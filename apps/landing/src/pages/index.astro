@@ -9,6 +9,9 @@ import Invoice from "../components/Invoice.svelte";
 import TerminalWalkthrough from "../components/TerminalWalkthrough.astro";
 import RandomPicker from "../components/RandomPicker.svelte";
 import AppleIcon from "../components/AppleIcon.astro";
+import GitHubIcon from "../components/GitHubIcon.astro";
+import XIcon from "../components/XIcon.astro";
+import DiscordIcon from "../components/DiscordIcon.astro";
 import { SITE_LINKS } from "../constants";
 import "../styles/global.css";
 
@@ -41,15 +44,21 @@ const platformRequirements = "macOS 14+ · Apple silicon";
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="masthead">
+    <header class="masthead home-masthead">
       <a class="wordmark" href="/" aria-label="hitSlop home"><span class="brand-mark"><img src="/assets/appicon.png" alt="" /></span><span>hitSlop</span></a>
       <nav aria-label="Primary navigation">
         <a href="#why">Why hitSlop</a><a href="#make">Make one</a><a href="#templates">Browse</a>
+        <a class="merch-link" href="/merch">Merch</a>
         <a href={SITE_LINKS.docs}>Docs</a>
-        <a href={SITE_LINKS.repository} target="_blank" rel="noreferrer">GitHub</a>
-        {SITE_LINKS.discord && <a href={SITE_LINKS.discord} target="_blank" rel="noreferrer">Discord</a>}
       </nav>
-      <a class="nav-download" href={SITE_LINKS.download}><AppleIcon /> Download</a>
+      <div class="header-actions">
+        <div class="social-links">
+          <a class="nav-social" href={SITE_LINKS.repository} target="_blank" rel="noopener noreferrer" aria-label="hitSlop on GitHub" title="GitHub"><GitHubIcon /></a>
+          <a class="nav-social" href="https://x.com/hitslop" target="_blank" rel="noopener noreferrer" aria-label="hitSlop on X" title="X"><XIcon /></a>
+          <a class="nav-social" href={SITE_LINKS.discord} target="_blank" rel="noopener noreferrer" aria-label="Join hitSlop on Discord" title="Discord"><DiscordIcon /></a>
+        </div>
+        <a class="nav-download" href={SITE_LINKS.download} aria-label="Download" title="Download"><AppleIcon /><span>Download</span></a>
+      </div>
     </header>
 
 
@@ -145,4 +154,24 @@ const platformRequirements = "macOS 14+ · Apple silicon";
 
 <style>
   .masthead { font-family: "HitSlop Sans", sans-serif; color: #10132c; }
+  .header-actions { display: flex; align-items: center; gap: 16px; }
+  .social-links { display: flex; align-items: center; }
+  .nav-social { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: #10132c; }
+  .nav-social:hover { color: #7922e0; background: #7922e00a; }
+  .nav-social :global(svg) { display: block; width: 20px; height: 20px; }
+  @media (max-width: 979px) {
+    .home-masthead { grid-template-columns: auto 1fr auto; }
+    .home-masthead nav { display: flex; justify-content: flex-end; }
+    .home-masthead nav a { display: none; }
+    .home-masthead nav .merch-link { display: inline-flex; align-items: center; min-height: 44px; font-size: .85rem; font-weight: 700; }
+  }
+  @media (max-width: 480px) {
+    .header-actions { gap: 4px; }
+    .home-masthead .nav-download { width: 44px; padding-inline: 0; }
+    .nav-download > span { display: none; }
+  }
+  @media (max-width: 420px) {
+    .home-masthead .wordmark > span:last-child { display: none; }
+    .home-masthead { padding-inline: 12px; gap: 10px; }
+  }
 </style>

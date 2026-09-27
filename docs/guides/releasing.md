@@ -36,6 +36,11 @@ the SDK provenance. CLI dependency pins must match the released SDK packages.
 
 ## Coordinated release sequence
 
+Mac **1.0.8 (26)** is an app-only patch enabling the catalog's Discord community
+link. It reuses sealed runtime contract **1**, revision **2**, schema/document
+**1.1.0**, and CLI **1.2.0**. Tag its validated commit `macos-v1.0.8`; do not
+republish the unchanged npm packages.
+
 The most recent coordinated release is npm **1.1.0**, paired with Mac **1.0.7 (25)** and tag `macos-v1.0.7`. It adds versioned JSON import with runtime contract **1**, revision **2**. The Mac and npm version sequences are independent. Mac 1.0.6 (24) shipped revision 1; preserve its existing runtime ledger checksum and template specimens.
 
 1. Finish release preparation and commit a clean tree. Check package versions, dependency pins, Apple version/build, and runtime provenance together. Confirm the intended npm versions and Mac tag have not already shipped.
@@ -122,7 +127,7 @@ Record commit, version/build, OS, and results. Test macOS 14 and the current sup
 - Failed save retains ownership; retry works and cancelled quit preserves other documents.
 - Kill WebContent, reopen saved state, and continue editing.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
-- GitHub and Discord remain in the native sidebar; Discord remains disabled until its URL is configured.
+- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
 - Gatekeeper launch from downloaded DMG and ZIP; installed helper works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
 

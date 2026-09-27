@@ -69,3 +69,6 @@ _vibe/
 /packages/cli/runtimes/
 
 /packages/cli/runtimes.building/
+
+# Local merch design sources and generation artifacts.
+/merch/
