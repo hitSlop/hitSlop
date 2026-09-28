@@ -26,7 +26,7 @@ jobs:
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Validate release secrets
@@ -158,7 +158,7 @@ jobs:
           if [ -f "$KEYCHAIN_PATH" ]; then
             security delete-keychain "$KEYCHAIN_PATH"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: release-evidence
