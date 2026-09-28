@@ -309,15 +309,24 @@ The capacity contract is decided: oversized work remains live and editable, save
 and close/export fail visibly, and Retry or explicit Discard provides recovery.
 CLI capacity failures use `failed`, because an edit may already be accepted in memory.
 
+Mac **1.1.1/build 28** shipped from commit
+`2e940fcb8551536454669ce58da9ff80c622316e`, tagged
+[`macos-v1.1.1`](https://github.com/hitSlop/hitslop/releases/tag/macos-v1.1.1).
+The clean local release gate, CI, and tagged release gate passed. Downloaded ZIP and
+DMG checksums, signatures, Gatekeeper acceptance, installed-helper editing/export,
+and the Sparkle update from signed 1.0.8 to 1.1.1 passed. Evidence is retained in
+`.hitslop/v1-evidence/release-1.1.1/` and the release workflow artifact.
+
+Contract 2, revision 1 and all 51 template specimens are the immutable launch
+baseline. The failed `macos-v1.1.0` tag remains unchanged and has no release assets.
+The follow-up fixed template-seal matching to exclude regenerated artwork while
+preserving complete historical specimen seals, and pinned the templates' icon
+dependency so clean CI builds reproduce the sealed authored content.
+
 Remaining launch acceptance:
 
-1. Actual network-disconnected launch remains a manual release check; this pass
-   verified local bundled resources without changing the machine's network settings.
-2. Validate the clean release commit with the complete `release:check`, then require
-   CI, signed-artifact acceptance, and the registry consumer checks before completing
-   the coordinated release.
-
-The approved Mac 1.1.0/build 27 and npm 2.0.0 release preparation seals contract 2,
-revision 1 and the 51 bundled template specimens. These records are now the immutable
-launch baseline. Historical successful release reports are not approval for this
-candidate; the full release gate must identify its final commit.
+1. Actual network-disconnected launch was **not run**: the maintainer could not
+   perform it. Bundled-resource and native-helper checks passed without changing
+   the machine's network settings; they do not substitute for that manual check.
+2. Complete npm 2.0.0 publication and fresh registry consumer checks. The signed
+   compatible Mac app is available; schema 2.0.0 is published and verified.
