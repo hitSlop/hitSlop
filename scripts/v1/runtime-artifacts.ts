@@ -12,10 +12,11 @@ export const runtimeDestinations = [
   join(repository, "packages/cli/runtimes"),
   join(repository, "apps/apple/Packages/HitSlopApple/Sources/HitSlopWasm/Resources/runtimes"),
 ];
-export async function digest(root: string): Promise<string> {
+export async function digest(root: string, topLevel?: readonly string[]): Promise<string> {
   const hash = createHash("sha256");
   async function visit(prefix: string) {
-    for (const name of (await readdir(join(root, prefix))).sort()) {
+    const names = prefix === "" && topLevel ? topLevel : await readdir(join(root, prefix));
+    for (const name of [...names].sort()) {
       const relative = join(prefix, name),
         path = join(root, relative),
         info = await lstat(path);
@@ -33,6 +34,11 @@ export async function digest(root: string): Promise<string> {
   }
   await visit("");
   return hash.digest("hex");
+}
+
+/** Match authored template content across machines, independently of previews, guidance and saved state. */
+export function templateAppDigest(root: string) {
+  return digest(root, ["manifest.json", "state.schema.json", "initial.json", "assets"]);
 }
 export async function catalog(root: string) {
   const result: Record<string, { identity: typeof identity; sha256: string }> = {};

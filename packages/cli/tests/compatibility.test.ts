@@ -11,6 +11,57 @@ import { SQLiteStore } from "../../document/test-support/sqlite";
 import { defineDocument, s } from "../../document/src/schema";
 import { digest, releases, repository } from "../../../scripts/v1/runtime-artifacts";
 import identity from "../../document/src/runtime-identity.json";
+import { checkTemplateSpecimens } from "../../../scripts/v1/compatibility-check";
+
+// Release builds on another macOS must accept fresh previews, but never unsealed app/data bytes.
+test("template specimens tolerate regenerated ancillary files but cover every authored byte", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-template-seal-"));
+  try {
+    const template = join(root, "example.slop");
+    const corpus = join(root, "fixtures");
+    const fixture = join(corpus, "example");
+    await mkdir(join(template, "assets"), { recursive: true });
+    await mkdir(join(template, "QuickLook"));
+    await mkdir(join(template, ".agents"));
+    const files = {
+      "manifest.json": '{"slug":"example"}',
+      "state.schema.json": '{"format":1}',
+      "initial.json": '{"title":"Initial"}',
+      "assets/runtime.json": '{"runtimeContract":2,"minRuntimeRevision":1}',
+      "assets/app.js": "export default { mount() {} };",
+      "assets/app.css": "body { color: black; }",
+      "assets/font.woff2": "authored font",
+      "QuickLook/Preview.png": "original generated preview",
+      ".agents/AGENTS.md": "original guidance",
+    };
+    for (const [path, content] of Object.entries(files))
+      await writeFile(join(template, path), content);
+    const sourceSha256 = await digest(template);
+    await mkdir(fixture, { recursive: true });
+    const document = join(fixture, "document");
+    await cp(template, document, { recursive: true });
+    await mkdir(join(document, "state"));
+    await writeFile(join(document, "state/document.sqlite"), "saved specimen state");
+    await writeFile(join(fixture, "fixture.json"), JSON.stringify({
+      kind: "template", sourceSha256, sha256: await digest(document),
+      runtimeContract: 2, runtimeRevision: 1,
+    }));
+    await checkTemplateSpecimens([template], corpus);
+    await writeFile(join(template, "QuickLook/Preview.png"), "preview from another macOS");
+    await writeFile(join(template, ".agents/AGENTS.md"), "updated guidance");
+    await checkTemplateSpecimens([template], corpus);
+    for (const [path, content] of Object.entries(files).filter(([path]) =>
+      !path.startsWith("QuickLook/") && !path.startsWith(".agents/"))) {
+      await writeFile(join(template, path), content + " changed");
+      await expect(checkTemplateSpecimens([template], corpus)).rejects.toThrow("Unsealed bundled templates: example");
+      await writeFile(join(template, path), content);
+    }
+    await writeFile(join(document, "QuickLook/Preview.png"), "rewritten historical preview");
+    await expect(checkTemplateSpecimens([template], corpus)).rejects.toThrow("Preserved fixture changed: example");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("historical readers open JSON-imported updates and checkpoints with preserved rich text and references", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-import-readers-"));

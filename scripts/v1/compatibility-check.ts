@@ -1,9 +1,9 @@
 import { builtTemplates, discoverTemplates } from "./templates";
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Check } from "typebox/value";
 import { RuntimeRequirementsSchema } from "../../packages/schema/src/runtime";
-import { catalog, digest, releases, repository, runtimeDestinations } from "./runtime-artifacts";
+import { catalog, digest, releases, repository, runtimeDestinations, templateAppDigest } from "./runtime-artifacts";
 
 export async function checkCompatibility(
   runtimeRoot = runtimeDestinations[0]!,
@@ -81,20 +81,31 @@ if (import.meta.main) {
 }
 
 /**
- * Release gate: every bundled template build must already be a sealed specimen, so
+ * Release gate: every bundled template's authored content must have a sealed specimen, so
  * documents created from a shipped template are replayed by every later release.
  */
 export async function checkTemplatesSealed() {
+  const packages = (await builtTemplates()).templates
+    .filter(({ bundled }) => bundled)
+    .map(({ slug }) => join(repository, "generated/v1/templates", slug + ".slop"));
+  await checkTemplateSpecimens(packages, join(repository, "tests/compatibility"));
+}
+
+export async function checkTemplateSpecimens(packages: string[], root: string) {
   const sealed = new Set<string>();
-  const root = join(repository, "tests/compatibility");
   for (const name of await readdir(root)) {
     const fixture = Bun.file(join(root, name, "fixture.json"));
-    if (await fixture.exists()) sealed.add((await fixture.json()).sourceSha256);
+    if (!(await fixture.exists())) continue;
+    const record = await fixture.json();
+    if (record.kind !== "template") continue;
+    const document = join(root, name, "document");
+    if (await digest(document) !== record.sha256)
+      throw new Error(`Preserved fixture changed: ${name}`);
+    sealed.add(await templateAppDigest(document));
   }
   const missing: string[] = [];
-  for (const { slug, bundled } of (await builtTemplates()).templates)
-    if (bundled && !sealed.has(await digest(join(repository, "generated/v1/templates", slug + ".slop"))))
-      missing.push(slug);
+  for (const directory of packages)
+    if (!sealed.has(await templateAppDigest(directory))) missing.push(basename(directory, ".slop"));
   if (missing.length)
     throw new Error(
       `Unsealed bundled templates: ${missing.join(", ")}. Seal the runtime, then run bun run fixtures:seal --write`,

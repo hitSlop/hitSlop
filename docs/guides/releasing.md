@@ -100,7 +100,7 @@ bun run test:native
 bun run test:render
 ```
 
-The first command only lists new specimens. `--write` adds immutable `tests/compatibility/template-*/` specimens with runtime/source provenance, expected initial state and a package seal. Existing source hashes are skipped; existing destinations are never overwritten. Review and commit the new specimens before validating the final release commit. Ordinary builds and checks never regenerate fixtures. Template specimens need no generated edits: named conformance scenarios own runtime semantics.
+The first command only lists new specimens. `--write` adds immutable `tests/compatibility/template-*/` specimens with runtime/source provenance, expected initial state and a package seal. Existing authored content is skipped; existing destinations are never overwritten. Matching includes every byte of the manifest, schema, initial data and assets (including runtime requirements), but excludes regenerated QuickLook artwork, guidance and specimen state. Historical specimens retain their full byte seals, including previews and state. Review and commit new specimens before validating the final release commit. Ordinary builds and checks never regenerate fixtures. Template specimens need no generated edits: named conformance scenarios own runtime semantics.
 
 Restore all older ledger runtimes with `bun run compatibility:restore` before validating on a fresh checkout. CI supplies an independent previous commit via `HITSLOP_COMPAT_BASE` to detect deleted or rewritten history, including a fixture and its hash changed together.
 

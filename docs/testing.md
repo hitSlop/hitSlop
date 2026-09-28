@@ -70,7 +70,7 @@ adding automatic retries or lengthening deadlines.
 |---|---|---|
 | `fast` | PRs, master pushes, manual runs; Ubuntu | hygiene, check, Bun tests, compatibility replay, packed npm packages (`test:packed` fast mode), landing check |
 | `native` | relevant changes, macOS | build, Swift tests, native owners, fixture render, helper, storage, native crash matrix |
-| `release-templates` | master pushes, or manual `render_corpus`; not required | warms the full template cache; manual profiling also verifies a second build has all hits and renders the complete corpus |
+| `release-templates` | master pushes, or manual `render_corpus`; not required | warms the full template cache and checks sealed authored content; manual profiling also verifies a second build has all hits and renders the complete corpus |
 | Release macOS | `macos-v*` tag, or manual dry run | full `release:check` once, then sign, accept, notarize and publish |
 
 The complete template corpus, `check:built` and full render run once per release, not on every push. A tag runs `release:check --skip-app`: instead of building a Debug app, packaging runs host-crash acceptance against the signed Release app before notarization, and Gatekeeper verification runs `release-artifact.ts` on the notarized app. A manual dry run executes the full `release:check`, including the Debug app, without signing or publishing.

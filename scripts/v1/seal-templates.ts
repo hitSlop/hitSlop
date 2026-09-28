@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { builtTemplates } from "./templates";
 import {
   digest,
+  templateAppDigest,
   releases,
   runtimeDestinations,
   verifyCopies,
@@ -24,14 +25,19 @@ for (const name of await readdir(corpus)) {
   const path = Bun.file(join(corpus, name, "fixture.json"));
   if (await path.exists()) {
     const record = await path.json();
-    if (record.sourceSha256) existing.add(record.sourceSha256);
+    if (record.kind === "template") {
+      const document = join(corpus, name, "document");
+      if (await digest(document) !== record.sha256)
+        throw new Error(`Preserved fixture changed: ${name}`);
+      existing.add(await templateAppDigest(document));
+    }
   }
 }
 for (const { slug, bundled } of (await builtTemplates()).templates) {
   if (!bundled) continue;
   const source = join("generated/v1/templates", `${slug}.slop`);
+  if (existing.has(await templateAppDigest(source))) continue;
   const sourceSha256 = await digest(source);
-  if (existing.has(sourceSha256)) continue;
   const requirements = await Bun.file(join(source, "assets/runtime.json")).json();
   const selected = runtimes[String(requirements.runtimeContract)];
   if (
