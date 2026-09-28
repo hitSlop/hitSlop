@@ -323,10 +323,13 @@ The follow-up fixed template-seal matching to exclude regenerated artwork while
 preserving complete historical specimen seals, and pinned the templates' icon
 dependency so clean CI builds reproduce the sealed authored content.
 
-Remaining launch acceptance:
+The matching schema, document and CLI npm packages are published at **2.0.0**.
+Each registry integrity hash matches its tested GitHub Release tarball, and all
+three `latest` tags resolve to 2.0.0. Fresh registry consumers passed SDK/type
+checks, init/install/check/dev/build/register, theme overrides, PNG/PDF export,
+and persisted edits using the signed helper without Node. Default and versioned
+`bunx` and an isolated global `slop` installation passed without SDK overrides.
 
-1. Actual network-disconnected launch was **not run**: the maintainer could not
-   perform it. Bundled-resource and native-helper checks passed without changing
-   the machine's network settings; they do not substitute for that manual check.
-2. Complete npm 2.0.0 publication and fresh registry consumer checks. The signed
-   compatible Mac app is available; schema 2.0.0 is published and verified.
+Actual network-disconnected launch was **not run**: the maintainer could not
+perform it. Bundled-resource and native-helper checks passed without changing
+the machine's network settings; they do not substitute for that manual check.
