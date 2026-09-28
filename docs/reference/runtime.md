@@ -2,7 +2,7 @@
 
 ## Architecture and client boundaries
 
-A `.slop` combines immutable authored app code with a structured local document. Each WebView owns one live Loro replica. The host supplies the document SDK and pinned JS/WASM engine for its selected runtime contract. Svelte observes immutable snapshots and writes typed operations. Loro events patch the snapshot incrementally: only touched containers are re-read and unchanged rows keep their identity. Remote bytes are validated in full on a staging fork before import. Commits carry an origin (`ui` or `cli`) and optional history message. Lazily created map children (optional composites, record entries) use Loro mergeable containers so concurrent creation merges. Swift persists opaque bytes; it does not interpret application fields.
+A `.slop` combines immutable authored app code with a structured local document. Each WebView owns one live Loro replica. The host supplies the document SDK and pinned JS/WASM engine for its selected runtime contract. Svelte observes immutable snapshots and writes typed operations. Loro events patch the snapshot incrementally: only touched containers are re-read and unchanged rows keep their identity. Imported peer bytes are checked for decoding and dependencies; merged semantic anomalies are accepted, preserved and reported as `issues`, never repaired (see [versioning](../versioning.md#reads-and-writes)). Commits carry an origin (`ui` or `cli`) and optional history message; subscribers receive `{kind: "change", origin: "local" | "host" | "remote"}` or `{kind: "status"}`. Every accepted local commit is emitted once through `onLocalUpdate` for persistence and future synchronization. Lazily created map children (optional composites, record entries) use Loro mergeable containers so concurrent creation merges; independently created rows keep distinct containers. Row and tree `$id`s are application registers, not container IDs. Swift persists opaque bytes; it does not interpret application fields.
 
 ```text
 App → typed operations → host-supplied Loro runtime
@@ -12,21 +12,22 @@ CLI → owner's Unix socket ────┘
 CLI → exclusive lock → engine-only WebKit → Swift SQLite (closed document)
 ```
 
-The document engine and visible-session lifecycle are framework independent.
-`@hitslop/document/adapter` exports `mountDocumentView` and the `ViewAdapter` /
-`DocumentView` types. An adapter mounts a view using the existing document and
-target element, then supplies `rendered()` (wait for pending UI updates) and
-`unmount()` (dispose the view and its subscriptions). Reload replaces only the
-view; flush, close, native readiness, themes, attachments and capture coordination
-remain shared. The adapter must not open its own document or bundle the engine.
+The runtime owns the page and the whole lifecycle: it opens the document, then
+imports the package's `assets/app.js` and calls `default.mount(ctx, target)`
+([abi.ts](../../packages/document/src/abi.ts)). `ctx` is the only thing an app may rely
+on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`,
+`issues`, `full`), `bind.text`/`bind.value`, capture hooks, attachments, theme,
+`window.resize` and `reportError`. The returned view supplies `rendered()` (wait for
+pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
+native readiness, themes, attachments and capture coordination stay in the runtime.
 
-`@hitslop/document/host` remains the Svelte `mountDocument(App)` entrypoint. It
-supplies Svelte mounting, context and `tick`; `@hitslop/document/svelte` retains
-the reactive bindings, error boundary and capture components. Svelte is an
-optional peer of the SDK, required when using those entrypoints. Other adapters
-mark their root `data-hitslop-root`, use the shared capture API for custom export
-views, and report render failures through the `hitslop:render-error` document
-event. Future framework adapters use the same host-supplied runtime and storage.
+`@hitslop/document/svelte` is the Svelte adapter compiled into each app:
+`defineSlop(App)` is the package entry (the CLI generates it from `App.svelte` and
+`styles.css`), and `useDocument`, `<Slop>`, `bindText`, `bindValue`, `capture` and
+`attachments` forward to `ctx`. Svelte is an optional peer of the SDK. Other
+frameworks supply `main.ts` exporting `default { mount(ctx, target) }` (type
+`SlopApp` from `@hitslop/document/abi`), mark their root `data-hitslop-root`, and
+use `ctx.capture` for custom export views.
 
 An edit returns after in-memory acceptance. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death can lose unsaved memory. There is no network acknowledgement or second document engine.
 
@@ -41,11 +42,10 @@ TypeBox defines the manifest and platform envelopes. Only `runtime: "hitslop-v1"
 ```text
 Example.slop/
   manifest.json
-  app.html
   assets/                       immutable compiled code, CSS, and resources
     runtime.json                contract, minimum revision, and provenance
-    main.js                     compiled app entrypoint
-    main.css                    compiled app styling
+    app.js                      app module: export default { mount(ctx, target) }
+    app.css                     compiled app styling
     theme.json                  declared token defaults
   state.schema.json             {format:1, root:...} descriptor, not JSON Schema
   initial.json                  immutable creation-only values
@@ -54,7 +54,7 @@ Example.slop/
     Preview.png                 refreshed in writable documents
     Icon.png                    optional immutable authored icon
   state/                        writable documents only
-    document.sqlite             opaque checkpoint/update bytes, format 1
+    document.sqlite             opaque checkpoint/update bytes and doc_id, format 1
     writer.lock                 permanent ownership inode
     host.lock                   live socket discovery
     theme.json                  optional token overrides
@@ -73,7 +73,7 @@ Swift owns `state/document.sqlite`: `user_version=1`, DELETE journaling, synchro
 
 One OS flock on permanent `state/writer.lock` owns each local package. Never unlink it or bypass a busy writer. `state/host.lock` is discovery only. A busy writer with unreachable discovery is an error, never permission for another writer.
 
-Autosave runs after 200 ms. Flush commits text drafts and scalar previews, persists updates, and checkpoints at 256 updates or 4 MiB. Native load/write limits are 4,096 rows and 32 MiB aggregate checkpoint/update bytes. The engine checkpoints before appending beyond those limits. Checkpoints retain history; automatic history pruning is deferred. Oversized snapshots fail visibly while retaining pending edits. Valid existing shallow checkpoints remain readable. Oversized existing packages are refused intact; compact cannot promise recovery of unloadable packages.
+Autosave runs after 200 ms. Flush commits text drafts and scalar previews, persists updates, and checkpoints at 256 updates or 4 MiB. Native load/write limits are 4,096 rows and 32 MiB aggregate checkpoint/update bytes. The engine checkpoints before appending beyond those limits. Checkpoints retain history; automatic history pruning is deferred. Before persisting a batch, the runtime checks its actual full snapshot against capacity. Oversized live edits remain visible and unsaved (`save-failed`, `full`), and close/export fail. Editing and retry remain available; successful saving or explicit discard clears the failure. Discard awaits reloading durable state under the same writer lock and remounts the view; failed restoration retains unsaved edits. Full history is kept; see [runtime reset](../runtime-reset.md#3-data-semantics-ready-for-collaboration). `bun scripts/v1/growth.ts` measures realistic growth (5,000 tasks of churn use about 2% of capacity). Writers never produce shallow checkpoints; valid existing shallow checkpoints remain readable. Oversized existing packages are refused intact; compact cannot promise recovery of unloadable packages.
 
 After an append commits but acknowledgement is lost, the engine reloads metadata and retains the same Loro bytes. A later flush imports them idempotently. Repeating the user's operation is not idempotent. CLI mutations serialize and acknowledge persistence; no receipts, public retry identity, or automatic replay exist. After an uncertain result, use `get` before another edit. `get` flushes drafts and pending writes. `hello` supplies the WebView session epoch for mutation/export handshakes.
 
@@ -97,7 +97,7 @@ Application-render errors and save failures have separate recovery paths. Render
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates package isolation, symlinks, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The resource scheme exposes only `app.html`, descriptor, initial values, immutable assets, and host runtime resources. Databases and discovery files are not served. Decoded resource paths reject empty, dot and parent segments before normalization; the allowlist applies to the resolved path. Descriptor-relative no-follow reads reject nonregular files and enforce 25 MiB per resource. Immutable packages are limited to 256 entries and 50 MiB. Symlinks are rejected during opening and resource reads.
+The runtime synthesizes the page. The resource scheme exposes only the descriptor, initial values, immutable assets, and host runtime resources. Databases and discovery files are not served. Decoded resource paths reject empty, dot and parent segments before normalization; the allowlist applies to the resolved path. Descriptor-relative no-follow reads reject nonregular files and enforce 25 MiB per resource. Immutable packages are limited to 256 entries and 50 MiB. Symlinks are rejected during opening and resource reads.
 
 CSP permits local scripts/WASM, local and HTTPS connections/media, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation; explicit HTTP(S) links open in the system browser. Camera/microphone grants are not part of v1.
 
@@ -136,3 +136,10 @@ Non-fatals carry a fixed operation, classification (platform/authored/rejection)
 Save and renderer incidents report once until recovery; propagated close/quit/export errors add breadcrumbs. Authored errors, expected rejections, and background catalog/artwork failures share a two-report limit per app launch, once per category, and stop after the first foreground platform failure. Optional artwork and stale Recents remain normal fallbacks. Standalone CLI processes have no Firebase sink.
 
 Release validation requires actual Firebase delivery and symbolication; unit tests cannot establish those. Use a disposable validation build and retain its dSYM and dashboard evidence, without shipping a crash trigger.
+
+## Schema identity
+
+A stored document opens only under an identical schema key: the canonical JSON of its
+descriptor, with keys sorted recursively, array order kept, no whitespace and
+JavaScript JSON number formatting. These rules are frozen by a golden vector in
+`packages/document/tests/open.test.ts`. Schema evolution is deferred.

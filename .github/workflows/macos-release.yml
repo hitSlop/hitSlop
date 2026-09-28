@@ -11,19 +11,18 @@ concurrency:
   group: macos-release-${{ github.ref_name }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   release:
     name: ${{ github.event_name == 'push' && 'Sign, notarize, and publish' || 'Release check (dry run)' }}
     if: github.repository == 'hitslop/hitslop'
     runs-on: macos-15
+    permissions:
+      contents: write
+    # Signing and notarization secrets are scoped to the steps that use them, so
+    # dependency installs, the test suite and third-party actions never see them.
     env:
-      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
-      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
-      ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
-      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
     steps:
@@ -36,6 +35,10 @@ jobs:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_API_KEY_P8 SPARKLE_PRIVATE_KEY; do
@@ -77,6 +80,11 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
       - name: Package notarized DMG
         if: github.event_name == 'push'
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           mkdir -p .hitslop/v1-evidence
@@ -125,7 +133,7 @@ jobs:
           Requires a Mac with an Apple M-series processor and macOS 14 or newer.
           Drag hitSlop.app into Applications, then create a document from the included template collection.
 
-          This release uses the hitSlop v1 document format. Older pre-v1 documents are not supported.
+          This release uses hitSlop document runtime contract 2. Documents created with pre-release 1.0.x builds are not supported; create them again from the included templates.
           The compatible authoring packages are @hitslop/schema and @hitslop/document $SDK_VERSION, with @hitslop/cli $CLI_VERSION.
           EOF
           gh release create "$GITHUB_REF_NAME" \

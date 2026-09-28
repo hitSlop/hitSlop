@@ -2,11 +2,11 @@
 
 Launch includes the signed/notarized Apple silicon Mac app and matching `@hitslop/schema`, `@hitslop/document`, and `@hitslop/cli` packages. Hosted template publication, catalog services, accounts, and collaboration remain deferred. npm publication is a separate maintainer-run action after the compatible Mac app is available. CLI-only releases may reuse an already shipped compatible app and SDK.
 
-## CLI-only release: 1.2.0
+## CLI-only release
 
-CLI **1.2.0** uses schema/document **1.1.0**, Mac **1.0.7 (25)**, and the existing
-sealed runtime contract **1**, revision **2**. Publish only the CLI. Keep SDK and
-runtime identities, sealed bytes, historical records, and Mac tags unchanged.
+A CLI-only release keeps the shipped SDK packages, sealed runtime and Mac app.
+Publish only the CLI. Keep SDK and runtime identities, sealed bytes, historical
+records, and Mac tags unchanged.
 
 1. Update the CLI version, lockfile, and user-facing commands. Generated projects
    must pin the CLI's exact document dependency independently of the CLI version.
@@ -34,18 +34,29 @@ For coordinated Mac releases below, package manifests determine each tarball's
 version. Release records include `packageVersions`; `runtime.sdkVersion` remains
 the SDK provenance. CLI dependency pins must match the released SDK packages.
 
+## Launch release: contract 2, revision 1
+
+The launch pairs the Mac app with npm **2.0.0** (schema, document, CLI) and runtime
+contract **2**, revision **1**; contract 1 was retired before launch. The runtime and
+bundled template specimens are sealed once, in this order, on the release candidate:
+
+1. `bun run build && bun run build:templates`, then run every tier below except
+   `check:sealed-templates` (which requires step 3).
+2. `bun scripts/v1/runtime-release.ts` seals the tested runtime and records 2/1 in
+   `runtimes/releases.json`.
+3. `bun run fixtures:seal` to preview, then `bun run fixtures:seal --write` to add the
+   `template-*` specimens.
+4. Review and commit the ledger entry and specimens; then run the complete
+   `bun run release:check` on that clean commit and continue with the sequence below.
+
+After launch, every record and fixture is immutable and later releases follow the
+same sequence with the next revision.
+
 ## Coordinated release sequence
-
-Mac **1.0.8 (26)** is an app-only patch enabling the catalog's Discord community
-link. It reuses sealed runtime contract **1**, revision **2**, schema/document
-**1.1.0**, and CLI **1.2.0**. Tag its validated commit `macos-v1.0.8`; do not
-republish the unchanged npm packages.
-
-The most recent coordinated release is npm **1.1.0**, paired with Mac **1.0.7 (25)** and tag `macos-v1.0.7`. It adds versioned JSON import with runtime contract **1**, revision **2**. The Mac and npm version sequences are independent. Mac 1.0.6 (24) shipped revision 1; preserve its existing runtime ledger checksum and template specimens.
 
 1. Finish release preparation and commit a clean tree. Check package versions, dependency pins, Apple version/build, and runtime provenance together. Confirm the intended npm versions and Mac tag have not already shipped.
 2. Run the complete local gate below on that final commit and record manual acceptance results. A report from a dirty checkout or another commit does not validate the release candidate.
-3. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-v1.0.7` and push the tag; this triggers `.github/workflows/macos-release.yml`.
+3. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-vVERSION` and push the tag; this triggers `.github/workflows/macos-release.yml`.
 4. Monitor signing, notarization, Gatekeeper verification, and GitHub Release publication. Verify downloaded artifacts and complete signed-install/Sparkle acceptance. Retain the release record and checksums.
 5. Download and verify the release's tested npm tarballs, then publish schema, document, and CLI in that order using the procedure below. Finish with fresh registry consumer checks.
 

@@ -2,12 +2,13 @@ import Combine
 import Darwin
 import Foundation
 import HitSlopCore
+import HitSlopFeatures
 import HitSlopRuntime
 
 public struct LocalTemplate: Identifiable, Sendable {
     public let packageURL: URL
-    public let iconURL: URL
-    public let previewURL: URL
+    public let icon: CatalogArtwork
+    public let preview: CatalogArtwork
     public let manifest: SlopManifest
     public let packageBytes: Int64
     public let createdAt: Date?

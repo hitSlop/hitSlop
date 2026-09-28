@@ -1,0 +1,24 @@
+{
+  "seed": 2718,
+  "koi": [
+    {
+      "name": "Mochi",
+      "pattern": "kohaku",
+      "size": 1.15,
+      "$id": "cpy9q66n8yc8za71fsxpqmx82r"
+    },
+    {
+      "name": "Pip",
+      "pattern": "ogon",
+      "size": 0.85,
+      "$id": "tjatdfapnqv9ex2d15hz75txxr"
+    },
+    {
+      "name": "Bean",
+      "pattern": "tancho",
+      "size": 1,
+      "$id": "6brx8skytvayvp65dt08yhf5cm"
+    }
+  ],
+  "feedings": 0
+}

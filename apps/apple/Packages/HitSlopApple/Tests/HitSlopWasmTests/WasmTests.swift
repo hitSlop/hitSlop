@@ -89,6 +89,9 @@ import WebKit
     owner.close()
     let loaded = try snapshot.call(["method": "load"])
     #expect(loaded["generation"] as? String == saved["generation"] as? String)
+    // The document identity is minted with the database and read unchanged by snapshots.
+    let identity = try #require(loaded["docId"] as? String)
+    #expect(identity.count == 32)
     #expect(loaded["updates"] as? [String] == [Data([1, 2, 3]).base64EncodedString()])
     // Renderer writes succeed in memory and are discarded.
     _ = try snapshot.call([
@@ -243,7 +246,7 @@ import WebKit
   func resizeBridgeHonorsManifest(resizable: Bool) async throws {
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/1-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/2-1/document", toPath: root.path)
     defer { try? FileManager.default.removeItem(at: root) }
     let manifestURL = root.appendingPathComponent("manifest.json")
     var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])

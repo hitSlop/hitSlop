@@ -1,16 +1,13 @@
 import ComposableArchitecture
 import Foundation
-
-public enum DocumentCommand: Equatable, Sendable {
-    case pin(Bool), exportPNG, exportPDF, duplicate, reveal, copyPath, openEditor(URL), retry, close
-}
+import HitSlopCore
 
 @DependencyClient
 public struct DocumentClient: Sendable {
     public var open: @Sendable (UUID, URL) async throws -> String
     public var focus: @Sendable (UUID) async -> Void
     /// Returns the new URL for duplication. Close returns only after native teardown.
-    public var perform: @Sendable (UUID, DocumentCommand) async throws -> URL?
+    public var perform: @Sendable (UUID, SlopDocumentCommand) async throws -> URL?
     public var prepareToQuit: @Sendable (UUID) async throws -> Void
     public var finishQuit: @Sendable (UUID) async throws -> Void
     public var cancelQuit: @Sendable (UUID) async -> Void
@@ -42,7 +39,7 @@ public extension DependencyValues {
         public var title: String
         public var isOpening = true
         public var isPinned = false
-        public var operation: DocumentCommand?
+        public var operation: SlopDocumentCommand?
         public var closeRequested = false
         public var isQuitting = false
         @Presents public var alert: AlertState<ErrorAlertAction>?
@@ -51,10 +48,10 @@ public extension DependencyValues {
         public var acceptsCommands: Bool { !isOpening && !isQuitting && operation == nil && !closeRequested }
     }
     public enum Action {
-        case command(DocumentCommand)
-        case operationFinished(DocumentCommand, URL?)
-        case operationFailed(DocumentCommand, String)
-        case runtimeFailed(String), runtimeReady, saveFailed(String)
+        case command(SlopDocumentCommand)
+        case operationFinished(SlopDocumentCommand, URL?)
+        case operationFailed(SlopDocumentCommand, String)
+        case runtimeFailed(String), runtimeReady
         case alert(PresentationAction<ErrorAlertAction>)
     }
     @Dependency(\.documentClient) var client
@@ -96,7 +93,6 @@ public extension DependencyValues {
                 return .none
             case .runtimeFailed(let message): state.runtimeError = message; return .none
             case .runtimeReady: state.runtimeError = nil; return .none
-            case .saveFailed(let message): state.alert = .operationFailure(message); return .none
             case .alert: return .none
             }
         }

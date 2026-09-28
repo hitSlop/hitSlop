@@ -75,7 +75,7 @@ export async function runCrashMatrix(adapters: ("bun" | "native")[], hostCheck =
     if (hostCheck) {
       // The real host owns a WebView and socket; acknowledge through CLI, then kill it.
       const root = join(folder, "Host.slop");
-      await cp("tests/compatibility/1-1/document", root, { recursive: true });
+      await cp("tests/compatibility/2-1/document", root, { recursive: true });
       const app =
         process.env.HITSLOP_APP_BINARY ??
         resolve("generated/v1/app/hitSlop.app/Contents/MacOS/hitSlop");

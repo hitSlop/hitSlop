@@ -55,11 +55,12 @@ private func documentWindowFixture(resizable: Bool) throws -> URL {
     let parent = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-document-window-\(UUID().uuidString)", isDirectory: true)
     let root = parent.appendingPathComponent("fixture.slop", isDirectory: true)
     try FileManager.default.createDirectory(at: root.appendingPathComponent("QuickLook"), withIntermediateDirectories: true)
-    try Data("<!doctype html><html><body><script>window.slop.ready()</script></body></html>".utf8).write(to: root.appendingPathComponent("app.html"))
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
+    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data(#"{"runtimeContract":1,"minRuntimeRevision":1,"sdkVersion":"1.0.0","loroVersion":"1.16.1","protocolVersion":1}"#.utf8).write(to: root.appendingPathComponent("assets/runtime.json"))
+    try Data(#"{"runtimeContract":2,"minRuntimeRevision":1,"sdkVersion":"2.0.0","loroVersion":"1.16.1","protocolVersion":1}"#.utf8).write(to: root.appendingPathComponent("assets/runtime.json"))
     let resizableJSON = resizable ? "true" : "false"
     let manifest = #"{"runtime":"hitslop-v1","$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))

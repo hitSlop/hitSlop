@@ -3,6 +3,8 @@ export type Stored = {
   updates: Uint8Array[];
   generation: string;
   schemaKey: string | null;
+  /** Host-owned logical document identity; renewed by Duplicate, never by a Loro edit. */
+  docId: string;
 };
 export interface ByteStore {
   load(): Promise<Stored>;

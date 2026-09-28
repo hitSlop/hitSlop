@@ -1,0 +1,60 @@
+{
+  "title": "Priority Desk Blotter",
+  "date": "Wed, Sep 16, 2026",
+  "tasks": [
+    {
+      "text": "Submit quarterly tax return",
+      "done": false,
+      "zone": "q1",
+      "$id": "sq1gjsbaev4xxxq8rn78ktwqsr"
+    },
+    {
+      "text": "Patch payment webhook failure",
+      "done": true,
+      "zone": "q1",
+      "$id": "vb8qc3rmdf7gmn0qc0qv7vmze0"
+    },
+    {
+      "text": "Draft engineering roadmap for v2",
+      "done": false,
+      "zone": "q2",
+      "$id": "n7gyx7eee0qv1420qw6fj8tkhm"
+    },
+    {
+      "text": "Weekly deep-work reading (45 min)",
+      "done": false,
+      "zone": "q2",
+      "$id": "wttcz59s5x54hz0w2qzccstpv8"
+    },
+    {
+      "text": "Strength training session",
+      "done": true,
+      "zone": "q2",
+      "$id": "zv7krwxspwtwwz0583a0a7yzfw"
+    },
+    {
+      "text": "Reply to inbound vendor cold emails",
+      "done": false,
+      "zone": "q3",
+      "$id": "339xrh87sqzmadzssrr13eb21g"
+    },
+    {
+      "text": "Reschedule dentist booking",
+      "done": false,
+      "zone": "q3",
+      "$id": "67rwrg4wk680c7b3f5xr1drdag"
+    },
+    {
+      "text": "Audit abandoned Slack channels",
+      "done": false,
+      "zone": "q4",
+      "$id": "463g6mkjgc1zrb689cn75x8h9g"
+    },
+    {
+      "text": "Review server disk space alert",
+      "done": false,
+      "zone": "inbox",
+      "$id": "p3tq4b34ayt8kwbkd7hzcbmnhr"
+    }
+  ]
+}

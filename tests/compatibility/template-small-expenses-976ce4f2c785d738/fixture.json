@@ -1,8 +1,0 @@
-{
-  "kind": "template",
-  "runtimeContract": 1,
-  "runtimeRevision": 2,
-  "sourceSha256": "976ce4f2c785d738fe2abd6cf8b933a2210c9360f01b057dcf091bcb65db93db",
-  "runtimeSha256": "06b36b6ddb7e029f6af55438fe7f1d78b5137cf9ea9a34888151cd967c5d0459",
-  "sha256": "3dc5043a217f4b7adc4263ab59f9eb5bc6f44a85dfe67ce4fd0c887911b41a8e"
-}

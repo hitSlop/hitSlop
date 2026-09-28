@@ -1,16 +1,23 @@
 # Preserved runtime fixtures
 
-`1-1/document` is a compiled contract-1/revision-1 app with a SQLite checkpoint
-and an uncheckpointed update. It covers text, optional strings, enums, nested number/boolean fields, and object
-lists, including Unicode, list identity/movement, transactions, bindings, themes
-and export. It does not cover every v1 value kind. `expected.json`
-records its saved state. Swift tests always edit disposable copies.
+These are release baselines, not generated examples. Never rebuild or replace them
+when the SDK changes; add new fixtures for new capabilities and contracts.
+`fixture.json` seals each `document/` tree; checks reject byte changes, and the history
+guard rejects any change to any file of a recorded fixture against the base commit.
 
-These are release baselines, not generated examples. Do not rebuild or replace
-them when the SDK changes. Add new fixtures for new capabilities and contracts.
-`fixture.json` seals each document tree; the check command rejects byte changes.
+Contract 2 / revision 1 (the launch baseline), authored once by
+`bun scripts/v1/author-fixtures.ts` over the shared schema in `tests/abi/fixture-schema.ts`:
 
-Runtime release hashes live in `runtimes/releases.json`. For revisions older than
-the installed runtime, restore the preserved release directories under
-`generated/v1/runtime-releases/<contract>-<revision>/<contract>/` before checks.
-Checks verify their hashes; native tests use them to read candidate-written state.
+| Fixture | Covers |
+|---|---|
+| `2-1` | Every value kind, a checkpoint plus uncheckpointed updates, a scripted `scenario.json` with independently modeled results, and `collaboration.json`: a concurrent offline round (deterministic merges only) and synced edits for mixed-version peers, with an independently modeled `expected` result. Its app is the hand-written plain-JS ABI consumer (`tests/abi/plain/app.js`). |
+| `2-1-saved-state` | Theme overrides, a content-addressed attachment referenced from a field, several separately saved updates. |
+| `2-1-issues` | Merged anomalies (non-finite counter, wrong container kind, unknown enum, unknown field, missing and duplicate row IDs, which read derived `x-` IDs) with exact `issues.json`; nothing is repaired. |
+| `2-1-svelte` | The Svelte adapter as compiled into apps (`tests/abi/svelte`). |
+
+Both consumer apps check the `ctx` ABI while mounting; a failed check fails the native
+open or export. `template-<slug>-<hash>` specimens are added by
+`bun run fixtures:seal --write` when a release seals its runtime.
+
+Swift tests always edit disposable copies. Host-behavior probes swap in the unsealed
+`tests/abi/probe/app.js`.

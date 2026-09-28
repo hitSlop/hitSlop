@@ -101,10 +101,6 @@ export function observe(handle: object) {
   if (!observer) throw new Error("Binding requires a live document handle");
   return observer;
 }
-/** @deprecated Compatibility name for compiled contract-1 apps. */
-export function observeText(handle: TextHandle) {
-  return observe(handle);
-}
 
 export function nodeAt(root: Node, path: Path): Node {
   let node = root;

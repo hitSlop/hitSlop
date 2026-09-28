@@ -1,0 +1,151 @@
+{
+  "week": "Week of Oct 12 — 18",
+  "focus": "Ship the v2 release & celebrate.",
+  "days": [
+    {
+      "name": "MON",
+      "date": "12",
+      "tasks": [
+        {
+          "time": "09:00",
+          "title": "Team sync",
+          "done": true,
+          "durationMinutes": 60,
+          "color": "sky",
+          "$id": "3g83c1kqa4e03x2z2ykeha891g"
+        },
+        {
+          "time": "14:00",
+          "title": "Design review",
+          "done": true,
+          "durationMinutes": 90,
+          "color": "lilac",
+          "$id": "5r510kx0kpb0k7fqehn4tb3pyr"
+        }
+      ],
+      "$id": "f9wq0b2n02atb8j91gktwm6078"
+    },
+    {
+      "name": "TUE",
+      "date": "13",
+      "tasks": [
+        {
+          "time": "10:30",
+          "title": "Customer interview",
+          "done": true,
+          "durationMinutes": 60,
+          "color": "coral",
+          "$id": "yrmt67wwd2zxq5cvq7zzm327dw"
+        },
+        {
+          "time": "15:00",
+          "title": "API integration",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "mint",
+          "$id": "qe3ttmb55tp4w8q4hpzqka2x9m"
+        }
+      ],
+      "$id": "fdrg8081rfdq7ne75z5qk5q3dg"
+    },
+    {
+      "name": "WED",
+      "date": "14",
+      "tasks": [
+        {
+          "time": "09:00",
+          "title": "Refactor models",
+          "done": false,
+          "durationMinutes": 90,
+          "color": "sky",
+          "$id": "szp85fmc3zxvcm5yh9a4907xk8"
+        },
+        {
+          "time": "13:30",
+          "title": "Run test suite",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "lilac",
+          "$id": "q0bae71s7ejemgcja7wz480bgg"
+        }
+      ],
+      "$id": "cjfv5k6sdxkdmndcgjc5evsfnm"
+    },
+    {
+      "name": "THU",
+      "date": "15",
+      "tasks": [
+        {
+          "time": "11:00",
+          "title": "Staging deploy",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "coral",
+          "$id": "rgqwghpk337hv0y4310exfsy9g"
+        },
+        {
+          "time": "16:00",
+          "title": "QA pass",
+          "done": false,
+          "durationMinutes": 90,
+          "color": "mint",
+          "$id": "egbbcegmm03a4easmc7exka2bm"
+        }
+      ],
+      "$id": "8d5y46wp3hh6sgqhcdactsvgt8"
+    },
+    {
+      "name": "FRI",
+      "date": "16",
+      "tasks": [
+        {
+          "time": "10:00",
+          "title": "Production launch",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "sky",
+          "$id": "0z7sc931q4g1txgsy45fekknzg"
+        },
+        {
+          "time": "17:00",
+          "title": "Team demo & toast",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "lilac",
+          "$id": "04rjn2z0p144mbyxjr9j2e9zsg"
+        }
+      ],
+      "$id": "x57ttqpjmad2yfysy01e92mkd4"
+    },
+    {
+      "name": "SAT",
+      "date": "17",
+      "tasks": [
+        {
+          "time": "09:30",
+          "title": "Farmers market",
+          "done": false,
+          "durationMinutes": 90,
+          "color": "coral",
+          "$id": "r89da8nygf0f53f9grpwgdchnr"
+        }
+      ],
+      "$id": "91hhbdmndta03y0pn4bk30tez4"
+    },
+    {
+      "name": "SUN",
+      "date": "18",
+      "tasks": [
+        {
+          "time": "",
+          "title": "Plan next week",
+          "done": false,
+          "durationMinutes": 60,
+          "color": "mint",
+          "$id": "qxm0cc9zy1ka5ag45g6ma6qv1g"
+        }
+      ],
+      "$id": "c0573wa057p1myexn3181yjcfc"
+    }
+  ]
+}

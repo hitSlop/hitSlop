@@ -1,4 +1,3 @@
-// Runtime changes require a new revision; preserve historical seals in docs/versioning.md.
 import type { Request as Command, Reply as Outcome, ReplyCode as Code } from "./session-types";
 export type * from "./session-types";
 import type { ThemeController } from "./theme-runtime";
@@ -43,7 +42,6 @@ export class Session {
             if (!this.theme) throw new OperationRejectedError("Theme controls unavailable");
             if (request.method !== "theme.get" && (request as Partial<Extract<Command, { epoch: unknown }>>).epoch !== this.epoch)
               throw new SessionChangedError("Session changed; inspect theme before retrying");
-            await this.doc.flush();
             const state =
               request.method === "theme.get"
                 ? this.theme.get()
@@ -92,18 +90,28 @@ export class Session {
     return task;
   }
   async flush() {
-    await this.queue;
+    await this.queue.catch(() => {});
     await this.doc.flush();
   }
   async prepareClose() {
     this.closing = true;
-    await this.queue;
+    await this.queue.catch(() => {});
     try {
       await this.doc.prepareClose();
     } catch (error) {
       this.closing = false;
       throw error;
     }
+  }
+  /** Restore durable state after earlier requests finish, keeping ownership. */
+  discardPending(): Promise<void> {
+    if (this.closing) return Promise.reject(new Error("Document is closing"));
+    this.closing = true;
+    const task = this.queue.catch(() => {}).then(() => this.doc.discardPending()).finally(() => {
+      this.closing = false;
+    });
+    this.queue = task;
+    return task;
   }
   cancelClose() {
     this.doc.cancelClose();

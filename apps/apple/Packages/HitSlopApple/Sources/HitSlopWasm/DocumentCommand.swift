@@ -16,14 +16,6 @@ import HitSlopCore
     let package = try SlopPackage(rootURL: url)
     let root = package.rootURL
     guard let command = SocketRequest.Method(rawValue: method) else { throw failure("Invalid document command") }
-    if command == .snapshot || command == .import {
-      let catalog = try RuntimeCatalog.bundled()
-      let runtime = try catalog.resolve(package: package)
-      guard let identity = catalog.identities.first(where: { String($0["runtimeContract"] as! Int) == runtime.lastPathComponent }),
-        (identity["runtimeRevision"] as! Int) >= 2 else {
-        throw failure("JSON import requires runtime revision 2. Update hitSlop.app.")
-      }
-    }
     if command == .schema {
       return try SlopFile.read(package.dataSchemaURL, within: root, maximumBytes: 1_048_576)
     }

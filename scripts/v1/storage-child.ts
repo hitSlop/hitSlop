@@ -15,7 +15,7 @@ if (phase === "hold") {
   process.kill(process.pid, "SIGSTOP");
 }
 if (phase.startsWith("append:")) {
-  doc.text(checklist.fields.title).replace("Crash edit");
+  doc.fields.title.replace("Crash edit");
   await doc.flush();
 } else await doc.compact();
 await doc.close();

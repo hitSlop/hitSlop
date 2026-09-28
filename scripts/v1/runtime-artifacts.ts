@@ -44,7 +44,7 @@ export async function catalog(root: string) {
     const value = JSON.parse(await readFile(join(directory, "identity.json"), "utf8"));
     if (!Check(RuntimeIdentitySchema, value) || String(value.runtimeContract) !== name)
       throw new Error(`Invalid runtime identity: ${directory}`);
-    for (const file of ["index.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"])
+    for (const file of ["index.js", "boot.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"])
       if (!(await lstat(join(directory, file))).isFile())
         throw new Error(`Missing runtime file: ${file}`);
     result[name] = { identity: value, sha256: await digest(directory) };

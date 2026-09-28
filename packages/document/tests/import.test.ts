@@ -217,3 +217,23 @@ test("accepted counter targets survive batched persistence with large historical
   expect(reopened.current.n).toBe(1);
   await reopened.close();
 });
+
+test("row and tree IDs are application values that survive a JSON round trip into a new document", async () => {
+  const source = await Document.open(definition, new MemoryStore(), initial);
+  source.fields.rows.item(source.current.rows[0]!.$id).link.set(source.current.rows[1]!.$id);
+  const ids = [...source.current.rows.map((r) => r.$id), source.current.tree[0]!.$id, source.current.tree[0]!.children[0]!.$id];
+  // Application IDs are short random strings, not engine container or tree IDs.
+  for (const id of ids) expect(id).toMatch(/^[0-9a-z]{26}$/);
+  expect(new Set(ids).size).toBe(ids.length);
+  const exported = JSON.parse(JSON.stringify({ ...source.current, notes: source.current.notes.text }));
+  const copy = await Document.open(definition, new MemoryStore(), { ...initial, rows: [], tree: [] });
+  copy.importJSON(exported);
+  expect(copy.current.rows.map((r) => r.$id)).toEqual(ids.slice(0, 2));
+  expect(copy.current.rows[0]!.link).toBe(ids[1]);
+  expect(copy.current.tree[0]!.children[0]!.$id).toBe(ids[3]);
+  copy.fields.rows.item(ids[1]!).name.set("Addressable");
+  expect(copy.current.rows[1]!.name).toBe("Addressable");
+  expect(() => copy.fields.rows.insert({ name: "Dup", link: "" }) && copy.execute({ type: "insert", path: ["rows"], value: { name: "x", link: "" }, id: ids[0] })).toThrow("already used");
+  await source.close();
+  await copy.close();
+});

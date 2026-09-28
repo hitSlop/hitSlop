@@ -106,8 +106,8 @@ import HitSlopRuntime
     static func localEntry(_ template: LocalTemplate) -> CatalogEntry {
         var entry = CatalogEntry(id: "local:\(template.packageURL.path)", source: .local(template.packageURL), title: template.manifest.title)
         apply(template.manifest, to: &entry)
-        entry.iconURLs = [template.iconURL, template.previewURL]
-        entry.previewURLs = [template.previewURL, template.iconURL]
+        entry.icons = [template.icon, template.preview]
+        entry.previews = [template.preview, template.icon]
         entry.packageBytes = template.packageBytes
         entry.createdAt = template.createdAt
         entry.updatedAt = template.updatedAt

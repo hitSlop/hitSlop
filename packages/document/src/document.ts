@@ -1,5 +1,5 @@
 import { createHandles, nodeAt, type At, type Handle, type Observer } from "./handles";
-import { OperationRejectedError } from "./errors";
+import { DocumentFullError, OperationRejectedError } from "./errors";
 import { LoroDoc, type LoroEventBatch } from "loro-crdt";
 import {
   isScalar,
@@ -15,20 +15,32 @@ import {
   type Path,
   type Snapshot,
 } from "./schema.ts";
-import type { ByteStore } from "./storage.ts";
-import { Commands, applyOperation, fill, project, type Operation } from "./operations";
+import type { ByteStore, Stored } from "./storage.ts";
+import { Commands, applyOperation, containerOf, fill, project, type Issue, type Lookup, type Operation } from "./operations";
 import { patch } from "./projection";
 import { importJSON } from "./json-import";
 import { base64 } from "./bridge";
-export type { Operation, Destination } from "./operations";
+export type { Operation, Destination, Issue } from "./operations";
 export type SaveStatus = "saved" | "saving" | "save-failed";
 /** `ui` for authored code, `cli` for socket requests; the message is kept in history. */
 export type CommitOptions = { origin?: string; message?: string };
-export type Scope<N extends ObjectNode> = Commands & {
+/**
+ * `change` events describe `current`: `local` for this session's edits, `host`
+ * for CLI/agent edits routed into it, `remote` for imported peer updates.
+ * `status` events report save status only.
+ */
+export type DocumentEvent =
+  | { readonly kind: "change"; readonly origin: "local" | "host" | "remote" }
+  | { readonly kind: "status" };
+const originOf = (options: CommitOptions) => (options.origin === "cli" ? "host" : "local");
+/** What a `change()` callback may use: typed handles only. */
+export type Scope<N extends ObjectNode> = {
   readonly fields: Handle<N>;
   readonly at: At;
 };
+/** Host storage bound for one checkpoint or checkpoint plus log (Swift Storage.maximumBytes). */
 const MAX_CHECKPOINT_BYTES = 32 * 1024 * 1024;
+export type OpenOptions = { capacityBytes?: number };
 const paths = new WeakMap<object, { owner: object; path: Path }>();
 const key = (path: Path) => JSON.stringify(path);
 export class Document<N extends ObjectNode> extends Commands {
@@ -44,19 +56,28 @@ export class Document<N extends ObjectNode> extends Commands {
   private preparations: Array<(commit: (callback: () => void) => void) => Promise<void>> = [];
   private committingPreparation = false;
   private queue: Promise<unknown> = Promise.resolve();
-  private listeners = new Set<() => void>();
+  private listeners = new Set<(event: DocumentEvent) => void>();
+  private outbound = new Set<(bytes: Uint8Array) => void>();
+  private revision = 0;
+  private issueCache?: { revision: number; issues: readonly Issue[] };
   private stop?: () => void;
   private stopEvents?: () => void;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
   private closing = false;
+  private discarding = false;
   private preparingClose?: Promise<void>;
   private snapshot!: Value<N>;
   private view!: Value<N>;
   private origin = "ui";
+  private capacityBytes = MAX_CHECKPOINT_BYTES;
+  /** The last save failed because its full snapshot exceeded storage capacity. */
+  full = false;
   status: SaveStatus = "saved";
   error: string | null = null;
   readonly key: string;
+  /** Logical document identity, distinct from row `$id`s and Loro peer IDs. */
+  id!: string;
   readonly fields: Handle<N>;
   private observer: Observer;
   private register = (value: object, path: Path) => paths.set(value, { owner: this, path });
@@ -81,40 +102,25 @@ export class Document<N extends ObjectNode> extends Commands {
     definition: Definition<N>,
     storage: ByteStore,
     initial: Input<N>,
+    options: OpenOptions = {},
   ): Promise<Document<N>> {
     const doc = new Document(definition, storage);
+    doc.capacityBytes = Math.min(options.capacityBytes ?? MAX_CHECKPOINT_BYTES, MAX_CHECKPOINT_BYTES);
     try {
-      const styles = textStyles(definition.descriptor.root);
-      if (Object.keys(styles).length) doc.engine.configTextStyle(styles);
       const stored = await storage.load();
-      doc.generation = stored.generation;
-      doc.checkpointBytes = stored.checkpoint?.length ?? 0;
-      doc.logRows = stored.updates.length;
-      doc.logBytes = stored.updates.reduce((n, b) => n + b.length, 0);
-      if (stored.schemaKey !== null && stored.schemaKey !== doc.key)
-        throw new Error("Incompatible document schema");
-      if (!stored.checkpoint && stored.updates.length)
-        throw new Error("Missing document checkpoint");
-      if (stored.checkpoint) {
-        doc.engine.import(stored.checkpoint);
-        if (stored.updates.length) {
-          const result = doc.engine.importBatch(stored.updates);
-          if (result.pending?.size) throw new Error("Incomplete update history");
-        }
-        // project() below walks every container and validates each stored value.
-      } else {
+      doc.id = stored.docId;
+      doc.restoreEngine(doc.engine, stored);
+      doc.storageMetadata(stored);
+      if (!stored.checkpoint) {
         validate(definition.descriptor.root, initial);
         fill(doc.engine.getMap("data"), definition.descriptor.root, initial);
         doc.engine.commit();
-        const snapshot = doc.engine.export({ mode: "snapshot" });
+        const snapshot = doc.measuredSnapshot();
         doc.generation = await storage.checkpoint(doc.generation, snapshot, doc.key);
         doc.checkpointBytes = snapshot.length;
       }
       doc.snapshot = doc.view = doc.projectAll();
-      doc.stop = doc.engine.subscribeLocalUpdates((bytes) => {
-        doc.pending.push(bytes.slice());
-      });
-      doc.stopEvents = doc.engine.subscribe((batch) => doc.onEvents(batch));
+      doc.subscribeEngine();
       return doc;
     } catch (error) {
       doc.engine.free();
@@ -122,18 +128,61 @@ export class Document<N extends ObjectNode> extends Commands {
       throw error;
     }
   }
+  private restoreEngine(engine: LoroDoc, stored: Stored) {
+    const styles = textStyles(this.definition.descriptor.root);
+    if (Object.keys(styles).length) engine.configTextStyle(styles);
+    if (stored.schemaKey !== null && stored.schemaKey !== this.key)
+      throw new Error("Incompatible document schema");
+    if (!stored.checkpoint && stored.updates.length) throw new Error("Missing document checkpoint");
+    // Full and shallow checkpoints are readable; writers only create full snapshots.
+    if (stored.checkpoint) {
+      const result = engine.import(stored.checkpoint);
+      if (result.pending?.size) throw new Error("Incomplete checkpoint history");
+      if (stored.updates.length && engine.importBatch(stored.updates).pending?.size)
+        throw new Error("Incomplete update history");
+    }
+  }
+  private subscribeEngine() {
+    this.stop = this.engine.subscribeLocalUpdates((bytes) => this.accept(bytes.slice(), true));
+    this.stopEvents = this.engine.subscribe((batch) => this.onEvents(batch));
+  }
   /** Immutable snapshot, including uncommitted previews. */
   get current(): Value<N> {
     return this.view;
   }
-  subscribe(listener: () => void) {
+  subscribe(listener: (event: DocumentEvent) => void) {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
-  private notify() {
-    for (const listener of this.listeners) listener();
+  /**
+   * Accepted local updates, exactly once per commit. Imported peer updates are
+   * persisted but never re-emitted. Emission happens at commit, before durability:
+   * a save can still fail for capacity and discardPending() can roll these back, so a
+   * synchronization transport must forward only updates that were saved.
+   */
+  onLocalUpdate(listener: (bytes: Uint8Array) => void) {
+    this.outbound.add(listener);
+    return () => {
+      this.outbound.delete(listener);
+    };
+  }
+  private accept(bytes: Uint8Array, local: boolean) {
+    this.pending.push(bytes);
+    if (local) for (const listener of this.outbound) listener(bytes);
+  }
+  /** Semantic anomalies in the stored state, computed on demand. Stored bytes are never repaired. */
+  get issues(): readonly Issue[] {
+    if (this.issueCache?.revision !== this.revision) {
+      const issues: Issue[] = [];
+      if (!this.closed) project(this.definition.descriptor.root, this.engine.getMap("data"), undefined, [], undefined, issues);
+      this.issueCache = { revision: this.revision, issues: Object.freeze(issues) };
+    }
+    return this.issueCache.issues;
+  }
+  private notify(event: DocumentEvent = { kind: "status" }) {
+    for (const listener of this.listeners) listener(event);
   }
   private projectAll(previous?: Value<N>): Value<N> {
     const root = this.definition.descriptor.root;
@@ -142,6 +191,7 @@ export class Document<N extends ObjectNode> extends Commands {
   /** Events arrive synchronously on commit and import; only touched containers are re-read. */
   private onEvents(batch: LoroEventBatch) {
     if (this.closed || batch.by === "checkout") return;
+    this.revision++;
     const root = this.definition.descriptor.root;
     try {
       this.snapshot = patch(root, this.engine, this.snapshot, batch, this.register) as Value<N>;
@@ -162,23 +212,30 @@ export class Document<N extends ObjectNode> extends Commands {
     const node = nodeAt(this.definition.descriptor.root, entry.path);
     return createHandles(node, commands, commands === this ? this.observer : undefined, entry.path);
   }
+  /** Resolve an effective row or tree-node ID through the projected snapshot, O(depth). */
+  private lookup: Lookup = (collection, id) => containerOf(read(this.snapshot, [...collection, { id }]));
   private transactionFailure: unknown;
   private collecting = false;
   private assertWritable() {
-    if (this.closed || (this.closing && !this.committingPreparation) || this.collecting) {
+    if (this.closed || ((this.closing || this.discarding) && !this.committingPreparation) || this.collecting) {
       const error = new OperationRejectedError(
-        "Document is closed, closing, or running a transaction; use tx.fields inside transactions",
+        "Document is closed, closing, discarding, or running a transaction; use tx.fields inside transactions",
       );
       if (this.collecting) this.transactionFailure ??= error;
       throw error;
     }
   }
+  private measuredSnapshot() {
+    const snapshot = this.engine.export({ mode: "snapshot" });
+    if (snapshot.length > this.capacityBytes) throw new DocumentFullError(this.capacityBytes);
+    return snapshot;
+  }
   apply(op: Operation, options: CommitOptions = {}) {
     this.assertWritable();
-    const result = applyOperation(this.engine, this.definition.descriptor.root, op);
+    const result = applyOperation(this.engine, this.definition.descriptor.root, op, this.lookup);
     this.dropPreview(op);
     this.engine.commit({ origin: options.origin ?? this.origin, message: options.message });
-    this.changed();
+    this.changed(originOf(options));
     return result;
   }
   /** One synchronous, all-or-nothing commit. Reads stay on the pre-change snapshot. */
@@ -187,19 +244,21 @@ export class Document<N extends ObjectNode> extends Commands {
   }
   /** Import desired values through the same staged operation boundary as authored changes. */
   importJSON(value: unknown, options: CommitOptions & { fresh?: boolean } = {}) {
-    this.stage(tx => importJSON(this.definition.descriptor.root, this.snapshot, value, tx, options.fresh), options, true);
+    this.stage((_, commands) => importJSON(this.definition.descriptor.root, this.snapshot, value, commands, options.fresh), options, true);
   }
   /** Opaque optimistic-concurrency token; stable across close/reopen and checkpointing. */
   snapshotFor(documentPath: string) {
     return {
       data: this.snapshot,
       schema: this.definition.descriptor,
+      /** Merged anomalies in `data`, preserved as stored; empty for ordinary documents. */
+      issues: this.issues,
       version: base64.encode(new TextEncoder().encode(JSON.stringify([
         documentPath, this.key, base64.encode(this.engine.oplogVersion().encode()),
       ]))),
     };
   }
-  private stage<R>(callback: (tx: Scope<N>) => R, options: CommitOptions, checkImport = false): R {
+  private stage<R>(callback: (tx: Scope<N>, commands: Commands) => R, options: CommitOptions, checkImport = false): R {
     this.assertWritable();
     const staged = this.engine.fork();
     let active = true;
@@ -209,7 +268,7 @@ export class Document<N extends ObjectNode> extends Commands {
       if (!active) throw new OperationRejectedError("Transaction callback has ended");
       if (this.transactionFailure) throw this.transactionFailure;
       try {
-        const result = applyOperation(staged, this.definition.descriptor.root, op);
+        const result = applyOperation(staged, this.definition.descriptor.root, op, this.lookup);
         touched.push(op);
         count++;
         return result;
@@ -218,15 +277,15 @@ export class Document<N extends ObjectNode> extends Commands {
         throw error;
       }
     });
-    const scoped = Object.assign(tx, {
+    const scoped = Object.freeze({
       fields: createHandles(this.definition.fields.node, tx),
       at: (value: object) => this.handleAt(tx, value),
-    }) as Scope<N>;
+    }) as unknown as Scope<N>;
     this.collecting = true;
     this.transactionFailure = undefined;
     try {
       staged.setPeerId(this.engine.peerIdStr);
-      const result = callback(scoped);
+      const result = callback(scoped, tx);
       if (result && typeof (result as any).then === "function") {
         void Promise.resolve(result).catch(() => {});
         throw new OperationRejectedError("Transaction callbacks must be synchronous");
@@ -235,21 +294,16 @@ export class Document<N extends ObjectNode> extends Commands {
       if (this.transactionFailure) throw this.transactionFailure;
       if (count) {
         staged.commit({ origin: options.origin ?? this.origin, message: options.message });
-        if (checkImport) {
-          project(this.definition.descriptor.root, staged.getMap("data"));
-          if (staged.export({ mode: "snapshot" }).length > MAX_CHECKPOINT_BYTES)
-            throw new OperationRejectedError("Import exceeds the 32 MiB storage limit");
-        }
         const bytes = staged.export({ mode: "update", from: this.engine.oplogVersion() });
         this.collecting = false;
         this.engine.import(bytes);
-        // Imported operations do not trigger subscribeLocalUpdates.
-        this.pending.push(bytes);
+        // Imported operations do not trigger subscribeLocalUpdates; they are still local edits.
+        this.accept(bytes, true);
         // Preserve the accepted absolute values as a checkpoint. Replaying separately
         // batched floating-point counter increments can otherwise change rounding.
         if (checkImport) this.checkpointImport = true;
         for (const op of touched) this.dropPreview(op);
-        this.changed();
+        this.changed(originOf(options));
       }
       return result;
     } finally {
@@ -259,17 +313,13 @@ export class Document<N extends ObjectNode> extends Commands {
       staged.free();
     }
   }
-  /** Compatibility name for compiled contract-1 apps; prefer change(). */
-  transaction<R>(callback: (tx: Scope<N>) => R): R {
-    return this.change(callback);
-  }
   applyAll(operations: Operation[], options: CommitOptions = {}): void {
     this.assertWritable();
     if (!Array.isArray(operations)) throw new OperationRejectedError("Expected operations array");
     if (!operations.length) return;
     // Route JSON batches through the same eager staging and acceptance boundary.
-    this.change((tx) => {
-      for (const op of operations) tx.execute(op);
+    this.stage((_, commands) => {
+      for (const op of operations) commands.execute(op);
     }, options);
   }
   /** Internal synchronization seam. No transport or author-facing raw engine. */
@@ -277,13 +327,13 @@ export class Document<N extends ObjectNode> extends Commands {
     this.assertWritable();
     const staged = this.engine.fork();
     try {
+      // Decoding and dependencies are checked before acceptance. Merged
+      // semantic anomalies are accepted and reported as issues so peers converge.
       const result = staged.import(bytes);
       if (result.pending?.size) throw new Error("Missing dependencies; request catch-up");
-      // Remote bytes are untrusted: validate the whole candidate state before accepting it.
-      project(this.definition.descriptor.root, staged.getMap("data"));
       this.engine.import(bytes);
-      this.pending.push(bytes.slice());
-      this.changed();
+      this.accept(bytes.slice(), false);
+      this.changed("remote");
     } finally {
       staged.free();
     }
@@ -299,11 +349,12 @@ export class Document<N extends ObjectNode> extends Commands {
   }
   private preview(path: Path, value: unknown) {
     if (this.closed) return;
+    this.assertWritable();
     const node = previewNode(this.definition.descriptor.root, path);
     validate(node, value);
     this.previews.set(key(path), { path, value });
     this.view = this.applyPreviews(this.snapshot);
-    this.notify();
+    this.notify({ kind: "change", origin: "local" });
   }
   private applyPreviews(snapshot: Value<N>): Value<N> {
     let view: any = snapshot;
@@ -325,24 +376,24 @@ export class Document<N extends ObjectNode> extends Commands {
     // Committed edits drop their previews; a failed commit keeps them for the next flush.
     const edits = [...this.previews.values()];
     try {
-      this.change((tx) => {
+      this.stage((_, commands) => {
         for (const { path, value } of edits) {
           try {
-            tx.execute({ type: "set", path, value: value as any });
+            commands.execute({ type: "set", path, value: value as any });
           } catch {
             // The previewed row or index was removed meanwhile; drop the preview.
             this.previews.delete(key(path));
             this.transactionFailure = undefined;
           }
         }
-      });
+      }, {});
     } catch {}
     this.view = this.applyPreviews(this.snapshot);
   }
-  private changed() {
+  private changed(origin: "local" | "host" | "remote") {
     this.view = this.applyPreviews(this.snapshot);
     if (!this.error) this.status = "saving";
-    this.notify();
+    this.notify({ kind: "change", origin });
     this.timer ??= setTimeout(() => {
       this.timer = undefined;
       void this.flush().catch(() => {});
@@ -359,7 +410,16 @@ export class Document<N extends ObjectNode> extends Commands {
   }
   flush(): Promise<void> {
     if (this.closed) return Promise.reject(new Error("Document closed"));
-    if (!this.closing) this.flushDrafts();
+    if (this.discarding) return Promise.reject(new Error("Document is discarding unsaved edits"));
+    // Accepted edits persist even when a pending draft cannot be committed; the
+    // failure is reported after they are durable, and the draft stays in place.
+    let pendingFailure: unknown;
+    if (!this.closing)
+      try {
+        this.flushDrafts();
+      } catch (error) {
+        pendingFailure = error;
+      }
     clearTimeout(this.timer);
     this.timer = undefined;
     const task = this.queue
@@ -380,13 +440,16 @@ export class Document<N extends ObjectNode> extends Commands {
           }
           while (this.pending.length) {
             const updates = this.pending.slice();
+            // Capture these bytes and their pending count before awaiting storage.
+            // Update size is not a bound on the resulting full snapshot size.
+            const snapshot = this.measuredSnapshot();
             const bytes = updates.reduce((n, b) => n + b.length, 0);
             if (
               this.checkpointImport || this.logRows + updates.length >= 256 ||
               this.logBytes + bytes >= 4 * 1024 * 1024 ||
-              this.checkpointBytes + this.logBytes + bytes > MAX_CHECKPOINT_BYTES
+              this.checkpointBytes + this.logBytes + bytes > this.capacityBytes
             ) {
-              await this.writeCheckpoint();
+              await this.writeCheckpoint(snapshot, updates.length);
               continue;
             }
             try {
@@ -400,8 +463,10 @@ export class Document<N extends ObjectNode> extends Commands {
             this.logRows += updates.length;
             this.logBytes += updates.reduce((n, b) => n + b.length, 0);
           }
+          if (pendingFailure) throw pendingFailure;
           this.status = this.pending.length ? "saving" : "saved";
           this.error = null;
+          this.full = false;
           this.notify();
         } catch (error) {
           if (error instanceof OperationRejectedError) {
@@ -416,6 +481,7 @@ export class Document<N extends ObjectNode> extends Commands {
           }
           this.status = "save-failed";
           this.error = String(error);
+          this.full = error instanceof DocumentFullError;
           this.notify();
           throw error;
         }
@@ -426,8 +492,67 @@ export class Document<N extends ObjectNode> extends Commands {
   /** Synchronous barrier immediately before a snapshot or version-checked edit. */
   flushDrafts() {
     this.assertWritable();
-    for (const draft of this.drafts) draft();
+    this.commitPending();
+  }
+  /** Commit drafts and previews before measuring the state to save. */
+  private commitPending() {
+    let failure: unknown;
+    for (const draft of this.drafts)
+      try {
+        draft();
+      } catch (error) {
+        failure ??= error;
+      }
     this.commitPreviews();
+    if (failure) throw failure;
+  }
+  /**
+   * Restore the latest durable state without relinquishing the writer lock.
+   * The host remounts the view afterwards to clear DOM-only drafts.
+   */
+  discardPending(): Promise<void> {
+    this.assertWritable();
+    this.discarding = true;
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    const task = this.queue.catch(() => {}).then(async () => {
+      const replacement = new LoroDoc();
+      try {
+        const stored = await this.storage.load();
+        if (stored.docId !== this.id || !stored.checkpoint) throw new Error("Saved document is unavailable");
+        this.restoreEngine(replacement, stored);
+        // Validate the replacement before touching the live document or drafts.
+        const snapshot = project(this.definition.descriptor.root, replacement.getMap("data"), undefined, [], this.register) as Value<N>;
+        this.stop?.();
+        this.stopEvents?.();
+        this.engine.free();
+        this.engine = replacement;
+        this.storageMetadata(stored);
+        this.pending = [];
+        this.preparations = [];
+        this.checkpointImport = false;
+        this.previews.clear();
+        // The view is remounted after discard; only its new bindings may flush drafts.
+        this.drafts.clear();
+        this.snapshot = this.view = snapshot;
+        this.revision++;
+        this.subscribeEngine();
+        this.full = false;
+        this.error = null;
+        this.status = "saved";
+        this.notify({ kind: "change", origin: "local" });
+      } catch (error) {
+        if (this.engine !== replacement) replacement.free();
+        this.status = "save-failed";
+        this.error = String(error);
+        this.notify();
+        throw error;
+      } finally {
+        this.discarding = false;
+      }
+    });
+    this.queue = task;
+    return task;
   }
   async compact() {
     await this.flush();
@@ -439,6 +564,7 @@ export class Document<N extends ObjectNode> extends Commands {
         } catch (error) {
           this.status = "save-failed";
           this.error = String(error);
+          this.full = error instanceof DocumentFullError;
           this.notify();
           throw error;
         }
@@ -447,18 +573,15 @@ export class Document<N extends ObjectNode> extends Commands {
     await task;
   }
   private async reloadStorageMetadata() {
-    const disk = await this.storage.load();
+    this.storageMetadata(await this.storage.load());
+  }
+  private storageMetadata(disk: Stored) {
     this.generation = disk.generation;
     this.checkpointBytes = disk.checkpoint?.length ?? 0;
     this.logRows = disk.updates.length;
     this.logBytes = disk.updates.reduce((n, b) => n + b.length, 0);
   }
-  private async writeCheckpoint() {
-    this.engine.commit();
-    const count = this.pending.length;
-    const snapshot = this.engine.export({ mode: "snapshot" });
-    if (snapshot.length > MAX_CHECKPOINT_BYTES)
-      throw new Error("Document exceeds the 32 MiB storage limit");
+  private async writeCheckpoint(snapshot = this.measuredSnapshot(), count = this.pending.length) {
     const imported = this.checkpointImport;
     this.checkpointImport = false;
     try {
@@ -475,9 +598,13 @@ export class Document<N extends ObjectNode> extends Commands {
   }
   prepareClose(): Promise<void> {
     if (this.closed) return Promise.resolve();
+    if (this.discarding) return Promise.reject(new Error("Document is discarding unsaved edits"));
     if (this.preparingClose) return this.preparingClose;
-    for (const draft of this.drafts) draft();
-    this.commitPreviews();
+    try {
+      this.commitPending();
+    } catch (error) {
+      return Promise.reject(error);
+    }
     this.closing = true;
     this.preparingClose = this.flush().catch((error) => {
       this.closing = false;
@@ -498,6 +625,7 @@ export class Document<N extends ObjectNode> extends Commands {
     if (this.closed) return;
     this.closed = true;
     this.notify();
+    this.outbound.clear();
     this.stop?.();
     this.stopEvents?.();
     this.engine.free();

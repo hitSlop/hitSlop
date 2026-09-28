@@ -25,7 +25,7 @@ for flag examples, defaults, and skill installation.
 
 CLI 1.2.0 uses document/schema SDK 1.1.0 and works with Mac 1.0.7. Generated projects pin the CLI and its required SDK separately; these package versions need not be equal. Prefer their `bun run check/dev/build/register` scripts. Native capture requires the installed Mac app or an explicit `HITSLOP_NATIVE_CLI`; authoring never compiles Swift. Browser preview needs no native renderer.
 
-Read `manifest.json` first. Set `runtime` to `hitslop-v1`, author, slug, title, description, one or two categories, and initial presentation. Define `schema.ts`, creation-only `initial.ts`, token defaults in `theme.ts`, and UI in `App.svelte`. `main.ts` imports `styles.css` and calls `mountDocument(App)` from `@hitslop/document/host`.
+Read `manifest.json` first. Set `runtime` to `hitslop-v1`, author, slug, title, description, one or two categories, and initial presentation. Define `schema.ts`, creation-only `initial.ts`, token defaults in `theme.ts`, and UI in `App.svelte`. No entry file is needed: the build mounts `App.svelte` with `styles.css` through `defineSlop`. A non-Svelte app supplies `main.ts` exporting `default { mount(ctx, target) }`; see the [runtime reference](../reference/runtime.md). Apps never import the runtime or call the host bridge.
 
 Preview state is disposable: refresh resets it and source changes require restarting dev. Build emits `dist/<slug>.slop`. Registration builds a complete immutable master under `~/.hitslop/templates`, backing up a previous master outside the catalog before replacement. Create a writable copy in the Mac app to test persistence. Source, template, and writable document are distinct objects.
 
@@ -55,7 +55,7 @@ Choose each field by how concurrent edits should merge:
 | `s.list(s.object({...}))` | Rows with identity: tasks, cards, entries | Insert, remove and move keep `$id` |
 | `s.list(scalar)` | Plain sequences: dates, tags, a pixel grid | Positional insert, set, remove, move |
 | `s.record(value)` | Values keyed by a string: spreadsheet cells, per-day entries | Per key; concurrent creation of one key merges |
-| `s.counter()` | Tallies that several people may bump | Increments add up |
+| `s.counter()` | Tallies that several people may bump | Increments add up; reads `number \| null` (`null` only after merged increments overflow, flagged in issues). Show it as unavailable and disable increments, as Koi Pond does. |
 | `s.tree(s.object({...}))` | Outlines and nested hierarchies | Moves never create cycles |
 | `s.optional(node)` | A value that may be absent | Created lazily; concurrent creation merges |
 
@@ -87,6 +87,8 @@ document-attached file picker. Cancellation leaves the document unchanged.
 Background rendering and headless commands never present file pickers. Validate
 the selected file in authored code before storing it.
 
+Keep the document for state worth saving. High-frequency or transient values (drag positions, playback progress, timers, hover state) belong in local component state or `handle.preview()`, which commits only at flush; writing them on every frame grows history for no benefit. Store binary data as attachments, never inside fields. Documents are capped at 32 MiB; a refused edit leaves everything already saved intact.
+
 Import `attachments` from `@hitslop/document/attachments`. Save a browser File with
 `await attachments.import(file, { commit(ref) { doc.change(tx => { /* update typed fields */ }); } })`.
 The synchronous commit runs after durable blob storage; the promise also waits for
@@ -117,7 +119,7 @@ Quick Checklist and Small Expenses are current examples, not a limit or a defaul
 
 Make the purpose visible in the first viewport. Keep controls familiar, state readable through words and structure, and essential text comfortable. Start with realistic content at manifest dimensions; remove competing elements before shrinking labels. Aim for at least 12px supporting text, 14px control labels, and 44px action targets. Provide keyboard access, visible focus, sufficient contrast, and reduced-motion behavior.
 
-Use plain CSS, with app-prefixed classes and related states/descendants kept together. Style Bits UI primitives through their supported attributes; give portal content explicit classes because it lives outside the trigger's ancestor tree. Define public tokens with `defineTheme` from `@hitslop/document/theme` and use `var(--slop-TOKEN)`. The builder writes immutable defaults to `assets/theme.json` and compiled app styling to `assets/main.css`. The runtime applies defaults and overrides before mounting the app, so no separate theme stylesheet is generated. Owners use `slop theme get/set/reset`; the host writes overrides to `state/theme.json`. Never edit these built files directly. Layout changes require authoring source and a rebuild.
+Use plain CSS, with app-prefixed classes and related states/descendants kept together. Style Bits UI primitives through their supported attributes; give portal content explicit classes because it lives outside the trigger's ancestor tree. Define public tokens with `defineTheme` from `@hitslop/document/theme` and use `var(--slop-TOKEN)`. The builder writes immutable defaults to `assets/theme.json` and compiled app styling to `assets/app.css`. The runtime applies defaults and overrides before mounting the app, so no separate theme stylesheet is generated. Owners use `slop theme get/set/reset`; the host writes overrides to `state/theme.json`. Never edit these built files directly. Layout changes require authoring source and a rebuild.
 
 Motion should explain change and settle for capture. Persist target values immediately, stop transient work on unmount, and honor reduced motion. Export hooks must not mutate saved state to prepare a view.
 
@@ -171,7 +173,7 @@ Keep editor, export, and icon markup together unless a separate component helps:
 </Slop>
 ```
 
-`<Slop>` reads the host document from context, reports rendering failures, flushes before capture, and mounts snippets lazily against the same document. It requires an app mounted with `mountDocument`; no document prop is needed. Nested wrappers for multiple documents are unsupported. Preview/PNG/PDF use `exportView` when supplied, otherwise the editor. Without an icon snippet, the host uses its generic icon.
+`<Slop>` reads the host document from context, reports rendering failures, flushes before capture, and mounts snippets lazily against the same document. It requires an app mounted by the host through `defineSlop`; no document prop is needed. Nested wrappers for multiple documents are unsupported. Preview/PNG/PDF use `exportView` when supplied, otherwise the editor. Without an icon snippet, the host uses its generic icon.
 
 Rendering failures in export or icon snippets reject that capture without replacing the editor or reporting an application-render error. Restoration clears the snippet failure so a later attempt renders it again. Editor rendering failures still use native application-error recovery and prevent capture.
 

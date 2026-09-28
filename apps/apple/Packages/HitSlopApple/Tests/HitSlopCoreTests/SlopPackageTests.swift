@@ -40,7 +40,10 @@ import Testing
     let source = try fixture(), temporary = source.deletingLastPathComponent(); defer { try? FileManager.default.removeItem(at: temporary) }
     try SlopDuplicator.makeImmutable(source)
     let destination = temporary.appendingPathComponent("copy.slop")
-    try SlopDuplicator.duplicate(from: source, to: destination)
+    let openedURL = try SlopDuplicator.duplicate(from: source, to: destination)
+    // Recents canonicalizes an existing directory. Duplicate must return that same
+    // identity, or reopening its live window attempts a second writer.
+    #expect(openedURL == destination.standardizedFileURL.resolvingSymlinksInPath())
     #expect(try Data(contentsOf: source.appendingPathComponent("manifest.json")) == Data(contentsOf: destination.appendingPathComponent("manifest.json")))
     #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("stores").path))
     let sourceMode = try FileManager.default.attributesOfItem(atPath: source.path)[.posixPermissions] as? NSNumber
@@ -155,8 +158,8 @@ import Testing
 private func fixture(skin: Bool = false) throws -> URL {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-core-\(UUID().uuidString)", isDirectory: true)
     let root = directory.appendingPathComponent("tiny-counter.slop", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    try Data("<html><head></head><body></body></html>".utf8).write(to: root.appendingPathComponent("app.html"))
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
+    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     let presentation = skin ? #"{"width":320,"height":240,"skin":"assets/skin.png"}"# : #"{"width":320,"height":240}"#

@@ -21,9 +21,10 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
       join(source, "main.ts"),
       `
       import "./styles.css";
-      import {mountDocumentView} from "@hitslop/document/adapter";
-      await mountDocumentView({
-        mount({document: doc, target}) {
+      import type {SlopApp} from "@hitslop/document/abi";
+      export default {
+        mount(ctx, target) {
+          const doc = ctx.document;
           const root = document.createElement("main");
           root.dataset.hitslopRoot = "";
           root.style.backgroundColor = "var(--slop-accent)";
@@ -35,7 +36,7 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
           const stop = doc.subscribe(render);
           return { rendered() {}, unmount() { stop(); root.remove(); } };
         },
-      });
+      } satisfies SlopApp;
     `,
     );
     // Only the host-runtime plugin: a non-Svelte app needs no Svelte compiler or runtime.
@@ -49,10 +50,8 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
       metafile: true,
       plugins: [runtimePlugin],
     });
-    for (const input of Object.keys(bundle.metafile!.inputs)) {
-      expect(input).not.toMatch(/svelte|loro-crdt/);
-      expect(input).not.toMatch(/document\/src\/(document|operations|session|runtime-entry)\.ts/);
-    }
+    for (const input of Object.keys(bundle.metafile!.inputs))
+      expect(input).not.toMatch(/svelte|loro-crdt|document\/src\//);
     const renderer = join(
       process.cwd(),
       "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
@@ -78,11 +77,10 @@ test("Slop and child components share the host document", async () => {
       join(source, "Child.svelte"),
       `
       <script lang="ts">
-        import {getContext} from "svelte";
-        import {documentContext, useDocument} from "@hitslop/document/svelte";
+        import {useDocument} from "@hitslop/document/svelte";
         import schema from "./schema";
         const doc = useDocument(schema);
-        if (doc.fields !== getContext(documentContext).fields) throw new Error("Child opened another document");
+        if (doc.fields !== (globalThis as any).appFields) throw new Error("Child received another document");
       </script>
       <h1>{doc.current.title}</h1>
     `,
@@ -92,8 +90,10 @@ test("Slop and child components share the host document", async () => {
       `
       <script lang="ts">
         import {mount} from "svelte";
-        import {Slop} from "@hitslop/document/svelte";
+        import {Slop, useDocument} from "@hitslop/document/svelte";
         import Child from "./Child.svelte";
+        import schema from "./schema";
+        (globalThis as any).appFields = useDocument(schema).fields;
         let missingHost = "";
         try { mount(Slop, {target: document.createElement("div"), props: {children: () => {}}, context: new Map()}); }
         catch (error) { missingHost = String(error); }

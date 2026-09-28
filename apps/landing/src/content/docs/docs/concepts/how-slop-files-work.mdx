@@ -7,11 +7,11 @@ A `.slop` is a directory package macOS presents as one document. It carries the 
 
 ## Source is not the runtime package
 
-Authoring source contains `App.svelte`, `styles.css`, `theme.ts`, `schema.ts`, `initial.ts`, `main.ts`, and a package manifest. Authors define theme defaults once in `theme.ts`, using `defineTheme`. The builder generates two files from those same defaults: `assets/theme.css` declares the `--slop-*` CSS variables, and `assets/theme.json` lets the runtime load the declared tokens and apply owner overrides. You do not maintain either generated file.
+Authoring source contains `App.svelte`, `styles.css`, `theme.ts`, `schema.ts`, `initial.ts`, and a package manifest. The builder generates the Svelte entry through `defineSlop`; a custom `main.ts` is optional for other frameworks and exports `default { mount(ctx, target) }`. Authors define theme defaults once in `theme.ts`, using `defineTheme`. The builder writes those defaults to `assets/theme.json`. Before mounting the app, the runtime applies them and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
 
 ```text
-theme.ts   ── build ──→ assets/theme.css + assets/theme.json
-styles.css ── build ──→ assets/main.css
+theme.ts   ── build ──→ assets/theme.json
+styles.css ── build ──→ assets/app.css
 ```
 
 The `assets/` folder in the built package contains compiled output and any bundled static resources. Build produces:
@@ -19,11 +19,9 @@ The `assets/` folder in the built package contains compiled output and any bundl
 ```text
 My.slop/
   manifest.json
-  app.html
   assets/
-    main.js
-    main.css
-    theme.css
+    app.js
+    app.css
     theme.json
     runtime.json
   state.schema.json
@@ -34,7 +32,7 @@ My.slop/
   .agents/skills/hitslop-document/
 ```
 
-`assets/theme.css` and `assets/theme.json` are immutable build output from `theme.ts`. `runtime.json` declares the required runtime contract and minimum revision. SDK/Loro versions record provenance, not opening gates. The authored bundle does not contain its own document engine. The host supplies that pinned runtime.
+`assets/theme.json` is immutable build output from `theme.ts`. `runtime.json` declares the required runtime contract and minimum revision. SDK/Loro versions record provenance, not opening gates. The authored bundle does not contain its own document engine. The installed app supplies a compatible runtime for the declared contract, including the page shell, boot sequence, Loro JS/WASM, and native lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. These runtime files are served to the WebView; they are not copied into the slop on open.
 
 ## A writable copy adds state
 
@@ -44,16 +42,17 @@ state/
   writer.lock
   host.lock               # present while a live session advertises itself
   theme.json              # optional owner token overrides
+  attachments/            # optional immutable, content-addressed blobs
 ```
 
 Loro in the WebView owns the live document. Swift persists opaque checkpoints and updates in format-1 SQLite. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
 
-The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and use an engine-only hidden WebView. Headless editing never loads authored `app.html`.
+The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and use an engine-only hidden WebView. Headless editing never loads `assets/app.js`.
 
-Owner changes go into `state/theme.json`, a separate, bounded token object. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro or live in SQLite. Direct file edits are not watched. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Use theme commands rather than editing files underneath a running owner. Duplicating a document preserves its saved content and overrides while creating fresh ownership files.
+Owner changes go into `state/theme.json`, a separate, bounded token object. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro or live in SQLite. Direct file edits are not watched. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Use theme commands rather than editing files underneath a running owner. Duplicating a document preserves its saved content and overrides while minting a fresh document ID (`doc_id`) and creating fresh ownership files.
 
 ## Masters and copies
 
-Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not update existing documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
+Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the UI or schema in existing documents. An app update can supply a newer compatible host runtime to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
 
 Close before moving or copying a document. Keep it on a local filesystem outside iCloud and other synced folders. Packages reject symlink entries, source/dependency caches, and oversized resources. Only `hitslop-v1` is accepted; migrations, schema evolution, and multi-writer local packages are not supported.

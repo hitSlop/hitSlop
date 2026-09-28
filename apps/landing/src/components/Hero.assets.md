@@ -8,9 +8,15 @@ live slop demos or documentation.
 Self-hosted Latin WOFF2 files in `public/assets/hero/fonts/`, downloaded from Google
 Fonts. Each family includes its SIL Open Font License in the same directory.
 
-- Lilita One, regular: marketing headline.
-- DM Sans, variable 400–700: header and hero interface/copy.
+- Mochiy Pop One, regular: marketing headline, sticker badge, merch headings.
+- Nunito Sans, variable 400–900 (opsz 6–12): header and hero interface/copy.
 - Kalam, regular: handwritten annotations.
+
+Mochiy Pop One runs wider than a typical display face; keep hero sizes tight
+(`letter-spacing: -.04em`, line-height about .96) and check the title at 1100–1280 px.
+
+Sticker, speech bubble, callouts, smiley, stars and underlines are inline SVG/CSS and
+decorative (`aria-hidden`). They hide below 1200 px where the poster has no margin.
 
 ## Feature illustrations
 

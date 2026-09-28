@@ -76,8 +76,8 @@ try {
       `
     import {strict as assert} from "node:assert";
     import {defineDocument, s} from "@hitslop/document";
-    import {mountDocumentView} from "@hitslop/document/adapter";
-    assert.equal(typeof mountDocumentView, "function");
+    import {attachments} from "@hitslop/document/attachments";
+    assert.equal(typeof attachments.import, "function");
     assert.ok(defineDocument({title: s.text()}).descriptor);
     assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
   `,
@@ -85,17 +85,18 @@ try {
     coreRoot,
     noNode,
   );
-  console.log("PASS packed document SDK and adapter load without Svelte installed");
+  console.log("PASS packed document SDK loads without Svelte installed");
   // Published source must resolve its transitive platform types outside the workspace.
   await writeFile(
     join(coreRoot, "consumer.ts"),
     `
-    import {mountDocumentView} from "@hitslop/document/adapter";
+    import type {SlopApp} from "@hitslop/document/abi";
     import type {SocketRequest} from "@hitslop/schema/socket";
     import type {BridgeReply} from "@hitslop/schema/bridge";
+    const app: SlopApp = {mount: (ctx, target) => (target.textContent = String(ctx.document.current), {})};
     const read: SocketRequest = {id: "read", documentPath: "/doc", method: "get"};
     const checkpoint: BridgeReply<"load">["checkpoint"] = null;
-    void mountDocumentView; void read; void checkpoint;
+    void app; void read; void checkpoint;
   `,
   );
   await run(
@@ -139,8 +140,8 @@ try {
   if (native) {
     await run([process.execPath, "run", "build"], project, noNode);
     const built = join(project, "dist/my-slop.slop");
-    assert.ok((await readFile(join(built, "assets/main.css"), "utf8")).includes(".slop-paper"));
-    assert.ok(!(await readFile(join(built, "assets/main.js"), "utf8")).includes(repository));
+    assert.ok((await readFile(join(built, "assets/app.css"), "utf8")).includes(".slop-paper"));
+    assert.ok(!(await readFile(join(built, "assets/app.js"), "utf8")).includes(repository));
     const home = join(root, "home");
     await mkdir(home);
     await run([process.execPath, cli, "register", project], root, { ...noNode, HOME: home });
@@ -231,7 +232,7 @@ try {
     assert.ok((await frame.text()).includes('src="/app.html"'));
     const app = await fetch("http://127.0.0.1:5197/app.html");
     assert.equal(app.status, 200);
-    assert.ok((await app.text()).includes("main.css"));
+    assert.ok((await app.text()).includes("/__runtime__/boot.js"));
     const runtime = await fetch("http://127.0.0.1:5197/__runtime__/identity.json");
     assert.equal(runtime.status, 200);
     const identity = JSON.parse(

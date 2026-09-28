@@ -150,7 +150,6 @@ export async function validateTemplate(path: string, slug: string) {
     throw new Error(`Invalid template directory: ${slug}`);
   const allowed = new Set([
     "manifest.json",
-    "app.html",
     "assets",
     "state.schema.json",
     "initial.json",
@@ -176,7 +175,7 @@ export async function validateTemplate(path: string, slug: string) {
     requirement.sdkVersion !== identity.sdkVersion
   )
     throw new Error(`Template runtime mismatch: ${slug}`);
-  if (!(await readFile(join(path, "app.html"))).length) throw new Error(`Empty template: ${slug}`);
+  if (!(await readFile(join(path, "assets/app.js"))).length) throw new Error(`Empty template: ${slug}`);
   for (const name of ["Preview.png", "Icon.png"]) {
     const png = await readFile(join(path, "QuickLook", name)).catch((error) => {
       if (name === "Icon.png" && error.code === "ENOENT") return undefined;

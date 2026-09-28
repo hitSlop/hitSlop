@@ -22,11 +22,11 @@ export default defineTheme({
 });
 ```
 
-The builder emits immutable `assets/theme.css` and machine-readable defaults. Each key becomes `--slop-KEY`, preserving case. `theme.vars` still provides typed references when needed in TypeScript. Do not maintain a second defaults stylesheet.
+The builder writes immutable defaults to `assets/theme.json`; the runtime applies them and owner overrides before mounting the app. Each key becomes `--slop-KEY`, preserving case. `theme.vars` still provides typed references when needed in TypeScript. Do not maintain a second defaults stylesheet.
 
 ## Write ordinary CSS
 
-Import `./styles.css` from `main.ts`. The builder emits a separate, minified `assets/main.css`. Styles ship as ordinary CSS.
+For a Svelte app, the builder includes `styles.css` automatically and emits a separate, minified `assets/app.css`. A custom `main.ts` must import its styles explicitly. Styles ship as ordinary CSS.
 
 ```css title="styles.css"
 body { color: var(--slop-ink); background: var(--slop-surface); font-family: var(--slop-font); }
@@ -60,7 +60,6 @@ Themes are files inside the `.slop` package:
 | File | Purpose |
 | --- | --- |
 | `assets/theme.json` | Immutable defaults generated from the author's `theme.ts`. |
-| `assets/theme.css` | Generated CSS variables for those same defaults. |
 | `state/theme.json` | Optional saved overrides for this writable document. |
 | `state/document.sqlite` | Loro document data; theme overrides are stored separately. |
 

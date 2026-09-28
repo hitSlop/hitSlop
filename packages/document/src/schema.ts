@@ -71,27 +71,29 @@ type ObjectValue<P extends Record<string, Node>> = {
 export type Value<N extends Node> = ProjectedValue<N>;
 type ProjectedValue<N extends Node, Origin extends Node = N> = N extends Text | StringNode
   ? string
-  : N extends NumberNode | IntegerNode | CounterNode
-    ? number
-    : N extends BooleanNode
-      ? boolean
-      : N extends EnumNode<infer V>
-        ? V[number]
-        : N extends RichText
-          ? RichTextValue
-          : N extends OptionalNode<infer S>
-            ? ProjectedValue<S, Origin> | undefined
-            : N extends ListNode<infer I>
-              ? I extends ObjectNode
-                ? ReadonlyArray<Value<I> & { readonly $id: string }>
-                : ReadonlyArray<Value<I>>
-              : N extends RecordNode<infer V>
-                ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
-                : N extends TreeNode<infer I>
-                  ? ReadonlyArray<TreeNodeValue<I>>
-                  : N extends ObjectNode<infer P>
-                    ? ObjectValue<P> & Snapshot<Origin>
-                    : never;
+  : N extends CounterNode
+    ? number | null
+    : N extends NumberNode | IntegerNode
+      ? number
+      : N extends BooleanNode
+        ? boolean
+        : N extends EnumNode<infer V>
+          ? V[number]
+          : N extends RichText
+            ? RichTextValue
+            : N extends OptionalNode<infer S>
+              ? ProjectedValue<S, Origin> | undefined
+              : N extends ListNode<infer I>
+                ? I extends ObjectNode
+                  ? ReadonlyArray<Value<I> & { readonly $id: string }>
+                  : ReadonlyArray<Value<I>>
+                : N extends RecordNode<infer V>
+                  ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
+                  : N extends TreeNode<infer I>
+                    ? ReadonlyArray<TreeNodeValue<I>>
+                    : N extends ObjectNode<infer P>
+                      ? ObjectValue<P> & Snapshot<Origin>
+                      : never;
 export type Input<N extends Node> =
   N extends ListNode<infer I>
     ? Input<I>[]
@@ -105,7 +107,9 @@ export type Input<N extends Node> =
             ? Input<S> | undefined
             : N extends ObjectNode<infer P>
               ? ObjectInput<P>
-              : Value<N>;
+              : N extends CounterNode
+                ? number
+                : Value<N>;
 /** Row and tree node IDs, record keys, and scalar list indices address values inside containers. */
 export type Segment = string | { id: string } | { key: string } | { index: number };
 export type Path = Segment[];

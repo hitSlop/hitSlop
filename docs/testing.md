@@ -15,7 +15,7 @@ Kernel tests name their failure modes at the top of each file. Domain rules use 
 
 Each conformance fixture has frozen package bytes, `expected.json` and a scripted `scenario.json` with independent expected results. The runner compares the initial state, edits, flushes or checkpoints, then closes and reopens. The candidate runtime is loaded once per artifact path and reused across sequential fixture cases and template opens. Published byte seals are verified before comparing hashes. Byte-identical releases are listed in each candidate result’s `equivalentReleases`, not counted as independent reader executions. Each distinct historical artifact reads separate copies of the candidate-written bytes in one isolated batch using its own JS and WASM. Runtime paths are immutable during a run; mutation checks use separate disposable artifact directories. Template specimens receive read/reopen coverage; the dedicated conformance corpus supplies semantic mutations.
 
-The original `1-1` fixture remains byte-for-byte unchanged. `1-1-vocabulary` extends coverage to rich text, counters, scalar lists, records, bounded numbers, trees and optional composites. Fixture seals detect byte changes; state hashes describe canonical logical state, not nondeterministic SQLite/Loro bytes.
+The launch baseline fixtures (`2-1`, `2-1-saved-state`, `2-1-issues`, `2-1-svelte`; see [their README](../tests/compatibility/README.md)) remain byte-for-byte unchanged. `2-1` and `2-1-svelte` embed frozen ABI consumers that check `ctx` while mounting in WebKit; `2-1-issues` pins exact issues for merged anomalies; `collaboration.json` scripts mixed-version peers that edit, exchange, edit again and reopen until both converge. Fixture seals detect byte changes; state hashes describe canonical logical state, not nondeterministic SQLite/Loro bytes.
 
 `bun scripts/v1/test-sensitivity.ts` deliberately breaks disposable copies of text handles, Unicode splice, preview persistence and collection identity. The designated behavior tests must fail. The normal compatibility tests also corrupt expected state and suppress a compiled handle edit to prove the replay's oracle is sensitive. These tools never mutate production sources or preserved specimens.
 
@@ -34,7 +34,7 @@ bun scripts/v1/crash-matrix.ts --native
 
 Run this tier when Apple code, the bridge, document/runtime code, compatibility fixtures, template inputs or build scripts change. Swift tests cover envelopes, isolation, ownership, WebKit lifecycle, draft/save/export ordering, render recovery and host interaction. Cancellation observes an acquired lease and subsequent release. Storage faults distinguish rejection before writing from loss of the reply after a successful write. They are scoped to one store bridge.
 
-Native-only Bun tests use `.native.test.ts`; `test:native` runs those owners. `bun run test:render --fixtures` renders the native fixtures and the contract specimens (`tests/compatibility/1-1*`); everyday CI runs this. The explicit full corpus, run by releases, is:
+Native-only Bun tests use `.native.test.ts`; `test:native` runs those owners. `bun run test:render --fixtures` renders the native fixtures and the contract specimens (`tests/compatibility/2-1*`, which run the frozen ABI consumers); everyday CI runs this. The explicit full corpus, run by releases, is:
 
 ```sh
 bun run build:templates
@@ -68,7 +68,7 @@ adding automatic retries or lengthening deadlines.
 
 | Tier | Trigger | Runs |
 |---|---|---|
-| `fast` | PRs, master pushes, manual runs; Ubuntu | hygiene, check, Bun tests, compatibility replay, landing check |
+| `fast` | PRs, master pushes, manual runs; Ubuntu | hygiene, check, Bun tests, compatibility replay, packed npm packages (`test:packed` fast mode), landing check |
 | `native` | relevant changes, macOS | build, Swift tests, native owners, fixture render, helper, storage, native crash matrix |
 | `release-templates` | master pushes, or manual `render_corpus`; not required | warms the full template cache; manual profiling also verifies a second build has all hits and renders the complete corpus |
 | Release macOS | `macos-v*` tag, or manual dry run | full `release:check` once, then sign, accept, notarize and publish |

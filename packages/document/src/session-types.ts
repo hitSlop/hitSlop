@@ -1,5 +1,4 @@
-// Keep these aliases outside the compiled module: esbuild's identifier histogram
-// includes type-only source text, and contract 1/1's minified bytes are sealed.
+// Socket request/reply types shared by the session and native helper.
 export type {
   SocketReply as Reply,
   SocketReplyCode as ReplyCode,

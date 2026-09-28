@@ -30,7 +30,7 @@ struct RuntimeCatalog {
         let identity = value as? [String: Any], identity["runtimeContract"] as? Int == contract else {
         throw failure("Invalid identity for runtime contract \(contract)")
       }
-      for name in ["index.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"] {
+      for name in ["index.js", "boot.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"] {
         let file = directory.appendingPathComponent(name)
         let attributes = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard attributes.isRegularFile == true, attributes.isSymbolicLink != true else {

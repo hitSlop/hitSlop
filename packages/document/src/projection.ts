@@ -1,5 +1,6 @@
 import type { LoroDoc, LoroEventBatch, LoroMap, LoroMovableList } from "loro-crdt";
-import { project, projectRows, type Register } from "./operations";
+import { containerOf, project, projectRows, rowValue as projectRowValue, type Register } from "./operations";
+import { ID_KEY } from "./identity";
 import { unwrap, type Node, type ObjectNode, type Path } from "./schema";
 
 /** Changed containers from one event batch, keyed by Loro event path segments. */
@@ -39,9 +40,11 @@ function update(node: Node, container: any, previous: any, dirty: Dirty, path: P
     return container === undefined ? undefined : update(node.inner, container, previous, dirty, path, register);
   if (previous === undefined || dirty.whole) return full(node, container, previous, dirty, path, register);
   const inner = unwrap(node);
+  // Records re-read through project() (reusing unchanged entries), so entry keys and
+  // unusable values follow exactly one policy in incremental and full reads.
+  if (inner.kind === "record") return project(inner, container, previous, path, register);
   switch (inner.kind) {
-    case "object":
-    case "record": {
+    case "object": {
       let next: Record<string, unknown> | undefined;
       const set = (key: string, value: unknown) => {
         if (value === previous[key] && (value !== undefined || !Object.hasOwn(previous, key))) return;
@@ -49,14 +52,15 @@ function update(node: Node, container: any, previous: any, dirty: Dirty, path: P
         if (value === undefined) delete copy[key];
         else copy[key] = value;
       };
+      // Unknown fields and identity changes need a whole re-read to report issues consistently.
       const childNode = (key: string): Node => {
-        if (inner.kind === "record") return inner.value;
-        if (!Object.hasOwn(inner.properties, key)) throw new Error(`Unknown stored field: ${key}`);
+        if (!Object.hasOwn(inner.properties, key)) throw new Error(`Re-read for stored field: ${key}`);
         return inner.properties[key]!;
       };
-      const childPath = (key: string) => [...path, inner.kind === "record" ? { key } : key];
-      for (const key of dirty.keys ?? [])
+      const childPath = (key: string) => [...path, key];
+      for (const key of dirty.keys ?? []) {
         set(key, project(childNode(key), (container as LoroMap).get(key), previous[key], childPath(key), register));
+      }
       for (const [key, child] of dirty.children) {
         if (typeof key !== "string" || dirty.keys?.has(key)) continue;
         set(key, update(childNode(key), (container as LoroMap).get(key), previous[key], child, childPath(key), register));
@@ -74,7 +78,8 @@ function update(node: Node, container: any, previous: any, dirty: Dirty, path: P
       for (const [index, child] of dirty.children) {
         const row = typeof index === "number" ? (list.get(index) as unknown as LoroMap) : undefined;
         const before = previous[index as number];
-        if (!row || before?.$id !== row.id) return full(node, container, previous, dirty, path, register);
+        if (!row || containerOf(before) !== row.id || child.keys?.has(ID_KEY))
+          return full(node, container, previous, dirty, path, register);
         const value = updateRow(inner.item, row, before, child, path, register);
         if (value !== before) (next ??= [...previous])[index as number] = value;
       }
@@ -85,13 +90,11 @@ function update(node: Node, container: any, previous: any, dirty: Dirty, path: P
   }
 }
 function updateRow(item: ObjectNode, row: LoroMap, before: any, dirty: Dirty, path: Path, register?: Register) {
-  const rowPath = [...path, { id: row.id }];
-  const { $id: _id, ...fields } = before;
+  const rowPath = [...path, { id: before.$id }];
+  const { $id: id, ...fields } = before;
   const next = update(item, row, fields, dirty, rowPath, register);
   if (next === fields) return before;
-  const value = Object.freeze({ ...next, $id: row.id });
-  register?.(value, rowPath);
-  return value;
+  return projectRowValue(next, id, row.id, rowPath, register);
 }
 /** Re-read a whole container, reusing rows whose contents did not change. */
 function full(node: Node, container: any, previous: any, dirty: Dirty, path: Path, register?: Register) {

@@ -10,7 +10,7 @@ import WebKit
     _ = NSApplication.shared
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/1-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/2-1/document", toPath: root.path)
     defer { try? FileManager.default.removeItem(at: root) }
     let engine = try await WasmSession.open(packageURL: root)
     engine.load()
@@ -38,7 +38,7 @@ import WebKit
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
-    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/1-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/2-1/document", toPath: root.path)
     try Data("Selected 🦊 bytes".utf8).write(to: file)
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: file) }
     let engine = try await WasmSession.open(packageURL: root)

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
+  "runtime": "hitslop-v1",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "merged-issues",
+  "title": "Merged issues",
+  "description": "Preserved runtime contract fixture.",
+  "categories": [
+    "utilities"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 480
+  }
+}

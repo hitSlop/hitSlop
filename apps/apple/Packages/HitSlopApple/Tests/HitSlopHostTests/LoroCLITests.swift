@@ -104,7 +104,7 @@ extension LoroClientTests {
       ) as? Bool == true)
     let previous = try Data(contentsOf: pdf)
     _ = try await view.callAsyncJavaScript(
-      "const {capture}=await import('/__runtime__/index.js');globalThis.stopFailure=capture.onPrepare(()=>{throw new Error('intentional capture failure')});return true",
+      "globalThis.stopFailure=globalThis.__hitslopCapture.onPrepare(()=>{throw new Error('intentional capture failure')});return true",
       arguments: [:], in: nil, contentWorld: .page)
     let failed = try await cli(["export", root.path, "--format", "pdf", "--output", pdf.path])
     #expect(failed.0 != 0)
@@ -220,9 +220,9 @@ extension LoroClientTests {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     try Data(
-      "<script>webkit.messageHandlers.storage.postMessage({method:'failed',error:'AUTHORED CODE RAN'})</script>"
+      "webkit.messageHandlers.storage.postMessage({method:'failed',error:'AUTHORED CODE RAN'});"
         .utf8
-    ).write(to: root.appendingPathComponent("app.html"))
+    ).write(to: root.appendingPathComponent("assets/app.js"))
     let data = try await DocumentCommand.run(
       method: "apply", url: root, operation: replace("Engine only"))
     #expect(String(decoding: data, as: UTF8.self).contains("Engine only"))

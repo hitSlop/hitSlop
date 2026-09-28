@@ -244,15 +244,10 @@ main.wins-card { min-height: 100%; }
 }
 ```
 
-Finally, `main.ts` connects the component to hitSlop's document runtime. This is the same entry point the starter already uses:
-
-```ts
-import "./styles.css";
-import { mountDocument } from "@hitslop/document/host";
-import App from "./App.svelte";
-
-await mountDocument(App);
-```
+The builder connects `App.svelte` and `styles.css` to the host runtime automatically
+through `defineSlop`; no `main.ts` is needed. For a non-Svelte app, an optional
+`main.ts` can export `default { mount(ctx, target) }` and import its styles. See the
+[authoring guide](docs/guides/authoring.md) for the app interface.
 
 ### 5. Take it for a spin
 

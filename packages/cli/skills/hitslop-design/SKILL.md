@@ -89,7 +89,7 @@ and PDF behavior.
   (`--slop-surface`, `--slop-accent`, `--slop-ink`). This ensures each slop retains its
   authentic physical personality (Paper, Instrument, Skin) while remaining effortless
   to restyle or re-theme at runtime.
-- Keep structural styles in plain `styles.css`, imported by `main.ts`. Define public
+- Keep structural styles in plain `styles.css`, imported by the generated entry. Define public
   tokens in `theme.ts` using `defineTheme` from `@hitslop/document/theme`.
   The builder emits defaults in `assets/theme.json`; the runtime applies them before
   mounting the app. Use `var(--slop-TOKEN)` in CSS.

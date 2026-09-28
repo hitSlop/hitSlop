@@ -20,7 +20,7 @@ export async function runAuthoring(
     await installTemplate(output, destination);
     console.log(destination);
   } else if (command === "dev") {
-    if (!(await Bun.file(join(runtimeDirectory, "index.js")).exists()))
+    if (!(await Bun.file(join(runtimeDirectory, "boot.js")).exists()))
       throw new Error("CLI preview runtime is missing. Reinstall @hitslop/cli.");
     const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
     const out = await buildProject(target, join(temporary, "preview.slop"));
@@ -40,6 +40,15 @@ export async function runAuthoring(
                 "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'",
             },
           });
+        // The runtime owns the page, as in the native host (SchemeHandler.visiblePage).
+        if (relative === "/app.html")
+          return new Response(page, {
+            headers: {
+              "Cache-Control": "no-store",
+              "Content-Type": "text/html; charset=utf-8",
+              "Content-Security-Policy": appPolicy,
+            },
+          });
         const runtime = relative.startsWith("/__runtime__/");
         const base = runtime ? runtimeDirectory : out;
         const path = resolve(base, relative.slice(runtime ? 13 : 1));
@@ -47,11 +56,7 @@ export async function runAuthoring(
         const file = Bun.file(path);
         if (!(await file.exists())) return new Response("Not found", { status: 404 });
         return new Response(file, {
-          headers: {
-            "Cache-Control": "no-store",
-            "Content-Security-Policy":
-              "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'",
-          },
+          headers: { "Cache-Control": "no-store", "Content-Security-Policy": appPolicy },
         });
       },
     });
@@ -63,6 +68,11 @@ export async function runAuthoring(
     });
   }
 }
+
+const page =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>hitSlop</title><link rel="stylesheet" href="/assets/app.css"></head><body><script type="module" src="/__runtime__/boot.js"></script></body></html>';
+const appPolicy =
+  "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'";
 
 /** Stands in for the native window: manifest size, shape mask, and backing or skin chrome. */
 export function previewFrame(manifest: Pick<SlopManifest, "title" | "presentation">) {

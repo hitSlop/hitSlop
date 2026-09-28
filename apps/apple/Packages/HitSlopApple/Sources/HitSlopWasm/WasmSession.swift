@@ -328,6 +328,13 @@ public final class WasmSession: NSObject, WKScriptMessageHandlerWithReply, WKNav
       "await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
   }
 
+  /// Restores the latest durable state under the existing writer lock, after the user chose to.
+  public func discardPending() async throws {
+    guard !rendererDead, !closed else { return }
+    _ = try await webView.callAsyncJavaScript(
+      "await globalThis.__slop.discardPending(); return true", arguments: [:], in: nil, contentWorld: .page)
+  }
+
   public func prepareClose() async throws {
     guard !closed else { return }
     guard !capturing else { throw failure("Document is exporting; try again when it finishes") }

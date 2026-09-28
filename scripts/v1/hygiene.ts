@@ -70,7 +70,9 @@ function assertTrackedHygiene(files: string[]): void {
 export function assertNoGeneratedSource(files: string[]): void {
   const generated = files.filter(
     (path) =>
+      // The runtime's two static entry modules are authored JavaScript.
       path !== "packages/document/src/headless.js" &&
+      path !== "packages/document/src/boot.js" &&
       /^packages\/[^/]+\/src\//.test(path) &&
       /\.(?:d\.ts|js)$/.test(path),
   );

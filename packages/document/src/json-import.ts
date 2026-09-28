@@ -12,6 +12,7 @@ import {
 } from "./schema";
 import type { Commands } from "./operations";
 import { diff } from "./bind-text";
+import { isID } from "./identity";
 
 const pointer = (base: string, key: string | number) =>
   base + "/" + String(key).replaceAll("~", "~0").replaceAll("/", "~1");
@@ -142,8 +143,8 @@ export function importJSON(
       if (row) {
         targets.add(at);
         if (value.$id !== undefined) {
-          if (typeof value.$id !== "string" || !value.$id || suppliedIDs.has(value.$id))
-            fail(pointer(at, "$id"), "Expected a unique nonempty row ID");
+          if (!isID(value.$id) || suppliedIDs.has(value.$id))
+            fail(pointer(at, "$id"), "Expected a unique row ID of 1-64 letters, digits, - or _");
           suppliedIDs.add(value.$id);
           result.$id = value.$id;
         }
@@ -338,9 +339,12 @@ export function importJSON(
         if (existingPath !== undefined && existingPath !== JSON.stringify(path))
           fail(pointer(rowAt, "$id"), "Cannot reuse an ID from another collection");
         const previous = !fresh && old.get(row.$id);
+        // Supplied IDs are kept (a round trip into a new document preserves references);
+        // fresh imports and rows without one receive new IDs.
+        const keep = !fresh && row.$id !== undefined ? { id: row.$id } : {};
         const id = previous
           ? row.$id
-          : checked(rowAt, () => tx.execute({ type: "insert", path, value: seed(node.item, row) }))!
+          : checked(rowAt, () => tx.execute({ type: "insert", path, value: seed(node.item, row), ...keep }))!
               .id;
         resolved.set(rowAt, id);
         if (!previous) {

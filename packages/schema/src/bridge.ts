@@ -60,7 +60,7 @@ export const BridgeReplies = {
   load: T.Object({
     checkpoint: T.Union([T.String(), T.Null()]),
     schemaKey: T.Union([T.String(), T.Null()]),
-    generation: T.String(), updates: T.Array(T.String()),
+    generation: T.String(), updates: T.Array(T.String()), docId: T.String(),
   }),
   append: T.Object({ generation: T.String() }),
   checkpoint: T.Object({ generation: T.String() }),

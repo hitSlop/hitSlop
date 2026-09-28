@@ -40,15 +40,16 @@ public struct SlopPackage: Sendable {
     try Self.validateManifest(manifestData)
     manifest = try JSONDecoder().decode(SlopManifest.self, from: manifestData)
 
+    // The runtime owns the page; a package supplies only its app module.
     guard fileManager.fileExists(atPath: entryURL.path) else {
-      throw SlopPackageError.missing("app.html")
+      throw SlopPackageError.missing("assets/app.js")
     }
     guard String(data: try SlopFile.read(entryURL, within: root), encoding: .utf8) != nil else {
-      throw SlopPackageError.invalid("app.html must be UTF-8")
+      throw SlopPackageError.invalid("assets/app.js must be UTF-8")
     }
     let topLevel = try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
     let allowedTopLevel = Set([
-      "manifest.json", "app.html", "assets", "state", "QuickLook", ".agents", "Icon\r",
+      "manifest.json", "assets", "state", "QuickLook", ".agents", "Icon\r",
       "state.schema.json", "initial.json",
     ])
     if let unknown = topLevel.first(where: { !allowedTopLevel.contains($0.lastPathComponent) }) {
@@ -105,7 +106,7 @@ public struct SlopPackage: Sendable {
     validatedSkin = try skin()
   }
 
-  public var entryURL: URL { rootURL.appendingPathComponent("app.html") }
+  public var entryURL: URL { rootURL.appendingPathComponent("assets/app.js") }
   public var previewURL: URL { rootURL.appendingPathComponent("QuickLook/Preview.png") }
   public var iconURL: URL { rootURL.appendingPathComponent("QuickLook/Icon.png") }
   public var stateURL: URL { rootURL.appendingPathComponent("state", isDirectory: true) }

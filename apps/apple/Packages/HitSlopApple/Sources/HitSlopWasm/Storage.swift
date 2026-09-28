@@ -25,8 +25,10 @@ final class Storage: @unchecked Sendable {
   private let inode: UInt64
   let mode: StorageMode
   private var snapshotTheme: [String: String] = [:]
+  /// `doc_id` names the logical document. It is minted with the database and renewed by
+  /// Duplicate; a plain filesystem copy keeps it, so it never authorizes synchronization.
   private static let schema =
-    "CREATE TABLE IF NOT EXISTS document(id INTEGER PRIMARY KEY CHECK(id=1), checkpoint BLOB, schema_key TEXT, generation INTEGER NOT NULL); INSERT OR IGNORE INTO document VALUES(1,NULL,NULL,0); CREATE TABLE IF NOT EXISTS updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL); PRAGMA user_version=1;"
+    "CREATE TABLE IF NOT EXISTS document(id INTEGER PRIMARY KEY CHECK(id=1), checkpoint BLOB, schema_key TEXT, generation INTEGER NOT NULL, doc_id TEXT NOT NULL); INSERT OR IGNORE INTO document VALUES(1,NULL,NULL,0,lower(hex(randomblob(16)))); CREATE TABLE IF NOT EXISTS updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL); PRAGMA user_version=1;"
   private func checkLocation() throws {
     let current = try FileManager.default.attributesOfItem(atPath: root.path)
     guard (current[.systemFileNumber] as? NSNumber)?.uint64Value == inode else {
@@ -83,7 +85,7 @@ final class Storage: @unchecked Sendable {
   /// modifies files inside the package. Limits are checked before any blob is
   /// read, and free pages in the source file are never loaded.
   private func openSnapshot(state: URL, source: URL) throws {
-    var saved: (checkpoint: Data?, schemaKey: String?, generation: Int64, updates: [(Int64, Data)])?
+    var saved: (checkpoint: Data?, schemaKey: String?, generation: Int64, docID: String, updates: [(Int64, Data)])?
     if FileManager.default.fileExists(atPath: state.path) {
       let info = try state.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
       guard info.isDirectory == true, info.isSymbolicLink != true else {
@@ -109,9 +111,10 @@ final class Storage: @unchecked Sendable {
       let version = try scalar("PRAGMA user_version")
       if version == 1 {
         try checkBounds()
-        let row = try statement("SELECT checkpoint,schema_key,generation FROM document WHERE id=1")
+        let row = try statement("SELECT checkpoint,schema_key,generation,doc_id FROM document WHERE id=1")
         defer { sqlite3_finalize(row) }
-        guard sqlite3_step(row) == SQLITE_ROW else { throw error("read") }
+        guard sqlite3_step(row) == SQLITE_ROW, let docID = sqlite3_column_text(row, 3).map({ String(cString: $0) })
+        else { throw error("read") }
         let updates = try statement("SELECT seq,bytes FROM updates ORDER BY seq")
         defer { sqlite3_finalize(updates) }
         var records: [(Int64, Data)] = []
@@ -124,7 +127,7 @@ final class Storage: @unchecked Sendable {
         guard status == SQLITE_DONE else { throw error("read updates") }
         saved = (
           try data(row, 0), sqlite3_column_text(row, 1).map { String(cString: $0) },
-          sqlite3_column_int64(row, 2), records
+          sqlite3_column_int64(row, 2), docID, records
         )
       } else {
         guard version == 0 else { throw failure("Unsupported database format") }
@@ -139,7 +142,7 @@ final class Storage: @unchecked Sendable {
     else { throw error("open snapshot storage") }
     guard let saved else { return }
     try exec(Self.schema)
-    let row = try statement("UPDATE document SET checkpoint=?,schema_key=?,generation=? WHERE id=1")
+    let row = try statement("UPDATE document SET checkpoint=?,schema_key=?,generation=?,doc_id=? WHERE id=1")
     defer { sqlite3_finalize(row) }
     if let checkpoint = saved.checkpoint { try bind(checkpoint, row, 1) }
     if let schemaKey = saved.schemaKey {
@@ -149,6 +152,8 @@ final class Storage: @unchecked Sendable {
       else { throw error("bind schema key") }
     }
     sqlite3_bind_int64(row, 3, saved.generation)
+    guard sqlite3_bind_text(row, 4, saved.docID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) == SQLITE_OK
+    else { throw error("bind document ID") }
     try done(row)
     for (seq, bytes) in saved.updates {
       let update = try statement("INSERT INTO updates(seq,bytes) VALUES(?,?)")
@@ -267,9 +272,10 @@ final class Storage: @unchecked Sendable {
     if method == "load" {
       // Aggregate lengths are checked before allocating or base64 encoding any blobs.
       try checkBounds()
-      let s = try statement("SELECT checkpoint,schema_key,generation FROM document WHERE id=1")
+      let s = try statement("SELECT checkpoint,schema_key,generation,doc_id FROM document WHERE id=1")
       defer { sqlite3_finalize(s) }
-      guard sqlite3_step(s) == SQLITE_ROW else { throw error("read") }
+      guard sqlite3_step(s) == SQLITE_ROW, let docID = sqlite3_column_text(s, 3).map({ String(cString: $0) })
+      else { throw error("read") }
       let schema: Any = sqlite3_column_text(s, 1).map { String(cString: $0) } ?? NSNull() as Any
       let updates = try statement("SELECT bytes FROM updates ORDER BY seq")
       defer { sqlite3_finalize(updates) }
@@ -283,7 +289,7 @@ final class Storage: @unchecked Sendable {
       guard status == SQLITE_DONE else { throw error("read updates") }
       return [
         "checkpoint": try data(s, 0)?.base64EncodedString() ?? NSNull() as Any, "schemaKey": schema,
-        "generation": String(sqlite3_column_int64(s, 2)), "updates": records,
+        "generation": String(sqlite3_column_int64(s, 2)), "updates": records, "docId": docID,
       ]
     }
     try exec("BEGIN IMMEDIATE")

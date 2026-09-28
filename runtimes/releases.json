@@ -1,12 +1,7 @@
 [
   {
-    "runtimeContract": 1,
+    "runtimeContract": 2,
     "runtimeRevision": 1,
-    "sha256": "392d34adfe0c51e02fd1e94185b871f756c1d63a24f15378e5079d1f20ecf443"
-  },
-  {
-    "runtimeContract": 1,
-    "runtimeRevision": 2,
-    "sha256": "06b36b6ddb7e029f6af55438fe7f1d78b5137cf9ea9a34888151cd967c5d0459"
+    "sha256": "04bbf2e014d33fcce65fcaecd2ae3e14d48ed83fd3c280dbb2358dcd9bfc5746"
   }
 ]

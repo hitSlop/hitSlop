@@ -188,7 +188,7 @@ extension LoroClientTests {
     try await session.waitUntilReady()
     #expect(try await SlopRenderer.targetPNGData(session: session, target: .icon) == nil)
     _ = try await session.webView.callAsyncJavaScript(
-      "const {capture}=await import('/__runtime__/index.js');globalThis.stopFailure=capture.onPrepare(()=>{throw new Error('capture test failure')});return true",
+      "globalThis.stopFailure=globalThis.__hitslopCapture.onPrepare(()=>{throw new Error('capture test failure')});return true",
       arguments: [:], in: nil, contentWorld: .page)
     await #expect(throws: (any Error).self) {
       try await SlopRenderer.exportPNGData(session: session)

@@ -8,7 +8,15 @@ import { checkHistory } from "./compatibility-history";
 import { discoverTemplates } from "./templates";
 import { buildProject } from "../../packages/cli/src/build";
 
-import { loadRuntime, runCase, type RuntimeCase, type RuntimeResult } from "./compatibility-worker";
+import {
+  canonical,
+  loadRuntime,
+  runCase,
+  runPeer,
+  type PeerCase,
+  type RuntimeCase,
+  type RuntimeResult,
+} from "./compatibility-worker";
 
 export type ReplayResult = {
   fixture: string;
@@ -23,11 +31,15 @@ export async function runRuntime(
   expected = "-",
   scenario = "-",
   phase = "read",
+  issues?: string,
 ) {
-  return runCase(await loadRuntime(runtime), { document, expected, scenario, phase });
+  return runCase(await loadRuntime(runtime), { document, expected, scenario, phase, issues });
 }
 
-async function readHistorical(runtime: string, cases: RuntimeCase[]): Promise<RuntimeResult[]> {
+async function readHistorical(
+  runtime: string,
+  cases: (RuntimeCase | PeerCase)[],
+): Promise<RuntimeResult[]> {
   const child = Bun.spawn(
     [process.execPath, join(import.meta.dir, "compatibility-worker.ts"), runtime],
     { stdin: new Blob([JSON.stringify(cases)]), stdout: "pipe", stderr: "pipe" },
@@ -92,12 +104,14 @@ export async function replayCompatibility(
       for (const phase of hasScenario ? ["updates", "checkpoint"] : ["read"]) {
         const document = join(workspace, `${name}-${phase}.slop`);
         await cp(join(fixture, "document"), document, { recursive: true });
+        const issues = join(fixture, "issues.json");
         const result = await runRuntime(
           candidate,
           document,
           join(fixture, "expected.json"),
           hasScenario ? scenario : "-",
           phase,
+          (await Bun.file(issues).exists()) ? issues : undefined,
         );
         const candidateResult: ReplayResult = {
           fixture: name,
@@ -142,10 +156,69 @@ export async function replayCompatibility(
       );
     }
     if (!results.length) throw new Error("Compatibility corpus is empty");
+    // Mixed-version collaboration: edit, exchange, edit again and reopen on both sides.
+    for (const name of (await readdir(corpus)).sort()) {
+      const fixture = join(corpus, name);
+      if (!(await Bun.file(join(fixture, "collaboration.json")).exists())) continue;
+      const record = await Bun.file(join(fixture, "fixture.json")).json();
+      const current = installed[String(record.runtimeContract)]!;
+      const candidate = join(runtimeRoot, String(record.runtimeContract));
+      const partners = [
+        { key: `${record.runtimeContract}-${current.identity.runtimeRevision}`, runtime: candidate, historical: false },
+        ...historical
+          .filter((r) => r.runtimeContract === record.runtimeContract && r.sha256 !== current.sha256)
+          .map((r) => ({ key: r.key, runtime: r.runtime, historical: true })),
+      ];
+      for (const partner of partners)
+        results.push(await collaborate(name, fixture, candidate, partner, workspace));
+    }
     return results;
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+}
+
+/** Peer "a" is the candidate; peer "b" is the partner runtime, isolated when historical. */
+async function collaborate(
+  name: string,
+  fixture: string,
+  candidate: string,
+  partner: { key: string; runtime: string; historical: boolean },
+  workspace: string,
+): Promise<ReplayResult> {
+  const { steps, expected } = await Bun.file(join(fixture, "collaboration.json")).json();
+  const directory = await mkdtemp(join(workspace, `${name}-collaboration-`));
+  const peers = {
+    a: { document: join(directory, "a.slop"), runtime: candidate, historical: false, exports: join(directory, "a.bin") },
+    b: { document: join(directory, "b.slop"), runtime: partner.runtime, historical: partner.historical, exports: join(directory, "b.bin") },
+  };
+  for (const peer of Object.values(peers))
+    await cp(join(fixture, "document"), peer.document, { recursive: true });
+  // `sync: false` edits offline, without first importing the other peer's history.
+  const run = async (side: "a" | "b", operations: unknown[], sync = true) => {
+    const peer = peers[side];
+    const other = peers[side === "a" ? "b" : "a"];
+    const input: PeerCase = {
+      kind: "peer",
+      document: peer.document,
+      imports: sync && (await Bun.file(other.exports).exists()) ? [other.exports] : [],
+      operations,
+      exportTo: peer.exports,
+    };
+    return peer.historical
+      ? (await readHistorical(peer.runtime, [input]))[0]!
+      : runPeer(await loadRuntime(peer.runtime), input);
+  };
+  for (const step of steps) await run(step.peer, step.operations, step.sync ?? true);
+  const a = await run("a", []);
+  const b = await run("b", []);
+  if (a.stateHash !== b.stateHash)
+    throw new Error(`Peers diverged: ${name} between candidate and ${partner.key}`);
+  // Equal peers could still have lost the same edits; compare an independent model.
+  for (const [key, value] of Object.entries(expected ?? {}))
+    if (canonical((a.state as Record<string, unknown>)[key]) !== canonical(value))
+      throw new Error(`Collaboration result differs at ${key}: ${name} with ${partner.key}`);
+  return { fixture: name, runtime: partner.key, phase: "collaboration", stateHash: a.stateHash };
 }
 
 export async function smokeTemplates(runtimeRoot: string) {

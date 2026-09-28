@@ -1,0 +1,84 @@
+{
+  "format": 1,
+  "root": {
+    "kind": "object",
+    "properties": {
+      "title": {
+        "kind": "text"
+      },
+      "notes": {
+        "kind": "richtext",
+        "marks": {
+          "bold": "after"
+        }
+      },
+      "count": {
+        "kind": "counter"
+      },
+      "done": {
+        "kind": "boolean"
+      },
+      "level": {
+        "kind": "integer",
+        "min": 0,
+        "max": 10
+      },
+      "mode": {
+        "kind": "enum",
+        "values": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "tags": {
+        "kind": "list",
+        "item": {
+          "kind": "string"
+        }
+      },
+      "rows": {
+        "kind": "list",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "name": {
+              "kind": "text"
+            },
+            "done": {
+              "kind": "boolean"
+            }
+          }
+        }
+      },
+      "cells": {
+        "kind": "record",
+        "value": {
+          "kind": "string"
+        }
+      },
+      "outline": {
+        "kind": "tree",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "label": {
+              "kind": "text"
+            }
+          }
+        }
+      },
+      "cover": {
+        "kind": "optional",
+        "inner": {
+          "kind": "object",
+          "properties": {
+            "caption": {
+              "kind": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

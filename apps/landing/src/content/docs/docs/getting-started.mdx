@@ -33,7 +33,9 @@ Read `manifest.json` first. Its slug comes from the directory name unless you su
 - `schema.ts` defines document fields; `initial.ts` provides creation-only values.
 - `App.svelte` renders and edits the document through typed handles.
 - `theme.ts` declares public visual tokens.
-- `styles.css` owns layout and component styling; `main.ts` imports it.
+- `styles.css` owns layout and component styling; the builder includes it automatically.
+
+The builder generates the entry for `App.svelte` and `styles.css` through `defineSlop`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
 
 The browser preview uses disposable memory. Refreshing resets document state. Restart `bun run dev` after source changes; native persistence is tested in a writable document copy.
 

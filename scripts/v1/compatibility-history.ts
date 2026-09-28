@@ -13,6 +13,12 @@ async function git(root: string, args: string[]) {
   return out.trim();
 }
 
+/**
+ * Pre-launch history removed by the 2026-09 runtime reset; the launch contract is 2.
+ * Never list a contract that reached users: its history stays immutable.
+ */
+export const retiredContracts: ReadonlySet<number> = new Set([1]);
+
 /** CI supplies the PR base / previous push, never the candidate commit itself. */
 export async function checkHistory(root = repository, baseline = process.env.HITSLOP_COMPAT_BASE) {
   if (!baseline) {
@@ -49,13 +55,7 @@ export async function checkHistory(root = repository, baseline = process.env.HIT
     const previous = JSON.parse(await git(root, ["show", `${commit}:runtimes/releases.json`]));
     const current = JSON.parse(await readFile(join(root, "runtimes/releases.json"), "utf8"));
     for (const entry of previous) {
-      // The documented pre-shipment baseline was never a released runtime.
-      if (
-        entry.runtimeContract === 1 &&
-        entry.runtimeRevision === 1 &&
-        entry.sha256 === "1b9504af7d8b39866b507884e124104398dc5dd373cf028d1b2d1c9dfc1e5dcd"
-      )
-        continue;
+      if (retiredContracts.has(entry.runtimeContract)) continue;
       if (
         !current.some(
           (value: typeof entry) =>
@@ -67,10 +67,17 @@ export async function checkHistory(root = repository, baseline = process.env.HIT
         throw new Error(`Published runtime record changed relative to ${commit}`);
     }
   }
-  const sealed = entries.filter(({ path }) =>
-    /^tests\/compatibility\/[^/]+\/(document\/|fixture\.json$|expected\.json$|scenario\.json$)/.test(
-      path,
-    ),
+  const retired = new Set<string>();
+  for (const { path } of entries) {
+    const fixture = /^(tests\/compatibility\/[^/]+)\/fixture\.json$/.exec(path)?.[1];
+    if (!fixture) continue;
+    const recorded = JSON.parse(await git(root, ["show", `${commit}:${path}`]));
+    if (retiredContracts.has(recorded.runtimeContract)) retired.add(fixture);
+  }
+  // Every file of a recorded fixture is an oracle (issues.json, collaboration.json, …).
+  const sealed = entries.filter(
+    ({ path }) =>
+      /^tests\/compatibility\/[^/]+\/.+/.test(path) && !retired.has(path.split("/").slice(0, 3).join("/")),
   );
   for (let start = 0; start < sealed.length; start += 128) {
     const batch = sealed.slice(start, start + 128);

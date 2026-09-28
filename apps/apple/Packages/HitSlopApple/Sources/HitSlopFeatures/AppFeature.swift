@@ -7,7 +7,6 @@ import HitSlopCore
     @ObservableState public struct State: Equatable {
         public var catalog = CatalogFeature.State()
         public var documents: IdentifiedArrayOf<DocumentFeature.State> = []
-        public var activeDocumentID: UUID?
         public var quitPhase: QuitPhase = .running
         @Presents public var alert: AlertState<ErrorAlertAction>?
         public init() {}
@@ -18,7 +17,7 @@ import HitSlopCore
         /// Caller resolves symlinks before dispatching; the reducer performs no filesystem access.
         case openDocument(URL)
         case openFinished(UUID, String), openFailed(UUID, String), openCancelled(UUID)
-        case focused(UUID?)
+        case quitDocumentClosed(UUID)
         case quitRequested, quitFinished, quitFailed(String), externalFailure(String)
         case alert(PresentationAction<ErrorAlertAction>)
     }
@@ -46,10 +45,10 @@ import HitSlopCore
             case .openFailed(let id, let message):
                 guard state.documents.remove(id: id) != nil else { return .none }
                 state.alert = .operationFailure(message)
-            case .focused(let id): state.activeDocumentID = id.flatMap { state.documents[id: $0] == nil ? nil : $0 }
+            case .quitDocumentClosed(let id):
+                state.documents.remove(id: id)
             case .documents(.element(let id, .operationFinished(.close, _))):
                 state.documents.remove(id: id)
-                if state.activeDocumentID == id { state.activeDocumentID = nil }
             case .documents(.element(_, .operationFinished(.duplicate, let url))):
                 if let url { effect = open(url, state: &state) }
             case .documents(.element(let id, .operationFailed(.close, let message))):
@@ -96,13 +95,19 @@ import HitSlopCore
         state.quitPhase = .preparing
         let ids = Array(state.documents.ids)
         return .run { send in
+            var remaining = ids[...]
             do {
                 for id in ids { try await client.prepareToQuit(id) }
                 await client.finishAssetRefreshes()
-                for id in ids { try await client.finishQuit(id) }
+                for id in ids {
+                    try await client.finishQuit(id)
+                    remaining = remaining.dropFirst()
+                    await send(.quitDocumentClosed(id))
+                }
                 await send(.quitFinished)
             } catch {
-                for id in ids { await client.cancelQuit(id) }
+                // A completed close has destroyed its renderer and cannot be rolled back.
+                for id in remaining { await client.cancelQuit(id) }
                 await send(.quitFailed(error.localizedDescription))
             }
         }

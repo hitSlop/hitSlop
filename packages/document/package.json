@@ -1,20 +1,19 @@
 {
   "name": "@hitslop/document",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "type": "module",
   "exports": {
     ".": "./src/schema.ts",
-    "./runtime": "./src/document.ts",
-    "./svelte": "./src/store.svelte.ts",
-    "./host": "./src/host.ts",
-    "./adapter": "./src/adapter.ts",
+    "./svelte": "./src/app/store.svelte.ts",
+    "./capture": "./src/app/capture.ts",
+    "./attachments": "./src/app/attachments.ts",
     "./theme": "./src/theme.ts",
-    "./capture": "./src/capture.ts",
-    "./attachments": "./src/attachments.ts",
+    "./abi": "./src/abi.ts",
+    "./runtime": "./src/document.ts",
     "./identity": "./src/runtime-identity.json"
   },
   "dependencies": {
-    "@hitslop/schema": "1.1.0",
+    "@hitslop/schema": "2.0.0",
     "loro-crdt": "1.16.1"
   },
   "peerDependencies": {

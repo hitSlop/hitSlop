@@ -1,0 +1,78 @@
+{
+  "deckTitle": "Single-File Desktop Objects",
+  "theme": "swiss",
+  "activeSlideIndex": 0,
+  "slides": [
+    {
+      "layout": "title",
+      "title": "Autonomous Desktop Objects",
+      "subtitle": "The unreasonable effectiveness of single-file local-first software.",
+      "tag": "LONGTAIL LABS · 2026",
+      "points": [],
+      "cards": [],
+      "notes": "Welcome everyone. Introduce the thesis of durable single-file software.",
+      "$id": "6dj2dmg1mm3jk76vhyn9an5dfc"
+    },
+    {
+      "layout": "split",
+      "title": "Why Single-File Matters",
+      "points": [
+        "Zero cloud rent — you own the file forever",
+        "Instant offline execution in any modern browser",
+        "Plain view-source honest JSON data",
+        "No SaaS logins, subscriptions, or dark patterns"
+      ],
+      "highlightLabel": "DURABILITY",
+      "highlightValue": "10+ Years",
+      "highlightDesc": "A file saved in 2026 will open without servers in 2036.",
+      "cards": [],
+      "notes": "Emphasize data sovereignty and local longevity.",
+      "$id": "ha0qbgvbc71e2t66j9kvgkxvkr"
+    },
+    {
+      "layout": "metric",
+      "title": "Adoption Velocity",
+      "subtitle": "Teams craft and share bespoke instruments in minutes rather than quarters.",
+      "tag": "MEASURED OUTCOMES",
+      "points": [],
+      "metricValue": "12.4x",
+      "metricLabel": "FASTER TIME-TO-VALUE",
+      "cards": [],
+      "notes": "Highlight rapid iteration cycles compared to bloated enterprise apps.",
+      "$id": "f2gae5qq412vtr4065k4ew925w"
+    },
+    {
+      "layout": "quote",
+      "points": [],
+      "quoteText": "The interface should feel composed before it feels configurable. Start with a strong opinion, then leave the edges open for the owner.",
+      "author": "hitSlop Principles",
+      "cards": [],
+      "notes": "Pause on this quote to reinforce the craft-first ethos.",
+      "$id": "mncqs35vexk8vcaq5ys51vved0"
+    },
+    {
+      "layout": "cards",
+      "title": "Three Core Tenets",
+      "points": [],
+      "cards": [
+        {
+          "title": "Tactile Objects",
+          "desc": "Apps designed as physical instruments on your desk.",
+          "$id": "j762sf1a2x58kncxq8r6pyc260"
+        },
+        {
+          "title": "Host Sovereignty",
+          "desc": "Data belongs to the user, not a remote server database.",
+          "$id": "twbvzhbsyb3fx3eaqrv47k881w"
+        },
+        {
+          "title": "Zero Drag",
+          "desc": "Instant boot, offline-first, under 100KB bundles.",
+          "$id": "aqpsygg1n3z9ry8n5ec5r5bx4g"
+        }
+      ],
+      "notes": "Wrap up key pillars and open the floor to Q&A.",
+      "$id": "z3kjc8pc8xs6h5x3f1bq1fvbsw"
+    }
+  ]
+}

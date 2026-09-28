@@ -38,7 +38,7 @@ async function writePackage(output: string, slug = "quick-checklist") {
   };
   for (const [name, value] of Object.entries(files))
     await writeFile(join(output, name), JSON.stringify(value));
-  await writeFile(join(output, "app.html"), "<!doctype html><title>Cache fixture</title>");
+  await writeFile(join(output, "assets/app.js"), "export default { mount() { return {}; } };");
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=",
     "base64",
@@ -81,7 +81,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     expect(await run(toolchain)).toBe("built");
     expect(toolchain.misses.get("quick-checklist")).toEqual(["shared @swift"]);
     expect(await run()).toBe("built");
-    await writeFile(join(directory, "quick-checklist/package.slop/app.html"), "damaged");
+    await writeFile(join(directory, "quick-checklist/package.slop/assets/app.js"), "damaged");
     expect(await run()).toBe("built");
     await writeFile(join(directory, "quick-checklist/entry.json"), "interrupted");
     expect(await run()).toBe("built");
@@ -152,10 +152,10 @@ test("failed builds never publish cache entries; cached packages reject state an
       "Unexpected template content",
     );
     await rm(join(output, "state"), { recursive: true });
-    const html = await readFile(join(output, "app.html"));
-    await writeFile(join(root, "external.html"), html);
-    await rm(join(output, "app.html"));
-    await symlink(join(root, "external.html"), join(output, "app.html"));
+    const app = await readFile(join(output, "assets/app.js"));
+    await writeFile(join(root, "external.js"), app);
+    await rm(join(output, "assets/app.js"));
+    await symlink(join(root, "external.js"), join(output, "assets/app.js"));
     await expect(validateTemplate(output, "quick-checklist")).rejects.toThrow(
       "Invalid runtime resource",
     );

@@ -1,0 +1,154 @@
+{
+  "steps": [
+    {
+      "peer": "a",
+      "sync": false,
+      "operations": [
+        {
+          "type": "text.splice",
+          "path": [
+            "title"
+          ],
+          "index": 0,
+          "delete": 0,
+          "insert": "A:"
+        },
+        {
+          "type": "increment",
+          "path": [
+            "count"
+          ],
+          "value": 10
+        },
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "rxkr7hxq4adphtgfhqn2dyvwfm",
+          "destination": {
+            "after": "egjvqg4g0sdphg9h0d97npvyzg"
+          }
+        },
+        {
+          "type": "remove",
+          "path": [
+            "rows"
+          ],
+          "id": "38y804n4aajnr7tegfx1d9yhf4"
+        },
+        {
+          "type": "assign",
+          "path": [
+            "cells",
+            {
+              "key": "fromA"
+            }
+          ],
+          "value": "a"
+        }
+      ]
+    },
+    {
+      "peer": "b",
+      "sync": false,
+      "operations": [
+        {
+          "type": "text.splice",
+          "path": [
+            "title"
+          ],
+          "index": 12,
+          "delete": 0,
+          "insert": ":B"
+        },
+        {
+          "type": "increment",
+          "path": [
+            "count"
+          ],
+          "value": 5
+        },
+        {
+          "type": "text.replace",
+          "path": [
+            "rows",
+            {
+              "id": "rxkr7hxq4adphtgfhqn2dyvwfm"
+            },
+            "name"
+          ],
+          "value": "Alpha*"
+        },
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "38y804n4aajnr7tegfx1d9yhf4"
+            },
+            "done"
+          ],
+          "value": false
+        },
+        {
+          "type": "assign",
+          "path": [
+            "cells",
+            {
+              "key": "fromB"
+            }
+          ],
+          "value": "b"
+        }
+      ]
+    },
+    {
+      "peer": "a",
+      "operations": [
+        {
+          "type": "increment",
+          "path": [
+            "count"
+          ],
+          "value": 1
+        }
+      ]
+    },
+    {
+      "peer": "b",
+      "operations": [
+        {
+          "type": "set",
+          "path": [
+            "done"
+          ],
+          "value": false
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "title": "A:Stored title:B",
+    "count": 21,
+    "done": false,
+    "rows": [
+      {
+        "$id": "egjvqg4g0sdphg9h0d97npvyzg",
+        "name": "Gamma",
+        "done": false
+      },
+      {
+        "$id": "rxkr7hxq4adphtgfhqn2dyvwfm",
+        "name": "Alpha*",
+        "done": false
+      }
+    ],
+    "cells": {
+      "A1": "1",
+      "B2": "2",
+      "fromA": "a",
+      "fromB": "b"
+    }
+  }
+}

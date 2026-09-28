@@ -13,6 +13,16 @@ public enum CatalogFilter: Hashable, Sendable {
     }
 }
 
+/// A scanned artwork file. Metadata participates in view reloads and decoded-image caching.
+public struct CatalogArtwork: Hashable, Sendable {
+    public let url: URL
+    public let modifiedAt: Date?
+    public let byteCount: Int?
+    public init(url: URL, modifiedAt: Date?, byteCount: Int?) {
+        self.url = url; self.modifiedAt = modifiedAt; self.byteCount = byteCount
+    }
+}
+
 /// Display and creation metadata only; no package reads occur when rendering a view.
 public struct CatalogEntry: Equatable, Identifiable, Sendable {
     public enum Source: Equatable, Sendable { case local(URL), recent(URL) }
@@ -24,8 +34,8 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     public var categories: [String] = []
     public var authorName: String?
     public var authorURL: URL?
-    public var iconURLs: [URL] = []
-    public var previewURLs: [URL] = []
+    public var icons: [CatalogArtwork] = []
+    public var previews: [CatalogArtwork] = []
     public var packageBytes: Int64 = 0
     public var createdAt: Date?
     public var updatedAt: Date?

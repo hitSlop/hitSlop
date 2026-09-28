@@ -159,13 +159,6 @@ private final class ShapedView: HoverView {
   }
 }
 
-public enum SlopDocumentCommand: Equatable, Sendable {
-  case pin(Bool)
-  case exportPNG, exportPDF, duplicate, reveal, copyPath
-  case openEditor(URL)
-  case retry, close
-}
-
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate,
   SlopRuntimeSessionDelegate
@@ -180,7 +173,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   private var reportedRendererFailure = false
   private var reportedGuestSources = Set<SlopRuntimeIssue.Source>()
   public var onRuntimeFailure: ((String) -> Void)?
-  private let opened: SlopOpenedDocument
   private var toolbar: NSPanel?, toolbarHost: NSHostingView<SlopToolbar>?
   private var toolbarMenuTracking = false
   private var toolbarInteracting = false
@@ -204,7 +196,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
 
   public convenience init(packageURL: URL) throws {
     let started = ContinuousClock.now
-    try self.init(opened: SlopOpenedDocument(presentedURL: packageURL), started: started)
+    try self.init(packageURL: packageURL, session: SlopRuntimeSession(packageURL: packageURL), started: started)
   }
 
   private static var preparingProgress: [URL: SlopOpeningProgress] = [:]
@@ -220,12 +212,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if let progress { preparingProgress[key] = progress }
     defer { if preparingProgress[key] === progress { preparingProgress[key] = nil } }
     let preparation = Task { @MainActor in
-      let opened = try await SlopOpenedDocument.open(presentedURL: packageURL)
+      let session = try await SlopRuntimeSession.open(packageURL: packageURL)
       do {
         try Task.checkCancellation()
-        return try SlopDocumentWindowController(opened: opened, started: started, telemetry: telemetry)
+        return try SlopDocumentWindowController(packageURL: packageURL, session: session, started: started, telemetry: telemetry)
       } catch {
-        try await opened.session.finish()
+        try await session.finish()
         throw error
       }
     }
@@ -235,9 +227,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         try await preparation.value
       } onCancel: { preparation.cancel() }
       if Task.isCancelled || preparation.isCancelled {
-        try await controller.session.finish()
-        controller.closePrepared = true
-        controller.window?.close()
+        try await controller.finishClose()
         throw CancellationError()
       }
       if presentsWindow {
@@ -251,12 +241,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
 
-  private init(opened: SlopOpenedDocument, started: ContinuousClock.Instant, telemetry: SlopTelemetry = .disabled) throws {
+  private init(packageURL: URL, session: SlopRuntimeSession, started: ContinuousClock.Instant, telemetry: SlopTelemetry = .disabled) throws {
     self.telemetry = telemetry
     startupStarted = started
-    self.opened = opened
-    self.packageURL = opened.presentedURL
-    session = opened.session
+    self.packageURL = packageURL.standardizedFileURL
+    self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
     session.load()
@@ -267,14 +256,14 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       contentRect: NSRect(origin: .zero, size: size),
       styleMask: slopDocumentWindowStyleMask(resizable: session.package.isResizable),
       backing: .buffered, defer: false)
-    window.title = SlopDocumentIdentity(url: opened.presentedURL).filename
+    window.title = SlopDocumentIdentity(url: self.packageURL).filename
     window.minSize = NSSize(width: 240, height: 180)
     window.isOpaque = false
     window.backgroundColor = .clear
     window.hasShadow = !session.package.usesTransparentBackground || session.package.isSkinned
     window.isReleasedWhenClosed = false
     window.tabbingMode = .disallowed
-    window.representedURL = opened.presentedURL
+    window.representedURL = self.packageURL
     window.miniwindowTitle = window.title
     window.miniwindowImage = NSImage(contentsOf: session.package.iconURL)
     if session.package.shape == .ellipse, spec.width == spec.height {
@@ -468,7 +457,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         reason: rejection ? .operationRejected : .authoredException, runtime: session.engine.telemetryRuntime)))
     }
     guard guestIssue?.message != issue.message else { return }
-    issueGeneration += 1
     guestIssue = issue
     showDocumentAttention()
   }
@@ -501,7 +489,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
   private var guestIssue: SlopRuntimeIssue?
-  private var issueGeneration = 0
   public func runtimeSessionRecovered(_ session: SlopRuntimeSession) {
     if guestIssue != nil { telemetry.send(.breadcrumb(.recovery, .recovered)) }
     guestIssue = nil
@@ -514,6 +501,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     alert.messageText = saving ? "Changes could not be saved" : "This slop encountered an error"
     alert.informativeText = message
     alert.addButton(withTitle: saving ? "Retry Save" : "Reload Interface")
+    // Unsaved work stays live; offer an explicit way back to the durable state.
+    let full = saving && Self.isCapacityFailure(message)
+    if full { alert.addButton(withTitle: "Discard Unsaved Edits") }
+    if saving { alert.addButton(withTitle: "Keep Open") }
     if !saving {
       alert.addButton(withTitle: "Dismiss")
       alert.addButton(withTitle: "Copy Details")
@@ -545,11 +536,22 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
               self.showDocumentAttention()
             }
           }
-        } else if result == .alertThirdButtonReturn {
+        } else if full && result == .alertSecondButtonReturn {
+          Task {
+            do {
+              try await self.session.engine.discardPending()
+              try await self.session.flush()
+              self.attentionMessage = nil
+            } catch {
+              self.attentionMessage = error.localizedDescription
+              self.showDocumentAttention()
+            }
+          }
+        } else if !saving && result == .alertThirdButtonReturn {
           NSPasteboard.general.clearContents()
           NSPasteboard.general.setString(message, forType: .string)
           if self.attentionMessage != nil { self.showDocumentAttention() }
-        } else if result == .abort || self.attentionMessage != nil {
+        } else if !saving && (result == .abort || self.attentionMessage != nil) {
           self.showDocumentAttention()
         }
       }
@@ -766,8 +768,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         if isLoading { startLoading() }
         throw error
       }
-      closePrepared = true
-      window?.close()
     }
     return nil
   }
@@ -795,8 +795,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
+    guard !closePrepared else { return }
     do {
       try await session.finish()
+      closePrepared = true
+      window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
     } catch { reportLifecycleFailure(operation, error: error); throw error }
   }
@@ -915,11 +918,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       do {
         try await prepareToClose()
         try await finishClose()
-        closePrepared = true
-        sender.close()
       } catch {
         if isLoading { startLoading() }
-        present("Changes could not be saved", error)
+        if Self.isCapacityFailure(error.localizedDescription) { offerDiscardAndClose(error) }
+        else { present("Changes could not be saved", error) }
       }
     }
     return false
@@ -940,9 +942,28 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if let toolbar { window?.removeChildWindow(toolbar) }
     toolbar?.close()
     toolbar = nil
-    opened.close()
     onClose?()
   }
+  /// Save failures for storage capacity; the runtime never drops unsaved edits silently.
+  static func isCapacityFailure(_ message: String) -> Bool { message.contains("Document is full") }
+
+  private func offerDiscardAndClose(_ error: Error) {
+    let alert = NSAlert(error: error)
+    alert.messageText = "This document is full"
+    alert.informativeText = "Your unsaved changes don't fit. Discard them to close, or cancel to keep this document open."
+    alert.addButton(withTitle: "Discard Unsaved Edits and Close")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    Task {
+      do {
+        try await session.engine.discardPending()
+        window?.performClose(nil)
+      } catch {
+        present("Unsaved changes could not be discarded", error)
+      }
+    }
+  }
+
   private func present(_ title: String, _ error: Error) {
     let alert = NSAlert(error: error)
     alert.messageText = title

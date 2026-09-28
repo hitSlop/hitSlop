@@ -1,11 +1,58 @@
 import ComposableArchitecture
 import Foundation
+import HitSlopCore
 import Testing
 @testable import HitSlopFeatures
 
 private let documentID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 private let documentURL = URL(fileURLWithPath: "/tmp/example.slop")
 private struct Failure: LocalizedError { var errorDescription: String? { "Save failed" } }
+
+// A late quit failure must not resurrect sessions whose native teardown already completed.
+@Test @MainActor func partialQuitKeepsCompletedDocumentsClosedAndRetriesOnlyRemainingDocuments() async {
+    let ids = [documentID, UUID(), UUID()]
+    var initial = AppFeature.State()
+    for id in ids {
+        var document = DocumentFeature.State(id: id, url: documentURL.appendingPathComponent(id.uuidString))
+        document.isOpening = false
+        initial.documents.append(document)
+    }
+    let finished = LockIsolated<[UUID]>([])
+    let cancelled = LockIsolated<[UUID]>([])
+    let replies = LockIsolated<[Bool]>([])
+    let failOnce = LockIsolated(true)
+    let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+        $0.documentClient.prepareToQuit = { _ in }
+        $0.documentClient.finishAssetRefreshes = {}
+        $0.documentClient.finishQuit = { id in
+            if id == ids[1], failOnce.withValue({ value in defer { value = false }; return value }) {
+                throw Failure()
+            }
+            finished.withValue { $0.append(id) }
+        }
+        $0.documentClient.cancelQuit = { id in cancelled.withValue { $0.append(id) } }
+        $0.documentClient.replyToQuit = { allowed in replies.withValue { $0.append(allowed) } }
+    }
+    store.exhaustivity = .off
+    await store.send(.quitRequested)
+    await store.receive(\.quitFailed)
+    await store.finish()
+    #expect(finished.value == [ids[0]])
+    #expect(Array(store.state.documents.ids) == Array(ids.dropFirst()))
+    #expect(store.state.documents.allSatisfy { $0.acceptsCommands })
+    #expect(cancelled.value == Array(ids.dropFirst()))
+    #expect(store.state.quitPhase == .running)
+    #expect(store.state.alert != nil)
+    #expect(replies.value == [false])
+
+    await store.send(.alert(.dismiss))
+    await store.send(.quitRequested)
+    await store.receive(\.quitFinished)
+    await store.finish()
+    #expect(store.state.documents.isEmpty)
+    #expect(finished.value == ids)
+    #expect(replies.value == [false, true])
+}
 
 
 
@@ -95,7 +142,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
 
 @Test @MainActor func closeWaitsForExportAndRunsOnlyOnce() async {
     let gate = AsyncStream<Void>.makeStream()
-    let operations = LockIsolated<[DocumentCommand]>([])
+    let operations = LockIsolated<[SlopDocumentCommand]>([])
     var initial = DocumentFeature.State(id: documentID, url: documentURL); initial.isOpening = false
     let store = TestStore(initialState: initial) { DocumentFeature() } withDependencies: {
         $0.documentClient.perform = { _, command in
@@ -202,6 +249,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     await store.receive(\.catalog.recentsReceived)
     #expect(replies.value.isEmpty)
     preparation.continuation.yield(())
+    await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: documentID) }
     await store.receive(\.quitFinished) { $0.quitPhase = .finished }
     await store.finish()
     #expect(prepared.value == [documentID])
@@ -213,7 +261,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     var initial = AppFeature.State()
     var first = DocumentFeature.State(id: documentID, url: documentURL); first.isOpening = false
     var second = DocumentFeature.State(id: otherID, url: URL(fileURLWithPath: "/tmp/other.slop")); second.isOpening = false; second.isPinned = true
-    initial.documents = [first, second]; initial.activeDocumentID = otherID
+    initial.documents = [first, second]
     let calls = LockIsolated<[UUID]>([])
     let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
         $0.documentClient.perform = { id, _ in calls.withValue { $0.append(id) }; return nil }
@@ -221,7 +269,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     await store.send(.documents(.element(id: documentID, action: .command(.close)))) { $0.documents[id: documentID]?.operation = .close }
     await store.receive(\.documents) { $0.documents.remove(id: documentID) }
     #expect(store.state.documents[id: otherID] == second)
-    #expect(store.state.activeDocumentID == otherID)
     #expect(calls.value == [documentID])
 }
 
@@ -247,6 +294,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     await store.send(.quitRequested)
     gate.continuation.yield(())
     await store.receive(\.documents) { $0.documents[id: documentID]?.operation = nil; $0.quitPhase = .preparing }
+    await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: documentID) }
     await store.receive(\.quitFinished) { $0.quitPhase = .finished }
     await store.finish()
     #expect(events.value == ["exported", "prepared", "assets", "reply"])
@@ -311,12 +359,14 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     var state = DocumentFeature.State(id: documentID, url: documentURL); state.isOpening = false
     let store = TestStore(initialState: state) { DocumentFeature() } withDependencies: {
         $0.documentClient.perform = { _, command in
+            if command == .exportPNG { throw Failure() }
             #expect(command == .retry)
             for await _ in gate.stream { break }
             return nil
         }
     }
-    await store.send(.saveFailed("Offline")) { $0.alert = .operationFailure("Offline") }
+    await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
+    await store.receive(\.operationFailed) { $0.operation = nil; $0.alert = .operationFailure("Save failed") }
     await store.send(.runtimeFailed("Stopped")) { $0.runtimeError = "Stopped" }
     #expect(store.state.alert != nil)
     await store.send(.alert(.dismiss)) { $0.alert = nil }
@@ -333,9 +383,19 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let otherID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     var state = AppFeature.State()
     state.documents = [DocumentFeature.State(id: documentID, url: documentURL), DocumentFeature.State(id: otherID, url: documentURL)]
-    let store = TestStore(initialState: state) { AppFeature() }
-    await store.send(.documents(.element(id: documentID, action: .saveFailed("First")))) { $0.documents[id: documentID]?.alert = .operationFailure("First") }
-    await store.send(.documents(.element(id: otherID, action: .saveFailed("Second")))) { $0.documents[id: otherID]?.alert = .operationFailure("Second") }
+    for id in state.documents.ids { state.documents[id: id]?.isOpening = false }
+    let store = TestStore(initialState: state) { AppFeature() } withDependencies: {
+        $0.documentClient.perform = { _, _ in throw Failure() }
+    }
+    for id in [documentID, otherID] {
+        await store.send(.documents(.element(id: id, action: .command(.exportPNG)))) {
+            $0.documents[id: id]?.operation = .exportPNG
+        }
+        await store.receive(\.documents) {
+            $0.documents[id: id]?.operation = nil
+            $0.documents[id: id]?.alert = .operationFailure("Save failed")
+        }
+    }
     await store.send(.documents(.element(id: documentID, action: .alert(.dismiss)))) { $0.documents[id: documentID]?.alert = nil }
     #expect(store.state.documents[id: otherID]?.alert != nil)
 }
@@ -394,6 +454,8 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     await store.receive(\.catalog.recentsReceived)
     #expect(replies.value.isEmpty)
     preparation.continuation.yield(())
+    await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: documentID) }
+    await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: duplicateID) }
     await store.receive(\.quitFinished) { $0.quitPhase = .finished }
     await store.finish()
     #expect(prepared.value == [documentID, duplicateID])
@@ -401,11 +463,17 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
 }
 
 @Test @MainActor func repeatedErrorGetsANewPresentationIdentity() async {
-    let store = TestStore(initialState: DocumentFeature.State(id: documentID, url: documentURL)) { DocumentFeature() }
-    await store.send(.saveFailed("Offline")) { $0.alert = .operationFailure("Offline") }
+    var state = DocumentFeature.State(id: documentID, url: documentURL)
+    state.isOpening = false
+    let store = TestStore(initialState: state) { DocumentFeature() } withDependencies: {
+        $0.documentClient.perform = { _, _ in throw Failure() }
+    }
+    await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
+    await store.receive(\.operationFailed) { $0.operation = nil; $0.alert = .operationFailure("Save failed") }
     let firstID = store.state.alert?.id
+    await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
     // AlertState equality compares content, not its presentation identity.
-    await store.send(.saveFailed("Offline"))
+    await store.receive(\.operationFailed) { $0.operation = nil }
     #expect(store.state.alert?.id != firstID)
     await store.send(.alert(.dismiss)) { $0.alert = nil }
 }

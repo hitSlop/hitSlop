@@ -90,8 +90,7 @@ extension LoroClientTests {
                     let rejected = false;
                     try { await __slop.reloadInterface(); } catch { rejected = true; }
                     if (!rejected || !document.querySelector('[role="alert"]')) return false;
-                    const {captureController} = await import('/__runtime__/index.js');
-                    const capture = captureController();
+                    const capture = globalThis.__hitslopCapture;
                     try { await capture.begin('falsy-test', 'export'); return false; }
                     catch { return !document.documentElement.hasAttribute('data-slop-capture'); }
                     finally { await capture.restore('falsy-test'); }

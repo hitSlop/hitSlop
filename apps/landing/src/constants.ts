@@ -7,5 +7,5 @@ export const SITE_LINKS = {
 } as const;
 
 // TODO: set to a form endpoint (e.g. a Worker route) to collect merch drop signups.
-// While undefined, /merch shows "Signups opening soon" and collects no email.
+// While undefined, /merch links directly to Discord and collects no email.
 export const NOTIFY_ENDPOINT: string | undefined = undefined;

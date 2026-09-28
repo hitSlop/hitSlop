@@ -5,6 +5,7 @@ import { defineDocument, s } from "../src/schema";
 import { MemoryStore } from "../src/memory";
 import { Session } from "../src/session";
 import { mountViewLifecycle } from "../src/view-lifecycle";
+import { bindText } from "../src/bind-text";
 
 const definition = defineDocument({ title: s.text() });
 
@@ -15,16 +16,12 @@ async function setup() {
   const events = new EventTarget();
   const target = { ownerDocument: events, inert: false } as unknown as HTMLElement;
   const log: string[] = [];
-  const mounted: (typeof doc)[] = [];
   let rendering: () => Promise<void> = async () => {};
   const lifecycle = await mountViewLifecycle({
     document: doc,
     target,
     session,
-    adapter: {
-      mount(context) {
-        expect(context.target).toBe(target);
-        mounted.push(context.document);
+    mount() {
         log.push("mount");
         return {
           async rendered() {
@@ -35,7 +32,6 @@ async function setup() {
             log.push("unmount");
           },
         };
-      },
     },
     capture: {
       async begin(token, mode) {
@@ -57,7 +53,6 @@ async function setup() {
     events,
     target,
     log,
-    mounted,
     lifecycle,
     renderWith(callback: () => Promise<void>) {
       rendering = callback;
@@ -69,7 +64,7 @@ test("views reload against the same document and retain flushed edits", async ()
   const h = await setup();
   h.doc.fields.title.replace("Edited");
   await h.lifecycle.reloadInterface();
-  expect(h.mounted).toEqual([h.doc, h.doc]);
+  expect(h.log.filter((entry) => entry === "mount" || entry === "unmount")).toEqual(["mount", "unmount", "mount"]);
   expect(h.log).toContain("recovered");
   const reply = await h.lifecycle.request({ id: "get", documentPath: "test", method: "get" });
   expect(reply.state).toEqual({ title: "Edited" });
@@ -158,4 +153,53 @@ test("render failures prevent recovery acknowledgement and a later reload can re
   await h.lifecycle.reloadInterface();
   expect(h.log).toContain("recovered");
   await h.lifecycle.close();
+});
+
+// The old DOM's uncommitted composition must disappear only after durable state
+// loads successfully; new bindings must still flush compositions after remount.
+test("discard awaits storage, retains a failed view, and remounts editable bindings", async () => {
+  const store = new MemoryStore();
+  const doc = await Document.open(definition, store, { title: "Saved" });
+  const session = new Session(doc, "test");
+  const target = { inert: false } as HTMLElement;
+  let input!: HTMLInputElement;
+  const lifecycle = await mountViewLifecycle({
+    document: doc, session, target,
+    mount() {
+      input = Object.assign(new EventTarget(), { value: "", disabled: false }) as unknown as HTMLInputElement;
+      const binding = bindText(input, doc.fields.title);
+      return { rendered() {}, unmount: () => binding.destroy() };
+    },
+    capture: { async begin() { throw new Error("unused"); }, async restore() {} },
+  });
+  input.dispatchEvent(new Event("compositionstart"));
+  input.value = "Unsaved composition";
+  const oldInput = input;
+  const load = store.load.bind(store);
+  store.load = async () => { throw new Error("Cannot load"); };
+  await expect(lifecycle.discardPending()).rejects.toThrow("Cannot load");
+  expect(input).toBe(oldInput);
+  expect(input.value).toBe("Unsaved composition");
+  expect(target.inert).toBe(false);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => entered = resolve);
+  const gate = new Promise<void>(resolve => release = resolve);
+  store.load = async () => { entered(); await gate; return load(); };
+  const discarding = lifecycle.discardPending();
+  await started;
+  expect(input).toBe(oldInput);
+  expect(target.inert).toBe(true);
+  expect(() => doc.fields.title.replace("racing edit")).toThrow("discarding");
+  release();
+  await discarding;
+  expect(input).not.toBe(oldInput);
+  expect(input.value).toBe("Saved");
+  expect(target.inert).toBe(false);
+  input.dispatchEvent(new Event("compositionstart"));
+  input.value = "New composition";
+  await lifecycle.close();
+  const reopened = await Document.open(definition, store, { title: "Unused" });
+  expect(reopened.current.title).toBe("New composition");
+  await reopened.close();
 });

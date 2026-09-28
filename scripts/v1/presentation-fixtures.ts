@@ -1,4 +1,4 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildProject } from "../../packages/cli/src/build";
 import { repository } from "./templates";
@@ -9,6 +9,8 @@ export async function buildPresentationFixtures() {
   const packages: Record<string, string> = {};
   for (const kind of ["standard", "ellipse", "washer"]) {
     const source = join(parent, "sources", kind);
+    // Replace, never merge: files removed from the fixture must not survive in the copy.
+    await rm(source, { recursive: true, force: true });
     await cp(fixture, source, { recursive: true });
     await writeFile(
       join(source, "manifest.json"),

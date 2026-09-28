@@ -29,6 +29,7 @@ try {
     ...(process.argv.includes("--built") ? [] : ["build", "build:templates"]),
     "check",
     "check:built",
+    "check:sealed-templates",
     "test",
     "swift:test",
     "test:native",

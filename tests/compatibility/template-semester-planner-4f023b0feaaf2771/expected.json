@@ -1,0 +1,133 @@
+{
+  "termTitle": "Fall Semester 2026",
+  "academicYear": "Academic Year 2026–2027",
+  "startMonth": "2026-09",
+  "courses": [
+    {
+      "code": "BIO",
+      "name": "AP Biology",
+      "colorHex": "#3b7a57",
+      "$id": "rqjwgs4rdkb46f6bhwffagq2t8"
+    },
+    {
+      "code": "CALC",
+      "name": "Pre-Calculus",
+      "colorHex": "#4f46e5",
+      "$id": "4wh603mad1ymz26vwx3xzy7rjg"
+    },
+    {
+      "code": "LIT",
+      "name": "Honors Lit",
+      "colorHex": "#4a5d6e",
+      "$id": "012ezjm9yk8wes5td5d7ww02xr"
+    },
+    {
+      "code": "HIST",
+      "name": "World History",
+      "colorHex": "#d97706",
+      "$id": "f6g91zxk3gwrtemgvaapdqtx78"
+    },
+    {
+      "code": "SPAN",
+      "name": "Spanish III",
+      "colorHex": "#c2410c",
+      "$id": "tt9c0g51wr7dtv05b7axdgb8e0"
+    },
+    {
+      "code": "ALL",
+      "name": "School Wide",
+      "colorHex": "#1f2328",
+      "$id": "m0bqrjv1afxs19enmmv42weqb8"
+    }
+  ],
+  "milestones": [
+    {
+      "date": "2026-09-08",
+      "title": "Add/Drop Class Deadline",
+      "courseCode": "ALL",
+      "type": "Deadline",
+      "notes": "Final schedule lock",
+      "$id": "yxbaqpqyn9779j3nfw9qt8tnsr"
+    },
+    {
+      "date": "2026-09-18",
+      "title": "AP Bio Unit 1 Exam (Biochemistry)",
+      "courseCode": "BIO",
+      "type": "Exam",
+      "notes": "Chapters 1-4",
+      "$id": "7zjvtechejyrmmbb2tabrzvre0"
+    },
+    {
+      "date": "2026-10-02",
+      "title": "Pre-Calc Midterm 1",
+      "courseCode": "CALC",
+      "type": "Exam",
+      "notes": "Polynomials & Radicals",
+      "$id": "ans6ngav4p94zh8ea1t3ez051r"
+    },
+    {
+      "date": "2026-10-12",
+      "title": "Columbus / Indigenous Peoples Day",
+      "courseCode": "ALL",
+      "type": "Break",
+      "notes": "No school",
+      "$id": "2rp9e61htcba2061ze29e3akjr"
+    },
+    {
+      "date": "2026-10-23",
+      "title": "Honors Lit Great Gatsby Essay",
+      "courseCode": "LIT",
+      "type": "Paper",
+      "notes": "5-page critical analysis",
+      "$id": "psr1bmn52fk0h2yw3dv3hxg53r"
+    },
+    {
+      "date": "2026-11-06",
+      "title": "World History Revolutions Presentation",
+      "courseCode": "HIST",
+      "type": "Presentation",
+      "notes": "French vs American revolution",
+      "$id": "0wd5spd3ydv37qxvrsktqr7ksc"
+    },
+    {
+      "date": "2026-11-20",
+      "title": "AP Bio Midterm 2 (Cellular Bio)",
+      "courseCode": "BIO",
+      "type": "Exam",
+      "notes": "Chapters 5-8",
+      "$id": "sbdgq84c5hfy0qk5zpmjd0na3r"
+    },
+    {
+      "date": "2026-11-25",
+      "title": "Thanksgiving Recess",
+      "courseCode": "ALL",
+      "type": "Break",
+      "notes": "Nov 25 - Nov 29",
+      "$id": "b0nbffjbdnm2wp1ax9cfgrsq3r"
+    },
+    {
+      "date": "2026-12-04",
+      "title": "Spanish Oral Dialogue Project",
+      "courseCode": "SPAN",
+      "type": "Project",
+      "notes": "Recorded conversational scene",
+      "$id": "sdkk02gjpx96yv28c7kn2010gg"
+    },
+    {
+      "date": "2026-12-14",
+      "title": "Final Exam Week Begins",
+      "courseCode": "ALL",
+      "type": "Exam",
+      "notes": "Study schedule in effect",
+      "$id": "ppevkh2wab4j20jabs884xq4ac"
+    },
+    {
+      "date": "2026-12-18",
+      "title": "Winter Break Starts",
+      "courseCode": "ALL",
+      "type": "Break",
+      "notes": "Classes resume Jan 5",
+      "$id": "83f09tyr8tx5s0j2xgrbffwwcw"
+    }
+  ]
+}

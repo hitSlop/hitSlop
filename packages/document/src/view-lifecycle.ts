@@ -1,20 +1,24 @@
-import type { ViewAdapter } from "./adapter";
 import type { Document } from "./document";
 import type { ObjectNode } from "./schema";
 import type { Session, Request } from "./session";
 import type { createCaptureController } from "./capture";
 
+/** A mounted view; rendered must wait for pending framework updates. */
+export interface DocumentView {
+  rendered(): void | Promise<void>;
+  unmount(): void | Promise<void>;
+}
+
 /** Shared visible-session lifecycle. Headless sessions never mount a view. */
 export async function mountViewLifecycle<N extends ObjectNode>(options: {
-  adapter: ViewAdapter<N>;
+  mount(): DocumentView | Promise<DocumentView>;
   document: Document<N>;
   target: HTMLElement;
-  session: Pick<Session, "flush" | "handle" | "prepareClose" | "cancelClose" | "close">;
+  session: Pick<Session, "flush" | "handle" | "prepareClose" | "cancelClose" | "close" | "discardPending">;
   capture: Pick<ReturnType<typeof createCaptureController>, "begin" | "restore">;
   recovered?: () => Promise<unknown>;
 }) {
-  const { adapter, document, target, session, capture, recovered } = options;
-  const mount = () => adapter.mount({ document, target });
+  const { mount, target, session, capture, recovered } = options;
   let view = await mount();
   await view.rendered();
   return {
@@ -44,6 +48,17 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
     cancelClose: () => {
       session.cancelClose();
       target.inert = false;
+    },
+    discardPending: async () => {
+      target.inert = true;
+      try {
+        await session.discardPending();
+        await view.unmount();
+        view = await mount();
+        await view.rendered();
+      } finally {
+        target.inert = false;
+      }
     },
     retrySave: async () => {
       try {

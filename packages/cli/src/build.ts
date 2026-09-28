@@ -9,25 +9,34 @@ import { createRequire } from "node:module";
 import identity from "@hitslop/document/identity";
 export const cliRoot = fileURLToPath(new URL("../", import.meta.url));
 export const runtimeDirectory = join(cliRoot, "runtimes", String(identity.runtimeContract));
-// Bootstrap/view adapters stay in the app; shared stateful services come from the host.
-const hostedModules = new Set(["document.ts", "handles.ts", "bind-text.ts", "bind-value.ts", "capture.ts", "attachments.ts"]);
+/**
+ * App bundles contain authored code, Svelte and the app-side SDK (src/app plus pure
+ * schema/theme helpers). The engine and host lifecycle ship with hitSlop; apps reach
+ * them only through the ctx passed to mount.
+ */
 export const runtimePlugin: Plugin = {
   name: "host-runtime",
   setup(b) {
-    b.onResolve({ filter: /^(loro-crdt|@hitslop\/document\/runtime)(\/.*)?$/ }, (args) => {
-      throw new Error(`App code cannot import engine ${args.path}; use the document SDK`);
-    });
-    b.onResolve({ filter: /^(\.\/|@hitslop\/document\/(capture|attachments))/ }, (args) => {
-      if (["@hitslop/document/capture", "@hitslop/document/attachments"].includes(args.path))
-        return { path: "/__runtime__/index.js", external: true };
-      if (
-        /\/(?:packages\/document|@hitslop\/document)\/src\//.test(args.importer) &&
-        hostedModules.has(args.path.replace("./", "").replace(/(?<!\.ts)$/, ".ts"))
-      )
-        return { path: "/__runtime__/index.js", external: true };
+    b.onResolve({ filter: /^(loro-crdt|@hitslop\/document\/runtime)(\/.*)?$|^\/__runtime__\// }, (args) => {
+      throw new Error(`App code cannot import ${args.path}; use ctx from the document SDK`);
     });
   },
 };
+const sdkSource = /(?:packages\/document|@hitslop\/document)\/src\/(.+)$/;
+const appSDK = /^(app\/.+|schema\.ts|errors\.ts|theme\.ts)$/;
+/** Reject engine code, host bridge access and remote resources needed to boot. */
+export function checkAppBundle(inputs: string[], script: string, css: string) {
+  for (const input of inputs) {
+    const sdk = sdkSource.exec(input)?.[1];
+    if (/loro-crdt/.test(input) || (sdk && !appSDK.test(sdk)))
+      throw new Error(`Embedded runtime code rejected: ${input}`);
+  }
+  if (/messageHandlers|__slop\b/.test(script))
+    throw new Error("App code cannot use the host bridge; use ctx from the document SDK");
+  const remote = /@import\s+(?:url\()?\s*["']?https?:|@font-face\s*\{[^}]*url\(\s*["']?https?:/i.exec(css);
+  if (remote || /\bimport\s*\(\s*["'`]https?:/.test(script))
+    throw new Error("Apps must not need remote stylesheets, fonts or scripts to start; copy them into assets/");
+}
 export async function buildProject(source: string, destination?: string) {
   source = resolve(source);
   const output = destination
@@ -79,10 +88,24 @@ export async function buildProjectInBun(source: string, destination?: string) {
   )
     await cp(join(source, "assets"), join(stage, "assets"), { recursive: true });
   try {
+    // App.svelte and styles.css need no entry file; main.ts may export another SlopApp.
+    const custom = await stat(join(source, "main.ts")).then(() => true, () => false);
+    const styles = await stat(join(source, "styles.css")).then(() => true, () => false);
     const result = await esbuild({
-      entryPoints: [join(source, "main.ts")],
+      ...(custom
+        ? { entryPoints: [join(source, "main.ts")] }
+        : {
+            stdin: {
+              contents:
+                (styles ? 'import "./styles.css";\n' : "") +
+                'import App from "./App.svelte";\nimport { defineSlop } from "@hitslop/document/svelte";\nexport default defineSlop(App);\n',
+              resolveDir: source,
+              sourcefile: "slop-entry.ts",
+              loader: "ts",
+            },
+          }),
       bundle: true,
-      outdir: join(stage, "assets"),
+      outfile: join(stage, "assets/app.js"),
       format: "esm",
       platform: "browser",
       target: "safari17",
@@ -122,9 +145,13 @@ export async function buildProjectInBun(source: string, destination?: string) {
         sveltePlugin(cliRoot),
       ],
     });
-    for (const input of Object.keys(result.metafile!.inputs))
-      if (/loro-crdt|document\/src\/(document|operations|session|runtime-entry)\.ts/.test(input))
-        throw new Error(`Embedded engine rejected: ${input}`);
+    const css = join(stage, "assets/app.css");
+    if (!(await stat(css).then(() => true, () => false))) await writeFile(css, "");
+    checkAppBundle(
+      Object.keys(result.metafile!.inputs),
+      await readFile(join(stage, "assets/app.js"), "utf8"),
+      await readFile(css, "utf8"),
+    );
     await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest, null, 2));
     await writeFile(join(stage, "state.schema.json"), JSON.stringify(descriptor, null, 2));
     await writeFile(join(stage, "initial.json"), JSON.stringify(initial, null, 2));
@@ -138,10 +165,6 @@ export async function buildProjectInBun(source: string, destination?: string) {
         loroVersion: identity.loroVersion,
         protocolVersion: identity.protocolVersion,
       }),
-    );
-    await writeFile(
-      join(stage, "app.html"),
-      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>hitSlop</title><link rel="stylesheet" href="/assets/main.css"></head><body><script type="module" src="/assets/main.js"></script></body></html>',
     );
     await mkdir(join(stage, ".agents/skills/hitslop-document"), { recursive: true });
     await cp(

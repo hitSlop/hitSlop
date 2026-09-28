@@ -28,7 +28,7 @@ actor CatalogScanner {
                 try Task.checkCancellation()
                 if makeImmutable { try? SlopDuplicator.makeImmutable(child) }
                 result.templates.append(LocalTemplate(
-                    packageURL: child, iconURL: package.iconURL, previewURL: package.previewURL,
+                    packageURL: child, icon: artwork(at: package.iconURL), preview: artwork(at: package.previewURL),
                     manifest: package.manifest, packageBytes: bytes,
                     createdAt: values?.creationDate, updatedAt: values?.contentModificationDate
                 ))
@@ -62,8 +62,9 @@ actor CatalogScanner {
             )
             if let package {
                 CatalogServices.apply(package.manifest, to: &entry)
-                entry.iconURLs = [package.iconURL, package.previewURL]
-                entry.previewURLs = [package.previewURL, package.iconURL]
+                let icon = artwork(at: package.iconURL), preview = artwork(at: package.previewURL)
+                entry.icons = [icon, preview]
+                entry.previews = [preview, icon]
             }
             entry.packageBytes = try await byteCount(url)
             let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
@@ -73,6 +74,11 @@ actor CatalogScanner {
             await Task.yield()
         }
         return entries
+    }
+
+    private func artwork(at url: URL) -> CatalogArtwork {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        return CatalogArtwork(url: url, modifiedAt: values?.contentModificationDate, byteCount: values?.fileSize)
     }
 
     private func byteCount(_ root: URL) async throws -> Int64 {

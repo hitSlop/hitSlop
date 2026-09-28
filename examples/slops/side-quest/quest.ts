@@ -27,7 +27,7 @@ export function addDays(iso: string, days: number): string {
   return isoDay(date);
 }
 
-export const hp = (quest: Quest) => Math.max(0, quest.maxHp - Number(quest.hits));
+export const hp = (quest: Quest) => quest.hits === null ? null : Math.max(0, quest.maxHp - quest.hits);
 export const cleared = (quest: Quest) => quest.done || (quest.kind === "boss" && hp(quest) === 0);
 
 export function byDue(quests: readonly Quest[]): Quest[] {

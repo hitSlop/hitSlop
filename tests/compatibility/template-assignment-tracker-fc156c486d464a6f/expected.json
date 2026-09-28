@@ -1,0 +1,98 @@
+{
+  "studentName": "Alex Rivera",
+  "term": "Fall Semester 2026",
+  "courses": [
+    {
+      "code": "BIO",
+      "name": "AP Biology",
+      "colorHex": "#3b7a57",
+      "$id": "drmw8qcrtzfgsczafm04bdd4nm"
+    },
+    {
+      "code": "CALC",
+      "name": "Pre-Calculus",
+      "colorHex": "#4f46e5",
+      "$id": "jn6drm3fd83x8t1y09fh1vyxd8"
+    },
+    {
+      "code": "LIT",
+      "name": "Honors Lit",
+      "colorHex": "#4a5d6e",
+      "$id": "3vynk63hpxzwf5kmq6qpjq82r8"
+    },
+    {
+      "code": "HIST",
+      "name": "World History",
+      "colorHex": "#d97706",
+      "$id": "70sfx1hrvg487za8pnmqjj2aa4"
+    },
+    {
+      "code": "SPAN",
+      "name": "Spanish III",
+      "colorHex": "#c2410c",
+      "$id": "p5bspe867wxv8v4d6y6t55m5zm"
+    }
+  ],
+  "assignments": [
+    {
+      "courseCode": "BIO",
+      "title": "Cellular Respiration Lab Writeup",
+      "dueDate": "2026-09-16",
+      "category": "Lab Report",
+      "points": 50,
+      "completed": false,
+      "notes": "Include graph for trial 3 enzyme rate",
+      "$id": "ngxqrapt0ry9bm60kra7drs1k0"
+    },
+    {
+      "courseCode": "CALC",
+      "title": "Problem Set 2.4: Trigonometric Identities #1–24",
+      "dueDate": "2026-09-16",
+      "category": "Problem Set",
+      "points": 20,
+      "completed": false,
+      "notes": "Show all unit circle substitutions",
+      "$id": "xc9yaw66yhq2aj6afhy58tvtbc"
+    },
+    {
+      "courseCode": "LIT",
+      "title": "Read The Great Gatsby Chapters 1–3",
+      "dueDate": "2026-09-18",
+      "category": "Reading",
+      "points": 15,
+      "completed": false,
+      "notes": "Annotate the green light motif",
+      "$id": "25d08rwpxrtsvnrn709ppg6v94"
+    },
+    {
+      "courseCode": "HIST",
+      "title": "DBQ Outline: Industrial Revolution",
+      "dueDate": "2026-09-20",
+      "category": "Essay",
+      "points": 40,
+      "completed": false,
+      "notes": "Draft a thesis before Friday",
+      "$id": "3a50d764t5xspeba2dq0vw5rgg"
+    },
+    {
+      "courseCode": "SPAN",
+      "title": "Subjunctive workbook p.42–45",
+      "dueDate": "2026-09-17",
+      "category": "Homework",
+      "points": 10,
+      "completed": true,
+      "notes": "",
+      "$id": "g1662sv4nc5sscsghy3jxsfpz0"
+    },
+    {
+      "courseCode": "BIO",
+      "title": "Unit 1 Quiz Prep: Macromolecules",
+      "dueDate": "2026-09-21",
+      "category": "Quiz Prep",
+      "points": 30,
+      "completed": false,
+      "notes": "Review Leitner box 2",
+      "$id": "ex3k91emhzyb134bjzdsaenecw"
+    }
+  ]
+}

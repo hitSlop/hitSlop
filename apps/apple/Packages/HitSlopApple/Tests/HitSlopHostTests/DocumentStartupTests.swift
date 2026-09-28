@@ -145,10 +145,10 @@ extension LoroClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let script = root.appendingPathComponent("assets/main.js")
+    let script = root.appendingPathComponent("assets/app.js")
     let original = try Data(contentsOf: script)
     try Data("await webkit.messageHandlers.storage.postMessage({method:'failed',error:'startup fixture failure'});".utf8)
-      .write(to: root.appendingPathComponent("assets/main.js"))
+      .write(to: root.appendingPathComponent("assets/app.js"))
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     var failures: [String] = []
     controller.showWindow(nil)
@@ -189,7 +189,7 @@ extension LoroClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let script = root.appendingPathComponent("assets/main.js")
+    let script = root.appendingPathComponent("assets/app.js")
     let original = try String(contentsOf: script, encoding: .utf8)
     try Data(("Object.defineProperty(document,'fonts',{value:{status:'loading'}});\n" + original).utf8).write(to: script)
     let controller = try await SlopDocumentWindowController.open(packageURL: root, presentsWindow: true)
@@ -215,7 +215,7 @@ extension LoroClientTests {
       try? FileManager.default.removeItem(at: root)
       try? FileManager.default.removeItem(at: output)
     }
-    let script = root.appendingPathComponent("assets/main.js")
+    let script = root.appendingPathComponent("assets/app.js")
     let original = try String(contentsOf: script, encoding: .utf8)
     try Data(("Object.defineProperty(document,'fonts',{value:{status:'loading',ready:new Promise(()=>{})}});\n" + original).utf8).write(to: script)
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
@@ -282,10 +282,8 @@ extension LoroClientTests {
   @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    try Data("<!doctype html><script src='/assets/startup-failure.js'></script>".utf8)
-      .write(to: root.appendingPathComponent("app.html"))
     try Data("throw new Error('private startup contents');".utf8)
-      .write(to: root.appendingPathComponent("assets/startup-failure.js"))
+      .write(to: root.appendingPathComponent("assets/app.js"))
     var failures: [SlopFailureContext] = []
     let controller = try await SlopDocumentWindowController.open(packageURL: root,
       telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { failures.append(context) } })
@@ -294,7 +292,7 @@ extension LoroClientTests {
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
-    #expect(failures.first?.runtime?.contract == 1)
+    #expect(failures.first?.runtime?.contract == 2)
     try await controller.session.finish()
   }
 }

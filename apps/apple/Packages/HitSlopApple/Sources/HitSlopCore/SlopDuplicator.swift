@@ -36,6 +36,7 @@ public enum SlopDuplicator {
         let state = destination.appendingPathComponent("state")
         try fileManager.createDirectory(at: state, withIntermediateDirectories: true)
         try backup(source.rootURL, to: state.appendingPathComponent("document.sqlite"))
+        try renewIdentity(destination)
       }
       try makeWritable(destination)
       let attachments = try SlopAttachments.list(in: source.rootURL)
@@ -47,8 +48,8 @@ public enum SlopDuplicator {
           _ = try SlopAttachments.put(bytes, in: destination)
         }
       }
-      _ = try SlopPackage(rootURL: destination)
-      return destination
+      // Use the existing package's directory URL, just like Open and Recents.
+      return try SlopPackage(rootURL: destination).rootURL
     } catch {
       try? makeWritable(destination)
       try? fileManager.removeItem(at: destination)
@@ -84,6 +85,25 @@ public enum SlopDuplicator {
     let finished = sqlite3_backup_finish(backup)
     guard result == SQLITE_DONE, finished == SQLITE_OK else {
       throw SlopPackageError.invalid("Document snapshot was busy or failed")
+    }
+  }
+
+  /// A duplicate is a new logical document with the same Loro history and row identities.
+  static func renewIdentity(_ root: URL) throws {
+    // As in backup: resolve only the package root; NOFOLLOW still guards state entries.
+    guard let resolved = Darwin.realpath(root.path, nil) else {
+      throw SlopPackageError.invalid("Cannot resolve duplicate for identity assignment")
+    }
+    let path = String(cString: resolved) + "/state/document.sqlite"
+    free(resolved)
+    var db: OpaquePointer?
+    defer { sqlite3_close(db) }
+    guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, nil) == SQLITE_OK,
+      sqlite3_exec(db, "UPDATE document SET doc_id=lower(hex(randomblob(16))) WHERE id=1", nil, nil, nil)
+        == SQLITE_OK, sqlite3_changes(db) == 1
+    else {
+      let reason = db.map { String(cString: sqlite3_errmsg($0)) } ?? "cannot open"
+      throw SlopPackageError.invalid("Cannot assign the duplicate a document identity: \(reason)")
     }
   }
 

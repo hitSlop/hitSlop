@@ -96,7 +96,6 @@ extension SlopRuntimeSessionDelegate {
   }
   public func flush() async throws { try await engine.flush() }
   public func finish() async throws { try await engine.close() }
-  public func close() { Task { try? await finish() } }
   public func reopenSavedDocument() async throws { try await engine.reopenSavedDocument() }
   /// Warms WebKit and the bundled runtime once so the first open avoids cold startup.
   public static func prewarm() { RuntimePrewarm.start() }

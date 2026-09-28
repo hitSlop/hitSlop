@@ -22,7 +22,8 @@
   let notice = $state("");
   let snapshot = $state("");
   let painting = $state(false);
-  const feedings = $derived(Number(doc.current.feedings));
+  const feedings = $derived(doc.current.feedings);
+  const feedingLabel = $derived(feedings === null ? "Feeding count unavailable" : `Fed ${feedings} ${feedings === 1 ? "time" : "times"}`);
   const full = $derived(doc.current.koi.length >= maxKoi);
   $effect(() => { if (notice) { const timer = setTimeout(() => notice = "", 3200); return () => clearTimeout(timer); } });
   $effect(() => { scene?.setKoi(doc.current.koi.map(k => ({ id: k.$id, name: k.name, pattern: k.pattern, size: k.size }))); });
@@ -36,10 +37,12 @@
     return items.length < 3 ? items.join(" & ") : `${items.slice(0, -1).join(", ")} & ${items.at(-1)}`;
   }
   function fed(name?: string) {
+    if (feedings === null) { notice = "Feeding count unavailable."; return; }
     doc.fields.feedings.increment();
     notice = name ? `${name} gobbled it up.` : "Snack time!";
   }
   function feed() {
+    if (feedings === null) { notice = "Feeding count unavailable."; return; }
     if (!scene || !doc.current.koi.length) { notice = "Add a koi first."; return; }
     fed(scene.feed());
   }
@@ -110,10 +113,10 @@
     <p class="koi-sr-only">A watercolor koi pond with {doc.current.koi.length} koi{doc.current.koi.length ? `: ${list(doc.current.koi.map(k => k.name.trim() || "unnamed"))}` : ""}. Click the water or press F to feed them.</p>
     {#if !doc.current.koi.length}<p class="koi-empty" aria-hidden="true">A quiet pond.<br /><span>Add a koi to keep it company.</span></p>{/if}
 
-    <div class="koi-badge" aria-hidden="true">Koi Pond · fed {feedings} {feedings === 1 ? "time" : "times"}</div>
+    <div class="koi-badge" aria-hidden="true">Koi Pond · {feedingLabel}</div>
 
     <div class="koi-controls" role="toolbar" aria-label="Pond">
-      <button class="koi-button" onclick={feed} aria-keyshortcuts="F" disabled={!doc.current.koi.length}>
+      <button class="koi-button" onclick={feed} aria-keyshortcuts="F" disabled={!doc.current.koi.length || feedings === null}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="14" r="2.6" /><circle cx="15" cy="10" r="2.6" /><circle cx="15.5" cy="17" r="2.2" /></svg>
         <span>Feed</span>
       </button>
@@ -136,7 +139,7 @@
             {:else}
               <p class="koi-note">No koi yet.</p>
             {/if}
-            <p class="koi-note">Fed {feedings} {feedings === 1 ? "time" : "times"} · F feed · K add · R repaint</p>
+            <p class="koi-note">{feedingLabel} · F feed · K add · R repaint</p>
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
@@ -150,7 +153,7 @@
   {#snippet exportView()}
     <figure class="koi-export">
       {#if snapshot}<img src={snapshot} alt={`Watercolor koi pond with ${list(doc.current.koi.map(k => k.name.trim() || "unnamed"))}`} />{/if}
-      <figcaption><strong>Koi Pond</strong><span>{doc.current.koi.length ? list(doc.current.koi.map(k => k.name.trim() || "unnamed")) : "A quiet pond"} · fed {feedings} {feedings === 1 ? "time" : "times"}</span></figcaption>
+      <figcaption><strong>Koi Pond</strong><span>{doc.current.koi.length ? list(doc.current.koi.map(k => k.name.trim() || "unnamed")) : "A quiet pond"} · {feedingLabel}</span></figcaption>
     </figure>
   {/snippet}
   {#snippet icon()}

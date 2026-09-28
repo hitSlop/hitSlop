@@ -1,0 +1,26 @@
+{
+  "prompt": "How are you, really?",
+  "entries": [
+    {
+      "day": "TODAY",
+      "mood": 4,
+      "energy": 4,
+      "note": "Clear head after a quiet morning.",
+      "$id": "p2s5z52dd5z6waber3715783dm"
+    },
+    {
+      "day": "YESTERDAY",
+      "mood": 5,
+      "energy": 5,
+      "note": "Deep work clicked.",
+      "$id": "t1hecxtv80gwcrj14xvc4t4xj4"
+    },
+    {
+      "day": "TUE 26",
+      "mood": 3,
+      "energy": 3,
+      "note": "A little stretched, still moving.",
+      "$id": "g8ywsbzph0d1xhk1bf78j90hwg"
+    }
+  ]
+}

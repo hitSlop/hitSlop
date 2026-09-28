@@ -16,6 +16,7 @@ extension LoroClientTests {
       defer { try? FileManager.default.removeItem(at: root) }
       let controller = try await SlopDocumentWindowController.open(packageURL: root)
       try await controller.session.waitUntilReady()
+      weak var webView = controller.session.webView
       #expect(controller.window?.styleMask.contains(.titled) == false)
       #expect(!NSApp.windows.contains { $0 !== controller.window && controller.owns($0) })
       controller.showWindow(nil)
@@ -50,13 +51,21 @@ extension LoroClientTests {
         String(
           decoding: try await DocumentCommand.run(method: "get", url: duplicate), as: UTF8.self
         ).contains("Native socket edit"))
-      try await controller.session.finish()
-      controller.window?.orderOut(nil)
+      // Finishing at the controller boundary must also close native chrome and release WebKit.
+      try await controller.finishClose()
+      #expect(controller.window?.isVisible == false)
+      #expect(webView == nil)
       _ = try await DocumentCommand.run(
         method: "apply", url: root, operation: replace("Closed WASM edit"))
       #expect(
         String(decoding: try await DocumentCommand.run(method: "get", url: root), as: UTF8.self)
           .contains("Closed WASM edit"))
+      // An interactive reopen reads back exactly the saved state (the probe app writes nothing).
+      let saved = try await DocumentCommand.run(method: "get", url: root)
+      let reopened = try await SlopDocumentWindowController.open(packageURL: root)
+      try await reopened.session.waitUntilReady()
+      #expect(try await DocumentCommand.run(method: "get", url: root) == saved)
+      try await reopened.finishClose()
     }
   }
 }

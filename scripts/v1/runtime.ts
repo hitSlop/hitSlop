@@ -17,10 +17,8 @@ export async function buildRuntime(destinations = runtimeDestinations) {
   try {
     const runtimeDirectory = join(stage, String(identity.runtimeContract));
     await mkdir(runtimeDirectory);
-    await cp(
-      join(repository, "packages/document/src/headless.js"),
-      join(runtimeDirectory, "headless.js"),
-    );
+    for (const entry of ["boot.js", "headless.js"])
+      await cp(join(repository, "packages/document/src", entry), join(runtimeDirectory, entry));
     await esbuild({
       entryPoints: [join(repository, "packages/document/src/runtime-entry.ts")],
       outfile: join(runtimeDirectory, "index.js"),

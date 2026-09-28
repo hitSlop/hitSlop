@@ -6,6 +6,53 @@ Bundled slop business logic is outside the platform suite by Jordan’s explicit
 
 ## Contract dispositions
 
+### Runtime reset: host-owned boot, ctx ABI and collaboration-ready data
+
+| Contract | Oracle | Tier | Duplicate-of | Verdict |
+|---|---|---|---|---|
+| Merged anomalies stay openable, are flagged and never repaired ([open](../packages/document/tests/open.test.ts), [convergence](../packages/document/tests/convergence.test.ts)) | Literal fallbacks and exact issues per anomaly; stored generation and checkpoint bytes unchanged after open; peers converge on state and issues | Bun | — | REWRITE the former "rejects invalid stored data" cases; the counter-overflow merge failed before the fix with "Expected finite number" |
+| One outbound stream per accepted local commit ([convergence](../packages/document/tests/convergence.test.ts)) | Handle, change, CLI batch and JSON import each emit once; remote imports emit none; replaying the emitted bytes reproduces the state | Bun | — | ADD; failed before the fix (no stream; staged commits emitted nothing) |
+| Application `$id` identity ([import](../packages/document/tests/import.test.ts), open) | 26-character random IDs, never container IDs; JSON round trip into a new document keeps IDs and references; missing, invalid and duplicate IDs read as null with identity issues | Bun | Existing move/reopen/same-transaction owners | ADD |
+| Save-time capacity ([storage](../packages/document/tests/storage.test.ts)) | Actual multibyte snapshot exceeds limit; no storage write, live edit retained, CLI reports failed (not rejected), close blocked; creation checks bytes too | Bun | — | REWRITE pre-edit refusal/reserve contract per approved plan; original code saved the oversized snapshot regression |
+| Counter projection types ([types](../packages/document/tests/types.ts)) | Reads require handling null; optional reads include undefined; inputs/increments reject null at compile time | TypeScript | Existing convergence test owns overflow and issues at runtime | EXTEND |
+| Native discard ([LoroEngineTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopHostTests/LoroEngineTests.swift)) | Failed save blocks close; awaited discard restores saved get while writes still fail, retains lock/doc_id, permits later edits and reopen | Swift/WebKit | Bun owns byte restoration and binding remount semantics | ADD |
+| Schema-key canonicalization ([open](../packages/document/tests/open.test.ts)) | Golden canonical string for a scrambled descriptor | Bun | — | ADD |
+| App bundles cannot reach the engine, bridge or remote boot resources ([build](../packages/cli/tests/build.test.ts)) | Each forbidden import or pattern fails the build with its message | Bun | — | REWRITE the former engine-import case over the new boundary |
+| Frozen ABI consumers keep working against the candidate host ([2-1, 2-1-svelte](../tests/compatibility/README.md)) | Self-checks inside mount/capture; render, `RuntimeCompatibilityTests` | Native | Bun replay owns data | ADD; breaking `ctx.bind.text` in a disposable runtime failed both consumers |
+| Mixed-version collaboration ([compatibility](../scripts/v1/compatibility.ts)) | Peers edit, exchange, edit again, reopen and converge on state and issues | Bun | Historical readers | ADD |
+| Duplicate renews `doc_id` ([LoroEngineTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopHostTests/LoroEngineTests.swift)) | Distinct IDs, identical checkpoint | Native | — | ADD; exposed `/var` realpath handling in the renewal |
+| Duplicate returns the same package URL identity as Open/Recents ([SlopPackageTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift)) | Returned URL equals the canonical existing directory URL; opening the live duplicate from Recents focuses its window | Swift/filesystem + manual UI | Existing duplication test checked bytes and permissions only | EXTEND; failed before the fix because `copy.slop` and `copy.slop/` were unequal, causing a second writer attempt |
+| Unsealed bundled templates block release (`check:sealed-templates`) | Gate names unsealed templates | Release | — | ADD |
+| Contract-1 fixtures, 1/1 byte-preservation, `transaction`/`observeText` aliases | — | — | — | DELETE with the pre-launch reset; no contract-1 documents exist |
+| Failed saves preserve drafts; explicit discard restores durable state ([storage](../packages/document/tests/storage.test.ts), [lifecycle](../packages/document/tests/view-lifecycle.test.ts)) | Composition stays visible, repeat close fails; discard preserves lost-reply commits and ownership, failed reload keeps edits; remounted bindings save new drafts | Bun | Existing queued-write and retry owners remain | REWRITE reserve case; original code erased the composition and retained unsaved Loro edits after discard (both reproduced before fixing) |
+| Incremental projection equals full projection ([convergence](../packages/document/tests/convergence.test.ts)) | For nine anomaly positions, state and issues after import deep-equal those after reopen | Bun | — | ADD; numeric-record repro failed first |
+| Derived IDs for broken rows ([open](../packages/document/tests/open.test.ts)) | Unique `x-` IDs stable across reopen, addressable by `at()`/`move`; ownership unchanged by moves; golden hash vector | Bun | Replaces the null-ID expectations | REWRITE |
+| Native compatibility by fixture kind ([RuntimeCompatibilityTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopHostTests/RuntimeCompatibilityTests.swift)) | Conformance edits only on the conformance schema; every fixture's background render leaves `get` unchanged; probe reopen equality ([LoroWindowTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopHostTests/LoroWindowTests.swift)) | Native | — | REWRITE; passed with a temporary template specimen |
+| Every recorded fixture file is history-guarded ([compatibility](../packages/cli/tests/compatibility.test.ts)) | Rewrites of `issues.json`/`collaboration.json` against the base fail | Bun | — | EXTEND |
+| Concurrent collaboration matches an independent model (`2-1/collaboration.json`) | Offline round plus synced edits; peers equal and equal to `expected` | Bun | Historical readers | EXTEND; fails for divergence and for equal-but-wrong peers |
+
+### Apple lifecycle and catalog cleanup
+
+| Contract | Oracle | Tier | Duplicate-of | Verdict |
+|---|---|---|---|---|
+| Partial quit keeps completed closes final ([FeatureTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopFeaturesTests/FeatureTests.swift)) | A closes, B fails, C remains open; only B/C regain commands and are retried; AppKit receives false then true | Swift reducer | Existing quit cases cover preparation failure and waiting, not failure after a completed close | ADD; baseline retained A, cancelled it, and finished it again on retry |
+| Controller finalization closes native chrome and releases the document ([LoroWindowTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopHostTests/LoroWindowTests.swift)) | Window becomes invisible, weak WebView disappears, and a closed CLI edit succeeds with persisted data intact | Native | Existing owner already proves live export and subsequent closed editing | EXTEND existing owner through awaited controller finalization; retain save-failure/ownership and renderer-death coverage in LoroEngineTests |
+| Same-path preview replacement updates a mounted catalog ([LocalTemplateStoreTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopCatalogTests/LocalTemplateStoreTests.swift)) | Rendered preview changes from a red fixture to a blue fixture after the preview notification, with unchanged selection | Native SwiftUI | Existing preview tests only checked bytes on disk | ADD; baseline displayed the initial red preview but never displayed its blue replacement |
+| Command errors remain visible, independent, repeatable, and compatible with runtime retry ([FeatureTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopFeaturesTests/FeatureTests.swift)) | Real failing command effects produce alerts; acknowledgement clears only the intended alert; repeated errors get fresh identities and retry retains newer failures | Swift reducer | Same existing alert owners | REWRITE test-only saveFailed triggers as command failures; remove the unused production action |
+| Closing one document preserves the other document ([FeatureTests](../apps/apple/Packages/HitSlopApple/Tests/HitSlopFeaturesTests/FeatureTests.swift)) | The other document's complete state is unchanged; reopening an existing document still invokes focus | Swift reducer | Existing close isolation and existing-document focus tests | KEEP behavioral assertions; remove the assertion on redundant activeDocumentID bookkeeping, which production never consumed |
+
+The focused run passed 26 feature/identity cases, 7 catalog cases and 2 native
+export/close/save-failure cases. In a disposable package copy, suppressing alert
+creation in `operationFailed` made all three rewritten alert owners fail (13
+issues), proving they still detect broken production error presentation. The
+production source was not faulted. Regression and sensitivity logs are retained
+under `.hitslop/v1-evidence/apple-cleanup/`.
+
+Final validation passed `bun run check`, `bun run test` (126 tests, 161 historical
+replay cases and 51 bundled template checks), `bun run build`, `bun run swift:test`
+(the three opt-in benchmarks stayed skipped), and `bun run test:native` (8 tests).
+Runtime bytes, bridge contracts and release records are unchanged.
+
 ### Cache and compiler corrections after the Nx pilot
 
 | Contract | Oracle | Tier | Duplicate-of | Verdict |
@@ -76,6 +123,11 @@ PNG/PDF, separate reopen, and immutable-master assertions remain in place.
 | Habit Heatmap, Doodle Board, Side Quest, Pocket Sheet and Soma Amp business rules | Application formulas, drawing geometry, skin parser and radio selection are outside platform requirements | — | No equivalent application proof claimed; shared owners above retain document invariants | DELETE application-only cases after FOLD |
 
 ## Preserved implementation evidence
+
+The entries below record earlier implementation and release checks, including the
+retired contract-1 baseline. They are historical evidence, not acceptance results
+for the current contract-2 launch candidate. Current release acceptance must refer
+to the final candidate commit and its own gate report.
 
 These results describe the approved initial cleanup, before the runner simplification below. Historical replay counts include byte-identical candidate/release executions; current reports deduplicate them.
 

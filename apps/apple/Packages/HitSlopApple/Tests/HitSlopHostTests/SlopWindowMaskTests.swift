@@ -30,8 +30,8 @@ import Testing
     let parent = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-transparent-\(UUID().uuidString)", isDirectory: true)
     let root = parent.appendingPathComponent("transparent.slop", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: parent) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    try Data("<html></html>".utf8).write(to: root.appendingPathComponent("app.html"))
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
+    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     let manifest = #"{"runtime":"hitslop-v1","$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"transparent","title":"Transparent","description":"Tests transparent geometry.","categories":["utilities"],"presentation":{"width":240,"height":180,"background":"transparent"}}"#
@@ -47,7 +47,7 @@ private func maskedFixture(alpha: (Int, Int) -> UInt8 = { _, y in y < 90 ? 255 :
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-host-mask-\(UUID().uuidString)", isDirectory: true)
     let root = directory.appendingPathComponent("asymmetric.slop", isDirectory: true)
     try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data("<html></html>".utf8).write(to: root.appendingPathComponent("app.html"))
+    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     let manifest = #"{"runtime":"hitslop-v1","$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"asymmetric","title":"Asymmetric","description":"Tests image mask orientation.","categories":["utilities"],"presentation":{"width":240,"height":180,"skin":"assets/window-mask.png"}}"#

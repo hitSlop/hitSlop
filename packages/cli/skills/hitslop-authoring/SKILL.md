@@ -12,7 +12,7 @@ App components call `const doc = useDocument(schema)`: read immutable doc.curren
 
 Initialize absent optional composites with set and record entries with put. Existing row lists and trees cannot be replaced, including through a containing object assignment: use insert/remove/move, or explicitly clear/delete before recreating new identities. Scalar lists use an empty list instead of optionality. Checkpoints retain history; automatic history pruning is deferred.
 
-The host supplies the document SDK and Loro runtime. Do not embed the engine into app bundles or expose a second JSON writer. Build emits state.schema.json (a descriptor), initial.json, app.html, assets and document guidance. Never include state/, stores/, source, dependencies or caches in templates.
+The host supplies the document SDK and Loro runtime. Do not embed the engine into app bundles or expose a second JSON writer. Build emits state.schema.json (a descriptor), initial.json, assets (including the app module assets/app.js, generated from App.svelte and styles.css) and document guidance. The host owns the page; apps reach it only through the document SDK. Never include state/, stores/, source, dependencies or caches in templates.
 
 Start anywhere with `bunx @hitslop/cli init NAME`, then `cd NAME` and `bun install`. Use the generated `bun run check/dev/build/register` scripts. Bun is the only JavaScript runtime required; build/register need the compatible installed hitSlop Mac app, not Swift or Xcode. Preview state is disposable; rerun dev to rebuild source. Create a writable copy of a built/registered template before editing. Agents use schema/get/apply/batch/compact. Pre-v1 documents are rejected without migration; preserve supported v1 contracts.
 
@@ -47,3 +47,6 @@ saves bytes before the reference and joins document flush/retry. `read(id)` retu
 a Blob; `list()` returns IDs and sizes. References are ordinary schema scalars,
 never base64 document values. Validate app formats first. Limits: 10 MiB/file,
 100 MiB and 256 files/document. HTTPS data/media requests are allowed; CORS applies.
+
+Keep high-frequency or transient values (drag positions, playback, timers) in local state or `handle.preview()`, not saved fields; use attachments for binary data. Documents are capped at 32 MiB.
+Counter values read `number | null`: `null` appears only after merged increments overflow; render it as unavailable and disable increments.

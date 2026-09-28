@@ -1,6 +1,21 @@
-import { defineDocument, s } from "../src/schema";
+import { defineDocument, s, type Input } from "../src/schema";
 import type { Document } from "../src/document";
-import type { SlopDocument } from "../src/store.svelte";
+import type { SlopDocument } from "../src/app/store.svelte";
+const counters = defineDocument({ count: s.counter(), optional: s.optional(s.counter()) });
+export function counterTypes(doc: SlopDocument<typeof counters.fields.node>) {
+  const count: number | null = doc.current.count;
+  const optional: number | null | undefined = doc.current.optional;
+  // @ts-expect-error Overflow is observable and callers must handle null.
+  const unchecked: number = doc.current.count;
+  const valid: Input<typeof counters.fields.node> = { count: 1, optional: 2 };
+  // @ts-expect-error null is a read fallback, never a valid counter input.
+  const invalid: Input<typeof counters.fields.node> = { count: null };
+  // @ts-expect-error Optional counter inputs still require a number when present.
+  const invalidOptional: Input<typeof counters.fields.node> = { count: 0, optional: null };
+  // @ts-expect-error Counter edits require numbers.
+  doc.fields.count.increment(null);
+  return { count, optional, valid };
+}
 const schema = defineDocument({
   title: s.text(),
   currency: s.enum(["CAD", "USD"]),
@@ -14,20 +29,20 @@ const schema = defineDocument({
   ),
 });
 export function authoringTypes(doc: Document<typeof schema.fields.node>) {
-  doc.text(schema.fields.title).replace("Fine");
-  doc.set(schema.fields.currency, "CAD");
-  doc.insert(schema.fields.tasks, { text: "x", done: false, amount: 100 });
-  doc.clear(schema.fields.tasks.item("id").note);
+  doc.fields.title.replace("Fine");
+  doc.fields.currency.set("CAD");
+  doc.fields.tasks.insert({ text: "x", done: false, amount: 100 });
+  doc.fields.tasks.item("id").note.clear();
   // @ts-expect-error Text is not a scalar register
-  doc.set(schema.fields.title, "wrong API");
+  doc.fields.title.set("wrong API");
   // @ts-expect-error Unknown enum variant
-  doc.set(schema.fields.currency, "GBP");
+  doc.fields.currency.set("GBP");
   // @ts-expect-error Only optional scalars can be cleared
-  doc.clear(schema.fields.currency);
+  doc.fields.currency.clear();
   // @ts-expect-error Nested boolean requires boolean
-  doc.set(schema.fields.tasks.item("id").done, "true");
+  doc.fields.tasks.item("id").done.set("true");
   // @ts-expect-error Required values cannot be omitted
-  doc.insert(schema.fields.tasks, { text: "Missing done" });
+  doc.fields.tasks.insert({ text: "Missing done" });
   s.optional(s.text());
   s.list(s.string());
   // @ts-expect-error Lists hold rows or scalars, not text
@@ -41,7 +56,7 @@ export function handleTypes(doc: Document<typeof schema.fields.node>) {
   const { id } = tasks.insert({ text: "x", done: false, amount: 100 });
   tasks.item(id).note.set("optional");
   tasks.item(id).note.clear();
-  const inserted: string = doc.transaction((tx) => {
+  const inserted: string = doc.change((tx) => {
     const { id } = tx.fields.tasks.insert({ text: "x", done: false, amount: 100 });
     tx.fields.tasks.item(id).done.set(true);
     return id;

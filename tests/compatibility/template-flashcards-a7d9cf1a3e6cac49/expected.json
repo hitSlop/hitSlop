@@ -1,0 +1,50 @@
+{
+  "decks": [
+    {
+      "deckKey": "d-type",
+      "name": "Type Terms",
+      "cards": [
+        {
+          "front": "Kerning",
+          "back": "The space between a specific pair of letters.",
+          "box": 1,
+          "$id": "cjwj4351kxwskmtz4wn1a8kbs8"
+        },
+        {
+          "front": "Leading",
+          "back": "Vertical space from one baseline to the next.",
+          "box": 1,
+          "$id": "dmx7zdj0cx2jrgde4br2mvjjtg"
+        },
+        {
+          "front": "X-height",
+          "back": "The height of lowercase letters, excluding ascenders.",
+          "box": 2,
+          "$id": "gw9dfmmjfpb98yj2qe3nf05kp4"
+        },
+        {
+          "front": "Ligature",
+          "back": "Two or more letters drawn as a single glyph.",
+          "box": 2,
+          "$id": "tacvrpy2grysxwkb7bmkdhe5aw"
+        },
+        {
+          "front": "Counter",
+          "back": "The enclosed or partially enclosed interior of a letter.",
+          "box": 3,
+          "$id": "wc7zjxay1kjchj3q5k9s3a5zg4"
+        },
+        {
+          "front": "Serif",
+          "back": "A small finishing stroke on the end of a letter stem.",
+          "box": 4,
+          "$id": "9ctyjpw6efecp9e574wpeqqtbg"
+        }
+      ],
+      "$id": "tq0jaar0gwh8xzh75qemftjh4w"
+    }
+  ],
+  "selectedDeckId": "d-type",
+  "selectedBox": 0,
+  "cardIndex": 0
+}

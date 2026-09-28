@@ -1,0 +1,36 @@
+{
+  "date": "Friday, Sep 25",
+  "notes": "Remember: Single-task only. Never move to the next item until the current one is finished.",
+  "tasks": [
+    {
+      "text": "Finalize quarterly financial model",
+      "done": false,
+      "$id": "nnfhxm4ysyzbjzz2rwze7hday0"
+    },
+    {
+      "text": "Review candidate take-home submission",
+      "done": false,
+      "$id": "gyfczytfcp6nt6q5b9pv8ceg28"
+    },
+    {
+      "text": "Draft customer onboarding email series",
+      "done": false,
+      "$id": "5g9frmy9rkjemt780h0zvjmepm"
+    },
+    {
+      "text": "Sync with design team on design tokens",
+      "done": true,
+      "$id": "tthvgmgnpm76d5ympkehcmq56g"
+    },
+    {
+      "text": "Clear urgent support escalations",
+      "done": false,
+      "$id": "63n3qtte70rpv4djha9t6jyyd0"
+    },
+    {
+      "text": "Plan tomorrow’s 6 priorities at sundown",
+      "done": false,
+      "$id": "97mb0njw8bn704qvbfytxdyy7w"
+    }
+  ]
+}

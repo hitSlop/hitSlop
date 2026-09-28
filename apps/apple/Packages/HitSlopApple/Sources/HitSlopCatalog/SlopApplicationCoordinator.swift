@@ -18,8 +18,6 @@ import SwiftUI
     private var observation: ObserveToken?
     private var documentObservations: [UUID: ObserveToken] = [:]
 
-    // NotificationCenter removal is thread-safe; registration and all callbacks stay on MainActor.
-    nonisolated(unsafe) private var notifications: [NSObjectProtocol] = []
     private var previousDocumentCount = 0
 
     public convenience init(templatesURL: URL = DocumentFactory.defaultTemplatesRoot) {
@@ -37,7 +35,6 @@ import SwiftUI
             $0.documentClient = native.client
         }
         native.onOpened = { [weak self] id, controller in self?.connect(id, controller: controller) }
-        native.onFocused = { [weak self] in self?.updateFocus() }
         observation = observe { [weak self] in
             guard let self else { return }
             let count = self.store.documents.count
@@ -49,14 +46,7 @@ import SwiftUI
                 }, dismiss: { [weak self] in self?.store.send(.alert(.dismiss)) }, send: { [weak self] action in self?.store.send(.alert(.presented(action))) })
             }
         }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification, NSWindow.didBecomeMainNotification, NSWindow.didResignMainNotification] {
-            notifications.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.updateFocus() }
-            })
-        }
     }
-
-    deinit { for token in notifications { NotificationCenter.default.removeObserver(token) } }
 
     public var hasOpenDocuments: Bool { !store.documents.isEmpty }
     public var documentControllers: [SlopDocumentWindowController] { Array(native.controllers.values) }
@@ -66,11 +56,10 @@ import SwiftUI
     }
     public var isActiveDocumentPinned: Bool { activeID.flatMap { store.documents[id: $0]?.isPinned } ?? false }
     private var activeID: UUID? {
-        // Resolve at invocation as well as observing focus; modal panels cannot retarget an existing operation.
+        // Resolve from AppKit at invocation; modal panels cannot retarget an existing operation.
         let candidate = NSApp.keyWindow ?? NSApp.mainWindow
         return native.controllers.first { $0.value.owns(candidate) }?.key
     }
-    private func updateFocus() { store.send(.focused(activeID)) }
 
     public func showCatalog() {
         guard presentsWindows, store.quitPhase == .running else { return }
@@ -113,7 +102,7 @@ import SwiftUI
     }
     public func sendToActiveDocument(_ command: SlopDocumentCommand) {
         guard let id = activeID else { return }
-        store.send(.documents(.element(id: id, action: .command(command.featureCommand))))
+        store.send(.documents(.element(id: id, action: .command(command))))
     }
     public func clearRecentDocuments() {
         NSDocumentController.shared.clearRecentDocuments(nil)
@@ -126,7 +115,7 @@ import SwiftUI
         store.send(.documents(.element(id: id, action: action)))
     }
     private func connect(_ id: UUID, controller: SlopDocumentWindowController) {
-        controller.onCommand = { [weak self] command in self?.send(.command(command.featureCommand), to: id) }
+        controller.onCommand = { [weak self] command in self?.send(.command(command), to: id) }
         controller.onRuntimeReady = { [weak self] in
             self?.catalogWindow?.window?.orderOut(nil)
             self?.send(.runtimeReady, to: id)
@@ -155,7 +144,6 @@ import SwiftUI
     var controllers: [UUID: SlopDocumentWindowController] = [:]
     private var preparingURLs: [UUID: URL] = [:]
     var onOpened: ((UUID, SlopDocumentWindowController) -> Void)?
-    var onFocused: (() -> Void)?
     var client: DocumentClient {
         DocumentClient(
             open: { [self] id, url in
@@ -189,12 +177,14 @@ import SwiftUI
         if presentsWindows {
             NSDocumentController.shared.noteNewRecentDocumentURL(url); NSApp.activate(ignoringOtherApps: true)
         }
-        onFocused?()
         telemetry.send(.breadcrumb(.open, .completed))
         telemetry.send(.opened)
         return controller.documentTitle
     }
-    private func finishQuit(_ id: UUID) async throws { try await controller(id).finishClose(operation: .quit) }
+    private func finishQuit(_ id: UUID) async throws {
+        try await controller(id).finishClose(operation: .quit)
+        controllers.removeValue(forKey: id)
+    }
     private func cancelQuit(_ id: UUID) async { await controllers[id]?.cancelPreparedClose() }
     private func prepareToQuit(_ id: UUID) async throws { try await controller(id).prepareToClose(operation: .quit) }
     private func focus(_ id: UUID) {
@@ -203,44 +193,12 @@ import SwiftUI
             else if let url = preparingURLs[id] { SlopDocumentWindowController.focusOpeningDocument(at: url) }
             NSApp.activate(ignoringOtherApps: true)
         }
-        onFocused?()
     }
-    private func perform(_ id: UUID, command: DocumentCommand) async throws -> URL? {
+    private func perform(_ id: UUID, command: SlopDocumentCommand) async throws -> URL? {
         let controller = try controller(id)
-        let result = try await controller.perform(command.nativeCommand)
+        let result = try await controller.perform(command)
         if command == .duplicate, result != nil { telemetry.send(.duplicated) }
         if command == .close { controllers.removeValue(forKey: id) }
         return result
-    }
-}
-
-private extension SlopDocumentCommand {
-    var featureCommand: DocumentCommand {
-        switch self {
-        case .pin(let value): .pin(value)
-        case .exportPNG: .exportPNG
-        case .exportPDF: .exportPDF
-        case .duplicate: .duplicate
-        case .reveal: .reveal
-        case .copyPath: .copyPath
-        case .openEditor(let url): .openEditor(url)
-        case .retry: .retry
-        case .close: .close
-        }
-    }
-}
-private extension DocumentCommand {
-    var nativeCommand: SlopDocumentCommand {
-        switch self {
-        case .pin(let value): .pin(value)
-        case .exportPNG: .exportPNG
-        case .exportPDF: .exportPDF
-        case .duplicate: .duplicate
-        case .reveal: .reveal
-        case .copyPath: .copyPath
-        case .openEditor(let url): .openEditor(url)
-        case .retry: .retry
-        case .close: .close
-        }
     }
 }

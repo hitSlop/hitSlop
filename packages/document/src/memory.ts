@@ -1,6 +1,10 @@
 import type { ByteStore, Stored } from "./storage";
 export class MemoryStore implements ByteStore {
-  private stored: Stored = { checkpoint: null, updates: [], generation: "0", schemaKey: null };
+  private stored: Stored;
+  /** Peer replicas of one document share its ID; a new store is a new document. */
+  constructor(docId: string = crypto.randomUUID()) {
+    this.stored = { checkpoint: null, updates: [], generation: "0", schemaKey: null, docId };
+  }
   async load() {
     return structuredClone(this.stored);
   }
@@ -15,6 +19,7 @@ export class MemoryStore implements ByteStore {
   async checkpoint(generation: string, bytes: Uint8Array, schemaKey: string) {
     this.check(generation);
     this.stored = {
+      ...this.stored,
       checkpoint: bytes.slice(),
       updates: [],
       schemaKey,

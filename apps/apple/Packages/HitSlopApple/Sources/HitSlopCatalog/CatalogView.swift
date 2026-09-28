@@ -95,12 +95,12 @@ private enum CatalogStyle {
 
 /// Rounded white tile holding a template or document icon.
 private struct IconTile: View {
-    let urls: [URL]
+    let artwork: [CatalogArtwork]
     let size: CGFloat
     let radius: CGFloat
 
     var body: some View {
-        CatalogImageView(urls: urls, fallback: .applicationIcon)
+        CatalogImageView(artwork: artwork, fallback: .applicationIcon)
             .padding(size * 0.1)
             .frame(width: size, height: size)
             .background(.white, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -396,7 +396,7 @@ private struct CatalogRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            IconTile(urls: entry.iconURLs, size: 40, radius: 9)
+            IconTile(artwork: entry.icons, size: 40, radius: 9)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.displayTitle).font(.body.weight(.medium)).lineLimit(1)
                     .truncationMode(entry.isRecent ? .middle : .tail)
@@ -478,7 +478,7 @@ private struct CatalogDetail: View {
                             }
                         }
 
-                        PreviewCard(urls: entry.previewURLs)
+                        PreviewCard(artwork: entry.previews)
 
                         details(entry)
 
@@ -512,7 +512,7 @@ private struct CatalogDetail: View {
 
     private func hero(_ entry: CatalogEntry) -> some View {
         HStack(alignment: .top, spacing: 16) {
-            IconTile(urls: entry.iconURLs, size: 64, radius: 14)
+            IconTile(artwork: entry.icons, size: 64, radius: 14)
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.displayTitle)
                     .font(.title.weight(.semibold))
@@ -579,14 +579,14 @@ private struct CatalogDetail: View {
 }
 
 private struct PreviewCard: View {
-    let urls: [URL]
+    let artwork: [CatalogArtwork]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("PREVIEW")
                 .font(.caption2.weight(.semibold)).tracking(0.6)
                 .foregroundStyle(.secondary)
-            CatalogImageView(urls: urls, fallback: .preview)
+            CatalogImageView(artwork: artwork, fallback: .preview)
                 .frame(maxWidth: .infinity)
         }
         .padding(14).padding(.bottom, 6)
@@ -649,7 +649,7 @@ private struct CatalogFact: Identifiable {
 private enum CatalogImageFallback { case applicationIcon, preview }
 
 private struct CatalogImageView: View {
-    let urls: [URL]
+    let artwork: [CatalogArtwork]
     let fallback: CatalogImageFallback
     @State private var image: NSImage?
     private let maxPreviewWidth: CGFloat = 560
@@ -677,10 +677,10 @@ private struct CatalogImageView: View {
                 .frame(maxWidth: .infinity, minHeight: 180)
             }
         }
-        .task(id: urls.map(\.absoluteString).joined(separator: "|")) {
+        .task(id: artwork) {
             image = nil
-            for url in urls {
-                let loaded = await loadCatalogImage(url)
+            for file in artwork {
+                let loaded = await loadCatalogImage(file)
                 guard !Task.isCancelled else { return }
                 if let loaded {
                     image = loaded
@@ -691,17 +691,14 @@ private struct CatalogImageView: View {
     }
 }
 
-/// Catalog artwork keyed by path and modification date, so refreshed previews reload
+/// Catalog artwork keyed by URL, modification date and byte count, so refreshed previews reload
 /// while scrolling and reselecting reuse decoded images.
 @MainActor private let catalogImages = NSCache<NSString, NSImage>()
 
-@MainActor private func loadCatalogImage(_ url: URL) async -> NSImage? {
-    guard url.isFileURL else { return nil }
-    let modified = await Task.detached(priority: .userInitiated) {
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-    }.value
-    guard !Task.isCancelled, let modified else { return nil }
-    let key = "\(url.path)|\(modified.timeIntervalSinceReferenceDate)" as NSString
+@MainActor private func loadCatalogImage(_ artwork: CatalogArtwork) async -> NSImage? {
+    let url = artwork.url
+    guard url.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
+    let key = "\(url.absoluteString)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)" as NSString
     if let cached = catalogImages.object(forKey: key) { return cached }
     let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
     guard !Task.isCancelled, let data, let image = NSImage(data: data) else { return nil }
@@ -725,14 +722,6 @@ private func folderName(_ folderPath: String) -> String {
 
 private func relativeDate(_ date: Date, now: Date = .now) -> String {
     now.timeIntervalSince(date) < 60 ? "Just now" : date.formatted(.relative(presentation: .named))
-}
-
-func catalogFilterEmoji(_ filter: CatalogFilter) -> String {
-    switch filter {
-    case .all: "🧃"
-    case .recents: "🔥"
-    case .category(let category): categoryEmoji(category)
-    }
 }
 
 func categoryEmoji(_ category: String) -> String {

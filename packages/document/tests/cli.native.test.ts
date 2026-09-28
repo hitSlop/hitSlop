@@ -32,11 +32,11 @@ test("JSON CLI creates atomically, replaces across closed sessions and rejects s
   };
   try {
     await mkdir(join(template, "assets"), { recursive: true });
-    const manifest = await readFile("tests/compatibility/1-1/document/manifest.json", "utf8");
+    const manifest = await readFile("examples/slops/quick-checklist/manifest.json", "utf8");
     const { runtimeRevision, ...provenance } = identity;
     const files = {
       "manifest.json": manifest,
-      "app.html": "<!doctype html><script>throw new Error('Authored code must not run')</script>",
+      "assets/app.js": "throw new Error('Authored code must not run');",
       "initial.json": JSON.stringify({ title: "Template" }),
       "state.schema.json": JSON.stringify(schema.descriptor),
       "assets/theme.json": "{}",
@@ -116,7 +116,7 @@ test("native CLI refuses an environment-configured template master before mutati
     const { runtimeRevision, ...provenance } = identity;
     const files: Record<string, string> = {
       "manifest.json": manifest,
-      "app.html": "<!doctype html><html></html>",
+      "assets/app.js": "export default { mount() { return {}; } };",
       "state.schema.json": JSON.stringify(schema.descriptor),
       "initial.json": JSON.stringify({ title: "Master" }),
       "assets/theme.json": "{}",
@@ -193,7 +193,7 @@ test("native CLI rejects old runtimes and malformed commands before mutation", a
     await writeFile(join(root, "manifest.json"), JSON.stringify(manifest));
     await mkdir(join(root, "assets"));
     await writeFile(join(root, "assets/theme.json"), "{}");
-    await writeFile(join(root, "app.html"), "<!doctype html><html></html>");
+    await writeFile(join(root, "assets/app.js"), "export default { mount() { return {}; } };");
     await writeFile(join(root, "state.schema.json"), JSON.stringify(schema.descriptor));
     await writeFile(join(root, "initial.json"), JSON.stringify({ title: "Initial" }));
     expect(

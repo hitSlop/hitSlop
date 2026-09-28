@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import HitSlopRuntime
 import PDFKit
+import SQLite3
 import Testing
 
 @testable import HitSlopHost
@@ -62,6 +63,10 @@ extension LoroClientTests {
     #expect(
       try Data(contentsOf: root.appendingPathComponent("state/theme.json"))
         == Data(contentsOf: duplicate.appendingPathComponent("state/theme.json")))
+    // A duplicate is a new logical document carrying the same saved history.
+    let original = try savedRow(root), copy = try savedRow(duplicate)
+    #expect(original.docID != copy.docID)
+    #expect(original.checkpoint == copy.checkpoint)
     // Pointer sampling continues while asynchronous close releases storage. A ready
     // session must never expose an already-destroyed renderer to the native toolbar.
     var finished = false
@@ -140,6 +145,41 @@ extension LoroClientTests {
     try await controller.session.finish()
     let reopened = try await DocumentCommand.run(method: "get", url: root)
     #expect(reopened == bytes)
+  }
+
+  // Gap: failed-save retry tests do not prove that explicit discard reloads bytes,
+  // awaits the bridge, retains ownership, and remounts the visible app.
+  @Test @MainActor func discardRestoresSavedStateWithoutReleasingOwnership() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    let engine = controller.session.engine
+    engine.onStatus = nil
+    engine.onError = nil
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("Durable title"))
+    let baseline = try await DocumentCommand.run(method: "get", url: root)
+    let identity = try savedRow(root).docID
+    engine.storageBridge.beforeWrite = { _ in
+      throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
+    }
+    await #expect(throws: (any Error).self) {
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("Unsaved title"))
+    }
+    await #expect(throws: (any Error).self) { try await engine.prepareClose() }
+    #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
+    try await engine.discardPending()
+    // Keep writes failing: this succeeds only if discard really removed pending writes.
+    let restored = try await DocumentCommand.run(method: "get", url: root)
+    #expect(restored == baseline)
+    #expect(try savedRow(root).docID == identity)
+    #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
+    engine.storageBridge.beforeWrite = nil
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("After discard"))
+    try await controller.session.finish()
+    let reopened = try await DocumentCommand.run(method: "get", url: root)
+    #expect(String(decoding: reopened, as: UTF8.self).contains("After discard"))
   }
 
   @Test @MainActor func failedSaveRetainsOwnershipAndRendererDeathReleasesOnClose() async throws {
@@ -274,4 +314,20 @@ extension LoroClientTests {
     try await controller.session.flush()
     try await controller.session.finish()
   }
+}
+
+/// Reads the host-owned identity and checkpoint directly from a closed or live package.
+private func savedRow(_ root: URL) throws -> (docID: String, checkpoint: Data?) {
+  var db: OpaquePointer?
+  defer { sqlite3_close(db) }
+  let path = root.appendingPathComponent("state/document.sqlite").path
+  var statement: OpaquePointer?
+  guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+    sqlite3_prepare_v2(db, "SELECT doc_id, checkpoint FROM document WHERE id=1", -1, &statement, nil) == SQLITE_OK,
+    sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0)
+  else { sqlite3_finalize(statement); throw CocoaError(.fileReadCorruptFile) }
+  defer { sqlite3_finalize(statement) }
+  let size = Int(sqlite3_column_bytes(statement, 1))
+  let checkpoint = sqlite3_column_blob(statement, 1).map { Data(bytes: $0, count: size) }
+  return (String(cString: text), checkpoint)
 }

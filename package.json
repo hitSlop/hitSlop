@@ -36,6 +36,7 @@
     "landing:build": "bun run --cwd apps/landing build",
     "test:native": "bun scripts/v1/test.ts --native",
     "check:built": "bun scripts/v1/check-built.ts",
+    "check:sealed-templates": "bun scripts/v1/compatibility-check.ts --sealed-templates",
     "compatibility:restore": "bun scripts/v1/restore-runtimes.ts",
     "test:compatibility": "bun scripts/v1/compatibility.ts .hitslop/v1-evidence/compatibility.json",
     "release:check": "bun scripts/v1/release-check.ts",

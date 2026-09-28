@@ -25,7 +25,7 @@ test("runtime catalogs compare complete contract sets and bytes per contract", a
         protocolVersion: 1,
       }),
     );
-    for (const file of ["index.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"])
+    for (const file of ["index.js", "boot.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"])
       await writeFile(join(folder, file), `contract ${contract}`);
   }
   try {

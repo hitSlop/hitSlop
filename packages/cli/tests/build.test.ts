@@ -3,29 +3,29 @@ import { buildProject } from "../src/build";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { readdir, mkdir } from "node:fs/promises";
-test("build contains no document engine, and rejects direct Loro imports", async () => {
+// Built apps import nothing from the runtime and reach the host only through ctx.
+test("apps contain no runtime code and cannot reach the engine, bridge or remote boot resources", async () => {
   const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
   try {
     const source = join(root, "source");
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     const output = await buildProject(source, join(root, "built.slop"));
-    const js = await readFile(join(output, "assets/main.js"), "utf8");
-    expect(js).toContain("/__runtime__/index.js");
+    const js = await readFile(join(output, "assets/app.js"), "utf8");
+    expect(js).not.toContain("/__runtime__/");
     expect(js).not.toContain("loro_wasm_bg");
-    await writeFile(
-      join(source, "main.ts"),
-      'import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());',
-    );
-    await expect(buildProject(source, join(root, "bad.slop"))).rejects.toThrow(
-      "cannot import engine",
-    );
-    await writeFile(
-      join(source, "main.ts"),
-      'import {Document} from "@hitslop/document/runtime"; console.log(Document);',
-    );
-    await expect(buildProject(source, join(root, "bad-runtime.slop"))).rejects.toThrow(
-      "cannot import engine",
-    );
+    expect(await readdir(output)).not.toContain("app.html");
+    const entry = 'import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);\n';
+    for (const [code, error] of [
+      ['import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());', "cannot import loro-crdt"],
+      ['import {Document} from "@hitslop/document/runtime"; console.log(Document);', "cannot import @hitslop/document/runtime"],
+      ['const runtime = await import("/__runtime__/index.js"); console.log(runtime);', "cannot import /__runtime__/index.js"],
+      ["globalThis.webkit.messageHandlers.storage.postMessage({ method: 'ready' });", "host bridge"],
+      ['import "./remote.css";', "remote stylesheets, fonts or scripts"],
+    ] as const) {
+      await writeFile(join(source, "remote.css"), '@font-face { font-family: R; src: url("https://example.com/r.woff2"); }');
+      await writeFile(join(source, "main.ts"), entry + code);
+      await expect(buildProject(source, join(root, "bad.slop"))).rejects.toThrow(error);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -96,10 +96,9 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
       @font-face { font-family: External; src: url('./dependency/External.woff2'); }
     `,
     );
-    const main = await readFile(join(source, "main.ts"), "utf8");
     await writeFile(
       join(source, "main.ts"),
-      main +
+      `import "./styles.css"; import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);` +
         `
       import './font-test.css';
       import fontURL from './assets/fonts/My Font.ttf';
@@ -111,10 +110,10 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
     expect(files.filter((file) => file.endsWith(".ttf"))).toEqual(["fonts/My Font.ttf"]);
     expect(files.filter((file) => file.endsWith(".woff2"))).toHaveLength(1);
     expect(await readFile(join(output, "assets/fonts/OFL.txt"), "utf8")).toBe("font license");
-    expect(await readFile(join(output, "assets/main.css"), "utf8")).toContain(
+    expect(await readFile(join(output, "assets/app.css"), "utf8")).toContain(
       "/assets/fonts/My%20Font.ttf",
     );
-    expect(await readFile(join(output, "assets/main.js"), "utf8")).toContain(
+    expect(await readFile(join(output, "assets/app.js"), "utf8")).toContain(
       "/assets/fonts/My%20Font.ttf",
     );
   } finally {
@@ -137,10 +136,10 @@ test("Svelte styles compile identically in different checkout locations", async 
       );
       await writeFile(
         join(source, "main.ts"),
-        'import { mount } from "svelte"; import Styled from "./Styled.svelte"; mount(Styled, { target: document.body });',
+        'import { mount } from "svelte"; import Styled from "./Styled.svelte"; export default { mount: (ctx, target) => (mount(Styled, { target }), {}) };',
       );
       const built = await buildProject(source, join(root, `${location}.slop`));
-      outputs.push(await readFile(join(built, "assets/main.js"), "utf8"));
+      outputs.push(await readFile(join(built, "assets/app.js"), "utf8"));
     }
     expect(outputs[0]).toBe(outputs[1]);
   } finally {

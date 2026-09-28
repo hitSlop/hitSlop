@@ -43,15 +43,21 @@ extension LoroClientTests {
     _ = NSApplication.shared
     let root = try captureFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let htmlURL = root.appendingPathComponent("app.html")
-    let html = try String(contentsOf: htmlURL, encoding: .utf8).replacingOccurrences(
-      of: "</head><body>", with: """
-      <style>
-      #hover-control { visibility: hidden; pointer-events: none; }
-      html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }
-      </style></head><body><button id="hover-control" data-slop-export="hide">Hover action</button>
-      """)
-    try html.write(to: htmlURL, atomically: true, encoding: .utf8)
+    // Wrap the probe app with an authored control that follows the native toolbar.
+    let assets = root.appendingPathComponent("assets")
+    try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
+    try Data("""
+      import probe from "./probe.js";
+      export default { mount(ctx, target) {
+        const style = document.createElement("style");
+        style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
+        document.head.append(style);
+        const button = document.createElement("button");
+        button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
+        target.append(button);
+        return probe.mount(ctx, target);
+      } };
+      """.utf8).write(to: assets.appendingPathComponent("app.js"))
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()

@@ -135,8 +135,8 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
       Local-first mini apps for macOS
     </p>
     <h1 class="hero-title" id="hero-title">
-      <span class="hero-title-line">Tiny apps.</span>
-      <span class="hero-title-line"><span class="hero-big">Big</span> personality.</span>
+      <span class="hero-title-line">Tiny apps.<svg class="hero-smiley hero-doodle" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" /><path d="M16 29c5 6 12 6 17-1" /><path class="hero-dot" d="M17 18v2M31 18v2" /></svg><svg class="hero-title-star hero-doodle" viewBox="0 0 40 40" aria-hidden="true"><path d="m20 3 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" /></svg></span>
+      <span class="hero-title-line"><span class="hero-big">Big</span> <span class="hero-underlined">personality.<svg class="hero-big-underline" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true"><path d="M4 12C70 4 170 3 296 9M40 15c60-4 130-5 210-2" /></svg></span></span>
       <svg class="hero-burst hero-doodle" viewBox="0 0 36 54" aria-hidden="true"><path d="m14 11 9-6M17 27l12 1M13 42l9 7" /></svg>
     </h1>
     <p class="hero-subhead">Interactive docs, handy tools, weird little desktop experiments. All in one file.</p>
@@ -156,6 +156,10 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
     </p>
   </div>
   <figure class="hero-picture">
+    <p class="hero-sticker" aria-hidden="true"><span>Small apps</span><span>big ideas</span><svg class="hero-sticker-heart" viewBox="0 0 24 22"><path d="M12 20S2 14 2 7.5A5 5 0 0 1 12 5a5 5 0 0 1 10 2.5C22 14 12 20 12 20Z" /></svg></p>
+    <p class="hero-callout hero-handwritten" aria-hidden="true">Your desktop.<br />But more you.
+      <svg class="hero-callout-arrow hero-arrow" viewBox="0 0 70 50"><path d="M64 6C40 2 16 14 10 42m-8-12 8 13 12-9" /></svg>
+    </p>
     <div class="hero-media-frame">
       <img class="hero-poster" src={heroPoster} alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners" width="1920" height="1080" fetchpriority="high" />
       {heroVideo && (
@@ -167,7 +171,12 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
     </div>
     <svg class="hero-stars-top hero-doodle" viewBox="0 0 36 75" aria-hidden="true"><path d="M21 3c0 18 4 23 12 25-8 2-12 8-12 23-1-15-5-21-13-23C16 25 20 20 21 3Z" /><path stroke="#f443a1" d="M8 48c0 8 2 11 7 12-5 2-7 4-7 12-1-8-3-10-7-12 4-1 6-4 7-12Z" /></svg>
     <svg class="hero-stars-bottom hero-doodle" viewBox="0 0 26 38" aria-hidden="true"><path d="M13 2c0 11 3 15 11 17-8 2-11 6-11 17C12 25 9 21 2 19 9 17 12 13 13 2Z" /></svg>
-    <figcaption class="hero-sticky-note hero-handwritten" aria-hidden="true">Your ideas,<br />right here.
+    <p class="hero-bubble hero-handwritten" aria-hidden="true">Local first.<br />Always <span class="hero-bubble-heart">♥</span>
+      <svg class="hero-bubble-tail" viewBox="0 0 30 24"><path d="M4 2c6 10 14 16 24 20C16 22 8 18 2 10" /></svg>
+    </p>
+    <svg class="hero-sparkle-left hero-doodle" viewBox="0 0 26 38" aria-hidden="true"><path d="M13 2c0 11 3 15 11 17-8 2-11 6-11 17C12 25 9 21 2 19 9 17 12 13 13 2Z" /></svg>
+    <figcaption class="hero-sticky-note hero-handwritten" aria-hidden="true">Ideas<br />live here.
+      <svg class="hero-note-smiley" viewBox="0 0 40 40"><path d="M14 13v3M26 13v3M11 23c5 7 13 7 18 0" /></svg>
       <svg class="hero-note-arrow hero-arrow" viewBox="0 0 70 50"><path d="M8 40c30 3 45-11 48-33M46 18 57 5l4 18" /></svg>
     </figcaption>
   </figure>
@@ -184,6 +193,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
       {categories.map((item) => <li class="hero-category" data-repeat aria-hidden="true"><span class="hero-emoji">{item.emoji}</span>{item.label}</li>)}
     </ul>
     <button class="hero-shelf-button" type="button" data-shelf-direction="1" aria-label="Scroll categories right" aria-controls="category-list"><svg class="hero-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5 7 7-7 7" /></svg></button>
+    <p class="hero-shelf-note hero-handwritten" aria-hidden="true">More tiny apps<br />this way <svg class="hero-shelf-arrow" viewBox="0 0 40 16"><path d="M2 9c12-3 22-3 34-1m-7-6 7 6-7 6" /></svg></p>
     <button class="hero-shelf-button" type="button" data-shelf-pause data-paused="false" aria-label="Pause category scrolling" aria-controls="category-list"><svg class="hero-pause-icon hero-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14" /></svg><svg class="hero-play-icon hero-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" /></svg></button>
   </div>
 </section>
@@ -208,7 +218,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   z-index: -1;
   inset: 0 calc((100% - 100vw) / 2);
   pointer-events: none;
-  background: radial-gradient(ellipse at 73% 14%, #e8e2ff 0, transparent 53%), radial-gradient(ellipse at 28% 67%, #fff0fa 0, transparent 48%), radial-gradient(ellipse at 90% 90%, #e5fbfa 0, transparent 44%);
+  background: radial-gradient(ellipse at 73% 14%, #ddd3ff 0, transparent 55%), radial-gradient(ellipse at 22% 70%, #ffe3f4 0, transparent 50%), radial-gradient(ellipse at 90% 90%, #d6f7f4 0, transparent 46%), radial-gradient(ellipse at 8% 8%, #fff5d6 0, transparent 34%);
 }
 
 @media screen and (min-width: 1100px) {
@@ -246,9 +256,9 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   margin: 0 0 16px;
   padding-left: 4px;
   color: #6c16ed;
-  font-size: clamp(.7rem, .9vw, .85rem);
-  font-weight: 700;
-  letter-spacing: .14em;
+  font-size: clamp(.72rem, .92vw, .88rem);
+  font-weight: 900;
+  letter-spacing: .16em;
   text-transform: uppercase;
 }
 
@@ -258,33 +268,91 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   max-width: 100%;
   margin: 0;
   font-family: "HitSlop Display", "Arial Rounded MT Bold", sans-serif;
-  font-size: clamp(4rem, 8vw, 6.5rem);
+  font-size: clamp(3.6rem, 7.2vw, 5.9rem);
   font-weight: 400;
-  line-height: .98;
-  letter-spacing: -.025em;
+  line-height: .96;
+  letter-spacing: -.04em;
   text-wrap: initial;
 }
 
 @media screen and (min-width: 1100px) {
   .hero-title {
-    font-size: clamp(4rem, 5.55vw, 6.3rem);
+    font-size: clamp(3.3rem, 4.55vw, 5.3rem);
   }
 }
 
 @media screen and (min-width: 1100px) and (max-height: 850px) {
   .hero-title {
-    font-size: clamp(4rem, 5.25vw, 5.7rem);
+    font-size: clamp(3.2rem, 4.3vw, 4.9rem);
   }
 }
 
 @media screen and (max-width: 599px) {
   .hero-title {
-    font-size: clamp(3.05rem, 11.3vw, 4.25rem);
+    font-size: clamp(2.6rem, 10vw, 3.8rem);
   }
 }
 
 .hero-title-line {
+  position: relative;
   display: block;
+  width: max-content;
+}
+
+.hero-title-line + .hero-title-line {
+  margin-top: .06em;
+}
+
+.hero-underlined {
+  position: relative;
+  display: inline-block;
+}
+
+.hero-big-underline {
+  position: absolute;
+  z-index: -1;
+  left: 2%;
+  bottom: -.24em;
+  width: 94%;
+  height: .2em;
+  fill: none;
+  stroke: #f443a1;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.hero-title .hero-smiley {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  width: .62em;
+  height: .62em;
+  margin: .02em 0 0 .32em;
+  color: #10132c;
+  stroke-width: 3.4;
+  fill: #ffd84a;
+  transform: rotate(12deg);
+}
+
+.hero-smiley path {
+  fill: none;
+}
+
+.hero-smiley .hero-dot {
+  stroke-width: 5;
+}
+
+.hero-title .hero-title-star {
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
+  width: .34em;
+  height: .34em;
+  margin: -.2em 0 0 .08em;
+  color: #f443a1;
+  fill: #ff7cc0;
+  stroke-width: 2.6;
+  transform: rotate(-14deg);
 }
 
 .hero-big {
@@ -310,9 +378,9 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
 
 .hero-subhead {
   margin: 24px 0 0;
-  max-width: 29ch;
+  max-width: 32ch;
   font-size: clamp(1.25rem, 1.65vw, 1.85rem);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.2;
   letter-spacing: -.025em;
 }
@@ -329,6 +397,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   max-width: 53ch;
   color: #4e527a;
   font-size: clamp(1rem, 1.15vw, 1.16rem);
+  font-weight: 500;
   line-height: 1.5;
 }
 
@@ -374,7 +443,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   border: 1px solid;
   border-radius: 20px;
   font-size: clamp(.9rem, 1.05vw, 1.05rem);
-  font-weight: 700;
+  font-weight: 800;
   white-space: nowrap;
   transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
 }
@@ -472,6 +541,15 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
 
 @media screen and (max-width: 599px) {
   .hero-benefit {
+    flex-direction: column;
+    align-items: start;
+    gap: 8px;
+  }
+}
+
+@media screen and (min-width: 1100px) and (max-width: 1279px) {
+  .hero-benefit,
+  .hero-benefit-link {
     flex-direction: column;
     align-items: start;
     gap: 8px;
@@ -744,6 +822,18 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   }
 }
 
+.hero-note-smiley {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: #10132c;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
 .hero-note-arrow {
   position: absolute;
   right: 8px;
@@ -839,6 +929,8 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
 @media (prefers-reduced-motion: no-preference) {
   .hero-doodle,
   .hero-arrow,
+  .hero-big-underline,
+  .hero-sticker-heart,
   .hero-little-underline,
   .hero-big::before {
     --wiggle-angle: 2deg;
@@ -855,6 +947,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   .hero-note-arrow { animation-delay: -.5s; }
 
   .hero-little-underline,
+  .hero-big-underline,
   .hero-big::before {
     --wiggle-angle: .7deg;
     --wiggle-lift: -.5px;
@@ -862,6 +955,11 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   }
 
   .hero-little-underline { animation-delay: -4s; }
+  .hero-big-underline { animation-delay: -3s; }
+  .hero-smiley { animation-delay: -6.2s; }
+  .hero-title-star { animation-delay: -2.2s; }
+  .hero-sticker-heart { animation-delay: -.9s; }
+  .hero-sparkle-left { animation-delay: -4.4s; }
   .hero-big::before { animation-delay: -1.8s; }
 
   @keyframes hero-ink-wiggle {
@@ -879,6 +977,7 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
 }
 
 .hero-shelf {
+  position: relative;
   grid-column: 1 / -1;
   min-width: 0;
   display: flex;
@@ -928,6 +1027,21 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
   font-size: .86rem;
   font-weight: 500;
   white-space: nowrap;
+}
+
+@media (hover: hover) and (min-width: 1100px) {
+  .hero-category {
+    transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
+  }
+
+  .hero-category:nth-child(3n + 1) { rotate: -1deg; }
+  .hero-category:nth-child(3n + 2) { rotate: 1.2deg; }
+  .hero-category:nth-child(5n) { rotate: -1.6deg; }
+
+  .hero-category:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 7px 12px #3122631a;
+  }
 }
 
 .hero-emoji {
@@ -988,6 +1102,149 @@ const heroVideo = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/asse
 
 [data-paused="true"] .hero-play-icon {
   display: block;
+}
+
+.hero-sticker {
+  position: absolute;
+  z-index: 3;
+  left: -34px;
+  top: -30px;
+  margin: 0;
+  padding: 12px 18px 12px 16px;
+  display: grid;
+  color: #10132c;
+  font-family: "HitSlop Display", sans-serif;
+  font-size: clamp(.95rem, 1.25vw, 1.3rem);
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+  background: #fff;
+  border: 3px solid #10132c;
+  border-radius: 18px 22px 16px 24px;
+  box-shadow: 0 0 0 5px #fff, 0 10px 22px #40247a30;
+  transform: rotate(-12deg);
+  pointer-events: none;
+  user-select: none;
+}
+
+.hero-sticker span:last-of-type {
+  color: #6c16ed;
+}
+
+.hero-sticker-heart {
+  position: absolute;
+  right: -12px;
+  top: -12px;
+  width: 26px;
+  height: 24px;
+  fill: #ff5cb0;
+  stroke: #10132c;
+  stroke-width: 2;
+  transform: rotate(14deg);
+}
+
+.hero-callout {
+  position: absolute;
+  z-index: 3;
+  right: 4%;
+  top: -64px;
+  margin: 0;
+  color: #3a4fd6;
+  font-size: clamp(1.15rem, 1.5vw, 1.6rem);
+  transform: rotate(-6deg);
+}
+
+.hero-callout-arrow {
+  position: absolute;
+  left: -64px;
+  top: 14px;
+}
+
+.hero-bubble {
+  position: absolute;
+  z-index: 3;
+  left: -44px;
+  bottom: 14%;
+  margin: 0;
+  padding: 14px 18px;
+  color: #10132c;
+  background: #fff;
+  border: 2.5px solid #10132c;
+  border-radius: 50% 46% 48% 52% / 56% 50% 50% 44%;
+  box-shadow: 0 8px 18px #40247a24;
+  text-align: center;
+  transform: rotate(-8deg);
+}
+
+.hero-bubble-heart {
+  color: #f443a1;
+}
+
+.hero-bubble-tail {
+  position: absolute;
+  right: 6px;
+  bottom: -16px;
+  width: 30px;
+  height: 24px;
+  fill: #fff;
+  stroke: #10132c;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.hero-sparkle-left {
+  color: #f443a1;
+  width: 24px;
+  height: 36px;
+  left: -40px;
+  top: 38%;
+  stroke-width: 2.2;
+}
+
+.hero-shelf-note {
+  position: absolute;
+  right: 18px;
+  bottom: calc(100% + 2px);
+  margin: 0;
+  color: #6c16ed;
+  font-size: 1.05rem;
+  text-align: right;
+  transform: rotate(-4deg);
+}
+
+.hero-shelf-arrow {
+  width: 34px;
+  height: 14px;
+  margin-left: 4px;
+  vertical-align: middle;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (max-width: 1199px) {
+  .hero-callout,
+  .hero-bubble,
+  .hero-sparkle-left,
+  .hero-shelf-note,
+  .hero-title-star {
+    display: none;
+  }
+
+  .hero-sticker {
+    left: -8px;
+    top: -22px;
+    font-size: .85rem;
+    padding: 8px 12px;
+  }
+}
+
+@media screen and (max-width: 599px) {
+  .hero-sticker {
+    display: none;
+  }
 }
 
 </style>

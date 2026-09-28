@@ -7,7 +7,7 @@ import Testing
   func fixture() throws -> URL {
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/1-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/2-1/document", toPath: root.path)
     try FileManager.default.removeItem(at: root.appendingPathComponent("state"))
     return root
   }
@@ -79,7 +79,7 @@ import Testing
       let directory = catalogRoot.appendingPathComponent(String(contract))
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try FileManager.default.createDirectory(at: directory.appendingPathComponent("loro"), withIntermediateDirectories: true)
-      for path in ["index.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"] {
+      for path in ["index.js", "boot.js", "headless.js", "loro/index.js", "loro/loro_wasm_bg.wasm"] {
         try Data("contract-\(contract)".utf8).write(to: directory.appendingPathComponent(path))
       }
       var identity = bundled.identities.last!

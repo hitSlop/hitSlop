@@ -95,7 +95,7 @@ import Testing
     #expect(try SlopAttachments.read(id, in: copy) == data)
     try await engine.close()
     // Headless attachment commands must not execute this authored application.
-    try Data("<script>throw new Error('authored code must not run')</script>".utf8).write(to: root.appendingPathComponent("app.html"))
+    try Data("throw new Error('authored code must not run');".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     let reopened = try await DocumentCommand.run(method: "attachments.read", url: root, attachmentID: id)
     #expect(reopened == read)
     try await expectListed()

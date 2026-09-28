@@ -71,7 +71,7 @@ test("insert IDs work immediately on the staging fork and results escape only af
   let publications = 0;
   const stop = doc.subscribe(() => publications++);
   let escaped!: ReturnType<typeof doc.fields.rows.item>;
-  const id = doc.transaction((tx) => {
+  const id = doc.change((tx) => {
     const { id } = tx.fields.rows.insert({ name: "New", done: false });
     escaped = tx.fields.rows.item(id);
     escaped.name.replace("Edited before commit");
@@ -105,33 +105,33 @@ test("caught rejection, callback throw, async callback and outer writes all disc
   const pending = (doc as any).pending.map((bytes: Uint8Array) => bytes.slice());
   const failed = [
     () =>
-      doc.transaction((tx) => {
+      doc.change((tx) => {
         tx.fields.title.replace("Discard");
         throw new Error("callback failed");
       }),
     () =>
-      doc.transaction((tx) => {
+      doc.change((tx) => {
         tx.fields.rows.insert({ name: "Discard", done: false });
         try {
           tx.fields.rows.item("missing").done.set(true);
         } catch {}
       }),
     () =>
-      doc.transaction((tx) => {
+      doc.change((tx) => {
         tx.fields.title.replace("Discard");
         try {
           doc.fields.title.replace("Outer write");
         } catch {}
       }),
     () =>
-      doc.transaction((tx) => {
+      doc.change((tx) => {
         tx.fields.title.replace("Discard");
         try {
-          doc.transaction(() => {});
+          doc.change(() => {});
         } catch {}
       }),
     () =>
-      doc.transaction(async (tx) => {
+      doc.change(async (tx) => {
         tx.fields.title.replace("Discard");
         await Promise.resolve();
         tx.fields.title.replace("Too late");
@@ -144,7 +144,7 @@ test("caught rejection, callback throw, async callback and outer writes all disc
     expect((doc as any).pending).toEqual(pending);
   }
   await Promise.resolve();
-  expect(doc.transaction(() => "empty result")).toBe("empty result");
+  expect(doc.change(() => "empty result")).toBe("empty result");
   await doc.flush();
   expect((await io.load()).updates).toHaveLength(1);
   await doc.close();
@@ -219,11 +219,11 @@ describe("schema and transactions", () => {
     const io = new MemoryStore(),
       d = await Document.open(schema, io, initial);
     expect(Object.hasOwn(d.current, "note")).toBe(false);
-    d.set(schema.fields.note, "optional");
-    d.set(schema.fields.amount, 456);
-    d.set(schema.fields.currency, "USD");
-    d.text(schema.fields.title).replace("Hello 🦊");
-    d.set(schema.fields.settings.enabled, true);
+    d.fields.note.set("optional");
+    d.fields.amount.set(456);
+    d.fields.currency.set("USD");
+    d.fields.title.replace("Hello 🦊");
+    d.fields.settings.enabled.set(true);
     await d.close();
     const r = await Document.open(schema, io, initial);
     expect<unknown>(r.current).toEqual({
@@ -234,7 +234,7 @@ describe("schema and transactions", () => {
       title: "Hello 🦊",
       settings: { enabled: true },
     });
-    r.clear(schema.fields.note);
+    r.fields.note.clear();
     await r.close();
     const again = await Document.open(schema, io, initial);
     expect(Object.hasOwn(again.current, "note")).toBe(false);
@@ -245,11 +245,11 @@ describe("schema and transactions", () => {
       before = d.current;
     for (const value of [NaN, Infinity, -Infinity, "12", null])
       expect(() => d.apply({ type: "set", path: ["amount"], value } as any)).toThrow();
-    expect(() => d.set(schema.fields.currency, "GBP" as any)).toThrow();
+    expect(() => d.fields.currency.set("GBP" as any)).toThrow();
     expect(() => d.apply({ type: "clear", path: ["label"] })).toThrow();
     expect(() => d.apply({ type: "set", path: ["constructor"], value: "bad" })).toThrow();
     expect(() =>
-      d.insert(schema.fields.rows, { name: "n", done: false, extra: true } as any),
+      d.fields.rows.insert({ name: "n", done: false, extra: true } as any),
     ).toThrow();
     for (const bad of [
       () => s.optional(s.optional(s.string()) as any),
@@ -288,10 +288,10 @@ describe("schema and transactions", () => {
       d = await Document.open(schema, io, initial);
     let changes = 0;
     const stop = d.subscribe(() => changes++);
-    d.transaction((tx) => {
-      tx.set(schema.fields.amount, 777);
-      tx.text(schema.fields.title).replace("Batch");
-      tx.set(schema.fields.note, "Together");
+    d.change((tx) => {
+      tx.fields.amount.set(777);
+      tx.fields.title.replace("Batch");
+      tx.fields.note.set("Together");
     });
     expect(changes).toBe(1);
     await d.flush();
@@ -320,9 +320,9 @@ describe("author error semantics", () => {
     }).toThrow(OperationRejectedError);
     expect(input).toBe("Keep this");
     expect(() => {
-      doc.transaction((tx) => {
-        tx.set(schema.fields.rows.item(selected[0]!).done, true);
-        tx.remove(schema.fields.rows, "missing");
+      doc.change((tx) => {
+        tx.fields.rows.item(selected[0]!).done.set(true);
+        tx.fields.rows.remove("missing");
       });
       selected = [];
     }).toThrow(OperationRejectedError);
@@ -330,7 +330,7 @@ describe("author error semantics", () => {
     expect(doc.current).toEqual(before);
     const bug = new TypeError("Author bug");
     try {
-      doc.transaction(() => {
+      doc.change(() => {
         throw bug;
       });
     } catch (error) {
@@ -338,7 +338,7 @@ describe("author error semantics", () => {
       expect(error).not.toBeInstanceOf(OperationRejectedError);
     }
     await doc.close();
-    expect(() => doc.text(schema.fields.title).replace("Closed")).toThrow(OperationRejectedError);
+    expect(() => doc.fields.title.replace("Closed")).toThrow(OperationRejectedError);
   });
 });
 

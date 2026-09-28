@@ -1,27 +1,12 @@
+// The runtime's internal module, loaded by boot.js and headless.js. Its exports are
+// not an app contract: built slops receive only the ctx defined in abi.ts.
+export { boot, bootHeadless, createContext, initialize } from "./boot";
 export { Document } from "./document";
 export { Session } from "./session";
-export { HostStore, hostCall } from "./bridge";
 export { MemoryStore } from "./memory";
-export { observe, observeText } from "./handles";
-export { bindText } from "./bind-text";
-export { bindValue } from "./bind-value";
-export { capture, captureController, createCaptureController } from "./capture";
-export const runtimeVersion = "hitslop-v1";
-let initializing: Promise<void> | undefined;
-export function initialize() {
-  return (initializing ??= (async () => {
-    const url = new URL("./loro/index.js", import.meta.url).href;
-    const { default: init } = await import(url);
-    await init({ module_or_path: new URL("./loro/loro_wasm_bg.wasm", import.meta.url).href });
-  })());
-}
-// Begin fetching and compiling WASM while the app bundle is still evaluating.
-// Callers observe failures through initialize().
-initialize().catch(() => {});
-
-export { installPresentationStage, presentationStage } from "./presentation";
 export { fromDescriptor } from "./schema";
-
-export { openTheme } from "./theme-runtime";
-export { attachments, configureAttachments } from "./attachments";
 export { default as runtimeIdentity } from "./runtime-identity.json";
+// Begin fetching and compiling WASM as soon as the runtime evaluates.
+// Callers observe failures through initialize().
+import { initialize } from "./boot";
+initialize().catch(() => {});

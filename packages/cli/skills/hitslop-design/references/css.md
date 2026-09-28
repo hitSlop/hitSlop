@@ -1,6 +1,6 @@
 # Plain CSS and public theme tokens
 
-Import `./styles.css` from `main.ts`. Keep markup class names literal and prefix
+Keep app styles in `./styles.css`; the build imports it with `App.svelte`. Keep markup class names literal and prefix
 classes with the app name. Each WebView owns one app, so document-level CSS is
 appropriate. Use native nesting for related states and descendants.
 
@@ -16,7 +16,7 @@ appropriate. Use native nesting for related states and descendants.
 Keep public defaults in `theme.ts` using `defineTheme` from
 `@hitslop/document/theme`. The builder writes defaults to `assets/theme.json`;
 the runtime applies defaults and document overrides before mounting the app.
-Compiled app styling lives in `assets/main.css`. Owners use `slop theme get/set/reset`;
+Compiled app styling lives in `assets/app.css`. Owners use `slop theme get/set/reset`;
 the host writes overrides separately in `state/theme.json`. Never edit these built
 files directly. Layout changes require authoring source and a rebuild.
 Do not add mutable CSS files or duplicate token defaults.

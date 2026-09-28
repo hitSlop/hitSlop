@@ -44,7 +44,7 @@ The three npm packages are publishable. The repository root, examples workspace,
 
 ## Add a template
 
-Add one authored project directly under `examples/slops/`, including `manifest.json`, `schema.ts`, `initial.ts`, `theme.ts`, `main.ts`, `App.svelte`, `styles.css`, and `tsconfig.json`. Use the current examples and [authoring guide](authoring.md). The examples workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
+Add one authored project directly under `examples/slops/`, including `manifest.json`, `schema.ts`, `initial.ts`, `theme.ts`, `App.svelte`, `styles.css`, and `tsconfig.json` (no `main.ts`). Use the current examples and [authoring guide](authoring.md). The examples workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
 
 Discovery scans immediate project directories with manifests. Hidden directories, `archive`, `dist`, and `node_modules` are excluded. Invalid manifests and duplicate slugs fail. Each project must pass its own Svelte/TypeScript check. A typical `tsconfig.json` extends `../../../tsconfig.v1.json`, includes local TypeScript/Svelte files, and excludes `dist` and `node_modules`.
 

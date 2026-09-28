@@ -1,0 +1,48 @@
+[
+  {
+    "path": [],
+    "kind": "unknown-field",
+    "detail": "Unknown stored field: extra"
+  },
+  {
+    "path": [
+      "count"
+    ],
+    "kind": "invalid",
+    "detail": "Expected finite number"
+  },
+  {
+    "path": [
+      "mode"
+    ],
+    "kind": "invalid",
+    "detail": "Unknown enum value"
+  },
+  {
+    "path": [
+      "rows",
+      {
+        "id": "x-h2h2h1epmmhsdhnf6hc6rsaz"
+      }
+    ],
+    "kind": "identity",
+    "detail": "Duplicate row ID"
+  },
+  {
+    "path": [
+      "rows",
+      {
+        "id": "x-jnehcr7aj6mxpajfr4yw08bp"
+      }
+    ],
+    "kind": "identity",
+    "detail": "Missing row ID"
+  },
+  {
+    "path": [
+      "cover"
+    ],
+    "kind": "invalid",
+    "detail": "Expected LoroMap"
+  }
+]

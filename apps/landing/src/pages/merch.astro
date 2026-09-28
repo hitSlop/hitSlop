@@ -1,7 +1,7 @@
 ---
 import MerchTryOn from "../components/MerchTryOn.svelte";
 import { MERCH_PIECES } from "../merch/pieces";
-import { NOTIFY_ENDPOINT } from "../constants";
+import { NOTIFY_ENDPOINT, SITE_LINKS } from "../constants";
 import "../styles/global.css";
 ---
 
@@ -14,8 +14,8 @@ import "../styles/global.css";
     <meta name="description" content="hitSlop merch. Tees, toques, caps and bags for people who make tiny apps. Coming soon." />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="preload" href="/assets/hero/fonts/lilita-one-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/assets/hero/fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/hero/fonts/mochiy-pop-one-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/assets/hero/fonts/nunito-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
     <title>hitSlop Merch — Try on the chaos</title>
   </head>
   <body class="merch-page">
@@ -25,7 +25,11 @@ import "../styles/global.css";
       <nav aria-label="Primary navigation"><a href="/">The app</a><a href="/merch" aria-current="page">Merch</a><a href="/docs/">Docs</a></nav>
       <div class="merch-actions">
         <span class="soon"><i aria-hidden="true"></i>Coming soon</span>
-        <button class="drop" id="join-drop" type="button" aria-haspopup="dialog" aria-controls="merch-signup">Join the drop <span aria-hidden="true">→</span></button>
+        {NOTIFY_ENDPOINT ? (
+          <button class="drop" id="join-drop" type="button" aria-haspopup="dialog" aria-controls="merch-signup">Join the drop <span aria-hidden="true">→</span></button>
+        ) : (
+          <a class="drop" href={SITE_LINKS.discord} target="_blank" rel="noopener noreferrer">Join the drop <span aria-hidden="true">→</span></a>
+        )}
       </div>
     </header>
     <main id="main-content" tabindex="-1">

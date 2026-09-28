@@ -9,6 +9,7 @@ export interface SlopRuntimeHandle {
   cancelClose(): void;
   close(): Promise<void>;
   retrySave(): Promise<boolean>;
+  discardPending(): Promise<void>;
   reloadInterface?(): Promise<void>;
   captureBegin?(token: string): ReturnType<ReturnType<typeof createCaptureController>["begin"]>;
   captureRestore?(token: string): ReturnType<ReturnType<typeof createCaptureController>["restore"]>;

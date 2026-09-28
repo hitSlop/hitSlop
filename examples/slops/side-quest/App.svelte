@@ -113,18 +113,20 @@
   }
 
   function hit(course: Course, quest: Quest, by: 1 | -1) {
-    if (by > 0 && hp(quest) === 0) return;
-    if (by < 0 && Number(quest.hits) <= 0) return;
-    const defeated = by > 0 && hp(quest) === 1;
+    const currentHp = hp(quest);
+    if (quest.hits === null || currentHp === null) return;
+    if (by > 0 && currentHp === 0) return;
+    if (by < 0 && quest.hits <= 0) return;
+    const defeated = by > 0 && currentHp === 1;
     doc.change((tx) => {
       const item = handle(course, quest, tx);
       if (by > 0) item.hits.increment();
       else item.hits.decrement();
       if (defeated) item.sticker.set(lootFor(quest.$id));
-      else if (by < 0 && hp(quest) === 0) { item.sticker.clear(); item.done.set(false); }
+      else if (by < 0 && currentHp === 0) { item.sticker.clear(); item.done.set(false); }
     }, { message: by > 0 ? "Log study session" : "Undo study session" });
     pulse++;
-    const left = Math.max(0, hp(quest) - by);
+    const left = Math.max(0, currentHp - by);
     announcement = defeated ? `K.O.! ${courseLabel(course)} ${questLabel(quest)} defeated.` : `${left} of ${quest.maxHp} HP left.`;
   }
 
@@ -254,11 +256,11 @@
         {#each points(course, row) as { quest, x, y, up } (quest.$id)}
           {@const done = cleared(quest)}
           {@const hpLeft = hp(quest)}
-          {@const label = `${courseLabel(course)} ${questLabel(quest)}, ${quest.kind}, due ${shortDate(quest.due)}${done ? ", cleared" : quest.kind === "boss" ? `, ${hpLeft} of ${quest.maxHp} HP` : overdue(quest) ? ", overdue" : ""}`}
+          {@const label = `${courseLabel(course)} ${questLabel(quest)}, ${quest.kind}, due ${shortDate(quest.due)}${done ? ", cleared" : quest.kind === "boss" ? (hpLeft === null ? ", HP unavailable" : `, ${hpLeft} of ${quest.maxHp} HP`) : overdue(quest) ? ", overdue" : ""}`}
 {#snippet face()}
             {#if quest.kind === "boss"}
               {@render monster(`var(--slop-${course.tape})`, done, row + quest.maxHp)}
-              {#if done}<span class="sq-ko">K.O.</span>{:else}<span class="sq-hpbar"><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>{/if}
+              {#if done}<span class="sq-ko">K.O.</span>{:else if hpLeft === null}<span>HP unavailable</span>{:else}<span class="sq-hpbar"><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>{/if}
             {:else if done}
               <span class="sq-node-sticker">{@render sticker(quest.sticker ?? lootFor(quest.$id))}</span>
             {:else}
@@ -311,9 +313,10 @@
   <div class="sq-readout" aria-live="polite">
     {#if boss}
       {@const days = daysBetween(today, boss.quest.due)}
+      {@const bossHp = hp(boss.quest)}
       <span class="sq-readout-eyebrow">Next boss</span>
       <strong>{courseLabel(boss.course)} {questLabel(boss.quest)}</strong>
-      <span class="sq-readout-meta">{when(days)} · <b>{Math.round((hp(boss.quest) / boss.quest.maxHp) * 100)}% HP</b></span>
+      <span class="sq-readout-meta">{when(days)} · <b>{bossHp === null ? "HP unavailable" : `${Math.round((bossHp / boss.quest.maxHp) * 100)}% HP`}</b></span>
     {:else}
       <span class="sq-readout-eyebrow">Next boss</span>
       <strong>None in sight</strong>
@@ -362,14 +365,14 @@
             <div class="sq-boss-card" data-pulse={pulse % 2} data-ko={hpLeft === 0}>
               <div class="sq-boss-hp">
                 <span>HP</span>
-                <span class="sq-hpbar sq-hpbar-big" role="meter" aria-label="Boss HP" aria-valuemin={0} aria-valuemax={quest.maxHp} aria-valuenow={hpLeft}><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>
-                <b>{hpLeft}/{quest.maxHp}</b>
+                {#if hpLeft !== null}<span class="sq-hpbar sq-hpbar-big" role="meter" aria-label="Boss HP" aria-valuemin={0} aria-valuemax={quest.maxHp} aria-valuenow={hpLeft}><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>{/if}
+                <b>{hpLeft === null ? "HP unavailable" : `${hpLeft}/${quest.maxHp}`}</b>
               </div>
-              <button type="button" class="sq-hit" disabled={hpLeft === 0} onclick={() => hit(course, quest, 1)}>
+              <button type="button" class="sq-hit" disabled={hpLeft === null || hpLeft === 0} onclick={() => hit(course, quest, 1)}>
                 <Swords size={15} /> {hpLeft === 0 ? "Defeated" : "Log study session"}
               </button>
               <div class="sq-boss-row">
-                <button type="button" class="sq-link" disabled={Number(quest.hits) === 0} onclick={() => hit(course, quest, -1)}><Minus size={11} /> Undo hit</button>
+                <button type="button" class="sq-link" disabled={quest.hits === null || quest.hits <= 0} onclick={() => hit(course, quest, -1)}><Minus size={11} /> Undo hit</button>
                 <label>Sessions <input type="number" min="1" max="50" value={quest.maxHp} onchange={(event) => setMaxHp(quest, event)} /></label>
               </div>
             </div>

@@ -8,6 +8,73 @@ import { defineDocument, s, fromDescriptor, schemaKey } from "../src/schema";
 import { Document } from "../src/document";
 import { SQLiteStore } from "../test-support/sqlite";
 import { Session } from "../src/session";
+import { bindText } from "../src/bind-text";
+
+// Regression: update byte counts/UTF-16 lengths underestimate full snapshot bytes.
+// The literal multibyte edit remains live, but cannot be acknowledged as saved.
+const multibyte = Array.from({ length: 20_000 }, (_, i) => String.fromCharCode(0x4e00 + ((i * 7919) % 18000))).join("");
+test("saving measures the full snapshot even when its update log fits", async () => {
+  const definition = defineDocument({ body: s.text() });
+  const store = new MemoryStore();
+  const doc = await Document.open(definition, store, { body: "" }, { capacityBytes: 96 * 1024 });
+  const before = await store.load();
+  doc.fields.body.replace(multibyte);
+  expect(doc.exportSnapshot().length).toBeGreaterThan(96 * 1024);
+  await expect(doc.flush()).rejects.toThrow("Document is full");
+  expect(await store.load()).toEqual(before);
+  expect(doc.current.body).toBe(multibyte);
+  expect(doc.status).toBe("save-failed");
+  expect(doc.full).toBe(true);
+  await doc.discardPending();
+  expect(doc.current.body).toBe("");
+  await doc.close();
+});
+
+// Regression: committing a composition used to notify status before throwing,
+// overwriting the input with its saved value and allowing the next close.
+test("a text composition survives capacity failure and continues to block close", async () => {
+  const definition = defineDocument({ title: s.text() });
+  const doc = await Document.open(definition, new MemoryStore(), { title: "saved" }, { capacityBytes: 96 * 1024 });
+  const input = Object.assign(new EventTarget(), { value: "", disabled: false }) as unknown as HTMLInputElement;
+  const binding = bindText(input, doc.fields.title);
+  input.dispatchEvent(new Event("compositionstart"));
+  input.value = multibyte.repeat(3);
+  await expect(doc.flush()).rejects.toThrow("Document is full");
+  expect(input.value).toBe(multibyte.repeat(3));
+  await expect(doc.close()).rejects.toThrow("Document is full");
+  binding.destroy();
+  await doc.discardPending();
+  await doc.close();
+});
+
+// Regression: discard previously cleared previews but left accepted unsaved data.
+test("discard reloads durable state and preserves commits whose reply was lost", async () => {
+  const definition = defineDocument({ title: s.text() });
+  const store = new MemoryStore();
+  const doc = await Document.open(definition, store, { title: "initial" });
+  const append = store.append.bind(store);
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => entered = resolve);
+  const gate = new Promise<void>(resolve => release = resolve);
+  store.append = async (...args) => {
+    entered();
+    await gate;
+    await append(...args);
+    throw new Error("reply lost");
+  };
+  doc.fields.title.replace("durable despite lost reply");
+  const saving = doc.flush();
+  await started;
+  doc.fields.title.replace("unsaved");
+  const discarding = doc.discardPending();
+  release();
+  await expect(saving).rejects.toThrow("reply lost");
+  await discarding;
+  expect(doc.current.title).toBe("durable despite lost reply");
+  expect(doc.status).toBe("saved");
+  store.append = append;
+  await doc.close();
+});
 const schema = defineDocument({
   title: s.text(),
   tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
@@ -24,11 +91,11 @@ async function fixture(run: (root: string) => Promise<void>) {
 test("generic operations preserve row IDs through moves, flush, compact and reopen", () =>
   fixture(async (root) => {
     const d = await Document.open(schema, await SQLiteStore.open(root), initial);
-    d.insert(schema.fields.tasks, { text: "A", done: false });
-    d.insert(schema.fields.tasks, { text: "B", done: true });
+    d.fields.tasks.insert({ text: "A", done: false });
+    d.fields.tasks.insert({ text: "B", done: true });
     const id = d.current.tasks[0]!.$id;
-    d.move(schema.fields.tasks, id, { after: d.current.tasks[1]!.$id });
-    d.text(schema.fields.tasks.item(id).text).replace("A edited 🦊");
+    d.fields.tasks.move(id, { after: d.current.tasks[1]!.$id });
+    d.fields.tasks.item(id).text.replace("A edited 🦊");
     await d.flush();
     await d.compact();
     const expected = d.current;
@@ -54,8 +121,8 @@ test("same runtime supports a second nested schema", () =>
       settings: { archived: false },
       notes: [],
     });
-    d.set(notes.fields.settings.archived, true);
-    d.insert(notes.fields.notes, { body: "No checklist reducer" });
+    d.fields.settings.archived.set(true);
+    d.fields.notes.insert({ body: "No checklist reducer" });
     await d.close();
     const r = await Document.open(notes, await SQLiteStore.open(root), {
       heading: "",
@@ -119,7 +186,7 @@ test("failed close retains ownership and can be retried", () =>
     const io = await SQLiteStore.open(root),
       append = io.append.bind(io);
     const d = await Document.open(schema, io, initial);
-    d.text(schema.fields.title).replace("Unsaved");
+    d.fields.title.replace("Unsaved");
     io.append = async () => {
       throw new Error("disk failure");
     };
@@ -137,7 +204,7 @@ test("checkpoint reply loss refreshes generation and permits further edits", () 
   fixture(async (root) => {
     const io = await SQLiteStore.open(root);
     const d = await Document.open(schema, io, initial);
-    d.text(schema.fields.title).replace("Before checkpoint");
+    d.fields.title.replace("Before checkpoint");
     await d.flush();
     const checkpoint = io.checkpoint.bind(io);
     let lose = true;
@@ -150,7 +217,7 @@ test("checkpoint reply loss refreshes generation and permits further edits", () 
       return generation;
     };
     await expect(d.compact()).rejects.toThrow("checkpoint reply lost");
-    d.insert(schema.fields.tasks, { text: "After lost reply", done: false });
+    d.fields.tasks.insert({ text: "After lost reply", done: false });
     await d.flush();
     await d.compact();
     await d.close();
@@ -209,9 +276,9 @@ describe("save status", () => {
     io.append = async () => {
       throw new Error("Disk unavailable");
     };
-    doc.text(schema.fields.title).replace("First");
+    doc.fields.title.replace("First");
     await expect(doc.flush()).rejects.toThrow("Disk unavailable");
-    doc.text(schema.fields.title).replace("Second");
+    doc.fields.title.replace("Second");
     expect(doc.status).toBe("save-failed");
     expect(doc.error).toContain("Disk unavailable");
     await expect(doc.flush()).rejects.toThrow();
@@ -241,12 +308,12 @@ test("edits arriving during append and checkpoint remain queued and survive reop
       await gate;
       return original(...args);
     };
-    doc.text(schema.fields.title).replace(`Before ${phase}`);
+    doc.fields.title.replace(`Before ${phase}`);
     const pending = phase === "append" ? doc.flush() : doc.compact();
     await started;
-    doc.transaction((tx) => {
-      tx.text(schema.fields.title).replace(`During ${phase}`);
-      tx.set(schema.fields.flag, true);
+    doc.change((tx) => {
+      tx.fields.title.replace(`During ${phase}`);
+      tx.fields.flag.set(true);
     });
     release();
     await pending;
@@ -284,3 +351,67 @@ test("valid shallow checkpoints remain readable without enabling automatic pruni
   expect(reopened.current.volume).toBe(0.6);
   await reopened.close();
 });
+
+// Save-time enforcement replaces the old pre-edit refusal/reserve contract.
+test("oversized local edits remain live and CLI reports failure rather than rejection", async () => {
+  const definition = defineDocument({ body: s.text(), title: s.string() });
+  const store = new MemoryStore();
+  const doc = await Document.open(definition, store, { body: "", title: "saved" }, { capacityBytes: 96 * 1024 });
+  const session = new Session(doc, "epoch");
+  const sent: Uint8Array[] = [];
+  doc.onLocalUpdate(bytes => sent.push(bytes));
+  const reply = await session.handle({
+    id: "large-edit", documentPath: "test", epoch: "epoch", method: "apply",
+    op: { type: "text.replace", path: ["body"], value: multibyte.repeat(3) },
+  });
+  expect(reply).toMatchObject({ ok: false, code: "failed" });
+  expect(doc.current.body).toBe(multibyte.repeat(3));
+  expect(sent).toHaveLength(1);
+  doc.fields.title.preview("visible draft");
+  await expect(doc.close()).rejects.toThrow("Document is full");
+  expect(doc.current.title).toBe("visible draft");
+  // Capacity failure does not turn the session read-only.
+  doc.fields.title.set("another edit");
+  await session.discardPending();
+  expect(doc.current.body).toBe("");
+  expect(doc.current.title).toBe("saved");
+  expect(doc.full).toBe(false);
+  doc.fields.title.preview("small draft");
+  await session.close();
+  const reopened = await Document.open(definition, store, { body: "", title: "unused" });
+  expect(reopened.current.body).toBe("");
+  expect(reopened.current.title).toBe("small draft");
+  await reopened.close();
+});
+
+test("creation checks actual snapshot bytes before writing", async () => {
+  const definition = defineDocument({ body: s.text() });
+  const store = new MemoryStore();
+  await expect(Document.open(definition, store, { body: multibyte }, { capacityBytes: 96 * 1024 }))
+    .rejects.toThrow("Document is full");
+  expect((await store.load()).checkpoint).toBeNull();
+});
+
+test("discard failure retains unsaved edits and ownership, then a retry restores saved state", () =>
+  fixture(async root => {
+    const store = await SQLiteStore.open(root);
+    const doc = await Document.open(schema, store, initial);
+    const id = doc.id;
+    const load = store.load.bind(store);
+    doc.fields.title.replace("unsaved");
+    store.load = async () => { throw new Error("read unavailable"); };
+    await expect(doc.discardPending()).rejects.toThrow("read unavailable");
+    expect(doc.current.title).toBe("unsaved");
+    expect(doc.status).toBe("save-failed");
+    await expect(SQLiteStore.open(root)).rejects.toThrow("live writer");
+    store.load = load;
+    await doc.discardPending();
+    expect(doc.current.title).toBe("List");
+    expect(doc.id).toBe(id);
+    await expect(SQLiteStore.open(root)).rejects.toThrow("live writer");
+    doc.fields.title.replace("after discard");
+    await doc.close();
+    const reopened = await Document.open(schema, await SQLiteStore.open(root), initial);
+    expect(reopened.current.title).toBe("after discard");
+    await reopened.close();
+  }));

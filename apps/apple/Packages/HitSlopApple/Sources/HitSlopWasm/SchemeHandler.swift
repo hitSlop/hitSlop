@@ -22,6 +22,11 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
       webkit.messageHandlers.prewarm.postMessage(outcome);
       """,
   ]
+  /// The runtime owns every page; packages supply only assets and data files.
+  private static let visiblePage =
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title><link rel=\"stylesheet\" href=\"/assets/app.css\"></head><body><script type=\"module\" src=\"/__runtime__/boot.js\"></script></body></html>"
+  private static let headlessPage =
+    "<html><head><script type=\"module\" src=\"/__runtime__/headless.js\"></script></head><body></body></html>"
   let headless: Bool
   let root: URL?
   let runtime: URL
@@ -41,11 +46,12 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
         respond(task, url: url, data: Data(page.utf8), fileExtension: url.path == "/" ? "html" : "js")
         return
       }
+      if !isRuntime && url.path == "/" {
+        respond(task, url: url, data: Data((headless ? Self.headlessPage : Self.visiblePage).utf8), fileExtension: "html")
+        return
+      }
       let base = (isRuntime ? runtime : root!).standardizedFileURL
-      let relative =
-        isRuntime
-        ? String(url.path.dropFirst("/__runtime__/".count))
-        : (url.path == "/" ? "app.html" : String(url.path.dropFirst()))
+      let relative = isRuntime ? String(url.path.dropFirst("/__runtime__/".count)) : String(url.path.dropFirst())
       // URL.path decodes escaped separators and dots. Reject aliases before
       // normalization so assets/../state can never inherit asset permissions.
       guard SlopPackage.isSafeRelativePath(relative), !relative.hasSuffix("/")
@@ -55,21 +61,14 @@ final class SchemeHandler: NSObject, WKURLSchemeHandler {
       let resource = String(file.path.dropFirst(base.path.count + 1))
       // Serve only authored resources, never state databases or discovery files.
       if !isRuntime
-        && !(resource == "app.html" || resource == "state.schema.json" || resource == "initial.json"
+        && !(resource == "state.schema.json" || resource == "initial.json"
           || resource.hasPrefix("assets/"))
       {
         throw failure("Resource not exposed")
       }
-      let data: Data
-      if headless && resource == "app.html" {
-        data = Data(
-          "<html><head><script type=\"module\" src=\"/__runtime__/headless.js\"></script></head><body></body></html>"
-            .utf8)
-      } else {
-        guard !headless || isRuntime || ["state.schema.json", "initial.json", "assets/theme.json"].contains(resource)
-        else { throw failure("App resources unavailable to headless engine") }
-        data = isRuntime ? try Self.runtimeFile(file, within: base) : try SlopFile.read(file, within: base)
-      }
+      guard !headless || isRuntime || ["state.schema.json", "initial.json", "assets/theme.json"].contains(resource)
+      else { throw failure("App resources unavailable to headless engine") }
+      let data = isRuntime ? try Self.runtimeFile(file, within: base) : try SlopFile.read(file, within: base)
       respond(task, url: url, data: data, fileExtension: file.pathExtension)
     } catch {
       NSLog(

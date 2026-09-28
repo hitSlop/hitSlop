@@ -75,4 +75,28 @@ export async function checkCompatibility(
   }
 }
 
-if (import.meta.main) await checkCompatibility();
+if (import.meta.main) {
+  if (process.argv.includes("--sealed-templates")) await checkTemplatesSealed();
+  else await checkCompatibility();
+}
+
+/**
+ * Release gate: every bundled template build must already be a sealed specimen, so
+ * documents created from a shipped template are replayed by every later release.
+ */
+export async function checkTemplatesSealed() {
+  const sealed = new Set<string>();
+  const root = join(repository, "tests/compatibility");
+  for (const name of await readdir(root)) {
+    const fixture = Bun.file(join(root, name, "fixture.json"));
+    if (await fixture.exists()) sealed.add((await fixture.json()).sourceSha256);
+  }
+  const missing: string[] = [];
+  for (const { slug, bundled } of (await builtTemplates()).templates)
+    if (bundled && !sealed.has(await digest(join(repository, "generated/v1/templates", slug + ".slop"))))
+      missing.push(slug);
+  if (missing.length)
+    throw new Error(
+      `Unsealed bundled templates: ${missing.join(", ")}. Seal the runtime, then run bun run fixtures:seal --write`,
+    );
+}

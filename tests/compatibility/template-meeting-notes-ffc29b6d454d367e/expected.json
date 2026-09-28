@@ -1,0 +1,58 @@
+{
+  "title": "Project Kickoff",
+  "date": "May 12, 2025",
+  "time": "10:00 AM · Zoom",
+  "attendees": [
+    "Maya",
+    "Jordan",
+    "Creative Team"
+  ],
+  "agenda": [
+    {
+      "text": "Review three creative directions",
+      "done": true,
+      "$id": "d2ym67eng62p2e1f3e7swbq39w"
+    },
+    {
+      "text": "Confirm production launch dates",
+      "done": false,
+      "$id": "kg1r1n2ps47bpxc7yfec93bgdr"
+    },
+    {
+      "text": "Set Q3 production budget",
+      "done": false,
+      "$id": "x5tvg5pcqknaz58yccdwww3yr4"
+    }
+  ],
+  "decisions": [
+    {
+      "text": "Lead with quieter tactile photography",
+      "$id": "k24c08rax8kmg8f4k1fn4t8w80"
+    },
+    {
+      "text": "Move launch date to October 6",
+      "$id": "vky1qhxwpja9afejtpcfxy1d0w"
+    }
+  ],
+  "notes": "Aligned on MVP scope. Creative team will explore two typography variants.\nFeedback from product was positive on tactile physical skins.\nNext milestone review scheduled for Friday.",
+  "actions": [
+    {
+      "text": "Send revised estimate to client",
+      "owner": "Jordan",
+      "done": false,
+      "$id": "f7s070xpx8d87qfk9hgfc45t5g"
+    },
+    {
+      "text": "Book studio and photographer",
+      "owner": "Maya",
+      "done": true,
+      "$id": "7n9szvjafeese6p1mkw18cazjw"
+    },
+    {
+      "text": "Share updated timeline across channels",
+      "owner": "Jordan",
+      "done": false,
+      "$id": "8237fac66408mer04s91qdtjk8"
+    }
+  ]
+}

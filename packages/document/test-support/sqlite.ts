@@ -26,8 +26,8 @@ export class SQLiteStore implements ByteStore {
       db.exec("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;");
       if (version === 0)
         db.exec(`BEGIN IMMEDIATE;
-        CREATE TABLE IF NOT EXISTS document(id INTEGER PRIMARY KEY CHECK(id=1), checkpoint BLOB, schema_key TEXT, generation INTEGER NOT NULL);
-        INSERT OR IGNORE INTO document VALUES(1,NULL,NULL,0);
+        CREATE TABLE IF NOT EXISTS document(id INTEGER PRIMARY KEY CHECK(id=1), checkpoint BLOB, schema_key TEXT, generation INTEGER NOT NULL, doc_id TEXT NOT NULL);
+        INSERT OR IGNORE INTO document VALUES(1,NULL,NULL,0,lower(hex(randomblob(16))));
         CREATE TABLE IF NOT EXISTS updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
         PRAGMA user_version=1; COMMIT;`);
       return new SQLiteStore(db, lease, phase, root, (await stat(root)).ino);
@@ -44,8 +44,8 @@ export class SQLiteStore implements ByteStore {
   async load(): Promise<Stored> {
     await this.checkLocation();
     const row = this.db
-      .query("SELECT checkpoint,schema_key,generation FROM document WHERE id=1")
-      .get() as { checkpoint: Uint8Array | null; schema_key: string | null; generation: number };
+      .query("SELECT checkpoint,schema_key,generation,doc_id FROM document WHERE id=1")
+      .get() as { checkpoint: Uint8Array | null; schema_key: string | null; generation: number; doc_id: string };
     const updates = this.db.query("SELECT bytes FROM updates ORDER BY seq").all() as {
       bytes: Uint8Array;
     }[];
@@ -54,6 +54,7 @@ export class SQLiteStore implements ByteStore {
       schemaKey: row.schema_key,
       generation: String(row.generation),
       updates: updates.map((r) => r.bytes),
+      docId: row.doc_id,
     };
   }
   private check(generation: string) {
