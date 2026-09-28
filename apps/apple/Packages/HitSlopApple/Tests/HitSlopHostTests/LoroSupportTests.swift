@@ -6,7 +6,7 @@ import PDFKit
 import Testing
 
 @testable import HitSlopHost
-@testable import HitSlopWasm
+@testable import HitSlopDocument
 
 // One parent suite keeps shared AppKit/WebView integration tests serialized.
 @Suite(.serialized) struct LoroClientTests {
@@ -24,16 +24,16 @@ import Testing
   func contractFixture() throws -> URL {
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/compatibility/2-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/4-1/document", toPath: root.path)
     let app = root.appendingPathComponent("assets/app.js")
     try FileManager.default.removeItem(at: app)
     try FileManager.default.copyItem(atPath: repository + "/tests/abi/probe/app.js", toPath: app.path)
     return root
   }
 
-  func replace(_ text: String) throws -> Data {
+  func prefixTitle(_ text: String) throws -> Data {
     try JSONSerialization.data(withJSONObject: [
-      "type": "text.replace", "path": ["title"], "value": text,
+      "type": "splice", "path": ["title"], "index": 0, "delete": 0, "insert": text,
     ])
   }
 

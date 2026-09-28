@@ -22,7 +22,7 @@ export async function embedTemplates(
       if (!bundled) continue;
       const template = join(source, slug + ".slop");
       const manifest = JSON.parse(await readFile(join(template, "manifest.json"), "utf8"));
-      if (manifest.slug !== slug || manifest.runtime !== "hitslop-v1")
+      if (manifest.slug !== slug)
         throw new Error(`Invalid built template: ${slug}`);
       for (const name of ["state", "stores"])
         if (

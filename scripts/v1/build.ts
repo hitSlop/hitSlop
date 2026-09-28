@@ -1,13 +1,16 @@
+import { buildCoreNative, buildCoreWasm } from "./core-build";
 import { buildSkills } from "../../packages/cli/src/skills-build";
 import { generateContracts } from "./generate";
-import { buildRuntime } from "./runtime";
+import { buildShell } from "./runtime";
 import { resolve } from "node:path";
 const repository = resolve(import.meta.dir, "../..");
 import { join } from "node:path";
 const started = performance.now();
 console.log("Building contracts, runtime, skills, and native helper");
 await generateContracts();
-await buildRuntime();
+await buildCoreWasm();
+await buildCoreNative();
+await buildShell();
 await buildSkills();
 const build = Bun.spawn(
   [

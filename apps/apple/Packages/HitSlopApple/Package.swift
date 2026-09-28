@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "HitSlopApple",
-  platforms: [.macOS(.v14)],
+  platforms: [.macOS(.v15)],
   products: [
     .library(name: "HitSlopCore", targets: ["HitSlopCore"]),
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
@@ -19,8 +19,10 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
   ],
   targets: [
-    .target(name: "HitSlopWasm", dependencies: ["HitSlopCore"], resources: [.copy("Resources/runtimes")], linkerSettings: [.linkedFramework("WebKit"), .linkedLibrary("sqlite3")]),
-    .testTarget(name: "HitSlopWasmTests", dependencies: ["HitSlopWasm"]),
+    .binaryTarget(name: "HitSlopCoreFFI", path: "Generated/HitSlopCoreFFI.xcframework"),
+    .target(name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding"),
+    .target(name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"], resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit"), .linkedLibrary("sqlite3")]),
+    .testTarget(name: "HitSlopDocumentTests", dependencies: ["HitSlopDocument", "HitSlopCoreBinding"]),
     .target(
       name: "HitSlopCore",
       linkerSettings: [.linkedFramework("ImageIO"), .linkedLibrary("sqlite3")]
@@ -37,7 +39,7 @@ let package = Package(
     .target(
       name: "HitSlopRuntime",
       dependencies: [
-        "HitSlopCore", "HitSlopWasm",
+        "HitSlopCore", "HitSlopDocument",
       ],
       linkerSettings: [
         .linkedFramework("WebKit"), .linkedFramework("CoreServices", .when(platforms: [.macOS])),
@@ -45,7 +47,7 @@ let package = Package(
     ),
     .target(
       name: "HitSlopHost",
-      dependencies: ["HitSlopCore", "HitSlopRuntime", "HitSlopWasm"],
+      dependencies: ["HitSlopCore", "HitSlopRuntime", "HitSlopDocument"],
       linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit"), .linkedLibrary("z")]
     ),
     .target(
@@ -69,7 +71,7 @@ let package = Package(
       dependencies: [
         "HitSlopCore",
         "HitSlopHost",
-        "HitSlopRuntime", "HitSlopWasm",
+        "HitSlopRuntime", "HitSlopDocument",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],
       linkerSettings: [.linkedFramework("AppKit")]
@@ -77,7 +79,7 @@ let package = Package(
     .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore"]),
     .testTarget(
       name: "HitSlopRuntimeTests", dependencies: ["HitSlopRuntime", "HitSlopCore"]),
-    .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopRuntime", "HitSlopWasm"]),
+    .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopRuntime", "HitSlopDocument"]),
     .testTarget(
       name: "HitSlopCatalogTests",
       dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopRuntime", "HitSlopFeatures"]

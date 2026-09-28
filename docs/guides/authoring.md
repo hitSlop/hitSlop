@@ -31,70 +31,53 @@ Preview state is disposable: refresh resets it and source changes require restar
 
 ## Model state
 
+The contract-4 trial supports `text`, `boolean`, `object`, `list(object)` and exact integer `counter`. Strings, bounded numbers, enums, optionals, records, scalar lists, trees and rich text are deferred and explicitly rejected by the core.
+
 ```ts
 import { defineDocument, s } from "@hitslop/document";
 export default defineDocument({
   title: s.text(),
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean(), lane: s.enum(["todo", "doing", "done"]) })),
-  checkins: s.list(s.string()),
-  cells: s.record(s.object({ raw: s.string(), style: s.optional(s.object({ bold: s.boolean() })) })),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
   cups: s.counter(),
-  outline: s.tree(s.object({ label: s.text() })),
-  bpm: s.integer({ min: 40, max: 240 }),
 });
 ```
 
-Choose each field by how concurrent edits should merge:
+Use text for typed content, booleans for flags, lists for identity-bearing rows, and counters for increments. Counter snapshots can be `null` after an invalid merged contribution or overflow; show the issue and disable increments. Give initial fields explicit values. `initial.json` is creation-only. A schema change needs a new document.
 
-| Builder | Use for | Merge behavior |
-| --- | --- | --- |
-| `s.string({maxLength?})`, `s.number({min?,max?})`, `s.integer({min?,max?})`, `s.boolean()`, `s.enum([...])` | Settings, labels, amounts, states | Last writer wins |
-| `s.text()` | Anything a person types | Character edits merge |
-| `s.richtext({ bold: "after", link: "none" })` | Styled text; marks are declared with their expansion | Characters and marks merge |
-| `s.object({...})` | Fixed groups of fields | Per field |
-| `s.list(s.object({...}))` | Rows with identity: tasks, cards, entries | Insert, remove and move keep `$id` |
-| `s.list(scalar)` | Plain sequences: dates, tags, a pixel grid | Positional insert, set, remove, move |
-| `s.record(value)` | Values keyed by a string: spreadsheet cells, per-day entries | Per key; concurrent creation of one key merges |
-| `s.counter()` | Tallies that several people may bump | Increments add up; reads `number \| null` (`null` only after merged increments overflow, flagged in issues). Show it as unavailable and disable increments, as Koi Pond does. |
-| `s.tree(s.object({...}))` | Outlines and nested hierarchies | Moves never create cycles |
-| `s.optional(node)` | A value that may be absent | Created lazily; concurrent creation merges |
-
-Model moves between groups as a flat list with an enum or ID field (kanban lanes, Eisenhower quadrants), and real hierarchy with `s.tree`. Never store coordinates or fixed-size tuples as lists. Keep transient view state such as selection, hover, open panels and card flips in component `$state`; persist it only when a person expects it after reopening or through `slop get`. Supply explicit initial values without `$id`; tree initial values nest `children`. The descriptor is data, not JSON Schema, and schema changes require new documents.
-
-Components call `useDocument(schema)`, which returns `{ current, status, error, fields, at, change, flush }`. Read only from the immutable `doc.current`; write only through handles:
+Components call `useDocument(schema)`. Read immutable `doc.current`; write through typed handles:
 
 ```ts
-const doc = useDocument(schema);
-doc.at(task).done.set(!task.done);            // handle for any object from current
-doc.fields.tasks.insert({ text: "", done: false, lane: "todo" }, { after: task.$id });
-doc.fields.cells.put("A1", { raw: "1" });
-doc.fields.cups.increment();
-doc.change(tx => { for (const t of finished) tx.at(t).lane.set("done"); }, { message: "File finished" });
+await doc.at(task).done.set(!task.done);
+const { id } = await doc.fields.tasks.insert({ text: "New task", done: false });
+await doc.fields.tasks.item(id).text.replace("Revised task");
+await doc.fields.cups.decrement(); // increment(-1), not a reset
+await doc.change(tx => {
+  for (const task of finished) tx.at(task).done.set(true);
+});
 ```
 
-`doc.at(value)` accepts the root, a row, a nested object, a record or its object entry, or a tree node from `doc.current`, and returns that node's typed handle. Use the original snapshot object, not a clone. `fields.x.item(id)` and `entry(key)` remain for IDs held elsewhere. Key UI rows and selection by `$id`, never by index. Unchanged rows keep object identity across edits.
+Ordinary writes resolve after acceptance and local publication. They do not promise disk durability or DOM rendering. Use `await doc.flush()` for durability and Svelte `tick()` when an action depends on rendering. Preserve composer input while a command is pending and show success notices only after acceptance. A rejection leaves the confirmed snapshot unchanged and is reported centrally.
 
-Initialize absent optional composites with `set`, and absent record entries with `put`. This includes row lists and trees. Once present, identity-bearing lists and trees must be edited with `insert`, `remove`, and `move`; assigning a containing object cannot replace them either. Clear an optional field or delete a record entry explicitly before recreating it with new identities. Scalar lists use an empty list instead of optionality.
+`doc.change` invokes its synchronous collector once. Its `tx` handles collect one atomic batch. They return immediately, so an inserted ID can be addressed later in the same callback. Throwing, returning a promise, nesting `change`, using ordinary document writes inside the callback, or using escaped transaction handles rejects. `doc.current` remains the pre-batch snapshot until acceptance. The optional message is currently advisory and is not persisted as history metadata.
 
-`doc.change(tx => ...)` is one synchronous, all-or-nothing commit; its optional message is kept in document history. A rejected operation poisons the whole change even if caught. Inside the callback, `doc.current` still shows the state before the change; write through `tx.fields` or `tx.at`, never through `doc`. `await doc.flush()` is the durability barrier. Writes outside `change` commit individually.
+`doc.at(value)` accepts an original snapshot object, including a row or nested object. `doc.fields.tasks.item(id)` provides the by-ID handle. Key rows by `$id`, never array position. Unchanged snapshots retain object identity. Edit identity-bearing lists through insert/remove/move; containing-object replacement is not supported.
 
-Use `bindText` for plain text inputs. Typing becomes Unicode-safe text splices; composition drafts are rebased against intervening text changes and selection is adjusted when the input updates. This is a plain-text binding, not a collaborative rich-text editor. Use `bindValue` for range, number, select, checkbox and text inputs bound to scalars: range drags preview on `input` and commit once on `change`, starting normal autosave. For your own gestures, call `handle.preview(value)` (or `list.preview(index, value)`) while dragging and `set` when done; pending previews commit at flush, close and export and never enter history on their own. The host autosaves and flushes before close/export, presenting retry on failed saves. Never edit SQLite or add a JSON reconciliation writer.
+Use `bindText` for plain text inputs and `bindValue` for boolean controls. Text drafts preserve Unicode, selection and composition ancestry. Close/export refuse while composition is active. Boolean `preview(value)` stays local until set/flush; a failed commit retains the preview. Save failures retain accepted edits and ownership for native retry. Never write SQLite or maintain a second JSON document.
+
+Keep transient UI state in Svelte `$state`. Every component's `useDocument(schema)` shares the mounted app adapter; removing one consumer does not disconnect the others.
 
 ## Attachments and HTTPS
 
 In interactive native windows, standard `<input type="file">` controls open a
 document-attached file picker. Cancellation leaves the document unchanged.
-Background rendering and headless commands never present file pickers. Validate
+Background rendering and closed CLI commands never present file pickers. Validate
 the selected file in authored code before storing it.
 
-Keep the document for state worth saving. High-frequency or transient values (drag positions, playback progress, timers, hover state) belong in local component state or `handle.preview()`, which commits only at flush; writing them on every frame grows history for no benefit. Store binary data as attachments, never inside fields. Documents are capped at 32 MiB; a refused edit leaves everything already saved intact.
+Keep the document for state worth saving. High-frequency or transient values (drag positions, playback progress, timers, hover state) belong in local component state or `handle.preview()`, which commits only at flush; writing them on every frame grows history for no benefit. Store binary data as attachments, never inside fields. Stored checkpoint plus updates are capped at 32 MiB; a failed save retains live edits and leaves the last durable representation intact.
 
 Import `attachments` from `@hitslop/document/attachments`. Save a browser File with
-`await attachments.import(file, { commit(ref) { doc.change(tx => { /* update typed fields */ }); } })`.
-The synchronous commit runs after durable blob storage; the promise also waits for
-the document write. Every failure rejects the promise. A commit that throws, or limit
-refusals, reject with `OperationRejectedError` and are final (the stored blob stays
-unreferenced); disk failures stay queued for native retry. References contain `id`, `name`, `mimeType`, and `byteLength`.
+`await attachments.import(file, { commit: ref => doc.change(tx => { /* store ref.id using supported fields */ }) })`.
+The callback runs after durable blob storage and must return its document-write promise. Submit the reference change synchronously in the callback; perform asynchronous file preparation before calling import. The import promise also waits for document durability. Failed blob storage never submits the reference; a rejected reference edit leaves an unreferenced immutable blob. An accepted reference whose save fails remains in the native owner for retry. References contain `id`, `name`, `mimeType`, and `byteLength`.
 Model them with ordinary scalar/object schema fields. Never put binary/base64
 payloads in Loro. Validate app-specific formats before importing.
 
@@ -177,7 +160,7 @@ Keep editor, export, and icon markup together unless a separate component helps:
 
 Rendering failures in export or icon snippets reject that capture without replacing the editor or reporting an application-render error. Restoration clears the snippet failure so a later attempt renders it again. Editor rendering failures still use native application-error recovery and prevent capture.
 
-Child components can call `useDocument(schema)` during initialization for typed access to the same host document, including inside export and icon snippets. Each call creates its own subscription, not another document engine. For repeated list components, pass reactive rows and typed handles (or the existing `doc` facade) as props to avoid a subscription per row.
+Child components can call `useDocument(schema)` during initialization for typed access to the same host document, including inside export and icon snippets. Every call returns the mounted app's shared adapter, not another subscription or engine. For repeated list components, still pass reactive rows and typed handles as props rather than rereading the whole document per row.
 
 Dedicated exports should use normal flow, not fixed viewport heights or nested scrolling. With `exportView`, the editor is never captured. Without one, mark editing-only controls `data-slop-export="hide"`; fallback capture renders native text inputs as wrapping text. `<Slop>` centers icon art in a transparent 512px square with a strong silhouette and safe margins. Dedicated exports do not inherit native masks.
 

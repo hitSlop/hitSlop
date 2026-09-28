@@ -51,7 +51,6 @@ private struct UpdateSettingsView: View {
         if urls.isEmpty {
             showCatalog()
             // A launch that opens documents warms WebKit itself.
-            SlopRuntimeSession.prewarm()
         } else { urls.forEach(openDocument) }
     }
     func application(_ application: NSApplication, open urls: [URL]) { urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "slop" }.forEach(openDocument) }

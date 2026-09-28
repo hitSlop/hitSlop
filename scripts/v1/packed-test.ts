@@ -67,8 +67,17 @@ try {
   const documentPackage = join(coreRoot, "node_modules/@hitslop/document");
   assert.ok(!(await readdir(documentPackage)).includes("test-support"));
   const documentSource = await readdir(join(documentPackage, "src"));
-  for (const adapter of ["sqlite.ts", "writer-lock.ts"])
-    assert.ok(!documentSource.includes(adapter), `Test adapter shipped in npm package: ${adapter}`);
+  for (const internal of [
+    "sqlite.ts",
+    "writer-lock.ts",
+    "document.ts",
+    "runtime-entry.ts",
+    "boot.ts",
+  ])
+    assert.ok(
+      !documentSource.includes(internal),
+      `Engine or test implementation shipped in npm SDK: ${internal}`,
+    );
   await run(
     [
       process.execPath,
@@ -80,6 +89,8 @@ try {
     assert.equal(typeof attachments.import, "function");
     assert.ok(defineDocument({title: s.text()}).descriptor);
     assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
+    assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
+    assert.throws(() => Bun.resolveSync("@hitslop/document/runtime", process.cwd()));
   `,
     ],
     coreRoot,
@@ -232,17 +243,9 @@ try {
     assert.ok((await frame.text()).includes('src="/app.html"'));
     const app = await fetch("http://127.0.0.1:5197/app.html");
     assert.equal(app.status, 200);
-    assert.ok((await app.text()).includes("/__runtime__/boot.js"));
-    const runtime = await fetch("http://127.0.0.1:5197/__runtime__/identity.json");
-    assert.equal(runtime.status, 200);
-    const identity = JSON.parse(
-      await readFile(
-        join(root, "node_modules/@hitslop/document/src/runtime-identity.json"),
-        "utf8",
-      ),
-    );
-    assert.deepEqual(await runtime.json(), identity);
-    const wasm = await fetch("http://127.0.0.1:5197/__runtime__/loro/loro_wasm_bg.wasm");
+    assert.ok((await app.text()).includes("/__shell__/boot.js"));
+    assert.equal((await fetch("http://127.0.0.1:5197/__shell__/index.js")).status, 200);
+    const wasm = await fetch("http://127.0.0.1:5197/__shell__/core/hitslop_core_wasm_bg.wasm");
     assert.equal(wasm.status, 200);
     assert.equal(
       Buffer.from(await wasm.arrayBuffer())

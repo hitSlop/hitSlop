@@ -9,7 +9,6 @@ import {
   validateTemplate,
 } from "../../../scripts/v1/template-cache";
 
-import identity from "../../document/src/runtime-identity.json";
 import { defineDocument, s } from "../../document/src/schema";
 
 // Cache behavior needs a valid package, not a native-generated template collection.
@@ -18,7 +17,6 @@ async function writePackage(output: string, slug = "quick-checklist") {
   await mkdir(join(output, "QuickLook"));
   const manifest = {
     $schema: "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-    runtime: "hitslop-v1",
     slug,
     title: "Cache fixture",
     description: "Cache contract",
@@ -30,11 +28,6 @@ async function writePackage(output: string, slug = "quick-checklist") {
     "manifest.json": manifest,
     "state.schema.json": defineDocument({ title: s.text() }).descriptor,
     "initial.json": { title: "Cache fixture" },
-    "assets/runtime.json": {
-      runtimeContract: identity.runtimeContract,
-      minRuntimeRevision: identity.runtimeRevision,
-      sdkVersion: identity.sdkVersion,
-    },
   };
   for (const [name, value] of Object.entries(files))
     await writeFile(join(output, name), JSON.stringify(value));
@@ -157,7 +150,7 @@ test("failed builds never publish cache entries; cached packages reject state an
     await rm(join(output, "assets/app.js"));
     await symlink(join(root, "external.js"), join(output, "assets/app.js"));
     await expect(validateTemplate(output, "quick-checklist")).rejects.toThrow(
-      "Invalid runtime resource",
+      "Invalid package resource",
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -231,7 +224,7 @@ test("template artwork is keyed on compiler and copied guidance, not CLI routing
     "packages/cli/src/build.ts",
     "packages/cli/src/svelte-plugin.ts",
     "packages/document/src",
-    "packages/cli/runtimes",
+    "packages/cli/shell",
     "packages/cli/skills/hitslop-document",
     "tsconfig.v1.json",
   ])

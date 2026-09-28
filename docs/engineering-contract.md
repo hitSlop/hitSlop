@@ -1,29 +1,56 @@
 # Engineering contract
 
-Read manifest.json first. Only runtime `hitslop-v1` is accepted. No legacy-format migration. Preserve all shipped v1 runtime contracts; see docs/versioning.md.
+The architecture and the remaining plan are in [HostOwnedReset.md](HostOwnedReset.md).
+**Nothing has shipped to production.** There is no legacy handling, migration,
+backwards compatibility, version gate or refusal message for older packages or
+databases. Add a version marker only when a first public release needs one.
 
-- The live document is Loro in the WebView. Swift stores opaque checkpoint/update bytes in state/document.sqlite (format 1).
-- One OS writer lock owns a local package. CLI commands route to the live native session or acquire ownership when closed. Never bypass a busy lock or unlink writer.lock.
-- Author schema.ts with defineDocument/s from @hitslop/document. state.schema.json is a descriptor, not JSON Schema. initial.json is immutable creation-only data.
-- App state uses text/rich text, finite scalar registers (including bounded integers), enums, objects, movable object/scalar lists, records, counters, trees, and optional values (scalar lists use an empty list). $id is an application row/tree identity register, never a Loro container ID and never minted while reading. Read immutable snapshots; write typed fields or doc.at(snapshot) handles and synchronous change(tx => ...). Initialize absent composites with set/put; never assign over existing identity-bearing collections, including through a containing object.
-- Never add stores/data.json, persistent JSON mirrors, watchers for JSON reconciliation, a JavaScriptCore document engine, compatibility lenses, or a second document engine. Explicit one-shot JSON import is supported: the shared document runtime translates destination-shaped values into staged operations, preserves matching identities, and checks a destination version before replacement.
-- Host and CLI ship matching runtimes per supported contract. The runtime owns the page and lifecycle and mounts `assets/app.js` through `default.mount(ctx, target)`; apps import nothing from the runtime, never embed Loro or the document implementation, and never call the private Swift bridge or `__slop`. slop dev uses the same runtime with disposable memory storage.
-- Keep TypeBox authoritative for platform manifest/bridge contracts. Generate native contracts with bun run schema:generate; do not edit generated files.
-- Runtime packages contain manifest.json, assets/ (including app.js), state.schema.json, initial.json, optional QuickLook images and embedded .agents/skills/hitslop-document guidance. Builds contain no state, stores, source, dependencies or caches.
-- Preserve the existing macOS client: TCA Features, Catalog, Host slop windows/hover toolbar, Firebase Analytics/Crashlytics, Sparkle, and NativeCLI. HitSlopWasm supplies the common document engine; HitSlopRuntime integrates it. A runtime rewrite must not replace the client.
-- Flush local drafts and document writes before close/export. Failed saves retain ownership and show native retry. Destroy WebViews on close.
-- Native code validates package isolation, symlinks, bridge envelopes and resource sizes. Authored code can damage its own document; no independent native semantic validator.
-- Active examples are discovered from immediate manifest-bearing directories under examples/slops; bundled.json selects shipped templates. Quick Checklist and Small Expenses remain regression fixtures. Each owns its design; use plain CSS and defineTheme tokens. Read examples/slops/PRODUCT.md and docs/guides/authoring.md for visual changes. _vibe is inspiration only.
-- CLI: bun slop dev/build/register SOURCE; schema/get/apply/batch/import/compact DOCUMENT. get --snapshot includes a replacement version. import creates from an immutable template or explicitly replaces a version-checked writable document. Runtime masters are immutable; create a writable copy to edit.
-- PDF/PNG export is in scope. Collaboration, audio-library import, remote catalog cutover, hosted template publication, undo UI, schema evolution, history pruning, iCloud and other synced folders are deferred.
+## Ownership
 
-- The native Swift CLI edits through the live Unix socket or an engine-only invisible WebKit session. Installed editing needs no Node/Bun. Never load authored app code for headless document operations.
-- Catalog discovery combines bundled slops and ~/.hitslop/templates, with manifest-derived categories and Recents. Users unpack external downloads before placing template packages in that folder. Hosted discovery, OpenAPI/Registry, accounts/Auth/App Check, and sharing code live in deferred; Firebase Analytics/Crashlytics stay active.
+- `hitslop-core` (Rust on Loro, `crates/`) owns document semantics: descriptors,
+  validation, `$id` rows, atomic batches, publications, issues, counters and text merges.
+- Swift `DocumentOwner` owns the live core handle, the OS writer lock, SQLite
+  (`state/document.sqlite`), saving, the socket and delivery to the page.
+- The page shell (`packages/document`, served by the host at `/__shell__/`) holds no
+  CRDT. It turns intents into requests and publications into immutable snapshots.
+- A slop package contains only its app: `manifest.json`, `assets/` (including
+  `app.js`), `state.schema.json`, `initial.json`, optional QuickLook images and the
+  embedded `.agents/skills/hitslop-document` guidance. No engine, runtime metadata,
+  state, source, dependencies or caches.
 
-- Launch includes compatible npm schema/document/CLI packages, published manually after the compatible signed Mac app. CLI versions may advance independently while their exact SDK dependency pins and runtime identity remain compatible. Hosted template publication remains deferred. See docs/guides/releasing.md.
+## Rules
 
-- Reusable attachments are in scope: host-owned immutable blobs in state/attachments, referenced by ordinary Loro fields. Use @hitslop/document/attachments or the native attachment CLI. HTTPS data/media access is allowed; CORS still applies.
-- Launch baseline: contract 2/revision 1/SDK 2.0.0 (contract 1 was retired before launch). Preserve sealed runtime bytes and ledger records; subsequent releases follow docs/versioning.md.
-- Collaboration readiness: reads are total for decodable state (preserve and flag through issues; never repair on open); validation is strict for local writes; one outbound stream emits every accepted local commit and never re-emits imports; peer IDs are never persisted; writers keep full history; mergeable containers only where concurrent creation means the same field; attachments stay content-addressed; capacity is checked using the full snapshot before saving; failed saves retain live edits and block close/export; explicit discard reloads durable state under the same writer lock and remounts the view. Loro stays in the WebView; the host is storage and transport.
+- One edit path. The CLI forwards to the live owner's socket or takes the writer lock
+  and runs the owner in-process, without WebKit or authored code. Never bypass a busy
+  lock or unlink `writer.lock`.
+- Storage: one write in flight; each write records an attempt token in the same SQLite
+  transaction, and a lost reply is resolved by comparing tokens, never by guessing from
+  the generation. Failed saves keep ownership and all edits and show a native retry.
+- Flush drafts and writes before close or export. Successful close destroys WebViews.
+- Author schemas with `defineDocument`/`s`. `state.schema.json` is a descriptor, not
+  JSON Schema. `initial.json` is creation-only. Descriptor kinds exist only once Rust,
+  the SDK and a fixture implement them (today: text, boolean, object, list(object),
+  integer counter).
+- Writes are asynchronous and resolve after the snapshot updates; `change(tx => …)`
+  collects synchronously. Reads come from immutable snapshots. Preserve `$id`
+  identity; merged anomalies are preserved and flagged, never repaired on read.
+- Never add `stores/data.json`, persistent JSON mirrors, JSON reconciliation, a
+  JavaScriptCore engine or a second document engine. The WASM core ships only in the
+  CLI, for `slop dev` and tests.
+- TypeBox owns platform contracts (`packages/schema`). Run `bun run schema:generate`;
+  never edit generated files.
+- Native code validates package isolation, symlinks, envelopes and resource bounds, not
+  app semantics.
+- Attachments are host-owned immutable content-addressed blobs in `state/attachments`,
+  referenced by ordinary document fields.
+- Preserve the macOS client: TCA features, catalog and Recents, slop windows and
+  toolbar, PNG/PDF export, Finder previews, Firebase Analytics/Crashlytics and Sparkle.
+- Active examples are the manifest-bearing directories under `examples/slops`;
+  `bundled.json` selects shipped templates. Quick Checklist is the active template;
+  other slops are archived. Dedicated fixtures own platform semantics. Use plain CSS and
+  `defineTheme`; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
+  visual changes.
+- Deferred: collaboration, undo UI, schema evolution, history pruning, synced folders,
+  hosted catalog/publishing, accounts and sharing.
 
-Testing policy and commands live in [testing](testing.md). Agent entrypoint: [AGENTS.md](../AGENTS.md).
+Testing policy lives in [testing](testing.md). Agent entrypoint: [AGENTS.md](../AGENTS.md).

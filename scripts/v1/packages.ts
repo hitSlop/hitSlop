@@ -1,8 +1,8 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { buildSkills } from "../../packages/cli/src/skills-build";
-import { buildRuntime } from "./runtime";
-await buildRuntime();
+import { buildShell } from "./runtime";
+await buildShell();
 await buildSkills();
 const output = resolve("generated/v1/npm");
 await mkdir(output, { recursive: true });

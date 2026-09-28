@@ -32,17 +32,16 @@ compile cache and combined PNG/PDF export are follow-ups requiring measurements;
 neither is part of this change. Signing, notarization and ZIP/DMG distribution keep
 their existing behavior.
 
-## Validation after removing the pilot
+## Validation after removing the pilot (2026-09-25, before contract 3)
 
 The [GitHub validation run](https://github.com/hitSlop/hitslop/actions/runs/36175211719)
-tests code commit `6dc7a9b`. Its Linux job completed in 2m 30s and its everyday
+tested code commit `6dc7a9b`. Its Linux job completed in 2m 30s and its everyday
 native job in 6m 55s. It passed 107 Bun tests, 55 compatibility replay cases,
 51 bundled template open/reopen checks, 126 Swift tests and seven native CLI
 tests, along with the native helper, storage and crash checks. The everyday
-render smoke passed all four packages. The runtime checksum still matches
-sealed release `1-1`.
+render smoke passed all four packages.
 
-These timings describe this run and its fixture-based native scope; they are
+These timings describe that run and its fixture-based native scope; they are
 not a claimed speedup for the complete release gate. Full-corpus profiling is
 an explicit manual option and does not sign or publish anything.
 

@@ -302,56 +302,6 @@ public struct SocketSnapshotRequest {
   }
 }
 
-public struct SocketImportRequest {
-  public var `id`: String
-  public var `documentPath`: String
-  public var `epoch`: String
-  public var `data`: [String: Any]
-  public var `expectedVersion`: String
-  public var `fresh`: Bool?
-
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `data`: [String: Any], `expectedVersion`: String, `fresh`: Bool? = nil) {
-    self.`id` = `id`
-    self.`documentPath` = `documentPath`
-    self.`epoch` = `epoch`
-    self.`data` = `data`
-    self.`expectedVersion` = `expectedVersion`
-    self.`fresh` = `fresh`
-  }
-
-  /// Call PlatformContract.valid before mapping an untrusted envelope.
-  public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketImportRequest.id") }
-    self.`id` = `id`
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketImportRequest.documentPath") }
-    self.`documentPath` = `documentPath`
-    guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketImportRequest.epoch") }
-    self.`epoch` = `epoch`
-    guard let `data` = json["data"] as? [String: Any] else { throw ContractMappingError.field("SocketImportRequest.data") }
-    self.`data` = `data`
-    guard let `expectedVersion` = json["expectedVersion"] as? String else { throw ContractMappingError.field("SocketImportRequest.expectedVersion") }
-    self.`expectedVersion` = `expectedVersion`
-    if let value = json["fresh"] {
-      guard let mapped = value as? Bool else { throw ContractMappingError.field("SocketImportRequest.fresh") }
-      self.`fresh` = mapped
-    } else {
-      self.`fresh` = nil
-    }
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "import"
-    result["id"] = `id`
-    result["documentPath"] = `documentPath`
-    result["epoch"] = `epoch`
-    result["data"] = `data`
-    result["expectedVersion"] = `expectedVersion`
-    if let value = `fresh` { result["fresh"] = value }
-    return result
-  }
-}
-
 public struct SocketApplyRequest {
   public var `id`: String
   public var `documentPath`: String
@@ -512,7 +462,6 @@ public enum SocketRequest {
   case `get`(SocketGetRequest)
   case `schema`(SocketSchemaRequest)
   case `snapshot`(SocketSnapshotRequest)
-  case `import`(SocketImportRequest)
   case `apply`(SocketApplyRequest)
   case `batch`(SocketBatchRequest)
   case `compact`(SocketCompactRequest)
@@ -529,7 +478,6 @@ public enum SocketRequest {
     case `get` = "get"
     case `schema` = "schema"
     case `snapshot` = "snapshot"
-    case `import` = "import"
     case `apply` = "apply"
     case `batch` = "batch"
     case `compact` = "compact"
@@ -546,7 +494,6 @@ public enum SocketRequest {
       case .`get`: return false
       case .`schema`: return false
       case .`snapshot`: return false
-      case .`import`: return true
       case .`apply`: return true
       case .`batch`: return true
       case .`compact`: return true
@@ -567,7 +514,6 @@ public enum SocketRequest {
     case .`get`: return .`get`
     case .`schema`: return .`schema`
     case .`snapshot`: return .`snapshot`
-    case .`import`: return .`import`
     case .`apply`: return .`apply`
     case .`batch`: return .`batch`
     case .`compact`: return .`compact`
@@ -587,7 +533,6 @@ public enum SocketRequest {
     case .`get`(let value): return value.documentPath
     case .`schema`(let value): return value.documentPath
     case .`snapshot`(let value): return value.documentPath
-    case .`import`(let value): return value.documentPath
     case .`apply`(let value): return value.documentPath
     case .`batch`(let value): return value.documentPath
     case .`compact`(let value): return value.documentPath
@@ -607,7 +552,6 @@ public enum SocketRequest {
     case .`get`: return self
     case .`schema`: return self
     case .`snapshot`: return self
-    case .`import`(var value): value.epoch = epoch; return .`import`(value)
     case .`apply`(var value): value.epoch = epoch; return .`apply`(value)
     case .`batch`(var value): value.epoch = epoch; return .`batch`(value)
     case .`compact`(var value): value.epoch = epoch; return .`compact`(value)
@@ -629,7 +573,6 @@ public enum SocketRequest {
     case .`get`: self = .`get`(try SocketGetRequest(json: json))
     case .`schema`: self = .`schema`(try SocketSchemaRequest(json: json))
     case .`snapshot`: self = .`snapshot`(try SocketSnapshotRequest(json: json))
-    case .`import`: self = .`import`(try SocketImportRequest(json: json))
     case .`apply`: self = .`apply`(try SocketApplyRequest(json: json))
     case .`batch`: self = .`batch`(try SocketBatchRequest(json: json))
     case .`compact`: self = .`compact`(try SocketCompactRequest(json: json))
@@ -649,7 +592,6 @@ public enum SocketRequest {
     case .`get`(let value): return value.json
     case .`schema`(let value): return value.json
     case .`snapshot`(let value): return value.json
-    case .`import`(let value): return value.json
     case .`apply`(let value): return value.json
     case .`batch`(let value): return value.json
     case .`compact`(let value): return value.json
@@ -784,6 +726,7 @@ public enum BridgeMethod: String, CaseIterable, Sendable {
   case `config` = "config"
   case `ready` = "ready"
   case `load` = "load"
+  case `metadata` = "metadata"
   case `append` = "append"
   case `checkpoint` = "checkpoint"
   case `status` = "status"

@@ -36,7 +36,7 @@ extension LoroClientTests {
                 #expect(try await view.callAsyncJavaScript("""
                     const button = document.querySelector('.editor button'), before = button.textContent;
                     button.click();
-                    await new Promise(resolve => setTimeout(resolve, 0));
+                    await globalThis.__slop.flush();
                     return button.isConnected && !button.disabled && button.textContent !== before &&
                         !document.documentElement.hasAttribute('data-slop-capture');
                     """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
@@ -62,7 +62,7 @@ extension LoroClientTests {
                 #expect(try await session.webView.callAsyncJavaScript("""
                     const button = document.querySelector('.editor button'), before = button.textContent;
                     button.click();
-                    await new Promise(r => setTimeout(r, 0));
+                    await globalThis.__slop.flush();
                     return button.isConnected && button.textContent !== before &&
                         !document.querySelector('[role="alert"]') &&
                         !document.documentElement.hasAttribute('data-slop-capture') &&

@@ -1,0 +1,22 @@
+[package]
+name = "hitslop-core-native-spike"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bindgen.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["uniffi/cli"]
+
+[dependencies]
+hitslop-core-spike = { path = "../core" }
+uniffi = "=0.31.1"
+thiserror.workspace = true
+

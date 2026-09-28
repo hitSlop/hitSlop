@@ -1,0 +1,1 @@
+export default { title: "Svelte ABI 2", done: false, hits: 0, rows: [] };

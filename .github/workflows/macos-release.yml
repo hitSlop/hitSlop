@@ -110,11 +110,10 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
           spctl --assess --type execute "$RUNNER_TEMP/verify-zip/hitSlop.app"
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
-      - name: Retain tested npm packages and sealed runtime
+      - name: Retain tested npm packages
         if: github.event_name == 'push'
         run: |
           bun scripts/v1/release-bundle.ts
-          git diff --exit-code -- runtimes/releases.json
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
       - name: Publish GitHub Release
         if: github.event_name == 'push'
@@ -146,8 +145,6 @@ jobs:
             dist/macos/appcast.xml \
             dist/macos/SHA256SUMS \
             dist/macos/hitslop-*.tgz \
-            dist/macos/runtime-*.tar.gz \
-            dist/macos/runtime-releases.json \
             dist/macos/release-record.json
       - name: Remove temporary signing credentials
         if: always()

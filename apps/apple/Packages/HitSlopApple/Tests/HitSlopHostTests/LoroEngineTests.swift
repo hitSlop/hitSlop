@@ -7,7 +7,7 @@ import SQLite3
 import Testing
 
 @testable import HitSlopHost
-@testable import HitSlopWasm
+@testable import HitSlopDocument
 
 extension LoroClientTests {
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
@@ -18,7 +18,7 @@ extension LoroClientTests {
     try await controller.session.waitUntilReady()
     let epoch = controller.session.engine.epoch
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: replace("Preserved through interface reload"))
+      method: "apply", url: root, operation: prefixTitle("Preserved through interface reload"))
     _ = try await controller.session.webView.callAsyncJavaScript(
       "dispatchEvent(new ErrorEvent('error', {error:new Error('Test application failure')})); return true",
       arguments: [:], in: nil, contentWorld: .page)
@@ -27,7 +27,7 @@ extension LoroClientTests {
     }
     let issueSheet = try #require(controller.window?.attachedSheet)
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: replace("Preserved through interface reload"))
+      method: "apply", url: root, operation: prefixTitle("Preserved through interface reload"))
     #expect(controller.window?.attachedSheet === issueSheet)
     controller.window?.endSheet(issueSheet, returnCode: .alertSecondButtonReturn)
     issueSheet.orderOut(nil)
@@ -98,22 +98,24 @@ extension LoroClientTests {
     let epoch = engine.epoch
     weak var oldWebView = engine.webView
     let pid = try #require(engine.webView.value(forKey: "_webProcessIdentifier") as? Int32)
-    engine.storageBridge.afterWrite = { _ in
-      engine.storageBridge.afterWrite = nil
+    engine.owner.storage.testingPhase = { phase in
+      guard phase == "append:committed" else { return }
       Darwin.kill(pid, SIGKILL)
       throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
     }
+    // Renderer death closes the socket; the CLI must report unknown outcome.
     await #expect(throws: (any Error).self) {
       _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: replace("Committed before renderer death"))
+        method: "apply", url: root, operation: prefixTitle("Committed before renderer death"))
     }
+    engine.owner.storage.testingPhase = nil
     for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
     #expect(engine.rendererDead)
     #expect(
       !FileManager.default.fileExists(atPath: root.appendingPathComponent("state/host.lock").path))
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
     _ = try await controller.perform(.retry)
-    #expect(engine.epoch != epoch)
+    #expect(engine.epoch == epoch)
     #expect(oldWebView == nil)
     let bytes = try await DocumentCommand.run(method: "get", url: root)
     #expect(String(decoding: bytes, as: UTF8.self).contains("Committed before renderer death"))
@@ -132,14 +134,13 @@ extension LoroClientTests {
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     try await controller.session.waitUntilReady()
     let engine = controller.session.engine
-    engine.storageBridge.afterWrite = { _ in
-      engine.storageBridge.afterWrite = nil
+    engine.owner.storage.testingPhase = { phase in
+      guard phase == "append:committed" else { return }
       throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
     }
-    await #expect(throws: (any Error).self) {
-      _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: replace("Lost reply"))
-    }
+    _ = try await DocumentCommand.run(
+      method: "apply", url: root, operation: prefixTitle("Lost reply"))
+    engine.owner.storage.testingPhase = nil
     let bytes = try await DocumentCommand.run(method: "get", url: root)
     #expect(String(decoding: bytes, as: UTF8.self).contains("Lost reply"))
     try await controller.session.finish()
@@ -158,14 +159,15 @@ extension LoroClientTests {
     let engine = controller.session.engine
     engine.onStatus = nil
     engine.onError = nil
-    _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("Durable title"))
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Durable title"))
     let baseline = try await DocumentCommand.run(method: "get", url: root)
     let identity = try savedRow(root).docID
-    engine.storageBridge.beforeWrite = { _ in
+    engine.owner.storage.testingPhase = { phase in
+      guard phase == "append:uncommitted" || phase == "checkpoint:uncommitted" else { return }
       throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
     }
     await #expect(throws: (any Error).self) {
-      _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("Unsaved title"))
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Unsaved title"))
     }
     await #expect(throws: (any Error).self) { try await engine.prepareClose() }
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
@@ -175,8 +177,8 @@ extension LoroClientTests {
     #expect(restored == baseline)
     #expect(try savedRow(root).docID == identity)
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
-    engine.storageBridge.beforeWrite = nil
-    _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("After discard"))
+    engine.owner.storage.testingPhase = nil
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("After discard"))
     try await controller.session.finish()
     let reopened = try await DocumentCommand.run(method: "get", url: root)
     #expect(String(decoding: reopened, as: UTF8.self).contains("After discard"))
@@ -192,15 +194,16 @@ extension LoroClientTests {
     controller.session.engine.onStatus = { [weak controller] status in
       guard let controller else { return }
       // Preserve production status handling, without displaying a sheet in the test harness.
-      controller.runtimeSession(controller.session, saveStatus: WasmSaveStatus(status: status.status, error: nil))
+      controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: status.status, error: nil))
     }
     controller.session.engine.onError = nil
-    controller.session.engine.storageBridge.beforeWrite = { _ in
+    controller.session.engine.owner.storage.testingPhase = { phase in
+      guard phase == "append:uncommitted" || phase == "checkpoint:uncommitted" else { return }
       throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
     }
     do {
       _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: replace("Recovered edit"))
+        method: "apply", url: root, operation: prefixTitle("Recovered edit"))
       Issue.record("Injected write succeeded")
     } catch { #expect(error.localizedDescription.contains("Run slop get")) }
     do {
@@ -211,7 +214,7 @@ extension LoroClientTests {
     // Gap: propagated close/quit errors must not duplicate the storage incident.
     #expect(operations == [.save])
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
-    controller.session.engine.storageBridge.beforeWrite = nil
+    controller.session.engine.owner.storage.testingPhase = nil
     try await controller.session.flush()
     let pid = try #require(
       controller.session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
@@ -240,13 +243,13 @@ extension LoroClientTests {
     var events: [SlopTelemetryEvent] = []
     controller.telemetry = SlopTelemetry { if case .failed = $0 { events.append($0) } }
     // Status reporting is separate from the existing real failed-save/ownership test.
-    let failed = WasmSaveStatus(status: "save-failed", error: nil)
+    let failed = DocumentSaveStatus(status: "save-failed", error: nil)
     controller.runtimeSession(controller.session, saveStatus: failed)
     controller.runtimeSession(controller.session, saveStatus: failed)
-    #expect(events == [.failed(.save, .init(reason: .storage, runtime: controller.session.engine.telemetryRuntime))])
-    controller.runtimeSession(controller.session, saveStatus: WasmSaveStatus(status: "saved", error: nil))
+    #expect(events == [.failed(.save, .init(reason: .storage))])
+    controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: "saved", error: nil))
     controller.runtimeSession(controller.session, saveStatus: failed)
-    #expect(events == Array(repeating: .failed(.save, .init(reason: .storage, runtime: controller.session.engine.telemetryRuntime)), count: 2))
+    #expect(events == Array(repeating: .failed(.save, .init(reason: .storage)), count: 2))
     try await controller.session.finish()
   }
 }

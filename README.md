@@ -8,7 +8,7 @@ Your agent can work with the data, too. It can read changes you make in the app,
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
-macOS 14+ · Apple silicon · No account required
+macOS 15.2+ · Apple silicon · No account required
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -27,15 +27,7 @@ If all you need is a packing list for next weekend, that's enough.
 
 ## What belongs on your desktop?
 
-Try these examples, or use their source as a starting point:
-
-| A little help | Something to send | Just for fun |
-| --- | --- | --- |
-| [Quick Checklist](examples/slops/quick-checklist): get it out of your head | [Invoice](examples/slops/invoice): get paid | [Pixel Art](examples/slops/pixel-art): one more pixel |
-| [Focus Timer](examples/slops/focus-timer): make room to concentrate | [Recipe](examples/slops/recipe): keep the good ones | [Koi Pond](examples/slops/koi-pond): take a break |
-| [Small Expenses](examples/slops/small-expenses): remember where it went | [Résumé](examples/slops/resume): introduce yourself | [Wordle](examples/slops/wordle): five letters, a little obsession |
-
-[Browse all the examples →](examples/slops)
+This development branch currently ships [Quick Checklist](examples/slops/quick-checklist). Other examples are preserved in [the slop archive](archive/slops) while their data types are ported.
 
 ## Keep the app. Keep the work.
 
@@ -53,7 +45,7 @@ Svelte suits the kinds of apps we want to make: small tools with custom interfac
 
 You can keep a component's markup, behavior, and [scoped CSS](https://svelte.dev/docs/svelte/scoped-styles) together in a `.svelte` file. That makes a small interface easy to follow and gives you room to design a paper planner, a calculator, or a pond without adopting a prescribed set of UI components. TypeScript and `bun run check` help catch type and template mistakes as you work.
 
-[Svelte's compiler](https://svelte.dev/docs/svelte/svelte-compiler) turns components into JavaScript. `bun run build` bundles that code, the Svelte runtime code it needs, and the app's styles into the `.slop`. The interface keeps the Svelte version it was built with. The Mac app supplies the separate hitSlop document engine and native services; it doesn't supply Svelte. Existing documents retain their built interface, with host compatibility governed by [hitSlop's runtime contracts](docs/versioning.md).
+[Svelte's compiler](https://svelte.dev/docs/svelte/svelte-compiler) turns components into JavaScript. `bun run build` bundles that code, the Svelte runtime code it needs, and the app's styles into the `.slop`. The interface keeps the Svelte version it was built with. The Mac app supplies the hitSlop document engine, the page shell and native services; it doesn't supply Svelte.
 
 Svelte 5's [reactive updates](https://svelte.dev/docs/svelte/lifecycle-hooks) let a state change update the parts of an interface that depend on it. hitSlop's Svelte bindings connect those views to document snapshots. How much work an edit triggers depends on how the app is written.
 
@@ -128,7 +120,6 @@ Replace the following starter files. Keep the generated `package.json` and `tsco
 ```json
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "slug": "tiny-wins",
   "title": "Tiny Wins",
   "description": "A little credit for the things you get done.",
@@ -187,7 +178,7 @@ export default defineTheme({
   <main class="wins-card">
     <input aria-label="Counter title" use:bindText={doc.fields.title} />
     <p class="wins-number" aria-live="polite">{doc.current.wins}</p>
-    <button onclick={() => doc.fields.wins.increment()}>A little win +1</button>
+    <button onclick={() => doc.fields.wins.increment().catch(() => {})}>A little win +1</button>
   </main>
 
   {#snippet icon()}
@@ -269,7 +260,7 @@ Your agent can add a win to that same document through the CLI. Substitute the p
 
 ```sh
 bunx @hitslop/cli@1.2.0 get "/path/to/My Wins.slop"
-bunx @hitslop/cli@1.2.0 apply "/path/to/My Wins.slop" --op '{"type":"increment","path":["wins"],"value":1}'
+bunx @hitslop/cli@1.2.0 apply "/path/to/My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
 ```
 
 With the document open, the number changes in the window. Its next export and icon capture use the updated value as well.
@@ -320,7 +311,7 @@ bun slop dev examples/slops/quick-checklist
 
 [Development](docs/guides/development.md) covers setup, the workspace, and adding templates. All active templates are discovered for checks and `bun run build:templates`; `examples/slops/bundled.json` selects those shipped with the app. The local catalog also discovers templates under `~/.hitslop/templates`.
 
-The native Mac client supplies the document runtime and local persistence. Authors build with the matching `@hitslop/document`, `@hitslop/schema`, and `@hitslop/cli` packages. See [runtime versioning](docs/versioning.md) for supported v1 contracts; pre-v1 documents are unsupported.
+The native Mac client supplies the document engine and local persistence. Authors build with the matching `@hitslop/document`, `@hitslop/schema`, and `@hitslop/cli` packages.
 
 Hosted discovery, public template publication, accounts, collaboration, and iCloud/synced folders are deferred. The current workflow is local creation, editing, and export.
 

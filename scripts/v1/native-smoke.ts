@@ -24,15 +24,8 @@ const packages = fixtures
         name: `bundled-${t.slug}`,
         source: resolve("generated/v1/templates", `${t.slug}.slop`),
       }));
-for (const name of (await readdir("tests/compatibility")).sort()) {
-  // Preserved template snapshots mirror the release corpus; fixtures keep contract specimens.
-  if (fixtures && name.startsWith("template-")) continue;
-  if (await Bun.file(`tests/compatibility/${name}/fixture.json`).exists())
-    packages.push({
-      name: `preserved-${name}`,
-      source: resolve("tests/compatibility", name, "document"),
-    });
-}
+for (const name of (await readdir("tests/fixtures")).sort())
+  packages.push({ name: `fixture-${name}`, source: resolve("tests/fixtures", name, "document") });
 type Stage = "initialRead" | "png" | "pdf" | "finalRead";
 type RenderResult = {
   name: string;
@@ -90,7 +83,7 @@ try {
       assert.equal(await digest(source), before, `Master changed: ${name}`);
       result.passed = true;
       console.log(
-        `PASS ${name}: headless open, authored render, PNG/PDF, reopen (${((performance.now() - started) / 1000).toFixed(1)}s)`,
+        `PASS ${name}: native open, authored render, PNG/PDF, reopen (${((performance.now() - started) / 1000).toFixed(1)}s)`,
       );
     } finally {
       result.seconds.total = (performance.now() - started) / 1000;

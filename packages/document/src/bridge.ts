@@ -1,5 +1,8 @@
-import type { BridgeMethod as Method, BridgeRequest as Message, BridgeReply as Result } from "@hitslop/schema/bridge";
-import type { ByteStore, Stored } from "./storage.ts";
+import type {
+  BridgeMethod as Method,
+  BridgeRequest as Message,
+  BridgeReply as Result,
+} from "@hitslop/schema/bridge";
 import { OperationRejectedError } from "./errors";
 // Safari 18.2+ has native base64 on Uint8Array; the fallbacks avoid per-byte callbacks.
 const native = Uint8Array as unknown as {
@@ -26,33 +29,4 @@ export async function hostCall<M extends Method>(args: Message<M>): Promise<Resu
   const reply = await (globalThis as any).webkit.messageHandlers.storage.postMessage(args);
   if (reply && typeof reply.rejected === "string") throw new OperationRejectedError(reply.rejected);
   return reply;
-}
-// Request stored bytes as soon as the runtime evaluates so the native read overlaps
-// WASM compilation. The first HostStore load consumes it; failures surface there.
-let prefetched: Promise<Result<"load">> | undefined = (globalThis as any).webkit?.messageHandlers?.storage
-  ? hostCall({ method: "load" })
-  : undefined;
-prefetched?.catch(() => {});
-export class HostStore implements ByteStore {
-  async load(): Promise<Stored> {
-    const pending = prefetched;
-    prefetched = undefined;
-    const raw = await (pending ?? hostCall({ method: "load" }));
-    return {
-      ...raw,
-      checkpoint: raw.checkpoint ? decode(raw.checkpoint) : null,
-      updates: raw.updates.map(decode),
-    };
-  }
-  async append(generation: string, updates: Uint8Array[]) {
-    return (await hostCall({ method: "append", generation, updates: updates.map(encode) }))
-      .generation;
-  }
-  async checkpoint(generation: string, bytes: Uint8Array, schemaKey: string) {
-    return (await hostCall({ method: "checkpoint", generation, bytes: encode(bytes), schemaKey }))
-      .generation;
-  }
-  async close() {
-    /* Swift closes after the JS shutdown reply, retaining ownership throughout. */
-  }
 }

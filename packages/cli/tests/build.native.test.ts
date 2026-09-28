@@ -5,6 +5,7 @@ import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { buildTemplate, installTemplate } from "../src/template";
 import { readdir, mkdir } from "node:fs/promises";
+import { copySourceFixture } from "./source-fixture";
 
 // Without the generated theme stylesheet, a missing or late runtime theme would
 // leave the first mounted view unstyled. Existing controller tests do not mount apps.
@@ -72,7 +73,7 @@ test("Slop and child components share the host document", async () => {
     "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
   );
   try {
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await copySourceFixture("examples/slops/quick-checklist", source);
     await writeFile(
       join(source, "Child.svelte"),
       `
@@ -153,7 +154,7 @@ test("native template assets are complete before replacing a registered master",
     await mkdir(join(master, "state"));
     await expect(installTemplate(output, master)).rejects.toThrow("writable document state");
     const badSource = join(root, "bad-capture-source");
-    await cp("examples/slops/quick-checklist", badSource, { recursive: true });
+    await copySourceFixture("examples/slops/quick-checklist", badSource);
     await writeFile(
       join(badSource, "App.svelte"),
       `

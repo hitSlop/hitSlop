@@ -51,4 +51,4 @@ Follow the [CLI workflows](https://hitslop.com/docs/guides/cli-workflows/) for c
 
 See the [authoring guide](https://github.com/hitSlop/hitslop/blob/master/docs/guides/authoring.md) and [release guide](https://github.com/hitSlop/hitslop/blob/master/docs/guides/releasing.md).
 
-CLI 2.0.0 uses hitSlop SDK 2.0.0, runtime contract 2 / revision 1. MIT licensed.
+The CLI pins the matching `@hitslop/document` and `@hitslop/schema` versions. MIT licensed.

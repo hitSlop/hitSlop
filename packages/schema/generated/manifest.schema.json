@@ -1,8 +1,6 @@
 {
   "type": "object",
   "required": [
-    "$schema",
-    "runtime",
     "author",
     "slug",
     "title",
@@ -14,10 +12,6 @@
     "$schema": {
       "type": "string",
       "const": "https://api.hitslop.com/schemas/v1/manifest.schema.json"
-    },
-    "runtime": {
-      "type": "string",
-      "const": "hitslop-v1"
     },
     "author": {
       "type": "object",

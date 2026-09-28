@@ -1,0 +1,40 @@
+[
+  {
+    "name": "late rejection preserves value and revision; stale field rejects but unrelated field succeeds",
+    "initial": {"title":"Before","rows":[{"$id":"a","text":"Alpha","done":false}]},
+    "steps": [
+      {"ops":[{"type":"set","path":["title"],"value":"BAD","expected":0},{"type":"set","path":["rows",{"id":"a"},"done"],"value":"invalid","expected":0}]},
+      {"ops":[{"type":"set","path":["title"],"value":"After 🐈‍⬛ 日本語","expected":0}]},
+      {"ops":[{"type":"set","path":["title"],"value":"stale","expected":0}]},
+      {"ops":[{"type":"set","path":["rows",{"id":"a"},"done"],"value":true,"expected":0}]},
+      {"ops":[{"type":"remove","path":["rows"],"id":"a","expected":0,"expectedRow":0}]}
+    ],
+    "expected": [
+      {"error":"type_mismatch","rev":0,"value":{"title":"Before","rows":[{"$id":"a","text":"Alpha","done":false}]}},
+      {"rev":1,"value":{"title":"After 🐈‍⬛ 日本語","rows":[{"$id":"a","text":"Alpha","done":false}]}},
+      {"error":"stale_field","rev":1,"value":{"title":"After 🐈‍⬛ 日本語","rows":[{"$id":"a","text":"Alpha","done":false}]}},
+      {"rev":2,"value":{"title":"After 🐈‍⬛ 日本語","rows":[{"$id":"a","text":"Alpha","done":true}]}},
+      {"error":"stale_row","rev":2,"value":{"title":"After 🐈‍⬛ 日本語","rows":[{"$id":"a","text":"Alpha","done":true}]}}
+    ]
+  },
+  {
+    "name":"IDs survive reorder; duplicate inserts and missing anchors roll back",
+    "initial":{"title":"List","rows":[{"$id":"a","text":"Alpha","done":false},{"$id":"b","text":"Beta","done":false}]},
+    "steps":[
+      {"ops":[{"type":"move","path":["rows"],"id":"a","to":{"after":"b"},"expected":0}]},
+      {"ops":[{"type":"set","path":["rows",{"id":"a"},"done"],"value":true,"expected":0}]},
+      {"ops":[{"type":"insert","path":["rows"],"value":{"$id":"b","text":"Duplicate","done":false},"at":{"end":true},"expected":1}]},
+      {"ops":[{"type":"move","path":["rows"],"id":"b","to":{"before":"missing"},"expected":1}]},
+      {"ops":[{"type":"insert","path":["rows"],"value":{"$id":"c","text":"Gamma","done":false},"at":{"before":"b"},"expected":1}]},
+      {"ops":[{"type":"remove","path":["rows"],"id":"a","expected":3,"expectedRow":2}]}
+    ],
+    "expected":[
+      {"rev":1,"value":{"title":"List","rows":[{"$id":"b","text":"Beta","done":false},{"$id":"a","text":"Alpha","done":false}]}},
+      {"rev":2,"value":{"title":"List","rows":[{"$id":"b","text":"Beta","done":false},{"$id":"a","text":"Alpha","done":true}]}},
+      {"error":"duplicate_id","rev":2,"value":{"title":"List","rows":[{"$id":"b","text":"Beta","done":false},{"$id":"a","text":"Alpha","done":true}]}},
+      {"error":"path_not_found","rev":2,"value":{"title":"List","rows":[{"$id":"b","text":"Beta","done":false},{"$id":"a","text":"Alpha","done":true}]}},
+      {"rev":3,"value":{"title":"List","rows":[{"$id":"c","text":"Gamma","done":false},{"$id":"b","text":"Beta","done":false},{"$id":"a","text":"Alpha","done":true}]}},
+      {"rev":4,"value":{"title":"List","rows":[{"$id":"c","text":"Gamma","done":false},{"$id":"b","text":"Beta","done":false}]}}
+    ]
+  }
+]

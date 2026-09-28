@@ -37,8 +37,8 @@ public struct SlopPackage: Sendable {
       throw SlopPackageError.missing("manifest.json")
     }
     manifestData = try SlopFile.read(manifestURL, within: root, maximumBytes: 64 * 1024)
-    try Self.validateManifest(manifestData)
-    manifest = try JSONDecoder().decode(SlopManifest.self, from: manifestData)
+    manifest = try JSONDecoder().decode(SlopManifest.self,
+      from: JSONSerialization.data(withJSONObject: Self.normalizedManifestObject(manifestData)))
 
     // The runtime owns the page; a package supplies only its app module.
     guard fileManager.fileExists(atPath: entryURL.path) else {
@@ -229,14 +229,28 @@ public struct SlopPackage: Sendable {
     return root.appendingPathComponent(relativePath).standardizedFileURL
   }
 
-  private static func validateManifest(_ data: Data) throws {
+  private static func normalizedManifestObject(_ data: Data) throws -> [String: Any] {
     guard String(data: data, encoding: .utf8) != nil else {
       throw SlopPackageError.invalid("manifest.json must be UTF-8")
     }
-    guard
-      PlatformContract.valid(
-        try JSONSerialization.jsonObject(with: data), against: manifestValidationSchema)
+    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      PlatformContract.valid(object, against: manifestReadSchema)
     else { throw SlopPackageError.invalid("unsupported or invalid v1 manifest") }
+    // Only this decoding copy is normalized. Opening and copying preserve manifestData bytes.
+    var seen = Set<String>()
+    object["categories"] = (object["categories"] as! [String]).compactMap { value -> String? in
+      let mapped = (SlopCategory(rawValue: value) ?? .other).rawValue
+      return seen.insert(mapped).inserted ? mapped : nil
+    }
+    var presentation = object["presentation"] as! [String: Any]
+    if let shape = presentation["shape"] as? String, Shape(rawValue: shape) == nil {
+      presentation.removeValue(forKey: "shape")
+    }
+    if let background = presentation["background"] as? String, Background(rawValue: background) == nil {
+      presentation.removeValue(forKey: "background")
+    }
+    object["presentation"] = presentation
+    return object
   }
 
   private func validateState() throws {

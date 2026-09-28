@@ -43,7 +43,7 @@ echo "Building development-signed hitSlop Release for ${build_arch}…"
 
 app="$stage_dir/derived/Build/Products/Release/hitSlop.app"
 
-for required in "$app" "$app/Contents/Helpers/HitSlopApple_HitSlopWasm.bundle"; do
+for required in "$app" "$app/Contents/Helpers/HitSlopApple_HitSlopDocument.bundle"; do
   if [ ! -e "$required" ]; then
     echo "Release output is missing: $required" >&2
     exit 70

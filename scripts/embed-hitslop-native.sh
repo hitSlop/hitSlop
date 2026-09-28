@@ -83,7 +83,7 @@ done
 # its resolved identity for normal builds and an ad-hoc signature when signing
 # is disabled; distribution packaging replaces both signatures as needed.
 signing_identity=${EXPANDED_CODE_SIGN_IDENTITY:--}
-for module in HitSlopWasm; do
+for module in HitSlopDocument; do
   resource_bundle="$native_bin/HitSlopApple_${module}.bundle"
   if [ ! -d "$resource_bundle" ]; then
     echo "hitslop-native resource bundle is missing at $resource_bundle" >&2

@@ -13,7 +13,6 @@ Writable state is managed by the document runtime; media import is deferred.
 ```json title="manifest.json"
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "Your Name",
     "url": "https://example.com"
@@ -36,7 +35,6 @@ Writable state is managed by the document runtime; media import is deferred.
 | Field | Rule |
 | --- | --- |
 | `$schema` | Must be `https://api.hitslop.com/schemas/v1/manifest.schema.json`. |
-| `runtime` | Required, exactly `hitslop-v1`. |
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
 | `author.url` | Optional HTTP or HTTPS URL, up to 2,048 characters. |
 | `slug` | 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |

@@ -21,7 +21,8 @@ export const SlopCategorySchema = Type.Enum(
   ],
   { title: "SlopCategory" },
 );
-const categories = Type.Array(SlopCategorySchema, { minItems: 1, maxItems: 2, uniqueItems: true });
+const categoryBounds = { minItems: 1, maxItems: 2, uniqueItems: true };
+const categories = Type.Array(SlopCategorySchema, categoryBounds);
 export const SlopAuthorSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 80, pattern: "\\S" }),
@@ -64,8 +65,7 @@ export const SlopPresentationSchema = Type.Union(
 );
 export const SlopManifestSchema = Type.Object(
   {
-    $schema: Type.Literal(manifestSchemaURL),
-    runtime: Type.Literal("hitslop-v1"),
+    $schema: Type.Optional(Type.Literal(manifestSchemaURL)),
     author: SlopAuthorSchema,
     slug: Type.String({ minLength: 2, maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }),
     title: Type.String({ minLength: 1, maxLength: 80 }),
@@ -80,3 +80,27 @@ export type SlopAuthor = Type.Static<typeof SlopAuthorSchema>;
 export type SlopManifest = Type.Static<typeof SlopManifestSchema>;
 export type SlopPresentation = Type.Static<typeof SlopPresentationSchema>;
 export const parseManifest = (input: unknown): SlopManifest => validate(SlopManifestSchema, input);
+
+// Readers accept metadata additions, but known fields and variant boundaries stay strict.
+// Referencing the writer's fields preserves every existing constraint without transforming unions.
+const futureEnum = Type.String({ minLength: 1, maxLength: 64 });
+const absent = Type.Optional(Type.Never());
+export const SlopManifestReadSchema = Type.Object({
+  ...SlopManifestSchema.properties,
+  author: Type.Object(SlopAuthorSchema.properties),
+  categories: Type.Array(futureEnum, categoryBounds),
+  presentation: Type.Union([
+    Type.Object({
+      ...SlopStandardPresentationSchema.properties,
+      shape: Type.Optional(futureEnum),
+      background: Type.Optional(futureEnum),
+      skin: absent,
+    }),
+    Type.Object({
+      ...SlopSkinPresentationSchema.properties,
+      resizable: absent,
+      shape: absent,
+      background: absent,
+    }),
+  ]),
+});

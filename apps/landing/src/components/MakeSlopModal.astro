@@ -49,10 +49,12 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
 </dialog>
 
 <script>
-  const trigger = document.querySelector<HTMLButtonElement>("#make-slop-trigger");
+  // Any button marked data-make-slop opens the flow; focus returns to whichever opened it.
+  const triggers = document.querySelectorAll<HTMLElement>("[data-make-slop]");
   const dialog = document.querySelector<HTMLDialogElement>("#make-slop-modal");
+  let trigger: HTMLElement | null = null;
 
-  if (trigger && dialog) {
+  if (triggers.length && dialog) {
     const storageKey = "hitslop:desktop-installed";
     const title = dialog.querySelector<HTMLHeadingElement>("#make-slop-title")!;
     const description = dialog.querySelector<HTMLParagraphElement>("#make-slop-description")!;
@@ -77,7 +79,8 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
         : "You’ll use it to open your finished slop on your Mac.";
     }
 
-    trigger.addEventListener("click", () => {
+    triggers.forEach((button) => button.addEventListener("click", () => {
+      trigger = button;
       let installed = confirmedThisVisit;
       try {
         installed ||= localStorage.getItem(storageKey) === "yes";
@@ -92,7 +95,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
       document.body.style.overflow = "hidden";
       if (installed) title.focus();
       else installedButton.focus();
-    });
+    }));
 
     installedButton.addEventListener("click", () => {
       confirmedThisVisit = true;
@@ -131,7 +134,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
     });
     dialog.addEventListener("close", () => {
       document.body.style.overflow = previousOverflow;
-      trigger.focus();
+      trigger?.focus();
     });
   }
 </script>
@@ -159,7 +162,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
   .make-slop-close { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
   .make-slop-close:hover { background: #eae3f7; }
   .make-slop-close svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
-  #make-slop-title { font-family: "HitSlop Display", sans-serif; font-size: clamp(2rem, 6vw, 2.6rem); font-weight: 400; line-height: 1.1; letter-spacing: -.02em; }
+  #make-slop-title { font-family: "HitSlop Display", sans-serif; font-size: clamp(2rem, 6vw, 2.6rem); font-weight: 800; line-height: 1.1; letter-spacing: -.02em; }
   #make-slop-title:focus { outline: none; }
   #make-slop-description { margin: 16px 0; color: #505168; line-height: 1.6; }
   .make-slop-requirements { margin: 0 0 22px; color: #505168; font-size: .85rem; }

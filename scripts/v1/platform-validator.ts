@@ -5,6 +5,9 @@ import CoreFoundation
 
 public enum PlatformContract {
     public static func valid(_ value: Any, against schema: [String: Any]) -> Bool {
+        if let forbidden = schema["not"] as? [String: Any], valid(value, against: forbidden) {
+            return false
+        }
         if let variants = schema["anyOf"] as? [[String: Any]] {
             return variants.contains { valid(value, against: $0) }
         }

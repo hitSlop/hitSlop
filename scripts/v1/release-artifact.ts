@@ -1,11 +1,5 @@
 import { builtTemplates } from "./templates";
-import {
-  verifyCopies,
-  verifyCurrentRuntime,
-  runtimeDestinations,
-  verifyReleasedIdentities,
-  digest,
-} from "./runtime-artifacts";
+import { digest, shellDestinations, shellFiles } from "./runtime-artifacts";
 import { strict as assert } from "node:assert";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
@@ -13,22 +7,15 @@ import { tmpdir } from "node:os";
 import { validateTemplate } from "./template-cache";
 const app = resolve(process.argv[2] ?? "generated/v1/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
-const roots = [
-  ...new Bun.Glob("**/runtimes/*/headless.js").scanSync({ cwd: app, onlyFiles: true }),
-].map((p) => dirname(dirname(join(app, p))));
-const catalogs = [...new Set(roots)];
-assert.ok(catalogs.length >= 2, "Host and helper must both bundle runtimes");
-assert.ok(
-  catalogs.some((root) => root.startsWith(join(app, "Contents/Resources") + "/")),
-  "Missing app runtime catalog",
+// Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
+const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>
+  dirname(join(app, p)),
 );
-assert.ok(
-  catalogs.some((root) => root.startsWith(join(app, "Contents/Helpers") + "/")),
-  "Missing helper runtime catalog",
-);
-const installedCatalog = await verifyCopies([...catalogs, runtimeDestinations[0]!]);
-verifyCurrentRuntime(installedCatalog);
-await verifyReleasedIdentities(installedCatalog);
+assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Resources") + "/")), "Missing app page shell");
+assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Helpers") + "/")), "Missing helper page shell");
+const expected = await digest(shellDestinations.app, shellFiles);
+for (const root of shells) assert.equal(await digest(root, shellFiles), expected, `Page shell differs: ${root}`);
+assert.deepEqual([...new Bun.Glob("**/*.wasm").scanSync({ cwd: app, onlyFiles: true })], [], "The app must not bundle WASM");
 const folder = await mkdtemp(join(tmpdir(), "hitslop-release-verify-"));
 try {
   const run = async (args: string[]) => {
@@ -46,16 +33,11 @@ try {
     assert.equal(code, 0, error);
     return out;
   };
-  const capabilities = JSON.parse(await run(["runtime-info"]));
-  const identities = Object.values(installedCatalog)
-    .map((value) => value.identity)
-    .sort((a, b) => a.runtimeContract - b.runtimeContract);
-  assert.deepEqual(capabilities, { current: identities.at(-1), runtimes: identities });
   const selected = (await builtTemplates()).templates.filter((t) => t.bundled).map((t) => t.slug);
   const starters = join(app, "Contents/Resources/StarterTemplates");
   assert.deepEqual((await readdir(starters)).sort(), selected.map((slug) => slug + ".slop").sort());
   const exhaustive = process.env.HITSLOP_TEMPLATE_EXHAUSTIVE === "1";
-  const fixtures = ["quick-checklist", "small-expenses"];
+  const fixtures = ["quick-checklist"];
   for (const fixture of fixtures)
     assert.ok(selected.includes(fixture), `Missing release fixture: ${fixture}`);
   for (const slug of selected) {
@@ -95,14 +77,16 @@ try {
     mutation,
     "--op",
     JSON.stringify({
-      type: "text.replace",
+      type: "splice",
       path: ["title"],
-      value: "Installed helper verified",
+      index: 0,
+      delete: 0,
+      insert: "Installed helper verified",
     }),
   ]);
-  assert.equal(JSON.parse(await run(["get", mutation])).title, "Installed helper verified");
+  assert.ok(JSON.parse(await run(["get", mutation])).title.startsWith("Installed helper verified"));
   console.log(
-    "PASS packaged starters, matching runtimes, installed editing and export without Bun/Node",
+    "PASS packaged starters, matching page shells, installed editing and export without Bun/Node",
   );
 } finally {
   await rm(folder, { recursive: true, force: true });

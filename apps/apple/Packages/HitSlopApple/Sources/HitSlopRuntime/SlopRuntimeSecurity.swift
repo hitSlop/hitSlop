@@ -1,5 +1,5 @@
 import Foundation
-import HitSlopWasm
+import HitSlopDocument
 
 public enum SlopRuntimePurpose: Sendable {
   case interactive, backgroundRender

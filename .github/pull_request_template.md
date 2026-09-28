@@ -15,4 +15,4 @@
 
 ## Compatibility notes
 
-<!-- Storage, host, package-format, or release impact. Preserve shipped v1 contracts and sealed bytes; no legacy migration. -->
+<!-- Storage, host, package-format, or release impact. Nothing has shipped: no legacy handling or migration. -->

@@ -1,6 +1,6 @@
-import type { Document } from "./document";
 import type { ObjectNode } from "./schema";
-import type { Session, Request } from "./session";
+import type { OwnerSession as Session } from "./owner/session";
+import type { Request } from "./session-types";
 import type { createCaptureController } from "./capture";
 
 /** A mounted view; rendered must wait for pending framework updates. */
@@ -12,9 +12,12 @@ export interface DocumentView {
 /** Shared visible-session lifecycle. Headless sessions never mount a view. */
 export async function mountViewLifecycle<N extends ObjectNode>(options: {
   mount(): DocumentView | Promise<DocumentView>;
-  document: Document<N>;
+  document: unknown;
   target: HTMLElement;
-  session: Pick<Session, "flush" | "handle" | "prepareClose" | "cancelClose" | "close" | "discardPending">;
+  session: Pick<
+    Session,
+    "flush" | "handle" | "prepareClose" | "cancelClose" | "close" | "discardPending"
+  >;
   capture: Pick<ReturnType<typeof createCaptureController>, "begin" | "restore">;
   recovered?: () => Promise<unknown>;
 }) {
@@ -77,10 +80,24 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
       }
     },
     captureBegin: async (token: string) => {
-      await session.flush();
-      await view.rendered();
-      return capture.begin(token, "export");
+      await session.prepareClose();
+      target.inert = true;
+      try {
+        await view.rendered();
+        return await capture.begin(token, "export");
+      } catch (error) {
+        session.cancelClose();
+        target.inert = false;
+        throw error;
+      }
     },
-    captureRestore: (token: string) => capture.restore(token),
+    captureRestore: async (token: string) => {
+      try {
+        return await capture.restore(token);
+      } finally {
+        session.cancelClose();
+        target.inert = false;
+      }
+    },
   } satisfies import("./runtime-handle").SlopRuntimeHandle;
 }

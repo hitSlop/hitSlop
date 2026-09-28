@@ -1,4 +1,5 @@
-export type CaptureMode = "preview" | "export" | "icon";
+import type { CaptureMode } from "./contracts";
+export type { CaptureMode } from "./contracts";
 type Target = {
   element: HTMLElement;
   prepare: () => void | Promise<void>;

@@ -1,5 +1,6 @@
-import { checkRuntime } from "./compatibility";
+import { buildCoreWasm } from "./core-build";
 const native = process.argv.includes("--native");
+if (!native) await buildCoreWasm();
 if (native) await (await import("./native-fixtures")).prepareNativeFixtures();
 const files = [...new Bun.Glob("packages/{document,cli,schema}/tests/**/*.test.ts").scanSync(".")]
   .filter((file) => file.endsWith(".native.test.ts") === native)
@@ -18,4 +19,3 @@ const child = Bun.spawn([process.execPath, "test", ...files.map((f) => "./" + f)
 });
 const code = await child.exited;
 if (code) process.exit(code);
-if (!native) await checkRuntime({ report: ".hitslop/v1-evidence/compatibility.json" });

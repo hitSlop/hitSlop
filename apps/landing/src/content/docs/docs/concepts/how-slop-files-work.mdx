@@ -23,7 +23,6 @@ My.slop/
     app.js
     app.css
     theme.json
-    runtime.json
   state.schema.json
   initial.json
   QuickLook/
@@ -32,7 +31,7 @@ My.slop/
   .agents/skills/hitslop-document/
 ```
 
-`assets/theme.json` is immutable build output from `theme.ts`. `runtime.json` declares the required runtime contract and minimum revision. SDK/Loro versions record provenance, not opening gates. The authored bundle does not contain its own document engine. The installed app supplies a compatible runtime for the declared contract, including the page shell, boot sequence, Loro JS/WASM, and native lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. These runtime files are served to the WebView; they are not copied into the slop on open.
+`assets/theme.json` is immutable build output from `theme.ts`. The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is not copied into the slop on open.
 
 ## A writable copy adds state
 
@@ -53,6 +52,6 @@ Owner changes go into `state/theme.json`, a separate, bounded token object. It c
 
 ## Masters and copies
 
-Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the UI or schema in existing documents. An app update can supply a newer compatible host runtime to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
+Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the UI or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
 
 Close before moving or copying a document. Keep it on a local filesystem outside iCloud and other synced folders. Packages reject symlink entries, source/dependency caches, and oversized resources. Only `hitslop-v1` is accepted; migrations, schema evolution, and multi-writer local packages are not supported.

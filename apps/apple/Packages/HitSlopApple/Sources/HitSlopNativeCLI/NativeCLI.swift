@@ -4,14 +4,14 @@ import Foundation
 import HitSlopCore
 import HitSlopHost
 import HitSlopRuntime
-import HitSlopWasm
+import HitSlopDocument
 
 @main struct NativeCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "hitslop-native", abstract: "Read, edit, open, and export hitSlop documents.",
     subcommands: [
-      RuntimeInfo.self, Theme.self, Attachments.self, Screenshot.self, Export.self,
-      Get.self, Schema.self, ImportJSON.self,
+      Theme.self, Attachments.self, Screenshot.self, Export.self,
+      Get.self, Schema.self,
       Apply.self, Batch.self, Compact.self, Create.self, Open.self,
     ] + debugCommands)
 
@@ -144,20 +144,13 @@ struct StorageProbe: ParsableCommand {
   @Argument var root: String
   @Argument var phase: String
   @Argument var marker: String
-  @Argument var payload: String
   func run() throws {
-    try DebugStorageProbe.run([root, phase, marker, payload])
+    try DebugStorageProbe.run([root, phase, marker])
   }
 }
 
 #endif
 
-struct RuntimeInfo: AsyncParsableCommand {
-  static let configuration = CommandConfiguration(commandName: "runtime-info")
-  @MainActor func run() async throws {
-    print(String(decoding: try WasmSession.runtimeCapabilitiesData(), as: UTF8.self))
-  }
-}
 struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(subcommands: [
     ThemeGet.self, ThemeSet.self, ThemeReset.self,

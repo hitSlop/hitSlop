@@ -2,7 +2,7 @@ import AppKit
 import ArgumentParser
 import Foundation
 import HitSlopCore
-import HitSlopWasm
+import HitSlopDocument
 import UniformTypeIdentifiers
 
 struct Attachments: AsyncParsableCommand {

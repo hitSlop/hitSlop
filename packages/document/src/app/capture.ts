@@ -1,5 +1,5 @@
 import type { CaptureTarget, SlopContext } from "../abi";
-import type { CaptureMode } from "../capture";
+import type { CaptureMode } from "../contracts";
 import { current } from "./context";
 export type { CaptureMode, CaptureTarget };
 

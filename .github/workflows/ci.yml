@@ -49,6 +49,10 @@ jobs:
           filters: |
             native:
               - 'apps/apple/**'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
               - 'packages/document/src/**'
               - 'packages/schema/src/**'
               - 'packages/cli/src/**'
@@ -59,7 +63,6 @@ jobs:
               - 'packages/*/package.json'
               - 'scripts/**'
               - 'tests/**'
-              - 'runtimes/**'
               - 'examples/slops/**'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
@@ -83,8 +86,7 @@ jobs:
           bun run test:native
           bun run test:render --fixtures
           bun run test:native-helper
-          bun run test:storage
-          bun scripts/v1/crash-matrix.ts --native
+          bun scripts/v1/crash-matrix.ts
       - name: Native unaffected
         if: steps.paths.outputs.native == 'false'
         run: echo 'No native inputs changed'
@@ -114,7 +116,6 @@ jobs:
         run: |
           bun run build
           bun run build:templates
-          bun run check:sealed-templates
       - name: Verify warm template cache and profile full render corpus
         if: github.event_name == 'workflow_dispatch' && inputs.render_corpus
         env:

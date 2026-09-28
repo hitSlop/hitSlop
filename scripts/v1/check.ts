@@ -1,11 +1,7 @@
-import { verifyProvenance } from "./runtime-artifacts";
-import { checkHistory } from "./compatibility-history";
 import { discoverTemplates, repository, type TemplateSource } from "./templates";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-await verifyProvenance();
-await checkHistory();
 const env = { ...process.env, PATH: "/opt/homebrew/bin:/usr/bin:/bin:" + process.env.PATH };
 async function run(cmd: string[]) {
   const p = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit", env });

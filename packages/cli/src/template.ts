@@ -1,8 +1,6 @@
 import { cp, chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
 import { join, resolve, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
-import identity from "@hitslop/document/identity";
-import { supportsRuntime } from "./runtime-capabilities";
 import { findNative } from "./native";
 import { buildProject } from "./build";
 
@@ -21,19 +19,6 @@ export async function prepareRenderer() {
   if (process.platform !== "darwin")
     throw new Error("Native template artwork requires hitSlop.app on macOS.");
   const helper = await findNative();
-  const check = Bun.spawn([helper, "runtime-info"], { stdout: "pipe", stderr: "pipe" });
-  const [output, code] = await Promise.all([new Response(check.stdout).text(), check.exited, new Response(check.stderr).text()]);
-  let actual;
-  try {
-    actual = JSON.parse(output);
-  } catch {}
-  if (
-    code ||
-    !supportsRuntime(actual, identity.runtimeContract, identity.runtimeRevision)
-  )
-    throw new Error(
-      `Update hitSlop.app: SDK ${identity.sdkVersion} requires runtime contract ${identity.runtimeContract}, revision ${identity.runtimeRevision} or newer.`,
-    );
   return helper;
 }
 

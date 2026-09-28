@@ -1,6 +1,6 @@
 {
   "name": "@hitslop/cli",
-  "version": "2.0.0",
+  "version": "4.0.0",
   "type": "module",
   "bin": {
     "slop": "src/cli.ts"
@@ -10,8 +10,8 @@
     "@crustjs/extensions": "0.4.1",
     "@crustjs/prompts": "0.2.3",
     "@crustjs/skills": "0.4.1",
-    "@hitslop/document": "2.0.0",
-    "@hitslop/schema": "2.0.0",
+    "@hitslop/document": "4.0.0",
+    "@hitslop/schema": "4.0.0",
     "esbuild": "^0.28.2",
     "svelte": "5.57.1",
     "svelte-check": "^4.7.6",
@@ -26,7 +26,7 @@
     "templates",
     "skills",
     ".crust/root/skills",
-    "runtimes"
+    "shell"
   ],
   "engines": {
     "bun": ">=1.4.2"

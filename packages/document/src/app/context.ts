@@ -9,6 +9,9 @@ let active: SlopContext | undefined;
 export function activate(ctx: SlopContext) {
   active = ctx;
 }
+export function deactivate(ctx: SlopContext) {
+  if (active === ctx) active = undefined;
+}
 export function current(): SlopContext {
   if (!active) throw new Error("Requires a mounted hitSlop app; export default defineSlop(App)");
   return active;

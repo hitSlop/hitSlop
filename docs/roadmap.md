@@ -10,7 +10,7 @@ Plan a separate Cloudflare HTTP module with R2 artifacts and catalog metadata. K
 
 ## Collaboration
 
-Collaboration is separate from hosted discovery. A future design can authenticate in Swift, transfer Loro updates between replicas, and persist opaque updates remotely. Each local replica retains one writer and local SQLite storage. History pruning remains deferred and will need a retention policy compatible with offline replicas. Mergeable map children, splice-based text binding and commit origins are already in place; undo can use `UndoManager` excluding the `cli` origin. Keep credentials outside authored code, preserve ByteStore as the persistence boundary, and introduce a dedicated sync envelope rather than overloading `apply`.
+Collaboration is separate from hosted discovery. A future design can authenticate in Swift, transfer Loro updates between replicas, and persist opaque updates remotely. Each local replica retains one writer and local SQLite storage. History pruning remains deferred and will need a retention policy compatible with offline replicas. Mergeable map children, splice-based text binding and commit origins are already in place. Undo first needs `change()` staging that a Loro `UndoManager` can observe; the current fork-based staging hides local operations. Keep credentials outside authored code, preserve ByteStore as the persistence boundary, and introduce a dedicated sync envelope rather than overloading `apply`.
 
 Do not restore JSON room seeds, command/snapshot authority, guest snapshot reconciliation, JavaScriptCore, data.json, or a second semantic validator. Convergence tests around internal import/export do not constitute a shipped collaboration product.
 

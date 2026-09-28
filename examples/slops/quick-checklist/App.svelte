@@ -3,8 +3,7 @@
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
-  import { flip } from "svelte/animate";
-  import { Checkbox, DropdownMenu, Tabs } from "bits-ui";
+  import { DropdownMenu, Tabs } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import Archive from "@lucide/svelte/icons/archive";
@@ -17,8 +16,15 @@
   let draft = $state("");
   let composer = $state<HTMLInputElement>();
   let notice = $state("");
+  let openMenu = $state<string | null>(null);
+  let menuAnchor = $state<HTMLElement | null>(null);
+  // Only the row being edited is a live textarea; the rest render as text (WebKit
+  // form controls are too expensive to mount by the thousand).
+  let editing = $state<{ id: string; caret: number | null } | null>(null);
   const visible = $derived(doc.current.tasks.filter(task => !task.archived));
   const filed = $derived(doc.current.tasks.filter(task => task.archived));
+  const menuIndex = $derived(openMenu ? visible.findIndex(task => task.$id === openMenu) : -1);
+  $effect(() => { if (openMenu && menuIndex < 0) openMenu = null; });
   const finished = $derived(visible.filter(task => task.done).length);
   const ratio = $derived(visible.length ? finished / visible.length * 100 : 0);
   const fill = new Tween(untrack(() => ratio), { duration: 280, easing: cubicOut });
@@ -29,38 +35,71 @@
   });
   onDestroy(() => { void fill.set(fill.target, {duration:0,delay:0}); });
   $effect(() => { if (notice) { const timer = setTimeout(() => notice = "", 4000); return () => clearTimeout(timer); } });
-  const flipMs = $derived(prefersReducedMotion.current ? 0 : 240);
   const exported = $derived(activeView === "filed" ? filed : visible);
   const exportFinished = $derived(exported.filter(task => task.done).length);
   const marks = $derived(visible.length ? Math.round(3 * finished / visible.length) : 0);
 
-  function addTask() {
-    const text = draft.trim(); if (!text) return;
-    doc.fields.tasks.insert({text, done:false, archived:false});
-    draft = ""; composer?.focus();
+  let adding = $state(false);
+  async function addTask() {
+    const submitted = draft;
+    const text = submitted.trim(); if (!text || adding) return;
+    adding = true;
+    try {
+      await doc.fields.tasks.insert({text, done:false, archived:false});
+      if (draft === submitted) draft = "";
+      composer?.focus();
+    } catch { /* The runtime reports failures; keep the composer for retry. */ }
+    finally { adding = false; }
   }
-  function move(id: string, direction: -1 | 1) {
+  async function move(id: string, direction: -1 | 1) {
     const index = visible.findIndex(task => task.$id === id);
     const neighbor = visible[index + direction]; if (!neighbor) return;
-    doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id});
+    try { await doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id}); } catch {}
   }
-  function remove(id: string) { doc.fields.tasks.remove(id); notice = "Task removed."; composer?.focus(); }
-  function fileFinished() {
+  async function remove(id: string) {
+    try { await doc.fields.tasks.remove(id); notice = "Task removed."; composer?.focus(); } catch {}
+  }
+  async function fileFinished() {
     const done = visible.filter(task => task.done);
-    doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); }, {message: "File finished tasks"});
-    notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
+    try {
+      await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); }, {message: "File finished tasks"});
+      notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
+    } catch {}
   }
-  function restore(task: (typeof filed)[number]) {
-    doc.change(tx => { const row = tx.at(task); row.archived.set(false); row.done.set(false); });
-    notice = "Task moved back to your list.";
+  async function restore(task: (typeof filed)[number]) {
+    try {
+      await doc.change(tx => { const row = tx.at(task); row.archived.set(false); row.done.set(false); });
+      notice = "Task moved back to your list.";
+    } catch {}
   }
-  function sizeToText(node: HTMLTextAreaElement, _value: string) {
-    let timer: ReturnType<typeof setTimeout>; let width = -1;
-    const resize = () => { clearTimeout(timer); timer = setTimeout(() => { node.style.height = "auto"; node.style.height = `${node.scrollHeight}px`; }); };
-    const observer = new ResizeObserver(entries => { const next = entries[0]?.contentRect.width; if (next !== undefined && next !== width) {width = next; resize();} });
-    observer.observe(node); node.addEventListener("input", resize); resize();
-    return {update:resize, destroy() {clearTimeout(timer);observer.disconnect();node.removeEventListener("input",resize);} };
+  async function toggle(id: string, input: HTMLInputElement) {
+    const checked = input.checked;
+    try { await doc.fields.tasks.item(id).done.set(checked); }
+    catch { input.checked = !checked; }
   }
+  function openActions(id: string, button: HTMLElement) {
+    if (openMenu === id) { openMenu = null; return; }
+    menuAnchor = button;
+    openMenu = id;
+  }
+  function startEditing(id: string, event?: MouseEvent) {
+    let caret: number | null = null;
+    const target = event?.currentTarget as HTMLElement | undefined;
+    const range = event && (document as any).caretRangeFromPoint?.(event.clientX, event.clientY);
+    if (target && range && target.contains(range.startContainer) && range.startContainer.nodeType === Node.TEXT_NODE) caret = range.startOffset;
+    editing = { id, caret };
+  }
+  function focusEditor(node: HTMLTextAreaElement, caret: number | null) {
+    node.focus();
+    const at = Math.min(caret ?? node.value.length, node.value.length);
+    node.setSelectionRange(at, at);
+  }
+  // CSS auto-grow: the wrapper's ::after mirrors the text, so no per-row measuring.
+  function mirror(event: Event) {
+    const field = event.currentTarget as HTMLTextAreaElement;
+    field.parentElement!.dataset.value = field.value;
+  }
+
 </script>
 
 {#snippet brand()}
@@ -83,14 +122,16 @@
   >
     <div class="checklist-heading">
       <p class="checklist-eyebrow">A little less on your mind.</p>
-      <textarea
-        class="checklist-title"
-        aria-label="Checklist title"
-        rows="1"
-        use:sizeToText={doc.current.title}
-        use:bindText={doc.fields.title}
-        placeholder="Name your list"
-      ></textarea>
+      <div class="checklist-grow title" data-value={doc.current.title}>
+        <textarea
+          class="checklist-title"
+          aria-label="Checklist title"
+          rows="1"
+          oninput={mirror}
+          use:bindText={doc.fields.title}
+          placeholder="Name your list"
+        ></textarea>
+      </div>
       <div class="checklist-progress">
         <span aria-live="polite"
           >{visible.length && finished === visible.length
@@ -119,7 +160,7 @@
       <button
         type="submit"
         aria-label="Add task"
-        disabled={!draft.trim()}
+        disabled={adding || !draft.trim()}
         ><Plus size={20} /></button
       >
     </form>
@@ -145,67 +186,75 @@
       {#if activeView === "tasks"}
         <ol class="checklist-list">
           {#each visible as task, index (task.$id)}
-            <li
-              class="checklist-row"
-              data-done={task.done}
-              animate:flip={{ duration: flipMs }}
-            >
-              <Checkbox.Root
-                checked={task.done}
-                onCheckedChange={(checked) => doc.at(task).done.set(checked)}
-                aria-label={`Mark ${task.text || "untitled task"} ${task.done ? "incomplete" : "complete"}`}
-              >
-                {#snippet children({ checked })}{#if checked}<Check
-                      size={17}
-                      strokeWidth={3}
-                    />{/if}{/snippet}
-              </Checkbox.Root>
-              <textarea
-                class="checklist-task-text"
-                aria-label={`Task ${index + 1}`}
-                rows="1"
-                use:sizeToText={task.text}
-                use:bindText={doc.at(task).text}
-                placeholder="Untitled task"
-                onkeydown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    composer?.focus();
-                  }
-                }}
-              ></textarea>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger
-                  class="checklist-more"
-                  aria-label={`Actions for ${task.text || "untitled task"}`}
-                  ><Ellipsis size={19} /></DropdownMenu.Trigger
-                >
-                <DropdownMenu.Portal
-                  ><DropdownMenu.Content
-                    class="checklist-menu"
-                    sideOffset={5}
-                    align="end"
-                  >
-                    <DropdownMenu.Item
-                      disabled={index === 0}
-                      onSelect={() => move(task.$id, -1)}
-                      >Move up</DropdownMenu.Item
-                    >
-                    <DropdownMenu.Item
-                      disabled={index === visible.length - 1}
-                      onSelect={() => move(task.$id, 1)}
-                      >Move down</DropdownMenu.Item
-                    >
-                    <DropdownMenu.Separator /><DropdownMenu.Item
-                      onSelect={() => remove(task.$id)}
-                      >Remove task</DropdownMenu.Item
-                    >
-                  </DropdownMenu.Content></DropdownMenu.Portal
-                >
-              </DropdownMenu.Root>
+            <li class="checklist-row" data-done={task.done}>
+              <label class="checklist-box">
+                <input
+                  type="checkbox"
+                  checked={task.done}
+                  onchange={(event) => toggle(task.$id, event.currentTarget)}
+                  aria-label={`Mark ${task.text || "untitled task"} ${task.done ? "incomplete" : "complete"}`}
+                />
+                {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
+              </label>
+              <div class="checklist-grow task" data-value={task.text}>
+                {#if editing?.id === task.$id}
+                  <textarea
+                    class="checklist-task-text"
+                    aria-label={`Task ${index + 1}`}
+                    rows="1"
+                    oninput={mirror}
+                    use:bindText={doc.at(task).text}
+                    use:focusEditor={editing.caret}
+                    onblur={() => { if (editing?.id === task.$id) editing = null; }}
+                    placeholder="Untitled task"
+                    onkeydown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        composer?.focus();
+                      }
+                    }}
+                  ></textarea>
+                {:else}
+                  <div
+                    class="checklist-task-text"
+                    role="textbox"
+                    tabindex="0"
+                    aria-label={`Task ${index + 1}`}
+                    onfocus={() => startEditing(task.$id)}
+                    onmousedown={(event) => { event.preventDefault(); startEditing(task.$id, event); }}
+                  >{#if task.text}{task.text}{:else}<span class="checklist-placeholder">Untitled task</span>{/if}</div>
+                {/if}
+              </div>
+              <button
+                class="checklist-more"
+                aria-label={`Actions for ${task.text || "untitled task"}`}
+                aria-haspopup="menu"
+                aria-expanded={openMenu === task.$id}
+                onclick={(event) => openActions(task.$id, event.currentTarget)}
+              ><Ellipsis size={19} /></button>
             </li>
           {/each}
         </ol>
+        <DropdownMenu.Root open={openMenu !== null} onOpenChange={(open) => { if (!open) openMenu = null; }}>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              class="checklist-menu"
+              customAnchor={menuAnchor}
+              sideOffset={5}
+              align="end"
+              onInteractOutside={(event) => { if (menuAnchor?.contains(event.target as Node)) event.preventDefault(); }}
+              onCloseAutoFocus={(event) => { event.preventDefault(); menuAnchor?.focus(); }}
+            >
+              {#if openMenu}
+                {@const id = openMenu}
+                <DropdownMenu.Item disabled={menuIndex <= 0} onSelect={() => move(id, -1)}>Move up</DropdownMenu.Item>
+                <DropdownMenu.Item disabled={menuIndex === visible.length - 1} onSelect={() => move(id, 1)}>Move down</DropdownMenu.Item>
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onSelect={() => remove(id)}>Remove task</DropdownMenu.Item>
+              {/if}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
         {#if !visible.length}<div class="checklist-empty">
             <Check size={30} />
             <h2>A little breathing room.</h2>

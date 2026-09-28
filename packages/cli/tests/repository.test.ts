@@ -51,7 +51,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
       await mkdir(join(root, slug + ".slop"));
       await writeFile(
         join(root, slug + ".slop/manifest.json"),
-        JSON.stringify({ slug, runtime: "hitslop-v1" }),
+        JSON.stringify({ slug }),
       );
     }
     const inventory = (selected: string) => ({
@@ -74,7 +74,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
 });
 
 test("hygiene allows authored JS and rejects broken skill links", async () => {
-  expect(() => assertNoGeneratedSource(["packages/document/src/headless.js"])).not.toThrow();
+  expect(() => assertNoGeneratedSource(["packages/document/src/boot.js"])).not.toThrow();
   expect(() => assertNoGeneratedSource(["packages/document/src/schema.js"])).toThrow();
   const root = await mkdtemp(join(tmpdir(), "hitslop-hygiene-"));
   try {

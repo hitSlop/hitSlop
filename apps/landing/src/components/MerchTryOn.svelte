@@ -32,6 +32,36 @@
   const visibleItems = $derived(visibleGroups.flatMap((group) => group.items));
   const selected = $derived(pieces.find((piece) => piece.slug === selectedSlug) ?? initial);
 
+  // Two pieces are literally clickers. Go on.
+  const clickers = new Set(["15-cursor-clicker", "16-ok-again"]);
+  let clicks = $state(0);
+  let pressed = $state(false);
+  function click(): void {
+    clicks += 1;
+    pressed = true;
+    setTimeout(() => { pressed = false; }, 110);
+  }
+
+  // Shuffle through the wardrobe like a fitting-room montage, then land on something.
+  let spinning = $state(false);
+  async function surprise(): Promise<void> {
+    if (spinning) return;
+    spinning = true;
+    const pick = pieces[Math.floor(Math.random() * pieces.length)]!;
+    const hops = motionMs ? 11 : 0;
+    for (let i = 0; i < hops; i++) {
+      const pool = visibleItems.length ? visibleItems : pieces;
+      selectedSlug = pool[Math.floor(Math.random() * pool.length)]!.slug;
+      await new Promise((resolve) => setTimeout(resolve, 55 + i * 16));
+    }
+    category = pick.category;
+    await tick();
+    page = Math.max(0, Math.floor(categoryItems.findIndex((entry) => entry.slug === pick.slug) / capacity));
+    await openPiece(pick);
+    fileButtons[pick.slug]?.focus({ preventScroll: true });
+    spinning = false;
+  }
+
   let email = $state("");
   let notifyState = $state<"idle" | "sending" | "done" | "error">("idle");
   let notifiedPiece = $state("");
@@ -187,6 +217,7 @@
   <header class="intro">
     <p class="edition"><span aria-hidden="true">✳</span> A little out of office.</p>
     <h1>Try on the chaos<span>.</span></h1>
+    <button type="button" class="surprise" onclick={surprise} disabled={spinning}><span aria-hidden="true">🎲</span> {spinning ? "Rummaging…" : "Surprise me"}</button>
   </header>
 
   <div class="wardrobe" bind:this={shelf} class:compact>
@@ -247,6 +278,12 @@
       {#if loading}<span class="loading">Opening {selected.name}…</span>{/if}
       {#if loadingError}<p class="load-error" role="alert">{loadingError}</p>{/if}
       <span class="preview-stamp" aria-hidden="true">hitSlop<br /><span>OFF THE DESKTOP.</span></span>
+      <span class="sticker coming" data-tone="sun" style="--tilt: -8deg" aria-hidden="true">coming soon ✨</span>
+      {#if clickers.has(opened.slug)}
+        <button type="button" class="clicker" class:pressed onclick={click} aria-label={`Click the ${opened.name}. ${clicks} clicks so far.`}>
+          <span class="click-count">{clicks === 0 ? "go on, click it" : `${clicks} click${clicks === 1 ? "" : "s"}${clicks >= 20 ? " (you ok?)" : ""}`}</span>
+        </button>
+      {/if}
     </div>
     <div class="caption" aria-live="polite">
       <div><h2>{opened.name}</h2><p>{opened.blurb}</p></div>
@@ -282,7 +319,7 @@
   .intro { min-width: 0; align-self: start; }
   .edition { margin: 0 0 8px; display: flex; align-items: center; gap: 9px; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5b358e; }
   .edition span { font-size: 24px; line-height: 1; }
-  h1 { font-family: "HitSlop Display", sans-serif; font-size: clamp(38px, 4.5vw, 80px); font-weight: 400; line-height: .98; letter-spacing: -.025em; white-space: nowrap; }
+  h1 { font-family: "HitSlop Display", sans-serif; font-size: clamp(38px, 4.5vw, 80px); font-weight: 800; line-height: .98; letter-spacing: -.025em; white-space: nowrap; }
   h1 > span { color: #7922e0; }
   .wardrobe { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .groups { min-height: 0; flex: 0 1 480px; display: grid; gap: 8px; }
@@ -292,10 +329,21 @@
   .files { min-height: 0; display: grid; grid-template-columns: repeat(var(--file-columns), minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 4px; }
   .file-icon { min-width: 0; min-height: 0; width: 100%; padding: 4px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 2px; transition: background 150ms, border-color 150ms; }
   .product { min-height: 0; min-width: 0; display: flex; justify-content: center; align-items: center; }
-  .product img { height: 100%; width: 100%; max-width: 144px; max-height: 128px; object-fit: contain; filter: drop-shadow(0 4px 5px #29203f18); pointer-events: none; transition: transform 180ms cubic-bezier(.22,1,.36,1); }
+  .product img { height: 100%; width: 100%; max-width: 144px; max-height: 128px; object-fit: contain; filter: drop-shadow(0 4px 5px #29203f18); pointer-events: none; transition: transform 320ms cubic-bezier(.34, 1.56, .64, 1); }
   .filename { justify-self: center; max-width: 100%; padding: 2px 5px; border-radius: 3px; overflow-wrap: anywhere; font-size: clamp(11px, .85vw, 13px); line-height: 1.3; text-align: center; }
   .file-icon:hover { background: #ffffff28; }
-  .file-icon:hover img { transform: translateY(-3px); }
+  .file-icon:hover img { transform: translateY(-5px) rotate(-5deg) scale(1.06); }
+  .file-icon:active img { transform: translateY(1px) scale(.96); }
+  .intro { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 18px; }
+  .intro .edition { flex-basis: 100%; }
+  .surprise { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; border: 2px solid #15152e; border-radius: 16px; color: #15152e; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "HitSlop Display", sans-serif; font-size: 1rem; font-weight: 800; cursor: pointer; transition: transform 220ms cubic-bezier(.34, 1.56, .64, 1); }
+  .surprise:hover { transform: translateY(-2px) rotate(2deg); }
+  .surprise:disabled { cursor: progress; }
+  .stage .coming { position: absolute; top: 16px; left: 16px; z-index: 2; font-size: .95rem; pointer-events: none; }
+  .clicker { position: absolute; inset: 0; z-index: 1; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 18px; border: 0; background: transparent; cursor: pointer; }
+  .click-count { padding: 6px 14px; border: 2px solid #15152e; border-radius: 99px; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "HitSlop Handwriting", cursive; font-size: 1.1rem; }
+  .stage:has(.clicker.pressed) .shot img { transform: scale(.94) translateY(4px); transition: transform 90ms ease-out; }
+  .shot img { transition: transform 200ms cubic-bezier(.34, 1.56, .64, 1); }
   .file-icon.selected { border-color: #8162c276; background: #ffffff35; }
   .file-icon.selected .filename { color: #fcf9ff; background: #7541c2; }
   button:focus-visible { outline: 3px solid #7138db; outline-offset: 2px; }
@@ -347,7 +395,7 @@
   .dialog-close { position: absolute; top: 8px; right: 10px; }
   .dialog-close button { width: 36px; height: 36px; border: 0; border-radius: 6px; background: transparent; font-size: 26px; color: #5d5372; cursor: pointer; }
   .dialog-eyebrow { margin: 0 0 16px; font-size: .7rem; font-weight: 700; letter-spacing: .12em; color: #7741b7; }
-  dialog h2 { font-family: "HitSlop Display", sans-serif; font-size: 40px; font-weight: 400; line-height: 1; }
+  dialog h2 { font-family: "HitSlop Display", sans-serif; font-size: 40px; font-weight: 800; line-height: 1; }
   dialog h2 span { color: #7922e0; }
   dialog p { font-size: .95rem; color: #5d5372; }
   dialog label { font-size: .8rem; font-weight: 650; }

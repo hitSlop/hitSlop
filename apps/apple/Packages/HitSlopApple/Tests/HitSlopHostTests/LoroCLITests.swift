@@ -6,29 +6,19 @@ import PDFKit
 import Testing
 
 @testable import HitSlopHost
-@testable import HitSlopWasm
+@testable import HitSlopDocument
 
 extension LoroClientTests {
-  @Test @MainActor func jsonImportUpdatesOpenViewAndRejectsPendingDrafts() async throws {
-    _ = NSApplication.shared
+  @Test @MainActor func jsonImportIsExplicitlyUnsupportedWithoutMutatingStateOrDraft() async throws {
     let root = try captureFixture()
     let file = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".json")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: file) }
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     try await controller.session.waitUntilReady()
+    let before = try await DocumentCommand.run(method: "get", url: root)
+    let saved = try Data(contentsOf: root.appendingPathComponent("state/document.sqlite"))
+    try Data("{}".utf8).write(to: file)
     let view = controller.session.webView
-    let before = try await cli(["get", root.path, "--snapshot"])
-    #expect(before.0 == 0, "\(before.2)")
-    let snapshot = try #require(try JSONSerialization.jsonObject(with: Data(before.1.utf8)) as? [String: Any])
-    let version = try #require(snapshot["version"] as? String)
-    var data = try #require(snapshot["data"] as? [String: Any])
-    data["title"] = "Imported into open window"
-    try JSONSerialization.data(withJSONObject: data).write(to: file)
-    let applied = try await cli(["import", root.path, "--replace", "--if-version", version, "--file", file.path])
-    #expect(applied.0 == 0, "\(applied.2)")
-    #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "Imported into open window")
-    let accepted = try #require(try JSONSerialization.jsonObject(with: Data(applied.1.utf8)) as? [String: Any])
-    let nextVersion = try #require(accepted["version"] as? String)
     _ = try await view.callAsyncJavaScript("""
       const input = document.querySelector('#draft');
       input.dispatchEvent(new CompositionEvent('compositionstart'));
@@ -36,25 +26,17 @@ extension LoroClientTests {
       input.dispatchEvent(new InputEvent('input', {bubbles:true, isComposing:true}));
       return true;
       """, arguments: [:], in: nil, contentWorld: .page)
-    let rejected = try await cli(["import", root.path, "--replace", "--if-version", nextVersion, "--file", file.path])
+    let rejected = try await cli(["apply", root.path, "--op", #"{"type":"set","path":["missing"],"value":true}"#])
     #expect(rejected.0 != 0)
-    #expect(rejected.2.contains("Destination changed"))
+    #expect(try Data(contentsOf: root.appendingPathComponent("state/document.sqlite")) == saved)
     #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "User is still typing")
-    let fresh = try await DocumentCommand.run(method: "snapshot", url: root)
-    let freshState = try #require(try JSONSerialization.jsonObject(with: fresh) as? [String: Any])
-    let freshVersion = try #require(freshState["version"] as? String)
-    let large = String(repeating: "bulk ", count: 230_000)
-    data["title"] = large
-    try JSONSerialization.data(withJSONObject: data).write(to: file)
-    let bulk = try await cli(["import", root.path, "--replace", "--if-version", freshVersion, "--file", file.path])
-    #expect(bulk.0 == 0, "\(bulk.2)")
-    // WebKit caps plain input values; rendering that prefix must not edit the document.
-    #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value.startsWith('bulk bulk')") as? Bool == true)
+    await #expect(throws: (any Error).self) { try await controller.session.finish() }
+    #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
+    _ = try await view.callAsyncJavaScript("document.querySelector('#draft').dispatchEvent(new CompositionEvent('compositionend')); return true", arguments: [:], in: nil, contentWorld: .page)
     try await controller.session.finish()
-    let reopened = try await cli(["get", root.path])
-    let state = try #require(try JSONSerialization.jsonObject(with: Data(reopened.1.utf8)) as? [String: Any])
-    let preserved = state["title"] as? String == large
-    #expect(preserved)
+    let after = try await DocumentCommand.run(method: "get", url: root)
+    #expect(after != before)
+    #expect(String(decoding: after, as: UTF8.self).contains("User is still typing"))
   }
 
   @Test @MainActor func executableExportsLiveSelectionAndClosedDefaultView() async throws {
@@ -77,6 +59,7 @@ extension LoroClientTests {
       input.dispatchEvent(new CompositionEvent('compositionstart'));
       input.value = 'CLI export pending title';
       input.dispatchEvent(new InputEvent('input', {bubbles:true, isComposing:true}));
+      input.dispatchEvent(new CompositionEvent('compositionend'));
       globalThis.selectedView = 'Selected view';
       return true;
       """, arguments: [:], in: nil, contentWorld: .page)
@@ -130,7 +113,7 @@ extension LoroClientTests {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let op = String(decoding: try replace("must not apply"), as: UTF8.self)
+    let op = String(decoding: try prefixTitle("must not apply"), as: UTF8.self)
     let incomplete = try await cli(["apply", root.path, "--op", op, "--id", "original"])
     #expect(incomplete.0 != 0)
     #expect(incomplete.2.contains("Unknown"))
@@ -146,7 +129,7 @@ extension LoroClientTests {
     let path = try DocumentCommand.liveSocket(for: documentRoot)
     let stale = try JSONSerialization.data(withJSONObject: [
       "id": "stale", "method": "apply", "documentPath": documentRoot.path, "epoch": "old",
-      "op": try JSONSerialization.jsonObject(with: replace("must not apply")),
+      "op": try JSONSerialization.jsonObject(with: prefixTitle("must not apply")),
     ])
     let response = try await Task.detached { try SocketClient.call(path: path, request: stale) }.value
     let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
@@ -196,27 +179,14 @@ extension LoroClientTests {
         "socket": server.path, "epoch": "peer", "pid": ProcessInfo.processInfo.processIdentifier,
         "documentPath": canonical.path,
       ]).write(to: canonical.appendingPathComponent("state/host.lock"))
-      let result = try await cli(["apply", root.path, "--op", String(decoding: replace("refused"), as: UTF8.self)])
+      let result = try await cli(["apply", root.path, "--op", String(decoding: prefixTitle("refused"), as: UTF8.self)])
       #expect(result.0 != 0)
       #expect(result.2.contains("Peer refusal\n" + expected), "\(result.2)")
     }
     #expect(!FileManager.default.fileExists(atPath: canonical.appendingPathComponent("state/document.sqlite").path))
   }
 
-  @Test @MainActor func oldRuntimeFailsBeforeCreatingState() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let url = root.appendingPathComponent("manifest.json")
-    var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
-    manifest["runtime"] = "old-runtime"
-    try JSONSerialization.data(withJSONObject: manifest).write(to: url)
-    await #expect(throws: (any Error).self) {
-      try await DocumentCommand.run(method: "get", url: root)
-    }
-    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("state").path))
-  }
-
-  @Test @MainActor func headlessDoesNotLoadAuthoredCode() async throws {
+  @Test @MainActor func closedOwnerDoesNotLoadAuthoredCode() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     try Data(
@@ -224,7 +194,7 @@ extension LoroClientTests {
         .utf8
     ).write(to: root.appendingPathComponent("assets/app.js"))
     let data = try await DocumentCommand.run(
-      method: "apply", url: root, operation: replace("Engine only"))
+      method: "apply", url: root, operation: prefixTitle("Engine only"))
     #expect(String(decoding: data, as: UTF8.self).contains("Engine only"))
   }
 }

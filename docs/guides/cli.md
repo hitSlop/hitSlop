@@ -158,7 +158,7 @@ separate historical increments are replayed together. An unchanged import does
 not write another checkpoint.
 
 Files and encoded requests are bounded at 16 MiB, nesting at 128 levels, and
-candidate Loro checkpoints at the existing 32 MiB storage limit. Counter
+candidate Loro checkpoints at the 32 MiB limit on stored checkpoint plus update bytes. Counter
 targets that cannot be represented exactly by a finite increment reject rather
 than silently round. Large text replacements use a Unicode-safe splice.
 

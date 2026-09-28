@@ -59,7 +59,13 @@ function assertTrackedHygiene(files: string[]): void {
     )
       failures.push(path);
     if (name === "Icon\r") failures.push(path);
-    if (/^(archive|examples\/archive|Prototypes)\//.test(path)) failures.push(path);
+    // The approved contract-4 reset retains authored slop sources with provenance.
+    // Other historical/local archives remain excluded from the public repository.
+    if (
+      /^(archive|examples\/archive|Prototypes)\//.test(path) &&
+      !path.startsWith("archive/slops/")
+    )
+      failures.push(path);
   }
   if (failures.length)
     throw new Error(
@@ -70,8 +76,7 @@ function assertTrackedHygiene(files: string[]): void {
 export function assertNoGeneratedSource(files: string[]): void {
   const generated = files.filter(
     (path) =>
-      // The runtime's two static entry modules are authored JavaScript.
-      path !== "packages/document/src/headless.js" &&
+      // The page shell's static entry module is authored JavaScript.
       path !== "packages/document/src/boot.js" &&
       /^packages\/[^/]+\/src\//.test(path) &&
       /\.(?:d\.ts|js)$/.test(path),

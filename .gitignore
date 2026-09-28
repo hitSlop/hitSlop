@@ -50,8 +50,9 @@ dist/
 _inspo/
 _vibe/
 
-# Historical source stays local and is excluded from the open-source tree.
-/archive/
+# Historical source stays local, except the approved slop archive with provenance.
+/archive/*
+!/archive/slops/
 /deferred/
 /examples/archive/
 /Prototypes/
@@ -60,15 +61,18 @@ _vibe/
 /apps/apple/Packages/HitSlopApple/Sources/HitSlopFoundation/Resources/
 .v1-build-test-*/
 
-/apps/apple/Packages/HitSlopApple/Sources/HitSlopWasm/Resources/
+/apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/
 
 **/.crust/
 
 # Generated, shipped in the CLI tarball
-/packages/cli/runtime/
-/packages/cli/runtimes/
+/packages/cli/shell/
 
-/packages/cli/runtimes.building/
+/packages/cli/shell.building/
 
 # Local merch design sources and generation artifacts.
 /merch/
+
+# Rust production build artifacts
+/target/
+/apps/apple/Packages/HitSlopApple/Generated/

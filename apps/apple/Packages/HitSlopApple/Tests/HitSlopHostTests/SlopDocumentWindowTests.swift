@@ -60,9 +60,8 @@ private func documentWindowFixture(resizable: Bool) throws -> URL {
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data(#"{"runtimeContract":2,"minRuntimeRevision":1,"sdkVersion":"2.0.0","loroVersion":"1.16.1","protocolVersion":1}"#.utf8).write(to: root.appendingPathComponent("assets/runtime.json"))
     let resizableJSON = resizable ? "true" : "false"
-    let manifest = #"{"runtime":"hitslop-v1","$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
     let skill = root.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
     try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)

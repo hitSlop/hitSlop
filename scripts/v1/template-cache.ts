@@ -3,7 +3,6 @@ import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node
 import { dirname, join, relative } from "node:path";
 import { parseManifest } from "../../packages/schema/src/manifest";
 import { fromDescriptor, validate } from "@hitslop/document";
-import identity from "../../packages/document/src/runtime-identity.json";
 import { digest } from "./runtime-artifacts";
 
 const format = 2;
@@ -75,7 +74,7 @@ async function version(command: string[]) {
   return out.trim();
 }
 
-/** Files every template build reads: compiler, SDK, runtime and native renderer. */
+/** Files every template build reads: compiler, SDK, page shell and native renderer. */
 export async function sharedTemplatePaths(repository: string, sources: string[]) {
   const native = "apps/apple/Packages/HitSlopApple";
   const paths = [
@@ -87,12 +86,12 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
     "packages/document/package.json",
     "packages/schema/src",
     "packages/schema/package.json",
-    "packages/cli/runtimes",
+    "packages/cli/shell",
     "scripts/v1/build-templates.ts",
     "scripts/v1/template-cache.ts",
     `${native}/Package.swift`,
     `${native}/Package.resolved`,
-    ...["HitSlopCore", "HitSlopWasm", "HitSlopRuntime", "HitSlopHost", "HitSlopNativeCLI"].map(
+    ...["HitSlopCore", "HitSlopDocument", "HitSlopRuntime", "HitSlopHost", "HitSlopNativeCLI"].map(
       (name) => `${native}/Sources/${name}`,
     ),
     ...(await compilerSources(repository, [
@@ -168,14 +167,8 @@ export async function validateTemplate(path: string, slug: string) {
     descriptor.descriptor.root,
     JSON.parse(await readFile(join(path, "initial.json"), "utf8")),
   );
-  const requirement = JSON.parse(await readFile(join(path, "assets/runtime.json"), "utf8"));
-  if (
-    requirement.runtimeContract !== identity.runtimeContract ||
-    requirement.minRuntimeRevision !== identity.runtimeRevision ||
-    requirement.sdkVersion !== identity.sdkVersion
-  )
-    throw new Error(`Template runtime mismatch: ${slug}`);
-  if (!(await readFile(join(path, "assets/app.js"))).length) throw new Error(`Empty template: ${slug}`);
+  if (!(await readFile(join(path, "assets/app.js"))).length)
+    throw new Error(`Empty template: ${slug}`);
   for (const name of ["Preview.png", "Icon.png"]) {
     const png = await readFile(join(path, "QuickLook", name)).catch((error) => {
       if (name === "Icon.png" && error.code === "ENOENT") return undefined;

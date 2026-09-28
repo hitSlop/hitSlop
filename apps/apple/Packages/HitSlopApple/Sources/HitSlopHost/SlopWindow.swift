@@ -1,7 +1,7 @@
 import AppKit
 import HitSlopCore
 import HitSlopRuntime
-import HitSlopWasm
+import HitSlopDocument
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -309,7 +309,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     recordStartup("runtime-ready")
     #if DEBUG
     if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-      // Page-relative milliseconds for the hitslop:* marks recorded by mountDocument.
+      // Page-relative milliseconds for the hitslop:* marks recorded by the runtime's boot.js.
       session.webView.evaluateJavaScript(
         "JSON.stringify(performance.getEntriesByType('mark').map(e => [e.name, Math.round(e.startTime)]))"
       ) { result, _ in print("[hitSlop startup] page \(result ?? "")") }
@@ -440,7 +440,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         ?? SlopFailureContext(reason: session.engine.failureReason ?? .presentation)
       telemetry.send(.breadcrumb(.renderer, .failed))
       var context = diagnostic
-      context.runtime = session.engine.telemetryRuntime
       if !reportedSaveFailure || context.reason == .webContentTerminated { telemetry.send(.failed(.renderer, context)) }
     }
     if let onRuntimeFailure {
@@ -454,7 +453,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if reportedGuestSources.insert(issue.source).inserted {
       let rejection = issue.source == .document
       telemetry.send(.failed(.renderer, .init(rejection ? .rejection : .authored,
-        reason: rejection ? .operationRejected : .authoredException, runtime: session.engine.telemetryRuntime)))
+        reason: rejection ? .operationRejected : .authoredException)))
     }
     guard guestIssue?.message != issue.message else { return }
     guestIssue = issue
@@ -464,12 +463,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard !reportedSaveFailure else { return }
     reportedSaveFailure = true
     var context = storageFailure
-    context.runtime = session.engine.telemetryRuntime
     telemetry.send(.breadcrumb(.save, .failed))
     telemetry.send(.failed(.save, context))
   }
 
-  public func runtimeSession(_ session: SlopRuntimeSession, saveStatus: WasmSaveStatus) {
+  public func runtimeSession(_ session: SlopRuntimeSession, saveStatus: DocumentSaveStatus) {
     if saveStatus.status == "save-failed" {
       runtimeSession(session, storageFailure: .init(reason: .storage))
     } else if saveStatus.status == "saved" {
@@ -498,9 +496,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard let message = attentionMessage ?? guestIssue?.message else { return }
     let saving = attentionMessage != nil
     let alert = NSAlert()
-    alert.messageText = saving ? "Changes could not be saved" : "This slop encountered an error"
+    let invalidated = saving && message.hasPrefix("Owner invalidated:")
+    alert.messageText = invalidated ? "The document engine needs recovery" : saving ? "Changes could not be saved" : "This slop encountered an error"
     alert.informativeText = message
-    alert.addButton(withTitle: saving ? "Retry Save" : "Reload Interface")
+    alert.addButton(withTitle: invalidated ? "Discard Unsaved Edits and Reload" : saving ? "Retry Save" : "Reload Interface")
     // Unsaved work stays live; offer an explicit way back to the durable state.
     let full = saving && Self.isCapacityFailure(message)
     if full { alert.addButton(withTitle: "Discard Unsaved Edits") }
@@ -520,6 +519,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
           Task {
             do {
               if saving {
+                if invalidated { try await self.session.engine.discardPending() }
                 try await self.session.flush()
                 self.attentionMessage = nil
                 self.showDocumentAttention()
@@ -783,7 +783,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       let destination = try await SlopPreparation.run { try SlopDuplicator.duplicate(from: source, to: target) }
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return destination
-    } catch { telemetry.failure(.duplicate, error: error, runtime: session.engine.telemetryRuntime); throw error }
+    } catch { telemetry.failure(.duplicate, error: error); throw error }
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.
@@ -791,7 +791,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
                                       format: SlopTelemetryEvent.ExportFormat? = nil) {
     if SlopFailureContext.isCancellation(error) { telemetry.send(.breadcrumb(operation, .cancelled)); return }
     if reportedSaveFailure || reportedRendererFailure { telemetry.send(.breadcrumb(operation, .failed)); return }
-    telemetry.failure(operation, error: error, runtime: session.engine.telemetryRuntime, format: format)
+    telemetry.failure(operation, error: error, format: format)
   }
 
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {

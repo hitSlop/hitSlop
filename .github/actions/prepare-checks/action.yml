@@ -1,5 +1,5 @@
 name: Prepare checks
-description: Install pinned tools and restore immutable historical readers
+description: Install pinned tools
 runs:
   using: composite
   steps:
@@ -12,9 +12,22 @@ runs:
         bun-version: "1.4.2"
     - run: bun install --frozen-lockfile
       shell: bash
-    - run: bun scripts/v1/ci-baseline.ts
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+          generated/core-tools
+        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/v1/core-build.ts') }}
+        restore-keys: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+    - name: Prepare shared Rust core toolchain
       shell: bash
-    - run: bun run compatibility:restore
+      run: |
+        rustup show active-toolchain
+        rustup target add wasm32-unknown-unknown
+        cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools
+    - run: bun run core:build:wasm
       shell: bash
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - run: bun run core:test
+      shell: bash

@@ -1,63 +1,30 @@
 import { build as esbuild } from "esbuild";
-import { mkdir, cp, writeFile, mkdtemp, rm, readdir, rename } from "node:fs/promises";
+import { mkdir, cp, mkdtemp, rm, rename } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import identity from "../../packages/document/src/runtime-identity.json";
-import {
-  repository,
-  runtimeDestinations,
-  verifyProvenance,
-  catalog,
-  verifyReleasedIdentities,
-} from "./runtime-artifacts";
+import { repository, shellDestinations } from "./runtime-artifacts";
 
-export async function buildRuntime(destinations = runtimeDestinations) {
-  await verifyProvenance();
-  const stage = await mkdtemp(join(tmpdir(), "hitslop-runtimes-"));
+/** Builds the page shell once and installs it in the app and CLI (plus WASM for CLI dev). */
+export async function buildShell() {
+  const stage = await mkdtemp(join(tmpdir(), "hitslop-shell-"));
   try {
-    const runtimeDirectory = join(stage, String(identity.runtimeContract));
-    await mkdir(runtimeDirectory);
-    for (const entry of ["boot.js", "headless.js"])
-      await cp(join(repository, "packages/document/src", entry), join(runtimeDirectory, entry));
+    await cp(join(repository, "packages/document/src/boot.js"), join(stage, "boot.js"));
     await esbuild({
       entryPoints: [join(repository, "packages/document/src/runtime-entry.ts")],
-      outfile: join(runtimeDirectory, "index.js"),
+      outfile: join(stage, "index.js"),
       bundle: true,
       format: "esm",
       platform: "browser",
       target: "safari17",
       minify: true,
-      plugins: [
-        {
-          name: "loro-external",
-          setup(b) {
-            b.onResolve({ filter: /^loro-crdt$/ }, () => ({
-              path: "./loro/index.js",
-              external: true,
-            }));
-          },
-        },
-      ],
     });
-    const loro = dirname(Bun.resolveSync("loro-crdt/package.json", repository));
-    await cp(join(loro, "web"), join(runtimeDirectory, "loro"), { recursive: true });
-    await writeFile(join(runtimeDirectory, "identity.json"), JSON.stringify(identity));
-    for (const entry of await readdir(join(repository, "runtimes"), { withFileTypes: true })) {
-      if (entry.isSymbolicLink())
-        throw new Error(`Runtime archive cannot be a symlink: ${entry.name}`);
-      if (!entry.isDirectory()) continue;
-      if (!/^[1-9][0-9]*$/.test(entry.name) || Number(entry.name) >= identity.runtimeContract)
-        throw new Error(`Archived runtime must precede current contract: ${entry.name}`);
-      await cp(join(repository, "runtimes", entry.name), join(stage, entry.name), {
-        recursive: true,
-      });
-    }
-    await verifyReleasedIdentities(await catalog(stage));
-    for (const destination of destinations) {
+    for (const [consumer, destination] of Object.entries(shellDestinations)) {
       await mkdir(dirname(destination), { recursive: true });
       const ready = destination + ".building";
       await rm(ready, { recursive: true, force: true });
       await cp(stage, ready, { recursive: true });
+      if (consumer === "cli")
+        await cp(join(repository, "generated/v1/core/wasm"), join(ready, "core"), { recursive: true });
       await rm(destination, { recursive: true, force: true });
       await rename(ready, destination);
     }
@@ -65,4 +32,4 @@ export async function buildRuntime(destinations = runtimeDestinations) {
     await rm(stage, { recursive: true, force: true });
   }
 }
-if (import.meta.main) await buildRuntime();
+if (import.meta.main) await buildShell();

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import HitSlopDocument
 import HitSlopCore
 import HitSlopRuntime
 import Testing
@@ -9,12 +10,7 @@ extension LoroClientTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_STARTUP_BENCH"] == "1"))
   @MainActor func documentStartupTimings() async throws {
     _ = NSApplication.shared
-    if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_PREWARM"] == "1" {
-      // Mirrors a catalog launch: WebKit warms while the user picks a document.
-      SlopRuntimeSession.prewarm()
-      try await Task.sleep(for: .seconds(2))
-    }
-    for name in ["quick-checklist", "small-expenses"] {
+    for name in ["quick-checklist"] {
       for sample in 0..<3 {
         let root = try fixture(name)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -38,16 +34,11 @@ extension LoroClientTests {
   @MainActor func savedDocumentStartupTimings() async throws {
     _ = NSApplication.shared
     let environment = ProcessInfo.processInfo.environment
-    let prewarm = environment["HITSLOP_STARTUP_PREWARM"] == "1"
-    if prewarm {
-      SlopRuntimeSession.prewarm()
-      try await Task.sleep(for: .seconds(2))
-    }
     if environment["HITSLOP_STARTUP_FOREGROUND"] == "1" {
       NSApp.activate(ignoringOtherApps: true)
     }
     let samples = max(1, Int(environment["HITSLOP_STARTUP_SAMPLES"] ?? "10") ?? 10)
-    var names = ["quick-checklist", "small-expenses", "large-checklist"]
+    var names = ["quick-checklist", "large-checklist"]
     var skinSource: String?
     if let fixtures = environment["HITSLOP_PRESENTATION_FIXTURES"] {
       skinSource = try JSONDecoder().decode([String: String].self, from: Data(fixtures.utf8))["washer"]
@@ -63,8 +54,8 @@ extension LoroClientTests {
       } else { root = try fixture(name == "large-checklist" ? "quick-checklist" : name) }
       defer { try? FileManager.default.removeItem(at: root) }
       var operations: [[String: Any]] = name == "washer"
-        ? [["type": "set", "path": ["count"], "value": 7]]
-        : [["type": "text.replace", "path": ["title"], "value": "Saved opening benchmark"]]
+        ? [["type": "increment", "path": ["count"], "by": 7]]
+        : [["type": "splice", "path": ["title"], "index": 0, "delete": 0, "insert": "Saved opening benchmark"]]
       if name == "large-checklist" {
         operations += (0..<1000).map { index in
           ["type": "insert", "path": ["tasks"],
@@ -85,7 +76,7 @@ extension LoroClientTests {
         await controller.waitForPresentation()
         let visible = start.duration(to: .now)
         #expect(controller.isContentReady)
-        print("[saved startup benchmark] \(name) sample=\(sample) prewarm=\(prewarm) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)")
+        print("[saved startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)")
         try await controller.session.finish()
         _ = try await controller.perform(.close)
       }
@@ -277,6 +268,37 @@ private actor OpeningDelay {
 }
 
 extension LoroClientTests {
+  // A subscriber failure must reach native reporting without interrupting the accepted edit.
+  @Test @MainActor func observerFailureIsReportedWithoutPreventingDurability() async throws {
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data(#"""
+      export default { mount(ctx) {
+        ctx.document.subscribe(() => { throw new Error('observer failure'); });
+        globalThis.observerProbe = async () => {
+          ctx.document.change(tx => tx.fields.title.replace('Saved despite observer failure'));
+          await ctx.document.flush();
+          return ctx.document.status;
+        };
+        return {};
+      } };
+      """#.utf8).write(to: root.appendingPathComponent("assets/app.js"))
+    let (incidents, continuation) = AsyncStream<SlopFailureContext>.makeStream()
+    defer { continuation.finish() }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root,
+      telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { continuation.yield(context) } })
+    try await controller.session.waitUntilReady()
+    let status = try await controller.session.webView.callAsyncJavaScript(
+      "return await globalThis.observerProbe()", arguments: [:], in: nil, contentWorld: .page)
+    #expect(status as? String == "saved")
+    var iterator = incidents.makeAsyncIterator()
+    let incident = await iterator.next()
+    #expect(incident?.classification == .authored)
+    try await controller.session.finish()
+    let saved = try await DocumentCommand.run(method: "get", url: root)
+    #expect(String(decoding: saved, as: UTF8.self).contains("Saved despite observer failure"))
+  }
+
   // Gap: installing telemetry only after open returns loses early guest startup failures.
   // A disposable fixture throws before mounting; expect one sanitized authored incident.
   @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
@@ -292,7 +314,6 @@ extension LoroClientTests {
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
-    #expect(failures.first?.runtime?.contract == 2)
     try await controller.session.finish()
   }
 }

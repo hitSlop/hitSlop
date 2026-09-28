@@ -233,52 +233,6 @@
           "documentPath",
           "epoch",
           "method",
-          "data",
-          "expectedVersion"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "documentPath": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096
-          },
-          "epoch": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "method": {
-            "type": "string",
-            "const": "import"
-          },
-          "data": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": true
-          },
-          "expectedVersion": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2097152
-          },
-          "fresh": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      {
-        "type": "object",
-        "required": [
-          "id",
-          "documentPath",
-          "epoch",
-          "method",
           "op"
         ],
         "properties": {

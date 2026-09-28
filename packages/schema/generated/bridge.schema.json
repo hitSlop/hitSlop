@@ -158,6 +158,18 @@
     {
       "type": "object",
       "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "metadata"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "method",
         "generation",
         "updates"

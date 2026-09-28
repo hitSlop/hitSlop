@@ -1,7 +1,5 @@
-/** One release gate and a retained report, including failed stages. Does not publish or seal. */
+/** One release gate and a retained report, including failed stages. Does not publish. */
 import { mkdir, writeFile } from "node:fs/promises";
-import { checkRuntime } from "./compatibility";
-import { strict as assert } from "node:assert";
 const directory = ".hitslop/v1-evidence";
 await mkdir(directory, { recursive: true });
 const git = Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" });
@@ -29,13 +27,11 @@ try {
     ...(process.argv.includes("--built") ? [] : ["build", "build:templates"]),
     "check",
     "check:built",
-    "check:sealed-templates",
     "test",
     "swift:test",
     "test:native",
     "test:render",
     "test:native-helper",
-    "test:storage",
     "packages:pack",
     "test:packed --native",
     "landing:check",
@@ -52,14 +48,6 @@ try {
     stages.push({ command, code, seconds: (performance.now() - start) / 1000 });
     if (code) throw new Error(`Release stage failed: ${command}`);
   }
-  const first = await checkRuntime({ templates: false });
-  const second = await checkRuntime({ templates: false });
-  assert.deepEqual(
-    second.results,
-    first.results,
-    "Logical compatibility state differs across identical replays",
-  );
-  report.compatibility = first;
   report.passed = true;
 } catch (error) {
   report.error = String(error);

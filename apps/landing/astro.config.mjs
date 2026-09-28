@@ -1,11 +1,13 @@
 import { defineConfig } from "astro/config";
 import svelte from "@astrojs/svelte";
 import starlight from "@astrojs/starlight";
+import sitemap from "@astrojs/sitemap";
 
 export default defineConfig({
   site: "https://hitslop.com",
   integrations: [
     svelte(),
+    sitemap(),
     starlight({
       title: "hitSlop Docs",
       description: "Build small local-first apps and documents that live on your desktop.",

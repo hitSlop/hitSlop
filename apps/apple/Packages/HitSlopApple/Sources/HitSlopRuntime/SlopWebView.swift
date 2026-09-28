@@ -1,6 +1,6 @@
 import Foundation
 import HitSlopCore
-import HitSlopWasm
+import HitSlopDocument
 import WebKit
 
 @MainActor public protocol SlopRuntimeSessionDelegate: AnyObject {
@@ -9,7 +9,7 @@ import WebKit
   func runtimeSessionRecovered(_ session: SlopRuntimeSession)
   func runtimeSession(_ session: SlopRuntimeSession, didReport issue: SlopRuntimeIssue)
   func runtimeSession(_ session: SlopRuntimeSession, didFail error: Error)
-  func runtimeSession(_ session: SlopRuntimeSession, saveStatus: WasmSaveStatus)
+  func runtimeSession(_ session: SlopRuntimeSession, saveStatus: DocumentSaveStatus)
   func runtimeSession(_ session: SlopRuntimeSession, storageFailure: SlopFailureContext)
 }
 extension SlopRuntimeSessionDelegate {
@@ -20,13 +20,13 @@ extension SlopRuntimeSessionDelegate {
   { throw SlopPackageError.invalid("Dynamic resizing unavailable") }
   public func runtimeSession(_ session: SlopRuntimeSession, didReport issue: SlopRuntimeIssue) {}
   public func runtimeSession(_ session: SlopRuntimeSession, didFail error: Error) {}
-  public func runtimeSession(_ session: SlopRuntimeSession, saveStatus: WasmSaveStatus) {}
+  public func runtimeSession(_ session: SlopRuntimeSession, saveStatus: DocumentSaveStatus) {}
   public func runtimeSession(_ session: SlopRuntimeSession, storageFailure: SlopFailureContext) {}
 }
 @MainActor public final class SlopRuntimeSession {
   public let package: SlopPackage
   public let purpose: SlopRuntimePurpose
-  public let engine: WasmSession
+  public let engine: DocumentSession
   public var webView: WKWebView { engine.webView }
   public var isReady: Bool { engine.isReady }
   public weak var delegate: (any SlopRuntimeSessionDelegate)?
@@ -34,11 +34,11 @@ extension SlopRuntimeSessionDelegate {
     packageURL: URL, renderTargetsEnabled: Bool = false, purpose: SlopRuntimePurpose = .interactive
   ) throws {
     try SlopLocalDocument.requireLocal(packageURL)
-    let engine = try WasmSession(
+    let engine = try DocumentSession(
       package: SlopPackage(rootURL: packageURL), storage: purpose.storageMode)
     self.init(engine: engine, renderTargetsEnabled: renderTargetsEnabled, purpose: purpose)
   }
-  private init(engine: WasmSession, renderTargetsEnabled: Bool, purpose: SlopRuntimePurpose) {
+  private init(engine: DocumentSession, renderTargetsEnabled: Bool, purpose: SlopRuntimePurpose) {
     self.engine = engine
     package = engine.package
     self.purpose = purpose
@@ -86,7 +86,7 @@ extension SlopRuntimeSessionDelegate {
   public static func open(
     packageURL: URL, renderTargetsEnabled: Bool = false, purpose: SlopRuntimePurpose = .interactive
   ) async throws -> SlopRuntimeSession {
-    let engine = try await WasmSession.open(packageURL: packageURL, storage: purpose.storageMode)
+    let engine = try await DocumentSession.open(packageURL: packageURL, storage: purpose.storageMode)
     return SlopRuntimeSession(
       engine: engine, renderTargetsEnabled: renderTargetsEnabled, purpose: purpose)
   }
@@ -97,6 +97,4 @@ extension SlopRuntimeSessionDelegate {
   public func flush() async throws { try await engine.flush() }
   public func finish() async throws { try await engine.close() }
   public func reopenSavedDocument() async throws { try await engine.reopenSavedDocument() }
-  /// Warms WebKit and the bundled runtime once so the first open avoids cold startup.
-  public static func prewarm() { RuntimePrewarm.start() }
 }

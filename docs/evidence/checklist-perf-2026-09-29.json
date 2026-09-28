@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-29",
+  "scope": "HostOwnedReset step 1 (spike S-A + Quick Checklist markup). Debug Swift test harness (BenchmarkTests, one window), system WKWebView on macOS 26 (Darwin 25.6). Single runs; open times vary run to run (0.6-2.8 s at 1k).",
+  "method": {
+    "bench": "HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 [HITSLOP_BENCH_LABEL=...] bun run bench:windows",
+    "acceptance_p95": "100 back-to-back checkbox writes; each waits for the host reply and snapshot update",
+    "idle_acceptance_p95": "40 checkbox writes, each started 100 ms after the previous one (like a real click)",
+    "frame_after_edit": "time from acceptance until the main thread is free (JS flush + WebKit layout)",
+    "click_split": "click -> DOM mutation (js), forced layout, remainder; same probe in scripts/v1/bench-webkit.ts (Playwright WebKit) and scripts/v1/bench-wkwebview.swift (plain system WKWebView)"
+  },
+  "baseline": {
+    "1000": { "open_ms": 2082, "acceptance_p95_ms": 329, "drain_ms": 133, "webcontent_mib": 239 },
+    "5000": { "result": "did not reach ready within 15 s" }
+  },
+  "attribution": {
+    "autosave_pushed_to_5s_1000": { "acceptance_p95_ms": 309, "note": "autosave is not the main cost" },
+    "no_dom_1000": { "open_ms": 568, "acceptance_p95_ms": 3, "drain_ms": 8, "webcontent_mib": 50 },
+    "no_dom_5000": { "open_ms": 388, "acceptance_p95_ms": 6, "drain_ms": 16, "webcontent_mib": 56 },
+    "flip_removed_1000": { "acceptance_p95_ms": 371 },
+    "sdk_fanout_1000": { "notifies_per_edit": 6, "listeners_per_notify": 1004, "binding_refresh_ms_per_edit": 315, "note": "root cause of the 1k edit latency" },
+    "textareas_5000": { "open_ms_with": 25337, "open_ms_without": 1666, "note": "WebKit mounts 5,000 textareas very slowly" }
+  },
+  "fixes": [
+    "SDK: bindings subscribe to their own path; a publication notifies only touched paths (full refresh on resync/barrier/preview)",
+    "Checklist: rows render as text and promote to a bound textarea on focus/click (caret from caretRangeFromPoint)",
+    "Checklist: native checkbox, one shared bits-ui menu (customAnchor), CSS grid auto-grow instead of per-row ResizeObserver, no animate:flip, content-visibility on rows, contain: strict on the scroller"
+  ],
+  "final": {
+    "1000": { "open_ms": "628-862", "acceptance_p95_ms": "12-17", "idle_acceptance_p95_ms": "6-13", "drain_ms": "12-21", "webcontent_mib": "148-157" },
+    "5000": { "open_ms": "1137-1252", "acceptance_p95_ms": "219-233", "idle_acceptance_p95_ms": 12, "frame_after_edit_ms": 183, "frame_after_row_text_edit_ms": 342, "drain_ms": "2-186", "webcontent_mib": 445 }
+  },
+  "targets": {
+    "1000": { "ready_le_1s": "pass", "checkbox_p95_le_50ms": "pass", "drain_le_50ms": "pass" },
+    "5000": { "ready_le_3s": "pass", "checkbox_p95_le_100ms": "acceptance passes (12 ms idle); WebKit layout afterwards ~170 ms fails. Accepted by the maintainer: 1k is the product target." }
+  },
+  "webkit_layout_scaling": {
+    "system_wkwebview_click_layout_ms": { "500": 5, "1000": 13, "2000": 28, "5000": 167 },
+    "playwright_webkit_5000": { "js_ms": 8, "layout_ms": 6, "rest_ms": 12 },
+    "chrome_5000": { "startup_ms": 889, "edit_p50_ms": 33 },
+    "ruled_out": ["animate:flip", "aria-live", "ARIA attributes", ":has() selectors", "content-visibility", "contain: strict", "fixed-size scroller", "grid vs flex rows", "ol/ul/div list", "attr() auto-grow mirror"],
+    "conclusion": "Superlinear layout in the macOS system WebKit build; the same page in newer WebKit (Playwright build 2359) lays out in 6 ms."
+  }
+}

@@ -6,7 +6,7 @@ import PDFKit
 import Testing
 
 @testable import HitSlopHost
-@testable import HitSlopWasm
+@testable import HitSlopDocument
 
 extension LoroClientTests {
   @Test @MainActor func checklistPDFPreservesSurfaceColorAndSelectableText() async throws {
@@ -17,7 +17,7 @@ extension LoroClientTests {
     session.load()
     try await session.waitUntilReady()
     do {
-      _ = try await DocumentCommand.run(method: "apply", url: root, operation: replace("PDF color"))
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("PDF color"))
       for hex in ["e98996", "80aabb"] {
         _ = try await DocumentCommand.run(method: "theme.set", url: root,
           themeValues: JSONSerialization.data(withJSONObject: ["surface": "#" + hex]))
@@ -145,7 +145,7 @@ extension LoroClientTests {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let tasks = (0..<300).map { index -> [String: Any] in
-      ["type": "insert", "path": ["tasks"], "value": ["text": "Long task \(index)", "done": false, "archived": false]]
+      ["type": "insert", "path": ["tasks"], "id": String(format: "%026d", index + 1), "value": ["text": "Long task \(index)", "done": false, "archived": false]]
     }
     _ = try await DocumentCommand.run(
       method: "batch", url: root, operations: JSONSerialization.data(withJSONObject: tasks))
@@ -181,7 +181,7 @@ extension LoroClientTests {
 
   @Test @MainActor func captureFailureRestoresEditorAndMissingIconIsOptional() async throws {
     _ = NSApplication.shared
-    let root = try fixture("small-expenses")
+    let root = try captureFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await SlopRuntimeSession.open(packageURL: root)
     session.load()
@@ -220,7 +220,7 @@ extension LoroClientTests {
     await #expect(throws: (any Error).self) {
       try await controller.exportDocument(format: .png, to: root.appendingPathComponent("private-name.png"))
     }
-    #expect(events == [.exported(.pdf), .failed(.export, .init(.rejection, reason: .operationRejected, format: .png, runtime: controller.session.engine.telemetryRuntime))])
+    #expect(events == [.exported(.pdf), .failed(.export, .init(.rejection, reason: .operationRejected, format: .png))])
     // The app-hosted CLI export callback must use the same reporting boundary.
     let liveExport = try #require(controller.session.engine.onExport)
     await #expect(throws: (any Error).self) {
@@ -228,7 +228,7 @@ extension LoroClientTests {
     }
     #expect(events.count == 3)
     #expect(events.last == .failed(.export, .init(.rejection, reason: .operationRejected,
-      format: .png, runtime: controller.session.engine.telemetryRuntime)))
+      format: .png)))
     try await controller.session.finish()
   }
 }

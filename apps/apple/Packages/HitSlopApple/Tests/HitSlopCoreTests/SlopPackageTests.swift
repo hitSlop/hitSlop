@@ -38,6 +38,7 @@ import Testing
 
 @Test func duplicateKeepsManifestIdenticalAndCreatesWritableState() throws {
     let source = try fixture(), temporary = source.deletingLastPathComponent(); defer { try? FileManager.default.removeItem(at: temporary) }
+    try extendManifest(source)
     try SlopDuplicator.makeImmutable(source)
     let destination = temporary.appendingPathComponent("copy.slop")
     let openedURL = try SlopDuplicator.duplicate(from: source, to: destination)
@@ -45,6 +46,7 @@ import Testing
     // identity, or reopening its live window attempts a second writer.
     #expect(openedURL == destination.standardizedFileURL.resolvingSymlinksInPath())
     #expect(try Data(contentsOf: source.appendingPathComponent("manifest.json")) == Data(contentsOf: destination.appendingPathComponent("manifest.json")))
+    #expect(try SlopPackage(rootURL: destination).manifest.categories == [.productivity, .other])
     #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("stores").path))
     let sourceMode = try FileManager.default.attributesOfItem(atPath: source.path)[.posixPermissions] as? NSNumber
     let destinationMode = try FileManager.default.attributesOfItem(atPath: destination.path)[.posixPermissions] as? NSNumber
@@ -52,6 +54,59 @@ import Testing
     #expect((destinationMode?.intValue ?? 0) & 0o200 != 0)
     try FileManager.default.createDirectory(at: destination.appendingPathComponent("state"), withIntermediateDirectories: true)
     try Data(#"{}"#.utf8).write(to: destination.appendingPathComponent("state/theme.json"))
+}
+
+@Test func manifestReadsPreserveUnknownMetadataAndRejectMalformedKnownFields() throws {
+    let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    try extendManifest(root)
+    let url = root.appendingPathComponent("manifest.json")
+    let original = try Data(contentsOf: url)
+    let package = try SlopPackage(rootURL: root)
+    #expect(package.manifest.categories == [.productivity, .other])
+    #expect(package.shape == .rounded)
+    #expect(!package.usesTransparentBackground)
+    #expect(package.manifestData == original)
+    var manifest = try #require(JSONSerialization.jsonObject(with: original) as? [String: Any])
+    for categories in [["future-a", "future-b"], ["other", "future"]] {
+        manifest["categories"] = categories
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+        #expect(try SlopPackage(rootURL: root).manifest.categories == [.other])
+    }
+    manifest["categories"] = ["utilities"]
+    try writeSkin(to: root.appendingPathComponent("assets/skin.png"), width: 320, height: 240)
+    manifest["presentation"] = ["width": 320, "height": 240, "skin": "assets/skin.png", "future": true]
+    try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+    #expect(try SlopPackage(rootURL: root).isSkinned)
+    for presentation: [String: Any] in [
+        ["width": 1, "height": 1],
+        ["width": 320, "height": 240, "skin": "../evil.png"],
+        ["width": 320, "height": 240, "skin": NSNull()],
+        ["width": 320, "height": 240, "shape": NSNull()],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "resizable": "wrong"],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "resizable": true],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "shape": 42],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "shape": "rounded"],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "background": NSNull()],
+    ] {
+        manifest["presentation"] = presentation
+        #expect(!PlatformContract.valid(manifest, against: manifestReadSchema))
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+    }
+    manifest["presentation"] = ["width": 320, "height": 240]
+    manifest["categories"] = [String(repeating: "x", count: 65)]
+    try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+}
+
+private func extendManifest(_ root: URL) throws {
+    let url = root.appendingPathComponent("manifest.json")
+    var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    object["lineage"] = ["template": "future"]
+    object["author"] = ["name": "Fixture Author", "handle": "future"]
+    object["categories"] = ["productivity", "future-category"]
+    object["presentation"] = ["width": 320, "height": 240, "shape": "future-shape", "background": "future-background", "future": true]
+    try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: url)
 }
 
 // Package validation precedes copying; the SQLite open must also reject a source
@@ -163,7 +218,7 @@ private func fixture(skin: Bool = false) throws -> URL {
     try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     let presentation = skin ? #"{"width":320,"height":240,"skin":"assets/skin.png"}"# : #"{"width":320,"height":240}"#
-    let manifest = #"{"runtime":"hitslop-v1","$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation)}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation)}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
     try writeCanonicalDocumentSkill(to: root)
     if skin { try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true); try writeSkin(to: root.appendingPathComponent("assets/skin.png"), width: 320, height: 240) }

@@ -1,12 +1,17 @@
+import { buildProject } from "../../packages/cli/src/build";
 import { join } from "node:path";
 import { repository } from "./templates";
 import { buildTemplates } from "./build-templates";
 import { buildPresentationFixtures } from "./presentation-fixtures";
 
-export const nativeFixtureSlugs = ["quick-checklist", "small-expenses"];
+export const nativeFixtureSlugs = ["quick-checklist"];
 
-/** Shared native owners need two black-box apps, not the shipped template corpus. */
+/** Native owners use the active trial template and dedicated presentation fixtures. */
 export async function prepareNativeFixtures() {
   await buildTemplates(join(repository, "generated/v1/native-fixtures"), nativeFixtureSlugs);
+  await buildProject(
+    join(repository, "tests/abi/owner-svelte"),
+    join(repository, "generated/v1/abi/owner-svelte.slop"),
+  );
   return buildPresentationFixtures();
 }

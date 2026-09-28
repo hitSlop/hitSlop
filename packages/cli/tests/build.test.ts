@@ -3,22 +3,23 @@ import { buildProject } from "../src/build";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { readdir, mkdir } from "node:fs/promises";
+import { copySourceFixture } from "./source-fixture";
 // Built apps import nothing from the runtime and reach the host only through ctx.
 test("apps contain no runtime code and cannot reach the engine, bridge or remote boot resources", async () => {
   const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await copySourceFixture("examples/slops/quick-checklist", source);
     const output = await buildProject(source, join(root, "built.slop"));
     const js = await readFile(join(output, "assets/app.js"), "utf8");
-    expect(js).not.toContain("/__runtime__/");
+    expect(js).not.toContain("/__shell__/");
     expect(js).not.toContain("loro_wasm_bg");
     expect(await readdir(output)).not.toContain("app.html");
     const entry = 'import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);\n';
     for (const [code, error] of [
       ['import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());', "cannot import loro-crdt"],
       ['import {Document} from "@hitslop/document/runtime"; console.log(Document);', "cannot import @hitslop/document/runtime"],
-      ['const runtime = await import("/__runtime__/index.js"); console.log(runtime);', "cannot import /__runtime__/index.js"],
+      ['const runtime = await import("/__shell__/index.js"); console.log(runtime);', "cannot import /__shell__/index.js"],
       ["globalThis.webkit.messageHandlers.storage.postMessage({ method: 'ready' });", "host bridge"],
       ['import "./remote.css";', "remote stylesheets, fonts or scripts"],
     ] as const) {
@@ -45,9 +46,7 @@ test("init creates a buildable v1 source and refuses to overwrite it", async () 
     const metadata = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
     expect(metadata.dependencies["@hitslop/document"]).not.toContain("__HITSLOP");
     const built = await buildProject(source, join(root, "starter.slop"));
-    expect(JSON.parse(await readFile(join(built, "manifest.json"), "utf8")).runtime).toBe(
-      "hitslop-v1",
-    );
+    expect(JSON.parse(await readFile(join(built, "manifest.json"), "utf8")).slug).toBeTruthy();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -82,7 +81,7 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
   const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await copySourceFixture("examples/slops/quick-checklist", source);
     await mkdir(join(source, "assets/fonts"), { recursive: true });
     await mkdir(join(source, "dependency"));
     await writeFile(join(source, "assets/fonts/My Font.ttf"), "copied-font");

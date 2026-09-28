@@ -2,7 +2,7 @@ import { resolve, join } from "node:path";
 import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
 import type { SlopManifest } from "@hitslop/schema";
 import { tmpdir, homedir } from "node:os";
-import { buildProject, runtimeDirectory } from "./build";
+import { buildProject, shellDirectory } from "./build";
 import { buildTemplate, prepareRenderer, installTemplate } from "./template";
 export async function runAuthoring(
   command: "build" | "register" | "dev",
@@ -20,8 +20,8 @@ export async function runAuthoring(
     await installTemplate(output, destination);
     console.log(destination);
   } else if (command === "dev") {
-    if (!(await Bun.file(join(runtimeDirectory, "boot.js")).exists()))
-      throw new Error("CLI preview runtime is missing. Reinstall @hitslop/cli.");
+    if (!(await Bun.file(join(shellDirectory, "boot.js")).exists()))
+      throw new Error("CLI page shell is missing. Reinstall @hitslop/cli.");
     const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
     const out = await buildProject(target, join(temporary, "preview.slop"));
     const frame = previewFrame(JSON.parse(await readFile(join(out, "manifest.json"), "utf8")));
@@ -40,7 +40,7 @@ export async function runAuthoring(
                 "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'",
             },
           });
-        // The runtime owns the page, as in the native host (SchemeHandler.visiblePage).
+        // The page shell owns the page, as in the native host (SchemeHandler.visiblePage).
         if (relative === "/app.html")
           return new Response(page, {
             headers: {
@@ -49,9 +49,9 @@ export async function runAuthoring(
               "Content-Security-Policy": appPolicy,
             },
           });
-        const runtime = relative.startsWith("/__runtime__/");
-        const base = runtime ? runtimeDirectory : out;
-        const path = resolve(base, relative.slice(runtime ? 13 : 1));
+        const shell = relative.startsWith("/__shell__/");
+        const base = shell ? shellDirectory : out;
+        const path = resolve(base, relative.slice(shell ? "/__shell__/".length : 1));
         if (!path.startsWith(base + "/")) return new Response("Forbidden", { status: 403 });
         const file = Bun.file(path);
         if (!(await file.exists())) return new Response("Not found", { status: 404 });
@@ -70,7 +70,7 @@ export async function runAuthoring(
 }
 
 const page =
-  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>hitSlop</title><link rel="stylesheet" href="/assets/app.css"></head><body><script type="module" src="/__runtime__/boot.js"></script></body></html>';
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>hitSlop</title><link rel="stylesheet" href="/assets/app.css"></head><body><script type="module" src="/__shell__/boot.js"></script></body></html>';
 const appPolicy =
   "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'";
 

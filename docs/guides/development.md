@@ -2,25 +2,18 @@
 
 ## Set up the checkout
 
-Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped app supports Apple silicon on macOS 14 or newer.
+Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped app supports Apple silicon on macOS 15.2 or newer.
 
 ```sh
 bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
-bun run compatibility:restore
 bun run build
 bun run check
 bun run test
 bun run swift:test
 ```
 
-`build` generates platform contracts and host/CLI runtime resources, builds agent skills, and compiles the native helper. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Neither command updates the runtime release ledger or historical fixtures.
-
-`compatibility:restore` uses the GitHub CLI (`gh`) to download missing historical
-runtime release assets and verify their committed checksums before compatibility
-tests. Install `gh` and ensure it can access the repository's releases. See the
-[runtime directory guide](../../runtimes/README.md) for generated resource paths,
-preserved archives, and runtime loading.
+`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM) and the page shell, installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/v1/app`.
 
@@ -29,9 +22,10 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | Area | Responsibility |
 | --- | --- |
 | `apps/apple` | macOS entry point, project configuration, signing, and Sparkle |
-| `apps/apple/Packages/HitSlopApple` | Core, Wasm engine integration, Runtime, Host, TCA Features, Catalog, telemetry, and NativeCLI |
-| `packages/document` | Loro document SDK, typed handles, Svelte, themes, and capture |
-| `packages/schema` | TypeBox platform manifest, runtime, bridge, and socket contracts |
+| `crates` | `hitslop-core` (Rust on Loro) document semantics, plus its UniFFI and WASM adapters |
+| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Runtime, Host, TCA Features, Catalog, telemetry, and NativeCLI |
+| `packages/document` | Page shell and SDK: snapshot store, typed handles, bindings, Svelte adapter, themes, and capture (no CRDT) |
+| `packages/schema` | TypeBox manifest, bridge, owner and socket contracts |
 | `packages/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
 | `examples/slops` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
@@ -58,8 +52,8 @@ Quick Checklist and Small Expenses are current examples and deliberate fixtures 
 
 - `bun run hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
 - `bun run schema:check`: generated contract drift; change TypeBox source and regenerate rather than editing generated files.
-- `bun run check`: runtime provenance/compatibility, generated contracts, skills, package types, and discovered template types.
-- `bun run test`: active document, schema, and CLI tests, compatibility replay, and all bundled template compile/open/reopen checks.
+- `bun run check`: generated contracts, skills, package types, and discovered template types.
+- `bun run test`: SDK, schema, and CLI tests over the WASM core, including the shared fixture replay.
 - `bun run swift:test`: native tests with two cached black-box apps and three presentation fixtures.
 - `bun run test:native`: native CLI owners. `bun run test:render` checks the full built template/preserved-package corpus; `--fixtures` limits it to the native fixtures and contract specimens.
 - `bun run test:storage` and `bun run test:native-crash`: commit-phase and native-process crash probes.

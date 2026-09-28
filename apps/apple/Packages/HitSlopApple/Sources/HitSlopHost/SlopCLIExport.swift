@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopRuntime
-import HitSlopWasm
+import HitSlopDocument
 
 extension SlopRenderer {
     /// Attach at the host boundary; the engine never imports the renderer.
@@ -19,7 +19,7 @@ extension SlopRenderer {
                 if let format = SlopTelemetryEvent.ExportFormat(rawValue: format) { telemetry.send(.exported(format)) }
             } catch {
                 if let onFailure { onFailure(error, SlopTelemetryEvent.ExportFormat(rawValue: format)) }
-                else { telemetry.failure(.export, error: error, runtime: session.engine.telemetryRuntime,
+                else { telemetry.failure(.export, error: error,
                                          format: SlopTelemetryEvent.ExportFormat(rawValue: format)) }
                 throw error
             }

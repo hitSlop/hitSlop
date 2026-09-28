@@ -8,12 +8,11 @@ import Foundation
 
 // MARK: - SlopManifest
 public struct SlopManifest: Codable, Sendable {
-    public let schema: Schema
+    public let schema: Schema?
     public let author: SlopAuthor
     public let categories: [SlopCategory]
     public let description: String
     public let presentation: SlopPresentation
-    public let runtime: Runtime
     public let slug: String
     public let title: String
 
@@ -23,18 +22,16 @@ public struct SlopManifest: Codable, Sendable {
         case categories = "categories"
         case description = "description"
         case presentation = "presentation"
-        case runtime = "runtime"
         case slug = "slug"
         case title = "title"
     }
 
-    public init(schema: Schema, author: SlopAuthor, categories: [SlopCategory], description: String, presentation: SlopPresentation, runtime: Runtime, slug: String, title: String) {
+    public init(schema: Schema?, author: SlopAuthor, categories: [SlopCategory], description: String, presentation: SlopPresentation, slug: String, title: String) {
         self.schema = schema
         self.author = author
         self.categories = categories
         self.description = description
         self.presentation = presentation
-        self.runtime = runtime
         self.slug = slug
         self.title = title
     }
@@ -59,12 +56,11 @@ public extension SlopManifest {
     }
 
     func with(
-        schema: Schema? = nil,
+        schema: Schema?? = nil,
         author: SlopAuthor? = nil,
         categories: [SlopCategory]? = nil,
         description: String? = nil,
         presentation: SlopPresentation? = nil,
-        runtime: Runtime? = nil,
         slug: String? = nil,
         title: String? = nil
     ) -> SlopManifest {
@@ -74,7 +70,6 @@ public extension SlopManifest {
             categories: categories ?? self.categories,
             description: description ?? self.description,
             presentation: presentation ?? self.presentation,
-            runtime: runtime ?? self.runtime,
             slug: slug ?? self.slug,
             title: title ?? self.title
         )
@@ -236,10 +231,6 @@ public enum Shape: String, Codable, Sendable {
     case capsule = "capsule"
     case ellipse = "ellipse"
     case rounded = "rounded"
-}
-
-public enum Runtime: String, Codable, Sendable {
-    case hitslopV1 = "hitslop-v1"
 }
 
 public enum Schema: String, Codable, Sendable {

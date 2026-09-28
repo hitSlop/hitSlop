@@ -1,0 +1,937 @@
+[
+  {
+    "slug": "three-three-three",
+    "title": "3-3-3 Plan",
+    "description": "Oliver Burkeman’s daily finite work docket: three hours on one deep project, three urgent tasks, and three maintenance loops.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 560,
+    "height": 760,
+    "emoji": "3️⃣",
+    "colors": {
+      "background": "#f7f6f2",
+      "accent": "#1e3a8a",
+      "ink": "#201f1d"
+    }
+  },
+  {
+    "slug": "alien-radio",
+    "title": "Alien Radio",
+    "description": "A sculpted desktop receiver for exploring listener-supported SomaFM stations.",
+    "categories": [
+      "media",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 720,
+    "height": 560,
+    "emoji": "👽",
+    "colors": {
+      "background": "#16190c",
+      "accent": "#caff42",
+      "ink": "#eaffb3"
+    }
+  },
+  {
+    "slug": "ambient-sound-mixer",
+    "title": "Ambient Sound Mixer",
+    "description": "A smoked-glass hi-fi mixer for balancing rain, thunder, wind, birds, and night with physical faders, mute, and solo.",
+    "categories": [
+      "media",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 480,
+    "emoji": "🌧️",
+    "colors": {
+      "background": "#13151b",
+      "accent": "#38bdf8",
+      "ink": "#f1f5f9"
+    }
+  },
+  {
+    "slug": "assignment-tracker",
+    "title": "Assignment Tracker",
+    "description": "A plum study pad for assignments, deadlines, course notes, and the satisfaction of checking work off.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 620,
+    "height": 700,
+    "emoji": "📖",
+    "colors": {
+      "background": "#ffffff",
+      "accent": "#a64038",
+      "ink": "#32223f"
+    }
+  },
+  {
+    "slug": "bullet-journal",
+    "title": "Bullet Journal",
+    "description": "Ryder Carroll’s analog rapid logging on cream dot-grid paper: tasks, events, notes, and classic signifier transitions.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 600,
+    "height": 820,
+    "emoji": "📒",
+    "colors": {
+      "background": "#fcfbf7",
+      "accent": "#b45309",
+      "ink": "#22201d"
+    }
+  },
+  {
+    "slug": "choice-point",
+    "title": "Choice Point",
+    "description": "Russ Harris’s ACT Choice Point: notice what hooks you, map away and towards moves, and pick one towards move.",
+    "categories": [
+      "personal",
+      "education"
+    ],
+    "shape": "rounded",
+    "width": 760,
+    "height": 860,
+    "emoji": "🧭",
+    "colors": {
+      "background": "#f5f1e9",
+      "accent": "#e4dccf",
+      "ink": "#29241f"
+    }
+  },
+  {
+    "slug": "codex-pet",
+    "title": "Codex Pet",
+    "description": "A transparent desktop companion that animates Codex pet packages and accepts local ZIP imports.",
+    "categories": [
+      "personal",
+      "developer-tools"
+    ],
+    "shape": "rectangle",
+    "width": 240,
+    "height": 180,
+    "emoji": "🐾",
+    "colors": {
+      "background": "#3b2821",
+      "accent": "#ffd281",
+      "ink": "#fff7eb"
+    }
+  },
+  {
+    "slug": "contact-card",
+    "title": "Contact Card",
+    "description": "A translucent mint glass badge and digital business card with direct links, bio, and vCard export.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 440,
+    "height": 580,
+    "emoji": "🪪",
+    "colors": {
+      "background": "#1c352a",
+      "accent": "#0f766e",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "cornell-notes",
+    "title": "Cornell Notes",
+    "description": "A classic Cornell lecture notebook page with cue column, notes area, summary box, and an active-recall study mask.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 700,
+    "height": 900,
+    "emoji": "📝",
+    "colors": {
+      "background": "#ffffff",
+      "accent": "#b31b1b",
+      "ink": "#0f172a"
+    }
+  },
+  {
+    "slug": "countdown-milestones",
+    "title": "Countdown & Milestones",
+    "description": "A playful desk-calendar countdown with editable milestones and a date worth remembering.",
+    "categories": [
+      "utilities",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 440,
+    "height": 580,
+    "emoji": "⏳",
+    "colors": {
+      "background": "#b9dcff",
+      "accent": "#6c16ed",
+      "ink": "#25212c"
+    }
+  },
+  {
+    "slug": "daily-planner",
+    "title": "Daily Planner",
+    "description": "A slim day board with three priorities, movable time blocks, and a live now marker.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 400,
+    "height": 900,
+    "emoji": "📅",
+    "colors": {
+      "background": "#f9fcfb",
+      "accent": "#ffb17e",
+      "ink": "#183d3b"
+    }
+  },
+  {
+    "slug": "pros-cons-sheet",
+    "title": "Decision Balance",
+    "description": "Weigh the reasons for and against a decision, adjust their importance, and record your own conclusion.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 720,
+    "height": 680,
+    "emoji": "⚖️",
+    "colors": {
+      "background": "#343935",
+      "accent": "#8b937c",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "doodle-board",
+    "title": "Doodle Board",
+    "description": "A little whiteboard for big ideas, tiny drawings, and happy accidents.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 744,
+    "height": 594,
+    "emoji": "🖍️",
+    "colors": {
+      "background": "#ef7965",
+      "accent": "#f9e4cf",
+      "ink": "#382c2a"
+    }
+  },
+  {
+    "slug": "eisenhower-matrix",
+    "title": "Eisenhower Matrix",
+    "description": "An urgent-versus-important priority desk blotter: four decision quadrants, a triage holding pen, and a live Q2 leverage ratio.",
+    "categories": [
+      "productivity",
+      "business"
+    ],
+    "shape": "rounded",
+    "width": 780,
+    "height": 780,
+    "emoji": "📌",
+    "colors": {
+      "background": "#efe8db",
+      "accent": "#6c16ed",
+      "ink": "#231f1c"
+    }
+  },
+  {
+    "slug": "expense-log",
+    "title": "Expense Log",
+    "description": "A thermal paper receipt roll for rapidly recording purchases, tracking categories, and running totals.",
+    "categories": [
+      "finance",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 380,
+    "height": 640,
+    "emoji": "🧾",
+    "colors": {
+      "background": "#f7f1e3",
+      "accent": "#c2410c",
+      "ink": "#1c1917"
+    }
+  },
+  {
+    "slug": "five-minute-journal",
+    "title": "Five Minute Journal",
+    "description": "A paper morning-and-evening bookend journal for three gratitudes, intentions, an affirmation, and dusk reflections.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rectangle",
+    "width": 560,
+    "height": 780,
+    "emoji": "💛",
+    "colors": {
+      "background": "#f1eadc",
+      "accent": "#6c16ed",
+      "ink": "#2a241c"
+    }
+  },
+  {
+    "slug": "flashcards",
+    "title": "Flashcards",
+    "description": "A tactile index-card study machine with 3D flipping cards, deck editing, and Leitner spaced repetition.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 540,
+    "height": 440,
+    "emoji": "🗂️",
+    "colors": {
+      "background": "#284bd8",
+      "accent": "#3659df",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "grade-calculator",
+    "title": "Grade Calculator",
+    "description": "An academic gradebook and GPA forecaster with a 'What do I need on the final?' target solver.",
+    "categories": [
+      "education",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 680,
+    "height": 520,
+    "emoji": "🎓",
+    "colors": {
+      "background": "#171615",
+      "accent": "#2b593f",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "grocery-list",
+    "title": "Grocery List",
+    "description": "A playful fridge-magnet shopping pad for organizing and checking grocery essentials by aisle.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 440,
+    "height": 620,
+    "emoji": "🥑",
+    "colors": {
+      "background": "#e9e4d8",
+      "accent": "#d9534f",
+      "ink": "#232220"
+    }
+  },
+  {
+    "slug": "habit-heatmap",
+    "title": "Habit Heatmap",
+    "description": "Keep a twelve-week record of small daily habits, one square at a time.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 620,
+    "height": 480,
+    "emoji": "🌿",
+    "colors": {
+      "background": "#eee8dd",
+      "accent": "#6c16ed",
+      "ink": "#29232b"
+    }
+  },
+  {
+    "slug": "harada-method",
+    "title": "Harada Method",
+    "description": "The Open Window 64 chart: one core goal, eight themes, and sixty-four concrete actions on a single hand-ruled sheet.",
+    "categories": [
+      "productivity",
+      "education"
+    ],
+    "shape": "rectangle",
+    "width": 800,
+    "height": 880,
+    "emoji": "🎯",
+    "colors": {
+      "background": "#eceef4",
+      "accent": "#4c3bd6",
+      "ink": "#14161e"
+    }
+  },
+  {
+    "slug": "invoice",
+    "title": "Invoice",
+    "description": "A warm paper invoice for parties, line items, tax, and payment status.",
+    "categories": [
+      "business",
+      "finance"
+    ],
+    "shape": "rectangle",
+    "width": 640,
+    "height": 640,
+    "emoji": "💸",
+    "colors": {
+      "background": "#faf8f1",
+      "accent": "#2f7052",
+      "ink": "#1b2421"
+    }
+  },
+  {
+    "slug": "ivy-lee-method",
+    "title": "Ivy Lee Method",
+    "description": "A strict six-item single-tasking ledger: work item 1 until finished, never touch item 2 prematurely, and roll over incomplete work at sundown.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 460,
+    "height": 680,
+    "emoji": "✅",
+    "colors": {
+      "background": "#f9f8f5",
+      "accent": "#b45309",
+      "ink": "#1f1e1c"
+    }
+  },
+  {
+    "slug": "kanban-board",
+    "title": "Kanban Board",
+    "description": "An anodized job-shop schedule board with work orders, lane limits, and a completed rail.",
+    "categories": [
+      "productivity",
+      "business"
+    ],
+    "shape": "rectangle",
+    "width": 880,
+    "height": 620,
+    "emoji": "📋",
+    "colors": {
+      "background": "#ece5d6",
+      "accent": "#6c16ed",
+      "ink": "#24211b"
+    }
+  },
+  {
+    "slug": "koi-pond",
+    "title": "Koi Pond",
+    "description": "A little watercolor pond where your koi drift, nibble, and keep you company.",
+    "categories": [
+      "personal"
+    ],
+    "shape": "ellipse",
+    "width": 420,
+    "height": 420,
+    "emoji": "🐟",
+    "colors": {
+      "background": "#5f9fa3",
+      "accent": "#a9d3c6",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "baby-journal",
+    "title": "Little Days",
+    "description": "A gentle baby journal for feedings, diaper changes, sleep, and little memories, with a name beside every act of care.",
+    "categories": [
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 900,
+    "height": 640,
+    "emoji": "🍼",
+    "colors": {
+      "background": "#fffaf0",
+      "accent": "#dcccf7",
+      "ink": "#29263f"
+    },
+    "icon": "/assets/templates/baby-journal/icon.png",
+    "preview": "/assets/templates/baby-journal/preview.png"
+  },
+  {
+    "slug": "markdown-editor",
+    "title": "Markdown Editor",
+    "description": "A paper manuscript for writing markdown: a native textarea over the rendered page, with edit, split, and preview.",
+    "categories": [
+      "productivity",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 720,
+    "height": 620,
+    "emoji": "✍️",
+    "colors": {
+      "background": "#faf6eb",
+      "accent": "#d4551a",
+      "ink": "#1c1914"
+    }
+  },
+  {
+    "slug": "meeting-notes",
+    "title": "Meeting Notes",
+    "description": "A forest-letterhead meeting memo for agenda, notes, decisions, and owned action items.",
+    "categories": [
+      "productivity",
+      "business"
+    ],
+    "shape": "rectangle",
+    "width": 680,
+    "height": 780,
+    "emoji": "💬",
+    "colors": {
+      "background": "#faf8f2",
+      "accent": "#c4dc33",
+      "ink": "#1a251e"
+    }
+  },
+  {
+    "slug": "metronome-tapper",
+    "title": "Metronome & BPM",
+    "description": "A precision studio metronome with an animated pendulum, synthesized woodblock clicks, tap tempo, and time signatures.",
+    "categories": [
+      "media",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 430,
+    "height": 600,
+    "emoji": "🎵",
+    "colors": {
+      "background": "#1a1614",
+      "accent": "#d4a337",
+      "ink": "#fdfbf7"
+    }
+  },
+  {
+    "slug": "mood-log",
+    "title": "Mood Log",
+    "description": "A gentle color journal for recording daily mood, energy, and a short reflection without pressure.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 620,
+    "emoji": "😊",
+    "colors": {
+      "background": "#fcfbfa",
+      "accent": "#6c16ed",
+      "ink": "#26221f"
+    }
+  },
+  {
+    "slug": "morning-pages",
+    "title": "Morning Pages",
+    "description": "Julia Cameron’s three-page morning brain clearing: a distraction-free 750-word stream-of-consciousness feed with a live word odometer.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rectangle",
+    "width": 640,
+    "height": 820,
+    "emoji": "🌅",
+    "colors": {
+      "background": "#e8d48a",
+      "accent": "#d24a4a",
+      "ink": "#2c2618"
+    }
+  },
+  {
+    "slug": "packing-list",
+    "title": "Packing List",
+    "description": "A traveler's luggage-tag checklist for organizing, weighing, and checking packing essentials across bags.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 540,
+    "height": 680,
+    "emoji": "🧳",
+    "colors": {
+      "background": "#ffffff",
+      "accent": "#2563eb",
+      "ink": "#172b4d"
+    }
+  },
+  {
+    "slug": "personal-budget",
+    "title": "Personal Budget",
+    "description": "A graphite pocket calculator fused with a dark paper ledger for monthly income, allocations, spending, and remaining funds.",
+    "categories": [
+      "finance",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 780,
+    "height": 530,
+    "emoji": "💰",
+    "colors": {
+      "background": "#16171b",
+      "accent": "#6c16ed",
+      "ink": "#f3f4f6"
+    }
+  },
+  {
+    "slug": "pixel-art",
+    "title": "Pixel Art Studio",
+    "description": "A pocket-console sprite desk for 16×16 drawing, fill, palettes, undo, and PNG export.",
+    "categories": [
+      "media",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 460,
+    "height": 620,
+    "emoji": "🎨",
+    "colors": {
+      "background": "#8b8a86",
+      "accent": "#6c16ed",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "pocket-sheet",
+    "title": "Pocket Sheet",
+    "description": "A little graph-paper spreadsheet for bill splits, tallies, and quick math.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 700,
+    "height": 640,
+    "emoji": "📊",
+    "colors": {
+      "background": "#fdfbf4",
+      "accent": "#e2553f",
+      "ink": "#2f3a4a"
+    }
+  },
+  {
+    "slug": "focus-timer",
+    "title": "Pomodoro",
+    "description": "A playful tomato timer for focus sprints, breaks, and local session history.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "ellipse",
+    "width": 320,
+    "height": 320,
+    "emoji": "🍅",
+    "colors": {
+      "background": "#d94935",
+      "accent": "#bd3e2d",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "quick-checklist",
+    "title": "Quick Checklist",
+    "description": "A blush pocket utility for capturing, finishing, and filing short task lists.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 620,
+    "emoji": "☑️",
+    "colors": {
+      "background": "#e98996",
+      "accent": "#a43d59",
+      "ink": "#432830"
+    }
+  },
+  {
+    "slug": "reading-tracker",
+    "title": "Reading Tracker",
+    "description": "A personal reading journal for books, authors, star ratings, and reading status.",
+    "categories": [
+      "education",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 600,
+    "emoji": "📚",
+    "colors": {
+      "background": "#ffffff",
+      "accent": "#6c16ed",
+      "ink": "#382337"
+    }
+  },
+  {
+    "slug": "recipe",
+    "title": "Recipe",
+    "description": "A crisp recipe workspace with ingredients, method, meal photos, and focused step-by-step cooking timers.",
+    "categories": [
+      "personal",
+      "other"
+    ],
+    "shape": "rectangle",
+    "width": 680,
+    "height": 680,
+    "emoji": "🍴",
+    "colors": {
+      "background": "#edf1ff",
+      "accent": "#2448c8",
+      "ink": "#182338"
+    }
+  },
+  {
+    "slug": "resume",
+    "title": "Resume",
+    "description": "An editorial paper resume with direct editing, strong typography, and clean export.",
+    "categories": [
+      "personal",
+      "business"
+    ],
+    "shape": "rectangle",
+    "width": 680,
+    "height": 780,
+    "emoji": "💼",
+    "colors": {
+      "background": "#fbfaf5",
+      "accent": "#247a73",
+      "ink": "#202725"
+    }
+  },
+  {
+    "slug": "school-schedule",
+    "title": "School Schedule",
+    "description": "Your week in color: classes, rooms, bell times, and after-class plans with a live now and next readout.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 880,
+    "height": 640,
+    "emoji": "🏫",
+    "colors": {
+      "background": "#f7faff",
+      "accent": "#ff907f",
+      "ink": "#172e62"
+    }
+  },
+  {
+    "slug": "semester-planner",
+    "title": "Semester Planner",
+    "description": "A bird's-eye academic term calendar for mapping syllabus milestones, exam dates, and semester deadlines.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 920,
+    "height": 580,
+    "emoji": "🗓️",
+    "colors": {
+      "background": "#181716",
+      "accent": "#2563eb",
+      "ink": "#ffffff"
+    }
+  },
+  {
+    "slug": "side-quest",
+    "title": "Side Quest",
+    "description": "Your semester as a doodled notebook map: quests to clear, exam bosses to study down, and stickers to earn.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rectangle",
+    "width": 940,
+    "height": 640,
+    "emoji": "🗺️",
+    "colors": {
+      "background": "#fbf7ec",
+      "accent": "#f19a9a",
+      "ink": "#27304a"
+    }
+  },
+  {
+    "slug": "slide-deck",
+    "title": "Slide Deck",
+    "description": "A single-file presentation studio with structured slide archetypes, live editing, and a fullscreen presenter mode.",
+    "categories": [
+      "business",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 840,
+    "height": 580,
+    "emoji": "🖥️",
+    "colors": {
+      "background": "#171920",
+      "accent": "#f97316",
+      "ink": "#f1f5f9"
+    }
+  },
+  {
+    "slug": "small-expenses",
+    "title": "Small Expenses",
+    "description": "Track a short expense list and settle selected items.",
+    "categories": [
+      "productivity"
+    ],
+    "shape": "rectangle",
+    "width": 640,
+    "height": 760,
+    "emoji": "🪙",
+    "colors": {
+      "background": "#faf7f0",
+      "accent": "#8b4e31",
+      "ink": "#312c29"
+    }
+  },
+  {
+    "slug": "soma-amp",
+    "title": "SomaAmp",
+    "description": "A classic skin-compatible desktop receiver for eight listener-supported SomaFM stations.",
+    "categories": [
+      "media",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 275,
+    "height": 470,
+    "emoji": "📻",
+    "colors": {
+      "background": "#080a0b",
+      "accent": "#43db7f",
+      "ink": "#b7c0c6"
+    }
+  },
+  {
+    "slug": "subscription-tracker",
+    "title": "Subscription Tracker",
+    "description": "A calm local ledger for recurring costs, renewal dates, and monthly pace.",
+    "categories": [
+      "finance",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 640,
+    "height": 720,
+    "emoji": "🔁",
+    "colors": {
+      "background": "#f4f3fa",
+      "accent": "#6740c8",
+      "ink": "#242039"
+    }
+  },
+  {
+    "slug": "trip-itinerary",
+    "title": "Trip Itinerary",
+    "description": "A lilac transit boarding pass for organizing flights, hotels, daily stops, and travel stubs.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 640,
+    "height": 580,
+    "emoji": "✈️",
+    "colors": {
+      "background": "#fbf9ff",
+      "accent": "#5b4fe0",
+      "ink": "#1e1b4b"
+    }
+  },
+  {
+    "slug": "water-tracker",
+    "title": "Water Tracker",
+    "description": "A translucent aqua hydration instrument with a live liquid-level readout and quick-tap logging.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 420,
+    "height": 580,
+    "emoji": "💧",
+    "colors": {
+      "background": "#08212b",
+      "accent": "#22d3ee",
+      "ink": "#f0fdfa"
+    }
+  },
+  {
+    "slug": "weekly-planner",
+    "title": "Weekly Planner",
+    "description": "A magnetic week board: draw, move, and stretch colorful time blocks to make room for your week.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 880,
+    "height": 560,
+    "emoji": "🧲",
+    "colors": {
+      "background": "#f7f9fd",
+      "accent": "#2449a5",
+      "ink": "#172e55"
+    }
+  },
+  {
+    "slug": "wordle",
+    "title": "Wordle",
+    "description": "A tactile 5-letter word puzzle instrument with mechanical letter tiles, daily and free play, streaks, and spoiler-free sharing.",
+    "categories": [
+      "games",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 440,
+    "height": 620,
+    "emoji": "🔤",
+    "colors": {
+      "background": "#181c24",
+      "accent": "#354054",
+      "ink": "#f8fafc"
+    }
+  },
+  {
+    "slug": "workout-planner",
+    "title": "Workout Planner",
+    "description": "A dark training console for logging individual sets, following your routine, and timing rest.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 440,
+    "height": 620,
+    "emoji": "💪",
+    "colors": {
+      "background": "#101214",
+      "accent": "#c3f653",
+      "ink": "#f2f5ed"
+    }
+  }
+]

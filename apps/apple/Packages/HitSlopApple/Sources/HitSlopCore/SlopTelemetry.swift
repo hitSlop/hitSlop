@@ -30,14 +30,14 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
     public enum Reason: String, Sendable {
         case unknown, storage, webContentTerminated, navigation, startup, presentation
-        case invalidPackage, missingFile, permission, diskFull, busy, unsupportedRuntime
+        case invalidPackage, missingFile, permission, diskFull, busy
         case authoredException, operationRejected, preview, icon, teardown, destinationExists
         var code: Int {
             switch self {
             case .unknown: 0; case .storage: 1; case .webContentTerminated: 2
             case .navigation: 3; case .startup: 4; case .presentation: 5
             case .invalidPackage: 6; case .missingFile: 7; case .permission: 8
-            case .diskFull: 9; case .busy: 10; case .unsupportedRuntime: 11
+            case .diskFull: 9; case .busy: 10
             case .authoredException: 12; case .operationRejected: 13
             case .preview: 14; case .icon: 15; case .teardown: 16; case .destinationExists: 17
             }
@@ -46,11 +46,10 @@ public struct SlopFailureContext: Equatable, Sendable {
     public let classification: Classification
     public let reason: Reason
     public var format: SlopTelemetryEvent.ExportFormat?
-    public var runtime: SlopTelemetryRuntime?
     public init(_ classification: Classification = .platform, reason: Reason = .unknown,
-                format: SlopTelemetryEvent.ExportFormat? = nil, runtime: SlopTelemetryRuntime? = nil) {
+                format: SlopTelemetryEvent.ExportFormat? = nil) {
         self.classification = classification; self.reason = reason
-        self.format = format; self.runtime = runtime
+        self.format = format
     }
     public static func classify(_ error: Error) -> Self {
         if let diagnostic = error as? any SlopDiagnosticProviding { return diagnostic.diagnostic }
@@ -89,19 +88,8 @@ public struct SlopFailureContext: Equatable, Sendable {
     public func fields(for operation: SlopTelemetryEvent.Failure) -> [String: String] {
         var fields = ["operation": operation.rawValue, "classification": classification.rawValue, "reason": reason.rawValue]
         if let format { fields["format"] = format.rawValue }
-        if let runtime {
-            fields["runtime_contract"] = String(runtime.contract)
-            fields["runtime_revision"] = String(runtime.revision)
-        }
         return fields
     }
-}
-
-/// Constructed from the selected, validated bundled runtime identity, never guest metadata.
-public struct SlopTelemetryRuntime: Equatable, Sendable {
-    public let contract: Int
-    public let revision: Int
-    public init(contract: Int, revision: Int) { self.contract = contract; self.revision = revision }
 }
 
 public protocol SlopDiagnosticProviding: Error { var diagnostic: SlopFailureContext { get } }
@@ -134,10 +122,10 @@ public struct SlopDiagnosticError: LocalizedError, SlopDiagnosticProviding {
     public init(send: @escaping (SlopTelemetryEvent) -> Void) { self.receive = send }
     public func send(_ event: SlopTelemetryEvent) { receive(event) }
     public func failure(_ operation: SlopTelemetryEvent.Failure, error: Error,
-                        runtime: SlopTelemetryRuntime? = nil, format: SlopTelemetryEvent.ExportFormat? = nil) {
+                        format: SlopTelemetryEvent.ExportFormat? = nil) {
         if SlopFailureContext.isCancellation(error) { send(.breadcrumb(operation, .cancelled)); return }
         var context = SlopFailureContext.classify(error)
-        context.runtime = runtime; context.format = format
+        context.format = format
         send(.breadcrumb(operation, .failed))
         send(.failed(operation, context))
     }

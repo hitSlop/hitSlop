@@ -1,0 +1,42 @@
+---
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+const video = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/assets/desktop-hero.mp4" : null;
+---
+
+{video && (
+  <dialog class="video-dialog" id="video-dialog" aria-label="hitSlop in action">
+    <button class="video-close" type="button" aria-label="Close video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+    <video controls playsinline preload="none" poster="/assets/desktop-hero-poster.jpg" width="1920" height="1080"><source src={video} type="video/mp4" /></video>
+  </dialog>
+)}
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>("#video-dialog");
+  if (dialog) {
+    const video = dialog.querySelector("video")!;
+    let opener: HTMLElement | null = null;
+    const play = () => {
+      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      dialog.showModal();
+      video.currentTime = 0;
+      void video.play().catch(() => {});
+    };
+    window.addEventListener("hitslop:play-video", play);
+    document.querySelectorAll("[data-play-video]").forEach((button) => button.addEventListener("click", play));
+    dialog.querySelector(".video-close")!.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    dialog.addEventListener("close", () => { video.pause(); opener?.focus(); });
+  }
+</script>
+
+<style>
+  .video-dialog { width: min(1280px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 0; border-radius: 20px; overflow: hidden; background: #10132c; box-shadow: 0 30px 90px #10132c88; }
+  .video-dialog[open] { animation: video-in 360ms var(--spring); }
+  .video-dialog::backdrop { background: #10132cb3; backdrop-filter: blur(6px); }
+  .video-dialog video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+  .video-close { position: absolute; z-index: 1; top: 10px; right: 10px; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 50%; color: #fff; background: #10132ccc; cursor: pointer; }
+  .video-close svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+  @keyframes video-in { from { opacity: 0; transform: scale(.94); } }
+</style>

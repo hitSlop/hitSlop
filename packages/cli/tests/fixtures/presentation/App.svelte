@@ -10,7 +10,7 @@
   }
 </script>
 <Slop>
-  <main class="editor">{checkRender("editor")}<button onclick={() => document.fields.count.set(document.current.count + 1)}>Clicks: {document.current.count}</button></main>
+  <main class="editor">{checkRender("editor")}<button onclick={() => document.fields.count.increment().catch(() => {})}>Clicks: {document.current.count}</button></main>
   {#snippet exportView()}<article class="export">{checkRender("export")}<h1>Presentation</h1><p>Clicks: {document.current.count}</p></article>{/snippet}
   {#snippet icon()}<div class="icon">{checkRender("icon")}</div>{/snippet}
 </Slop>

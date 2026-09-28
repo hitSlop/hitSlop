@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopRuntime
-import HitSlopWasm
+import HitSlopDocument
 import WebKit
 
 public enum SlopRenderTarget: String, Sendable {
@@ -40,10 +40,10 @@ struct SlopDocumentAssets: Sendable {
         try await withRenderSession(packageURL: packageURL, renderTargetsEnabled: true) { session in
             var preview: Data?, icon: Data?
             do { preview = try await capture(session: session, output: .previewPNG) }
-            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview, runtime: session.engine.telemetryRuntime))) } }
+            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
             try Task.checkCancellation()
             do { icon = try await targetPNGData(session: session, target: .icon) }
-            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon, runtime: session.engine.telemetryRuntime))) } }
+            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
             try Task.checkCancellation()
             return SlopDocumentAssets(previewPNG: preview, finderIconPNG: icon)
         }

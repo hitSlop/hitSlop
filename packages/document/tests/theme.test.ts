@@ -1,11 +1,7 @@
-// Guards persisted token overrides, failed writes, invalid values and session ordering.
+// Guards persisted token overrides, failed writes and invalid values.
 import { test, expect } from "bun:test";
 import { ThemeController } from "../src/theme-runtime";
 import { defineTheme } from "../src/theme";
-import { Document } from "../src/document";
-import { Session } from "../src/session";
-import { MemoryStore } from "../src/memory";
-import { defineDocument, s } from "../src/schema";
 
 test("theme overrides persist before application and failed writes preserve the visible theme", async () => {
   const defaults = defineTheme({ accent: "red", paper: "white" });
@@ -58,28 +54,4 @@ test("theme rejects undeclared tokens, structural CSS and oversized values witho
   await expect(theme.reset("missing")).rejects.toThrow();
   expect(saves).toBe(0);
   expect(() => defineTheme({ "invalid token": "red" })).toThrow();
-});
-
-test("theme commands serialize with document saves and reject stale sessions", async () => {
-  const store = new MemoryStore();
-  const doc = await Document.open(defineDocument({ title: s.text() }), store, { title: "Initial" });
-  const theme = new ThemeController({ accent: "red" }, async () => {});
-  const session = new Session(doc, "current", theme);
-  const base = {
-    id: "theme",
-    documentPath: "test",
-    method: "theme.set" as const,
-    values: { accent: "blue" },
-  };
-  expect((await session.handle({ ...base, epoch: "old" })).ok).toBe(false);
-  doc.fields.title.replace("Pending");
-  const append = store.append.bind(store);
-  store.append = async () => {
-    throw new Error("disk full");
-  };
-  expect((await session.handle({ ...base, epoch: "current" })).ok).toBe(false);
-  expect(theme.get().effective.accent).toBe("red");
-  store.append = append;
-  expect((await session.handle({ ...base, epoch: "current" })).ok).toBe(true);
-  await session.close();
 });
