@@ -66,6 +66,8 @@ If a gate fails, fix and validate the candidate before publication. Never move a
 
 Use the pinned Bun release, Xcode, and XcodeGen on macOS:
 
+Seal templates from a clean dependency installation. A frozen-lockfile install may leave old, undeclared links in existing workspace `node_modules` directories. Bundled templates declare their icon-library version explicitly so a fresh CI checkout reproduces the sealed app content; QuickLook artwork may vary by macOS.
+
 ```sh
 bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile

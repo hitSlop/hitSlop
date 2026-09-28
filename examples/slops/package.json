@@ -6,6 +6,7 @@
     "@hitslop/document": "workspace:*",
     "@humanspeak/svelte-markdown": "1.9.0",
     "@internationalized/date": "^3.12.4",
+    "@lucide/svelte": "1.37.0",
     "bits-ui": "^2.19.2",
     "jszip": "3.10.1",
     "p5": "2.3.3",
