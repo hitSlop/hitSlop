@@ -26,10 +26,8 @@ import HitSlopCoreBinding
       guard let generation = disk["generation"] as? String, let schemaKey = disk["schemaKey"] as? String,
         let checkpoint = (disk["checkpoint"] as? String).flatMap({ Data(base64Encoded: $0) })
       else { throw failure("Probe needs a saved document") }
-      let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint)
-      for update in disk["updates"] as? [String] ?? [] {
-        _ = try core.importUpdates(bytes: Data(base64Encoded: update)!)
-      }
+      let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint,
+        updates: (disk["updates"] as? [String] ?? []).map { Data(base64Encoded: $0)! })
       let before = try core.version()
       _ = try core.commandCurrent(batchJson: #"{"intents":[{"type":"splice","path":["title"],"index":0,"delete":0,"insert":"Crash edit "}]}"#)
       storage.testingPhase = stop

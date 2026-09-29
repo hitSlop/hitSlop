@@ -15,6 +15,14 @@ import HitSlopDocument
       Apply.self, Batch.self, Compact.self, Create.self, Open.self,
     ] + debugCommands)
 
+  @Flag(name: .customLong("core-build"), help: "Print the embedded document core build ID.")
+  var coreBuild = false
+
+  func run() async throws {
+    guard coreBuild else { throw CleanExit.helpRequest(self) }
+    print(DocumentOwner.coreBuildID)
+  }
+
   private static var debugCommands: [ParsableCommand.Type] {
     #if DEBUG
     [StorageProbe.self]

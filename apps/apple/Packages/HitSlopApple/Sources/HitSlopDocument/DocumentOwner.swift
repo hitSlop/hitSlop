@@ -116,11 +116,11 @@ public final class DocumentOwner: @unchecked Sendable {
     guard let encoded = loaded["checkpoint"] as? String, let bytes = Data(base64Encoded: encoded) else {
       throw failure("Missing durable checkpoint")
     }
-    let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: bytes)
-    for update in loaded["updates"] as? [String] ?? [] {
+    let updates = try (loaded["updates"] as? [String] ?? []).map { update in
       guard let bytes = Data(base64Encoded: update) else { throw failure("Invalid stored update") }
-      _ = try core.importUpdates(bytes: bytes)
+      return bytes
     }
+    let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: bytes, updates: updates)
     let meta = try storage.call(["method": "metadata"])
     return Restored(core: core, generation: loaded["generation"] as! String, stored: (
       meta["updateRows"] as? Int64 ?? 0, meta["updateBytes"] as? Int64 ?? 0, meta["checkpointBytes"] as? Int64 ?? 0))
@@ -146,8 +146,7 @@ public final class DocumentOwner: @unchecked Sendable {
     }
   }
   private func checkPoisoned(_ error: Error) {
-    let description = String(describing: error)
-    if description.contains("engine_panic") || description.contains("owner_poisoned") {
+    if case CoreError.Invalidated = error {
       invalidated = true
       publishStatus("save-failed", "Owner invalidated: reload saved state explicitly; accepted unsaved edits may be lost.", sequence)
     }
@@ -421,5 +420,18 @@ public final class DocumentOwner: @unchecked Sendable {
     let storage = storage
     try await persist { storage.close() }
     try await enqueue(allowInvalidated: true) { self.closed = true }
+  }
+}
+
+extension DocumentOwner {
+  /// The embedded core's build ID; a release checks the app and helper report the same one.
+  public static var coreBuildID: String { coreBuildId() }
+}
+
+extension Error {
+  /// The core or owner refuses every call until saved state is reloaded explicitly.
+  var isOwnerInvalidation: Bool {
+    if case CoreError.Invalidated? = self as? CoreError { return true }
+    return localizedDescription.contains("Owner invalidated")
   }
 }

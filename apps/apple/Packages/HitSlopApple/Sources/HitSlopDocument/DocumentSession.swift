@@ -248,7 +248,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           let description = error.localizedDescription
           let code = description.contains("session_changed") ? "session_changed"
             : description.contains("unknown_outcome") ? "unknown_outcome"
-            : description.contains("invalidated") || description.contains("poisoned") || description.contains("engine_panic") ? "owner_invalidated"
+            : error.isOwnerInvalidation ? "owner_invalidated"
             : args["method"] as? String == "flush" ? "save_failed" : "rejected"
           replyHandler(["id": args["id"] ?? "invalid", "ok": false, "code": code, "error": description], nil)
         }

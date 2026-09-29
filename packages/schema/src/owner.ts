@@ -75,6 +75,18 @@ export const textFields = {
 };
 export const TextRequest = Type.Object(textFields, { additionalProperties: false });
 
+// Stateless text: the page's field was `from` at `base` (its last authored version) and
+// is now `to`. The owner computes the edit script and merges it; no draft state.
+export const editTextFields = {
+  base: Type.String(),
+  path,
+  from: Type.String(),
+  to: Type.String(),
+  selectionStart: Type.Integer({ minimum: 0 }),
+  selectionEnd: Type.Integer({ minimum: 0 }),
+};
+export const EditTextRequest = Type.Object(editTextFields, { additionalProperties: false });
+
 // Command offsets explicitly refer to state when the host executor runs them.
 // A renderer draft must use TextRequest instead; it must never silently rebase.
 const { base: _base, ...currentSplice } = variants.splice;
@@ -248,6 +260,7 @@ export const OwnerContractsSchema = Type.Object(
   {
     batch: Batch,
     text: TextRequest,
+    editText: EditTextRequest,
     command: CurrentCommand,
     state: OwnerStateSchema,
     publication: OwnerPublicationSchema,

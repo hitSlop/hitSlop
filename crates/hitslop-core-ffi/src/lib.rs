@@ -4,15 +4,51 @@ use hitslop_core::Document as Core;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
+/// A rejected request leaves the owner usable; an invalidated owner refuses every call
+/// until the host reloads saved state into a new owner.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum BridgeError {
+pub enum CoreError {
+    #[error("{code}: {message}")]
+    Rejected {
+        code: String,
+        message: String,
+        op_index: Option<u32>,
+    },
     #[error("{message}")]
-    Failure { message: String },
+    Invalidated { message: String },
 }
-fn failure(e: impl ToString) -> BridgeError {
-    BridgeError::Failure {
-        message: e.to_string(),
+fn rejected(e: hitslop_core::Error) -> CoreError {
+    CoreError::Rejected {
+        code: e.code,
+        message: e.message,
+        op_index: e.op_index.map(|i| i as u32),
     }
+}
+fn invalidated(message: &str) -> CoreError {
+    CoreError::Invalidated {
+        message: message.into(),
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ApplyResult {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub publication: String,
+}
+#[derive(uniffi::Record)]
+pub struct TextResult {
+    pub sequence: u64,
+    pub authored: String,
+    pub selection_start: u32,
+    pub selection_end: u32,
+    pub publication: Option<String>,
+}
+
+/// The core build this library embeds; app and helper must report the same value.
+#[uniffi::export]
+pub fn core_build_id() -> String {
+    hitslop_core::BUILD_ID.into()
 }
 
 #[derive(uniffi::Object)]
@@ -22,10 +58,10 @@ pub struct NativeDocument {
 impl NativeDocument {
     fn construct(
         f: impl FnOnce() -> Result<Core, hitslop_core::Error>,
-    ) -> Result<Arc<Self>, BridgeError> {
+    ) -> Result<Arc<Self>, CoreError> {
         let core = catch_unwind(AssertUnwindSafe(f))
-            .map_err(|_| failure("engine_panic: creation failed"))?
-            .map_err(failure)?;
+            .map_err(|_| invalidated("engine_panic: creation failed"))?
+            .map_err(rejected)?;
         Ok(Arc::new(Self {
             inner: Mutex::new(Some(core)),
         }))
@@ -33,16 +69,16 @@ impl NativeDocument {
     fn call<T>(
         &self,
         f: impl FnOnce(&mut Core) -> Result<T, hitslop_core::Error>,
-    ) -> Result<T, BridgeError> {
-        let mut guard = self.inner.lock().map_err(|_| failure("owner_poisoned"))?;
+    ) -> Result<T, CoreError> {
+        let mut guard = self.inner.lock().map_err(|_| invalidated("owner_poisoned"))?;
         let core = guard
             .as_mut()
-            .ok_or_else(|| failure("owner_poisoned: reload durable state"))?;
+            .ok_or_else(|| invalidated("owner_poisoned: reload durable state"))?;
         match catch_unwind(AssertUnwindSafe(|| f(core))) {
-            Ok(result) => result.map_err(failure),
+            Ok(result) => result.map_err(rejected),
             Err(_) => {
                 *guard = None;
-                Err(failure(
+                Err(invalidated(
                     "engine_panic: owner invalidated; reload durable state",
                 ))
             }
@@ -52,44 +88,73 @@ impl NativeDocument {
 #[uniffi::export]
 impl NativeDocument {
     #[uniffi::constructor]
-    pub fn create(schema_json: String, initial_json: String) -> Result<Arc<Self>, BridgeError> {
+    pub fn create(schema_json: String, initial_json: String) -> Result<Arc<Self>, CoreError> {
         Self::construct(|| Core::create(&schema_json, &initial_json))
     }
     #[uniffi::constructor]
-    pub fn open(schema_json: String, checkpoint: Vec<u8>) -> Result<Arc<Self>, BridgeError> {
-        Self::construct(|| Core::open(&schema_json, &checkpoint, &[]))
+    pub fn open(
+        schema_json: String,
+        checkpoint: Vec<u8>,
+        updates: Vec<Vec<u8>>,
+    ) -> Result<Arc<Self>, CoreError> {
+        Self::construct(|| Core::open(&schema_json, &checkpoint, &updates))
     }
-    pub fn snapshot(&self) -> Result<String, BridgeError> {
+    pub fn sequence(&self) -> Result<u64, CoreError> {
+        self.call(|d| Ok(d.sequence()))
+    }
+    pub fn apply_batch(&self, batch_json: String) -> Result<ApplyResult, CoreError> {
+        self.call(|d| {
+            let applied = d.apply_batch(&batch_json)?;
+            Ok(ApplyResult {
+                sequence: applied.sequence,
+                ids: applied.ids,
+                publication: applied.publication,
+            })
+        })
+    }
+    pub fn edit_text(&self, request_json: String) -> Result<TextResult, CoreError> {
+        self.call(|d| {
+            let edit = d.edit_text(&request_json)?;
+            Ok(TextResult {
+                sequence: edit.sequence,
+                authored: edit.authored,
+                selection_start: edit.selection_start as u32,
+                selection_end: edit.selection_end as u32,
+                publication: edit.publication,
+            })
+        })
+    }
+    pub fn snapshot(&self) -> Result<String, CoreError> {
         self.call(|d| d.snapshot())
     }
-    pub fn version(&self) -> Result<String, BridgeError> {
+    pub fn version(&self) -> Result<String, CoreError> {
         self.call(|d| Ok(d.version()))
     }
-    pub fn command_current(&self, batch_json: String) -> Result<String, BridgeError> {
+    pub fn command_current(&self, batch_json: String) -> Result<String, CoreError> {
         self.call(|d| d.command_current(&batch_json))
     }
-    pub fn apply(&self, batch_json: String) -> Result<String, BridgeError> {
+    pub fn apply(&self, batch_json: String) -> Result<String, CoreError> {
         self.call(|d| d.apply(&batch_json))
     }
-    pub fn import_updates(&self, bytes: Vec<u8>) -> Result<String, BridgeError> {
+    pub fn import_updates(&self, bytes: Vec<u8>) -> Result<String, CoreError> {
         self.call(|d| d.import(&bytes))
     }
-    pub fn detach_renderer(&self) -> Result<(), BridgeError> {
+    pub fn detach_renderer(&self) -> Result<(), CoreError> {
         self.call(|d| {
             d.detach_renderer();
             Ok(())
         })
     }
-    pub fn text(&self, request_json: String) -> Result<String, BridgeError> {
+    pub fn text(&self, request_json: String) -> Result<String, CoreError> {
         self.call(|d| d.text(&request_json))
     }
-    pub fn release_draft(&self, draft: String) -> Result<(), BridgeError> {
+    pub fn release_draft(&self, draft: String) -> Result<(), CoreError> {
         self.call(|d| d.release_draft(&draft))
     }
-    pub fn checkpoint(&self) -> Result<Vec<u8>, BridgeError> {
+    pub fn checkpoint(&self) -> Result<Vec<u8>, CoreError> {
         self.call(|d| d.checkpoint())
     }
-    pub fn export_since(&self, version: String) -> Result<Vec<u8>, BridgeError> {
+    pub fn export_since(&self, version: String) -> Result<Vec<u8>, CoreError> {
         self.call(|d| d.export_since(&version))
     }
 }
@@ -105,9 +170,9 @@ mod tests {
         let owner = NativeDocument::create(schema.into(), r#"{"done":false}"#.into()).unwrap();
         let saved = owner.checkpoint().unwrap();
         let result: Result<(), _> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
-        assert!(result.unwrap_err().to_string().contains("engine_panic"));
-        assert!(owner.snapshot().unwrap_err().to_string().contains("owner_poisoned"));
-        let restored = NativeDocument::open(schema.into(), saved).unwrap();
+        assert!(matches!(result, Err(CoreError::Invalidated { .. })));
+        assert!(matches!(owner.snapshot(), Err(CoreError::Invalidated { .. })));
+        let restored = NativeDocument::open(schema.into(), saved, vec![]).unwrap();
         assert!(restored.snapshot().unwrap().contains("\"done\":false"));
     }
 }

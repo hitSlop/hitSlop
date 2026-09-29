@@ -48,8 +48,7 @@ import Testing
         _ = try core.apply(batchJson: batch)
         let current = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
         #expect(try json(current["value"]!) == json(scenario["after"]!))
-        let reopened = try NativeDocument.open(schemaJson: schema, checkpoint: seed)
-        _ = try reopened.importUpdates(bytes: core.exportSince(version: version))
+        let reopened = try NativeDocument.open(schemaJson: schema, checkpoint: seed, updates: [core.exportSince(version: version)])
         let replay = try JSONSerialization.jsonObject(with: Data(reopened.snapshot().utf8)) as! [String: Any]
         #expect(try json(replay["value"]!) == json(scenario["after"]!))
       }

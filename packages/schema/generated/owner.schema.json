@@ -3,6 +3,7 @@
   "required": [
     "batch",
     "text",
+    "editText",
     "command",
     "state",
     "publication",
@@ -431,6 +432,63 @@
           "minimum": 0
         },
         "insert": {
+          "type": "string"
+        },
+        "selectionStart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selectionEnd": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "editText": {
+      "type": "object",
+      "required": [
+        "base",
+        "path",
+        "from",
+        "to",
+        "selectionStart",
+        "selectionEnd"
+      ],
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
           "type": "string"
         },
         "selectionStart": {

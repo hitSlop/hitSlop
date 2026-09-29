@@ -93,9 +93,8 @@ extension DocumentOwner {
       default: return .init(ok: false, epoch: session, error: "Unsupported owner command", code: .rejected)
       }
     } catch {
-      if !accepted, case BridgeError.Failure(let message) = error,
-        !message.contains("engine_panic"), !message.contains("owner_poisoned") {
-        return .init(ok: false, epoch: session, error: message, code: .rejected)
+      if !accepted, case CoreError.Rejected = error {
+        return .init(ok: false, epoch: session, error: error.localizedDescription, code: .rejected)
       }
       return .init(ok: false, epoch: session, error: error.localizedDescription, code: .failed)
     }

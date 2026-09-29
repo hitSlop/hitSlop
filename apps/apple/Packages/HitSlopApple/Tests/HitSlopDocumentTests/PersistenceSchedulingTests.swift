@@ -49,10 +49,8 @@ final class StorageGate: @unchecked Sendable {
     let loaded = try storage.call(["method": "load"])
     let core = try NativeDocument.open(
       schemaJson: loaded["schemaKey"] as! String,
-      checkpoint: Data(base64Encoded: loaded["checkpoint"] as! String)!)
-    for update in loaded["updates"] as? [String] ?? [] {
-      _ = try core.importUpdates(bytes: Data(base64Encoded: update)!)
-    }
+      checkpoint: Data(base64Encoded: loaded["checkpoint"] as! String)!,
+      updates: (loaded["updates"] as? [String] ?? []).map { Data(base64Encoded: $0)! })
     let frame = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }

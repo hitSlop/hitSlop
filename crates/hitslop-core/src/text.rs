@@ -9,37 +9,9 @@ pub(super) struct Draft {
     /// The owner version right after this draft's last accepted edit. While the
     /// owner is still exactly there, the authored text equals the owner's text.
     accepted: VersionVector,
+    accepted_at: Frontiers,
     /// Materialized only once other edits intervene after this draft started.
     authored: Option<LoroDoc>,
-}
-fn text_at(
-    doc: &LoroDoc,
-    schema: &Node,
-    path: &[Segment],
-    lists: &HashMap<ContainerID, ListState>,
-) -> Result<LoroText> {
-    let loc = resolve(doc, schema, path, &Rows::new(lists))?;
-    match (loc.node, loc.value) {
-        (Node::Text, ValueOrContainer::Container(Container::Text(text))) => Ok(text),
-        _ => Err(err("type_mismatch", "Expected text")),
-    }
-}
-fn unicode_offset(text: &str, utf16: usize) -> Result<usize> {
-    let mut n = 0;
-    for (i, c) in text.chars().enumerate() {
-        if n == utf16 {
-            return Ok(i);
-        }
-        n += c.len_utf16();
-    }
-    if n == utf16 {
-        Ok(text.chars().count())
-    } else {
-        Err(err(
-            "out_of_range",
-            "Selection splits a surrogate or exceeds text",
-        ))
-    }
 }
 impl Document {
     pub fn detach_renderer(&mut self) {
@@ -98,7 +70,7 @@ impl Document {
                 None if draft.accepted == owner => None,
                 None => Some(
                     self.doc
-                        .fork_at(&self.doc.vv_to_frontiers(&draft.accepted))
+                        .fork_at(&draft.accepted_at)
                         .map_err(engine)?,
                 ),
             }
@@ -112,11 +84,10 @@ impl Document {
             if r.sequence != 1 || r.parent.is_some() {
                 return Err(err("draft_parent", "Unknown draft"));
             }
-            let vv = decode_version(&r.base)?;
+            let (fronts, vv) = decode_version(&self.doc, &r.base)?;
             if vv == owner {
                 None
             } else {
-                let fronts = self.doc.vv_to_frontiers(&vv);
                 let doc = self.doc.fork_at(&fronts).map_err(engine)?;
                 if doc.oplog_vv() != vv {
                     return Err(err("stale_base", "Unknown or non-causal draft base"));
@@ -163,7 +134,7 @@ impl Document {
                     return Err(err("path_not_found", "Text identity changed"));
                 }
                 let from = authored.oplog_vv();
-                let base = version_token(&from);
+                let base = version_token(&authored.oplog_frontiers());
                 let intent = Intent::Splice {
                     path: r.path.clone(),
                     base: base.clone(),
@@ -217,6 +188,7 @@ impl Document {
                 request: canonical,
                 reply: reply.clone(),
                 accepted: self.doc.oplog_vv(),
+                accepted_at: self.doc.oplog_frontiers(),
                 authored: branch,
             },
         );

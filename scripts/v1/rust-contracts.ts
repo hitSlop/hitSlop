@@ -1,4 +1,4 @@
-import { variants, Segment, Anchor, textFields } from "../../packages/schema/src/owner";
+import { variants, Segment, Anchor, textFields, editTextFields } from "../../packages/schema/src/owner";
 
 // The deliberately small generator fails on unsupported types. It generates the
 // Rust deserialization envelope; descriptor interpretation stays inside the core.
@@ -60,6 +60,12 @@ pub struct Batch { pub intents: Vec<Intent> }
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub struct TextRequest { ${Object.entries(textFields)
+  .map(([key, schema]) => `pub ${key}: ${rust(schema)}`)
+  .join(", ")} }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub struct EditText { ${Object.entries(editTextFields)
   .map(([key, schema]) => `pub ${key}: ${rust(schema)}`)
   .join(", ")} }
 `;

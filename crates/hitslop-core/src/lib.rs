@@ -4,7 +4,7 @@
 #[path = "wire.generated.rs"]
 mod wire;
 use loro::{
-    Container, ContainerID, ContainerTrait, ExportMode, Index, LoroDoc, LoroMap, LoroMovableList,
+    Container, ContainerID, ContainerTrait, ExportMode, Frontiers, Index, LoroDoc, ID, LoroMap, LoroMovableList,
     LoroText, ValueOrContainer, VersionVector,
 };
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,9 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 mod publication;
 mod identity;
+mod edit;
 mod text;
+use edit::{text_at, unicode_offset};
 use publication::{Events, ListState};
 use std::sync::Arc;
 use wire::{Anchor, Batch, Intent, Segment};
@@ -60,25 +62,43 @@ fn unhex(s: &str) -> Result<Vec<u8>> {
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(engine))
         .collect()
 }
-// Loro's postcard encoding serializes a hash map. Tokens must be stable across
-// import/reopen and independent hash-map insertion order.
-fn version_token(vv: &VersionVector) -> String {
-    let sorted: BTreeMap<_, _> = vv
+/// Version tokens are the document's frontiers: the IDs of its latest operations,
+/// sorted, as 12-byte big-endian (peer, counter) records. They grow with concurrent
+/// heads, not with every peer ever seen, and are stable across import and reopen.
+fn version_token(frontiers: &Frontiers) -> String {
+    let mut ids: Vec<ID> = frontiers.iter().collect();
+    ids.sort();
+    hex(&ids
         .iter()
-        .filter(|(_, v)| **v > 0)
-        .map(|(k, v)| (*k, *v))
-        .collect();
-    hex(serde_json::to_string(&sorted)
-        .expect("integer map")
-        .as_bytes())
+        .flat_map(|id| id.peer.to_be_bytes().into_iter().chain(id.counter.to_be_bytes()))
+        .collect::<Vec<_>>())
 }
-fn decode_version(s: &str) -> Result<VersionVector> {
-    let values: BTreeMap<u64, i32> =
-        serde_json::from_slice(&unhex(s)?).map_err(|e| err("invalid_version", e))?;
-    if values.values().any(|v| *v <= 0) {
-        return Err(err("invalid_version", "Nonpositive counter"));
+/// Decodes a token and proves every ID is in this document's history before any Loro
+/// API sees it; unknown operations must never reach a panicking conversion.
+fn decode_version(doc: &LoroDoc, s: &str) -> Result<(Frontiers, VersionVector)> {
+    let bytes = unhex(s)?;
+    if bytes.is_empty() || bytes.len() % 12 != 0 || bytes.len() > 12 * 1024 {
+        return Err(err("invalid_version", "Expected an opaque version token"));
     }
-    Ok(values.into_iter().collect())
+    let known = doc.oplog_vv();
+    let mut ids = Vec::with_capacity(bytes.len() / 12);
+    for record in bytes.chunks_exact(12) {
+        let peer = u64::from_be_bytes(record[..8].try_into().expect("8 bytes"));
+        let counter = i32::from_be_bytes(record[8..].try_into().expect("4 bytes"));
+        if counter < 0 {
+            return Err(err("invalid_version", "Negative counter"));
+        }
+        let id = ID::new(peer, counter);
+        if !known.includes_id(id) {
+            return Err(err("stale_base", "Version names operations this document does not have"));
+        }
+        ids.push(id);
+    }
+    let frontiers = Frontiers::from(ids);
+    let vv = doc
+        .frontiers_to_vv(&frontiers)
+        .ok_or_else(|| err("stale_base", "Version is not in this document's history"))?;
+    Ok((frontiers, vv))
 }
 fn random_id() -> Result<String> {
     let mut bytes = [0; 16];
@@ -489,10 +509,20 @@ fn execute(
     let at = resolve(doc, schema, op.path(), rows)?;
     match op {
         Intent::Set { value, .. } => {
+            // Whole-field text replaces the text as it is at execution. The script exists
+            // before the first mutation, so a slow diff never leaves a batch half applied.
+            if let (Node::Text, ValueOrContainer::Container(Container::Text(text))) = (&at.node, &at.value) {
+                let to = value.as_str().ok_or_else(|| err("type_mismatch", "Expected text"))?;
+                let delta = edit::script(&text.to_string(), to, to.chars().count());
+                if !delta.is_empty() {
+                    text.apply_delta(&delta).map_err(engine)?;
+                }
+                return Ok(());
+            }
             if !matches!(at.node, Node::Boolean) {
                 return Err(err(
                     "type_mismatch",
-                    "set only accepts booleans in milestone one",
+                    "set accepts only text and booleans",
                 ));
             }
             at.node.validate(value, false)?;
@@ -723,6 +753,30 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
     publication::subscribe(doc, events).detach();
 }
 
+/// Identifies the core build (a hash of its sources and the lockfile), so a release can
+/// prove the app and its helper embed the same core.
+pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
+
+/// A committed batch: its publication sequence, the IDs of inserted rows, and the
+/// publication to deliver.
+#[derive(Debug)]
+pub struct Applied {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub publication: String,
+}
+/// A stateless text edit. `authored` is the version right after this edit on its own
+/// branch; the page sends it as the next `base`. Selections are UTF-16 offsets in the
+/// merged text. A caret-only request publishes nothing.
+#[derive(Debug)]
+pub struct TextEdit {
+    pub sequence: u64,
+    pub authored: String,
+    pub selection_start: usize,
+    pub selection_end: usize,
+    pub publication: Option<String>,
+}
+
 /// Exactly one host executor owns this value. Neither binding contains semantics.
 pub struct Document {
     doc: LoroDoc,
@@ -790,7 +844,7 @@ impl Document {
         Ok(found)
     }
     pub fn version(&self) -> String {
-        version_token(&self.doc.oplog_vv())
+        version_token(&self.doc.oplog_frontiers())
     }
     pub fn snapshot(&self) -> Result<String> {
         // Deliberately recomputed from the full value: this is the oracle that
@@ -823,31 +877,7 @@ impl Document {
         self.apply(&value.to_string())
     }
     pub fn apply(&mut self, batch: &str) -> Result<String> {
-        let batch: Batch = parse(batch)?;
-        if batch.intents.len() > 1000 {
-            return Err(err("too_large", "Batch exceeds 1000 intents"));
-        }
-        let base = self.version();
-        let before = self.doc.state_frontiers();
-        let mut ids = vec![];
-        let mut failure = None;
-        {
-            let mut rows = Rows::new(&self.lists);
-            for (index, op) in batch.intents.iter().enumerate() {
-                if let Err(mut e) = execute(&self.doc, &self.schema, op, &base, &mut ids, &mut rows)
-                {
-                    e.op_index = Some(index);
-                    failure = Some(e);
-                    break;
-                }
-            }
-        }
-        if let Some(e) = failure {
-            self.abort(&before)?; // Atomicity sensitivity removes only this call in a disposable copy.
-            return Err(e);
-        }
-        self.doc.commit();
-        self.publish(ids)
+        self.apply_batch(batch).map(|applied| applied.publication)
     }
     /// Loro transactions cannot be rolled back. Validation happens before each
     /// intent's first mutation, so a batch rejected at its first intent left nothing
@@ -888,6 +918,39 @@ impl Document {
             .map_err(|e| err("invalid_bytes", e))?;
         self.publish(vec![])
     }
+    /// The publication sequence: the number of published changes since open.
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+    /// Like `apply`, with the result as a record so hosts never parse the reply.
+    pub fn apply_batch(&mut self, batch: &str) -> Result<Applied> {
+        let batch: Batch = parse(batch)?;
+        if batch.intents.len() > 1000 {
+            return Err(err("too_large", "Batch exceeds 1000 intents"));
+        }
+        let base = self.version();
+        let before = self.doc.state_frontiers();
+        let mut ids = vec![];
+        let mut failure = None;
+        {
+            let mut rows = Rows::new(&self.lists);
+            for (index, op) in batch.intents.iter().enumerate() {
+                if let Err(mut e) = execute(&self.doc, &self.schema, op, &base, &mut ids, &mut rows)
+                {
+                    e.op_index = Some(index);
+                    failure = Some(e);
+                    break;
+                }
+            }
+        }
+        if let Some(e) = failure {
+            self.abort(&before)?; // Atomicity sensitivity removes only this call in a disposable copy.
+            return Err(e);
+        }
+        self.doc.commit();
+        let publication = self.publish(ids.clone())?;
+        Ok(Applied { sequence: self.sequence, ids, publication })
+    }
     fn publish(&mut self, ids: Vec<String>) -> Result<String> {
         #[cfg(not(target_arch = "wasm32"))]
         let started = std::time::Instant::now();
@@ -915,7 +978,7 @@ impl Document {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
     }
     pub fn export_since(&self, version: &str) -> Result<Vec<u8>> {
-        let vv = decode_version(version)?;
+        let (_, vv) = decode_version(&self.doc, version)?;
         self.doc.export(ExportMode::updates(&vv)).map_err(engine)
     }
 }

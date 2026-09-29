@@ -6,6 +6,23 @@ fn error(e: hitslop_core::Error) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
+/// Mirrors the native `TextResult` record.
+#[wasm_bindgen(getter_with_clone)]
+pub struct TextResult {
+    pub sequence: f64,
+    pub authored: String,
+    #[wasm_bindgen(js_name = selectionStart)]
+    pub selection_start: u32,
+    #[wasm_bindgen(js_name = selectionEnd)]
+    pub selection_end: u32,
+    pub publication: Option<String>,
+}
+
+#[wasm_bindgen(js_name = coreBuildId)]
+pub fn core_build_id() -> String {
+    hitslop_core::BUILD_ID.into()
+}
+
 #[wasm_bindgen]
 pub struct WasmDocument {
     inner: Core,
@@ -33,6 +50,20 @@ impl WasmDocument {
     }
     pub fn import_updates(&mut self, bytes: &[u8]) -> Result<String, JsValue> {
         self.inner.import(bytes).map_err(error)
+    }
+    pub fn sequence(&self) -> f64 {
+        self.inner.sequence() as f64
+    }
+    #[wasm_bindgen(js_name = editText)]
+    pub fn edit_text(&mut self, request_json: &str) -> Result<TextResult, JsValue> {
+        let edit = self.inner.edit_text(request_json).map_err(error)?;
+        Ok(TextResult {
+            sequence: edit.sequence as f64,
+            authored: edit.authored,
+            selection_start: edit.selection_start as u32,
+            selection_end: edit.selection_end as u32,
+            publication: edit.publication,
+        })
     }
     pub fn text(&mut self, request_json: &str) -> Result<String, JsValue> {
         self.inner.text(request_json).map_err(error)

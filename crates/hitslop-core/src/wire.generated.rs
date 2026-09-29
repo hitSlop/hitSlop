@@ -40,3 +40,7 @@ pub struct Batch { pub intents: Vec<Intent> }
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub struct TextRequest { pub session: String, pub draft: String, pub sequence: usize, pub parent: Option<usize>, pub base: String, pub path: Vec<Segment>, pub index: usize, pub delete: usize, pub insert: String, pub selectionStart: usize, pub selectionEnd: usize }
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub struct EditText { pub base: String, pub path: Vec<Segment>, pub from: String, pub to: String, pub selectionStart: usize, pub selectionEnd: usize }

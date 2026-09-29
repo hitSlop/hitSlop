@@ -5,7 +5,12 @@ SDK meet the 1k targets (see §7). Step 2 deleted the legacy machinery, replaced
 negotiation with one bundled page shell, and shipped the fresh storage schema with
 attempt-token recovery (bug 1). Step 3 split the owner queue from the persistence queue
 (one write in flight, epoch-fenced completions, flush targets, close/discard fences;
-S-B is `PersistenceSchedulingTests`). Steps 4–7 remain.
+S-B is `PersistenceSchedulingTests`). Step 4 added, next to the old API: validated
+frontier tokens (bug 2), stateless `edit_text` with precomputed scripts (S-C chose fork;
+`docs/evidence/stateless-text-2026-09-29.json`), text `set`, `sequence()`, `open` with
+updates, UniFFI records, a typed `CoreError` and `BUILD_ID` (`hitslop-native
+--core-build`). The release assertion that the app and helper report the same build ID
+moves to step 5, where the app first references the core ID. Steps 5–7 remain.
 
 Once work starts, this document supersedes the migration machinery in
 [LoroRustCutover.md](../archive/docs/LoroRustCutover.md) and [LoroHostPlan.md](../archive/docs/LoroHostPlan.md). The
