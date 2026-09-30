@@ -223,7 +223,7 @@
     const won = guess === target;
     const lost = !won && nextCount >= ROWS;
     currentGuess = "";
-    doc.change((tx) => {
+    void doc.change((tx) => {
       const board = mode === "daily" ? tx.fields.daily : tx.fields.practice;
       board.guesses.insert(guess);
       if (!won && !lost) return;
@@ -240,6 +240,9 @@
       } else {
         tx.fields.stats.currentStreak.set(0);
       }
+    }).catch(() => {
+      // Refused: the guess goes back into the row for another try.
+      currentGuess = guess;
     });
 
     revealing = true;
@@ -263,9 +266,9 @@
     });
   }
 
-  function resetPuzzle(which: "daily" | "practice", next: { targetWord: string; date?: string }): void {
+  function resetPuzzle(which: "daily" | "practice", next: { targetWord: string; date?: string }): Promise<void> {
     const count = doc.current[which].guesses.length;
-    doc.change((tx) => {
+    return doc.change((tx) => {
       const board = tx.fields[which];
       board.targetWord.set(next.targetWord);
       if (count) board.guesses.remove(0, count);
@@ -276,7 +279,7 @@
   }
 
   function startNewPractice(): void {
-    resetPuzzle("practice", { targetWord: getRandomWord() });
+    resetPuzzle("practice", { targetWord: getRandomWord() }).catch(() => {});
     currentGuess = "";
     completionSession = false;
     revealing = false;
@@ -350,10 +353,13 @@
     return evaluateGuess(completed, game.targetWord)[colIndex] ?? "";
   }
 
+  // The effect can rerun before the reset is accepted: reset each day at most once.
+  let resettingFor: string | undefined;
   $effect(() => {
     const today = getDailyWord();
-    if (doc.current.daily.date !== today.dateStr) {
-      resetPuzzle("daily", { targetWord: today.word, date: today.dateStr });
+    if (doc.current.daily.date !== today.dateStr && resettingFor !== today.dateStr) {
+      resettingFor = today.dateStr;
+      resetPuzzle("daily", { targetWord: today.word, date: today.dateStr }).catch(() => (resettingFor = undefined));
     }
   });
 

@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "wordle",
   "title": "Wordle",
   "description": "A tactile 5-letter word puzzle instrument with mechanical letter tiles, daily and free play, streaks, and spoiler-free sharing.",
-  "categories": ["games", "utilities"],
+  "categories": [
+    "games",
+    "utilities"
+  ],
   "presentation": {
     "width": 440,
     "height": 620,

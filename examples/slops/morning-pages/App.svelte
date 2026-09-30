@@ -32,9 +32,15 @@
   }
 
   const doc = useDocument(schema);
+  // Writes are asynchronous, so an effect can rerun before its write is accepted: each
+  // page is created (and marked complete) at most once per session.
+  const created = new Set<string>();
+  const completed = new Set<string>();
   $effect(() => {
     const key = doc.current.currentKey;
-    if (!doc.current.entries[key]) doc.fields.entries.put(key, { date: key, text: "", completedAt: "" });
+    if (doc.current.entries[key] || created.has(key)) return;
+    created.add(key);
+    doc.fields.entries.put(key, { date: key, text: "", completedAt: "" }).catch(() => created.delete(key));
   });
 
   const active = $derived(doc.current.entries[doc.current.currentKey]);
@@ -54,8 +60,10 @@
   });
   $effect(() => {
     const page = active;
-    if (!page || wordsCount < TARGET || page.completedAt) return;
-    doc.at(page).completedAt.set(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    if (!page || wordsCount < TARGET || page.completedAt || completed.has(page.date)) return;
+    completed.add(page.date);
+    doc.at(page).completedAt.set(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+      .catch(() => completed.delete(page.date));
   });
 
   onMount(() => capture.onPrepare(async () => {
@@ -65,10 +73,12 @@
   onDestroy(() => { void odometer.set(odometer.target, { duration: 0, delay: 0 }); });
 
   function openDay(key: string) {
+    const create = !doc.current.entries[key] && !created.has(key);
+    if (create) created.add(key);
     doc.change((tx) => {
-      if (!doc.current.entries[key]) tx.fields.entries.put(key, { date: key, text: "", completedAt: "" });
+      if (create) tx.fields.entries.put(key, { date: key, text: "", completedAt: "" });
       tx.fields.currentKey.set(key);
-    });
+    }).catch(() => { if (create) created.delete(key); });
   }
   function shiftDate(deltaDays: number) {
     const [y, m, d] = doc.current.currentKey.split("-").map(Number);

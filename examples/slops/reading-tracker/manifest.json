@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "reading-tracker",
   "title": "Reading Tracker",
   "description": "A personal reading journal for books, authors, star ratings, and reading status.",
-  "categories": ["education", "personal"],
+  "categories": [
+    "education",
+    "personal"
+  ],
   "presentation": {
     "width": 560,
     "height": 600,

@@ -1,10 +1,18 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
-  "author": { "name": "hitSlop" },
+  "author": {
+    "name": "hitSlop"
+  },
   "slug": "habit-heatmap",
   "title": "Habit Heatmap",
   "description": "Keep a twelve-week record of small daily habits, one square at a time.",
-  "categories": ["personal", "productivity"],
-  "presentation": { "width": 620, "height": 480, "shape": "rounded" }
+  "categories": [
+    "personal",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 620,
+    "height": 480,
+    "shape": "rounded"
+  }
 }

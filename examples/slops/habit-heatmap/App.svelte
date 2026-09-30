@@ -40,14 +40,15 @@
     formError = "";
     dialogOpen = true;
   }
-  function save() {
+  async function save() {
     const name = draftName.trim();
     if (!name) { formError = "Give this habit a name."; return; }
     try {
-      const id = doc.change(tx => {
+      // The id is available inside the collector; the change resolves once accepted.
+      const id = await doc.change(tx => {
         if (editingID !== null) {
           const habit = tx.fields.habits.item(editingID);
-          habit.name.replace(name);
+          habit.name.set(name);
           habit.color.set(draftColor);
           return editingID;
         }
@@ -66,14 +67,14 @@
       ?? document.querySelector<HTMLElement>('.habit-add');
     target?.focus();
   }
-  function removeHabit() {
+  async function removeHabit() {
     if (!editingID) return;
     const habits = doc.current.habits;
     const index = habits.findIndex(habit => habit.$id === editingID);
     if (index < 0) return;
     const next = habits[index + 1] ?? habits[index - 1];
     try {
-      doc.fields.habits.remove(editingID);
+      await doc.fields.habits.remove(editingID);
       selectedID = next?.$id ?? null;
       highlightedDay = null;
       removeOpen = false;
@@ -84,9 +85,11 @@
   function toggle(habit: Habit, day: string) {
     if (day > today) return;
     const checkins = doc.at(habit).checkins;
-    if (habit.checkins[day]) checkins.delete(day);
-    else checkins.put(day, 1);
-    notice = `${habit.name}: ${shortDay(day)} ${habit.checkins[day] ? "cleared" : "complete"}.`;
+    const done = Boolean(habit.checkins[day]);
+    (done ? checkins.delete(day) : checkins.put(day, 1)).then(
+      () => (notice = `${habit.name}: ${shortDay(day)} ${done ? "cleared" : "complete"}.`),
+      () => {},
+    );
   }
   function weekLabel(day: string, index: number) {
     return index === 0 || day.slice(0, 7) !== weeks[index - 1]?.slice(0, 7)

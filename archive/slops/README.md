@@ -6,3 +6,5 @@ paths and source commit. Sealed packages remain untouched in compatibility histo
 
 Restored to `examples/slops` once their kinds landed: small-expenses, kanban-board, recipe
 and doodle-board (scalars milestone, `docs/ScalarsPlan.md`).
+
+Restored in the collections milestone (`docs/CollectionsPlan.md`): habit-heatmap, harada-method, morning-pages, pocket-sheet, wordle, alien-radio, meeting-notes, metronome-tapper, pixel-art, workout-planner, reading-tracker, slide-deck.

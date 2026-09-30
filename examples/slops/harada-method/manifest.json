@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "harada-method",
   "title": "Harada Method",
   "description": "The Open Window 64 chart: one core goal, eight themes, and sixty-four concrete actions on a single hand-ruled sheet.",
-  "categories": ["productivity", "education"],
+  "categories": [
+    "productivity",
+    "education"
+  ],
   "presentation": {
     "width": 800,
     "height": 880

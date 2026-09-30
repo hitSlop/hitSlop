@@ -68,9 +68,79 @@ const checks: Record<string, (page: Page) => Promise<void>> = {
     const geometry = await page.locator("svg.doodle-canvas path[data-stroke]").last().getAttribute("d");
     assert.ok(geometry && geometry.length > 20, `stroke path: ${geometry}`);
   },
+  // Record entry by date: a day's checkbox toggles a check-in.
+  "habit-heatmap": async (page) => {
+    const day = page.locator('button[role="checkbox"]:not([disabled])').last();
+    await day.waitFor();
+    await day.click();
+    await page.waitForFunction(() => {
+      const days = [...document.querySelectorAll('button[role="checkbox"]:not([disabled])')];
+      return days.at(-1)?.getAttribute("data-state") === "checked";
+    });
+  },
+  // Scalar list insert: a new attendee pill appears.
+  "meeting-notes": async (page) => {
+    const input = page.locator('input[aria-label="Add attendee"]');
+    await input.waitFor();
+    await input.fill("Robin");
+    await input.press("Enter");
+    await page.waitForSelector('[aria-label="Remove Robin"]');
+  },
+  // Scalar list insert at the end of the presets.
+  "metronome-tapper": async (page) => {
+    const save = page.locator('button[aria-label="Save current tempo"]');
+    await save.waitFor();
+    await save.click();
+    await page.waitForTimeout(300);
+  },
+  // Scalar list preview while painting, then set on release.
+  "pixel-art": async (page) => {
+    const canvas = page.locator('[aria-label="16 by 16 pixel canvas"]');
+    await canvas.waitFor();
+    const box = (await canvas.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.2);
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+  },
+  // Record entry of objects: a cell's contents are written through the formula bar.
+  "pocket-sheet": async (page) => {
+    const bar = page.locator('input[aria-label^="Contents of"]');
+    await bar.waitFor();
+    await bar.fill("42");
+    await bar.press("Enter");
+    await page.waitForFunction(() => document.querySelector('[role="grid"]')?.textContent?.includes("42"));
+  },
+  // Record entry text created by an effect and edited with bindText.
+  "morning-pages": async (page) => {
+    const area = page.locator('[aria-label="Morning Pages writing area"]');
+    await area.waitFor();
+    await area.click();
+    await page.keyboard.type("Three pages, starting now.");
+    await page.waitForTimeout(300);
+    assert.ok((await area.inputValue()).includes("Three pages"));
+  },
+  // Scalar list replace: a set's checkbox marks it complete.
+  "workout-planner": async (page) => {
+    const set = page.locator('[aria-label^="Set 1 of"]').first();
+    await set.waitFor();
+    await set.click();
+    await page.waitForFunction(() => document.querySelector('[aria-label^="Set 1 of"]')?.getAttribute("data-state") === "checked");
+  },
 };
+/** Slops without a targeted check still must load and render without page errors. */
+const settle = async (page: Page) => {
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForTimeout(1000);
+};
+const every = [
+  "small-expenses", "kanban-board", "recipe", "doodle-board",
+  "habit-heatmap", "harada-method", "morning-pages", "pocket-sheet", "wordle", "alien-radio",
+  "meeting-notes", "metronome-tapper", "pixel-art", "workout-planner", "reading-tracker", "slide-deck",
+];
 
-const slugs = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(checks);
+const slugs = process.argv.slice(2).length ? process.argv.slice(2) : every;
 const browser = await webkit.launch();
 let failed = 0;
 for (const [index, slug] of slugs.entries()) {
@@ -83,7 +153,9 @@ for (const [index, slug] of slugs.entries()) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(String(error)));
   page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
+    // Network loads (streams, remote media) are outside the document; app errors are not.
+    if (message.type() === "error" && !/Failed to load resource|NotSupportedError|NotAllowedError/.test(message.text()))
+      errors.push(message.text());
   });
   try {
     const url = `http://127.0.0.1:${port}/app.html`;
@@ -97,7 +169,7 @@ for (const [index, slug] of slugs.entries()) {
       }
     }
     errors.length = 0; // connection refusals while the dev server started
-    await checks[slug]!(page);
+    await (checks[slug] ?? settle)(page);
     assert.deepEqual(errors, [], `page errors: ${errors.join("\n")}`);
     console.log(`PASS ${slug}`);
   } catch (error) {

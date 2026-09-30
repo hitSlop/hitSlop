@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { Popover } from "bits-ui";
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
+  import { Slop, useDocument, bindText, type DocumentScope } from "@hitslop/document/svelte";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
   import schema, { stamps, tints, type Tint } from "./schema";
@@ -72,17 +72,18 @@
     if (!extend) anchor = next;
   }
   function write(entries: [string, string][], message: string) {
-    doc.change(tx => {
+    void doc.change(tx => {
       for (const [key, input] of entries) {
         const cell = doc.current.cells[key];
         if (!cell) { if (input) tx.fields.cells.put(key, { input }); continue; }
         if (!input && cell.tint === undefined && cell.stamp === undefined) tx.fields.cells.delete(key);
         else if (cell.input !== input) tx.fields.cells.entry(key).input.set(input);
       }
-    }, { message });
+    }, { message }).catch(() => {});
   }
-  function decorate(apply: (key: string, handle: ReturnType<typeof doc.fields.cells.entry>) => void, empty: (key: string) => boolean, message: string) {
-    doc.change(tx => {
+  type CellHandle = ReturnType<DocumentScope<typeof schema.fields.node>["fields"]["cells"]["entry"]>;
+  function decorate(apply: (key: string, handle: CellHandle) => void, empty: (key: string) => boolean, message: string) {
+    void doc.change(tx => {
       for (const key of selection) {
         if (!doc.current.cells[key]) {
           if (empty(key)) continue;
@@ -92,7 +93,7 @@
         const cell = doc.current.cells[key];
         if (empty(key) && !cell?.input) tx.fields.cells.delete(key);
       }
-    }, { message });
+    }, { message }).catch(() => {});
   }
   function paint(tint: Tint | null) {
     const clearing = tint === null || selection.every(key => doc.current.cells[key]?.tint === tint);
@@ -197,8 +198,9 @@
     const move = (event: PointerEvent) => { resizing = { letter, width: Math.max(56, Math.min(320, Math.round(width + event.clientX - start))) }; };
     const up = () => {
       node.removeEventListener("pointermove", move);
-      if (resizing) doc.fields.widths.put(letter, resizing.width);
-      resizing = null;
+      // Keep the dragged width shown until the saved width replaces it.
+      if (resizing) doc.fields.widths.put(letter, resizing.width).finally(() => (resizing = null)).catch(() => {});
+      else resizing = null;
     };
     const down = (event: PointerEvent) => {
       event.preventDefault(); event.stopPropagation();
@@ -207,7 +209,7 @@
       node.addEventListener("pointermove", move);
       node.addEventListener("pointerup", up, { once: true });
     };
-    const reset = () => { if (doc.current.widths[letter] !== undefined) doc.fields.widths.delete(letter); };
+    const reset = () => { if (doc.current.widths[letter] !== undefined) doc.fields.widths.delete(letter).catch(() => {}); };
     node.addEventListener("pointerdown", down);
     node.addEventListener("dblclick", reset);
     return { destroy() { node.removeEventListener("pointerdown", down); node.removeEventListener("dblclick", reset); } };

@@ -115,13 +115,18 @@
     if (contentEl) contentEl.scrollTop = 0;
   }
 
-  function toggleSet(ex: Exercise, index: number) {
+  async function toggleSet(ex: Exercise, index: number) {
     const next = toggled(ex, index);
-    doc.change((tx) => {
-      const handle = tx.at(ex);
-      handle.completedSetIndices.replace(next.indices);
-      handle.completedSets.set(next.indices.length);
-    });
+    try {
+      // The snapshot below reflects this change once it resolves.
+      await doc.change((tx) => {
+        const handle = tx.at(ex);
+        handle.completedSetIndices.replace(next.indices);
+        handle.completedSets.set(next.indices.length);
+      });
+    } catch {
+      return;
+    }
     selectedId = ex.$id;
     reviewCompleted = false;
     const updated = doc.current.exercises.find((item) => item.$id === ex.$id) ?? ex;
@@ -138,7 +143,7 @@
   function logSet() {
     if (!active) return;
     const index = nextSet(active);
-    if (index !== undefined) toggleSet(active, index);
+    if (index !== undefined) void toggleSet(active, index);
   }
 
   function edit(ex?: Exercise) {
@@ -150,7 +155,7 @@
     dialogOpen = true;
   }
 
-  function saveExercise() {
+  async function saveExercise() {
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) {
@@ -168,18 +173,19 @@
       const original = doc.current.exercises.find((ex) => ex.$id === draft!.id);
       if (!original) return;
       const indices = checked(original).filter((index) => index < setCount);
-      doc.change((tx) => {
+      const saved = doc.change((tx) => {
         const handle = tx.at(original);
-        handle.name.replace(name);
+        handle.name.set(name);
         handle.sets.set(setCount);
         handle.reps.set(reps);
         handle.weight.set(weight);
         handle.completedSetIndices.replace(indices);
         handle.completedSets.set(indices.length);
       });
+      if (!(await saved.then(() => true, () => false))) return;
       if (pendingAdvance === original.$id && indices.length !== setCount) pendingAdvance = null;
     } else {
-      doc.change((tx) => {
+      const saved = doc.change((tx) => {
         tx.fields.exercises.insert({
           name,
           sets: setCount,
@@ -189,6 +195,7 @@
           completedSetIndices: [],
         });
       });
+      if (!(await saved.then(() => true, () => false))) return;
     }
     if (doc.current.exercises.every(complete)) stopRest();
     dialogOpen = false;
@@ -197,7 +204,7 @@
   function removeExercise() {
     if (!draft?.id) return;
     const id = draft.id;
-    doc.fields.exercises.remove(id);
+    doc.fields.exercises.remove(id).catch(() => {});
     if (selectedId === id) selectedId = null;
     stopRest();
     dialogOpen = false;
@@ -209,18 +216,18 @@
     const item = exercises[index];
     const neighbor = exercises[next];
     if (!item || !neighbor || next < 0 || next >= exercises.length) return;
-    doc.fields.exercises.move(item.$id, step < 0 ? { before: neighbor.$id } : { after: neighbor.$id });
+    doc.fields.exercises.move(item.$id, step < 0 ? { before: neighbor.$id } : { after: neighbor.$id }).catch(() => {});
   }
 
   function resetProgress() {
     const exercises = doc.current.exercises;
-    doc.change((tx) => {
+    void doc.change((tx) => {
       for (const ex of exercises) {
         const handle = tx.at(ex);
         handle.completedSets.set(0);
         handle.completedSetIndices.replace([]);
       }
-    });
+    }).catch(() => {});
     selectedId = null;
     reviewCompleted = false;
     stopRest();
@@ -362,7 +369,7 @@
               type="single"
               value={doc.current.restPreset}
               items={PRESETS}
-              onValueChange={(value) => { if (value && isPreset(value)) doc.fields.restPreset.set(value); }}
+              onValueChange={(value) => { if (value && isPreset(value)) doc.fields.restPreset.set(value).catch(() => {}); }}
             >
               <Select.Trigger class="button" aria-label="Rest duration">
                 {PRESETS.find((item) => item.value === doc.current.restPreset)?.label ?? `${preset()}s`} ▾

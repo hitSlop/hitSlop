@@ -2,13 +2,6 @@
   "reason": "Contract 4 Rust host cutover; restore each slop when its descriptor vocabulary is supported.",
   "templates": [
     {
-      "slug": "alien-radio",
-      "source": "examples/slops/alien-radio",
-      "archived": "archive/slops/alien-radio",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "ambient-sound-mixer",
       "source": "examples/slops/ambient-sound-mixer",
       "archived": "archive/slops/ambient-sound-mixer",
@@ -128,20 +121,6 @@
       "runtimeContract": 3
     },
     {
-      "slug": "habit-heatmap",
-      "source": "examples/slops/habit-heatmap",
-      "archived": "archive/slops/habit-heatmap",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "harada-method",
-      "source": "examples/slops/harada-method",
-      "archived": "archive/slops/harada-method",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "invoice",
       "source": "examples/slops/invoice",
       "archived": "archive/slops/invoice",
@@ -170,30 +149,9 @@
       "runtimeContract": 3
     },
     {
-      "slug": "meeting-notes",
-      "source": "examples/slops/meeting-notes",
-      "archived": "archive/slops/meeting-notes",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "metronome-tapper",
-      "source": "examples/slops/metronome-tapper",
-      "archived": "archive/slops/metronome-tapper",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "mood-log",
       "source": "examples/slops/mood-log",
       "archived": "archive/slops/mood-log",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "morning-pages",
-      "source": "examples/slops/morning-pages",
-      "archived": "archive/slops/morning-pages",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
     },
@@ -212,30 +170,9 @@
       "runtimeContract": 3
     },
     {
-      "slug": "pixel-art",
-      "source": "examples/slops/pixel-art",
-      "archived": "archive/slops/pixel-art",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "pocket-sheet",
-      "source": "examples/slops/pocket-sheet",
-      "archived": "archive/slops/pocket-sheet",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "pros-cons-sheet",
       "source": "examples/slops/pros-cons-sheet",
       "archived": "archive/slops/pros-cons-sheet",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "reading-tracker",
-      "source": "examples/slops/reading-tracker",
-      "archived": "archive/slops/reading-tracker",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
     },
@@ -264,13 +201,6 @@
       "slug": "side-quest",
       "source": "examples/slops/side-quest",
       "archived": "archive/slops/side-quest",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "slide-deck",
-      "source": "examples/slops/slide-deck",
-      "archived": "archive/slops/slide-deck",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
     },
@@ -315,20 +245,6 @@
       "archived": "archive/slops/weekly-planner",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
-    },
-    {
-      "slug": "wordle",
-      "source": "examples/slops/wordle",
-      "archived": "archive/slops/wordle",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "workout-planner",
-      "source": "examples/slops/workout-planner",
-      "archived": "archive/slops/workout-planner",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
     }
   ],
   "restored": [
@@ -351,6 +267,66 @@
       "slug": "doodle-board",
       "to": "examples/slops/doodle-board",
       "milestone": "scalars (docs/ScalarsPlan.md)"
+    },
+    {
+      "slug": "habit-heatmap",
+      "to": "examples/slops/habit-heatmap",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "harada-method",
+      "to": "examples/slops/harada-method",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "morning-pages",
+      "to": "examples/slops/morning-pages",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "pocket-sheet",
+      "to": "examples/slops/pocket-sheet",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "wordle",
+      "to": "examples/slops/wordle",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "alien-radio",
+      "to": "examples/slops/alien-radio",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "meeting-notes",
+      "to": "examples/slops/meeting-notes",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "metronome-tapper",
+      "to": "examples/slops/metronome-tapper",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "pixel-art",
+      "to": "examples/slops/pixel-art",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "workout-planner",
+      "to": "examples/slops/workout-planner",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "reading-tracker",
+      "to": "examples/slops/reading-tracker",
+      "milestone": "collections (docs/CollectionsPlan.md)"
+    },
+    {
+      "slug": "slide-deck",
+      "to": "examples/slops/slide-deck",
+      "milestone": "collections (docs/CollectionsPlan.md)"
     }
   ]
 }

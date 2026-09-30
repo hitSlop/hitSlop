@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "slide-deck",
   "title": "Slide Deck",
   "description": "A single-file presentation studio with structured slide archetypes, live editing, and a fullscreen presenter mode.",
-  "categories": ["business", "productivity"],
+  "categories": [
+    "business",
+    "productivity"
+  ],
   "presentation": {
     "width": 840,
     "height": 580,

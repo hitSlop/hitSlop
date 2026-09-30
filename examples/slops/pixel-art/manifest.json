@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "pixel-art",
   "title": "Pixel Art Studio",
   "description": "A pocket-console sprite desk for 16×16 drawing, fill, palettes, undo, and PNG export.",
-  "categories": ["media", "utilities"],
+  "categories": [
+    "media",
+    "utilities"
+  ],
   "presentation": {
     "width": 460,
     "height": 620,
