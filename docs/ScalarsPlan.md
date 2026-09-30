@@ -1,5 +1,10 @@
 # Milestone: scalar kinds (string, number, integer, enum, optional)
 
+Status (2026-09-29): implemented. The five kinds, `clear`, scalar `bindValue` and
+`preview` are live in the core, SDK and fixtures; small-expenses, kanban-board, recipe
+and doodle-board are restored and bundled (`bun run test:restored` drives them in
+`slop dev`).
+
 ## Context
 
 The host-owned reset is complete; `docs/architecture.md` describes the live system. The

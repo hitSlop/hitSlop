@@ -1,6 +1,5 @@
 {
   "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -8,7 +7,10 @@
   "slug": "recipe",
   "title": "Recipe",
   "description": "A crisp recipe workspace with ingredients, method, meal photos, and focused step-by-step cooking timers.",
-  "categories": ["personal", "other"],
+  "categories": [
+    "personal",
+    "other"
+  ],
   "presentation": {
     "width": 680,
     "height": 680

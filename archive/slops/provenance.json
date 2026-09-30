@@ -79,13 +79,6 @@
       "runtimeContract": 3
     },
     {
-      "slug": "doodle-board",
-      "source": "examples/slops/doodle-board",
-      "archived": "archive/slops/doodle-board",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "eisenhower-matrix",
       "source": "examples/slops/eisenhower-matrix",
       "archived": "archive/slops/eisenhower-matrix",
@@ -159,13 +152,6 @@
       "slug": "ivy-lee-method",
       "source": "examples/slops/ivy-lee-method",
       "archived": "archive/slops/ivy-lee-method",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "kanban-board",
-      "source": "examples/slops/kanban-board",
-      "archived": "archive/slops/kanban-board",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
     },
@@ -254,13 +240,6 @@
       "runtimeContract": 3
     },
     {
-      "slug": "recipe",
-      "source": "examples/slops/recipe",
-      "archived": "archive/slops/recipe",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
       "slug": "resume",
       "source": "examples/slops/resume",
       "archived": "archive/slops/resume",
@@ -292,13 +271,6 @@
       "slug": "slide-deck",
       "source": "examples/slops/slide-deck",
       "archived": "archive/slops/slide-deck",
-      "sourceCommit": "9ded8c9",
-      "runtimeContract": 3
-    },
-    {
-      "slug": "small-expenses",
-      "source": "examples/slops/small-expenses",
-      "archived": "archive/slops/small-expenses",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
     },
@@ -357,6 +329,28 @@
       "archived": "archive/slops/workout-planner",
       "sourceCommit": "9ded8c9",
       "runtimeContract": 3
+    }
+  ],
+  "restored": [
+    {
+      "slug": "small-expenses",
+      "to": "examples/slops/small-expenses",
+      "milestone": "scalars (docs/ScalarsPlan.md)"
+    },
+    {
+      "slug": "kanban-board",
+      "to": "examples/slops/kanban-board",
+      "milestone": "scalars (docs/ScalarsPlan.md)"
+    },
+    {
+      "slug": "recipe",
+      "to": "examples/slops/recipe",
+      "milestone": "scalars (docs/ScalarsPlan.md)"
+    },
+    {
+      "slug": "doodle-board",
+      "to": "examples/slops/doodle-board",
+      "milestone": "scalars (docs/ScalarsPlan.md)"
     }
   ]
 }

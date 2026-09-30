@@ -29,8 +29,8 @@ databases. Add a version marker only when a first public release needs one.
 - Flush unsent text and pending writes before close or export. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`. `state.schema.json` is a descriptor, not
   JSON Schema. `initial.json` is creation-only. Descriptor kinds exist only once Rust,
-  the SDK and a fixture implement them (today: text, boolean, object, list(object),
-  integer counter).
+  the SDK and a fixture implement them (today: text, boolean, string, number, integer, enum,
+  optional (of a scalar or an object), object, list(object) and integer counter).
 - Writes are asynchronous and resolve after the snapshot updates; `change(tx => …)`
   collects synchronously. Reads come from immutable snapshots. Preserve `$id`
   identity; merged anomalies are preserved and flagged, never repaired on read.

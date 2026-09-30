@@ -3,6 +3,8 @@
   "include": [
     "quick-checklist/**/*",
     "small-expenses/**/*",
-    "soma-amp/**/*"
+    "kanban-board/**/*",
+    "recipe/**/*",
+    "doodle-board/**/*"
   ]
 }

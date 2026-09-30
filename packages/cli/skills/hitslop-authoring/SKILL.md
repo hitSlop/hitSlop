@@ -7,11 +7,11 @@ description: Create, preview, validate, build, and register hitSlop authoring pr
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Read manifest.json first. Author schema.ts with defineDocument/s, initial.ts and theme.ts. Supported descriptors: s.text, s.boolean, s.object, s.list(s.object) and integer s.counter. Other descriptors reject explicitly until their core and SDK coverage lands. Keep transient view state in $state.
+Read manifest.json first. Author schema.ts with defineDocument/s, initial.ts and theme.ts. Supported descriptors: s.text (merging typed text), s.boolean, s.string({maxLength}), s.number({min,max}), s.integer({min,max}), s.enum([...]) (last writer wins; maxLength counts UTF-16 units; bounds are inclusive), s.optional(scalar or object) (absent until set; `clear()` removes it; inserts and initial values may omit it; an optional object is created or replaced by `set` unless it holds lists, counters or text), s.object, s.list(s.object) and integer s.counter. Records, scalar lists, trees and rich text are not implemented. Keep transient view state in $state.
 
 Components call `const doc = useDocument(schema)`. Read immutable `doc.current`; ordinary handles return promises: `await doc.at(row).done.set(true)` and `const {id} = await doc.fields.items.insert(...)`. `list.item(id)` addresses a row directly. `await doc.change(tx => { ... })` collects synchronous tx writes once into one atomic batch; tx insert returns an ID immediately for later tx writes. Do not use async/nested collectors or ordinary document writes inside them. A write resolves after acceptance and local publication, before durability or necessarily a DOM update; use `await tick()` for the DOM and `await doc.flush()` for saving.
 
-`bindText` keeps the user's text in the field and sends each change for the owner to merge, preserving Unicode, the caret and composition; `bindValue` submits booleans asynchronously. Text handles write whole fields with `set(value)`. Flush sends unsent text and waits for pending writes; close/export commit a composition in progress. Import attachments with `attachments.import(file, (tx, ref) => tx.fields.photo.set(ref.id))`: the reference is written in the same step as the stored blob. Keep composer input until insert succeeds, preserve newer input, and display success notices only after acceptance. Handle rejected promises; the runtime reports command failures centrally. The host owns save-failure and retry UI.
+`bindText` keeps the user's text in the field and sends each change for the owner to merge, preserving Unicode, the caret and composition; `bindValue` binds checkboxes (booleans), selects (enums, strings), range and number inputs (numbers, integers) and text/date/time inputs (strings); ranges preview while dragging and commit on release, and an empty control clears an optional field. For drags and drawing, call `handle.preview(value)` per frame and `set` the final value; previews stay local until set or flush. Text handles write whole fields with `set(value)`. Flush sends unsent text and waits for pending writes; close/export commit a composition in progress. Import attachments with `attachments.import<typeof schema.fields.node>(file, (tx, ref) => tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType }))`: the reference is written in the same step as the stored blob. Keep composer input until insert succeeds, preserve newer input, and display success notices only after acceptance. Handle rejected promises; the runtime reports command failures centrally. The host owns save-failure and retry UI.
 
 Writes are asynchronous, so avoid these patterns:
 - Read-modify-write from a snapshot (`set(qty + 1)`): use a `change(tx)` collector or `increment` on a counter.
@@ -52,8 +52,8 @@ Use `<Slop>` from `@hitslop/document/svelte`; optional inline exportView and ico
 Read [the workflow](references/workflow.md) and [package boundaries](references/storage-and-packages.md) for the complete source-to-document path.
 
 Use `attachments` from `@hitslop/document/attachments` for portable binary files.
-`await attachments.import(file, { commit: ref => doc.change(tx => { /* typed reference fields */ }) })`
-waits for durable bytes, accepted reference edits and persistence. `read(id)` returns
+`await attachments.import<typeof schema.fields.node>(file, (tx, ref) => { /* write reference fields with tx */ })`
+stores the bytes, then writes the reference in the same step; it rejects if either fails. `read(id)` returns
 a Blob; `list()` returns IDs and sizes. References are ordinary schema scalars,
 never base64 document values. Validate app formats first. Limits: 10 MiB/file,
 100 MiB and 256 files/document. HTTPS data/media requests are allowed; CORS applies.

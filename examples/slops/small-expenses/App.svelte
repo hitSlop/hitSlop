@@ -24,12 +24,21 @@
     const minor=Number(whole)*100+Number(fraction.padEnd(2,"0"));
     if(!Number.isSafeInteger(minor)){error="Amount is too large.";return;}
     error="";
-    const { id } = items.insert({merchant:merchant.trim(),amountMinor:minor,...(note.trim()?{note:note.trim()}:{}),settled:false});
-    merchant="";amount="";note="";
-    await tick();
-    merchantInputs.get(id)?.focus();
+    try {
+      // The id arrives with acceptance; the entry stays filled until then.
+      const { id } = await items.insert({merchant:merchant.trim(),amountMinor:minor,...(note.trim()?{note:note.trim()}:{}),settled:false});
+      merchant="";amount="";note="";
+      await tick();
+      merchantInputs.get(id)?.focus();
+    } catch { /* The runtime reports the rejection; keep the entry for retry. */ }
   }
-  function settle() { doc.change(tx=>{for(const id of selectedIDs)tx.fields.items.item(id).settled.set(true)},{message:"Settle expenses"});selected=[]; }
+  async function settle() {
+    const settling=selectedIDs;
+    try {
+      await doc.change(tx=>{for(const id of settling)tx.fields.items.item(id).settled.set(true)},{message:"Settle expenses"});
+      selected=[];
+    } catch { /* Reported centrally; the selection stays. */ }
+  }
 </script>
 <Slop>
 <main class="expenses-paper">
@@ -37,7 +46,7 @@
   <input class="expenses-title" aria-label="List title" use:bindText={title} />
   <div class="expenses-overview">
     <div><div class="expenses-muted">TOTAL RECORDED</div><div class="expenses-total" data-total>{money(total)}</div><div class="expenses-muted">{money(unsettled)} still to settle</div></div>
-    <Tabs.Root value={doc.current.currency} onValueChange={value=>currency.set(value as "CAD"|"USD"|"EUR")}>
+    <Tabs.Root value={doc.current.currency} onValueChange={value=>currency.set(value as "CAD"|"USD"|"EUR").catch(()=>{})}>
       <Tabs.List class="expenses-currencies" aria-label="Currency">
         {#each ["CAD","USD","EUR"] as currency}<Tabs.Trigger class="expenses-currency" value={currency}>{currency}</Tabs.Trigger>{/each}
       </Tabs.List>
@@ -57,10 +66,10 @@
           <input class="expenses-merchant" aria-label="Merchant text" use:bindText={doc.at(row).merchant} use:merchantInput={row.$id} />
           {#if row.note}<p class="expenses-note">{row.note}</p>{/if}
           <div class="expenses-actions">
-            <button class="expenses-small" disabled={index===0} aria-label="Move expense up" onclick={()=>items.move(row.$id,{before:doc.current.items[index-1]!.$id})}>↑</button>
-            <button class="expenses-small" disabled={index===doc.current.items.length-1} aria-label="Move expense down" onclick={()=>items.move(row.$id,{after:doc.current.items[index+1]!.$id})}>↓</button>
-            {#if row.note!==undefined}<button class="expenses-small" onclick={()=>doc.at(row).note.clear()}>Clear note</button>{/if}
-            <button class="expenses-small" onclick={()=>items.remove(row.$id)}>Remove</button>
+            <button class="expenses-small" disabled={index===0} aria-label="Move expense up" onclick={()=>items.move(row.$id,{before:doc.current.items[index-1]!.$id}).catch(()=>{})}>↑</button>
+            <button class="expenses-small" disabled={index===doc.current.items.length-1} aria-label="Move expense down" onclick={()=>items.move(row.$id,{after:doc.current.items[index+1]!.$id}).catch(()=>{})}>↓</button>
+            {#if row.note!==undefined}<button class="expenses-small" onclick={()=>doc.at(row).note.clear().catch(()=>{})}>Clear note</button>{/if}
+            <button class="expenses-small" onclick={()=>items.remove(row.$id).catch(()=>{})}>Remove</button>
           </div>
         </div>
         <div class="expenses-amount">{money(row.amountMinor)}<div class="expenses-muted">{row.settled?"Settled":"Unsettled"}</div></div>

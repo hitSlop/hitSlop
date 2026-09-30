@@ -84,7 +84,8 @@ For an explicit storage checkpoint, use `bun slop compact /path/to/List.slop`. I
 
 | Operation | Shape | Targets |
 | --- | --- | --- |
-| `set` | `{"type":"set","path":[...],"value":v}` | Booleans, and whole text fields (the text as it is when the owner applies it) |
+| `set` | `{"type":"set","path":[...],"value":v}` | Scalars (within their bounds), optional values and objects, and whole text fields (the text as it is when the owner applies it) |
+| `clear` | `{"type":"clear","path":[...]}` | Optional fields; clearing an unset field does nothing |
 | `insert` | `{"type":"insert","path":[...],"value":v,"id":"optional","at":{"after":"$id"}}` | Object-row lists; supply `id` for an insert you may retry |
 | `remove` | `{"type":"remove","path":[...],"id":"$id"}` | Rows |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |

@@ -27,8 +27,8 @@
     value: number | undefined;
     min: number;
     max: number;
-    set: (value: number) => void;
-    clear: () => void;
+    set: (value: number) => Promise<unknown>;
+    clear: () => Promise<unknown>;
   };
 
   function bindOptionalNumber(node: HTMLInputElement, binding: OptionalNumber) {
@@ -42,13 +42,14 @@
     const commit = () => {
       const raw = node.value.trim();
       if (raw === "") {
-        if (current.value !== undefined) current.clear();
+        // A refused write shows the saved value again.
+        if (current.value !== undefined) current.clear().catch(sync);
         return;
       }
       const parsed = Number(raw);
       if (!Number.isFinite(parsed)) return sync();
       const next = Math.min(current.max, Math.max(current.min, parsed));
-      if (next !== current.value) current.set(next);
+      if (next !== current.value) current.set(next).catch(sync);
       if (node.value !== String(next)) node.value = String(next);
     };
     const onFocus = () => { focused = true; };
@@ -156,21 +157,21 @@
     return step.title.trim() || `Step ${index + 1}`;
   }
   function addIngredient(): void {
-    doc.fields.ingredients.insert({ text: "New ingredient", checked: false });
+    doc.fields.ingredients.insert({ text: "New ingredient", checked: false }).catch(() => {});
   }
   function moveRow(kind: "ingredients" | "steps", id: string, direction: -1 | 1): void {
     const items = doc.current[kind];
     const index = items.findIndex((item) => item.$id === id);
     const neighbor = items[index + direction];
     if (index < 0 || !neighbor) return;
-    doc.fields[kind].move(id, direction < 0 ? { before: neighbor.$id } : { after: neighbor.$id });
+    doc.fields[kind].move(id, direction < 0 ? { before: neighbor.$id } : { after: neighbor.$id }).catch(() => {});
   }
   function addStep(): void {
     const number = doc.current.steps.length + 1;
-    doc.fields.steps.insert({ title: `Step ${number}`, text: "Describe the next step." });
+    doc.fields.steps.insert({ title: `Step ${number}`, text: "Describe the next step." }).catch(() => {});
   }
   function removeStep(id: string): void {
-    doc.fields.steps.remove(id);
+    doc.fields.steps.remove(id).catch(() => {});
     delete remainingByStep[id];
     remainingByStep = { ...remainingByStep };
     completedStepIDs = completedStepIDs.filter((stepID) => stepID !== id);
@@ -252,9 +253,10 @@
     }
     photoError = null;
     try {
-      await attachments.import(file, { commit(ref) {
-        doc.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
-      } });
+      // The reference is written in the same step as the stored image.
+      await attachments.import<typeof schema.fields.node>(file, (tx, ref) => {
+        tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
+      });
     } catch {
       photoError = "That photo couldn’t be added. Try another image.";
     }
@@ -280,7 +282,7 @@
       <header class="hero">
         <div class="intro">
           <div class="utilityLine">
-            <Select.Root type="single" value={doc.current.difficulty} items={difficultyItems} onValueChange={(value) => { if (isDifficulty(value)) doc.fields.difficulty.set(value); }}>
+            <Select.Root type="single" value={doc.current.difficulty} items={difficultyItems} onValueChange={(value) => { if (isDifficulty(value)) doc.fields.difficulty.set(value).catch(() => {}); }}>
               <Select.Trigger class="difficultyTrigger" aria-label="Difficulty">
                 <Select.Value placeholder="Difficulty" />
                 <ChevronDown size={11} strokeWidth={2.2} data-slop-export="hide" />
@@ -314,7 +316,7 @@
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>
               <Camera size={13} />Replace
             </button>
-            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.clear()}><X size={13} /></button>
+            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.clear().catch(() => {})}><X size={13} /></button>
           </div>{/if}
           <input bind:this={picker} class="srOnly" data-slop-export="hide" type="file" accept="image/*" tabindex="-1" onchange={onPhoto} />
         </figure>
@@ -399,14 +401,14 @@
           <ul class="list">
             {#each doc.current.ingredients as item, index (item.$id)}
               <li class="ingredientRow" data-checked={item.checked}>
-                <Checkbox.Root checked={item.checked} onCheckedChange={(checked) => doc.at(item).checked.set(checked === true)} aria-label="Mark {item.text || 'untitled ingredient'} {item.checked ? 'still needed' : 'complete'}">
+                <Checkbox.Root checked={item.checked} onCheckedChange={(checked) => doc.at(item).checked.set(checked === true).catch(() => {})} aria-label="Mark {item.text || 'untitled ingredient'} {item.checked ? 'still needed' : 'complete'}">
                   {#snippet children({ checked })}{#if checked}<Check size={10} strokeWidth={3} />{/if}{/snippet}
                 </Checkbox.Root>
                 <input class="itemCopy" aria-label="Ingredient {index + 1}" use:bindText={doc.at(item).text} />
                 <div class="rowActions" data-slop-export="hide">
                   <button aria-label="Move ingredient up" disabled={index === 0} onclick={() => moveRow("ingredients", item.$id, -1)}><ArrowUp size={10} /></button>
                   <button aria-label="Move ingredient down" disabled={index === doc.current.ingredients.length - 1} onclick={() => moveRow("ingredients", item.$id, 1)}><ArrowDown size={10} /></button>
-                  <button aria-label="Remove ingredient" onclick={() => doc.fields.ingredients.remove(item.$id)}><Trash2 size={10} /></button>
+                  <button aria-label="Remove ingredient" onclick={() => doc.fields.ingredients.remove(item.$id).catch(() => {})}><Trash2 size={10} /></button>
                 </div>
               </li>
             {:else}

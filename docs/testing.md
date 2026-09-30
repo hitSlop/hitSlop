@@ -31,6 +31,7 @@ bun run test:native
 bun run test:native-helper
 bun scripts/v1/crash-matrix.ts           # add --host for host death (test:native-crash)
 bun run test:render --fixtures
+bun run test:restored                    # restored slops in `slop dev` under Playwright WebKit
 ```
 
 `build` generates contracts, builds the Rust bindings and the page shell, and compiles

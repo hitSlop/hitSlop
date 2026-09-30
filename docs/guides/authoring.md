@@ -31,7 +31,13 @@ Preview state is disposable: refresh resets it and source changes require restar
 
 ## Model state
 
-The `s` builder offers what the core implements: `text`, `boolean`, `object`, `list(object)` and exact integer `counter`. Strings, numbers, integers, enums and optionals are the next milestone; each kind lands in the core, the SDK and a fixture together.
+The `s` builder offers what the core implements:
+- `text` for anything a person types (character edits merge);
+- `boolean`, `string({maxLength})`, `number({min,max})`, `integer({min,max})` and `enum([...])` for values where the last writer wins (`maxLength` counts UTF-16 units; bounds are inclusive; integers are safe integers);
+- `optional(inner)` for a scalar or an object that may be absent: `set` gives it a value, `clear()` removes it, and inserts or `initial.json` may omit it. An optional object is created or replaced with `set` unless it holds lists, counters or text; edit those fields instead;
+- `object`, `list(object)` rows with `$id`, and exact integer `counter`.
+
+Records, scalar lists, trees and rich text are not implemented; each kind lands in the core, the SDK and a fixture together.
 
 ```ts
 import { defineDocument, s } from "@hitslop/document";
@@ -62,7 +68,7 @@ Ordinary writes resolve after acceptance and local publication. They do not prom
 
 `doc.at(value)` accepts an original snapshot object, including a row or nested object. `doc.fields.tasks.item(id)` provides the by-ID handle. Key rows by `$id`, never array position. Unchanged snapshots retain object identity. Edit identity-bearing lists through insert/remove/move; containing-object replacement is not supported.
 
-Use `bindText` for plain text inputs and `bindValue` for boolean controls. A text binding keeps the user's text in the field and sends each change as "was X, is now Y"; the owner merges it with concurrent edits and keeps the caret, including through IME composition. Switching a binding to another row, or unmounting it, sends its unsent text first; close and export commit a composition in progress. A text handle's `set(value)` replaces the whole field as it is when the owner applies it. Save failures retain accepted edits and ownership for native retry. Never write SQLite or maintain a second JSON document.
+Use `bindText` for plain text inputs and `bindValue` for scalar controls: checkboxes (booleans), selects (enums and strings), range and number inputs (numbers and integers), and text, date and time inputs (strings). Ranges preview while dragging and commit on release; an empty control clears an optional field. For drags and drawing outside a form control, call `handle.preview(value)` on each frame and `set` the final value; previews stay local until `set` or `flush`. A text binding keeps the user's text in the field and sends each change as "was X, is now Y"; the owner merges it with concurrent edits and keeps the caret, including through IME composition. Switching a binding to another row, or unmounting it, sends its unsent text first; close and export commit a composition in progress. A text handle's `set(value)` replaces the whole field as it is when the owner applies it. Save failures retain accepted edits and ownership for native retry. Never write SQLite or maintain a second JSON document.
 
 Keep transient UI state in Svelte `$state`. Every component's `useDocument(schema)` shares the mounted app adapter; removing one consumer does not disconnect the others.
 

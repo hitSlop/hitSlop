@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+  import { Slop, resizeWindow, useDocument } from "@hitslop/document/svelte";
   import { onDestroy, onMount, tick } from "svelte";
   import { capture } from "@hitslop/document/capture";
   import { AlertDialog, Collapsible, Popover, RadioGroup, ToggleGroup } from "bits-ui";
@@ -39,7 +39,8 @@
   let resizeQueue = Promise.resolve();
   let nativeResize = $state(false);
   let svg: SVGSVGElement;
-  let active: { pointer: number; id?: string; samples: StrokeSamples; brush: Brush; pen: boolean; last: Point; erased: Set<string>; eraserPaths: { id: string; path: Path2D }[] } | undefined;
+  // `draw` marks a pen gesture; `id` arrives once its stroke insert is accepted.
+  let active: { pointer: number; draw: boolean; id?: string; inserted?: Promise<string | undefined>; samples: StrokeSamples; brush: Brush; pen: boolean; last: Point; erased: Set<string>; eraserPaths: { id: string; path: Path2D }[] } | undefined;
   let hitContext: CanvasRenderingContext2D | null = null;
   let frame = 0;
   let notice = $state("");
@@ -72,12 +73,11 @@
     const version = ++fitVersion;
     resizeQueue = resizeQueue.then(async () => {
       await tick();
-      const resize = (globalThis as typeof globalThis & { slop?: { window: { resize: (size: { width: number; height: number }) => Promise<{ width: number; height: number }> } } }).slop?.window.resize;
-      if (!alive || version !== fitVersion || !resize || capture.isRenderer()) return;
+      if (!alive || version !== fitVersion || capture.isRenderer()) return;
       const chrome = { width: shell.clientWidth - stage.clientWidth, height: shell.clientHeight - stage.clientHeight };
       const desired = fitWindowSize(doc.current.boardShape, chrome, { width: screen.availWidth, height: screen.availHeight });
       // The host may further clamp to this window's display; CSS fits its actual viewport.
-      await resize(desired);
+      await resizeWindow(desired);
     }).catch(() => { if (alive) notice = "Couldn't fit the window. Try Fit board again."; });
   }
   onMount(() => {
@@ -85,7 +85,7 @@
     // Slop mounts its child snippet inside a boundary; wait for its element bindings.
     void tick().then(() => {
       if (!alive || !shell) return;
-      nativeResize = Boolean((globalThis as any).slop?.window?.resize) && !capture.isRenderer();
+      nativeResize = !capture.isRenderer();
       if (nativeResize) fitBoard();
       let previous = { width: shell.clientWidth, height: shell.clientHeight };
       observer = new ResizeObserver(() => {
@@ -115,8 +115,13 @@
     cancelAnimationFrame(frame); frame = 0;
     if (!active) return;
     const gesture = active;
-    if (gesture.id && doc.current.strokes.some(s => s.$id === gesture.id)) {
-      doc.fields.strokes.item(gesture.id).geometry.set(pathForGesture());
+    if (gesture.draw) {
+      // Commit the final path once the stroke exists; the preview shows it until then.
+      const path = pathForGesture();
+      void gesture.inserted?.then((id) => {
+        if (id && doc.current.strokes.some(s => s.$id === id))
+          return doc.fields.strokes.item(id).geometry.set(path);
+      }).catch(() => {});
     }
     active = undefined;
     drawing = false;
@@ -133,7 +138,7 @@
       if (hit && !active.erased.has(hit.id) && doc.current.strokes.some(stroke => stroke.$id === hit.id)) removed.add(hit.id);
     }
     if (removed.size) {
-      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); }, { message: "Erase strokes" });
+      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); }, { message: "Erase strokes" }).catch(() => {});
       for (const id of removed) active.erased.add(id);
     }
   }
@@ -144,10 +149,19 @@
     drawing = true; hovered = false;
     if (!pinned) { trayOpen = false; (document.activeElement as HTMLElement | null)?.blur(); }
     const samples = new StrokeSamples(); samples.add(p);
-    active = { pointer: event.pointerId, samples, brush: { ...brush }, pen: event.pointerType === "pen", last: p, erased: new Set(), eraserPaths: [] };
+    active = { pointer: event.pointerId, draw: tool === "pen", samples, brush: { ...brush }, pen: event.pointerType === "pen", last: p, erased: new Set(), eraserPaths: [] };
     if (tool === "pen") {
       const color = getComputedStyle(svg).getPropertyValue(`--slop-${marker}`).trim();
-      active.id = doc.fields.strokes.insert({ geometry: pathForGesture(), color }).id;
+      const gesture = active;
+      // Inside change() the minted id is synchronous; the stroke exists once accepted.
+      gesture.inserted = doc.change(tx => tx.fields.strokes.insert({ geometry: pathForGesture(), color }).id).then(
+        (id) => {
+          gesture.id = id;
+          if (active === gesture && !frame) frame = requestAnimationFrame(preview);
+          return id;
+        },
+        () => undefined,
+      );
     } else {
       hitContext ??= document.createElement("canvas").getContext("2d");
       // Freeze hit-test order for this gesture so pointer-up cannot erase a newly exposed stroke.
@@ -159,7 +173,7 @@
   function move(event: PointerEvent) {
     if (!active || event.pointerId !== active.pointer) return;
     const p = point(event); if (!p) return;
-    if (active.id) {
+    if (active.draw) {
       for (const sample of event.getCoalescedEvents?.() ?? []) { const next = point(sample); if (next) active.samples.add(next); }
       active.samples.add(p);
       if (!frame) frame = requestAnimationFrame(preview);
@@ -170,7 +184,7 @@
     if (!active || active.pointer !== event.pointerId) return;
     const p = point(event);
     if (p && event.type === "pointerup") {
-      if (active.id) active.samples.add(p, true);
+      if (active.draw) active.samples.add(p, true);
       else erase(active.last, p);
     }
     finish();
@@ -181,12 +195,12 @@
   }
   function chooseBoard(value: string) {
     if (!boardShapes.includes(value as typeof doc.current.boardShape)) return;
-    finish(); doc.fields.boardShape.set(value as typeof doc.current.boardShape); boardMenu = false;
+    finish(); doc.fields.boardShape.set(value as typeof doc.current.boardShape).catch(() => {}); boardMenu = false;
     fitBoard();
   }
   function clearBoard() {
     finish();
-    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); }, { message: "Clear board" });
+    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); }, { message: "Clear board" }).catch(() => {});
     clearDialog = false;
     notice = "Fresh start.";
   }

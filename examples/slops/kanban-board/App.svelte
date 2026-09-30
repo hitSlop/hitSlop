@@ -44,16 +44,21 @@
   function nextOrder(laneKey: string): number { return cardsFor(laneKey).reduce((max, card) => Math.max(max, card.order + 1), 0); }
   function pad(value: number): string { return String(value).padStart(2, "0"); }
 
-  function toggleDoneLane(lane: Lane) {
-    if (isDone(lane.laneKey)) doc.fields.doneLaneKey.clear();
-    else doc.fields.doneLaneKey.set(lane.laneKey);
-    announcement = isDone(lane.laneKey) ? "No completed lane set." : `${lane.title} is now the completed lane.`;
+  // Writes resolve once the snapshot shows them, so announcements read the new state.
+  async function toggleDoneLane(lane: Lane) {
+    try {
+      if (isDone(lane.laneKey)) await doc.fields.doneLaneKey.clear();
+      else await doc.fields.doneLaneKey.set(lane.laneKey);
+      announcement = isDone(lane.laneKey) ? `${lane.title} is now the completed lane.` : "No completed lane set.";
+    } catch { /* Reported centrally. */ }
   }
 
-  function addLane() {
+  async function addLane() {
     const laneKey = crypto.randomUUID();
-    doc.fields.lanes.insert({ laneKey, title: `Lane ${doc.current.lanes.length + 1}` });
-    announcement = `Lane added. ${doc.current.lanes.length + 1} lanes on the board.`;
+    try {
+      await doc.fields.lanes.insert({ laneKey, title: `Lane ${doc.current.lanes.length + 1}` });
+      announcement = `Lane added. ${doc.current.lanes.length} lanes on the board.`;
+    } catch { /* Reported centrally. */ }
   }
 
   function removeLane(lane: Lane) {
@@ -63,7 +68,7 @@
     if (!refuge) return;
     const stranded = cardsFor(lane.laneKey);
     let order = nextOrder(refuge.laneKey);
-    doc.change((tx) => {
+    void doc.change((tx) => {
       for (const card of stranded) {
         const handle = tx.fields.cards.item(card.$id);
         handle.laneKey.set(refuge.laneKey);
@@ -71,7 +76,7 @@
       }
       tx.fields.lanes.remove(lane.$id);
       if (doc.current.doneLaneKey === lane.laneKey) tx.fields.doneLaneKey.clear();
-    }, { message: "Remove board lane" });
+    }, { message: "Remove board lane" }).catch(() => {});
     announcement = `${lane.title || "Lane"} removed. ${stranded.length} orders moved to ${refuge.title}.`;
   }
 
@@ -79,22 +84,25 @@
     const source = doc.current.lanes.find((lane) => lane.laneKey === laneKey);
     const target = doc.current.lanes.find((lane) => lane.laneKey === targetKey);
     if (!source || !target || source.$id === target.$id) return;
-    if (laneIndex(laneKey) < laneIndex(targetKey)) doc.fields.lanes.move(source.$id, { after: target.$id });
-    else doc.fields.lanes.move(source.$id, { before: target.$id });
+    const destination = laneIndex(laneKey) < laneIndex(targetKey) ? { after: target.$id } : { before: target.$id };
+    return doc.fields.lanes.move(source.$id, destination).catch(() => {});
   }
 
-  function nudgeLane(lane: Lane, direction: -1 | 1) {
+  async function nudgeLane(lane: Lane, direction: -1 | 1) {
     const target = doc.current.lanes[laneIndex(lane.laneKey) + direction];
     if (!target) return;
-    reorderLane(lane.laneKey, target.laneKey);
+    await reorderLane(lane.laneKey, target.laneKey);
     announcement = `${lane.title} is now lane ${laneIndex(lane.laneKey) + 1} of ${doc.current.lanes.length}.`;
   }
 
   function setLaneLimit(lane: Lane, event: Event) {
-    const value = (event.currentTarget as HTMLInputElement).value;
+    const input = event.currentTarget as HTMLInputElement;
     const handle = doc.at(lane).limit;
-    if (value === "") handle.clear();
-    else handle.set(Math.max(0, Math.floor(Number(value) || 0)));
+    const write = input.value === ""
+      ? handle.clear()
+      : handle.set(Math.min(999, Math.max(0, Math.floor(Number(input.value) || 0))));
+    // A refused value shows the saved limit again.
+    write.catch(() => { input.value = String(lane.limit ?? ""); });
   }
 
   function openComposer(laneKey: string) {
@@ -105,19 +113,24 @@
     composing = true;
   }
 
-  function punchTicket() {
+  async function punchTicket() {
     const title = draftTitle.trim();
     const laneKey = composingLaneKey;
     if (!title || !laneKey) return;
-    doc.fields.cards.insert({ laneKey, title, note: draftNote.trim(), tag: draftTag.trim(), order: nextOrder(laneKey) });
-    announcement = `Work order punched into ${laneTitle(laneKey)}.`;
-    composing = false;
-    composingLaneKey = null;
+    try {
+      // The dialog keeps the draft until the ticket is accepted.
+      await doc.fields.cards.insert({ laneKey, title, note: draftNote.trim(), tag: draftTag.trim(), order: nextOrder(laneKey) });
+      announcement = `Work order punched into ${laneTitle(laneKey)}.`;
+      composing = false;
+      composingLaneKey = null;
+    } catch { /* Reported centrally. */ }
   }
 
   function removeCard(card: Card) {
-    doc.fields.cards.remove(card.$id);
-    announcement = `${card.title.trim() || "Work order"} removed.`;
+    doc.fields.cards.remove(card.$id).then(
+      () => (announcement = `${card.title.trim() || "Work order"} removed.`),
+      () => {},
+    );
   }
 
   function shiftLane(card: Card, direction: -1 | 1) {
@@ -128,7 +141,7 @@
       const handle = tx.fields.cards.item(card.$id);
       handle.laneKey.set(target.laneKey);
       handle.order.set(order);
-    }, { message: "Move work order" });
+    }, { message: "Move work order" }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to ${target.title}.`;
   }
 
@@ -140,7 +153,7 @@
     doc.change((tx) => {
       tx.fields.cards.item(card.$id).order.set(neighbour.order);
       tx.fields.cards.item(neighbour.$id).order.set(card.order);
-    }, { message: "Reorder work order" });
+    }, { message: "Reorder work order" }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to position ${index + direction + 1}.`;
   }
 
@@ -154,16 +167,18 @@
       const handle = tx.fields.cards.item(card.$id);
       handle.laneKey.set(laneKey);
       handle.order.set(order);
-    }, { message: "Move work order" });
+    }, { message: "Move work order" }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to ${laneTitle(laneKey)}.`;
   }
 
   function handleLaneDrop(event: DragEvent, lane: Lane) {
     event.preventDefault();
     if (draggingLaneKey) {
-      reorderLane(draggingLaneKey, lane.laneKey);
-      announcement = `${laneTitle(draggingLaneKey)} moved to lane ${laneIndex(draggingLaneKey) + 1}.`;
+      const moving = draggingLaneKey;
       draggingLaneKey = null;
+      void reorderLane(moving, lane.laneKey)?.then(() => {
+        announcement = `${laneTitle(moving)} moved to lane ${laneIndex(moving) + 1}.`;
+      });
       return;
     }
     dropCard(lane.laneKey);
@@ -276,7 +291,7 @@
     <Dialog.Overlay class="board-overlay" data-slop-export="hide" />
     <Dialog.Content class="board-dialog" data-slop-export="hide" onOpenAutoFocus={(event) => { event.preventDefault(); queueMicrotask(() => titleField?.focus()); }}>
       <div class="board-dialog-head"><div><p class="board-dialog-eyebrow">Work order</p><Dialog.Title>Punch a ticket</Dialog.Title><Dialog.Description>Slot this order into {composingLaneTitle}. Drag it to another rail when work moves.</Dialog.Description></div><Dialog.Close class="board-dialog-close" aria-label="Close"><X size={14} /></Dialog.Close></div>
-      <form class="board-dialog-form" onsubmit={(event) => { event.preventDefault(); punchTicket(); }}>
+      <form class="board-dialog-form" onsubmit={(event) => { event.preventDefault(); void punchTicket(); }}>
         <label><span>Job title</span><input bind:this={titleField} bind:value={draftTitle} placeholder="Rebuild the spindle jig" required /></label>
         <label><span>Notes</span><textarea rows="3" bind:value={draftNote} placeholder="Setup, parts, or hold-ups"></textarea></label>
         <label><span>Tag</span><input bind:value={draftTag} placeholder="shop" /></label>

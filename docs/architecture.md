@@ -13,6 +13,10 @@ the page. The WebView renders immutable snapshots and holds no CRDT.
  CLI (slop / hitslop-native) ── socket (live) or writer lock (closed) ─┘ persistence queue ──▶ state/document.sqlite
 ```
 
+Descriptor kinds: text (merging), boolean, string, number, integer and enum (last
+writer wins, checked on write), optional (of a scalar or an object; absent until set,
+removed by `clear`), object, list(object) rows with `$id`, and counter.
+
 The same core compiles to WASM for `slop dev` and the Bun tests only. The app, helper,
 page shell and CLI are built from one tree; nothing has shipped, so there is no version
 negotiation between them.

@@ -38,6 +38,7 @@
     "release:check": "bun scripts/v1/release-check.ts",
     "build:templates": "bun scripts/v1/build-templates.ts",
     "test:render": "bun scripts/v1/native-smoke.ts",
+    "test:restored": "bun scripts/v1/restored-smoke.ts",
     "core:build": "bun scripts/v1/core-build.ts",
     "core:build:wasm": "bun scripts/v1/core-build.ts --wasm",
     "core:build:native": "bun scripts/v1/core-build.ts --native",

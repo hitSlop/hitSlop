@@ -1,6 +1,6 @@
 ---
 title: Data and schemas
-description: Typed document fields chosen by merge behavior, snapshot handles, changes and persistence.
+description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
 ---
 
 The hitSlop app owns each document. Its Rust core (on Loro) merges and validates every edit, and the app stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
@@ -12,7 +12,11 @@ import { defineDocument, s } from "@hitslop/document";
 export default defineDocument({
   title: s.text(),
   archived: s.boolean(),
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
+  budget: s.number({ min: 0 }),
+  mood: s.integer({ min: 1, max: 5 }),
+  lane: s.enum(["todo", "doing", "done"]),
+  note: s.optional(s.string({ maxLength: 280 })),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean(), due: s.optional(s.string()) })),
   visits: s.counter(),
 });
 ```
@@ -22,17 +26,21 @@ Choose each field by how edits from several places should merge:
 | Builder | Use for | Merge behavior |
 | --- | --- | --- |
 | `s.text()` | Anything a person types | Character edits merge |
-| `s.boolean()` | Flags and toggles | Last writer wins |
+| `s.string({ maxLength? })`, `s.number({ min?, max? })`, `s.integer({ min?, max? })`, `s.boolean()`, `s.enum([...])` | Settings, amounts, dates, states | Last writer wins |
+| `s.optional(scalar or object)` | Values that may be absent | `set` gives a value, `clear()` removes it |
 | `s.object({...})` | Fixed groups of fields | Per field |
 | `s.list(s.object({...}))` | Rows with identity | Insert, remove and move keep `$id` |
 | `s.counter()` | Tallies | Increments add up |
 
-These are the kinds available today. Strings, numbers, integers, enums and optional values are next; each arrives in the core, the SDK and the builder together. Keep transient view state (selection, hover, flipped cards) in component state.
+`maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. Records, scalar lists, trees and rich text are not available yet. Keep transient view state (selection, hover, flipped cards) in component state.
 
 ```ts title="initial.ts"
 export default {
   title: "Weekend",
   archived: false,
+  budget: 120,
+  mood: 4,
+  lane: "todo",
   tasks: [{ text: "Buy groceries", done: false }],
   visits: 0,
 };
@@ -51,6 +59,11 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 <Slop>
   <input aria-label="Title" use:bindText={doc.fields.title} />
   <input type="checkbox" use:bindValue={doc.fields.archived} />
+  <input type="range" min="1" max="5" use:bindValue={doc.fields.mood} />
+  <select use:bindValue={doc.fields.lane}>
+    <option value="todo">To do</option><option value="doing">Doing</option><option value="done">Done</option>
+  </select>
+  <input aria-label="Note" use:bindValue={doc.fields.note} />
   {#each doc.current.tasks as task (task.$id)}
     <input type="checkbox" checked={task.done} onchange={() => doc.at(task).done.set(!task.done)} />
     <input aria-label="Task" use:bindText={doc.at(task).text} />
@@ -62,7 +75,11 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 
 Writes are asynchronous: `await doc.at(task).done.set(true)` resolves once the app has accepted the edit and `doc.current` shows it. Read the snapshot after awaiting, not before.
 
-`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field. `bindValue` binds a checkbox to a boolean.
+`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field. `bindValue` binds checkboxes to booleans, selects to enums and strings, range and number inputs to numbers and integers, and text, date and time inputs to strings. A range previews while it is dragged and saves on release; clearing a control clears an optional field.
+
+## Previews for drags and drawing
+
+While a person drags or draws, call `handle.preview(value)` on each frame: `doc.current` shows the value immediately, but nothing is written. Then `set` the final value. Pending previews are saved by `flush`, close and export.
 
 Child components can call `useDocument(schema)` for the same document; in long lists, pass rows and handles as props instead.
 
