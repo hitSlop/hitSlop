@@ -19,17 +19,10 @@ export class DocumentFullError extends Error {
   }
 }
 
-/** Stable contract-4 request outcome. A rejected command is distinct from a failed save. */
+/** A page request outcome. `rejected`, `owner_replaced` and `closing` were not applied. */
 export class OwnerError extends Error {
   constructor(
-    readonly code:
-      | "rejected"
-      | "session_changed"
-      | "closing"
-      | "unsupported_operation"
-      | "unknown_outcome"
-      | "save_failed"
-      | "owner_invalidated",
+    readonly code: import("@hitslop/schema/owner").PageErrorCode,
     message: string,
   ) {
     super(message);

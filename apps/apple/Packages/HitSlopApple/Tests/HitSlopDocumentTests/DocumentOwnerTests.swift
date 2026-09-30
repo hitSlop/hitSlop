@@ -41,11 +41,11 @@ import Testing
       }
       let batch = try json(["intents": intents])
       if let expected = scenario["error"] as? String {
-        do { _ = try core.apply(batchJson: batch); Issue.record("Accepted invalid fixture") }
+        do { _ = try core.applyBatch(batchJson: batch); Issue.record("Accepted invalid fixture") }
         catch { #expect(String(describing: error).contains(expected)) }
         #expect(try core.snapshot() == before)
       } else {
-        _ = try core.apply(batchJson: batch)
+        _ = try core.applyBatch(batchJson: batch)
         let current = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
         #expect(try json(current["value"]!) == json(scenario["after"]!))
         let reopened = try NativeDocument.open(schemaJson: schema, checkpoint: seed, updates: [core.exportSince(version: version)])
@@ -60,14 +60,14 @@ import Testing
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     #expect(throws: DocumentWriterLock.Busy.self) { _ = try DocumentWriterLock(root: root) }
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await owner.close()
     let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
-    #expect(reopened.session != owner.session)
+    #expect(reopened.epoch != owner.epoch)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
-      _ = try await reopened.apply(session: owner.session, batch: self.increment)
+      _ = try await reopened.apply(batch: self.increment, epoch: owner.epoch)
     }
     try await reopened.close()
   }
@@ -79,7 +79,7 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
     var committed = false
     owner.storage.testingPhase = { phase in
       if phase == "append:committed" || phase == "checkpoint:committed" {
@@ -92,7 +92,7 @@ import Testing
     }
     await #expect(throws: (any Error).self) { try await owner.flush() }
     owner.storage.testingPhase = nil
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
     try await owner.flush()
     try await owner.close()
     let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -105,7 +105,7 @@ import Testing
     let moved = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
     // Real I/O boundary: the package temporarily becomes unavailable.
     try FileManager.default.moveItem(at: root, to: moved)
     await #expect(throws: (any Error).self) { try await owner.close() }
@@ -122,12 +122,12 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
     try await owner.flush()
     let capture = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
     #expect((try await value(capture)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
-      _ = try await capture.apply(session: capture.session, batch: self.increment)
+      _ = try await capture.apply(batch: self.increment)
     }
     try await capture.close()
     try await owner.close()
@@ -217,9 +217,8 @@ import Testing
     defer { try? FileManager.default.removeItem(at: root) }
     try Data("""
       export default { mount(ctx) { globalThis.attachmentProbe = () => {
-        globalThis.importWork = ctx.attachments.import(new File(['native attachment'], 'note.txt', {type:'text/plain'}), {
-          commit: ref => ctx.document.fields.title.replace(ref.id)
-        });
+        globalThis.importWork = ctx.attachments.import(new File(['native attachment'], 'note.txt', {type:'text/plain'}),
+          (tx, ref) => tx.fields.title.set(ref.id));
       }; return {}; } };
       """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
     let session = try DocumentSession(package: SlopPackage(rootURL: root))
@@ -249,6 +248,24 @@ import Testing
       await #expect(throws: (any Error).self) { try await owner.saveTheme(values) }
     }
     #expect(try await owner.loadTheme() == ["accent": "var(--slop-accent)"])
+    try await owner.close()
+  }
+
+  // Spike S-D. Failure: work queued by a replaced page, or captured before a discard,
+  // applied to state it never saw. Oracle: `owner_replaced` and an unchanged document.
+  @Test func requestsFromAReplacedViewOrEpochAreRefused() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    _ = try await owner.open(view: "first")
+    _ = try await owner.open(view: "second")
+    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
+    _ = try await owner.apply(batch: increment, view: "second")
+    let epoch = owner.epoch
+    try await owner.discardPending()
+    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, epoch: epoch) }
+    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
+    #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 0)
     try await owner.close()
   }
 }

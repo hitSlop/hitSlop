@@ -43,13 +43,7 @@ try {
       "apply",
       master,
       "--op",
-      JSON.stringify({
-        type: "splice",
-        path: ["title"],
-        index: 0,
-        delete: 0,
-        insert: "Must refuse",
-      }),
+      JSON.stringify({ type: "set", path: ["title"], value: "Must refuse" }),
     ],
     "writable copy",
   );
@@ -60,13 +54,7 @@ try {
     "apply",
     document,
     "--op",
-    JSON.stringify({
-      type: "splice",
-      path: ["title"],
-      index: 0,
-      delete: initial.title.length,
-      insert: "Relocated native edit",
-    }),
+    JSON.stringify({ type: "set", path: ["title"], value: "Relocated native edit" }),
   ]);
   assert.equal(JSON.parse(await run(["get", document])).title, "Relocated native edit");
   for (const format of ["png", "pdf"]) {

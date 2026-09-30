@@ -43,6 +43,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   private(set) var owner: DocumentOwner
   private var storage: Storage
   private var server: SocketServer?
+  /// The attached page's token (see `makeWebView`).
+  private var view = UUID().uuidString
+  nonisolated private let pushes = PushQueue()
   private var closing = false
   private var closed = false
   private var closeTask: Task<Void, Error>?
@@ -91,19 +94,38 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   private func observeOwner() {
     owner.onPublication = { [weak self] publication in
+      self?.push(#"{"type":"publication","publication":"# + publication + "}")
+    }
+    owner.onSaveStatus = { [weak self] status, failure, savedSequence in
+      if let failure {
+        let error = String(decoding: (try? JSONSerialization.data(withJSONObject: failure.localizedDescription, options: .fragmentsAllowed)) ?? Data(#""Save failed""#.utf8), as: UTF8.self)
+        self?.push(#"{"type":"failed","error":"# + error + "}")
+      } else {
+        self?.push(#"{"type":"saved","sequence":\#(savedSequence)}"#)
+      }
       Task { @MainActor in
-        guard let self, self.isReady, !self.rendererDead, let view = self.liveWebView else { return }
-        do { _ = try await view.callAsyncJavaScript("await globalThis.__ownerEvents?.publication(JSON.parse(payload))", arguments: ["payload": publication], in: nil, contentWorld: .page) }
-        catch { self.onIssue?("Document publication could not reach the interface: \(error.localizedDescription)", false) }
+        self?.onStatus?(.init(status: status == "pending" ? "saving" : status, failure: failure))
       }
     }
-    owner.onSaveStatus = { [weak self] status, failure, sequence in
-      Task { @MainActor in
-        guard let self else { return }
-        self.onStatus?(.init(status: status == "pending" ? "saving" : status, failure: failure))
-        let error = failure?.localizedDescription
-        guard self.isReady, let view = self.liveWebView else { return }
-        _ = try? await view.callAsyncJavaScript("globalThis.__ownerEvents?.status(status, error, sequence)", arguments: ["status": status, "error": error as Any? ?? NSNull(), "sequence": sequence], in: nil, contentWorld: .page)
+  }
+
+  /// Called on the owner queue, so pushes enter `pushes` in owner order. One drain at a
+  /// time delivers everything buffered in a single awaited call; Swift never parses them.
+  nonisolated private func push(_ json: String) {
+    guard pushes.append(json) else { return }
+    Task { @MainActor [weak self] in await self?.drainPushes() }
+  }
+  private func drainPushes() async {
+    while true {
+      let batch = pushes.take()
+      if batch.isEmpty { return }
+      // A page that has not installed its receiver yet reads these changes when it opens.
+      guard !rendererDead, let view = liveWebView else { continue }
+      do {
+        _ = try await view.callAsyncJavaScript("globalThis.__hitslop?.publish(JSON.parse(payload)); return true",
+          arguments: ["payload": "[" + batch.joined(separator: ",") + "]"], in: nil, contentWorld: .page)
+      } catch {
+        onIssue?("Document changes could not reach the interface: \(error.localizedDescription)", false)
       }
     }
   }
@@ -152,6 +174,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       contentWorld: .page)
   }
   private func makeWebView() {
+    // Each page gets its own view token; requests from a replaced page are refused.
+    view = UUID().uuidString
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -236,21 +260,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         let bytes = try? JSONSerialization.data(withJSONObject: args), bytes.count <= 4 * 1024 * 1024 else {
         replyHandler(nil, "Invalid owner request"); return
       }
-      Task {
-        do {
-          var reply = try await owner.bridge(args)
-          reply["id"] = args["id"]; reply["ok"] = true
-          reply["status"] = args["method"] as? String == "flush" ? "saved" : "pending"
-          replyHandler(reply, nil)
-        } catch {
-          let description = error.localizedDescription
-          let code = description.contains("session_changed") ? "session_changed"
-            : description.contains("unknown_outcome") ? "unknown_outcome"
-            : error.isOwnerInvalidation ? "owner_invalidated"
-            : args["method"] as? String == "flush" ? "save_failed" : "rejected"
-          replyHandler(["id": args["id"] ?? "invalid", "ok": false, "code": code, "error": description], nil)
-        }
-      }
+      Task { replyHandler(await owner.bridge(args), nil) }
       return
     }
     guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
@@ -269,6 +279,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       replyHandler(
         [
           "epoch": epoch,
+          "view": view,
           "documentID": owner.documentID,
           "readOnly": storage.mode == .snapshot,
           "presentation": [
@@ -296,9 +307,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     case .runtimeRecovered:
       onRecovered?()
       replyHandler([:], nil)
-    case .status:
-      // Status flows one way, owner to window; the page no longer reports it back.
-      replyHandler([:], nil)
     case .failed, .runtimeError:
       let error = args["error"] as? String ?? "Runtime error"
       if method == .runtimeError && isReady {
@@ -311,8 +319,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       replyHandler([:], nil)
     case .attachmentsPut, .attachmentsRead, .attachmentsList, .themeLoad, .themeSave:
       servePageStorage(request, method: method.rawValue, reply: replyHandler)
-    case .load, .metadata, .append, .checkpoint:
-      replyHandler(nil, "Document storage is owned by the native core")
     }
   }
 
@@ -438,7 +444,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     }
     closing = true
     destroyWebView()
-    try await owner.detachRenderer()
     rendererDead = false
     failureClassification = .platform
     failureReason = nil
@@ -578,5 +583,29 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   }
   public static func set(_ value: Bool, on view: WKWebView) {
     view.setValue(value, forKey: "drawsBackground")
+  }
+}
+
+/// Pushes waiting for delivery. `append` reports whether a drain must start; `take`
+/// empties the queue and, once empty, lets the next append start a drain.
+final class PushQueue: @unchecked Sendable {
+  private let lock = NSLock()
+  private var items: [String] = []
+  private var draining = false
+  func append(_ json: String) -> Bool {
+    lock.withLock {
+      items.append(json)
+      if draining { return false }
+      draining = true
+      return true
+    }
+  }
+  func take() -> [String] {
+    lock.withLock {
+      let batch = items
+      items.removeAll()
+      if batch.isEmpty { draining = false }
+      return batch
+    }
   }
 }

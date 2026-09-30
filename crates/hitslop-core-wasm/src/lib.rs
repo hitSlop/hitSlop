@@ -6,6 +6,14 @@ fn error(e: hitslop_core::Error) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
+/// Mirrors the native `ApplyResult` record.
+#[wasm_bindgen(getter_with_clone)]
+pub struct ApplyResult {
+    pub sequence: f64,
+    pub ids: Vec<String>,
+    pub publication: String,
+}
+
 /// Mirrors the native `TextResult` record.
 #[wasm_bindgen(getter_with_clone)]
 pub struct TextResult {
@@ -45,11 +53,17 @@ impl WasmDocument {
     pub fn version(&self) -> String {
         self.inner.version()
     }
-    pub fn apply(&mut self, batch_json: &str) -> Result<String, JsValue> {
-        self.inner.apply(batch_json).map_err(error)
-    }
     pub fn import_updates(&mut self, bytes: &[u8]) -> Result<String, JsValue> {
         self.inner.import(bytes).map_err(error)
+    }
+    #[wasm_bindgen(js_name = applyBatch)]
+    pub fn apply_batch(&mut self, batch_json: &str) -> Result<ApplyResult, JsValue> {
+        let applied = self.inner.apply_batch(batch_json).map_err(error)?;
+        Ok(ApplyResult {
+            sequence: applied.sequence as f64,
+            ids: applied.ids,
+            publication: applied.publication,
+        })
     }
     pub fn sequence(&self) -> f64 {
         self.inner.sequence() as f64
@@ -64,12 +78,6 @@ impl WasmDocument {
             selection_end: edit.selection_end as u32,
             publication: edit.publication,
         })
-    }
-    pub fn text(&mut self, request_json: &str) -> Result<String, JsValue> {
-        self.inner.text(request_json).map_err(error)
-    }
-    pub fn release_draft(&mut self, draft: &str) -> Result<(), JsValue> {
-        self.inner.release_draft(draft).map_err(error)
     }
     pub fn checkpoint(&self) -> Result<Vec<u8>, JsValue> {
         self.inner.checkpoint().map_err(error)

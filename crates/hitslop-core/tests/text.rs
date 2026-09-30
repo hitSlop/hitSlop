@@ -60,9 +60,11 @@ impl Binding {
         code
     }
 }
+/// Another writer (the CLI) inserts at a UTF-16 offset of the current title.
 fn splice(d: &mut Document, index: usize, insert: &str) {
-    d.apply(&json!({"intents":[{"type":"splice","path":["title"],"base":d.version(),"index":index,"delete":0,"insert":insert}]}).to_string())
-        .unwrap();
+    let units: Vec<u16> = title(d).encode_utf16().collect();
+    let value = String::from_utf16(&units[..index]).unwrap() + insert + &String::from_utf16(&units[index..]).unwrap();
+    d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":value}]}).to_string()).unwrap();
 }
 
 #[test]
@@ -86,7 +88,7 @@ fn remote_update_and_page_edit_both_survive() {
     let base = d.version();
     let mut peer = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
     page.edit(&mut d, "abcX", 4);
-    peer.apply(&json!({"intents":[{"type":"splice","path":["title"],"base":base,"index":0,"delete":0,"insert":"遠"}]}).to_string()).unwrap();
+    splice(&mut peer, 0, "遠");
     d.import(&peer.export_since(&base).unwrap()).unwrap();
     let reply = page.edit(&mut d, "abcXYZ", 6);
     assert_eq!(title(&d), "遠abcXYZ");
@@ -114,7 +116,7 @@ fn disjoint_edits_coalesced_in_flight_merge_around_a_concurrent_change() {
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":"one two three"}]}).to_string()).unwrap();
     let mut page = Binding::new(&d, json!(["title"]));
     // Someone replaces the middle word while the page capitalizes both ends.
-    d.apply(&json!({"intents":[{"type":"splice","path":["title"],"base":d.version(),"index":4,"delete":3,"insert":"TWO"}]}).to_string()).unwrap();
+    d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":"one TWO three"}]}).to_string()).unwrap();
     page.edit(&mut d, "One two Three", 13);
     assert_eq!(title(&d), "One TWO Three");
 }

@@ -30,8 +30,8 @@ fn main() {
         let (first, mid, last) = (ids[0].clone(), ids[rows / 2].clone(), ids[rows - 1].clone());
         let apply = |doc: &mut Document, op: Value| doc.apply(&json!({"intents":[op]}).to_string()).unwrap();
         let checkbox = time(40, |i| { apply(&mut doc, json!({"type":"set","path":["rows",{"id":mid},"done"],"value":i%2==0})); });
-        let text = time(40, |_| { let v = doc.version(); apply(&mut doc, json!({"type":"splice","path":["title"],"base":v,"index":0,"delete":0,"insert":"x"})); });
-        let row_text = time(40, |_| { let v = doc.version(); apply(&mut doc, json!({"type":"splice","path":["rows",{"id":mid},"text"],"base":v,"index":0,"delete":0,"insert":"y"})); });
+        let text = time(40, |_| { let v = doc.version(); apply(&mut doc, json!({"type":"set","path":["title"],"value":format!("x{v}")})); });
+        let row_text = time(40, |_| { let v = doc.version(); apply(&mut doc, json!({"type":"set","path":["rows",{"id":mid},"text"],"value":format!("y{v}")})); });
         let insert = time(40, |i| { apply(&mut doc, json!({"type":"insert","path":["rows"],"id":format!("ins{rows}x{i}"),"value":{"text":"new","done":false},"at":{"before":mid}})); });
         let remove = time(40, |i| { apply(&mut doc, json!({"type":"remove","path":["rows"],"id":format!("ins{rows}x{i}")})); });
         let mv = time(40, |i| { let (id, to) = if i % 2 == 0 { (&first, json!({"after":last})) } else { (&first, json!({"before":mid})) }; apply(&mut doc, json!({"type":"move","path":["rows"],"id":id,"at":to})); });

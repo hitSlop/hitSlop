@@ -1,11 +1,12 @@
-// Gap: Rust tests cannot prove renderer promises, collector lifetime, or immutable
-// snapshots. Oracle: literal authored outcomes through the real WASM binding.
+// Gap: Rust tests cannot prove renderer promises, collector lifetime, stream recovery or
+// immutable snapshots. Oracle: literal authored outcomes through the real WASM binding,
+// with replies resolving before their publications arrive, as they can natively.
 import { expect, test } from "bun:test";
-import { OwnerDocument, type OwnerTransport } from "../src/owner/document";
+import { OwnerDocument } from "../src/owner/document";
+import { wasmTransport, type OwnerTransport } from "../src/owner/transport";
 import { defineDocument, s } from "../src/schema";
-import { projection } from "../src/owner/projection";
 import { Check } from "typebox/value";
-import { OwnerStateSchema, OwnerPublicationSchema } from "@hitslop/schema/owner";
+import { OwnerStateSchema, OwnerPublicationSchema, type PagePush } from "@hitslop/schema/owner";
 const moduleURL = new URL("../../../generated/v1/core/wasm/hitslop_core_wasm.js", import.meta.url);
 const wasm = await import(moduleURL.href);
 wasm.initSync({
@@ -43,15 +44,13 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
       expect(Check(OwnerStateSchema, JSON.parse(before))).toBe(true);
       const seed = core.checkpoint();
       const version = core.version();
-      const intents = scenario.intents.map((op: any) =>
-        op.base === "$current" ? { ...op, base: version } : op,
-      );
+      const batch = JSON.stringify({ intents: scenario.intents });
       if (scenario.error) {
-        expect(() => core.apply(JSON.stringify({ intents }))).toThrow(scenario.error);
+        expect(() => core.applyBatch(batch)).toThrow(scenario.error);
         expect(core.snapshot()).toBe(before);
       } else {
-        const reply = JSON.parse(core.apply(JSON.stringify({ intents })));
-        expect(Check(OwnerPublicationSchema, reply)).toBe(true);
+        const applied = core.applyBatch(batch);
+        expect(Check(OwnerPublicationSchema, JSON.parse(applied.publication))).toBe(true);
         expect(JSON.parse(core.snapshot()).value).toEqual(scenario.after);
         const reopened = wasm.WasmDocument.open(JSON.stringify(fixture.schema), seed);
         try {
@@ -66,41 +65,36 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
     }
   }
 });
-async function open() {
-  const core = wasm.WasmDocument.create(
-    JSON.stringify(definition.descriptor),
-    JSON.stringify(initial),
-  );
+
+async function open(state = initial) {
+  const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify(state));
   const errors: unknown[] = [];
-  const transport: OwnerTransport = {
-    state: async () => JSON.parse(core.snapshot()),
-    apply: async ({ batch }) => JSON.parse(core.apply(JSON.stringify(batch))),
-    text: async (request) => JSON.parse(core.text(JSON.stringify(request))),
-    releaseDraft: async (id) => core.release_draft(id),
-    flush: async () => {},
-  };
+  const transport = wasmTransport(core) as OwnerTransport & Record<string, any>;
   const doc = await OwnerDocument.open(definition, transport, (error) => errors.push(error));
   return { core, transport, doc, errors };
 }
+const gate = () => {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => (release = resolve));
+  return { promise, release };
+};
 
 test("ordinary writes resolve after publication and preserve unaffected snapshot identity", async () => {
   const { core, transport, doc } = await open();
   try {
-    let release!: () => void, entered!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    const started = new Promise<void>((resolve) => (entered = resolve));
+    const hold = gate(), entered = gate();
     const apply = transport.apply;
-    transport.apply = async (request) => {
-      entered();
-      await gate;
-      return apply(request);
+    transport.apply = async (batch) => {
+      entered.release();
+      await hold.promise;
+      return apply(batch);
     };
     const before = doc.current;
     const pending = doc.fields.rows.item("a").done.set(true);
-    await started;
+    await entered.promise;
     expect(doc.current).toBe(before);
     expect(doc.status).toBe("pending");
-    release();
+    hold.release();
     await pending;
     expect(doc.current.rows[0]!.done).toBe(true);
     expect(doc.current.rows[1]).toBe(before.rows[1]);
@@ -118,27 +112,33 @@ class Field extends EventTarget {
   value = "";
   selectionStart = 0;
   selectionEnd = 0;
+  disabled = false;
   setSelectionRange(start: number, end: number) {
     this.selectionStart = start;
     this.selectionEnd = end;
   }
   blur() {}
+  type(value: string) {
+    this.value = value;
+    this.setSelectionRange(value.length, value.length);
+    this.dispatchEvent(new Event("input"));
+  }
 }
-test("text composition stays local until commit and flush drains the real core reply", async () => {
+const field = () => new Field() as Field & HTMLInputElement;
+
+test("text composition stays local until it ends, then flush sends the committed text", async () => {
   const { core, doc } = await open();
-  const field = new Field();
-  const binding = doc.bindText(field as unknown as HTMLInputElement, doc.fields.title);
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
   try {
-    field.dispatchEvent(new Event("compositionstart"));
-    field.value = "Hello 日本😀";
-    field.setSelectionRange(field.value.length, field.value.length);
-    field.dispatchEvent(new Event("input"));
+    input.dispatchEvent(new Event("compositionstart"));
+    input.type("Hello 日本😀");
+    await Bun.sleep(5);
     expect(doc.current.title).toBe("Hello");
-    await expect(doc.flush()).rejects.toThrow("composition_pending");
-    field.dispatchEvent(new Event("compositionend"));
+    input.dispatchEvent(new Event("compositionend"));
     await doc.flush();
     expect(doc.current.title).toBe("Hello 日本😀");
-    expect(field.value).toBe("Hello 日本😀");
+    expect(input.value).toBe("Hello 日本😀");
     expect(doc.status).toBe("saved");
   } finally {
     binding.destroy();
@@ -152,8 +152,8 @@ test("collectors insert then address minted IDs synchronously and resolve only a
     const inserted = await doc.change((tx) => {
       const result = tx.fields.rows.insert({ text: "New", done: false });
       tx.fields.rows.item(result.id).done.set(true);
-      tx.fields.rows.item(result.id).text.replace("New title");
-      tx.fields.rows.item(result.id).text.replace("Final");
+      tx.fields.rows.item(result.id).text.set("New title");
+      tx.fields.rows.item(result.id).text.set("Final");
       tx.fields.hits.increment(4);
       tx.fields.hits.decrement();
       return result;
@@ -166,29 +166,8 @@ test("collectors insert then address minted IDs synchronously and resolve only a
     expect(doc.current.hits).toBe(3);
     await doc.at(doc.current.rows[0]!).done.set(true);
     expect(doc.current.rows[0]!.done).toBe(true);
-  } finally {
-    core.free();
-  }
-});
-
-test("previews stay outside the core until flush and survive a rejected commit", async () => {
-  const { core, doc, transport } = await open();
-  try {
-    doc.fields.done.preview(true);
-    expect(doc.current.done).toBe(true);
-    expect(JSON.parse(core.snapshot()).value.done).toBe(false);
-    expect(doc.status).toBe("pending");
-    const apply = transport.apply;
-    transport.apply = async () => {
-      throw Error("rejected");
-    };
-    await expect(doc.flush()).rejects.toThrow("rejected");
-    expect(doc.current.done).toBe(true);
-    expect(JSON.parse(core.snapshot()).value.done).toBe(false);
-    transport.apply = apply;
-    await doc.flush();
-    expect(JSON.parse(core.snapshot()).value.done).toBe(true);
-    expect(doc.status).toBe("saved");
+    // Handles are cached by path: repeated lookups do not rebuild them.
+    expect(doc.at(doc.current.rows[0]!)).toBe(doc.fields.rows.item("a"));
   } finally {
     core.free();
   }
@@ -199,9 +178,9 @@ test("throwing, async, nested and escaped collectors never submit their staged c
   try {
     let sent = 0;
     const apply = transport.apply;
-    transport.apply = (request) => {
+    transport.apply = (batch) => {
       sent++;
-      return apply(request);
+      return apply(batch);
     };
     await expect(
       doc.change((tx) => {
@@ -238,13 +217,14 @@ test("observer failures cannot reject acceptance; save failure is retained until
     expect(doc.current.done).toBe(true);
     dispose();
     expect(errors.length).toBeGreaterThan(0);
+    const flush = transport.flush;
     transport.flush = async () => {
       throw Error("disk unavailable");
     };
     await expect(doc.flush()).rejects.toThrow("disk unavailable");
     expect(doc.status).toBe("save-failed");
     expect(doc.current.done).toBe(true);
-    transport.flush = async () => {};
+    transport.flush = flush;
     await doc.flush();
     expect(doc.status).toBe("saved");
   } finally {
@@ -252,140 +232,220 @@ test("observer failures cannot reject acceptance; save failure is retained until
   }
 });
 
-test("a delayed resync cannot roll back later publications", async () => {
-  let finish!: (frame: any) => void;
-  const p = projection(
-    { session: "s", sequence: 1, version: "v1", value: { done: false }, issues: [] },
-    () => new Promise((resolve) => (finish = resolve)),
-  );
-  const gap = p.accept({
-    version: "v3",
-    patch: { session: "s", previous: 2, sequence: 3, ops: [], issues: [] },
-  });
-  await p.accept({
-    version: "v2",
-    patch: {
-      session: "s",
-      previous: 1,
-      sequence: 2,
-      ops: [{ type: "set", path: ["done"], value: true }],
-      issues: [],
-    },
-  });
-  finish({ session: "s", sequence: 1, version: "v1", value: { done: false }, issues: [] });
-  await gap;
-  expect(p.get().value.done).toBe(true);
-  expect(p.get().sequence).toBe(3);
-});
-
-// Gap: close previously admitted new edits while waiting for an attachment blob.
-// The blob's reference must finish; unrelated writes must be refused immediately.
-test("close stops admission while draining an already admitted attachment commit", async () => {
-  const { core, doc } = await open();
-  let finish!: () => void;
-  const blob = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
+// Spike S-D. Failure: a gap in the push stream silently skipped a change, or recovery
+// rebuilt the page and lost text the user was still typing. Oracle: the resynced state
+// equals the owner's, and the DOM keeps its unsent text and sends it afterwards.
+test("a push gap resyncs from a fresh snapshot and keeps unsent text", async () => {
+  const { core, transport, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
+  let deliver!: (pushes: PagePush[]) => void;
+  transport.onPush((pushes) => deliver(pushes));
   try {
-    const attachment = doc.stageSave(async (commit) => {
-      await blob;
-      await commit(() => doc.fields.done.set(true));
-    });
-    const closing = doc.prepareClose();
-    await expect(doc.fields.hits.increment()).rejects.toThrow("barrier");
-    finish();
-    await Promise.all([attachment, closing]);
+    const dropped: PagePush[] = [];
+    deliver = (pushes) => dropped.push(...pushes); // this publication is lost in delivery
+    await transport.apply({ intents: [{ type: "increment", path: ["hits"], by: 2 }] });
+    await Bun.sleep(5);
+    expect(dropped.length).toBe(1);
+    deliver = (pushes) => (doc as any).store.publish(pushes);
+    input.dispatchEvent(new Event("compositionstart"));
+    input.type("Hello there");
+    await doc.fields.done.set(true); // arrives with previous = 1 while the page is at 0
+    expect(doc.current.hits).toBe(2);
     expect(doc.current.done).toBe(true);
-    expect(doc.current.hits).toBe(0);
-    expect(doc.status).toBe("saved");
-    doc.cancelClose();
-    await doc.fields.hits.increment();
-    expect(doc.current.hits).toBe(1);
-  } finally {
-    finish();
-    core.free();
-  }
-});
-
-// Gap: the core's deleted-row test cannot prove disposal of a composing DOM draft.
-// Removing its row must disable the field and allow close without resurrecting it.
-test("a deleted focused row retires its composing draft", async () => {
-  const { core, doc } = await open();
-  const field = new Field();
-  const binding = doc.bindText(
-    field as unknown as HTMLInputElement,
-    doc.fields.rows.item("a").text,
-  );
-  try {
-    field.dispatchEvent(new Event("compositionstart"));
-    field.value = "unfinished";
-    field.dispatchEvent(new Event("input"));
-    await doc.fields.rows.remove("a");
-    await doc.prepareClose();
-    expect(doc.current.rows.map((row) => row.$id)).toEqual(["b"]);
-    expect((field as any).disabled).toBe(true);
+    expect(input.value).toBe("Hello there");
+    input.dispatchEvent(new Event("compositionend"));
+    await doc.flush();
+    expect(doc.current.title).toBe("Hello there");
+    expect(JSON.parse(core.snapshot()).value.title).toBe("Hello there");
   } finally {
     binding.destroy();
     core.free();
   }
 });
 
-// Gap: core ancestry tests do not cover more DOM input arriving before a bridge
-// acknowledgement. Literal text/selection expectations apply at every latency.
-for (const delay of [0, 20, 100, 500]) {
-  test(`text binding retains newer input across a ${delay}ms owner reply`, async () => {
-    const { core, doc, transport } = await open();
-    const send = transport.text;
-    transport.text = async request => { if (delay) await Bun.sleep(delay); return send(request); };
-    const field = new Field();
-    const binding = doc.bindText(field as unknown as HTMLInputElement, doc.fields.title);
-    try {
-      field.value = "Hello 日本😀";
-      field.setSelectionRange(field.value.length, field.value.length);
-      field.dispatchEvent(new Event("input"));
-      // Yield admission of the first packet, then type before its reply resolves.
-      await Promise.resolve();
-      field.value += "!";
-      field.setSelectionRange(field.value.length, field.value.length);
-      field.dispatchEvent(new Event("input"));
-      await doc.flush();
-      expect(doc.current.title).toBe("Hello 日本😀!");
-      expect(field.value).toBe("Hello 日本😀!");
-      expect(field.selectionStart).toBe(field.value.length);
-    } finally { binding.destroy(); core.free(); }
-  });
-}
-
-// Gap (moved from the retired engine suite): an attachment reference must never be
-// written before its blob is stored, and limits apply before anything is stored.
-test("attachment import stores the blob before its reference and deduplicates by content", async () => {
-  const { ownerAttachments } = await import("../src/owner/attachments");
+test("a publication older than the current state is ignored", async () => {
   const { core, doc } = await open();
   try {
-    const attachments = ownerAttachments(doc, false);
-    let storedWhenCommitted = -1;
-    const file = new File([new Uint8Array([1, 2, 3])], "a.bin", { type: "application/octet-stream" });
-    const ref = await attachments.import(file, {
-      async commit(ref) {
-        storedWhenCommitted = (await attachments.list()).length;
-        await doc.fields.title.replace(ref.id);
+    await doc.fields.hits.increment(1);
+    const current = doc.current;
+    (doc as any).store.publish([
+      {
+        type: "publication",
+        publication: { previous: 0, sequence: 1, version: "old", ops: [{ type: "set", path: ["hits"], value: 99 }], issues: [] },
       },
-    });
-    expect(storedWhenCommitted).toBe(1);
-    expect(doc.current.title).toBe(ref.id);
-    const again = await attachments.import(new File([new Uint8Array([1, 2, 3])], "b.bin"), { commit() {} });
-    expect(again.id).toBe(ref.id);
-    expect((await attachments.list()).length).toBe(1);
-    const huge = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin");
-    await expect(attachments.import(huge, { commit() {} })).rejects.toThrow();
-    expect((await attachments.list()).length).toBe(1);
+    ]);
+    expect(doc.current).toBe(current);
   } finally {
     core.free();
   }
 });
 
-// Gap (moved from the retired lifecycle suite): reloading the interface must remount
-// against the same document without losing flushed edits.
+// Bug 3. Failure: a close barrier that joined a flush already past its drain point did
+// not wait for an attachment import started after it. Oracle: when the barrier resolves,
+// the reference is in the document.
+test("close waits for an import that started while a flush was running", async () => {
+  const { core, doc, transport } = await open();
+  const saving = gate(), stored = gate();
+  const flush = transport.flush;
+  let first = true;
+  transport.flush = async () => {
+    if (first) {
+      first = false;
+      await saving.promise;
+    }
+    return flush();
+  };
+  try {
+    const flushing = doc.flush();
+    await Bun.sleep(0);
+    const imported = doc.admit(
+      async () => {
+        await stored.promise;
+        return "blob";
+      },
+      (tx, ref) => tx.fields.title.set(ref),
+    );
+    const closing = doc.prepareClose();
+    saving.release();
+    await flushing;
+    await expect(doc.fields.hits.increment()).rejects.toThrow("barrier");
+    stored.release();
+    await closing;
+    expect(doc.current.title).toBe("blob");
+    await imported;
+    expect(doc.current.hits).toBe(0);
+    expect(doc.status).toBe("saved");
+    doc.cancelClose();
+    await doc.fields.hits.increment();
+    expect(doc.current.hits).toBe(1);
+  } finally {
+    saving.release();
+    stored.release();
+    core.free();
+  }
+});
+
+// Gap: the core's deleted-row test cannot prove disposal of a composing DOM field.
+test("a deleted focused row disables its field and close still completes", async () => {
+  const { core, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.rows.item("a").text);
+  try {
+    input.dispatchEvent(new Event("compositionstart"));
+    input.type("unfinished");
+    await doc.fields.rows.remove("a");
+    await doc.prepareClose();
+    expect(doc.current.rows.map((row) => row.$id)).toEqual(["b"]);
+    expect(input.disabled).toBe(true);
+  } finally {
+    binding.destroy();
+    core.free();
+  }
+});
+
+// Failure: switching a binding to another row threw while text was unsent, or lost it.
+test("retargeting a binding sends the old field's unsent text first", async () => {
+  const { core, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.rows.item("a").text);
+  try {
+    input.dispatchEvent(new Event("compositionstart"));
+    input.type("First edited");
+    binding.update(doc.fields.rows.item("b").text);
+    await doc.flush();
+    expect(doc.current.rows[0]!.text).toBe("First edited");
+    expect(input.value).toBe("Second");
+  } finally {
+    binding.destroy();
+    core.free();
+  }
+});
+
+// Failure: more typing before a reply was lost, duplicated or misplaced the caret.
+for (const delay of [0, 20, 100]) {
+  test(`text binding retains newer input across a ${delay}ms owner reply`, async () => {
+    const { core, doc, transport } = await open();
+    const send = transport.text;
+    transport.text = async (request) => {
+      if (delay) await Bun.sleep(delay);
+      return send(request);
+    };
+    const input = field();
+    const binding = doc.bindText(input, doc.fields.title);
+    try {
+      input.type("Hello 日本😀");
+      await Promise.resolve();
+      input.type(input.value + "!");
+      await doc.flush();
+      expect(doc.current.title).toBe("Hello 日本😀!");
+      expect(input.value).toBe("Hello 日本😀!");
+      expect(input.selectionStart).toBe(input.value.length);
+    } finally {
+      binding.destroy();
+      core.free();
+    }
+  });
+}
+
+// Failure: a CLI or second binding edit to the same field overwrote the user's text.
+test("a concurrent whole-field set and page typing both survive", async () => {
+  const { core, transport, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
+  const hold = gate();
+  const send = transport.text;
+  transport.text = async (request) => {
+    await hold.promise;
+    return send(request);
+  };
+  try {
+    input.type("Hello!");
+    await doc.fields.title.set("Oh Hello"); // lands while the page's request waits
+    hold.release();
+    await doc.flush();
+    expect(doc.current.title).toBe("Oh Hello!");
+    expect(input.value).toBe("Oh Hello!");
+  } finally {
+    hold.release();
+    binding.destroy();
+    core.free();
+  }
+});
+
+// Gap: an attachment reference must never be written before its blob is stored, and
+// limits apply before anything is stored.
+test("attachment import stores the blob before its reference and deduplicates by content", async () => {
+  const { ownerAttachments } = await import("../src/owner/attachments");
+  const { core, doc } = await open();
+  try {
+    const attachments = ownerAttachments(doc, false);
+    const file = new File([new Uint8Array([1, 2, 3])], "a.bin", { type: "application/octet-stream" });
+    let storedWhenReferenced = -1;
+    const store = attachments.store as any;
+    const ref = await attachments.import(file, (tx: any, ref) => {
+      storedWhenReferenced = store.files.size;
+      tx.fields.title.set(ref.id);
+    });
+    expect(storedWhenReferenced).toBe(1);
+    expect(doc.current.title).toBe(ref.id);
+    const again = await attachments.import(new File([new Uint8Array([1, 2, 3])], "b.bin"), () => {});
+    expect(again.id).toBe(ref.id);
+    expect((await attachments.list()).length).toBe(1);
+    const huge = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin");
+    await expect(attachments.import(huge, () => {})).rejects.toThrow();
+    expect((await attachments.list()).length).toBe(1);
+    // A reference the core refuses rejects the import.
+    await expect(
+      attachments.import(new File([new Uint8Array([4])], "c.bin"), (tx: any) => tx.fields.rows.remove("missing")),
+    ).rejects.toThrow();
+  } finally {
+    core.free();
+  }
+});
+
+// Gap: reloading the interface must remount against the same document without losing
+// flushed edits.
 test("view reload remounts against the same document and keeps flushed edits", async () => {
   const { mountViewLifecycle } = await import("../src/view-lifecycle");
   const { core, doc } = await open();
@@ -413,7 +473,7 @@ test("view reload remounts against the same document and keeps flushed edits", a
         recovered++;
       },
     });
-    await doc.fields.title.replace("Reloaded");
+    await doc.fields.title.set("Reloaded");
     await handle.reloadInterface();
     expect(mounts).toBe(2);
     expect(recovered).toBe(1);

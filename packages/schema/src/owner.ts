@@ -1,6 +1,6 @@
 import { Type, type Static } from "typebox";
 
-// Contract 4: shared native/WASM core envelopes. TypeBox is authoritative.
+// Document core and page wire. TypeBox is authoritative; Rust and Swift are generated.
 export const Segment = Type.Union([
   Type.String({ minLength: 1 }),
   Type.Object(
@@ -14,6 +14,7 @@ export const Anchor = Type.Union([
   Type.Object({ after: Type.String() }, { additionalProperties: false }),
 ]);
 export const variants = {
+  // Booleans, and whole text fields (replacing the text as it is at execution).
   set: { path, value: Type.Unknown() },
   insert: {
     path,
@@ -23,32 +24,14 @@ export const variants = {
   },
   remove: { path, id: Type.String() },
   move: { path, id: Type.String(), at: Type.Optional(Anchor) },
-  // CLI splices carry an execution-time base; renderer drafts use TextRequest.
-  splice: {
-    path,
-    base: Type.String(),
-    index: Type.Integer({ minimum: 0 }),
-    delete: Type.Integer({ minimum: 0 }),
-    insert: Type.String(),
-  },
   // Counters: a nonzero safe-integer delta; the core also bounds the resulting sum.
   increment: { path, by: Type.Integer({ minimum: -9007199254740991, maximum: 9007199254740991 }) },
 } as const;
 export const Intent = Type.Union([
   Type.Object({ type: Type.Literal("set"), ...variants.set }, { additionalProperties: false }),
-  Type.Object(
-    { type: Type.Literal("insert"), ...variants.insert },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { type: Type.Literal("remove"), ...variants.remove },
-    { additionalProperties: false },
-  ),
+  Type.Object({ type: Type.Literal("insert"), ...variants.insert }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal("remove"), ...variants.remove }, { additionalProperties: false }),
   Type.Object({ type: Type.Literal("move"), ...variants.move }, { additionalProperties: false }),
-  Type.Object(
-    { type: Type.Literal("splice"), ...variants.splice },
-    { additionalProperties: false },
-  ),
   Type.Object(
     { type: Type.Literal("increment"), ...variants.increment },
     { additionalProperties: false },
@@ -59,21 +42,6 @@ export const Batch = Type.Object(
   { additionalProperties: false },
 );
 export type Batch = Static<typeof Batch>;
-
-export const textFields = {
-  session: Type.String(),
-  draft: Type.String(),
-  sequence: Type.Integer({ minimum: 1 }),
-  parent: Type.Optional(Type.Integer({ minimum: 1 })),
-  base: Type.String(),
-  path,
-  index: Type.Integer({ minimum: 0 }),
-  delete: Type.Integer({ minimum: 0 }),
-  insert: Type.String(),
-  selectionStart: Type.Integer({ minimum: 0 }),
-  selectionEnd: Type.Integer({ minimum: 0 }),
-};
-export const TextRequest = Type.Object(textFields, { additionalProperties: false });
 
 // Stateless text: the page's field was `from` at `base` (its last authored version) and
 // is now `to`. The owner computes the edit script and merges it; no draft state.
@@ -87,20 +55,6 @@ export const editTextFields = {
 };
 export const EditTextRequest = Type.Object(editTextFields, { additionalProperties: false });
 
-// Command offsets explicitly refer to state when the host executor runs them.
-// A renderer draft must use TextRequest instead; it must never silently rebase.
-const { base: _base, ...currentSplice } = variants.splice;
-export const CurrentIntent = Type.Union(
-  Object.entries({ ...variants, splice: currentSplice }).map(([type, fields]) =>
-    Type.Object({ type: Type.Literal(type), ...fields }, { additionalProperties: false }),
-  ),
-);
-export const CurrentCommand = Type.Object(
-  {
-    intents: Type.Array(CurrentIntent, { maxItems: 1000 }),
-  },
-  { additionalProperties: false },
-);
 export const PatchOp = Type.Union([
   Type.Object(
     { type: Type.Literal("set"), path, value: Type.Unknown() },
@@ -138,7 +92,6 @@ export const OwnerIssueSchema = Type.Object(
 );
 export const OwnerStateSchema = Type.Object(
   {
-    session: identity,
     sequence,
     version: Type.String(),
     value: Type.Unknown(),
@@ -146,128 +99,98 @@ export const OwnerStateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export const OwnerPatchSchema = Type.Object(
+/** One accepted change. `previous` lets the page prove the stream is contiguous. */
+export const OwnerPublicationSchema = Type.Object(
   {
-    session: identity,
     previous: sequence,
     sequence,
+    version: Type.String(),
     ops: Type.Array(PatchOp),
     issues: Type.Array(OwnerIssueSchema),
   },
   { additionalProperties: false },
 );
-export const OwnerPublicationSchema = Type.Object(
-  {
-    version: Type.String(),
-    ids: Type.Array(Type.String()),
-    patch: OwnerPatchSchema,
-    patchBuildMS: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-    text: Type.Optional(
-      Type.Object(
-        {
-          draft: identity,
-          sequence,
-          authored: Type.String(),
-          selectionStart: sequence,
-          selectionEnd: sequence,
-        },
-        { additionalProperties: false },
-      ),
-    ),
-  },
-  { additionalProperties: false },
-);
-export const OwnerStatusSchema = Type.Enum(["pending", "saved", "save-failed"]);
-export const OwnerRequestSchema = Type.Union([
+
+// Page → host. `view` names the attached page; a request from a replaced page, or one
+// queued before discard, is refused with `owner_replaced` and never applied.
+const pageBase = { id: identity, view: identity };
+export const PageRequestSchema = Type.Union([
+  Type.Object({ ...pageBase, method: Type.Literal("open") }, { additionalProperties: false }),
   Type.Object(
-    { id: identity, session: identity, method: Type.Literal("apply"), batch: Batch },
+    { ...pageBase, method: Type.Literal("apply"), batch: Batch },
     { additionalProperties: false },
   ),
   Type.Object(
-    { id: identity, session: identity, method: Type.Literal("text"), request: TextRequest },
+    { ...pageBase, method: Type.Literal("text"), request: EditTextRequest },
     { additionalProperties: false },
   ),
-  Type.Object(
-    { id: identity, session: identity, method: Type.Literal("releaseDraft"), draft: identity },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { id: identity, method: Type.Enum(["state", "flush"]) },
-    { additionalProperties: false },
-  ),
+  Type.Object({ ...pageBase, method: Type.Literal("flush") }, { additionalProperties: false }),
 ]);
-export const OwnerReplySchema = Type.Union([
+export const PageErrorCodeSchema = Type.Enum([
+  "rejected",
+  "owner_replaced",
+  "closing",
+  "save_failed",
+  "owner_invalidated",
+  "unknown_outcome",
+]);
+export const PageReplySchema = Type.Union([
   Type.Object(
     {
       id: identity,
       ok: Type.Literal(true),
+      // open: the snapshot the push stream continues from, and save status.
       state: Type.Optional(OwnerStateSchema),
-      publication: Type.Optional(OwnerPublicationSchema),
-      status: OwnerStatusSchema,
+      savedSequence: Type.Optional(sequence),
+      saveFailure: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      // apply and text: the publication sequence that carries the change.
+      sequence: Type.Optional(sequence),
+      ids: Type.Optional(Type.Array(Type.String())),
+      // text: the version right after this edit on its own branch, and the caret.
+      authored: Type.Optional(Type.String()),
+      selectionStart: Type.Optional(sequence),
+      selectionEnd: Type.Optional(sequence),
     },
     { additionalProperties: false },
   ),
   Type.Object(
-    {
-      id: identity,
-      ok: Type.Literal(false),
-      code: Type.Enum([
-        "rejected",
-        "session_changed",
-        "closing",
-        "unsupported_operation",
-        "unknown_outcome",
-        "save_failed",
-        "owner_invalidated",
-      ]),
-      error: Type.String(),
-    },
+    { id: identity, ok: Type.Literal(false), code: PageErrorCodeSchema, error: Type.String() },
     { additionalProperties: false },
   ),
 ]);
+/** Host → page, in order, through `__hitslop.publish(pushes)`. */
+export const PagePushSchema = Type.Union([
+  Type.Object(
+    { type: Type.Literal("publication"), publication: OwnerPublicationSchema },
+    { additionalProperties: false },
+  ),
+  Type.Object({ type: Type.Literal("saved"), sequence }, { additionalProperties: false }),
+  Type.Object(
+    { type: Type.Literal("failed"), error: Type.String() },
+    { additionalProperties: false },
+  ),
+]);
+
 export type OwnerState = Static<typeof OwnerStateSchema>;
 export type OwnerPublication = Static<typeof OwnerPublicationSchema>;
-export type OwnerStatus = Static<typeof OwnerStatusSchema>;
-export type OwnerRequest = Static<typeof OwnerRequestSchema>;
-export type OwnerReply = Static<typeof OwnerReplySchema>;
 export type OwnerIntent = Static<typeof Intent>;
 export type OwnerPath = Static<typeof path>;
-export type OwnerTextRequest = Static<typeof TextRequest>;
 export type OwnerPatchOp = Static<typeof PatchOp>;
-
-const socketBase = { id: identity, documentPath: Type.String({ minLength: 1, maxLength: 4096 }) };
-const socketMutation = { ...socketBase, epoch: identity };
-export const OwnerSocketRequestSchema = Type.Union([
-  Type.Object(
-    { ...socketBase, method: Type.Enum(["hello", "get", "schema", "snapshot"]) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...socketMutation, method: Type.Literal("apply"), op: CurrentIntent },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      ...socketMutation,
-      method: Type.Literal("batch"),
-      ops: Type.Array(CurrentIntent, { maxItems: 1000 }),
-    },
-    { additionalProperties: false },
-  ),
-]);
+export type EditText = Static<typeof EditTextRequest>;
+export type PageRequest = Static<typeof PageRequestSchema>;
+export type PageReply = Static<typeof PageReplySchema>;
+export type PageErrorCode = Static<typeof PageErrorCodeSchema>;
+export type PagePush = Static<typeof PagePushSchema>;
 
 export const OwnerContractsSchema = Type.Object(
   {
     batch: Batch,
-    text: TextRequest,
     editText: EditTextRequest,
-    command: CurrentCommand,
     state: OwnerStateSchema,
     publication: OwnerPublicationSchema,
-    status: OwnerStatusSchema,
-    request: OwnerRequestSchema,
-    reply: OwnerReplySchema,
-    socketRequest: OwnerSocketRequestSchema,
+    request: PageRequestSchema,
+    reply: PageReplySchema,
+    push: PagePushSchema,
   },
   { additionalProperties: false },
 );

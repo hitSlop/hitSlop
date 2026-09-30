@@ -30,11 +30,11 @@ extension LoroClientTests {
       #expect(panel.isVisible)
       panel.orderOut(nil)
       #expect(try await controller.session.webView.evaluateJavaScript("document.body.innerText.trim().length > 0") as? Bool == true)
-      _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("abcXYZ"))
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("abcXYZ"))
       let live = try await DocumentCommand.run(method: "get", url: root)
       #expect(String(decoding: live, as: UTF8.self).contains("abcXYZ"))
       _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: prefixTitle("Native socket edit"))
+        method: "apply", url: root, operation: setTitle("Native socket edit"))
       let png = try await SlopRenderer.exportPNGData(session: controller.session)
       let pdf = try await SlopRenderer.exportPDFData(session: controller.session)
       #expect(NSImage(data: png) != nil)
@@ -56,7 +56,7 @@ extension LoroClientTests {
       #expect(controller.window?.isVisible == false)
       #expect(webView == nil)
       _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: prefixTitle("Closed WASM edit"))
+        method: "apply", url: root, operation: setTitle("Closed WASM edit"))
       #expect(
         String(decoding: try await DocumentCommand.run(method: "get", url: root), as: UTF8.self)
           .contains("Closed WASM edit"))

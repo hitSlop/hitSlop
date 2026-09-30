@@ -100,10 +100,10 @@ import WebKit
           let notifyMS = 0, last = 0;
           doc.subscribe(() => { last = performance.now(); });
           // Push path: arrival, synchronous receive/notify, and when the main thread is next free.
-          const events = globalThis.__ownerEvents, publication = events.publication;
+          const events = globalThis.__hitslop, publication = events.publish;
           const phases = [];
           let editStart = 0;
-          events.publication = (p) => {
+          events.publish = (p) => {
             const arrived = performance.now();
             const result = publication(p);
             const syncDone = performance.now();
@@ -143,7 +143,7 @@ import WebKit
           const titleFrame = [];
           for (let i = 0; i < 20; i++) {
             await new Promise(r => setTimeout(r, 100));
-            await doc.fields.title.replace("Measurement " + i);
+            await doc.fields.title.set("Measurement " + i);
             const f = performance.now();
             await nextFrame();
             titleFrame.push(performance.now() - f);
@@ -151,7 +151,7 @@ import WebKit
           const rowTextFrame = [];
           for (let i = 0; i < 20; i++) {
             await new Promise(r => setTimeout(r, 100));
-            await doc.fields.tasks.item(id).text.replace("Task edited " + i);
+            await doc.fields.tasks.item(id).text.set("Task edited " + i);
             const f = performance.now();
             await nextFrame();
             rowTextFrame.push(performance.now() - f);

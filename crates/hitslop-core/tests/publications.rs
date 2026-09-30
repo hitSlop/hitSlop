@@ -39,7 +39,7 @@ fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
         }
         2 if !rows.is_empty() => json!({"type":"move","path":["rows"],"id":rows[index]["$id"]}),
         3 if rows.len() > 1 => json!({"type":"remove","path":["rows"],"id":rows[index]["$id"]}),
-        _ => json!({"type":"splice","path":["title"],"base":d.version(),"index":0,"delete":0,"insert":"x"}),
+        _ => json!({"type":"set","path":["title"],"value":format!("x{r}")}),
     }
 }
 #[test]
@@ -66,12 +66,12 @@ fn seeded_100000_local_and_remote_steps() {
                 d.apply(&json!({"intents":[op]}).to_string()).unwrap()
             };
             let reply: Value = serde_json::from_str(&reply).unwrap();
-            support::apply_patches(&mut projected, &reply["patch"]["ops"]);
+            support::apply_patches(&mut projected, &reply["ops"]);
             let fresh: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
             assert_eq!(projected, fresh["value"]);
-            assert_eq!(reply["patch"]["issues"], fresh["issues"]);
+            assert_eq!(reply["issues"], fresh["issues"]);
             // Clean lists publish row operations, never a whole-list replacement.
-            assert!(!reply["patch"]["ops"].as_array().unwrap().iter().any(|op| op["path"] == json!(["rows"]) && op["type"] == "set"));
+            assert!(!reply["ops"].as_array().unwrap().iter().any(|op| op["path"] == json!(["rows"]) && op["type"] == "set"));
         }
     }
 }
@@ -94,10 +94,10 @@ fn merged_duplicate_ids_publish_exactly_and_stay_flagged() {
             _ => a.apply(r#"{"intents":[{"type":"move","path":["rows"],"id":"00000000000000000000000000000002","at":{"before":"00000000000000000000000000000001"}}]}"#).unwrap(),
         };
         let reply: Value = serde_json::from_str(&reply).unwrap();
-        support::apply_patches(&mut projected, &reply["patch"]["ops"]);
+        support::apply_patches(&mut projected, &reply["ops"]);
         let fresh: Value = serde_json::from_str(&a.snapshot().unwrap()).unwrap();
         assert_eq!(projected, fresh["value"]);
-        assert_eq!(reply["patch"]["issues"], fresh["issues"]);
+        assert_eq!(reply["issues"], fresh["issues"]);
         assert!(fresh["issues"].as_array().unwrap().iter().any(|i| i["code"] == "duplicate_id"));
         let ids: std::collections::HashSet<_> = fresh["value"]["rows"].as_array().unwrap().iter().map(|row| row["$id"].as_str().unwrap()).collect();
         assert_eq!(ids.len(), 4, "Every merged row must remain uniquely addressable");

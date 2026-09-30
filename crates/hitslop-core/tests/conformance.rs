@@ -51,12 +51,12 @@ fn cases(errors: bool) {
             let reply: Value = serde_json::from_str(&result.unwrap()).unwrap();
             assert_eq!(snapshot(&d)["value"], case["after"], "{name}");
             let mut patched = before["value"].clone();
-            apply_patches(&mut patched, &reply["patch"]["ops"]);
+            apply_patches(&mut patched, &reply["ops"]);
             assert_eq!(
                 patched, case["after"],
                 "{name}: patch did not reconstruct state"
             );
-            assert_eq!(reply["patch"]["issues"], snapshot(&d)["issues"]);
+            assert_eq!(reply["issues"], snapshot(&d)["issues"]);
             let delta = d.export_since(&version).unwrap();
             let reopened = Document::open(&f["schema"].to_string(), &seed, &[delta]).unwrap();
             assert_eq!(
@@ -122,8 +122,8 @@ fn merged_anomaly_is_preserved_flagged_and_not_repaired_on_read() {
         view["issues"],
         json!([{"code":"type_mismatch","path":["done"]},{"code":"unknown_field","path":["extra"]}])
     );
-    assert_eq!(reply["patch"]["issues"], view["issues"]);
-    let mut ops = reply["patch"]["ops"].as_array().unwrap().clone();
+    assert_eq!(reply["issues"], view["issues"]);
+    let mut ops = reply["ops"].as_array().unwrap().clone();
     ops.sort_by_key(|op| op["path"].to_string());
     assert_eq!(ops, vec![json!({"type":"set","path":["done"],"value":"invalid"}), json!({"type":"set","path":["extra"],"value":"preserved"})]);
     assert_eq!(d.version(), before);
@@ -144,7 +144,7 @@ fn independent_replicas_merge_and_duplicate_delivery_is_idempotent() {
     let mut a = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let mut b = Document::open(&f["schema"].to_string(), &a.checkpoint().unwrap(), &[]).unwrap();
     let from = a.version();
-    a.apply(&json!({"intents":[{"type":"splice","path":["title"],"base":from,"index":3,"delete":0,"insert":"X"}]}).to_string()).unwrap();
+    a.apply(r#"{"intents":[{"type":"set","path":["title"],"value":"abcX"}]}"#).unwrap();
     b.apply(r#"{"intents":[{"type":"set","path":["rows",{"id":"00000000000000000000000000000001"},"done"],"value":true}]}"#).unwrap();
     let left = a.export_since(&from).unwrap();
     let right = b.export_since(&from).unwrap();
@@ -163,8 +163,8 @@ fn independent_replicas_merge_and_duplicate_delivery_is_idempotent() {
 fn minted_ids_are_application_ids_and_survive_reopen() {
     let f = fixture();
     let mut d = Document::create(&f["schema"].to_string(), r#"{"title":"abc","hits":0,"rows":[]}"#).unwrap();
-    let reply: Value = serde_json::from_str(&d.apply(r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#).unwrap()).unwrap();
-    let id = reply["ids"][0].as_str().unwrap();
+    let applied = d.apply_batch(r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#).unwrap();
+    let id = applied.ids[0].as_str();
     assert_eq!(id.len(), 26);
     assert!(id
         .bytes()
@@ -173,8 +173,8 @@ fn minted_ids_are_application_ids_and_survive_reopen() {
     assert_eq!(snapshot(&reopened)["value"]["rows"][0]["$id"], id);
 }
 
-// Failure: the owner rebuilt after a late rejection stops publishing, loses its
-// draft ancestry, or exports bytes that no longer replay. Oracle: independent patch
+// Failure: the owner rebuilt after a late rejection stops publishing, loses the
+// page's authored text, or exports bytes that no longer replay. Oracle: independent patch
 // consumer, fresh snapshots and a literal final title. Gap: atomic_rejection only
 // checks the state immediately after the rejection.
 #[test]
@@ -187,17 +187,15 @@ fn owner_keeps_working_after_a_late_rejection() {
     let mut projected = snapshot(&d)["value"].clone();
     let check = |d: &Document, projected: &mut Value, reply: &str| {
         let reply: Value = serde_json::from_str(reply).unwrap();
-        apply_patches(projected, &reply["patch"]["ops"]);
+        apply_patches(projected, &reply["ops"]);
         assert_eq!(*projected, snapshot(d)["value"]);
     };
-    let session = snapshot(&d)["session"].clone();
-    let draft = |seq: usize, index: usize, text: &str, base: &str| {
-        let mut r = json!({"session":session,"draft":"title","sequence":seq,"base":base,"path":["title"],"index":index,"delete":0,"insert":text,"selectionStart":index+1,"selectionEnd":index+1});
-        if seq > 1 { r["parent"] = json!(seq - 1); }
-        r.to_string()
+    let edit = |base: &str, from: &str, to: &str| {
+        let caret = to.encode_utf16().count();
+        json!({"base":base,"path":["title"],"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string()
     };
-    let r = d.text(&draft(1, 3, "X", &v0)).unwrap();
-    check(&d, &mut projected, &r);
+    let e = d.edit_text(&edit(&v0, "abc", "abcX")).unwrap();
+    check(&d, &mut projected, e.publication.as_deref().unwrap());
     // Late rejection: the first intent mutated before the second failed.
     let late = r#"{"intents":[{"type":"set","path":["rows",{"id":"00000000000000000000000000000001"},"done"],"value":true},{"type":"remove","path":["rows"],"id":"missing"}]}"#;
     assert_eq!(d.apply(late).unwrap_err().code, "path_not_found");
@@ -213,12 +211,11 @@ fn owner_keeps_working_after_a_late_rejection() {
     peer.commit();
     let r = d.import(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
     check(&d, &mut projected, &r);
-    // The draft continues: the owner moved on, so this uses the authored branch.
-    let r = d.text(&draft(2, 4, "Y", &v0)).unwrap();
-    check(&d, &mut projected, &r);
-    // And again with nothing intervening: the direct path.
-    let r = d.text(&draft(3, 5, "Z", &v0)).unwrap();
-    check(&d, &mut projected, &r);
+    // The page keeps typing from its authored version while the owner moved on.
+    let e = d.edit_text(&edit(&e.authored, "abcX", "abcXY")).unwrap();
+    check(&d, &mut projected, e.publication.as_deref().unwrap());
+    let e = d.edit_text(&edit(&e.authored, "abcXY", "abcXYZ")).unwrap();
+    check(&d, &mut projected, e.publication.as_deref().unwrap());
     assert_eq!(snapshot(&d)["value"]["title"], "abcXYZ");
     // Bytes exported by the rebuilt owner replay from before the rejection.
     let replayed = Document::open(&schema, &seed, &[d.export_since(&v0).unwrap()]).unwrap();

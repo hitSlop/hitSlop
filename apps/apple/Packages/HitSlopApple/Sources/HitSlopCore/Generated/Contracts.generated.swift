@@ -743,11 +743,6 @@ public enum BridgeMethod: String, CaseIterable, Sendable {
   case `windowResize` = "window.resize"
   case `config` = "config"
   case `ready` = "ready"
-  case `load` = "load"
-  case `metadata` = "metadata"
-  case `append` = "append"
-  case `checkpoint` = "checkpoint"
-  case `status` = "status"
   case `failed` = "failed"
   case `runtimeError` = "runtimeError"
 }

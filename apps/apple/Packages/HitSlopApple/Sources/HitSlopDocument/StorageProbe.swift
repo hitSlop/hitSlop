@@ -27,7 +27,10 @@ import HitSlopCoreBinding
       else { throw failure("Probe needs a saved document") }
       let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint, updates: disk.updates)
       let before = try core.version()
-      _ = try core.commandCurrent(batchJson: #"{"intents":[{"type":"splice","path":["title"],"index":0,"delete":0,"insert":"Crash edit "}]}"#)
+      let frame = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
+      let title = (frame["value"] as? [String: Any])?["title"] as? String ?? ""
+      let edit = ["intents": [["type": "set", "path": ["title"], "value": "Crash edit " + title]]]
+      _ = try core.applyBatch(batchJson: String(decoding: JSONSerialization.data(withJSONObject: edit), as: UTF8.self))
       storage.testingPhase = stop
       let write: Storage.Write = phase.hasPrefix("append:")
         ? .append(try core.exportSince(version: before))

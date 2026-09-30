@@ -1,7 +1,6 @@
 import * as T from "typebox";
 export const protocolVersion = 1;
 const text = T.String({ maxLength: 4096 });
-const bytes = T.String({ maxLength: 48 * 1024 * 1024 });
 export const AttachmentIDSchema = T.String({
   pattern: "^[a-f0-9]{64}$",
   minLength: 64,
@@ -32,24 +31,6 @@ export const BridgeMethods = {
   }),
   config: T.Object({ method: T.Literal("config") }),
   ready: T.Object({ method: T.Literal("ready") }),
-  load: T.Object({ method: T.Literal("load") }),
-  metadata: T.Object({ method: T.Literal("metadata") }),
-  append: T.Object({
-    method: T.Literal("append"),
-    generation: text,
-    updates: T.Array(bytes, { maxItems: 4096 }),
-  }),
-  checkpoint: T.Object({
-    method: T.Literal("checkpoint"),
-    generation: text,
-    bytes,
-    schemaKey: T.String({ maxLength: 1048576 }),
-  }),
-  status: T.Object({
-    method: T.Literal("status"),
-    status: T.Enum(["saved", "saving", "save-failed"]),
-    error: T.Union([text, T.Null()]),
-  }),
   failed: T.Object({ method: T.Literal("failed"), error: text }),
   runtimeError: T.Object({
     method: T.Literal("runtimeError"),
@@ -69,6 +50,7 @@ const attachmentInfo = T.Object({ id: AttachmentIDSchema, byteLength: T.Integer(
 export const BridgeReplies = {
   config: T.Object({
     epoch: T.String(),
+    view: T.String(),
     documentID: T.String(),
     readOnly: T.Boolean(),
     presentation: T.Object({
@@ -79,25 +61,6 @@ export const BridgeReplies = {
       mode: T.Enum(["standard", "transparent", "skin"]),
     }),
   }),
-  load: T.Object({
-    checkpoint: T.Union([T.String(), T.Null()]),
-    schemaKey: T.Union([T.String(), T.Null()]),
-    generation: T.String(),
-    updates: T.Array(T.String()),
-    docId: T.String(),
-    readerRevision: T.Integer({ minimum: 1 }),
-  }),
-  metadata: T.Object({
-    generation: T.String(),
-    schemaKey: T.Union([T.String(), T.Null()]),
-    docId: T.String(),
-    checkpointBytes: T.Integer({ minimum: 0 }),
-    updateBytes: T.Integer({ minimum: 0 }),
-    updateRows: T.Integer({ minimum: 0 }),
-    readerRevision: T.Integer({ minimum: 1 }),
-  }),
-  append: T.Object({ generation: T.String() }),
-  checkpoint: T.Object({ generation: T.String() }),
   "attachments.put": attachmentInfo,
   "attachments.read": T.Object({ bytes: T.String() }),
   "attachments.list": T.Object({ files: T.Array(attachmentInfo) }),
@@ -106,7 +69,6 @@ export const BridgeReplies = {
   "theme.save": T.Object({}),
   runtimeRecovered: T.Object({}),
   ready: T.Object({}),
-  status: T.Object({}),
   failed: T.Object({}),
   runtimeError: T.Object({}),
 } satisfies Record<BridgeMethod, T.TObject>;

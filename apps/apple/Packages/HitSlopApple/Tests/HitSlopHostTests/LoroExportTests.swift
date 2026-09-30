@@ -17,7 +17,7 @@ extension LoroClientTests {
     session.load()
     try await session.waitUntilReady()
     do {
-      _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("PDF color"))
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("PDF color"))
       for hex in ["e98996", "80aabb"] {
         _ = try await DocumentCommand.run(method: "theme.set", url: root,
           themeValues: JSONSerialization.data(withJSONObject: ["surface": "#" + hex]))

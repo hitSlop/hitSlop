@@ -7,7 +7,7 @@ use loro::{cursor::Side, event::Diff, TextDelta, UpdateOptions};
 /// Bounds the diff; past it the script falls back to a single caret-hinted splice.
 const SCRIPT_TIMEOUT_MS: f64 = 50.0;
 
-pub(crate) fn text_at(
+fn text_at(
     doc: &LoroDoc,
     schema: &Node,
     path: &[Segment],
@@ -20,7 +20,7 @@ pub(crate) fn text_at(
     }
 }
 /// The Unicode scalar offset of a UTF-16 offset, refusing one inside a surrogate pair.
-pub(crate) fn unicode_offset(text: &str, utf16: usize) -> Result<usize> {
+fn unicode_offset(text: &str, utf16: usize) -> Result<usize> {
     let mut n = 0;
     for (i, c) in text.chars().enumerate() {
         if n == utf16 {
@@ -156,7 +156,7 @@ impl Document {
             }
             (version_token(&branch.oplog_frontiers()), positions)
         };
-        let publication = self.publish(vec![])?;
+        let publication = self.publish()?;
         Ok(TextEdit {
             sequence: self.sequence,
             authored,

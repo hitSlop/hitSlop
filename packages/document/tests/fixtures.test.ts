@@ -3,6 +3,7 @@
 import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { OwnerDocument } from "../src/owner/document";
+import { wasmTransport } from "../src/owner/transport";
 import { fromDescriptor } from "../src/schema";
 
 const root = new URL("../../../tests/fixtures/", import.meta.url);
@@ -17,13 +18,7 @@ for (const name of (await readdir(root)).sort()) {
     const descriptor = await at("document/state.schema.json");
     const core = wasm.WasmDocument.create(JSON.stringify(descriptor), JSON.stringify(await at("document/initial.json")));
     try {
-      const doc = await OwnerDocument.open(fromDescriptor(descriptor), {
-        state: async () => JSON.parse(core.snapshot()),
-        apply: async ({ batch }) => JSON.parse(core.apply(JSON.stringify(batch))),
-        text: async (request) => JSON.parse(core.text(JSON.stringify(request))),
-        releaseDraft: async (id) => core.release_draft(id),
-        flush: async () => {},
-      });
+      const doc = await OwnerDocument.open(fromDescriptor(descriptor), wasmTransport(core));
       expect(doc.current).toEqual(await at("expected.json"));
       const scenario = await at("scenario.json");
       for (const { path, method, args } of scenario.handles) {

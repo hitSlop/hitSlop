@@ -80,20 +80,15 @@ For an explicit storage checkpoint, use `bun slop compact /path/to/List.slop`. I
 
 ## Operations
 
-`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names are strings, rows and tree nodes are `{"id": "$id from get"}`, record entries are `{"key": "A1"}`, and scalar list elements are `{"index": 3}`. Never use array positions as row identity.
+`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names are strings and rows are `{"id": "$id from get"}`. Never use array positions as row identity. Both print `{ids, sequence, value}`; `ids` lists inserted row IDs.
 
 | Operation | Shape | Targets |
 | --- | --- | --- |
-| `set` | `{"type":"set","path":[...],"value":v}` | Any scalar, including a record entry or list element |
-| `clear` | `{"type":"clear","path":[...]}` | Optional fields and record entries |
-| `assign` | `{"type":"assign","path":[...],"value":v}` | Write whole values; row lists and trees can only be initialized when absent, including inside objects/records |
-| `text.replace` | `{"type":"text.replace","path":[...],"value":"..."}` | Text and rich text |
-| `text.splice` | `{"type":"text.splice","path":[...],"index":0,"delete":0,"insert":"..."}` | Text and rich text (UTF-16 offsets) |
-| `text.mark` / `text.unmark` | `{"type":"text.mark","path":[...],"start":0,"end":5,"key":"bold","value":true}` | Rich text marks declared in the schema |
-| `insert` | `{"type":"insert","path":[...],"value":v,"destination":{"after":"$id"}}` | Row lists and trees (returns the new `$id` in state); scalar lists take `"index"` |
-| `remove` | `{"type":"remove","path":[...],"id":"$id"}` | Rows and tree nodes; scalar lists take `"index"` and optional `"count"` |
-| `move` | `{"type":"move","path":[...],"id":"$id","destination":{"before":"$id"}}` | Rows; tree nodes also accept `{"parent":"$id"}` or `{"parent":null}`; scalar lists take `"from"` and `"to"` |
-| `increment` | `{"type":"increment","path":[...],"value":1}` | Counters (negative values decrement) |
+| `set` | `{"type":"set","path":[...],"value":v}` | Booleans, and whole text fields (the text as it is when the owner applies it) |
+| `insert` | `{"type":"insert","path":[...],"value":v,"id":"optional","at":{"after":"$id"}}` | Object-row lists; supply `id` for an insert you may retry |
+| `remove` | `{"type":"remove","path":[...],"id":"$id"}` | Rows |
+| `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
+| `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
 
 ## Full JSON import
 
@@ -160,7 +155,7 @@ not write another checkpoint.
 Files and encoded requests are bounded at 16 MiB, nesting at 128 levels, and
 candidate Loro checkpoints at the 32 MiB limit on stored checkpoint plus update bytes. Counter
 targets that cannot be represented exactly by a finite increment reject rather
-than silently round. Large text replacements use a Unicode-safe splice.
+than silently round.
 
 JSON contains attachment references, not blob bytes. Copy blobs with
 `attachments export` and `attachments import`, then retain their content IDs

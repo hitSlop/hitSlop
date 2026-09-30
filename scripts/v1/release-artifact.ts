@@ -76,13 +76,7 @@ try {
     "apply",
     mutation,
     "--op",
-    JSON.stringify({
-      type: "splice",
-      path: ["title"],
-      index: 0,
-      delete: 0,
-      insert: "Installed helper verified",
-    }),
+    JSON.stringify({ type: "set", path: ["title"], value: "Installed helper verified" }),
   ]);
   assert.ok(JSON.parse(await run(["get", mutation])).title.startsWith("Installed helper verified"));
   console.log(

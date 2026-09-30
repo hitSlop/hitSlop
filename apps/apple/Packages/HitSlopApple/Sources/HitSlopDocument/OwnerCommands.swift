@@ -9,26 +9,46 @@ extension DocumentOwner {
     return PlatformContract.valid(value, against: schema)
   }
 
-  /// The bridge accepts validated envelopes; Rust remains the semantic authority.
-  @MainActor func bridge(_ args: [String: Any]) async throws -> [String: Any] {
-    guard Self.validates(args, contract: "request"), let method = args["method"] as? String else {
-      throw failure("Invalid owner request")
+  /// Page requests. Envelopes are validated here; Rust remains the semantic authority.
+  /// Every reply carries the request `id`; failures carry a typed code, never a guess.
+  @MainActor func bridge(_ args: [String: Any]) async -> [String: Any] {
+    let id = args["id"] as? String ?? "invalid"
+    guard Self.validates(args, contract: "request"), let method = args["method"] as? String,
+      let view = args["view"] as? String
+    else { return ["id": id, "ok": false, "code": "rejected", "error": "Invalid page request"] }
+    do {
+      switch method {
+      case "open":
+        let opened = try await open(view: view)
+        return ["id": id, "ok": true, "state": try JSONSerialization.jsonObject(with: Data(opened.state.utf8)),
+          "savedSequence": opened.savedSequence, "saveFailure": opened.saveFailure as Any? ?? NSNull()]
+      case "apply":
+        let batch = String(decoding: try JSONSerialization.data(withJSONObject: args["batch"]!), as: UTF8.self)
+        let applied = try await apply(batch: batch, view: view)
+        return ["id": id, "ok": true, "sequence": applied.sequence, "ids": applied.ids]
+      case "text":
+        let request = String(decoding: try JSONSerialization.data(withJSONObject: args["request"]!), as: UTF8.self)
+        let edit = try await editText(request, view: view)
+        return ["id": id, "ok": true, "sequence": edit.sequence, "authored": edit.authored,
+          "selectionStart": edit.selectionStart, "selectionEnd": edit.selectionEnd]
+      default:
+        try await flush()
+        return ["id": id, "ok": true]
+      }
+    } catch {
+      return ["id": id, "ok": false, "code": Self.pageCode(error, flushing: method == "flush"),
+        "error": error.localizedDescription]
     }
-    if let requested = args["session"] as? String, requested != session { throw failure("session_changed") }
-    switch method {
-    case "state": return ["state": try JSONSerialization.jsonObject(with: Data(await state().utf8))]
-    case "flush": try await flush(); return [:]
-    case "apply":
-      let batch = String(decoding: try JSONSerialization.data(withJSONObject: args["batch"]!), as: UTF8.self)
-      let reply = try await apply(session: args["session"] as! String, batch: batch)
-      return ["publication": try JSONSerialization.jsonObject(with: Data(reply.utf8))]
-    case "text":
-      let request = try JSONSerialization.data(withJSONObject: args["request"]!)
-      let reply = try await text(String(decoding: request, as: UTF8.self))
-      return ["publication": try JSONSerialization.jsonObject(with: Data(reply.utf8))]
-    case "releaseDraft": try await releaseDraft(args["draft"] as! String); return [:]
-    default: throw failure("Unsupported owner method")
-    }
+  }
+  /// `rejected`, `owner_replaced` and `closing` were not applied; the others leave the
+  /// page to read state before relying on the outcome.
+  static func pageCode(_ error: Error, flushing: Bool) -> String {
+    if error is OwnerReplaced { return "owner_replaced" }
+    if error.isOwnerInvalidation { return "owner_invalidated" }
+    if case CoreError.Rejected? = error as? CoreError { return "rejected" }
+    if error is SaveFailure || flushing { return "save_failed" }
+    if error.localizedDescription.contains("closing") || error.localizedDescription.contains("closed") { return "closing" }
+    return "unknown_outcome"
   }
 
   @MainActor func request(_ request: SocketRequest) async -> SocketReply {
@@ -45,14 +65,12 @@ extension DocumentOwner {
       if request.method == .apply || request.method == .batch {
         let intents = request.method == .apply ? [request.json["op"]!] : request.json["ops"]!
         let batch: [String: Any] = ["intents": intents]
-        guard Self.validates(batch, contract: "command") else {
-          return .init(ok: false, epoch: epoch, error: "Invalid contract-4 command", code: .rejected)
+        guard Self.validates(batch, contract: "batch") else {
+          return .init(ok: false, epoch: epoch, error: "Invalid document command", code: .rejected)
         }
-        let reply = try await apply(session: session,
-          batch: String(decoding: JSONSerialization.data(withJSONObject: batch), as: UTF8.self), current: true)
-        let publication = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any]
-        applied = (publication?["ids"] as? [String] ?? [],
-          (publication?["patch"] as? [String: Any])?["sequence"] as? Int ?? 0)
+        let result = try await apply(batch: String(decoding: JSONSerialization.data(withJSONObject: batch), as: UTF8.self),
+          epoch: request.json["epoch"] as? String)
+        applied = (result.ids, result.sequence)
       }
       accepted = true
       if request.method == .compact { try await compact() }
@@ -96,6 +114,9 @@ extension DocumentOwner {
       default: return .init(ok: false, epoch: epoch, error: "Unsupported owner command", code: .rejected)
       }
     } catch {
+      if !accepted, error is OwnerReplaced {
+        return .init(ok: false, epoch: epoch, error: error.localizedDescription, code: .sessionChanged)
+      }
       if !accepted, case CoreError.Rejected = error {
         return .init(ok: false, epoch: epoch, error: error.localizedDescription, code: .rejected)
       }

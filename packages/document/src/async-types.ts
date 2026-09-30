@@ -5,9 +5,7 @@ export type AsyncHandle<H> = {
   readonly [K in keyof H]: H[K] extends (...args: infer A) => infer R
     ? K extends "item" | "entry"
       ? (...args: A) => AsyncHandle<R>
-      : K extends "preview"
-        ? H[K]
-        : (...args: A) => Promise<R>
+      : (...args: A) => Promise<R>
     : AsyncHandle<H[K]>;
 };
 export type AsyncAt = <N extends Node>(value: Snapshot<N>) => AsyncHandle<Handle<N>>;

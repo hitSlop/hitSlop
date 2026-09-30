@@ -29,15 +29,15 @@ extension LoroClientTests {
       // Only the conformance schema has a title; template specimens get generic checks.
       let conformance = record["kind"] as? String != "template"
       if conformance {
-        _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Live command"))
+        _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("Live command"))
         _ = try await DocumentCommand.run(method: "theme.set", url: root, themeValues: Data(##"{"accent":"#654321"}"##.utf8))
         _ = try await DocumentCommand.run(method: "compact", url: root)
       }
       try await controller.session.finish()
       if conformance {
-        _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Closed command"))
+        _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("Closed command"))
         _ = try await DocumentCommand.run(method: "compact", url: root)
-        _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Candidate update"))
+        _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("Candidate update"))
       }
       // Renders run the authored app (including its self-checks) against a snapshot:
       // saved state is byte-for-byte what a later read returns.

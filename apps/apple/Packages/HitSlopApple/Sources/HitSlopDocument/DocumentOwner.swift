@@ -10,7 +10,9 @@ public final class DocumentOwner: @unchecked Sendable {
   let storage: Storage
   let queue = DispatchQueue(label: "hitslop.owner")
   private var core: NativeDocument
-  public private(set) var session: String
+  /// The attached page, set by `open`. Page requests name it; a request from a replaced
+  /// page is refused with `owner_replaced` and never applied.
+  private var view: String?
   /// Names this owner's live state for socket clients. Minted here, never by the core, and
   /// rotated when unsaved edits are discarded, so a client's queued request cannot apply
   /// to replaced state.
@@ -18,7 +20,9 @@ public final class DocumentOwner: @unchecked Sendable {
   public let documentID: String
   var onPublication: (@Sendable (String) -> Void)?
   var onSaveStatus: (@Sendable (String, SaveFailure?, Int) -> Void)?
+  /// The core's publication sequence, and the last one the durable state covers.
   private var sequence = 0
+  private var savedSequence = 0
   private var autosave: DispatchWorkItem?
   private let schemaKey: String
   private var generation: Int64
@@ -50,6 +54,7 @@ public final class DocumentOwner: @unchecked Sendable {
     let epoch: Int
     let attempt: String
     let target: Int
+    let sequence: Int
     let version: String
     let checkpoint: Bool
     let bytes: Int64
@@ -98,9 +103,8 @@ public final class DocumentOwner: @unchecked Sendable {
         stored = (0, 0, Int64(checkpoint.count))
       }
       savedVersion = try core.version()
-      let frame = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
-      session = frame["session"] as! String
-      sequence = frame["sequence"] as! Int
+      sequence = Int(try core.sequence())
+      savedSequence = sequence
     } catch {
       storage.close()
       throw error
@@ -139,57 +143,91 @@ public final class DocumentOwner: @unchecked Sendable {
   private func checkPoisoned(_ error: Error) {
     if case CoreError.Invalidated = error {
       invalidated = true
-      publishStatus("save-failed", .invalidated, sequence)
+      publishStatus("save-failed", .invalidated)
     }
   }
   private func requireEditable() throws {
     guard storage.mode == .document else { throw failure("Read-only capture cannot edit") }
     guard !closing else { throw failure("Document is closing") }
-    guard !discarding else { throw failure("session_changed") }
+    guard !discarding else { throw OwnerReplaced() }
+  }
+  /// A request captured before a discard (new epoch) or from a replaced page (new view)
+  /// must not apply to state it never saw.
+  private func requireCurrent(epoch: String?, view: String?) throws {
+    if let epoch, epoch != self.epoch { throw OwnerReplaced() }
+    if let view, view != self.view { throw OwnerReplaced() }
   }
 
   public func state() async throws -> String { try await enqueue { try self.core.snapshot() } }
 
-  /// Applies one batch. Callers never resend a request; a lost reply is resolved by
-  /// reading state, never by replaying.
-  public func apply(session: String, batch: String, current: Bool = false) async throws -> String {
-    try await enqueue {
-      try self.requireEditable()
-      guard self.session == session else { throw failure("session_changed") }
-      guard batch.utf8.count <= 4 * 1024 * 1024 else { throw failure("Request exceeds size limit") }
-      let reply = try current ? self.core.commandCurrent(batchJson: batch) : self.core.apply(batchJson: batch)
-      self.didEdit(reply)
-      return reply
+  public struct Applied: Sendable {
+    public let sequence: Int
+    public let ids: [String]
+  }
+  public struct TextEdit: Sendable {
+    public let sequence: Int
+    public let authored: String
+    public let selectionStart: Int
+    public let selectionEnd: Int
+  }
+  public struct Opened: Sendable {
+    public let state: String
+    public let savedSequence: Int
+    public let saveFailure: String?
+  }
+
+  /// Attaches a page: the snapshot and the push stream start at the same owner-queue
+  /// point, so the page misses and repeats nothing.
+  func open(view: String) async throws -> Opened {
+    try await enqueue(allowInvalidated: true) {
+      self.view = view
+      return Opened(state: try self.core.snapshot(), savedSequence: self.savedSequence,
+        saveFailure: self.saveFailure?.localizedDescription)
     }
   }
 
-  public func text(_ request: String) async throws -> String {
+  /// Applies one batch. Callers never resend a request; a lost reply is resolved by
+  /// reading state, never by replaying.
+  public func apply(batch: String, epoch: String? = nil, view: String? = nil) async throws -> Applied {
     try await enqueue {
       try self.requireEditable()
-      let reply = try self.core.text(requestJson: request)
-      self.didEdit(reply)
-      return reply
+      try self.requireCurrent(epoch: epoch, view: view)
+      guard batch.utf8.count <= 4 * 1024 * 1024 else { throw failure("Request exceeds size limit") }
+      let result = try self.core.applyBatch(batchJson: batch)
+      self.didEdit(result.publication, sequence: Int(result.sequence))
+      return Applied(sequence: Int(result.sequence), ids: result.ids)
     }
   }
-  public func releaseDraft(_ draft: String) async throws {
-    try await enqueue { try self.core.releaseDraft(draft: draft) }
+
+  /// A page text field went from `from` at `base` to `to`; the core merges it.
+  func editText(_ request: String, view: String? = nil) async throws -> TextEdit {
+    try await enqueue {
+      try self.requireEditable()
+      try self.requireCurrent(epoch: nil, view: view)
+      let result = try self.core.editText(requestJson: request)
+      if let publication = result.publication { self.didEdit(publication, sequence: Int(result.sequence)) }
+      return TextEdit(sequence: Int(result.sequence), authored: result.authored,
+        selectionStart: Int(result.selectionStart), selectionEnd: Int(result.selectionEnd))
+    }
   }
-  private func publishStatus(_ status: String, _ error: SaveFailure?, _ sequence: Int) {
+  /// Reports status with the last saved publication sequence; the page counts anything
+  /// after it as unsaved.
+  private func publishStatus(_ status: String, _ error: SaveFailure?) {
     if status == "save-failed" { saveFailure = error }
     else if status == "saved" { saveFailure = nil }
-    onSaveStatus?(saveFailure == nil ? status : "save-failed", saveFailure, sequence)
+    onSaveStatus?(saveFailure == nil ? status : "save-failed", saveFailure, savedSequence)
   }
   func republishStatus() async throws {
     try await enqueue(allowInvalidated: true) {
-      self.onSaveStatus?(self.saveFailure == nil ? (self.edits > self.savedEdits ? "pending" : "saved") : "save-failed", self.saveFailure, self.sequence)
+      self.onSaveStatus?(self.saveFailure == nil ? (self.edits > self.savedEdits ? "pending" : "saved") : "save-failed", self.saveFailure, self.savedSequence)
     }
   }
-  private func didEdit(_ publication: String) {
+  private func didEdit(_ publication: String, sequence next: Int) {
     edits += 1
-    if let reply = try? JSONSerialization.jsonObject(with: Data(publication.utf8)) as? [String: Any], let patch = reply["patch"] as? [String: Any], let next = patch["sequence"] as? Int { sequence = next }
+    sequence = next
     onPublication?(publication)
     // Status changes once when the document becomes dirty, not on every keystroke.
-    if edits == savedEdits + 1 { publishStatus("pending", nil, sequence) }
+    if edits == savedEdits + 1 { publishStatus("pending", nil) }
     autosave?.cancel()
     let task = DispatchWorkItem { [weak self] in
       guard let self, !self.closed, !self.invalidated else { return }
@@ -213,7 +251,8 @@ public final class DocumentOwner: @unchecked Sendable {
       let version = try core.version()
       if version == savedVersion && !forceCheckpoint {
         savedEdits = edits
-        publishStatus("saved", nil, sequence)
+        savedSequence = sequence
+        publishStatus("saved", nil)
         return settle(checkpointed: false)
       }
       let job = try makeJob(version: version, forceCheckpoint: forceCheckpoint)
@@ -238,14 +277,14 @@ public final class DocumentOwner: @unchecked Sendable {
       let checkpoint = try core.checkpoint()
       // SQLite also bounds the complete checkpoint row (including its schema key).
       if Int64(checkpoint.count + schemaKey.utf8.count + 512) <= Storage.maximumBytes {
-        return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, version: version, checkpoint: true, bytes: Int64(checkpoint.count),
+        return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, sequence: sequence, version: version, checkpoint: true, bytes: Int64(checkpoint.count),
           generation: generation, write: .checkpoint(checkpoint, schemaKey: schemaKey))
       } else if forceCheckpoint || !canAppend {
         throw SaveFailure.full
       }
       // Optional maintenance must not prevent an update that still fits the log.
     }
-    return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, version: version, checkpoint: false, bytes: Int64(updates.count),
+    return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, sequence: sequence, version: version, checkpoint: false, bytes: Int64(updates.count),
       generation: generation, write: .append(updates))
   }
   /// A successful SQLite commit may lose its reply. The stored attempt token says whether
@@ -279,9 +318,10 @@ public final class DocumentOwner: @unchecked Sendable {
     generation = observed
     savedVersion = job.version
     savedEdits = max(savedEdits, job.target)
+    savedSequence = max(savedSequence, job.sequence)
     stored = job.checkpoint ? (0, 0, job.bytes) : (stored.rows + 1, stored.updateBytes + job.bytes, stored.checkpointBytes)
     saveFailure = nil
-    publishStatus(edits > savedEdits ? "pending" : "saved", nil, sequence)
+    publishStatus(edits > savedEdits ? "pending" : "saved", nil)
     settle(checkpointed: job.checkpoint)
   }
   /// Settles a lost reply before the next write, which must build on the right generation.
@@ -309,7 +349,7 @@ public final class DocumentOwner: @unchecked Sendable {
     }
   }
   private func fail(_ failure: SaveFailure, upTo target: Int) {
-    publishStatus("save-failed", failure, sequence)
+    publishStatus("save-failed", failure)
     waiters.removeAll { waiter in
       guard waiter.target <= target else { return false }
       waiter.continuation.resume(throwing: failure)
@@ -332,7 +372,6 @@ public final class DocumentOwner: @unchecked Sendable {
     guard storage.mode == .document else { throw failure("Read-only capture cannot compact") }
     try await write(checkpoint: true)
   }
-  public func detachRenderer() async throws { try await enqueue { try self.core.detachRenderer() } }
 
   /// Drops unsaved edits and reloads saved state. The epoch fences a write in flight: it
   /// finishes on the persistence queue before the reload reads, and its reply is ignored.
@@ -354,13 +393,13 @@ public final class DocumentOwner: @unchecked Sendable {
         self.uncertainWrite = nil
         self.writing = false
         self.savedVersion = try restored.core.version()
-        let frame = try JSONSerialization.jsonObject(with: Data(restored.core.snapshot().utf8)) as! [String: Any]
-        self.session = frame["session"] as! String
         self.epoch = UUID().uuidString
-        self.sequence = frame["sequence"] as! Int
+        self.view = nil
+        self.sequence = Int(try restored.core.sequence())
+        self.savedSequence = self.sequence
         self.savedEdits = self.edits
         self.discarding = false
-        self.publishStatus("saved", nil, self.sequence)
+        self.publishStatus("saved", nil)
         self.pump()
       }
     } catch {
@@ -456,4 +495,10 @@ extension Error {
     if case CoreError.Invalidated? = self as? CoreError { return true }
     return localizedDescription.contains("Owner invalidated")
   }
+}
+
+/// The page or epoch a request was captured for has been replaced (discard, reload or a
+/// new view); the request was not applied.
+public struct OwnerReplaced: LocalizedError {
+  public var errorDescription: String? { "owner_replaced: the document was reloaded; this edit was not applied" }
 }

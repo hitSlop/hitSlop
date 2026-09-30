@@ -8,7 +8,7 @@
   let checkbox: HTMLInputElement;
   onMount(() => {
     (globalThis as any).contractTest = async () => {
-      await doc.fields.title.replace("Accepted 😀");
+      await doc.fields.title.set("Accepted 😀");
       if (doc.current.title !== "Accepted 😀") throw new Error("Acceptance did not publish");
       await tick();
       if (shown.textContent !== "Accepted 😀") throw new Error("Svelte did not render publication");

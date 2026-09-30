@@ -54,7 +54,7 @@ final class StorageGate: @unchecked Sendable {
   }
 
   func edit(_ owner: DocumentOwner) async throws {
-    _ = try await owner.apply(session: owner.session, batch: increment)
+    _ = try await owner.apply(batch: increment)
   }
 
   /// True when `work` finishes before the deadline. The deadline only bounds a failure;

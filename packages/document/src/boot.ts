@@ -36,8 +36,9 @@ async function openDocument(native: boolean) {
   const [config, descriptor, initial, theme] = await Promise.all([
     native
       ? hostCall({ method: "config" })
-      : ({ epoch: crypto.randomUUID(), documentID: crypto.randomUUID(), readOnly: false } as {
+      : ({ epoch: crypto.randomUUID(), view: crypto.randomUUID(), documentID: crypto.randomUUID(), readOnly: false } as {
           epoch: string;
+          view: string;
           documentID: string;
           readOnly: boolean;
           presentation?: PresentationStage;
@@ -49,7 +50,7 @@ async function openDocument(native: boolean) {
   const doc = await Document.open(
     fromDescriptor(descriptor),
     native
-      ? nativeTransport(config.documentID, config.readOnly)
+      ? nativeTransport(config.documentID, config.view, config.readOnly)
       : await browserTransport(descriptor, initial),
     (error, kind = "operation") => {
       if (native)
@@ -109,8 +110,8 @@ export function createContext(
       registerTarget: capture.registerTarget,
     }),
     attachments: Object.freeze({
-      import: (file: File, options: Parameters<ReturnType<typeof ownerAttachments>["import"]>[1]) =>
-        attachments.import(file, options),
+      import: ((file, reference) =>
+        attachments.import(file, reference as any)) as SlopContext["attachments"]["import"],
       read: (id: string, options?: { type?: string }) => attachments.read(id, options),
       list: () => attachments.list(),
     }),
@@ -178,18 +179,7 @@ export async function boot() {
       capture,
       recovered: native ? () => hostCall({ method: "runtimeRecovered" }) : undefined,
     });
-    if (native) {
-      (globalThis as any).__ownerEvents = {
-        publication: (value: import("@hitslop/schema/owner").OwnerPublication) =>
-          doc.receive(value),
-        status: (
-          status: "pending" | "saved" | "save-failed",
-          error: string | null,
-          sequence: number,
-        ) => doc.saved(status, error, sequence),
-      };
-      await hostCall({ method: "ready" });
-    }
+    if (native) await hostCall({ method: "ready" });
   } catch (error) {
     globalThis.document.body.textContent = `Could not open this document: ${String(error)}`;
     if (native) await hostCall({ method: "failed", error: String(error) }).catch(() => {});

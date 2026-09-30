@@ -1,6 +1,6 @@
 # Host-owned reset: plan, deletions and remaining spikes
 
-Status (2026-09-29): steps 1–5 are implemented. Step 1 made the Quick Checklist and
+Status (2026-09-29): steps 1–6 are implemented. Step 1 made the Quick Checklist and
 SDK meet the 1k targets (see §7). Step 2 deleted the legacy machinery, replaced runtime
 negotiation with one bundled page shell, and shipped the fresh storage schema with
 attempt-token recovery (bug 1). Step 3 split the owner queue from the persistence queue
@@ -19,7 +19,14 @@ Retry Save and Discard on the owner; startup failure keeps the lock; CLI edits r
 `{ids, sequence, value}`. Still open: view tokens for queued page work (they arrive
 with the step-6 bridge), and a release check that the app and helper embed the same
 core build (needs the app target to reference `DocumentOwner.coreBuildID`, verified
-in an app build). Steps 6–7 remain.
+in an app build). Step 6 cut the wire over: the core has no drafts, sessions,
+`command_current` or `splice` (text is `edit_text` or a whole-field `set`); publications
+are `{previous, sequence, version, ops, issues}`; the page speaks `open`/`apply`/`text`/
+`flush` with a view token and receives one ordered push stream (`__hitslop.publish`),
+resyncing from a fresh snapshot on any gap (S-D); the SDK has a sequence-ordered store,
+cached handles, a stateless text binding, one write queue, and a barrier that drains
+pending work instead of joining a flush (bug 3); attachments import through a collector.
+1k rows: open 0.6 s, checkbox p95 14 ms, drain 20 ms. Step 7 remains.
 
 Once work starts, this document supersedes the migration machinery in
 [LoroRustCutover.md](../archive/docs/LoroRustCutover.md) and [LoroHostPlan.md](../archive/docs/LoroHostPlan.md). The

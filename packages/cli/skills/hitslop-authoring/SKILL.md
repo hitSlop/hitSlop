@@ -11,7 +11,7 @@ Read manifest.json first. Author schema.ts with defineDocument/s, initial.ts and
 
 Components call `const doc = useDocument(schema)`. Read immutable `doc.current`; ordinary handles return promises: `await doc.at(row).done.set(true)` and `const {id} = await doc.fields.items.insert(...)`. `list.item(id)` addresses a row directly. `await doc.change(tx => { ... })` collects synchronous tx writes once into one atomic batch; tx insert returns an ID immediately for later tx writes. Do not use async/nested collectors or ordinary document writes inside them. A write resolves after acceptance and local publication, before durability or necessarily a DOM update; use `await tick()` for the DOM and `await doc.flush()` for saving.
 
-`bindText` maintains local Unicode drafts and composition; `bindValue` submits booleans asynchronously. Boolean previews stay local until set/flush. Flush drains drafts, previews and writes; unfinished composition blocks close/export. Keep composer input until insert succeeds, preserve newer input, and display success notices only after acceptance. Handle rejected promises; the runtime reports command failures centrally. The host owns save-failure and retry UI.
+`bindText` keeps the user's text in the field and sends each change for the owner to merge, preserving Unicode, the caret and composition; `bindValue` submits booleans asynchronously. Text handles write whole fields with `set(value)`. Flush sends unsent text and waits for pending writes; close/export commit a composition in progress. Import attachments with `attachments.import(file, (tx, ref) => tx.fields.photo.set(ref.id))`: the reference is written in the same step as the stored blob. Keep composer input until insert succeeds, preserve newer input, and display success notices only after acceptance. Handle rejected promises; the runtime reports command failures centrally. The host owns save-failure and retry UI.
 
 Never replace an existing identity-bearing list through a containing object. Use insert/remove/move. Counter decrement is increment(-n); there is no concurrent reset API. Checkpoints retain history.
 
@@ -51,5 +51,5 @@ a Blob; `list()` returns IDs and sizes. References are ordinary schema scalars,
 never base64 document values. Validate app formats first. Limits: 10 MiB/file,
 100 MiB and 256 files/document. HTTPS data/media requests are allowed; CORS applies.
 
-Keep high-frequency or transient values (drag positions, playback, timers) in local state or `handle.preview()`, not saved fields; use attachments for binary data. Documents are capped at 32 MiB.
+Keep high-frequency or transient values (drag positions, playback, timers) in local state, not saved fields; use attachments for binary data. Documents are capped at 32 MiB.
 Counter values read `number | null`: `null` flags invalid stored contributions or merged overflow; render it as unavailable and disable increments.

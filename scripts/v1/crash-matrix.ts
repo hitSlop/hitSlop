@@ -37,7 +37,7 @@ export async function runCrashMatrix(hostCheck = false) {
       const root = join(folder, `${phase.replace(":", "-")}.slop`);
       await cp(fixture, root, { recursive: true });
       const seeded = await native(binary, [
-        "apply", root, "--op", JSON.stringify({ type: "splice", path: ["title"], index: 0, delete: 0, insert: "Acknowledged " }),
+        "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Acknowledged" }),
       ]);
       assert.equal(seeded.code, 0, seeded.error);
       const marker = join(folder, `${phase.replace(":", "-")}.paused`);
@@ -73,12 +73,12 @@ export async function runCrashMatrix(hostCheck = false) {
         }
         const child = Bun.spawn(
           [process.execPath, "packages/cli/src/cli.ts", "apply", root, "--op",
-            JSON.stringify({ type: "splice", path: ["title"], index: 0, delete: 0, insert: "Native acknowledged" })],
+            JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
           { stdout: "pipe", stderr: "pipe", env: { ...process.env, HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? binary } },
         );
         const [out, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
         assert.equal(code, 0, error);
-        assert.ok(JSON.parse(out).title.startsWith("Native acknowledged"));
+        assert.ok(JSON.parse(out).value.title.startsWith("Native acknowledged"));
       } finally {
         host.kill("SIGKILL");
         await host.exited;

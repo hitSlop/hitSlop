@@ -20,7 +20,6 @@ pub enum Intent {
     Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor> },
     Remove { path: Vec<Segment>, id: String },
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
-    Splice { path: Vec<Segment>, base: String, index: usize, delete: usize, insert: String },
     Increment { path: Vec<Segment>, by: i64 },
 }
 impl Intent {
@@ -29,17 +28,12 @@ impl Intent {
         Self::Insert { path, .. } => path,
         Self::Remove { path, .. } => path,
         Self::Move { path, .. } => path,
-        Self::Splice { path, .. } => path,
         Self::Increment { path, .. } => path,
     } }
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Batch { pub intents: Vec<Intent> }
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(non_snake_case)]
-pub struct TextRequest { pub session: String, pub draft: String, pub sequence: usize, pub parent: Option<usize>, pub base: String, pub path: Vec<Segment>, pub index: usize, pub delete: usize, pub insert: String, pub selectionStart: usize, pub selectionEnd: usize }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

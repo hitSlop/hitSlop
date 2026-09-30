@@ -55,7 +55,7 @@ extension LoroClientTests {
       defer { try? FileManager.default.removeItem(at: root) }
       var operations: [[String: Any]] = name == "washer"
         ? [["type": "increment", "path": ["count"], "by": 7]]
-        : [["type": "splice", "path": ["title"], "index": 0, "delete": 0, "insert": "Saved opening benchmark"]]
+        : [["type": "set", "path": ["title"], "value": "Saved opening benchmark"]]
       if name == "large-checklist" {
         operations += (0..<1000).map { index in
           ["type": "insert", "path": ["tasks"],
@@ -276,7 +276,7 @@ extension LoroClientTests {
       export default { mount(ctx) {
         ctx.document.subscribe(() => { throw new Error('observer failure'); });
         globalThis.observerProbe = async () => {
-          ctx.document.change(tx => tx.fields.title.replace('Saved despite observer failure'));
+          ctx.document.change(tx => tx.fields.title.set('Saved despite observer failure'));
           await ctx.document.flush();
           return ctx.document.status;
         };

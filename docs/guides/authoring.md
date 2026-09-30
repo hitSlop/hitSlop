@@ -49,7 +49,7 @@ Components call `useDocument(schema)`. Read immutable `doc.current`; write throu
 ```ts
 await doc.at(task).done.set(!task.done);
 const { id } = await doc.fields.tasks.insert({ text: "New task", done: false });
-await doc.fields.tasks.item(id).text.replace("Revised task");
+await doc.fields.tasks.item(id).text.set("Revised task");
 await doc.fields.cups.decrement(); // increment(-1), not a reset
 await doc.change(tx => {
   for (const task of finished) tx.at(task).done.set(true);
@@ -62,7 +62,7 @@ Ordinary writes resolve after acceptance and local publication. They do not prom
 
 `doc.at(value)` accepts an original snapshot object, including a row or nested object. `doc.fields.tasks.item(id)` provides the by-ID handle. Key rows by `$id`, never array position. Unchanged snapshots retain object identity. Edit identity-bearing lists through insert/remove/move; containing-object replacement is not supported.
 
-Use `bindText` for plain text inputs and `bindValue` for boolean controls. Text drafts preserve Unicode, selection and composition ancestry. Close/export refuse while composition is active. Boolean `preview(value)` stays local until set/flush; a failed commit retains the preview. Save failures retain accepted edits and ownership for native retry. Never write SQLite or maintain a second JSON document.
+Use `bindText` for plain text inputs and `bindValue` for boolean controls. A text binding keeps the user's text in the field and sends each change as "was X, is now Y"; the owner merges it with concurrent edits and keeps the caret, including through IME composition. Switching a binding to another row, or unmounting it, sends its unsent text first; close and export commit a composition in progress. A text handle's `set(value)` replaces the whole field as it is when the owner applies it. Save failures retain accepted edits and ownership for native retry. Never write SQLite or maintain a second JSON document.
 
 Keep transient UI state in Svelte `$state`. Every component's `useDocument(schema)` shares the mounted app adapter; removing one consumer does not disconnect the others.
 
@@ -73,7 +73,7 @@ document-attached file picker. Cancellation leaves the document unchanged.
 Background rendering and closed CLI commands never present file pickers. Validate
 the selected file in authored code before storing it.
 
-Keep the document for state worth saving. High-frequency or transient values (drag positions, playback progress, timers, hover state) belong in local component state or `handle.preview()`, which commits only at flush; writing them on every frame grows history for no benefit. Store binary data as attachments, never inside fields. Stored checkpoint plus updates are capped at 32 MiB; a failed save retains live edits and leaves the last durable representation intact.
+Keep the document for state worth saving. High-frequency or transient values (drag positions, playback progress, timers, hover state) belong in local component state; writing them on every frame grows history for no benefit. Store binary data as attachments, never inside fields. Stored checkpoint plus updates are capped at 32 MiB; a failed save retains live edits and leaves the last durable representation intact.
 
 Import `attachments` from `@hitslop/document/attachments`. Save a browser File with
 `await attachments.import(file, { commit: ref => doc.change(tx => { /* store ref.id using supported fields */ }) })`.

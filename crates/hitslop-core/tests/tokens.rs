@@ -30,9 +30,8 @@ fn foreign_and_malformed_bases_are_refused_without_panicking() {
     let foreign = two_peers().version();
     let before = view(&d);
     for base in [foreign.as_str(), "zz", "", "00"] {
-        let request = json!({"session":before["session"],"draft":"typing","sequence":1,"base":base,"path":["title"],
-            "index":0,"delete":0,"insert":"x","selectionStart":1,"selectionEnd":1});
-        let code = d.text(&request.to_string()).unwrap_err().code;
+        let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcx","selectionStart":4,"selectionEnd":4});
+        let code = d.edit_text(&request.to_string()).unwrap_err().code;
         assert!(["stale_base", "invalid_version"].contains(&code.as_str()), "{base}: {code}");
         let code = d.export_since(base).unwrap_err().code;
         assert!(["stale_base", "invalid_version"].contains(&code.as_str()), "{base}: {code}");

@@ -130,26 +130,8 @@ impl NativeDocument {
     pub fn version(&self) -> Result<String, CoreError> {
         self.call(|d| Ok(d.version()))
     }
-    pub fn command_current(&self, batch_json: String) -> Result<String, CoreError> {
-        self.call(|d| d.command_current(&batch_json))
-    }
-    pub fn apply(&self, batch_json: String) -> Result<String, CoreError> {
-        self.call(|d| d.apply(&batch_json))
-    }
     pub fn import_updates(&self, bytes: Vec<u8>) -> Result<String, CoreError> {
         self.call(|d| d.import(&bytes))
-    }
-    pub fn detach_renderer(&self) -> Result<(), CoreError> {
-        self.call(|d| {
-            d.detach_renderer();
-            Ok(())
-        })
-    }
-    pub fn text(&self, request_json: String) -> Result<String, CoreError> {
-        self.call(|d| d.text(&request_json))
-    }
-    pub fn release_draft(&self, draft: String) -> Result<(), CoreError> {
-        self.call(|d| d.release_draft(&draft))
     }
     pub fn checkpoint(&self) -> Result<Vec<u8>, CoreError> {
         self.call(|d| d.checkpoint())

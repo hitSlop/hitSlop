@@ -21,9 +21,8 @@ export type InsertResult = { readonly id: string };
 /** Resolve a snapshot's original schema, including text/register distinctions. */
 export type At = <N extends Node>(value: Snapshot<N>) => Handle<N>;
 export type TextHandle = {
-  replace(value: string): void;
-  /** Delete `deleteCount` UTF-16 units at `index`, then insert `insert` there. */
-  splice(index: number, deleteCount: number, insert?: string): void;
+  /** Replace the whole field with `value`, as the text is when the owner applies it. */
+  set(value: string): void;
 };
 export type TextRange = { start: number; end: number };
 export type RichTextHandle<M extends string = string> = TextHandle & {
@@ -32,8 +31,6 @@ export type RichTextHandle<M extends string = string> = TextHandle & {
 };
 export type ScalarHandle<V> = {
   set(value: V): void;
-  /** Show a local value without writing history; `set` or the next flush commits it. */
-  preview(value: V): void;
 };
 export type RowDestination = { before: string } | { after: string };
 export type TreeDestination = { before: string } | { after: string } | { parent: string | null };

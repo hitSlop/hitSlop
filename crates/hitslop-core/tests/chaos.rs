@@ -26,10 +26,10 @@ fn peer_of(d: &Document) -> LoroDoc {
 fn deliver(d: &mut Document, projected: &mut Value, peer: &LoroDoc, from: &loro::VersionVector) {
     let bytes = peer.export(ExportMode::updates(from)).unwrap();
     let reply: Value = serde_json::from_str(&d.import(&bytes).unwrap()).unwrap();
-    support::apply_patches(projected, &reply["patch"]["ops"]);
+    support::apply_patches(projected, &reply["ops"]);
     let fresh = snapshot(d);
     assert_eq!(*projected, fresh["value"], "projection diverged");
-    assert_eq!(reply["patch"]["issues"], fresh["issues"], "issues diverged");
+    assert_eq!(reply["issues"], fresh["issues"], "issues diverged");
 }
 fn rows(peer: &LoroDoc) -> Option<LoroMovableList> {
     match peer.get_map("data").get("rows") {
@@ -241,10 +241,10 @@ fn seeded_chaos_peer_imports_publish_exactly() {
                 let op = json!({"intents":[{"type":"set","path":["rows",{"id":first["$id"]},"done"],"value":true}]});
                 if let Ok(reply) = d.apply(&op.to_string()) {
                     let reply: Value = serde_json::from_str(&reply).unwrap();
-                    support::apply_patches(&mut projected, &reply["patch"]["ops"]);
+                    support::apply_patches(&mut projected, &reply["ops"]);
                     let fresh = snapshot(&d);
                     assert_eq!(projected, fresh["value"], "local projection diverged");
-                    assert_eq!(reply["patch"]["issues"], fresh["issues"]);
+                    assert_eq!(reply["issues"], fresh["issues"]);
                 }
             }
         }

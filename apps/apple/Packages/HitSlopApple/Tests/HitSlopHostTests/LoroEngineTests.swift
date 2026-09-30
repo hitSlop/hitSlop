@@ -18,7 +18,7 @@ extension LoroClientTests {
     try await controller.session.waitUntilReady()
     let epoch = controller.session.engine.epoch
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: prefixTitle("Preserved through interface reload"))
+      method: "apply", url: root, operation: setTitle("Preserved through interface reload"))
     _ = try await controller.session.webView.callAsyncJavaScript(
       "dispatchEvent(new ErrorEvent('error', {error:new Error('Test application failure')})); return true",
       arguments: [:], in: nil, contentWorld: .page)
@@ -27,7 +27,7 @@ extension LoroClientTests {
     }
     let issueSheet = try #require(controller.window?.attachedSheet)
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: prefixTitle("Preserved through interface reload"))
+      method: "apply", url: root, operation: setTitle("Preserved through interface reload"))
     #expect(controller.window?.attachedSheet === issueSheet)
     controller.window?.endSheet(issueSheet, returnCode: .alertSecondButtonReturn)
     issueSheet.orderOut(nil)
@@ -99,7 +99,7 @@ extension LoroClientTests {
       "const input = document.createElement('input'); document.body.append(input); input.focus(); globalThis.__probe = input; return document.activeElement === input",
       arguments: [:], in: nil, contentWorld: .page)
     #expect(focused as? Bool == true)
-    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("From the CLI"))
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("From the CLI"))
     let still = try await view.callAsyncJavaScript(
       "return document.activeElement === globalThis.__probe && !document.body.inert",
       arguments: [:], in: nil, contentWorld: .page)
@@ -127,7 +127,7 @@ extension LoroClientTests {
     // The socket follows the owner, not the page: the lost acknowledgement is settled by
     // the stored attempt token, so the CLI learns the edit is durable.
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: prefixTitle("Committed before renderer death"))
+      method: "apply", url: root, operation: setTitle("Committed before renderer death"))
     engine.owner.storage.testingPhase = nil
     for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
     #expect(engine.rendererDead)
@@ -159,7 +159,7 @@ extension LoroClientTests {
       throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
     }
     _ = try await DocumentCommand.run(
-      method: "apply", url: root, operation: prefixTitle("Lost reply"))
+      method: "apply", url: root, operation: setTitle("Lost reply"))
     engine.owner.storage.testingPhase = nil
     let bytes = try await DocumentCommand.run(method: "get", url: root)
     #expect(String(decoding: bytes, as: UTF8.self).contains("Lost reply"))
@@ -179,7 +179,7 @@ extension LoroClientTests {
     let engine = controller.session.engine
     engine.onStatus = nil
     engine.onError = nil
-    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Durable title"))
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("Durable title"))
     let baseline = try await DocumentCommand.run(method: "get", url: root)
     let identity = try savedRow(root).docID
     engine.owner.storage.testingPhase = { phase in
@@ -187,7 +187,7 @@ extension LoroClientTests {
       throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
     }
     await #expect(throws: (any Error).self) {
-      _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("Unsaved title"))
+      _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("Unsaved title"))
     }
     await #expect(throws: (any Error).self) { try await engine.prepareClose() }
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
@@ -198,7 +198,7 @@ extension LoroClientTests {
     #expect(try savedRow(root).docID == identity)
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
     engine.owner.storage.testingPhase = nil
-    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("After discard"))
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: setTitle("After discard"))
     try await controller.session.finish()
     let reopened = try await DocumentCommand.run(method: "get", url: root)
     #expect(String(decoding: reopened, as: UTF8.self).contains("After discard"))
@@ -223,7 +223,7 @@ extension LoroClientTests {
     }
     do {
       _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: prefixTitle("Recovered edit"))
+        method: "apply", url: root, operation: setTitle("Recovered edit"))
       Issue.record("Injected write succeeded")
     } catch { #expect(error.localizedDescription.contains("Run slop get")) }
     do {

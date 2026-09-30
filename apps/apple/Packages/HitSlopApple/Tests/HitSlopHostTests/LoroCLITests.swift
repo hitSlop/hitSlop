@@ -30,9 +30,7 @@ extension LoroClientTests {
     #expect(rejected.0 != 0)
     #expect(try Data(contentsOf: root.appendingPathComponent("state/document.sqlite")) == saved)
     #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "User is still typing")
-    await #expect(throws: (any Error).self) { try await controller.session.finish() }
-    #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
-    _ = try await view.callAsyncJavaScript("document.querySelector('#draft').dispatchEvent(new CompositionEvent('compositionend')); return true", arguments: [:], in: nil, contentWorld: .page)
+    // Close commits a composition in progress instead of refusing to close.
     try await controller.session.finish()
     let after = try await DocumentCommand.run(method: "get", url: root)
     #expect(after != before)
@@ -113,7 +111,7 @@ extension LoroClientTests {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let op = String(decoding: try prefixTitle("must not apply"), as: UTF8.self)
+    let op = String(decoding: try setTitle("must not apply"), as: UTF8.self)
     let incomplete = try await cli(["apply", root.path, "--op", op, "--id", "original"])
     #expect(incomplete.0 != 0)
     #expect(incomplete.2.contains("Unknown"))
@@ -129,7 +127,7 @@ extension LoroClientTests {
     let path = try DocumentCommand.liveSocket(for: documentRoot)
     let stale = try JSONSerialization.data(withJSONObject: [
       "id": "stale", "method": "apply", "documentPath": documentRoot.path, "epoch": "old",
-      "op": try JSONSerialization.jsonObject(with: prefixTitle("must not apply")),
+      "op": try JSONSerialization.jsonObject(with: setTitle("must not apply")),
     ])
     let response = try await Task.detached { try SocketClient.call(path: path, request: stale) }.value
     let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
@@ -179,7 +177,7 @@ extension LoroClientTests {
         "socket": server.path, "epoch": "peer", "pid": ProcessInfo.processInfo.processIdentifier,
         "documentPath": canonical.path,
       ]).write(to: canonical.appendingPathComponent("state/host.lock"))
-      let result = try await cli(["apply", root.path, "--op", String(decoding: prefixTitle("refused"), as: UTF8.self)])
+      let result = try await cli(["apply", root.path, "--op", String(decoding: setTitle("refused"), as: UTF8.self)])
       #expect(result.0 != 0)
       #expect(result.2.contains("Peer refusal\n" + expected), "\(result.2)")
     }
@@ -194,7 +192,7 @@ extension LoroClientTests {
         .utf8
     ).write(to: root.appendingPathComponent("assets/app.js"))
     let data = try await DocumentCommand.run(
-      method: "apply", url: root, operation: prefixTitle("Engine only"))
+      method: "apply", url: root, operation: setTitle("Engine only"))
     #expect(String(decoding: data, as: UTF8.self).contains("Engine only"))
   }
 }

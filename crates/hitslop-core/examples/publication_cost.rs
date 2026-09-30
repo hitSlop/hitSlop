@@ -14,9 +14,10 @@ fn main() {
         let id = view["value"]["rows"].as_array().unwrap().last().unwrap()["$id"].clone();
         let mut samples = vec![];
         for i in 0..20 {
+            let started = std::time::Instant::now();
             let reply:Value=serde_json::from_str(&doc.apply(&json!({"intents":[{"type":"set","path":["rows",{"id":id},"done"],"value":i%2==0}]}).to_string()).unwrap()).unwrap();
-            assert_eq!(reply["patch"]["ops"].as_array().unwrap().len(), 1);
-            samples.push(reply["patchBuildMS"].as_f64().unwrap());
+            samples.push(started.elapsed().as_secs_f64() * 1e3);
+            assert_eq!(reply["ops"].as_array().unwrap().len(), 1);
         }
         let mut sorted = samples.clone();
         sorted.sort_by(f64::total_cmp);

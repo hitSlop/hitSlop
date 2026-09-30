@@ -23,7 +23,7 @@ const checklist = defineDocument({
 export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.fields.node>) {
   const { id } = await doc.fields.tasks.insert({ text: "x", done: false });
   await doc.fields.tasks.item(id).done.set(true);
-  await doc.fields.title.replace("Packing");
+  await doc.fields.title.set("Packing");
   const row = doc.current.tasks[0]!;
   await doc.at(row).done.set(false);
   // Collectors stay synchronous: insert returns its id immediately.
@@ -35,8 +35,8 @@ export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.fields
   await doc.fields.tasks.remove(minted);
   // @ts-expect-error Writes are asynchronous; the id arrives after acceptance.
   const sync: string = doc.fields.tasks.insert({ text: "z", done: false }).id;
-  // @ts-expect-error Text is not a scalar register.
-  void doc.at(row).text.set("wrong API");
+  // @ts-expect-error Text fields take whole strings.
+  void doc.at(row).text.set(7);
   // @ts-expect-error Boolean fields require booleans.
   void doc.at(row).done.set("true");
   // @ts-expect-error Required row values cannot be omitted.

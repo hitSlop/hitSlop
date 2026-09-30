@@ -13,7 +13,7 @@ fn main() {
     let schema = fixture["schema"].to_string();
     let rows: Vec<Value> = (0..5000).map(|i| json!({"$id":format!("r{i}"),"text":format!("Task number {i}"),"done":false})).collect();
     let mut doc = Document::create(&schema, &json!({"title":"t","rows":rows,"hits":0}).to_string()).unwrap();
-    // 20 peers each make 500 edits (toggles and text splices), merged into the owner.
+    // 20 peers each make 500 edits (toggles and text sets), merged into the owner.
     for p in 0..20 {
         let base = doc.version();
         let mut peer = Document::open(&schema, &doc.checkpoint().unwrap(), &[]).unwrap();
@@ -22,7 +22,7 @@ fn main() {
             let op = if k % 2 == 0 {
                 json!({"type":"set","path":["rows",{"id":id},"done"],"value":k % 4 == 0})
             } else {
-                json!({"type":"splice","path":["rows",{"id":id},"text"],"base":peer.version(),"index":0,"delete":0,"insert":"x"})
+                json!({"type":"set","path":["rows",{"id":id},"text"],"value":format!("x{k} task")})
             };
             peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
         }
@@ -41,7 +41,7 @@ fn main() {
         let concurrent = i % 2 == 1;
         if concurrent {
             // Another writer prepends to the same field: the next page edit takes the slow path.
-            doc.apply(&json!({"intents":[{"type":"splice","path":path,"base":doc.version(),"index":0,"delete":0,"insert":"c"}]}).to_string()).unwrap();
+            doc.apply(&json!({"intents":[{"type":"set","path":path,"value":format!("c{from}")}]}).to_string()).unwrap();
         }
         let request = json!({"base":base,"path":path,"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string();
         let started = Instant::now();

@@ -31,10 +31,9 @@ import Testing
     return root
   }
 
-  func prefixTitle(_ text: String) throws -> Data {
-    try JSONSerialization.data(withJSONObject: [
-      "type": "splice", "path": ["title"], "index": 0, "delete": 0, "insert": text,
-    ])
+  /// A CLI edit replacing the probe's title.
+  func setTitle(_ text: String) throws -> Data {
+    try JSONSerialization.data(withJSONObject: ["type": "set", "path": ["title"], "value": text])
   }
 
   func cli(_ args: [String]) async throws -> (Int32, String, String) {

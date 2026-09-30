@@ -27,10 +27,10 @@ fn increment(path: Value, by: i64) -> String {
 }
 fn checked(d: &mut Document, projected: &mut Value, reply: String) {
     let reply: Value = serde_json::from_str(&reply).unwrap();
-    support::apply_patches(projected, &reply["patch"]["ops"]);
+    support::apply_patches(projected, &reply["ops"]);
     let fresh = snapshot(d);
     assert_eq!(*projected, fresh["value"]);
-    assert_eq!(reply["patch"]["issues"], fresh["issues"]);
+    assert_eq!(reply["issues"], fresh["issues"]);
 }
 
 #[test]

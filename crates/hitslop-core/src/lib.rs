@@ -1,4 +1,4 @@
-//! Shared native/WASM document semantics for runtime contract 4.
+//! Shared native/WASM document semantics.
 
 #[rustfmt::skip]
 #[path = "wire.generated.rs"]
@@ -13,8 +13,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 mod publication;
 mod identity;
 mod edit;
-mod text;
-use edit::{text_at, unicode_offset};
 use publication::{Events, ListState};
 use std::sync::Arc;
 use wire::{Anchor, Batch, Intent, Segment};
@@ -99,11 +97,6 @@ fn decode_version(doc: &LoroDoc, s: &str) -> Result<(Frontiers, VersionVector)> 
         .frontiers_to_vv(&frontiers)
         .ok_or_else(|| err("stale_base", "Version is not in this document's history"))?;
     Ok((frontiers, vv))
-}
-fn random_id() -> Result<String> {
-    let mut bytes = [0; 16];
-    getrandom::getrandom(&mut bytes).map_err(engine)?;
-    Ok(hex(&bytes))
 }
 fn valid_id(s: &str) -> bool {
     !s.is_empty()
@@ -486,23 +479,12 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
     })
 }
 
-fn boundary(text: &str, target: usize) -> bool {
-    let mut offset = 0;
-    for ch in text.chars() {
-        if offset == target {
-            return true;
-        }
-        offset += ch.len_utf16();
-    }
-    offset == target
-}
 /// Validates each intent completely before its first Loro mutation. A failure in a
 /// later intent can still leave earlier intents applied; `Document::abort` owns that.
 fn execute(
     doc: &LoroDoc,
     schema: &Node,
     op: &Intent,
-    base: &str,
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
@@ -533,39 +515,6 @@ fn execute(
                 .parent
                 .ok_or_else(|| err("type_mismatch", "Cannot replace a row"))?;
             map.insert(&key, value.as_bool().unwrap()).map_err(engine)?;
-        }
-        Intent::Splice {
-            base: authored,
-            index,
-            delete,
-            insert,
-            ..
-        } => {
-            if authored != base {
-                return Err(err(
-                    "stale_base",
-                    "Read a new snapshot; draft ancestry is not implemented yet",
-                ));
-            }
-            let ValueOrContainer::Container(Container::Text(text)) = at.value else {
-                return Err(err("type_mismatch", "Expected text"));
-            };
-            if !matches!(at.node, Node::Text) {
-                return Err(err("type_mismatch", "Expected text descriptor"));
-            }
-            let value = text.to_string();
-            let end = index
-                .checked_add(*delete)
-                .ok_or_else(|| err("out_of_range", "Text range overflow"))?;
-            if !boundary(&value, *index) || !boundary(&value, end) {
-                return Err(err("out_of_range", "Invalid UTF-16 boundary"));
-            }
-            if *delete > 0 {
-                text.delete_utf16(*index, *delete).map_err(engine)?;
-            }
-            if !insert.is_empty() {
-                text.insert_utf16(*index, insert).map_err(engine)?;
-            }
         }
         Intent::Insert {
             id,
@@ -782,15 +731,12 @@ pub struct Document {
     doc: LoroDoc,
     schema: Node,
     sequence: u64,
-    session: String,
     /// Every movable list's order and row identities as of the last publication.
     lists: HashMap<ContainerID, ListState>,
     /// Issues as of the last publication. Empty is the common case and enables
     /// change-proportional validation; a document with anomalies rescans on publish.
     issues: Vec<Value>,
     events: Events,
-    drafts: BTreeMap<String, text::Draft>,
-    retired: BTreeSet<String>,
 }
 impl Document {
     fn from_doc(doc: LoroDoc, schema: Node) -> Result<Self> {
@@ -801,11 +747,8 @@ impl Document {
             doc,
             schema,
             sequence: 0,
-            session: random_id()?,
             issues: vec![],
             events,
-            drafts: BTreeMap::new(),
-            retired: BTreeSet::new(),
         };
         this.issues = this.scan_issues()?;
         Ok(this)
@@ -854,27 +797,8 @@ impl Document {
         issues(&self.schema, &value, &mut vec![], &mut found);
         let value = project_at(&self.doc, Some(&self.schema), &self.doc.get_map("data").id())?;
         encode(
-            &json!({"version":self.version(),"value":value,"issues":found,"sequence":self.sequence,"session":self.session}),
+            &json!({"version":self.version(),"value":value,"issues":found,"sequence":self.sequence}),
         )
-    }
-    /// A host command explicitly addressed against the state at queue execution.
-    /// Unlike authored draft edits, these positional splices omit a base token.
-    pub fn command_current(&mut self, batch: &str) -> Result<String> {
-        let mut value: Value = parse(batch)?;
-        if let Some(intents) = value.get_mut("intents").and_then(Value::as_array_mut) {
-            for op in intents {
-                if op["type"] == "splice" {
-                    if op.get("base").is_some() {
-                        return Err(err(
-                            "invalid_request",
-                            "Current-state command must omit base",
-                        ));
-                    }
-                    op["base"] = json!(self.version());
-                }
-            }
-        }
-        self.apply(&value.to_string())
     }
     pub fn apply(&mut self, batch: &str) -> Result<String> {
         self.apply_batch(batch).map(|applied| applied.publication)
@@ -916,7 +840,7 @@ impl Document {
         self.doc
             .import(bytes)
             .map_err(|e| err("invalid_bytes", e))?;
-        self.publish(vec![])
+        self.publish()
     }
     /// The publication sequence: the number of published changes since open.
     pub fn sequence(&self) -> u64 {
@@ -928,14 +852,13 @@ impl Document {
         if batch.intents.len() > 1000 {
             return Err(err("too_large", "Batch exceeds 1000 intents"));
         }
-        let base = self.version();
         let before = self.doc.state_frontiers();
         let mut ids = vec![];
         let mut failure = None;
         {
             let mut rows = Rows::new(&self.lists);
             for (index, op) in batch.intents.iter().enumerate() {
-                if let Err(mut e) = execute(&self.doc, &self.schema, op, &base, &mut ids, &mut rows)
+                if let Err(mut e) = execute(&self.doc, &self.schema, op, &mut ids, &mut rows)
                 {
                     e.op_index = Some(index);
                     failure = Some(e);
@@ -948,12 +871,12 @@ impl Document {
             return Err(e);
         }
         self.doc.commit();
-        let publication = self.publish(ids.clone())?;
+        let publication = self.publish()?;
         Ok(Applied { sequence: self.sequence, ids, publication })
     }
-    fn publish(&mut self, ids: Vec<String>) -> Result<String> {
-        #[cfg(not(target_arch = "wasm32"))]
-        let started = std::time::Instant::now();
+    /// Publishes the committed events as one change: `{previous, sequence, version, ops,
+    /// issues}`. Applying it to the previous snapshot yields a fresh snapshot.
+    fn publish(&mut self) -> Result<String> {
         let events = std::mem::take(&mut *self.events.lock().unwrap());
         let published = publication::publish(&self.doc, &self.schema, &mut self.lists, events)?;
         if published.rescan || !self.issues.is_empty() {
@@ -963,14 +886,8 @@ impl Document {
             .sequence
             .checked_add(1)
             .ok_or_else(|| err("too_large", "Publication sequence"))?;
-        #[cfg(not(target_arch = "wasm32"))]
-        let patch_build_ms = started.elapsed().as_secs_f64() * 1000.0;
-        #[cfg(target_arch = "wasm32")]
-        let patch_build_ms: Option<f64> = None;
-        let response = encode(
-            &json!({"patchBuildMS":patch_build_ms,"version":self.version(),"ids":ids,
-            "patch":{"session":self.session,"previous":self.sequence,"sequence":next,"ops":published.ops,"issues":self.issues}}),
-        )?;
+        let response = encode(&json!({"previous":self.sequence,"sequence":next,"version":self.version(),
+            "ops":published.ops,"issues":self.issues}))?;
         self.sequence = next;
         Ok(response)
     }

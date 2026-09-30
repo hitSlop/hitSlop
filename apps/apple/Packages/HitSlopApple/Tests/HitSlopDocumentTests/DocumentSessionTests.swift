@@ -10,11 +10,12 @@ import WebKit
   // Per-field schema bounds do not bound an array's combined payload. The native
   // dispatch boundary must reject it before base64 decoding or touching SQLite.
   @Test func bridgeBoundsAggregatePayloadAndRejectsUnknownFields() {
-    #expect(StorageRequest(["method": "metadata"]) != nil)
-    #expect(StorageRequest(["method": "metadata", "extra": "unexpected"]) == nil)
-    let chunk = String(repeating: "A", count: 1024 * 1024)
-    #expect(StorageRequest(["method": "append", "generation": "0", "updates": Array(repeating: chunk, count: 49)]) == nil)
-    #expect(StorageRequest(["method": "append", "generation": "0", "updates": ["AQID"]]) != nil)
+    #expect(StorageRequest(["method": "attachments.list"]) != nil)
+    #expect(StorageRequest(["method": "attachments.list", "extra": "unexpected"]) == nil)
+    let values = Dictionary(uniqueKeysWithValues: (0..<16).map { ("token\($0)", String(repeating: "A", count: 4096)) })
+    #expect(StorageRequest(["method": "theme.save", "values": values]) != nil)
+    let oversized = Dictionary(uniqueKeysWithValues: (0..<20_000).map { ("token\($0)", String(repeating: "A", count: 4096)) })
+    #expect(StorageRequest(["method": "theme.save", "values": oversized]) == nil)
   }
 
   // Lost-reply recovery depends on this: only a committed write records its attempt.

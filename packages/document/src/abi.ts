@@ -45,9 +45,11 @@ export interface SlopContext {
     registerTarget(kind: "icon" | "export", target: CaptureTarget): () => void;
   };
   readonly attachments: {
+    /** Stores the file, then runs `reference` synchronously (like `change`) to write
+     * its reference; both are accepted together or the promise rejects. */
     import(
       file: File,
-      options: { commit(ref: AttachmentRef): void | Promise<void> },
+      reference: (tx: Scope<ObjectNode>, ref: AttachmentRef) => void,
     ): Promise<AttachmentRef>;
     read(id: string, options?: { type?: string }): Promise<Blob>;
     list(): Promise<AttachmentInfo[]>;
@@ -82,7 +84,7 @@ export interface SlopDocument<N extends ObjectNode> {
   readonly key: string;
   /** Logical document identity. */
   readonly id: string;
-  /** Immutable snapshot including uncommitted previews. Unchanged rows keep identity. */
+  /** Immutable snapshot. Unchanged rows keep identity. */
   readonly current: Value<N>;
   readonly status: "saved" | "pending" | "save-failed";
   readonly error: string | null;
@@ -92,7 +94,7 @@ export interface SlopDocument<N extends ObjectNode> {
   readonly at: AsyncAt;
   /** Collect synchronously; resolve after acceptance and local publication. */
   change<R>(callback: (tx: Scope<N>) => R, options?: { message?: string }): Promise<R>;
-  /** Durability barrier: commits drafts and previews, then waits for storage. */
+  /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
   flush(): Promise<void>;
   subscribe(listener: () => void): () => void;
 }

@@ -30,8 +30,8 @@ fn random_op(rng: &mut u64, serial: &mut u64, d: &Document) -> Value {
         5 if !tags.is_empty() => json!({"type":"remove","path":["rows",{"id":rid},"tags"],"id":tags[tags.len()-1]["$id"]}),
         6 if rows.len() > 1 => json!({"type":"remove","path":["rows"],"id":rid}),
         7 if rows.len() > 1 => json!({"type":"move","path":["rows"],"id":rid,"at":{"before":rows[0]["$id"]}}),
-        8 if !tags.is_empty() => json!({"type":"splice","path":["rows",{"id":rid},"tags",{"id":tags[0]["$id"]},"label"],"base":d.version(),"index":0,"delete":0,"insert":"q"}),
-        _ => json!({"type":"splice","path":["rows",{"id":rid},"text"],"base":d.version(),"index":0,"delete":0,"insert":"s"}),
+        8 if !tags.is_empty() => json!({"type":"set","path":["rows",{"id":rid},"tags",{"id":tags[0]["$id"]},"label"],"value":format!("q{r}")}),
+        _ => json!({"type":"set","path":["rows",{"id":rid},"text"],"value":format!("s{r}")}),
     }
 }
 #[test]
@@ -59,12 +59,12 @@ fn seeded_nested_local_and_remote_steps() {
                 d.apply(&json!({"intents":[op]}).to_string()).unwrap()
             };
             let reply: Value = serde_json::from_str(&reply).unwrap();
-            support::apply_patches(&mut projected, &reply["patch"]["ops"]);
+            support::apply_patches(&mut projected, &reply["ops"]);
             let fresh: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
             assert_eq!(projected, fresh["value"]);
-            assert_eq!(reply["patch"]["issues"], fresh["issues"]);
+            assert_eq!(reply["issues"], fresh["issues"]);
             // Clean nested lists publish row operations, not a replacement of their row list.
-            for op in reply["patch"]["ops"].as_array().unwrap() {
+            for op in reply["ops"].as_array().unwrap() {
                 if op["type"] == "set" {
                     let last = op["path"].as_array().unwrap().last().cloned();
                     assert!(last != Some(json!("rows")) && last != Some(json!("tags")), "fallback in clean list: {op}");
@@ -90,8 +90,8 @@ fn nested_edit_and_removal_of_its_row_in_one_import() {
         peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
     }
     let reply: Value = serde_json::from_str(&d.import(&peer.export_since(&base).unwrap()).unwrap()).unwrap();
-    support::apply_patches(&mut projected, &reply["patch"]["ops"]);
+    support::apply_patches(&mut projected, &reply["ops"]);
     let fresh: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
     assert_eq!(projected, fresh["value"]);
-    assert_eq!(reply["patch"]["ops"], json!([{"type":"deleteRow","path":["rows"],"id":"row1"}]));
+    assert_eq!(reply["ops"], json!([{"type":"deleteRow","path":["rows"],"id":"row1"}]));
 }
