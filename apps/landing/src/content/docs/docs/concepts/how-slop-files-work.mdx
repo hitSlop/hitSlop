@@ -44,9 +44,9 @@ state/
   attachments/            # optional immutable, content-addressed blobs
 ```
 
-Loro in the WebView owns the live document. Swift persists opaque checkpoints and updates in format-1 SQLite. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
+The app's Rust core (on Loro) owns the live document; the page renders snapshots of it. Swift persists opaque checkpoints and updates in SQLite. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
 
-The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and use an engine-only hidden WebView. Headless editing never loads `assets/app.js`.
+The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and edit the document directly. Headless editing never starts a WebView or loads `assets/app.js`.
 
 Owner changes go into `state/theme.json`, a separate, bounded token object. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro or live in SQLite. Direct file edits are not watched. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Use theme commands rather than editing files underneath a running owner. Duplicating a document preserves its saved content and overrides while minting a fresh document ID (`doc_id`) and creating fresh ownership files.
 
@@ -54,4 +54,4 @@ Owner changes go into `state/theme.json`, a separate, bounded token object. It c
 
 Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the UI or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
 
-Close before moving or copying a document. Keep it on a local filesystem outside iCloud and other synced folders. Packages reject symlink entries, source/dependency caches, and oversized resources. Only `hitslop-v1` is accepted; migrations, schema evolution, and multi-writer local packages are not supported.
+Close before moving or copying a document. Keep it on a local filesystem outside iCloud and other synced folders. Packages reject symlink entries, source/dependency caches, and oversized resources. Migrations, schema evolution, and multi-writer local packages are not supported.

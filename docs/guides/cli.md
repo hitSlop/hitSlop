@@ -65,7 +65,7 @@ Choose a template and **Create** in the Mac app, or run the native helper from y
 
 ## Read and edit data
 
-Read `manifest.json` first; only `hitslop-v1` is accepted. Inspect the schema and current data before choosing operations. These edits assume a text field named `title`; substitute your own document path and schema fields.
+Read `manifest.json` first. Inspect the schema and current data before choosing operations. These edits assume a text field named `title`; substitute your own document path and schema fields.
 
 ```sh
 bun slop schema /path/to/List.slop
@@ -90,86 +90,19 @@ For an explicit storage checkpoint, use `bun slop compact /path/to/List.slop`. I
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
 
-## Full JSON import
+## Moving data between documents
 
-Read the source data and destination schema, then prepare a complete JSON object
-matching the destination's fields. An agent can help map the data for you.
-
-```sh
-bun slop get Source.slop > source.json
-bun slop schema Template.slop
-# Prepare mapped.json in the destination schema, then create a new document:
-bun slop import New.slop --from Template.slop --file mapped.json
-
-# For an existing destination, capture its data, schema and version together:
-bun slop get Destination.slop --snapshot > destination.json
-# Prepare mapped.json using that snapshot. Replace VERSION_TOKEN with its
-# exact version string, keeping it quoted:
-bun slop import Destination.slop --replace --if-version 'VERSION_TOKEN' --file mapped.json
-```
-
-`--from` and `--replace` are mutually exclusive. Creation never overwrites an
-existing path and publishes the new package only after a successful save and
-close. Both import modes return `{data, schema, version}`. Plain `get` continues
-to return only data. Version tokens survive an unchanged close/reopen or
-checkpoint, but belong to one destination path, schema and Loro version.
-
-The input file is a complete root object, not a patch or a snapshot envelope.
-Required fields must be supplied. Omitted optional fields, record entries and
-rows are removed; imported order is authoritative. Unknown fields, invalid
-values and unresolved references reject the whole import with a JSON Pointer
-in the error. There are no implicit defaults or type coercions. Creation uses
-fresh row/tree IDs. Replacement retains supplied `$id` values that identify
-existing rows in the same collection; unmatched IDs create new rows. Duplicate
-IDs and moving an existing ID between collections are rejected. Omit source
-IDs when you intend to create fresh rows in an existing destination.
-
-Rich text accepts a string (unformatted) or `{text, delta}` as returned by `get`.
-Delta inserts must concatenate to `text` and use only destination-declared
-marks. String fields can reference imported rows explicitly:
-
-```json
-{
-  "groups": [{"name": "Work"}],
-  "tasks": [{"title": "Send invoice", "groupId": {"$ref": "/groups/0"}}]
-}
-```
-
-`$ref` uses an RFC 6901 JSON Pointer into the input root and must target a row or
-tree node. This includes forward and cyclic links, optional strings, string
-record entries and string-list elements. Ordinary strings are never rewritten.
-References resolve to actual destination IDs inside the same transaction.
-
-Open documents receive imports through their owning WebView. Pending drafts
-and writes flush first; the runtime checks the expected version immediately
-before applying the staged operations synchronously. A newer edit rejects the
-replacement: read another snapshot and reconsider the mapping. A save failure
-after acceptance retains the live changes for normal native retry. Never replay
-an import automatically after an uncertain result.
-
-Accepted imports persist a full Loro checkpoint, retaining history. This also
-preserves absolute counter values whose rounding could otherwise change when
-separate historical increments are replayed together. An unchanged import does
-not write another checkpoint.
-
-Files and encoded requests are bounded at 16 MiB, nesting at 128 levels, and
-candidate Loro checkpoints at the 32 MiB limit on stored checkpoint plus update bytes. Counter
-targets that cannot be represented exactly by a finite increment reject rather
-than silently round.
-
-JSON contains attachment references, not blob bytes. Copy blobs with
-`attachments export` and `attachments import`, then retain their content IDs
-in the mapped data. For a new document with attachments, first create a writable
-copy of the template, transfer its blobs, then use version-checked replacement.
-Existing blobs and theme overrides are retained; import only replaces document
-data. Templates, authored assets, initial data, source history and source peer
-IDs are never imported or rewritten.
+There is no JSON import. To move data, create a document from the destination template
+and write it with `batch`: read the source with `get`, map each row to `insert`
+operations (supplying `id` keeps rows addressable and makes a retried insert refuse as a
+duplicate), and set text and boolean fields with `set`. Copy attachments with
+`attachments export` and `attachments import`, then write their references.
 
 ## Ownership and retries
 
-The permanent `state/writer.lock` decides ownership. Closed editing runs an engine-only invisible WebKit session; it never loads authored app code. Busy documents route through their owner's Unix socket. Missing or failed discovery never permits a second writer. A small `hello` handshake returns session identity without a document snapshot; ordinary reads need no handshake.
+The permanent `state/writer.lock` decides ownership. Closed editing runs the native owner in the helper process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. A small `hello` handshake returns the owner's epoch without a document snapshot; ordinary reads need no handshake.
 
-Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. `get` flushes pending drafts and writes before returning; save failures return an error. One internal epoch identifies each WebView lifetime.
+Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused.
 
 ## Export
 
@@ -180,7 +113,7 @@ bun slop export /path/to/List.slop --format pdf --output /path/to/List.pdf
 
 Export prints the destination path on success.
 
-Open-document exports capture the live view, including current width and selected tab. The existing capture flow commits text drafts, flushes storage, mounts the authored export snippet, and restores the editor. Closed exports render a disposable saved-state snapshot using the app's initial view. For Quick Checklist that means To do; the selected tab is not persisted.
+Open-document exports capture the live view, including current width and selected tab. The capture flow sends unsent text, flushes storage, mounts the authored export snippet, and restores the editor. Closed exports render a disposable saved-state snapshot using the app's initial view. For Quick Checklist that means To do; the selected tab is not persisted.
 
 The source writer lock is held while copying a closed writable document. Managed or read-only templates remain state-free. User export destinations must be outside the source package; completed output replaces its destination atomically. Template screenshots are a separate build operation and may write QuickLook assets in their staging package.
 

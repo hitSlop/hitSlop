@@ -1,6 +1,6 @@
 # Host-owned reset: plan, deletions and remaining spikes
 
-Status (2026-09-29): steps 1–6 are implemented. Step 1 made the Quick Checklist and
+Status (2026-09-29): complete; archived. Steps 1–7 are implemented and the live system is described in [architecture](../../docs/architecture.md). Step 8 (scalars) is the next milestone, with its own plan. Step 1 made the Quick Checklist and
 SDK meet the 1k targets (see §7). Step 2 deleted the legacy machinery, replaced runtime
 negotiation with one bundled page shell, and shipped the fresh storage schema with
 attempt-token recovery (bug 1). Step 3 split the owner queue from the persistence queue
@@ -26,10 +26,13 @@ are `{previous, sequence, version, ops, issues}`; the page speaks `open`/`apply`
 resyncing from a fresh snapshot on any gap (S-D); the SDK has a sequence-ordered store,
 cached handles, a stateless text binding, one write queue, and a barrier that drains
 pending work instead of joining a flush (bug 3); attachments import through a collector.
-1k rows: open 0.6 s, checkbox p95 14 ms, drain 20 ms. Step 7 remains.
+1k rows: open 0.6 s, checkbox p95 14 ms, drain 20 ms. Step 7 trimmed `s` and the
+handle types to implemented kinds, merged the page handlers into one `hitslop` handler,
+trimmed the page lifecycle, added `docs/architecture.md`, and brought the guides,
+landing docs and skills up to date.
 
 Once work starts, this document supersedes the migration machinery in
-[LoroRustCutover.md](../archive/docs/LoroRustCutover.md) and [LoroHostPlan.md](../archive/docs/LoroHostPlan.md). The
+[LoroRustCutover.md](LoroRustCutover.md) and [LoroHostPlan.md](LoroHostPlan.md). The
 architecture decision itself (Rust Loro owned by the host, UniFFI, async SDK) stands.
 
 The plan comes from a full read of `crates/`, `packages/`, `apps/apple/`,

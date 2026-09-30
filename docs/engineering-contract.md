@@ -1,6 +1,6 @@
 # Engineering contract
 
-The architecture and the remaining plan are in [HostOwnedReset.md](HostOwnedReset.md).
+How the system works is in [architecture](architecture.md).
 **Nothing has shipped to production.** There is no legacy handling, migration,
 backwards compatibility, version gate or refusal message for older packages or
 databases. Add a version marker only when a first public release needs one.
@@ -26,7 +26,7 @@ databases. Add a version marker only when a first public release needs one.
 - Storage: one write in flight; each write records an attempt token in the same SQLite
   transaction, and a lost reply is resolved by comparing tokens, never by guessing from
   the generation. Failed saves keep ownership and all edits and show a native retry.
-- Flush drafts and writes before close or export. Successful close destroys WebViews.
+- Flush unsent text and pending writes before close or export. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`. `state.schema.json` is a descriptor, not
   JSON Schema. `initial.json` is creation-only. Descriptor kinds exist only once Rust,
   the SDK and a fixture implement them (today: text, boolean, object, list(object),

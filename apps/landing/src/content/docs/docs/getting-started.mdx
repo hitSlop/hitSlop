@@ -45,7 +45,7 @@ Replace the starter's data definition:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "@hitslop/document";
-export default defineDocument({ title: s.text(), count: s.number() });
+export default defineDocument({ title: s.text(), count: s.counter() });
 ```
 
 ```ts title="initial.ts"
@@ -65,7 +65,7 @@ Replace `App.svelte` with:
   <main class="counter">
     <input aria-label="Counter title" use:bindText={doc.fields.title} />
     <p class="counter-value">{doc.current.count}</p>
-    <button onclick={() => doc.fields.count.set(doc.current.count + 1)}>
+    <button onclick={() => doc.fields.count.increment()}>
       Count one
     </button>
   </main>

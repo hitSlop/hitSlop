@@ -1,6 +1,7 @@
 # hitSlop
 
-Architecture and the remaining plan: [HostOwnedReset.md](docs/HostOwnedReset.md).
+Architecture: [architecture](docs/architecture.md). The completed host-owned reset plan
+is archived at [archive/docs/HostOwnedReset.md](archive/docs/HostOwnedReset.md).
 Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 [testing](docs/testing.md). Quick Checklist is the active template; other slops are
 archived.

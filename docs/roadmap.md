@@ -4,13 +4,13 @@ The current launch includes the signed Mac app and matching npm authoring packag
 
 ## Hosted templates
 
-A future publishing service may accept validated immutable `hitslop-v1` artifacts, expose a generated OpenAPI catalog, and download immutable cached masters. Creating a document will still make a writable local copy; bundled and cached masters must work offline.
+A future publishing service may accept validated immutable template artifacts, expose a generated OpenAPI catalog, and download immutable cached masters. Creating a document will still make a writable local copy; bundled and cached masters must work offline.
 
 Plan a separate Cloudflare HTTP module with R2 artifacts and catalog metadata. Keep TypeBox authoritative. Publisher identity, upload limits, package isolation/checksums, immutable release identity, and abuse controls are prerequisites. Any historical worker retained in a local `deferred/` archive is unsupported scaffolding, not a v1 deployment or self-hosting path. The local app needs no document server.
 
 ## Collaboration
 
-Collaboration is separate from hosted discovery. A future design can authenticate in Swift, transfer Loro updates between replicas, and persist opaque updates remotely. Each local replica retains one writer and local SQLite storage. History pruning remains deferred and will need a retention policy compatible with offline replicas. Mergeable map children, splice-based text binding and commit origins are already in place. Undo first needs `change()` staging that a Loro `UndoManager` can observe; the current fork-based staging hides local operations. Keep credentials outside authored code, preserve ByteStore as the persistence boundary, and introduce a dedicated sync envelope rather than overloading `apply`.
+Collaboration is separate from hosted discovery. A future design can authenticate in Swift, have the owner exchange Loro updates with other replicas (it already imports and exports them), and persist opaque updates remotely. Each local replica retains one writer and local SQLite storage. Frontier version tokens and stateless text edits already work across replicas: a page's text request names the history it saw, and the core merges it with whatever arrived since. History pruning remains deferred and will need a retention policy compatible with offline replicas. Undo can use a Loro `UndoManager` scoped to local origins. Keep credentials outside authored code and introduce a dedicated sync envelope rather than overloading `apply`.
 
 Do not restore JSON room seeds, command/snapshot authority, guest snapshot reconciliation, JavaScriptCore, data.json, or a second semantic validator. Convergence tests around internal import/export do not constitute a shipped collaboration product.
 

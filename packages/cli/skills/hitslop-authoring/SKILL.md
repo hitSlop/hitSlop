@@ -13,6 +13,13 @@ Components call `const doc = useDocument(schema)`. Read immutable `doc.current`;
 
 `bindText` keeps the user's text in the field and sends each change for the owner to merge, preserving Unicode, the caret and composition; `bindValue` submits booleans asynchronously. Text handles write whole fields with `set(value)`. Flush sends unsent text and waits for pending writes; close/export commit a composition in progress. Import attachments with `attachments.import(file, (tx, ref) => tx.fields.photo.set(ref.id))`: the reference is written in the same step as the stored blob. Keep composer input until insert succeeds, preserve newer input, and display success notices only after acceptance. Handle rejected promises; the runtime reports command failures centrally. The host owns save-failure and retry UI.
 
+Writes are asynchronous, so avoid these patterns:
+- Read-modify-write from a snapshot (`set(qty + 1)`): use a `change(tx)` collector or `increment` on a counter.
+- Writes in `$effect` or on mount to "ensure" defaults: put defaults in initial.ts.
+- Using an insert's id, or reading `doc.current`, right after an unawaited write: `await` it (inside `change`, insert ids are synchronous).
+- `try/catch` around an unawaited write: `await` it so the catch sees the rejection.
+- Moving a row between lists as separate remove and insert calls: do both in one `change(tx)` with an explicit id.
+
 Never replace an existing identity-bearing list through a containing object. Use insert/remove/move. Counter decrement is increment(-n); there is no concurrent reset API. Checkpoints retain history.
 
 Swift owns the native Rust Loro core; WebViews receive snapshots and patches. Browser development uses the same Rust core compiled to WASM. Do not embed the engine into app bundles or expose a second JSON writer. Build emits state.schema.json (a descriptor), initial.json, assets (including the app module assets/app.js, generated from App.svelte and styles.css) and document guidance. The host owns the page; apps reach it only through the document SDK. Never include state/, stores/, source, dependencies or caches in templates.

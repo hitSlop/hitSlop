@@ -25,13 +25,13 @@ for flag examples, defaults, and skill installation.
 
 CLI 1.2.0 uses document/schema SDK 1.1.0 and works with Mac 1.0.7. Generated projects pin the CLI and its required SDK separately; these package versions need not be equal. Prefer their `bun run check/dev/build/register` scripts. Native capture requires the installed Mac app or an explicit `HITSLOP_NATIVE_CLI`; authoring never compiles Swift. Browser preview needs no native renderer.
 
-Read `manifest.json` first. Set `runtime` to `hitslop-v1`, author, slug, title, description, one or two categories, and initial presentation. Define `schema.ts`, creation-only `initial.ts`, token defaults in `theme.ts`, and UI in `App.svelte`. No entry file is needed: the build mounts `App.svelte` with `styles.css` through `defineSlop`. A non-Svelte app supplies `main.ts` exporting `default { mount(ctx, target) }`; see the [runtime reference](../reference/runtime.md). Apps never import the runtime or call the host bridge.
+Read `manifest.json` first. Set author, slug, title, description, one or two categories, and initial presentation. Define `schema.ts`, creation-only `initial.ts`, token defaults in `theme.ts`, and UI in `App.svelte`. No entry file is needed: the build mounts `App.svelte` with `styles.css` through `defineSlop`. A non-Svelte app supplies `main.ts` exporting `default { mount(ctx, target) }`; see the [runtime reference](../reference/runtime.md). Apps never import the runtime or call the host bridge.
 
 Preview state is disposable: refresh resets it and source changes require restarting dev. Build emits `dist/<slug>.slop`. Registration builds a complete immutable master under `~/.hitslop/templates`, backing up a previous master outside the catalog before replacement. Create a writable copy in the Mac app to test persistence. Source, template, and writable document are distinct objects.
 
 ## Model state
 
-The contract-4 trial supports `text`, `boolean`, `object`, `list(object)` and exact integer `counter`. Strings, bounded numbers, enums, optionals, records, scalar lists, trees and rich text are deferred and explicitly rejected by the core.
+The `s` builder offers what the core implements: `text`, `boolean`, `object`, `list(object)` and exact integer `counter`. Strings, numbers, integers, enums and optionals are the next milestone; each kind lands in the core, the SDK and a fixture together.
 
 ```ts
 import { defineDocument, s } from "@hitslop/document";

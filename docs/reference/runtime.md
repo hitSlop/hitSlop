@@ -1,15 +1,17 @@
 # Runtime reference (page shell, packages, storage)
 
+How an edit, a save and a close flow through the system is described in
+[architecture](../architecture.md). This page is the reference for packages, storage
+limits, security, capture and telemetry.
+
 ## Architecture and client boundaries
 
-A `.slop` combines immutable authored app code with a structured local document. One Rust Loro core owned by Swift, exposed through UniFFI, holds the live document. The WebView holds immutable snapshots and local input drafts; it contains no Loro replica. The same Rust crate runs as WASM only in disposable browser development and Bun tests. Changed-container publications update the renderer snapshot while retaining unaffected object identity. Decodable merged anomalies are preserved and flagged, never repaired on read.
+A `.slop` combines immutable authored app code with a structured local document. One Rust Loro core owned by Swift, exposed through UniFFI, holds the live document. The WebView holds immutable snapshots and the text in its fields; it contains no Loro replica. The same Rust crate runs as WASM only in disposable browser development and Bun tests. Changed-container publications update the renderer snapshot while retaining unaffected object identity. Decodable merged anomalies are preserved and flagged, never repaired on read.
 
 ```text
-Svelte → async typed handles → owner bridge → Swift serial owner → Rust Loro
-                                                    ↓                 ↓
-                                               SQLite bytes    publications
-                                                                      ↓
-                                                              Svelte snapshot
+Svelte → async typed handles → hitslop handler → Swift owner queue → Rust Loro
+                                                    ↓                   ↓
+                                     persistence queue → SQLite    ordered pushes → page store
 CLI → live owner socket, or exclusive lock → same native Rust owner
 ```
 
@@ -30,7 +32,7 @@ frameworks supply `main.ts` exporting `default { mount(ctx, target) }` (type
 `SlopApp` from `@hitslop/document/abi`), mark their root `data-hitslop-root`, and
 use `ctx.capture` for custom export views.
 
-An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; unsubmitted input drafts can be lost. There is no network acknowledgement or second document engine.
+An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
 The macOS client retains Core, HitSlopDocument, Runtime, Host frameless windows and hover toolbar, TCA Features, local Catalog, Firebase Analytics/Crashlytics, Sparkle, and NativeCLI. HitSlopDocument integrates the shared engine; HitSlopRuntime connects it to the client. The installed helper needs neither Node/Bun nor a running app. Closed document operations never load authored app code.
 
@@ -70,21 +72,21 @@ Packages carry no runtime metadata. Nothing has shipped, so there is no version 
 
 ## Persistence and ownership
 
-Swift owns `state/document.sqlite`: `user_version=2`, DELETE journaling, synchronous EXTRA and macOS fullfsync, and opaque checkpoint/update bytes. Checkpoint replacement and covered-row deletion are atomic. The exact canonical descriptor is the storage key. Generation is a storage token, not a Loro version.
+Swift owns `state/document.sqlite`: two tables (`document`, `updates`), DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, and opaque checkpoint/update bytes. Checkpoint replacement and covered-row deletion are atomic. The exact canonical descriptor is the storage key. Generation is a storage token, not a Loro version.
 
 One OS flock on permanent `state/writer.lock` owns each local package. Never unlink it or bypass a busy writer. `state/host.lock` is discovery only. A busy writer with unreachable discovery is an error, never permission for another writer.
 
-Autosave coalesces writes for 150 ms. Flush drains text drafts, boolean previews and admitted attachment work, then persists updates. Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Checkpoints retain full history. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. JSON import/replacement is explicitly unsupported in this trial.
+Autosave coalesces writes for 150 ms, with one write in flight on the persistence queue. Flush sends unsent text, waits for queued writes and attachment imports, then persists updates. Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Checkpoints retain full history. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. JSON import/replacement is explicitly unsupported in this trial.
 
-If a SQLite commit loses its reply, the owner checks its generation under the held writer lock. Same-session request IDs deduplicate accepted mutations; expired results reject as unknown outcomes. The CLI never blindly resends a mutation. After an uncertain result, use `get` before another edit. Live `get` stops admission and drains renderer work before reading durable state. `hello` supplies the native owner session identity.
+If a SQLite commit loses its reply, the owner reads back the attempt token that write stored in the same transaction; if the read fails too, it settles the write before the next one. Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. `hello` supplies the owner's epoch, which rotates when unsaved edits are discarded.
 
-Prepare-close commits drafts and freezes edits. Failed saves retain ownership and native retry UI; cancel-close restores editing. Successful close removes discovery, destroys the WebView/bridge, drains storage, closes SQLite, and releases ownership. Quit prepares every document before releasing any. Close before moving or renaming packages. iCloud and other synced folders are unsupported.
+Prepare-close sends unsent text (committing a composition in progress), waits for pending page work and refuses new edits. Failed saves retain ownership and native retry UI; cancel-close restores editing. Successful close removes discovery, destroys the WebView/bridge, drains storage, closes SQLite, and releases ownership. Quit prepares every document before releasing any. Close before moving or renaming packages. iCloud and other synced folders are unsupported.
 
-Opaque imported attachments live at `state/attachments/<sha256>`, outside Loro. Imports store and fsync bytes before an awaited typed document change commits the reference. Pending imports participate in flush/close and retain accepted document writes for native save retry. The owner enforces 10 MiB per file, 100 MiB total, and 256 files, rejects links, and verifies hashes on read. Duplication copies attachments; runtime templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
+Opaque imported attachments live at `state/attachments/<sha256>`, outside Loro. `attachments.import(file, (tx, ref) => …)` stores and fsyncs the bytes, then submits the collector's reference edits; the close and capture barriers wait for it, so a blob is never saved without its reference. The owner enforces 10 MiB per file, 100 MiB total, and 256 files, rejects links, and verifies hashes on read. Duplication copies attachments; runtime templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
 
 Theme defaults are declared in immutable `assets/theme.json`. The page shell applies defaults and document overrides as CSS variables before mounting the app.
 
-Theme overrides are bounded host presentation state, not a document projection. The 64 KiB `state/theme.json` map contains declared token overrides. Use `slop theme get/set/reset`; never edit this file or compiled assets directly. Layout changes require authoring source and a rebuild. Theme commands share ownership with document operations. Theme controllers validate declared names and bounded token values; native storage validates isolation and size. Arbitrary CSS override files are unsupported.
+Theme overrides are bounded host presentation state, not a document projection. The 64 KiB `state/theme.json` map contains declared token overrides. Use `slop theme get/set/reset`; never edit this file or compiled assets directly. Layout changes require authoring source and a rebuild. Theme commands share ownership with document operations. Swift validates every write, from the page or the CLI: declared tokens, UTF-16 lengths, no `{};`, known `var(--slop-*)` references and 64 KiB. Loading never validates; the browser ignores CSS it cannot parse. Arbitrary CSS override files are unsupported.
 
 ## Opening and recovery
 
@@ -92,7 +94,7 @@ Document windows remain hidden until runtime readiness and bounded font readines
 
 Debug `HITSLOP_STARTUP_TIMINGS=1` logs elapsed native preparation, runtime readiness, font readiness, presentation, and page-relative `hitslop:*` boot marks without document values or paths. `HITSLOP_STARTUP_BENCH=1 bun run swift:test --filter documentStartupTimings` retains the fresh-document benchmark. Use `HITSLOP_STARTUP_BENCH=1 bun run swift:test -c release --filter savedDocumentStartupTimings` for existing documents: it seeds saved edits in a separate helper process, then reopens Quick Checklist, a 1,000-row checklist and a skinned fixture ten times each. Output records preparation/readiness/reveal durations and whether progress appeared. Set `HITSLOP_STARTUP_CASE=quick-checklist` (or another case) to measure that case first in a fresh process, `HITSLOP_STARTUP_SAMPLES` for the sample count, and `HITSLOP_STARTUP_FOREGROUND=1` to activate the benchmark app. Compare the first sample separately from subsequent samples; report warmed median and p95 rather than enforcing machine-dependent CI thresholds. Caches and machine activity affect these diagnostics.
 
-Application-render errors and save failures have separate recovery paths. Renderer recovery retains the writer lease while replacing the WebView and reopening saved bytes. Unsaved renderer memory cannot be recovered. Host and CLI exports flush before capture; expired captures cannot publish output.
+Application-render errors and save failures have separate recovery paths. Renderer recovery retains the writer lease and the socket, and attaches a new WebView to the same owner, including its unsaved edits. Text not yet sent from the dead page cannot be recovered. Host and CLI exports flush before capture; expired captures cannot publish output.
 
 ## Security boundaries
 
@@ -143,4 +145,4 @@ Release validation requires actual Firebase delivery and symbolication; unit tes
 A stored document opens only under an identical schema key: the canonical JSON of its
 descriptor, with keys sorted recursively, array order kept, no whitespace and
 JavaScript JSON number formatting. These rules are frozen by a golden vector in
-`packages/document/tests/open.test.ts`. Schema evolution is deferred.
+`packages/document/tests/schema.test.ts`. Schema evolution is deferred.

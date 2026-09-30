@@ -1,9 +1,9 @@
 ---
 title: Data and schemas
-description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
+description: Typed document fields chosen by merge behavior, snapshot handles, changes and persistence.
 ---
 
-Loro in the WebView owns the document. The same pinned engine runs in the installed native CLI. Swift stores opaque bytes; it does not interpret your application's fields.
+The hitSlop app owns each document. Its Rust core (on Loro) merges and validates every edit, and the app stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
 
 ## Define the shape
 
@@ -11,14 +11,9 @@ Loro in the WebView owns the document. The same pinned engine runs in the instal
 import { defineDocument, s } from "@hitslop/document";
 export default defineDocument({
   title: s.text(),
-  budget: s.number({ min: 0 }),
   archived: s.boolean(),
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean(), lane: s.enum(["todo", "done"]) })),
-  tags: s.list(s.string()),
-  notes: s.record(s.object({ body: s.text() })),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
   visits: s.counter(),
-  outline: s.tree(s.object({ label: s.text() })),
-  cover: s.optional(s.object({ caption: s.text() })),
 });
 ```
 
@@ -26,29 +21,24 @@ Choose each field by how edits from several places should merge:
 
 | Builder | Use for | Merge behavior |
 | --- | --- | --- |
-| `s.string`, `s.number`, `s.integer`, `s.boolean`, `s.enum` | Settings, amounts, states; optional `maxLength`, `min`, `max` | Last writer wins |
 | `s.text()` | Anything a person types | Character edits merge |
-| `s.richtext({ bold: "after" })` | Styled text with declared marks | Characters and marks merge |
+| `s.boolean()` | Flags and toggles | Last writer wins |
 | `s.object({...})` | Fixed groups of fields | Per field |
 | `s.list(s.object({...}))` | Rows with identity | Insert, remove and move keep `$id` |
-| `s.list(scalar)` | Plain sequences: dates, tags, pixels | Positional edits |
-| `s.record(value)` | Values keyed by a string: cells, days | Per key |
 | `s.counter()` | Tallies | Increments add up |
-| `s.tree(s.object({...}))` | Outlines and hierarchies | Moves never create cycles |
-| `s.optional(node)` | Values that may be absent | Created on first write |
 
-Move items between groups with an enum field on one list rather than separate lists. Keep transient view state (selection, hover, flipped cards) in component state.
+These are the kinds available today. Strings, numbers, integers, enums and optional values are next; each arrives in the core, the SDK and the builder together. Keep transient view state (selection, hover, flipped cards) in component state.
 
 ```ts title="initial.ts"
 export default {
-  title: "Weekend", budget: 100, archived: false,
-  tasks: [{ text: "Buy groceries", done: false, lane: "todo" }],
-  tags: [], notes: {}, visits: 0,
-  outline: [{ label: "Saturday", children: [{ label: "Market" }] }],
+  title: "Weekend",
+  archived: false,
+  tasks: [{ text: "Buy groceries", done: false }],
+  visits: 0,
 };
 ```
 
-The builder validates initial values and emits `state.schema.json` and `initial.json`. The former is a document descriptor, not JSON Schema. The latter seeds a new document only; editing it does not rewrite an existing document. Schema evolution and pre-v1 migration are deferred.
+The builder validates initial values and emits `state.schema.json` and `initial.json`. The former is a document descriptor, not JSON Schema. The latter seeds a new document only; editing it does not rewrite an existing document. Schema evolution is deferred.
 
 ## Read snapshots; write through handles
 
@@ -60,7 +50,7 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 </script>
 <Slop>
   <input aria-label="Title" use:bindText={doc.fields.title} />
-  <input type="range" min="0" max="500" use:bindValue={doc.fields.budget} />
+  <input type="checkbox" use:bindValue={doc.fields.archived} />
   {#each doc.current.tasks as task (task.$id)}
     <input type="checkbox" checked={task.done} onchange={() => doc.at(task).done.set(!task.done)} />
     <input aria-label="Task" use:bindText={doc.at(task).text} />
@@ -68,23 +58,23 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 </Slop>
 ```
 
-`doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the schema-typed write handle for the root, a row, a nested object, a record or its object entry, or a tree node taken directly from `doc.current`; do not pass clones. `bindText` turns typing into Unicode-safe text splices and rebases composition drafts against intervening edits. It is a plain-text binding, not a collaborative rich-text editor. `bindValue` binds range, number, select and checkbox inputs; range drags preview and commit once on release, starting normal autosave.
+`doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-Initialize absent optional composites with `set`, and record entries with `put`. Row lists and trees can be initialized this way when absent, but existing collections must use `insert`, `remove`, and `move`. Assigning a containing object cannot replace their identities. Clear/delete explicitly before recreating a collection. Scalar lists use an empty list instead of optionality.
+Writes are asynchronous: `await doc.at(task).done.set(true)` resolves once the app has accepted the edit and `doc.current` shows it. Read the snapshot after awaiting, not before.
+
+`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field. `bindValue` binds a checkbox to a boolean.
 
 Child components can call `useDocument(schema)` for the same document; in long lists, pass rows and handles as props instead.
 
 ## Keep row identity stable
 
-Every row and tree node has `$id`. Key Svelte loops and selection state by that ID, not by index:
+Every row has `$id`. Key Svelte loops and selection state by that ID, not by index:
 
 ```ts
-const { id } = doc.fields.tasks.insert({ text: "Book tickets", done: false, lane: "todo" }, { after: task.$id });
-doc.fields.tasks.move(id, { before: anotherTask.$id });
-doc.fields.tasks.remove(id);
-doc.fields.outline.move(node.$id, { parent: other.$id });
-doc.fields.notes.put("2026-09-23", { body: "" });
-doc.fields.visits.increment();
+const { id } = await doc.fields.tasks.insert({ text: "Book tickets", done: false }, { after: task.$id });
+await doc.fields.tasks.move(id, { before: anotherTask.$id });
+await doc.fields.tasks.remove(id);
+await doc.fields.visits.increment();
 ```
 
 A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
@@ -92,29 +82,29 @@ A deleted row is no longer a valid write target. Do not add `$id` manually to cr
 ## Group changes
 
 ```ts
-doc.change(tx => {
-  for (const task of finished) tx.at(task).lane.set("done");
+await doc.change(tx => {
+  for (const task of finished) tx.at(task).done.set(true);
+  const { id } = tx.fields.tasks.insert({ text: "Plan next weekend", done: false });
+  tx.fields.tasks.move(id, { before: finished[0].$id });
   tx.fields.archived.set(false);
-}, { message: "Close out the weekend" });
+});
 ```
 
-A change is one synchronous, all-or-nothing commit; the message is kept in document history. Do not `await` inside the callback or write through `doc` there, and remember `doc.current` still shows the state from before the change. A rejected operation discards the whole change.
+A change is one synchronous, all-or-nothing commit. Inside the callback, `insert` returns its `id` immediately so later writes can address the new row. Do not `await` inside the callback or write through `doc` there, and remember `doc.current` still shows the state from before the change until the returned promise resolves. A rejected operation discards the whole change.
 
-## Gestures
-
-While a person drags, call `handle.preview(value)` to update `doc.current` without writing history, then `set` the final value. Pending previews commit on flush, close and export.
+Prefer a change, or `increment` on a counter, over reading a value and writing it back: the snapshot you read may be a moment old.
 
 ## Save and recover
 
-The host autosaves, and `await doc.flush()` commits drafts, previews and pending writes explicitly. Close, quit, and export flush first. Failed saves retain ownership and offer native retry. Application errors are reported separately from save failures. Checkpoints retain edit history; automatic history pruning is deferred. Oversized snapshots fail visibly while retaining pending edits for retry.
+The host autosaves, and `await doc.flush()` sends any unsent text, waits for pending writes, and saves. Close, quit and export do the same first. Failed saves keep every edit and offer native retry. Application errors are reported separately from save failures. Checkpoints retain edit history; automatic history pruning is deferred.
 
-CLI reads and mutations use the same interpreter:
+CLI reads and edits go through the same app-owned core:
 
 ```sh
 bunx @hitslop/cli schema My.slop
 bunx @hitslop/cli get My.slop
-bunx @hitslop/cli apply My.slop --op '{"type":"text.replace","path":["title"],"value":"Ready"}'
+bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
 bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
-Mutations acknowledge persistence. After an unknown outcome, inspect with `get` before another edit; mutations are never automatically replayed. Raw Loro import/export hooks are internal sharing seams, not the author API. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
+Edits print `{ids, sequence, value}` and are saved when the command succeeds. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).

@@ -4,7 +4,7 @@ hitSlop ships a macOS app and a matching Bun authoring CLI/SDK. Documents stay l
 
 | Task | Guide |
 | --- | --- |
-| Understand the architecture and the remaining plan | [Host-owned reset](HostOwnedReset.md) |
+| Understand how the system works | [Architecture](architecture.md) |
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
 | Build or refine a mini app | [Authoring](guides/authoring.md) |
 | Run common CLI workflows or look up document operations | [CLI workflows and reference](guides/cli.md) |

@@ -88,40 +88,18 @@ For a document with a text field named `title`:
 
 ```sh
 bunx @hitslop/cli apply My.slop \
-  --op '{"type":"text.replace","path":["title"],"value":"Weekend"}'
+  --op '{"type":"set","path":["title"],"value":"Weekend"}'
 bunx @hitslop/cli batch My.slop \
-  --ops '[{"type":"text.replace","path":["title"],"value":"Ready for the weekend"}]'
+  --ops '[{"type":"set","path":["title"],"value":"Ready for the weekend"}]'
 ```
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON, and successful edits are saved. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
-## Import complete JSON data
+## Move data between documents
 
-Read the destination schema, then ask your agent to prepare `mapped.json` with the data you want to import.
-
-To create a new document from a built template:
-
-```sh
-bunx @hitslop/cli schema dist/weekend-kit.slop
-bunx @hitslop/cli import New.slop \
-  --from dist/weekend-kit.slop --file mapped.json
-```
-
-To replace an existing document's data, first capture its data, schema, and version:
-
-```sh
-bunx @hitslop/cli get My.slop --snapshot > snapshot.json
-# Prepare mapped.json using the snapshot. Replace VERSION_TOKEN below
-# with the exact version string from snapshot.json, keeping it quoted.
-bunx @hitslop/cli import My.slop \
-  --replace --if-version 'VERSION_TOKEN' --file mapped.json
-```
-
-`mapped.json` must contain the complete document data. **Replacement removes rows and optional values that you leave out.** Use the data from your snapshot as a starting point, keeping row IDs for items you want to retain.
-
-If someone edits the document after your snapshot, take a new snapshot and update your import before retrying. Import changes data only; it keeps the document's theme and existing attachments. To copy attachments from another document, use the attachment commands below. See the [import reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#full-json-import) for advanced cases.
+There is no JSON import. To move data into a new document, create it from the template, read the source with `get`, and write the rows with one `batch` of `insert` operations. Give each insert an `id` so a retried command is refused as a duplicate instead of adding the row twice. Copy attachments with the commands below, then write their references.
 
 ## Change theme colors
 
