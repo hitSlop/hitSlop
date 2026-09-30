@@ -1,19 +1,20 @@
 # hitSlop
 
-Architecture: [architecture](docs/architecture.md). The completed host-owned reset plan
-is archived at [archive/docs/HostOwnedReset.md](archive/docs/HostOwnedReset.md).
+Architecture: [architecture](docs/architecture.md). Status and open work:
+[direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
 Contracts: [engineering contract](docs/engineering-contract.md). Tests:
-[testing](docs/testing.md). Quick Checklist is the active template; other slops are
-archived.
+[testing](docs/testing.md). `examples/slops/bundled.json` selects the bundled templates;
+slops not yet on the implemented document kinds are in `archive/slops`.
 
 ## Non-negotiable
 
-- **Nothing has shipped: start fresh.** No legacy handling, migrations, backwards
-  compatibility, version gates, refusal messages or compatibility tests. The app, helper,
-  page shell and CLI are built from one tree. Add a version marker only when a first
-  public release needs one.
-- `hitslop-core` (Rust on Loro) owns document semantics. The Swift `DocumentOwner` owns
-  the writer lock, SQLite, saving, the socket and delivery to the page. The page shell
+- **Start fresh: earlier 1.x builds are unsupported.** No legacy handling, migrations
+  or backwards-compatible readers. The app, helper, page shell and CLI are built from
+  one tree. The release markers are SQLite application/schema identity and the exact
+  core build identity checked between CLI, helper and live owner; no version negotiation.
+- `hitslop-core` (Rust on Loro) owns document semantics and durable storage: SQLite,
+  the writer lock and the save policy. The Swift `DocumentOwner` schedules saves and owns
+  the socket and delivery to the page; Loro bytes never reach Swift. The page shell
   holds no CRDT, and slops contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or unlink `writer.lock`. Closed edits never
@@ -27,7 +28,7 @@ archived.
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No `stores/data.json`, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for `slop dev` and tests only.
+  document engine. The WASM core is for authoring validation, `slop dev` and tests only.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
@@ -50,6 +51,6 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Collaboration, undo UI, schema evolution, history pruning, synced folders, hosted
+Collaboration, document history undo UI, schema evolution, history pruning, synced folders, hosted
 catalog/publishing, accounts/auth and sharing. `archive/`, `_docs/` and `deferred/` are
 not active contracts.

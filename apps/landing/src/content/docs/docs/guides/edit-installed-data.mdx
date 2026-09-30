@@ -20,7 +20,7 @@ Read the descriptor and current state before choosing operations. The CLI prints
 
 The installed app's helper sends edits to the open document's socket, or edits a closed document directly without loading its interface. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. Installed native editing itself needs no Bun; the `bunx` command is its convenient authoring-CLI entrypoint.
 
-Theme changes use a separate command and persist in `state/theme.json`, outside the Loro data in SQLite:
+Theme changes use a separate command and are saved beside the Loro data, in the same database:
 
 ```sh
 bunx @hitslop/cli theme get My.slop
@@ -28,4 +28,4 @@ bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad"}'
 bunx @hitslop/cli theme reset My.slop
 ```
 
-Only declared tokens may be changed. They affect the editor and captures, not application data or layout selectors. Do not edit SQLite, initial values, or theme sidecars underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).
+Only declared tokens may be changed. They affect the editor and captures, not application data or layout selectors. Do not edit SQLite or initial values underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).

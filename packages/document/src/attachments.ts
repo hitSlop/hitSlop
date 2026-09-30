@@ -1,25 +1,20 @@
 import { base64, hostCall } from "./bridge";
 import { OperationRejectedError } from "./errors";
 
-export const attachmentLimits = {
-  file: 10 * 1024 * 1024,
-  total: 100 * 1024 * 1024,
-  count: 256,
-} as const;
-import type { AttachmentInfo, AttachmentRef } from "./contracts";
-export type { AttachmentInfo, AttachmentRef } from "./contracts";
-export interface AttachmentStore {
+import { AttachmentIdPattern, AttachmentLimits as attachmentLimits } from "@hitslop/schema/constants";
+export { attachmentLimits };
+import type { AttachmentInfo, AttachmentRef } from "./abi";
+export type { AttachmentInfo, AttachmentRef } from "./abi";
+interface AttachmentStore {
   put(bytes: Uint8Array): Promise<AttachmentInfo>;
   read(id: string): Promise<Uint8Array>;
   list(): Promise<AttachmentInfo[]>;
 }
-export const assertAttachmentID = (id: string) => {
-  if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Invalid attachment ID");
+const assertAttachmentID = (id: string) => {
+  if (!new RegExp(AttachmentIdPattern).test(id)) throw new Error("Invalid attachment ID");
 };
-const utf8Length = (text: string) => new TextEncoder().encode(text).length;
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const checkSize = (size: number) => {
-  if (size > attachmentLimits.file) throw new Error("Attachment exceeds 10 MiB");
+  if (size > attachmentLimits.file) throw new Error(`Attachment exceeds ${attachmentLimits.file >> 20} MiB`);
 };
 export class MemoryAttachments implements AttachmentStore {
   private files = new Map<string, Uint8Array>();

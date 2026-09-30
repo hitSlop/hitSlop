@@ -22,4 +22,4 @@ export default {
     { title: "Build the sauce", text: "Add pasta, lemon zest, juice, and a splash of pasta water.", minutes: 2 },
     { title: "Finish and serve", text: "Toss with parmesan until glossy. Season and serve." },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

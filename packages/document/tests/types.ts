@@ -3,13 +3,13 @@ import { defineDocument, s, type Input } from "../src/schema";
 import type { SlopDocument } from "../src/app/store.svelte";
 
 const counters = defineDocument({ count: s.counter() });
-export function counterTypes(doc: SlopDocument<typeof counters.fields.node>) {
+export function counterTypes(doc: SlopDocument<typeof counters.descriptor>) {
   const count: number | null = doc.current.count;
   // @ts-expect-error Overflow is observable and callers must handle null.
   const unchecked: number = doc.current.count;
-  const valid: Input<typeof counters.fields.node> = { count: 1 };
+  const valid: Input<typeof counters.descriptor> = { count: 1 };
   // @ts-expect-error null is a read fallback, never a valid counter input.
-  const invalid: Input<typeof counters.fields.node> = { count: null };
+  const invalid: Input<typeof counters.descriptor> = { count: null };
   // @ts-expect-error Counter edits require numbers.
   void doc.fields.count.increment(null);
   return { count, valid, unchecked, invalid };
@@ -19,7 +19,7 @@ const checklist = defineDocument({
   title: s.text(),
   tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
 });
-export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.fields.node>) {
+export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.descriptor>) {
   const { id } = await doc.fields.tasks.insert({ text: "x", done: false });
   await doc.fields.tasks.item(id).done.set(true);
   await doc.fields.title.set("Packing");
@@ -52,7 +52,7 @@ const scalars = defineDocument({
   photo: s.optional(s.object({ id: s.string() })),
   rows: s.list(s.object({ text: s.text(), limit: s.optional(s.integer()) })),
 });
-export async function scalarTypes(doc: SlopDocument<typeof scalars.fields.node>) {
+export async function scalarTypes(doc: SlopDocument<typeof scalars.descriptor>) {
   const currency: "CAD" | "USD" = doc.current.currency;
   const note: string | undefined = doc.current.note;
   // @ts-expect-error An optional value may be absent.
@@ -70,7 +70,7 @@ export async function scalarTypes(doc: SlopDocument<typeof scalars.fields.node>)
   await doc.fields.rows.insert({ text: "row" });
   // @ts-expect-error Required row values cannot be omitted.
   await doc.fields.rows.insert({ limit: 3 });
-  const valid: Input<typeof scalars.fields.node> = { currency: "CAD", amount: 1, rows: [] };
+  const valid: Input<typeof scalars.descriptor> = { currency: "CAD", amount: 1, rows: [] };
   return { currency, note, required, valid };
 }
 
@@ -80,7 +80,7 @@ const collections = defineDocument({
   pixels: s.list(s.string()),
   notes: s.optional(s.text()),
 });
-export async function collectionTypes(doc: SlopDocument<typeof collections.fields.node>) {
+export async function collectionTypes(doc: SlopDocument<typeof collections.descriptor>) {
   const count: number | undefined = doc.current.checkins["2026-09-23"];
   const pixel: string | undefined = doc.current.pixels[0];
   const notes: string | undefined = doc.current.notes;

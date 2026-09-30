@@ -7,5 +7,5 @@ const schema = defineDocument({
   muted: s.boolean(),
 });
 
-export type AlienRadio = Value<typeof schema.fields.node>;
+export type AlienRadio = Value<typeof schema.descriptor>;
 export default schema;

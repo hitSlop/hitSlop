@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
+import Brand from "./Brand.svelte";
+import { checklistView } from "./model";
+import { ui } from "./ui.svelte";
+
+  import { useDocument, bindText } from "@hitslop/document/svelte";
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
@@ -12,7 +16,8 @@
   import schema from "./schema";
 
   const doc = useDocument(schema);
-  let activeView = $state<"tasks" | "filed">("tasks");
+const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, ui.activeView));
+
   let draft = $state("");
   let composer = $state<HTMLInputElement>();
   let notice = $state("");
@@ -21,12 +26,12 @@
   // Only the row being edited is a live textarea; the rest render as text (WebKit
   // form controls are too expensive to mount by the thousand).
   let editing = $state<{ id: string; caret: number | null } | null>(null);
-  const visible = $derived(doc.current.tasks.filter(task => !task.archived));
-  const filed = $derived(doc.current.tasks.filter(task => task.archived));
+
+
   const menuIndex = $derived(openMenu ? visible.findIndex(task => task.$id === openMenu) : -1);
   $effect(() => { if (openMenu && menuIndex < 0) openMenu = null; });
-  const finished = $derived(visible.filter(task => task.done).length);
-  const ratio = $derived(visible.length ? finished / visible.length * 100 : 0);
+
+
   const fill = new Tween(untrack(() => ratio), { duration: 280, easing: cubicOut });
   let initialized = false;
   $effect(() => {
@@ -35,9 +40,7 @@
   });
   onDestroy(() => { void fill.set(fill.target, {duration:0,delay:0}); });
   $effect(() => { if (notice) { const timer = setTimeout(() => notice = "", 4000); return () => clearTimeout(timer); } });
-  const exported = $derived(activeView === "filed" ? filed : visible);
-  const exportFinished = $derived(exported.filter(task => task.done).length);
-  const marks = $derived(visible.length ? Math.round(3 * finished / visible.length) : 0);
+
 
   let adding = $state(false);
   async function addTask() {
@@ -62,7 +65,7 @@
   async function fileFinished() {
     const done = visible.filter(task => task.done);
     try {
-      await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); }, {message: "File finished tasks"});
+      await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); });
       notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
     } catch {}
   }
@@ -94,7 +97,8 @@
     const at = Math.min(caret ?? node.value.length, node.value.length);
     node.setSelectionRange(at, at);
   }
-  // CSS auto-grow: the wrapper's ::after mirrors the text, so no per-row measuring.
+  // CSS auto-grow: the wrapper's ::after mirrors the text, so no per-row measuring. Only
+  // the row being edited carries the mirror; a text row sizes itself.
   function mirror(event: Event) {
     const field = event.currentTarget as HTMLTextAreaElement;
     field.parentElement!.dataset.value = field.value;
@@ -102,20 +106,11 @@
 
 </script>
 
-{#snippet brand()}
-<header class="checklist-header">
-  <span class="checklist-brand"><Check size={15} strokeWidth={3} /> Quick Checklist</span>
-  <span class="checklist-edition" aria-hidden="true">ONE THING AT A TIME</span>
-</header>
 
-{/snippet}
-
-<Slop>
 <main
   class="checklist-shell"
-  data-slop-selection="none"
 >
-  {@render brand()}
+  <Brand />
   <section
     class="checklist-paper"
     aria-label="Your checklist"
@@ -165,9 +160,9 @@
       >
     </form>
     <Tabs.Root
-      value={activeView}
+      value={ui.activeView}
       onValueChange={(value) => {
-        if (value === "tasks" || value === "filed") activeView = value;
+        if (value === "tasks" || value === "filed") ui.activeView = value;
       }}
     >
       <Tabs.List
@@ -182,8 +177,8 @@
         >
       </Tabs.List>
     </Tabs.Root>
-    <div class={`${"checklist-scroller"} ${activeView === "filed" ? "checklist-filed-view" : ""}`}>
-      {#if activeView === "tasks"}
+    <div class={`${"checklist-scroller"} ${ui.activeView === "filed" ? "checklist-filed-view" : ""}`}>
+      {#if ui.activeView === "tasks"}
         <ol class="checklist-list">
           {#each visible as task, index (task.$id)}
             <li class="checklist-row" data-done={task.done}>
@@ -196,7 +191,7 @@
                 />
                 {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
               </label>
-              <div class="checklist-grow task" data-value={task.text}>
+              <div class="checklist-grow task" data-value={editing?.id === task.$id ? task.text : undefined}>
                 {#if editing?.id === task.$id}
                   <textarea
                     class="checklist-task-text"
@@ -279,10 +274,10 @@
     </div>
     <div class="checklist-paper-foot">
       <span
-        >{activeView === "tasks"
+        >{ui.activeView === "tasks"
           ? "Enter to add. Check to finish."
           : "Restore anything you need again."}</span
-      >{#if activeView === "tasks"}<button
+      >{#if ui.activeView === "tasks"}<button
           onclick={fileFinished}
           disabled={!finished}
           ><Archive size={15} /> File finished{finished
@@ -293,36 +288,3 @@
   </section>
   {#if notice}<div class="checklist-notice" role="status">{notice}</div>{/if}
 </main>
-
-{#snippet exportView()}
-<article class="checklist-shell">
-  {@render brand()}
-  <section class="checklist-paper" aria-label="Exported checklist">
-    <div class="checklist-heading">
-      <p class="checklist-eyebrow">{activeView === "filed" ? "Filed tasks" : "A little less on your mind."}</p>
-      <h1 class="checklist-title" style:white-space="pre-wrap" style:overflow-wrap="anywhere">{doc.current.title || "Untitled list"}</h1>
-      <div class="checklist-progress"><span>{activeView === "filed" ? `${exported.length} filed` : `${exported.length - exportFinished} left to do`}</span><span>{exportFinished} / {exported.length} done</span></div>
-      <div class="checklist-track"><div style:width={`${exported.length ? exportFinished / exported.length * 100 : 0}%`}></div></div>
-    </div>
-    <ol class="checklist-list">
-      {#each exported as task (task.$id)}
-        <li class="checklist-row" data-done={task.done}>
-          <span data-checkbox-root data-state={task.done ? "checked" : "unchecked"} aria-label={task.done ? "Complete" : "Incomplete"}>{#if task.done}<Check size={17} strokeWidth={3} />{/if}</span>
-          <span class="checklist-task-text" style:white-space="pre-wrap">{task.text || "Untitled task"}</span>
-        </li>
-      {/each}
-    </ol>
-    {#if !exported.length}<div class="checklist-empty"><Check size={30} /><h2>{activeView === "filed" ? "No filed tasks yet." : "A little breathing room."}</h2></div>{/if}
-  </section>
-</article>
-
-{/snippet}
-{#snippet icon()}
-<div class="checklist-icon-tile" aria-hidden="true"><div class="checklist-icon-paper">
-    {#each [0, 1, 2] as index}
-      <div data-complete={index < marks}><span>{#if index < marks}<Check size={32} strokeWidth={3} />{/if}</span><i></i></div>
-    {/each}
-  </div></div>
-
-{/snippet}
-</Slop>

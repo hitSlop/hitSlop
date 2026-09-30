@@ -1,4 +1,5 @@
 import Foundation
+import HitSlopCoreBinding
 import ImageIO
 
 public enum SlopPackageError: LocalizedError {
@@ -14,37 +15,44 @@ public enum SlopPackageError: LocalizedError {
 
 public struct SlopPackage: Sendable {
   public let rootURL: URL
-  public let manifestData: Data
   private var validatedSkin: (url: URL, image: CGImage)?
+  public let schemaKey: String
+  /// `assets/theme.json`, validated: every theme token and its default value.
+  public let themeDefaults: String
   public let manifest: SlopManifest
+  public let silhouette: SlopSilhouette
+  /// Every regular file in the package, state included, in bytes.
+  public let byteCount: Int64
 
   public init(rootURL: URL) throws {
     let fileManager = FileManager.default
-    guard try rootURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
-      throw SlopPackageError.invalid("document package cannot be a symlink")
-    }
-    let root = rootURL.standardizedFileURL.resolvingSymlinksInPath()
-    var isDirectory: ObjCBool = false
-    guard root.pathExtension.lowercased() == "slop" else {
-      throw SlopPackageError.invalid("document must have a .slop extension")
-    }
-    guard fileManager.fileExists(atPath: root.path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    else { throw SlopPackageError.invalid("document is not a directory") }
+    let root = try Self.resolvedRoot(rootURL)
     self.rootURL = root
-    let manifestURL = root.appendingPathComponent("manifest.json")
-    guard fileManager.fileExists(atPath: manifestURL.path) else {
-      throw SlopPackageError.missing("manifest.json")
-    }
-    manifestData = try SlopFile.read(manifestURL, within: root, maximumBytes: 64 * 1024)
-    manifest = try JSONDecoder().decode(SlopManifest.self,
-      from: JSONSerialization.data(withJSONObject: Self.normalizedManifestObject(manifestData)))
+    let decoded = try Self.readManifest(root)
+    manifest = decoded.manifest
 
-    // The runtime owns the page; a package supplies only its app module.
-    guard fileManager.fileExists(atPath: entryURL.path) else {
+    silhouette = SlopSilhouette(parsed: decoded.silhouette)
+    do {
+      func utf8(_ file: String, maximum: Int) throws -> String {
+        let bytes = try SlopFile.read(root.appendingPathComponent(file), within: root, maximumBytes: maximum)
+        guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
+        return value
+      }
+      schemaKey = try validateDocument(schemaJson: utf8("state.schema.json", maximum: 1_048_576), initialJson: utf8("initial.json", maximum: SlopFile.maximumBytes))
+      themeDefaults = try utf8("assets/theme.json", maximum: Limits.theme)
+      try validateThemeDefaults(json: themeDefaults)
+    } catch let CoreError.Rejected(_, message, _) {
+      throw SlopPackageError.invalid(message)
+    } catch let CoreError.Invalidated(message) {
+      throw SlopPackageError.invalid(message)
+    }
+
+    // The host owns the page; a package supplies only its app module.
+    let entry = root.appendingPathComponent("assets/app.js")
+    guard fileManager.fileExists(atPath: entry.path) else {
       throw SlopPackageError.missing("assets/app.js")
     }
-    guard String(data: try SlopFile.read(entryURL, within: root), encoding: .utf8) != nil else {
+    guard String(data: try SlopFile.read(entry, within: root), encoding: .utf8) != nil else {
       throw SlopPackageError.invalid("assets/app.js must be UTF-8")
     }
     let topLevel = try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
@@ -53,14 +61,15 @@ public struct SlopPackage: Sendable {
       "state.schema.json", "initial.json",
     ])
     if let unknown = topLevel.first(where: { !allowedTopLevel.contains($0.lastPathComponent) }) {
-      throw SlopPackageError.invalid("unexpected runtime entry \(unknown.lastPathComponent)")
+      throw SlopPackageError.invalid("unexpected package entry \(unknown.lastPathComponent)")
     }
     let forbidden = Set([
       "package.json", "bun.lock", "bun.lockb", "node_modules", "source", "src", "build",
-      "document.json", ".build", ".hitslop", "style.css",
+      ".build", ".hitslop",
     ])
     var immutableCount = 0
     var immutableBytes = 0
+    var totalBytes: Int64 = 0
     if let enumerator = fileManager.enumerator(
       at: root,
       includingPropertiesForKeys: [
@@ -75,9 +84,16 @@ public struct SlopPackage: Sendable {
           values.isRegularFile == true || values.isDirectory == true
         else {
           throw SlopPackageError.invalid(
-            "runtime documents require regular files and directories, without symlinks")
+            "packages require regular files and directories, without symlinks")
         }
-        let relative = String(url.path.dropFirst(root.path.count + 1))
+        // Foundation may enumerate /private/var entries from a /var root. Compare
+        // equally resolved paths so mutable state never enters the authored budget.
+        let entryPath = url.standardizedFileURL.resolvingSymlinksInPath().path
+        guard entryPath.hasPrefix(root.path + "/") else {
+          throw SlopPackageError.invalid("file escapes its package")
+        }
+        let relative = String(entryPath.dropFirst(root.path.count + 1))
+        if values.isRegularFile == true { totalBytes += Int64(values.fileSize ?? 0) }
         if !relative.hasPrefix("state/")
           && relative != "state" && relative != "Icon\r"
         {
@@ -85,7 +101,7 @@ public struct SlopPackage: Sendable {
           if values.isRegularFile == true {
             let size = values.fileSize ?? 0
             guard size <= SlopFile.maximumBytes else {
-              throw SlopPackageError.invalid("runtime file exceeds 25 MiB")
+              throw SlopPackageError.invalid("package file exceeds 25 MiB")
             }
             immutableBytes += size
           }
@@ -95,12 +111,12 @@ public struct SlopPackage: Sendable {
         }
         if forbidden.contains(url.lastPathComponent.lowercased()) {
           throw SlopPackageError.invalid(
-            "runtime documents cannot contain \(url.lastPathComponent)")
+            "packages cannot contain \(url.lastPathComponent)")
         }
       }
     }
+    byteCount = totalBytes
     try validateState()
-    try validateSchemaMetadata()
     try validateDocumentSkill()
     try validateQuickLook()
     validatedSkin = try skin()
@@ -112,12 +128,13 @@ public struct SlopPackage: Sendable {
   public var stateURL: URL { rootURL.appendingPathComponent("state", isDirectory: true) }
   public var dataSchemaURL: URL { rootURL.appendingPathComponent("state.schema.json") }
   public var initialURL: URL { rootURL.appendingPathComponent("initial.json") }
+  /// Mutable state: theme overrides, the live owner's discovery file and the database.
+  public var discoveryURL: URL { stateURL.appendingPathComponent("host.lock") }
   public var isSkinned: Bool { manifest.presentation.skin != nil }
   public var usesTransparentBackground: Bool {
     isSkinned || manifest.presentation.background == .transparent
   }
   public var isResizable: Bool { isSkinned ? false : manifest.presentation.resizable ?? true }
-  public var shape: Shape { manifest.presentation.shape ?? .rounded }
 
   /// Validates and decodes the window skin once for callers that also need its pixels.
   public func skin() throws -> (url: URL, image: CGImage)? {
@@ -154,38 +171,13 @@ public struct SlopPackage: Sendable {
     return (url, image)
   }
 
-  public func validateAsTemplate(requirePreview: Bool = false) throws {
+  public func validateAsTemplate() throws {
     try validateDocumentSkill(strict: true)
     if FileManager.default.fileExists(atPath: stateURL.path) {
       throw SlopPackageError.invalid("templates cannot contain state")
     }
     if FileManager.default.fileExists(atPath: rootURL.appendingPathComponent("Icon\r").path) {
       throw SlopPackageError.invalid("templates cannot contain a Finder custom icon")
-    }
-    if requirePreview {
-      for url in [previewURL, iconURL] {
-        let relativePath = "QuickLook/\(url.lastPathComponent)"
-        guard FileManager.default.fileExists(atPath: url.path) else {
-          throw SlopPackageError.missing(relativePath)
-        }
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        guard values.isRegularFile == true, (values.fileSize ?? 0) <= 5 * 1024 * 1024,
-          let source = CGImageSourceCreateWithData(
-            try SlopFile.read(url, within: rootURL) as CFData, nil),
-          CGImageSourceGetType(source) as String? == "public.png"
-        else {
-          throw SlopPackageError.invalid("\(relativePath) must be a PNG no larger than 5 MB")
-        }
-        try Self.validateImageDimensions(
-          source, label: relativePath, width: url == iconURL ? 512 : nil,
-          height: url == iconURL ? 512 : nil)
-        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-          throw SlopPackageError.invalid("\(relativePath) must be a valid PNG")
-        }
-        if url == iconURL, image.width != 512 || image.height != 512 {
-          throw SlopPackageError.invalid("\(relativePath) must be exactly 512x512 pixels")
-        }
-      }
     }
   }
 
@@ -221,43 +213,54 @@ public struct SlopPackage: Sendable {
     }
     let root = root.standardizedFileURL.resolvingSymlinksInPath()
     let url = root.appendingPathComponent(relativePath).standardizedFileURL
-      .resolvingSymlinksInPath()
-    let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
-    guard url.path == root.path || url.path.hasPrefix(prefix) else {
+    guard SlopPath.contains(root, url) else {
       throw SlopPackageError.invalid("unsafe path \(relativePath)")
     }
-    return root.appendingPathComponent(relativePath).standardizedFileURL
+    return url
   }
 
-  private static func normalizedManifestObject(_ data: Data) throws -> [String: Any] {
-    guard String(data: data, encoding: .utf8) != nil else {
+  /// A package directory's canonical URL: a `.slop` directory, never a symlink.
+  static func resolvedRoot(_ rootURL: URL) throws -> URL {
+    guard try rootURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+      throw SlopPackageError.invalid("document package cannot be a symlink")
+    }
+    let root = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+    guard root.pathExtension.lowercased() == "slop" else {
+      throw SlopPackageError.invalid("document must have a .slop extension")
+    }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue
+    else { throw SlopPackageError.invalid("document is not a directory") }
+    return root
+  }
+
+  static func readManifest(_ root: URL) throws -> (manifest: SlopManifest, silhouette: WindowSilhouette) {
+    let url = root.appendingPathComponent("manifest.json")
+    guard FileManager.default.fileExists(atPath: url.path) else { throw SlopPackageError.missing("manifest.json") }
+    return try decodeManifest(try SlopFile.read(url, within: root, maximumBytes: 64 * 1024))
+  }
+
+  /// The manifest must match the current contract exactly: nothing has shipped, so
+  /// there is no tolerant reader for older or newer fields.
+  private static func decodeManifest(_ data: Data) throws -> (manifest: SlopManifest, silhouette: WindowSilhouette) {
+    guard let json = String(data: data, encoding: .utf8) else {
       throw SlopPackageError.invalid("manifest.json must be UTF-8")
     }
-    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-      PlatformContract.valid(object, against: manifestReadSchema)
-    else { throw SlopPackageError.invalid("unsupported or invalid v1 manifest") }
-    // Only this decoding copy is normalized. Opening and copying preserve manifestData bytes.
-    var seen = Set<String>()
-    object["categories"] = (object["categories"] as! [String]).compactMap { value -> String? in
-      let mapped = (SlopCategory(rawValue: value) ?? .other).rawValue
-      return seen.insert(mapped).inserted ? mapped : nil
+    do {
+      let silhouette = try validateManifest(manifestJson: json)
+      return (try JSONDecoder().decode(SlopManifest.self, from: data), silhouette)
+    } catch let CoreError.Rejected(_, message, _) {
+      throw SlopPackageError.invalid(message)
+    } catch {
+      throw SlopPackageError.invalid(error.localizedDescription)
     }
-    var presentation = object["presentation"] as! [String: Any]
-    if let shape = presentation["shape"] as? String, Shape(rawValue: shape) == nil {
-      presentation.removeValue(forKey: "shape")
-    }
-    if let background = presentation["background"] as? String, Background(rawValue: background) == nil {
-      presentation.removeValue(forKey: "background")
-    }
-    object["presentation"] = presentation
-    return object
   }
 
   private func validateState() throws {
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: stateURL.path) else { return }
     let allowed = Set([
-      "document.sqlite", "document.sqlite-journal", "writer.lock", "host.lock", "theme.json",
+      "document.sqlite", "document.sqlite-journal", "writer.lock", "host.lock",
     ])
     for url in try fileManager.contentsOfDirectory(
       at: stateURL, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
@@ -273,14 +276,6 @@ public struct SlopPackage: Sendable {
         throw SlopPackageError.invalid("unexpected or unsafe state file")
       }
     }
-  }
-
-  private func validateSchemaMetadata() throws {
-    let descriptor = try SlopFile.read(dataSchemaURL, within: rootURL, maximumBytes: 1024 * 1024)
-    guard let header = try JSONSerialization.jsonObject(with: descriptor) as? [String: Any],
-      header["format"] as? Int == 1
-    else { throw SlopPackageError.invalid("unsupported v1 document descriptor") }
-    _ = try JSONSerialization.jsonObject(with: SlopFile.read(initialURL, within: rootURL))
   }
 
   private func validateDocumentSkill(strict: Bool = false) throws {

@@ -1,7 +1,7 @@
 // Guards the canonical schema key (the host refuses a document whose stored key differs)
 // and the base64 codec used for attachment bytes on the host bridge.
 import { describe, test, expect } from "bun:test";
-import { fromDescriptor, schemaKey } from "../src/schema";
+import { fromDescriptor, schemaKey } from "../src/descriptor";
 import { base64 } from "../src/bridge";
 
 describe("schema identity", () => {
@@ -9,17 +9,14 @@ describe("schema identity", () => {
   // keys sorted recursively, array order kept, no whitespace, JavaScript JSON numbers.
   test("keys are canonical JSON of the descriptor, independent of authoring order and normalization", () => {
     const descriptor = {
-      root: {
         properties: {
           b: { kind: "counter" },
           a: { item: { properties: { z: { kind: "text" }, y: { kind: "boolean" } }, kind: "object" }, kind: "list" },
         },
         kind: "object",
-      },
-      format: 1,
     } as any;
     const golden =
-      '{"format":1,"root":{"kind":"object","properties":{"a":{"item":{"kind":"object","properties":{"y":{"kind":"boolean"},"z":{"kind":"text"}}},"kind":"list"},"b":{"kind":"counter"}}}}';
+      '{"kind":"object","properties":{"a":{"item":{"kind":"object","properties":{"y":{"kind":"boolean"},"z":{"kind":"text"}}},"kind":"list"},"b":{"kind":"counter"}}}';
     expect(schemaKey(descriptor)).toBe(golden);
     expect(schemaKey(fromDescriptor(descriptor).descriptor)).toBe(golden);
   });

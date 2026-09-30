@@ -1,5 +1,5 @@
 use super::*;
-const ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
+pub(super) const ALPHABET: &[u8] = crate::wire::ID_ALPHABET;
 fn fnv(text: &str) -> u64 {
     text.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
 }
@@ -9,18 +9,40 @@ pub(super) fn derived(internal: &str) -> String {
     for _ in 0..24 { out.push(ALPHABET[(bits & 31) as usize] as char); bits >>= 5; }
     out
 }
+/// A row's stored `$id`, when it is a valid application ID.
+pub(super) fn stored_id(map: &LoroMap) -> Option<String> {
+    match map.get("$id") {
+        Some(ValueOrContainer::Value(loro::LoroValue::String(s))) if valid_id(&s) => Some(s.to_string()),
+        _ => None,
+    }
+}
+fn entries(list: &LoroMovableList) -> Vec<Option<(ContainerID, Option<String>)>> {
+    let mut entries = Vec::with_capacity(list.len());
+    list.for_each(|row| entries.push(match row {
+        ValueOrContainer::Container(Container::Map(map)) => Some((map.id(), stored_id(&map))),
+        _ => None,
+    }));
+    entries
+}
+/// The stored IDs when every row is a map with its own unique valid ID (the common case,
+/// where stored and effective IDs agree).
+fn clean(entries: &[Option<(ContainerID, Option<String>)>]) -> Option<Vec<String>> {
+    let mut unique = HashSet::with_capacity(entries.len());
+    entries.iter().map(|entry| match entry {
+        Some((_, Some(id))) if unique.insert(id.as_str()) => Some(id.clone()),
+        _ => None,
+    }).collect()
+}
+pub(super) fn clean_rows(list: &LoroMovableList) -> Option<Vec<String>> {
+    clean(&entries(list))
+}
 /// Pure projection. Stored identity registers are never repaired.
 pub(super) fn rows(list: &LoroMovableList) -> Vec<Option<String>> {
-    let entries: Vec<_> = (0..list.len()).map(|i| match list.get(i) {
-        Some(ValueOrContainer::Container(Container::Map(map))) => {
-            let stored = match map.get("$id") {
-                Some(ValueOrContainer::Value(loro::LoroValue::String(s))) if valid_id(&s) => Some(s.to_string()),
-                _ => None,
-            };
-            Some((map.id().to_string(), stored))
-        }
-        _ => None,
-    }).collect();
+    let entries = entries(list);
+    if let Some(ids) = clean(&entries) {
+        return ids.into_iter().map(Some).collect();
+    }
+    let entries: Vec<_> = entries.into_iter().map(|entry| entry.map(|(cid, stored)| (cid.to_string(), stored))).collect();
     let mut owners: BTreeMap<String, String> = BTreeMap::new();
     for (internal, stored) in entries.iter().flatten() {
         if let Some(id) = stored {

@@ -15,27 +15,37 @@
     fx: number; fy: number; tilt: number; open: boolean;
   };
   const layout: Win[] = [
-    { id: "video", title: "hitSlop in action.mp4", emoji: "🎬", kind: "video", width: 460, height: 296, fx: 0, fy: .04, tilt: -1.5, open: true },
+    { id: "video", title: "hitSlop in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
     { id: "picker", title: "Pick One.slop", emoji: "🔮", kind: "shape", width: 330, height: 208, zoom: .55, fx: .04, fy: 1, tilt: 1.5, open: true },
     { id: "checklist", title: "Today.slop", emoji: "☑️", kind: "window", width: 300, height: 392, fx: .39, fy: .1, tilt: 2, open: true },
     { id: "note", title: "Sticky note", emoji: "📝", kind: "note", width: 200, height: 176, fx: .325, fy: 1, tilt: -7, open: true },
     { id: "timer", title: "Pomodoro.slop", emoji: "🍅", kind: "shape", width: 250, height: 250, zoom: .72, fx: .64, fy: .78, tilt: 0, open: true },
     { id: "invoice", title: "Invoice.slop", emoji: "💸", kind: "window", width: 344, height: 392, zoom: .555, fx: 1, fy: .02, tilt: -2, open: true },
   ];
-  // Medium desktops get a roomier arrangement; the invoice and picker wait in the dock.
+  // Narrower desktops (the hero's right column) keep the video in front; the invoice and picker wait in the dock.
   const medium: Record<string, Partial<Win>> = {
-    video: { fx: 0, fy: .02 },
-    checklist: { fx: 1, fy: .05 },
-    timer: { fx: .3, fy: 1 },
-    note: { fx: .75, fy: 1, tilt: -6 },
+    video: { fx: 0, fy: 0 },
+    checklist: { fx: 1, fy: 0 },
+    timer: { fx: .42, fy: 1 },
+    note: { fx: 1, fy: 1, tilt: -6 },
     invoice: { open: false, fx: .5, fy: .15 },
     picker: { open: false, fx: .45, fy: .55 },
   };
-  let roomy = true;
-  const clone = () => layout.map((win) => ({ ...win, ...(roomy ? {} : medium[win.id]) }));
+  // Narrower still (k = 1 at 690px wide): everything shrinks so two windows fit side by side.
+  const compact = (k: number): Record<string, Partial<Win>> => ({
+    video: { width: Math.round(400 * k), height: Math.round(36 + 225 * k) },
+    checklist: { width: Math.round(270 * k), height: Math.round(353 * k), zoom: .9 * k },
+    timer: { width: Math.round(200 * k), height: Math.round(200 * k), zoom: .576 * k, fx: .4 },
+    note: { width: Math.round(170 * k), height: Math.round(150 * k), fx: .7 },
+  });
+  let tier: "roomy" | "medium" | "compact" = "roomy";
+  let shrink = 1;
+  const clone = () => layout.map((win) => ({ ...win, ...(tier === "roomy" ? {} : medium[win.id]), ...(tier === "compact" ? compact(shrink)[win.id] : {}) }));
+  // The video sits above the checklist but under the timer and note, so nothing ever covers its play button.
+  const stack = () => ["invoice", "picker", "checklist", "video", "timer", "note"];
 
   let windows = $state<Win[]>(clone());
-  let order = $state<string[]>(layout.map((win) => win.id));
+  let order = $state<string[]>(stack());
   let dragging = $state<string | null>(null);
   let dragTilt = $state(0);
   // Unknown until mounted, so server markup shows the desktop layout and small screens rely on CSS.
@@ -60,7 +70,7 @@
   }
   function tidy(): void {
     windows = clone();
-    order = layout.map((win) => win.id);
+    order = stack();
   }
   function shuffle(): void {
     for (const win of windows) {
@@ -129,10 +139,9 @@
     const query = matchMedia("(min-width: 780px) and (pointer: fine)");
     const sync = () => { canDrag = query.matches; };
     sync();
-    if (surface.clientWidth < 1100) {
-      roomy = false;
-      windows = clone();
-    }
+    tier = surface.clientWidth >= 1100 ? "roomy" : surface.clientWidth >= 780 || !canDrag ? "medium" : "compact";
+    shrink = clamp(surface.clientWidth / 690, .8, 1);
+    if (tier !== "roomy") windows = clone();
     query.addEventListener("change", sync);
     const format = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
     const tick = () => { clock = format.format(new Date()); };
@@ -189,8 +198,8 @@
             {#if win.id === "video"}
               <button type="button" class="poster" onclick={playVideo} aria-label="Watch hitSlop in action, 30 seconds">
                 <picture>
-                  <source type="image/avif" srcset="/assets/desktop-hero-poster-960.avif 960w, /assets/desktop-hero-poster.avif 1920w" sizes="460px" />
-                  <source type="image/webp" srcset="/assets/desktop-hero-poster-960.webp 960w, /assets/desktop-hero-poster.webp 1920w" sizes="460px" />
+                  <source type="image/avif" srcset="/assets/desktop-hero-poster-960.avif 960w, /assets/desktop-hero-poster.avif 1920w" sizes="520px" />
+                  <source type="image/webp" srcset="/assets/desktop-hero-poster-960.webp 960w, /assets/desktop-hero-poster.webp 1920w" sizes="520px" />
                   <img src="/assets/desktop-hero-poster-960.jpg" width="960" height="540" alt="A Mac desktop full of open slops: a music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle and school planners" fetchpriority="high" />
                 </picture>
                 <span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" /></svg></span>
@@ -233,7 +242,7 @@
   .menubar-app img { border-radius: 4px; }
   .menubar-menus { color: #10132cb3; }
   .menubar-right { margin-left: auto; display: inline-flex; gap: 14px; font-variant-numeric: tabular-nums; }
-  .surface { position: relative; height: clamp(600px, 50vw, 700px); }
+  .surface { position: relative; height: clamp(520px, 34vw, 600px); }
   .win { position: absolute; left: calc(var(--pad) + (100% - var(--pad) * 2 - var(--w)) * var(--fx)); top: calc(var(--pad) + (100% - var(--pad) - var(--dock) - var(--h)) * var(--fy)); width: var(--w); rotate: var(--tilt); transition: left 650ms var(--spring), top 650ms var(--spring), rotate 450ms var(--spring), box-shadow 200ms, scale 200ms var(--spring); touch-action: none; }
   .win[data-dragging="true"] { transition: rotate 120ms linear, box-shadow 200ms, scale 200ms var(--spring); scale: 1.03; cursor: grabbing; }
   .win[data-kind="window"], .win[data-kind="video"] { overflow: hidden; border: 1px solid #10132c1f; border-radius: 16px; background: #fff; box-shadow: 0 22px 44px #2a1b5c2e, 0 2px 6px #2a1b5c14; }
@@ -253,6 +262,8 @@
   .poster img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
   .play { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%; background: #fffffff2; box-shadow: 0 12px 34px #2a1b6a66, 0 0 0 8px #ffffff55; transform: translate(-50%, -50%); transition: transform 240ms var(--spring); }
   .play svg { width: 30px; margin-left: 5px; fill: #6c3fd6; }
+  @media (prefers-reduced-motion: no-preference) { .play::after { position: absolute; inset: -8px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffffcc; opacity: 0; animation: play-pulse 2.6s ease-out infinite; content: ""; } }
+  @keyframes play-pulse { 0% { opacity: .9; scale: 1; } 70%, 100% { opacity: 0; scale: 1.5; } }
   .poster:hover .play, .poster:focus-visible .play { transform: translate(-50%, -50%) scale(1.12); }
   .play-label { position: absolute; left: 12px; bottom: 12px; padding: 6px 12px; border-radius: 999px; color: #10132c; background: #fffffff0; font-size: 14px; font-weight: 800; }
   .play-label small { margin-left: 4px; color: #6b6890; font-size: 13px; font-weight: 600; }

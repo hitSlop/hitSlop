@@ -11,4 +11,4 @@ export default {
     { title: "Deep Work", author: "Cal Newport", rating: 5, status: "To Read" },
     { title: "The Creative Act", author: "Rick Rubin", rating: 4, status: "To Read" },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

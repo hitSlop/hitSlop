@@ -6,6 +6,8 @@ export const interactiveUpdates = defineExtension(defineExtensionId("hitslop:upd
   const notifier = updateNotifier({
     packageName: "@hitslop/cli",
     timeoutMs: 1_000,
+    // Upgrading the global install is also what refreshes agent skills.
+    updateCommand: { scope: "global" },
     updateDocsUrl: "https://hitslop.com/docs/guides/cli-workflows/#upgrade-the-cli",
   });
   return {

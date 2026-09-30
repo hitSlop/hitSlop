@@ -1,15 +1,19 @@
+import { isOperationRejection } from "../errors";
 import type { OwnerIntent, OwnerPath as Path, OwnerState } from "@hitslop/schema/owner";
 import type { Handle, At } from "../handle-types";
-import { isScalar, schemaKey, unwrap, type Definition, type Node, type ObjectNode, type Value } from "../schema";
-import { applyOps, readPath, Store, type Changes, type Segment } from "./store";
+import type { Definition, Node, ObjectNode, Value } from "../schema";
+import { schemaKey, unwrap } from "../descriptor";
+import type { Segment } from "../schema";
+import { readPath, Store, type Changes } from "./store";
 import { bindText as bindField } from "./text";
 import type { OwnerTransport } from "./transport";
-import { newID } from "../identity";
+import { handleFactory, type Collector } from "./handles";
+import { bindValue } from "./bind-value";
+import { Previews, type Preview } from "./previews";
 import type { AsyncHandle } from "../async-types";
 export type { AsyncHandle } from "../async-types";
 export type { OwnerTransport } from "./transport";
-export type OwnerScope<N extends ObjectNode> = { readonly fields: Handle<N>; readonly at: At };
-type Collector = (intent: OwnerIntent) => void;
+import type { SaveStatus, Scope as OwnerScope } from "../abi";
 
 /** Page-side document state. It contains no CRDT and never writes persistent JSON. */
 export class OwnerDocument<N extends ObjectNode> {
@@ -20,7 +24,8 @@ export class OwnerDocument<N extends ObjectNode> {
   private readonly paths = new WeakMap<object, { node: Node; path: Path }>();
   private readonly handles = new Map<string, any>();
   private readonly handlePaths = new WeakMap<object, { node: Node; path: Path }>();
-  private readonly bindings = new Set<ReturnType<typeof bindField>>();
+  /** Each binding's drain: sends its unsent edit before a barrier saves. */
+  private readonly drains = new Set<() => Promise<void>>();
   private readonly listeners = new Set<() => void>();
   private readonly pathListeners = new Map<string, Set<() => void>>();
   /** Work the close and capture barriers wait for: writes, text sends, attachments. */
@@ -29,8 +34,18 @@ export class OwnerDocument<N extends ObjectNode> {
   private collecting = false;
   private blocked = false;
   /** Local-only values shown over the store (drags, drawing) until set or flush. */
-  private readonly previews = new Map<string, { path: Path; value: unknown }>();
+  private readonly previews = new Previews();
   private presented: unknown;
+
+  private readonly makeHandle = handleFactory({
+    handle: (node, path, collect) => this.handle(node, path, collect),
+    submit: (intents, result) => this.submit(intents, result),
+    write: (intent) => {
+      const key = JSON.stringify(intent.path);
+      return this.writePreview(key, this.previews.get(key), intent);
+    },
+    preview: (path, value) => this.setPreview(path, value),
+  });
 
   private constructor(
     private readonly definition: Definition<N>,
@@ -43,7 +58,7 @@ export class OwnerDocument<N extends ObjectNode> {
       () => transport.open(),
       (changes) => this.changed(changes),
     );
-    this.fields = this.handle(definition.descriptor.root, [], undefined);
+    this.fields = this.handle(definition.descriptor, [], undefined);
   }
   static async open<N extends ObjectNode>(
     definition: Definition<N>,
@@ -62,7 +77,7 @@ export class OwnerDocument<N extends ObjectNode> {
   get issues(): OwnerState["issues"] {
     return this.store.state.issues;
   }
-  get status(): "pending" | "saved" | "save-failed" {
+  get status(): SaveStatus {
     if (this.store.saveFailure) return "save-failed";
     return this.store.state.sequence > this.store.savedSequence || this.pending.size || this.previews.size
       ? "pending"
@@ -105,18 +120,10 @@ export class OwnerDocument<N extends ObjectNode> {
     };
   }
   private notifyPaths(changes: Changes) {
+    // A touched path refreshes its own bindings and every binding beneath it.
+    const touched = changes === "all" ? undefined : [...changes.paths].map((path) => [path, path.slice(0, -1) + ","] as const);
     for (const [key, set] of this.pathListeners) {
-      if (changes !== "all") {
-        // A touched path refreshes its own bindings and every binding beneath it.
-        let hit = false;
-        for (const touched of changes.paths) {
-          if (key === touched || key.startsWith(touched.slice(0, -1) + ",")) {
-            hit = true;
-            break;
-          }
-        }
-        if (!hit) continue;
-      }
+      if (touched && !touched.some(([path, beneath]) => key === path || key.startsWith(beneath))) continue;
       for (const listener of set) {
         try {
           listener();
@@ -127,41 +134,53 @@ export class OwnerDocument<N extends ObjectNode> {
     }
   }
   private changed(changes: Changes) {
+    // Handles held by callers remain valid path references, but deleted rows/entries
+    // must not stay strongly retained by the document's cache for its whole lifetime.
+    if (changes === "all") this.handles.clear();
+    else for (const path of changes.removed ?? []) {
+      const key = JSON.stringify(path), prefix = key.slice(0, -1) + ",";
+      for (const cached of this.handles.keys())
+        if (cached === key || cached.startsWith(prefix)) this.handles.delete(cached);
+    }
     this.present();
     this.notify();
     this.notifyPaths(changes);
   }
-  /** Applies previews over the store's snapshot. A preview whose row is gone is dropped. */
   private present() {
-    let value = this.store.state.value;
-    for (const [key, preview] of this.previews) {
-      try {
-        value = applyOps(value, [{ type: "set", path: preview.path, value: preview.value } as any]);
-      } catch {
-        this.previews.delete(key);
-      }
-    }
-    this.presented = value;
-    this.register(value, this.definition.descriptor.root, []);
+    this.presented = this.previews.overlay(this.store.state.value);
+    this.register(this.presented, this.definition.descriptor, []);
   }
   private setPreview(path: Path, value: unknown) {
     if (this.transport.readOnly) throw new Error("Read-only document");
     if (this.blocked) throw new Error("Document barrier is active");
     if (this.collecting) throw new Error("Previews are not transaction writes");
-    const key = JSON.stringify(path);
-    this.previews.set(key, { path, value: structuredClone(value) });
+    const key = this.previews.set(path, value);
     this.present();
     this.notify();
     this.notifyPaths({ paths: new Set([key]) });
   }
-  /** Drops the preview for `path` once a write covering it is accepted, unless a newer
-   * preview replaced it meanwhile. */
-  private settlePreview(key: string, preview: { path: Path; value: unknown } | undefined) {
-    if (!preview || this.previews.get(key) !== preview) return;
-    this.previews.delete(key);
+  private settlePreviews(covered: ReadonlyMap<string, Preview>) {
+    const settled = this.previews.settle(covered);
+    if (!settled.size) return;
     this.present();
     this.notify();
-    this.notifyPaths({ paths: new Set([key]) });
+    this.notifyPaths({ paths: settled });
+  }
+  /** Commits one preview's value. A refused value can never be saved, so the saved value
+   * shows again; an unknown outcome keeps the preview for the barrier to report. */
+  private writePreview(
+    key: string,
+    preview: Preview | undefined,
+    intent: OwnerIntent,
+    admitted = false,
+  ) {
+    return this.submit([intent], undefined, admitted).then(
+      () => {},
+      error => {
+        if (isOperationRejection(error) && preview) this.settlePreviews(new Map([[key, preview]]));
+        throw error;
+      },
+    );
   }
   /** Maps snapshot objects to their paths for `at`. Stops at objects already seen, so
    * the cost follows the objects a publication created. */
@@ -173,12 +192,14 @@ export class OwnerDocument<N extends ObjectNode> {
       for (const [key, child] of Object.entries(inner.properties))
         this.register(value[key], child, [...path, key]);
     } else if (inner.kind === "list" && Array.isArray(value)) {
+      // Rows a publication kept are already mapped: skip them before building a path.
       for (const row of value)
-        if (row && typeof row === "object" && typeof row.$id === "string")
+        if (row && typeof row === "object" && typeof row.$id === "string" && !this.paths.has(row))
           this.register(row, inner.item, [...path, { id: row.$id }]);
     } else if (inner.kind === "record" && !Array.isArray(value)) {
       // Object entries resolve with `doc.at(entry)`, addressed by their key.
-      for (const [key, entry] of Object.entries(value)) this.register(entry, inner.value, [...path, key]);
+      for (const [key, entry] of Object.entries(value))
+        if (!this.paths.has(entry as object)) this.register(entry, inner.value, [...path, key]);
     }
   }
   /** Tracks work for barriers and status; `notify` reports the pending transition. */
@@ -193,21 +214,24 @@ export class OwnerDocument<N extends ObjectNode> {
     return work;
   }
   /** One FIFO queue for handle writes, so `insert` then `move` cannot reorder. */
-  private submit<R>(intents: OwnerIntent[], result: R, admitted = false): Promise<R> {
+  /** `collected` intents were already copied when their collector ran. */
+  private submit<R>(intents: OwnerIntent[], result: R, admitted = false, collected = false): Promise<R> {
     if (this.transport.readOnly) return Promise.reject(new Error("Read-only document"));
     if (this.blocked && !admitted) return Promise.reject(new Error("Document barrier is active"));
     if (this.collecting) throw new Error("Use tx handles inside change()");
-    const batch = structuredClone({ intents });
+    const batch = { intents: collected ? intents : structuredClone(intents) };
+    const covered = this.previews.coveredBy(intents);
     const run = this.tail.then(async () => {
+      this.store.assertWritable();
       const reply = await this.transport.apply(batch);
       await this.store.reached(reply.sequence);
+      this.settlePreviews(covered);
       return result;
     });
     this.tail = run.catch(() => {});
-    return this.track(run).catch((error) => {
-      this.report(error);
-      throw error;
-    });
+    // Return a distinct promise: internal queue/barrier observers must not swallow
+    // an unhandled rejection on the author's promise.
+    return this.track(run).then(value => value);
   }
   at = (<T extends Node>(value: object) => {
     const location = this.paths.get(value);
@@ -229,7 +253,7 @@ export class OwnerDocument<N extends ObjectNode> {
     this.collecting = true;
     try {
       const tx = {
-        fields: this.handle(this.definition.descriptor.root, [], collect),
+        fields: this.handle(this.definition.descriptor, [], collect),
         at: (value: object) => {
           if (!active) throw new Error("Transaction handle escaped change()");
           const location = this.paths.get(value);
@@ -249,7 +273,7 @@ export class OwnerDocument<N extends ObjectNode> {
       this.collecting = false;
     }
   }
-  change<R>(callback: (tx: OwnerScope<N>) => R, _options?: { message?: string }): Promise<R> {
+  change<R>(callback: (tx: OwnerScope<N>) => R): Promise<R> {
     if (this.transport.readOnly) return Promise.reject(new Error("Read-only document"));
     if (this.blocked) return Promise.reject(new Error("Document barrier is active"));
     if (this.collecting) throw new Error("Nested change() is not supported");
@@ -257,10 +281,9 @@ export class OwnerDocument<N extends ObjectNode> {
     try {
       collected = this.collect(callback);
     } catch (error) {
-      this.report(error);
       return Promise.reject(error);
     }
-    return this.submit(collected.intents, collected.result);
+    return this.submit(collected.intents, collected.result, false, true);
   }
   /**
    * Stores a blob, then submits the collector's edits that reference it. It joins the
@@ -277,7 +300,7 @@ export class OwnerDocument<N extends ObjectNode> {
       (async () => {
         const stored = await store();
         const { intents } = this.collect((tx) => callback(tx, stored));
-        await this.submit(intents, undefined, true);
+        await this.submit(intents, undefined, true, true);
         return stored;
       })(),
     );
@@ -294,128 +317,30 @@ export class OwnerDocument<N extends ObjectNode> {
     }
     return handle;
   }
-  private makeHandle(node: Node, path: Path, collect: Collector | undefined): any {
-    const send = <R>(intent: OwnerIntent, result: R) => {
-      if (collect) {
-        collect(intent);
-        return result;
-      }
-      return this.submit([intent], result);
-    };
-    const key = JSON.stringify(path);
-    const set = (value: unknown) => {
-      if (collect) return send({ type: "set", path, value }, undefined);
-      const preview = this.previews.get(key);
-      return this.submit([{ type: "set", path, value }], undefined).then(() => this.settlePreview(key, preview));
-    };
-    const scalar = () => ({ set, preview: (value: unknown) => this.setPreview(path, value) });
-    if (node.kind === "optional") {
-      const clear = () => {
-        if (collect) return send({ type: "clear", path }, undefined);
-        const preview = this.previews.get(key);
-        return this.submit([{ type: "clear", path }], undefined).then(() => this.settlePreview(key, preview));
-      };
-      if (isScalar(node.inner)) return Object.freeze({ ...scalar(), clear });
-      if (node.inner.kind === "text")
-        return Object.freeze({ set: (value: string) => send({ type: "set", path, value }, undefined), clear });
-      // An optional object: its fields, plus `set` to create or replace it and `clear`.
-      const fields = this.makeHandle(node.inner, path, collect);
-      const handle = Object.create(null);
-      for (const name of Object.keys(fields))
-        Object.defineProperty(handle, name, { enumerable: true, get: () => fields[name] });
-      Object.defineProperty(handle, "set", { value: (value: unknown) => send({ type: "set", path, value }, undefined) });
-      Object.defineProperty(handle, "clear", { value: clear });
-      return Object.freeze(handle);
-    }
-    if (isScalar(node)) return Object.freeze(scalar());
-    switch (node.kind) {
-      case "object": {
-        // Children are built on first access and cached with their path.
-        const children: Record<string, any> = {};
-        for (const key of Object.keys(node.properties))
-          Object.defineProperty(children, key, {
-            enumerable: true,
-            get: () => this.handle(node.properties[key]!, [...path, key], collect),
-          });
-        return Object.freeze(children);
-      }
-      case "counter": {
-        const increment = (by = 1) => send({ type: "increment", path, by }, undefined);
-        return Object.freeze({ increment, decrement: (by = 1) => increment(-by) });
-      }
-      case "record": {
-        const entry = (key: string) => [...path, key];
-        return Object.freeze({
-          entry: (key: string) => this.handle(node.value, entry(key), collect),
-          put: (key: string, value: unknown) => send({ type: "set", path: entry(key), value }, undefined),
-          delete: (key: string) => send({ type: "clear", path: entry(key) }, undefined),
-        });
-      }
-      case "list": {
-        if (node.item.kind !== "object") {
-          const at = (index: number) => [...path, { index }];
-          return Object.freeze({
-            insert: (value: unknown, index?: number) =>
-              send({ type: "insert", path, value, ...(index === undefined ? {} : { index }) }, undefined),
-            set: (index: number, value: unknown) => {
-              if (collect) return send({ type: "set", path: at(index), value }, undefined);
-              const key = JSON.stringify(at(index));
-              const preview = this.previews.get(key);
-              return this.submit([{ type: "set", path: at(index), value }], undefined).then(() =>
-                this.settlePreview(key, preview),
-              );
-            },
-            preview: (index: number, value: unknown) => this.setPreview(at(index), value),
-            remove: (index: number, count = 1) => send({ type: "remove", path, index, count }, undefined),
-            // Rewrites the whole list; the owner keeps unchanged positions.
-            replace: (values: unknown[]) => send({ type: "set", path, value: values }, undefined),
-          });
-        }
-        const item = node.item;
-        return Object.freeze({
-          item: (id: string) => this.handle(item, [...path, { id }], collect),
-          insert: (value: unknown, at?: { before: string } | { after: string }) => {
-            const id = newID();
-            return send({ type: "insert", path, value, id, ...(at ? { at } : {}) }, Object.freeze({ id }));
-          },
-          remove: (id: string) => send({ type: "remove", path, id }, undefined),
-          move: (id: string, at?: { before: string } | { after: string }) =>
-            send({ type: "move", path, id, ...(at ? { at } : {}) }, undefined),
-        });
-      }
-      case "text":
-        // Whole-field replacement of the text as it is when the owner runs it.
-        return Object.freeze({ set: (value: string) => send({ type: "set", path, value }, undefined) });
-      default:
-        throw new Error(`Unsupported descriptor: ${(node as Node).kind}`);
-    }
-  }
   /** Drains bindings, queued writes and attachment work, then saves once. A barrier
    * never joins a flush that already passed its drain point. */
   private async drainAndSave(): Promise<void> {
-    for (const binding of this.bindings) binding.commit();
-    // Previews commit as one batch; each stays shown until its write is accepted.
-    const previews = [...this.previews.entries()];
-    if (previews.length)
-      void this.submit(
-        previews.map(([, p]) => ({ type: "set" as const, path: p.path, value: p.value }) as OwnerIntent),
-        undefined,
-        true,
-      ).then(
-        () => previews.forEach(([key, preview]) => this.settlePreview(key, preview)),
-        () => {},
-      );
+    if (this.store.failure) await this.store.resync();
+    await Promise.all([...this.drains].map((drain) => drain()));
+    // One invalid draft must not reject an unrelated, valid draft's atomic batch.
+    for (const [key, preview] of this.previews.all()) {
+      try {
+        await this.writePreview(key, preview, { type: "set", path: preview.path, value: preview.value }, true);
+      } catch (error) {
+        if (!isOperationRejection(error)) throw error;
+        this.report(error);
+      }
+    }
     while (this.pending.size) await Promise.allSettled([...this.pending]);
     const target = this.store.state.sequence;
     try {
       await this.transport.flush();
     } catch (error) {
-      this.store.saveFailure = String(error instanceof Error ? error.message : error);
+      this.store.markSaveFailed(String(error instanceof Error ? error.message : error));
       this.notify();
       throw error;
     }
-    this.store.savedSequence = Math.max(this.store.savedSequence, target);
-    this.store.saveFailure = null;
+    this.store.markSaved(target);
     this.notify();
   }
   flush(): Promise<void> {
@@ -439,9 +364,6 @@ export class OwnerDocument<N extends ObjectNode> {
     this.blocked = false;
     this.notify();
   }
-  async close() {
-    await this.prepareClose();
-  }
   /**
    * Binds a form control to a scalar. Checkboxes and selects commit on `change`; ranges
    * preview while dragging and commit on `change`; number inputs commit on `change`;
@@ -450,146 +372,83 @@ export class OwnerDocument<N extends ObjectNode> {
    * reverts to the document's value.
    */
   bindValue(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, initial: object) {
-    let location!: { node: Node; path: Path };
-    let latest: { clear: true } | { value: unknown } | undefined;
-    let running: Promise<void> | undefined;
-    let destroyed = false;
-    const input = element as HTMLInputElement;
-    // `<select>` reports "select-one"; a textarea reports "textarea" and commits on input.
-    const raw = String((element as { type?: string }).type ?? "text");
-    const type = raw.startsWith("select") ? "select" : raw;
-    const resolve = (next: object) => {
-      const found = this.handlePaths.get(next);
-      if (!found || !isScalar(unwrap(found.node))) throw new Error("Expected this document's scalar handle");
-      location = found;
-    };
-    const kind = () => unwrap(location.node) as import("../schema").Scalar;
-    const optional = () => location.node.kind === "optional";
-    const sync = () => {
-      if (running) return;
-      const value = readPath(this.current, location.path as Segment[]);
-      const expected = { boolean: "boolean", string: "string", enum: "string", number: "number", integer: "number" }[kind().kind];
-      const valid = value === undefined ? optional() : typeof value === expected;
-      const disabled = !!this.transport.readOnly || !valid;
-      if (element.disabled !== disabled) element.disabled = disabled;
-      if (type === "checkbox") input.checked = value === true;
-      else {
-        const text = value === undefined ? "" : String(value);
-        if (element.value !== text) element.value = text;
-      }
-    };
-    /** The control's value as a write, or undefined when it cannot be written. */
-    const parse = (): { clear: true } | { value: unknown } | undefined => {
-      const k = kind();
-      if (type === "checkbox") return k.kind === "boolean" ? { value: input.checked } : undefined;
-      const raw = element.value;
-      if (raw === "" && optional()) return { clear: true };
-      switch (k.kind) {
-        case "boolean":
-          return raw === "true" || raw === "false" ? { value: raw === "true" } : undefined;
-        case "number":
-        case "integer": {
-          const n = raw.trim() === "" ? NaN : Number(raw);
-          if (!Number.isFinite(n) || (k.kind === "integer" && !Number.isSafeInteger(n))) return undefined;
-          return { value: n };
-        }
-        default:
-          return { value: raw };
-      }
-    };
-    const intent = (write: { clear: true } | { value: unknown }): OwnerIntent =>
-      "clear" in write ? { type: "clear", path: location.path } : { type: "set", path: location.path, value: write.value };
-    const commit = () => {
-      if (destroyed) return;
-      const write = parse();
-      if (!write || this.blocked || this.transport.readOnly) return void (running ? undefined : sync());
-      latest = write;
-      if (running) return;
-      running = (async () => {
-        while (latest) {
-          const next = latest;
-          latest = undefined;
-          const key = JSON.stringify(location.path);
-          const preview = this.previews.get(key);
-          try {
-            await this.submit([intent(next)], undefined, true);
-            this.settlePreview(key, preview);
-          } catch {
-            /* submit already reports the rejection centrally; sync shows the document value. */
-            this.settlePreview(key, preview);
-          }
-        }
-      })().finally(() => {
-        running = undefined;
-        if (!destroyed) sync();
-      });
-      void this.track(running);
-    };
-    const preview = () => {
-      const write = parse();
-      if (write && "value" in write && !this.blocked) this.setPreview(location.path, write.value);
-    };
-    const events: [string, () => void][] =
-      type === "range"
-        ? [["input", preview], ["change", commit]]
-        : type === "checkbox" || type === "select" || type === "number"
-          ? [["change", commit]]
-          : [["input", commit]];
-    resolve(initial);
-    let stop = this.subscribePath(location.path, sync);
-    for (const [name, listener] of events) element.addEventListener(name, listener);
-    sync();
-    return {
-      update: (next: object) => {
-        resolve(next);
-        stop();
-        stop = this.subscribePath(location.path, sync);
-        sync();
+    return bindValue({
+      locate: (handle) => this.handlePaths.get(handle),
+      read: (path) => readPath(this.current, path),
+      readOnly: () => !!this.transport.readOnly,
+      blocked: () => this.blocked,
+      write: (intent) => {
+        const key = JSON.stringify(intent.path);
+        return this.writePreview(key, this.previews.get(key), intent, true);
       },
-      destroy: () => {
-        destroyed = true;
-        stop();
-        for (const [name, listener] of events) element.removeEventListener(name, listener);
+      preview: (path, value) => this.setPreview(path, value),
+      report: (error) => this.report(error),
+      track: (work) => void this.track(work),
+      recover: async (path) => { await this.store.resync(); return readPath(this.store.state.value, path); },
+      subscribe: (path, listener) => this.subscribePath(path, listener),
+      barrier: (drain) => {
+        this.drains.add(drain);
+        return () => { this.drains.delete(drain); };
       },
-    };
+    }, element, initial);
   }
   bindText(element: HTMLInputElement | HTMLTextAreaElement, handle: object) {
-    let optional = false;
     const locate = (next: object) => {
       const location = this.handlePaths.get(next);
       if (!location || unwrap(location.node).kind !== "text") throw new Error("Expected this document's text handle");
-      optional = location.node.kind === "optional";
-      return location.path;
+      return location;
     };
-    let path = locate(handle);
-    const binding = bindField(element, path as Segment[], {
-      read: (at) => ({
-        // An unset optional text reads as "" and stays editable; typing creates it.
-        text: readPath(this.store.state.value, at) ?? (optional ? "" : undefined),
-        version: this.store.state.version,
-        sequence: this.store.state.sequence,
-      }),
-      send: (request) => this.transport.text(request),
-      reached: (sequence) => this.store.reached(sequence),
-      readOnly: () => !!this.transport.readOnly,
-      track: (work) => void this.track(work),
-      report: (error) => this.report(error),
-    });
-    this.bindings.add(binding);
-    let stop = this.subscribePath(path, () => binding.refresh());
+    const attach = (location: ReturnType<typeof locate>) => {
+      const optional = location.node.kind === "optional";
+      const binding = bindField(element, location.path as Segment[], {
+        read: (at) => {
+          const value = readPath(this.store.state.value, at);
+          const parent = readPath(this.store.state.value, at.slice(0, -1));
+          return {
+            text: value === undefined && optional && parent != null ? "" : value,
+            version: this.store.state.version,
+            sequence: this.store.state.sequence,
+          };
+        },
+        send: (request) => { this.store.assertWritable(); return this.transport.text(request); },
+        reached: (sequence) => this.store.reached(sequence),
+        recover: () => this.store.resync(),
+        readOnly: () => !!this.transport.readOnly,
+        track: (work) => void this.track(work),
+        report: (error) => this.report(error),
+      });
+      const drain = async () => {
+        await binding.commit();
+        if (binding.detached) this.drains.delete(drain);
+      };
+      this.drains.add(drain);
+      const stop = this.subscribePath(location.path, () => binding.refresh());
+      return {
+        path: location.path,
+        destroy: () => {
+          stop();
+          // No control remains to retry a detached draft: report it once, then stop
+          // holding barriers so close can proceed.
+          void binding.destroy()
+            .catch(error => this.report(error))
+            .finally(() => this.drains.delete(drain));
+        },
+      };
+    };
+    let active = attach(locate(handle));
+    let destroyed = false;
     return {
       update: (next: object) => {
-        const nextPath = locate(next);
-        if (JSON.stringify(nextPath) === JSON.stringify(path)) return;
-        stop();
-        path = nextPath;
-        binding.retarget(path as Segment[]);
-        stop = this.subscribePath(path, () => binding.refresh());
+        if (destroyed) return;
+        const location = locate(next);
+        if (JSON.stringify(location.path) === JSON.stringify(active.path)) return;
+        active.destroy();
+        active = attach(location);
       },
       destroy: () => {
-        stop();
-        binding.destroy();
-        this.bindings.delete(binding);
+        if (destroyed) return;
+        destroyed = true;
+        active.destroy();
       },
     };
   }

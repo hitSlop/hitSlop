@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+  import { useDocument } from "@hitslop/document/svelte";
   import schema from "./schema";
   const document = useDocument(schema);
   // Native tests inject failures without changing the document or the shipped examples.
@@ -9,8 +9,5 @@
     return "";
   }
 </script>
-<Slop>
+
   <main class="editor">{checkRender("editor")}<button onclick={() => document.fields.count.increment().catch(() => {})}>Clicks: {document.current.count}</button></main>
-  {#snippet exportView()}<article class="export">{checkRender("export")}<h1>Presentation</h1><p>Clicks: {document.current.count}</p></article>{/snippet}
-  {#snippet icon()}<div class="icon">{checkRender("icon")}</div>{/snippet}
-</Slop>

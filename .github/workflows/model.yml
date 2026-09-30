@@ -1,0 +1,17 @@
+name: Core model
+# The extended descriptor model (64 seeds × 500 steps per fixture) is too slow for
+# every change; it runs weekly and on demand against the default branch.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/prepare-checks
+      - run: bun run core:test:extended

@@ -36,6 +36,7 @@ export default defineConfig({
           label: "Build a slop",
           items: [
             { label: "Data and schemas", slug: "docs/guides/data-and-schemas" },
+            { label: "Files and the web", slug: "docs/guides/files-and-web" },
             { label: "Manifest and windows", slug: "docs/guides/manifest-and-windows" },
             { label: "Style an app", slug: "docs/guides/styling" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },
@@ -55,6 +56,7 @@ export default defineConfig({
           items: [
             { label: "CLI workflows", slug: "docs/guides/cli-workflows" },
             { label: "Availability", slug: "docs/availability" },
+            { label: "Privacy", slug: "docs/privacy" },
             { label: "Collaboration (coming soon)", slug: "docs/guides/live-sharing" },
           ],
         },

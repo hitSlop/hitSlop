@@ -1,0 +1,73 @@
+---
+title: Files and the web
+description: Store files as attachments, fetch HTTPS data, and embed web content such as YouTube.
+---
+
+## Keep the document for state worth saving
+
+Save what a person would want back tomorrow. Drag positions, playback progress, timers
+and hover state belong in component state: writing them on every frame grows the
+document's history for no benefit. Store files as attachments, never as base64 inside
+fields. A document's saved data is capped at 32 MiB; a failed save keeps every edit and
+leaves the last saved version intact.
+
+## Attachments
+
+In a native window, an ordinary `<input type="file">` opens a file picker attached to the
+document. Cancelling changes nothing. Background rendering and closed CLI commands never
+show a picker. Validate the chosen file in your app before storing it.
+
+```ts
+import { attachments } from "@hitslop/document/attachments";
+
+await attachments.import(file, (tx, ref) => {
+  tx.fields.cover.set(ref);
+});
+```
+
+`import` stores the file, then runs your collector like a `change`: synchronously, with
+its edits accepted together with the file or the promise rejects. Prepare the file
+asynchronously before calling `import`. If storing the file fails, the collector never
+runs; if the reference edit is refused, the file stays stored but unreferenced. A
+reference is `{ id, name, mimeType, byteLength }`; model it with ordinary fields. The name
+and type are descriptive, never a path.
+
+```ts
+const blob = await attachments.read(ref.id, { type: ref.mimeType });
+const url = URL.createObjectURL(blob); // revoke it when you're done
+const stored = await attachments.list(); // IDs and sizes, including unused files
+```
+
+Files are immutable and deduplicated by content: up to 10 MiB each, 100 MiB and 256 files
+per document. Removing a reference doesn't delete the file yet. Close, export and duplicate
+wait for imports in progress. Templates never contain imported files, and browser preview
+keeps them in memory with the same limits. From the terminal, use
+[`attachments import/list/export`](/docs/guides/cli-workflows/#work-with-attachments).
+
+## HTTPS data, media and frames
+
+A slop may fetch HTTPS data, play HTTPS media and embed HTTPS `<iframe>`s without
+declaring them. Images may use HTTPS, data or blob URLs. CORS still applies, and remote
+scripts and `eval` are blocked, so bundle your code. An embedded frame can't reach the
+document or the host; drive it through its own `postMessage` API.
+
+## YouTube
+
+A slop's page has no web origin, and YouTube's player refuses to play without one
+(error 153, or 150 from `slop dev`). Use `@hitslop/document/embed`, which plays videos
+through a relay page on hitslop.com. You don't run a server, and the relay never sees which
+video is playing.
+
+```ts
+import { youtube } from "@hitslop/document/embed";
+
+const id = youtube.findId(pastedText);              // null unless it holds a YouTube link
+const { title, author } = await youtube.lookup(id); // rejects with a LookupError if it can't be embedded
+// <iframe bind:this={frame} src={youtube.src(id, { controls: false })}
+//         allow="autoplay; encrypted-media" title="Player"></iframe>
+const player = youtube.player(frame, { onState, onTime, onEnded, onError });
+player.play(); player.seek(30); player.setVolume(0.5); player.dispose();
+```
+
+`youtube.thumbnail(id)` is an image URL. Playback needs the network; `onError(-1)` means
+the relay never answered. Pass `relay` to `youtube.src` to host the relay page yourself.

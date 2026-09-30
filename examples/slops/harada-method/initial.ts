@@ -122,4 +122,4 @@ const initial = {
     "7:1": true
   }
 };
-export default initial satisfies Input<typeof schema.fields.node>;
+export default initial satisfies Input<typeof schema.descriptor>;

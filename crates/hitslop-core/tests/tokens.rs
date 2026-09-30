@@ -1,6 +1,8 @@
 // Failure: a version token naming operations this owner never saw reached a panicking
 // Loro API (`vv_to_frontiers`), poisoning the native owner and aborting WASM.
 // Oracle: a typed `stale_base`/`invalid_version` error and an unchanged snapshot.
+mod support;
+use support::Edit;
 use hitslop_core::Document;
 use serde_json::{json, Value};
 fn fixture() -> Value {
@@ -31,10 +33,10 @@ fn foreign_and_malformed_bases_are_refused_without_panicking() {
     let before = view(&d);
     for base in [foreign.as_str(), "zz", "", "00"] {
         let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcx","selectionStart":4,"selectionEnd":4});
-        let code = d.edit_text(&request.to_string()).unwrap_err().code;
-        assert!(["stale_base", "invalid_version"].contains(&code.as_str()), "{base}: {code}");
-        let code = d.export_since(base).unwrap_err().code;
-        assert!(["stale_base", "invalid_version"].contains(&code.as_str()), "{base}: {code}");
+        let code = d.edit_text(&request.to_string()).unwrap_err().code.as_str();
+        assert!(["stale_base", "invalid_version"].contains(&code), "{base}: {code}");
+        let code = d.export_since(base).unwrap_err().code.as_str();
+        assert!(["stale_base", "invalid_version"].contains(&code), "{base}: {code}");
     }
     assert_eq!(view(&d), before);
 }

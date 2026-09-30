@@ -12,7 +12,3 @@
 - [ ] Visual changes include screenshots
 - [ ] Manifest/schema changes include regenerated artifacts
 - [ ] No secrets, local documents, or private paths are included
-
-## Compatibility notes
-
-<!-- Storage, host, package-format, or release impact. Nothing has shipped: no legacy handling or migration. -->

@@ -2,15 +2,16 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopDocument
 
-// Native gap: the shared Rust semantic tests cannot prove production SQLite
-// durability, writer exclusion, or refusal before the package gains state.
+// Native gap: the Rust store tests own SQLite semantics; these prove the owner drives
+// them through the binding without WebKit or authored code.
 @Suite(.serialized) struct DocumentOwnerTests {
   func fixture() throws -> URL {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/4-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
     let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
     for (file, key) in [("state.schema.json", "schema"), ("initial.json", "initial")] {
       try JSONSerialization.data(withJSONObject: spec[key]!).write(to: root.appendingPathComponent(file))
@@ -23,6 +24,59 @@ import Testing
     try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
   }
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
+
+  @Test(arguments: [Optional<String>.none, "another-core"])
+  @MainActor func liveOwnerWithWrongCoreIdentityIsRefusedBeforeCommands(identity: String?) async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let package = try SlopPackage(rootURL: root)
+    let owner = try DocumentOwner(package: package)
+    let forwarded = Locked(0)
+    let server = try SocketServer { request, _ in
+      if request.method == .hello { return SocketReply(ok: true, epoch: owner.epoch, coreBuildId: identity).encoded() }
+      forwarded.modify { $0 += 1 }
+      return await owner.request(request)
+    }
+    defer { server.stop() }
+    try JSONSerialization.data(withJSONObject: ["socket": server.path, "documentPath": package.rootURL.path])
+      .write(to: package.rootURL.appendingPathComponent("state/host.lock"))
+    for method in ["get", "apply"] {
+      do {
+        _ = try await command(method, url: root,
+          operation: method == "apply" ? Data(#"{"type":"increment","path":["hits"],"by":3}"#.utf8) : nil)
+        Issue.record("Accepted owner without core identity")
+      } catch {
+        #expect(error.localizedDescription.contains("different document cores"))
+      }
+    }
+    let output = root.appendingPathComponent("should-not-exist.png")
+    do {
+      try await DocumentCommand.exportLive(root: package.rootURL, socket: server.path, format: .png, output: output)
+      Issue.record("Accepted export from owner without matching core identity")
+    } catch { #expect(error.localizedDescription.contains("different document cores")) }
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+    #expect(forwarded.value == 0)
+    #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 0)
+    try await owner.close()
+  }
+
+  // Failure: nothing cleared the discovery file a crashed session left behind. A command
+  // that found the lock busy while the next owner was still opening read the dead socket
+  // from it, instead of waiting for the new owner to publish its own.
+  @Test @MainActor func takingOwnershipClearsDiscoveryLeftByACrashedSession() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = root.appendingPathComponent("state")
+    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    let leftover = state.appendingPathComponent("host.lock")
+    try JSONSerialization.data(withJSONObject: ["socket": "/tmp/hitslop-gone/dead.sock", "documentPath": root.path])
+      .write(to: leftover)
+    #expect(try DocumentCommand.liveSocket(for: root) == "/tmp/hitslop-gone/dead.sock", "the leftover must look valid")
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    #expect(!FileManager.default.fileExists(atPath: leftover.path))
+    #expect(throws: (any Error).self) { try DocumentCommand.liveSocket(for: root) }
+    try await owner.close()
+  }
 
   @Test func nativeBindingExecutesLiteralFixturesAndReplaysUpdates() throws {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
@@ -40,19 +94,27 @@ import Testing
     for scenario in scenarios {
       ran += 1
       let schema = try json(f["schema"]!)
-      let core = try NativeDocument.create(schemaJson: schema, initialJson: json(scenario["initial"] ?? f["initial"]!))
-      let before = try core.snapshot(), seed = try core.checkpoint(), version = try core.version()
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+      let store = try NativeStore.open(root: root.path, mode: .document)
+      let core = try store.document(schemaKey: schema, initialJson: json(scenario["initial"] ?? f["initial"]!))
+      let before = try core.state()
       let batch = try json(["intents": scenario["intents"]!])
       if let expected = scenario["error"] as? String {
         do { _ = try core.applyBatch(batchJson: batch); Issue.record("Accepted invalid fixture") }
         catch { #expect(String(describing: error).contains(expected)) }
-        #expect(try core.snapshot() == before)
+        #expect(try core.state() == before)
+        try store.close()
       } else {
         _ = try core.applyBatch(batchJson: batch)
-        let current = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
+        let current = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
         #expect(try json(current["value"]!) == json(scenario["after"]!))
-        let reopened = try NativeDocument.open(schemaJson: schema, checkpoint: seed, updates: [core.exportSince(version: version)])
-        let replay = try JSONSerialization.jsonObject(with: Data(reopened.snapshot().utf8)) as! [String: Any]
+        // The saved update replays to the same value; a batch that changed nothing saves nothing.
+        if let job = try core.saveJob(store: store, forceCheckpoint: false) { try store.write(job: job) }
+        try store.close()
+        let reopened = try NativeStore.open(root: root.path, mode: .snapshot).document(schemaKey: schema, initialJson: "{}")
+        let replay = try JSONSerialization.jsonObject(with: Data(reopened.state().utf8)) as! [String: Any]
         #expect(try json(replay["value"]!) == json(scenario["after"]!))
       }
     }
@@ -64,7 +126,7 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    #expect(throws: DocumentWriterLock.Busy.self) { _ = try DocumentWriterLock(root: root) }
+    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
     _ = try await owner.apply(batch: increment)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await owner.close()
@@ -77,26 +139,21 @@ import Testing
     try await reopened.close()
   }
 
-  // Failure: after a committed write's reply is lost and the recovery read also fails,
-  // the next save's generation conflict was mistaken for success and its edits dropped.
-  // Oracle: every accepted increment survives close and reopen.
+  // Failure: a lost commit acknowledgement must retain both the original edit and edits
+  // accepted before the next retry. Oracle: every accepted increment survives reopen.
   @Test func lostReplyWithFailedRecoveryReadNeverDropsLaterEdits() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     _ = try await owner.apply(batch: increment)
-    var committed = false
-    owner.storage.testingPhase = { phase in
+    owner.testingPhase = { phase in
       if phase == "append:committed" || phase == "checkpoint:committed" {
-        committed = true
         throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost acknowledgement"])
-      }
-      if phase == "metadata" && committed {
-        throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recovery read failed"])
       }
     }
     await #expect(throws: (any Error).self) { try await owner.flush() }
-    owner.storage.testingPhase = nil
+    await #expect(throws: (any Error).self) { try await owner.flush() }
+    owner.testingPhase = nil
     _ = try await owner.apply(batch: increment)
     try await owner.flush()
     try await owner.close()
@@ -115,7 +172,7 @@ import Testing
     try FileManager.default.moveItem(at: root, to: moved)
     await #expect(throws: (any Error).self) { try await owner.close() }
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
-    #expect(throws: DocumentWriterLock.Busy.self) { _ = try DocumentWriterLock(root: moved) }
+    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(moved) }
     try FileManager.default.moveItem(at: moved, to: root)
     try await owner.close()
     let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -123,7 +180,23 @@ import Testing
     try await reopened.close()
   }
 
-  @Test func readOnlyOwnerAndOlderStorageReaderCannotWriteTheNewLayout() async throws {
+  // A snapshot reads the theme with its document and can change neither the theme nor
+  // the attachments.
+  @Test func snapshotOwnerFreezesTheThemeAndOwnsNothing() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let first = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
+    let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#333333"}"##))
+    #expect(try await snapshot.loadTheme() == first.overrides)
+    await #expect(throws: (any Error).self) { _ = try await snapshot.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##)) }
+    await #expect(throws: (any Error).self) { _ = try await snapshot.putAttachment(base64: "AQ==") }
+    try await snapshot.close()
+    try await owner.close()
+  }
+
+  @Test func snapshotOwnerReadsSavedStateWithoutWriting() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -156,7 +229,7 @@ import Testing
         return { unmount() { binding.destroy(); input.remove(); } };
       } };
       """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try DocumentSession(package: SlopPackage(rootURL: root))
+    let session = try await DocumentSession.open(packageURL: root)
     session.load()
     try await session.waitUntilReady()
     let accepted = try await session.webView.callAsyncJavaScript("""
@@ -166,7 +239,7 @@ import Testing
       return doc.current.rows[0].done;
       """, arguments: [:], in: nil, contentWorld: .page) as? Bool
     #expect(accepted == true)
-    _ = try await DocumentCommand.run(method: "apply", url: root,
+    _ = try await command("apply", url: root,
       operation: Data(#"{"type":"increment","path":["hits"],"by":7}"#.utf8))
     let published = try await session.webView.callAsyncJavaScript("""
       const doc = globalThis.consumer;
@@ -189,12 +262,12 @@ import Testing
     #expect(current["title"] as? String == "Saved 😀 draft")
     #expect((current["rows"] as? [[String: Any]])?.first?["done"] as? Bool == true)
     try await owner.close()
-    let result = try await DocumentCommand.run(method: "apply", url: root,
+    let result = try await command("apply", url: root,
       operation: Data(#"{"type":"increment","path":["hits"],"by":2}"#.utf8))
     let reply = try #require(try JSONSerialization.jsonObject(with: result) as? [String: Any])
     #expect((reply["value"] as? [String: Any])?["hits"] as? Int == 9)
     // A minted row ID is reported, so a caller can address the row it just created.
-    let inserted = try JSONSerialization.jsonObject(with: await DocumentCommand.run(method: "apply", url: root,
+    let inserted = try JSONSerialization.jsonObject(with: await command("apply", url: root,
       operation: Data(#"{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}"#.utf8))) as! [String: Any]
     let ids = try #require(inserted["ids"] as? [String])
     let rows = (inserted["value"] as? [String: Any])?["rows"] as? [[String: Any]] ?? []
@@ -203,11 +276,11 @@ import Testing
 
   @Test @MainActor func plainAndSvelteConsumersExerciseCtx() async throws {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    for source in ["tests/fixtures/4-1/document", "tests/fixtures/4-1-svelte/document", "generated/v1/abi/owner-svelte.slop"] {
+    for source in ["tests/fixtures/checklist/document", "generated/abi/owner-svelte.slop"] {
       let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
       defer { try? FileManager.default.removeItem(at: root) }
       try FileManager.default.copyItem(atPath: repository + "/" + source, toPath: root.path)
-      let session = try DocumentSession(package: SlopPackage(rootURL: root))
+      let session = try await DocumentSession.open(packageURL: root)
       session.load(); try await session.waitUntilReady()
       let passed = try await session.webView.callAsyncJavaScript("return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
       #expect(passed == true)
@@ -226,7 +299,7 @@ import Testing
           (tx, ref) => tx.fields.title.set(ref.id));
       }; return {}; } };
       """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try DocumentSession(package: SlopPackage(rootURL: root))
+    let session = try await DocumentSession.open(packageURL: root)
     session.load(); try await session.waitUntilReady()
     _ = try await session.webView.callAsyncJavaScript("attachmentProbe(); return true", arguments: [:], in: nil, contentWorld: .page)
     try await session.close()
@@ -245,14 +318,18 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    try await owner.saveTheme(["accent": "var(--slop-accent)"])
+    let set = { (values: [String: String]) in
+      ThemeChange.set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
+    }
+    _ = try await owner.applyTheme(set(["accent": "var(--slop-accent)"]))
     for values in [
       ["missing": "blue"], ["accent": " "], ["accent": "red;display:none"], ["accent": "}"],
       ["accent": String(repeating: "😀", count: 2049)], ["accent": "var(--slop-unknown)"],
     ] {
-      await #expect(throws: (any Error).self) { try await owner.saveTheme(values) }
+      await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(set(values)) }
     }
-    #expect(try await owner.loadTheme() == ["accent": "var(--slop-accent)"])
+    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.reset(token: "missing")) }
+    #expect(try await owner.loadTheme() == #"{"accent":"var(--slop-accent)"}"#)
     try await owner.close()
   }
 
@@ -262,8 +339,11 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.attach(view: "first")
     _ = try await owner.open(view: "first")
+    owner.attach(view: "second")
     _ = try await owner.open(view: "second")
+    await #expect(throws: OwnerReplaced.self) { _ = try await owner.open(view: "first") }
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
     _ = try await owner.apply(batch: increment, view: "second")
     let epoch = owner.epoch
@@ -273,4 +353,94 @@ import Testing
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 0)
     try await owner.close()
   }
+}
+
+extension DocumentOwnerTests {
+  @Test @MainActor func failedDeliveryResyncsTheLivePageWithoutReplayingItsEdit() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("export default {mount(ctx) {globalThis.doc = ctx.document; return {}}}".utf8)
+      .write(to: root.appendingPathComponent("assets/app.js"))
+    let session = try await DocumentSession.open(packageURL: root)
+    session.load(); try await session.waitUntilReady()
+    var injected = false
+    session.testingDeliveryFailure = {
+      if !injected { injected = true; throw failure("injected JavaScript delivery failure") }
+    }
+    let hits = try await session.webView.callAsyncJavaScript("""
+      await Promise.race([doc.fields.hits.increment(4),
+        new Promise((_, reject) => setTimeout(() => reject(Error('publication did not recover')), 3000))]);
+      return doc.current.hits;
+      """, arguments: [:], in: nil, contentWorld: .page) as? Int
+    #expect(injected)
+    #expect(hits == 4)
+    #expect((try await value(session.owner)["value"] as? [String: Any])?["hits"] as? Int == 4)
+    try await session.close()
+  }
+
+  @Test @MainActor func pageAdmissionOrdersMixedEditsAndFencesOldOpenAndFlush() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.attach(view: "first")
+    let initial = try await value(owner)
+    let title = (initial["value"] as! [String: Any])["title"] as! String
+    let base = initial["version"] as! String
+    let sequences: [Int] = await withCheckedContinuation { continuation in
+      var values: [Int] = []
+      let receive: @MainActor @Sendable ([String: Any]) -> Void = { reply in
+        values.append(reply["sequence"] as? Int ?? -1)
+        if values.count == 2 { continuation.resume(returning: values) }
+      }
+      owner.admitPage(["id": "first-edit", "view": "first", "method": "apply",
+        "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])], reply: receive)
+      owner.admitPage(["id": "second-edit", "view": "first", "method": "text",
+        "request": json(["base": base, "path": ["title"], "from": title, "to": title + "!",
+          "selectionStart": title.utf16.count + 1, "selectionEnd": title.utf16.count + 1])], reply: receive)
+    }
+    #expect(sequences == [1, 2])
+    owner.attach(view: "second")
+    for method in ["open", "flush"] {
+      let code: String? = await withCheckedContinuation { continuation in
+        owner.admitPage(["id": method, "view": "first", "method": method]) {
+          continuation.resume(returning: $0["code"] as? String)
+        }
+      }
+      #expect(code == "owner_replaced")
+    }
+    try await owner.close()
+  }
+
+  // Swift checks only the envelope; the core parses the payload. Either way a malformed
+  // or oversized request is a definite refusal that applies nothing.
+  @Test @MainActor func malformedPageRequestsAreRefusedNotUncertain() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.attach(view: "page")
+    let increment = json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
+    let requests: [([String: Any], String)] = [
+      (["id": "a", "view": "page", "method": "apply"], "invalid_request"),
+      (["id": "b", "view": "page", "method": "apply", "batch": increment, "extra": true], "invalid_request"),
+      (["id": "c", "view": "page", "method": "flush", "batch": increment], "invalid_request"),
+      (["id": "d", "view": "", "method": "apply", "batch": increment], "invalid_request"),
+      (["id": "e", "view": "page", "method": "apply", "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
+      (["id": "f", "view": "page", "method": "text", "request": json(["base": "x"])], "invalid_request"),
+      (["id": "h", "view": "page", "method": "apply", "batch": ["intents": []]], "invalid_request"),
+      (["id": "g", "view": "page", "method": "apply", "batch": json(["intents": [["type": "set", "path": ["title"], "value": String(repeating: "x", count: 4 * 1024 * 1024)]]])], "too_large"),
+    ]
+    for (request, reason) in requests {
+      let reply: [String?] = await withCheckedContinuation { continuation in
+        owner.admitPage(request) { continuation.resume(returning: [$0["code"] as? String, $0["reason"] as? String]) }
+      }
+      #expect(reply == ["rejected", reason])
+    }
+    #expect(try await value(owner)["sequence"] as? Int == 0)
+    try await owner.close()
+  }
+}
+
+/// A page payload, as the page sends it: JSON text.
+private func json(_ value: Any) -> String {
+  String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self)
 }

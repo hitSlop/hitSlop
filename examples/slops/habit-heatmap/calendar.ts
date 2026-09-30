@@ -22,6 +22,18 @@ export function calendarDays(today: string): string[] {
   const start = shiftDay(today, -weekday - 11 * 7);
   return Array.from({ length: 84 }, (_, index) => shiftDay(start, index));
 }
+/** The calendar's days, its week columns and their labels: the month where one begins. */
+export function calendarWeeks(today: string) {
+  const days = calendarDays(today);
+  const weeks = days.filter((_, i) => i % 7 === 0);
+  const labels = weeks.map((day, index) =>
+    index === 0 || day.slice(0, 7) !== weeks[index - 1]!.slice(0, 7)
+      ? new Intl.DateTimeFormat(undefined, { month: "short" }).format(localDate(day))
+      : String(localDate(day).getDate()),
+  );
+  return { days, weeks, labels };
+}
+export const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function streak(checkins: Readonly<Record<string, number>>, today: string): number {
   let day = checkins[today] ? today : shiftDay(today, -1);
   let count = 0;

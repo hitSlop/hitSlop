@@ -8,16 +8,11 @@ import UniformTypeIdentifiers
 struct Attachments: AsyncParsableCommand {
   static let configuration = CommandConfiguration(subcommands: [AttachmentList.self, AttachmentImport.self, AttachmentExport.self])
 }
-@MainActor private func prepareAttachments() {
-  _ = NSApplication.shared
-  NSApp.setActivationPolicy(.prohibited)
-}
 struct AttachmentList: AsyncParsableCommand {
   static let configuration = CommandConfiguration(commandName: "list")
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @MainActor func run() async throws {
-    prepareAttachments()
-    print(String(decoding: try await DocumentCommand.run(method: "attachments.list", url: document), as: UTF8.self))
+    try await printDocument(document) { .attachmentsList(.init(id: $0, documentPath: $1)) }
   }
 }
 struct AttachmentImport: AsyncParsableCommand {
@@ -25,14 +20,18 @@ struct AttachmentImport: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @MainActor func run() async throws {
-    prepareAttachments()
     let source = file.standardizedFileURL
-    guard source.lastPathComponent.count <= 255 else { throw ValidationError("Filename exceeds 255 characters") }
-    let bytes = try SlopFile.read(source, within: source.deletingLastPathComponent(), maximumBytes: SlopAttachments.maximumBytes)
-    let data = try await DocumentCommand.run(method: "attachments.put", url: document, attachmentBytes: bytes)
+    let mimeType = UTType(filenameExtension: source.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+    guard source.lastPathComponent.utf8.count <= AttachmentLimits.name, mimeType.utf8.count <= AttachmentLimits.name else {
+      throw ValidationError("File name or type exceeds \(AttachmentLimits.name) bytes")
+    }
+    let bytes = try SlopFile.read(source, within: source.deletingLastPathComponent(), maximumBytes: AttachmentLimits.file).base64EncodedString()
+    let data = try await DocumentCommand.run(url: document) {
+      .attachmentsPut(.init(id: UUID().uuidString, documentPath: $0, epoch: "", bytes: bytes))
+    }
     var ref = try JSONSerialization.jsonObject(with: data) as! [String: Any]
     ref["name"] = source.lastPathComponent
-    ref["mimeType"] = UTType(filenameExtension: source.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+    ref["mimeType"] = mimeType
     print(String(decoding: try JSONSerialization.data(withJSONObject: ref, options: [.prettyPrinted, .sortedKeys]), as: UTF8.self))
   }
 }
@@ -42,13 +41,14 @@ struct AttachmentExport: AsyncParsableCommand {
   @Argument var id: String
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
-    prepareAttachments()
     let destination = output.standardizedFileURL.resolvingSymlinksInPath()
-    let root = document.standardizedFileURL.resolvingSymlinksInPath().path
-    guard destination.path != root, !destination.path.hasPrefix(root + "/") else {
+    guard !SlopPath.contains(document, destination) else {
       throw ValidationError("Export destination must be outside the document package")
     }
-    let response = try await DocumentCommand.run(method: "attachments.read", url: document, attachmentID: id)
+    let id = id
+    let response = try await DocumentCommand.run(url: document) {
+      .attachmentsRead(.init(id: UUID().uuidString, documentPath: $0, attachmentID: id))
+    }
     guard let value = try JSONSerialization.jsonObject(with: response) as? [String: String],
       let encoded = value["bytes"], let bytes = Data(base64Encoded: encoded) else {
       throw ValidationError("Invalid attachment response")

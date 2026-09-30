@@ -4,12 +4,12 @@ import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { OwnerDocument } from "../src/owner/document";
 import { wasmTransport } from "../src/owner/transport";
-import { fromDescriptor } from "../src/schema";
+import { fromDescriptor } from "../src/descriptor";
 
 const root = new URL("../../../tests/fixtures/", import.meta.url);
-const wasm = await import(new URL("../../../generated/v1/core/wasm/hitslop_core_wasm.js", import.meta.url).href);
+const wasm = await import(new URL("../../../generated/core/wasm/hitslop_core_wasm.js", import.meta.url).href);
 wasm.initSync({
-  module: await Bun.file(new URL("../../../generated/v1/core/wasm/hitslop_core_wasm_bg.wasm", import.meta.url)).bytes(),
+  module: await Bun.file(new URL("../../../generated/core/wasm/hitslop_core_wasm_bg.wasm", import.meta.url)).bytes(),
 });
 
 for (const name of (await readdir(root)).sort()) {

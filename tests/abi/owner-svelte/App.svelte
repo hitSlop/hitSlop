@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, onMount } from "svelte";
-  import { Slop, useDocument, bindText, bindValue } from "@hitslop/document/svelte";
+  import { useDocument, bindText, bindValue } from "@hitslop/document/svelte";
   import schema from "./schema";
   const doc = useDocument(schema);
   let shown: HTMLParagraphElement;
@@ -35,11 +35,8 @@
     return () => { delete (globalThis as any).contractTest; };
   });
 </script>
-<Slop>
+
   <main><p bind:this={shown}>{doc.current.title}</p>
     <textarea aria-label="Title" bind:this={input} use:bindText={doc.fields.title}></textarea>
     <input aria-label="Done" type="checkbox" bind:this={checkbox} use:bindValue={doc.fields.done} />
   </main>
-  {#snippet exportView()}<main><h1>{doc.current.title}</h1><p>{doc.current.rows.length} rows</p></main>{/snippet}
-  {#snippet icon()}<main>ABI 2</main>{/snippet}
-</Slop>

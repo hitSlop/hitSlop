@@ -1,10 +1,6 @@
-import type { CaptureMode } from "./contracts";
-export type { CaptureMode } from "./contracts";
-type Target = {
-  element: HTMLElement;
-  prepare: () => void | Promise<void>;
-  restore: () => void | Promise<void>;
-};
+import type { CaptureMode } from "./abi";
+import type { CaptureTarget as Target } from "./abi";
+export type { CaptureMode } from "./abi";
 type CaptureState = {
   attribute: string | null;
   active: HTMLElement | null;
@@ -22,10 +18,12 @@ type CaptureState = {
 const interactionEvents = ["pointerdown", "click", "keydown", "wheel", "touchstart"];
 const timeoutMS = 10_000;
 
-export function createCaptureController() {
+function createCaptureController() {
   const targets = new Map<"icon" | "export", Target>();
   const preparations = new Set<(mode: CaptureMode, signal: AbortSignal) => void | Promise<void>>();
-  const states = new Map<string, CaptureState>();
+  /** The capture in progress; there is at most one. */
+  let session: { token: string; state: CaptureState } | undefined;
+  const active = (token: string) => (session?.token === token ? session.state : undefined);
   const bounded = async <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<never>((_, reject) => {
@@ -46,8 +44,8 @@ export function createCaptureController() {
       clearTimeout(timer!);
     }
   };
-  const measure = (token: string) => {
-    const target = states.get(token)?.target?.element;
+  const measure = (state: CaptureState) => {
+    const target = state.target?.element;
     if (target) {
       const rect = target.getBoundingClientRect();
       return {
@@ -76,10 +74,11 @@ export function createCaptureController() {
       dedicated: false,
     };
   };
+  /** Waits for fonts, images and a stable layout; returns the settled measurement. */
   const settle = async (token: string) => {
-    const state = states.get(token);
+    const state = active(token);
     if (!state) throw new Error("Capture session is no longer active");
-    await bounded(
+    return bounded(
       (async () => {
         await document.fonts.ready;
         state.controller.signal.throwIfAborted();
@@ -93,21 +92,24 @@ export function createCaptureController() {
           image.loading = "eager";
         }
         await Promise.all(images.map((image) => image.decode()));
-        let previous = "";
-        let stable = 0;
-        while (stable < 3) {
+        // Stable once three ticks in a row measure what the previous one did.
+        let current = measure(state);
+        let previous = JSON.stringify(current);
+        for (let stable = 0; stable < 3; ) {
           await new Promise((resolve) => setTimeout(resolve, 40));
           state.controller.signal.throwIfAborted();
-          const next = JSON.stringify(measure(token));
+          current = measure(state);
+          const next = JSON.stringify(current);
           stable = next === previous ? stable + 1 : 0;
           previous = next;
         }
+        return current;
       })(),
       state.controller.signal,
     );
   };
   const restore = async (token: string) => {
-    const state = states.get(token);
+    const state = active(token);
     if (!state) return;
     state.controller.abort();
     // Restore host-owned state even when an author's teardown fails.
@@ -154,7 +156,7 @@ export function createCaptureController() {
         element.scrollTop = top;
       }
       window.scrollTo(...state.windowScroll);
-      states.delete(token);
+      session = undefined;
     }
   };
   return {
@@ -171,8 +173,8 @@ export function createCaptureController() {
         preparations.delete(handler);
       };
     },
-    async begin(token: string, mode: CaptureMode, options: { blockInteraction?: boolean } = {}) {
-      if (states.size) throw new Error("Another capture is already in progress");
+    async begin(token: string, mode: CaptureMode) {
+      if (session) throw new Error("Another capture is already in progress");
       const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       const selection = window.getSelection();
       const style = document.createElement("style");
@@ -207,11 +209,10 @@ export function createCaptureController() {
           active.selectionEnd,
           active.selectionDirection,
         ];
-      states.set(token, state);
+      session = { token, state };
       try {
-        if (options.blockInteraction !== false)
-          for (const event of interactionEvents)
-            window.addEventListener(event, state.block, { capture: true, passive: false });
+        for (const event of interactionEvents)
+          window.addEventListener(event, state.block, { capture: true, passive: false });
         document.head.append(style);
         active?.blur();
         document.documentElement.setAttribute(
@@ -253,14 +254,12 @@ export function createCaptureController() {
             input.after(replacement);
             input.style.display = "none";
           }
-        await settle(token);
-        return measure(token);
+        return await settle(token);
       } catch (error) {
         await restore(token);
         throw error;
       }
     },
-    measure,
     settle,
     restore,
   };
@@ -274,12 +273,4 @@ declare global {
 export function captureController() {
   return (window.__hitslopCapture ??= createCaptureController());
 }
-export const capture = {
-  isRenderer: () =>
-    typeof document !== "undefined" && document.documentElement.dataset.slopRenderer === "true",
-  registerTarget: (kind: "icon" | "export", target: Target) =>
-    captureController().registerTarget(kind, target),
-  onPrepare: (handler: (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>) =>
-    captureController().onPrepare(handler),
-};
 if (typeof window !== "undefined") captureController();

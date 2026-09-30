@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-01",
+  "scope": "Quick Checklist at 5,000 rows, one window. Debug Swift test harness (BenchmarkTests), system WKWebView on macOS 26 (Darwin 25.6). Single runs per variant.",
+  "method": {
+    "bench": "HITSLOP_BENCH_ROWS=5000 HITSLOP_BENCH_WINDOWS=1 HITSLOP_BENCH_LABEL=<label> [HITSLOP_BENCH_CSS=<rule>] bun run bench:windows",
+    "row_text_split_ms": "Row text edit: owner round trip and JS until the row's DOM changes (js), forced style (getComputedStyle), forced layout (offsetHeight), remainder until a timer runs (rest); records = DOM mutation records across the whole list"
+  },
+  "question": "frame_after_row_text_edit grew from 342 ms (2026-09-29) to 802 ms (09-30) and 961 ms (10-01)",
+  "attribution": {
+    "current": {
+      "row_text_frame_ms": 961,
+      "split": {
+        "js": 8,
+        "style": 210,
+        "layout": 0,
+        "rest": 210,
+        "records": 4
+      }
+    },
+    "no_size_container": {
+      "css": ".checklist-shell { container-type: normal }",
+      "row_text_frame_ms": 305,
+      "split_style_ms": 0
+    },
+    "no_attr_mirror": {
+      "css": ".checklist-grow::after { content: none }",
+      "row_text_frame_ms": 291,
+      "split_style_ms": 0
+    },
+    "rows_always_rendered": {
+      "css": ".checklist-row { content-visibility: visible }",
+      "row_text_frame_ms": 1017,
+      "split_style_ms": 179,
+      "title_frame_ms": 8
+    },
+    "finding": "The SDK and Svelte cost 8 ms and touch only the edited row (4 DOM records). The cost was WebKit restyling the whole list: every row carried a hidden ::after mirror with content: attr(data-value), inside a container-type: inline-size ancestor. Removing either the size container or the per-row attr() mirror removes the full-list style recalc. The mirror was added on 2026-09-29 (CSS grid auto-grow)."
+  },
+  "fix": "Quick Checklist: only the row being edited carries data-value, and the mirror renders only on .checklist-grow[data-value]. Text rows size themselves; the textarea still auto-grows from the mirror. SDK: OwnerDocument.register skips already-mapped list rows and record entries before building their path.",
+  "result_5000": {
+    "before": {
+      "open_ms": 2039,
+      "acceptance_p95_ms": 515,
+      "idle_acceptance_p50_ms": 7,
+      "frame_after_edit_p50_ms": 199,
+      "frame_after_title_edit_p50_ms": 46,
+      "frame_after_row_text_edit_p50_ms": 961,
+      "click_layout_ms": 179,
+      "webcontent_mib": 420
+    },
+    "after": {
+      "open_ms": 1220,
+      "acceptance_p95_ms": 375,
+      "idle_acceptance_p50_ms": 8,
+      "frame_after_edit_p50_ms": 183,
+      "frame_after_title_edit_p50_ms": 49,
+      "frame_after_row_text_edit_p50_ms": 296,
+      "click_layout_ms": 172,
+      "webcontent_mib": 387
+    }
+  },
+  "remaining": "About 170-280 ms per edit at 5,000 rows is system WebKit laying out the list (click: forced layout; row text: the rendering update after it), as measured on 2026-09-29 (5 ms at 500 rows, 167 ms at 5,000; Playwright WebKit 6 ms). content-visibility: auto adds about 40 ms per rendering update at this size (title frame 46-49 ms vs 8 ms without it). 1,000 rows is the product target; windowing the list is a template design change for its own round.",
+  "authoring_note": "A per-item CSS attr() mirror inside a size container restyles every item when one item's attribute changes in system WebKit. Render such mirrors only where they are needed.",
+  "ab_20_windows": {
+    "note": "Old and new checklist mirror run back to back under the same memory pressure (16 GB of 17.4 GB swap in use). Isolated 20-window runs on a swapping machine varied from 13.3 s to 24.6 s at 5,000 rows, so compare only back-to-back pairs.",
+    "1000": {
+      "old": {
+        "open_ms": 4747,
+        "acceptance_p95_ms": 16,
+        "row_text_frame_ms": 24
+      },
+      "new": {
+        "open_ms": 4727,
+        "acceptance_p95_ms": 11,
+        "row_text_frame_ms": 10
+      }
+    },
+    "5000": {
+      "old": {
+        "open_ms": 16929,
+        "acceptance_p95_ms": 582,
+        "frame_after_edit_p95_ms": 546,
+        "row_text_frame_ms": 1125,
+        "webcontent_mib": 7832
+      },
+      "new": {
+        "open_ms": 14626,
+        "acceptance_p95_ms": 376,
+        "frame_after_edit_p95_ms": 334,
+        "row_text_frame_ms": 302,
+        "webcontent_mib": 7417
+      }
+    }
+  }
+}

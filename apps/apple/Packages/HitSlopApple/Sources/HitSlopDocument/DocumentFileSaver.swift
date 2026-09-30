@@ -24,7 +24,9 @@ import UniformTypeIdentifiers
   var onSaved: ((URL) -> Void)?
   var onFailed: ((String) -> Void)?
   var hasPendingSave: Bool { transfers.values.contains { $0.completion != nil } }
-  var hasActiveTransfers: Bool { !transfers.isEmpty }
+  var hasActiveTransfers: Bool { !transfers.isEmpty || installing > 0 }
+  /// Finished downloads being copied to their destination.
+  private var installing = 0
 
   init(presenter: @escaping Presenter = DocumentFileSaver.presentSheet) {
     self.presenter = presenter
@@ -98,15 +100,23 @@ import UniformTypeIdentifiers
     guard let transfer = transfers.removeValue(forKey: ObjectIdentifier(download)),
       let staging = transfer.staging, let destination = transfer.destination else { return }
     transfer.observation = nil
-    defer { try? FileManager.default.removeItem(at: staging) }
-    do {
-      try Self.install(staging, at: destination)
-      onSaved?(destination)
-    } catch { onFailed?(error.localizedDescription) }
+    // A download can be 100 MiB; copying it never blocks the main thread.
+    installing += 1
+    Task {
+      let result = await Task.detached(priority: .userInitiated) {
+        defer { try? FileManager.default.removeItem(at: staging) }
+        return Result { try Self.install(staging, at: destination) }
+      }.value
+      installing -= 1
+      switch result {
+      case .success: onSaved?(destination)
+      case .failure(let error): onFailed?(error.localizedDescription)
+      }
+    }
   }
 
   /// Copy to the destination volume before the final atomic replacement.
-  static func install(_ staging: URL, at destination: URL, limit: Int64 = maximumBytes,
+  nonisolated static func install(_ staging: URL, at destination: URL, limit: Int64 = maximumBytes,
     quarantine: (URL) throws -> Void = applyQuarantine
   ) throws {
     let manager = FileManager.default

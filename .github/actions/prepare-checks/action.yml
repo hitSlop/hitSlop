@@ -19,7 +19,7 @@ runs:
           ~/.cargo/git
           target
           generated/core-tools
-        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/v1/core-build.ts') }}
+        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/core-build.ts') }}
         restore-keys: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - name: Prepare shared Rust core toolchain
       shell: bash

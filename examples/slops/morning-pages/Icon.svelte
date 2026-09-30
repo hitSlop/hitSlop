@@ -1,7 +1,9 @@
 <script lang="ts">
-    let { words = 0 }: { words?: number } = $props();
-  const complete = $derived(words >= 750);
-  const label = $derived(complete ? "750" : String(Math.max(0, Math.round(words))).padStart(3, "0"));
+import { useDocument } from "@hitslop/document/svelte";
+import schema from "./schema";
+import { pageView } from "./model";
+const doc = useDocument(schema);
+const { wordsCount, page3Done } = $derived(pageView(doc.current));
 </script>
 
 <div class={"mp-iconSurface"} aria-hidden="true">
@@ -14,6 +16,6 @@
       <span class={"mp-iconLine"}></span>
       <span class={"mp-iconLine"}></span>
     </div>
-    <span class={"mp-iconSeal"} data-complete={complete}>{label}</span>
+    <span class={"mp-iconSeal"} data-complete={page3Done}>{page3Done ? "750" : String(wordsCount).padStart(3, "0")}</span>
   </div>
 </div>

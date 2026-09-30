@@ -26,8 +26,14 @@ pub(crate) enum Item {
 pub(crate) enum Change {
     Map(Vec<(String, Option<Slot>)>),
     List(Vec<Item>),
-    Text,
+    /// In Unicode code points of the previous text.
+    Text(Vec<Hunk>),
     Other,
+}
+/// A place whose issues may have changed: a whole container, or one map entry.
+pub(crate) enum Dirty {
+    Container(ContainerID),
+    Entry(ContainerID, String),
 }
 #[derive(Debug)]
 pub(crate) struct Event {
@@ -69,7 +75,18 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
                         })
                         .collect(),
                 ),
-                Diff::Text(_) => Change::Text,
+                Diff::Text(delta) => {
+                    let mut hunks: Vec<Hunk> = delta.iter().filter_map(|item| match item {
+                        loro::TextDelta::Retain { retain, .. } => (*retain > 0).then_some(Hunk::Retain { retain: *retain }),
+                        loro::TextDelta::Insert { insert, .. } => (!insert.is_empty()).then(|| Hunk::Insert { insert: insert.clone() }),
+                        loro::TextDelta::Delete { delete } => (*delete > 0).then_some(Hunk::Delete { delete: *delete }),
+                    }).collect();
+                    // The rest of the field is retained anyway.
+                    while matches!(hunks.last(), Some(Hunk::Retain { .. })) {
+                        hunks.pop();
+                    }
+                    Change::Text(hunks)
+                }
                 _ => Change::Other,
             };
             out.push(Event {
@@ -97,12 +114,7 @@ impl ListState {
         if cid.container_type() != ContainerType::Map {
             return None;
         }
-        match doc.get_map(cid.clone()).get("$id") {
-            Some(ValueOrContainer::Value(LoroValue::String(s))) if valid_id(&s) => {
-                Some(s.to_string())
-            }
-            _ => None,
-        }
+        stored_id(&doc.get_map(cid.clone()))
     }
     fn add(&mut self, cid: ContainerID, id: Option<String>) {
         match &id {
@@ -173,6 +185,10 @@ fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, Lis
             }
         }),
         Container::MovableList(list) => {
+            // A list inside a new container is indexed once, by the outermost walk.
+            if out.contains_key(&list.id()) {
+                return;
+            }
             out.insert(list.id(), ListState::build(doc, list));
             list.for_each(|v| {
                 if let ValueOrContainer::Container(c) = v {
@@ -192,11 +208,11 @@ fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, Lis
     }
 }
 
-fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s Node> {
+pub(super) fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s Node> {
     let mut node = schema;
     for (_, index) in path.iter().skip(1) {
         node = match (unwrap_optional(node), index) {
-            (Node::Object { properties }, Index::Key(key)) => properties.get(&key.to_string())?,
+            (Node::Object { properties }, Index::Key(key)) => properties.get(key.as_str())?,
             (Node::Record { value }, Index::Key(_)) => value,
             (Node::List { item }, Index::Seq(_)) => item,
             _ => return None,
@@ -206,18 +222,18 @@ fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s No
 }
 /// Converts a Loro container path to a publication path. Rows are addressed by
 /// `$id`; a row without a unique ID makes its list the fallback container.
-fn json_path(
+pub(super) fn json_path(
     lists: &HashMap<ContainerID, ListState>,
     path: &[(ContainerID, Index)],
-) -> std::result::Result<Vec<Value>, ContainerID> {
+) -> std::result::Result<Vec<Segment>, ContainerID> {
     let mut out = Vec::with_capacity(path.len());
     for i in 1..path.len() {
         match &path[i].1 {
-            Index::Key(key) => out.push(json!(key.to_string())),
+            Index::Key(key) => out.push(Segment::Key(key.to_string())),
             Index::Seq(_) => {
                 let list = &path[i - 1].0;
                 match lists.get(list).and_then(|s| s.unique_id(&path[i].0)) {
-                    Some(id) => out.push(json!({ "id": id })),
+                    Some(id) => out.push(Segment::Id { id: id.to_owned() }),
                     None => return Err(list.clone()),
                 }
             }
@@ -227,44 +243,57 @@ fn json_path(
     Ok(out)
 }
 fn deep(doc: &LoroDoc, cid: &ContainerID) -> Result<Value> {
-    let value = doc
+    json(doc
         .get_container(cid.clone())
         .map(|c| ValueOrContainer::Container(c).get_deep_value())
-        .unwrap_or(LoroValue::Null);
-    serde_json::to_value(value).map_err(engine)
+        .unwrap_or(LoroValue::Null))
 }
 fn materialize(doc: &LoroDoc, slot: &Slot) -> Result<Value> {
     match slot {
-        Slot::Value(v) => serde_json::to_value(v).map_err(engine),
+        Slot::Value(v) => json(v.clone()),
         Slot::Container(c) => deep(doc, c),
     }
 }
 fn clean_value(node: &Node, value: &Value) -> bool {
     let mut found = vec![];
-    issues(node, value, &mut vec![], &mut found);
+    issues(node, value, None, &mut vec![], &mut found);
     found.is_empty()
+}
+/// The application view of a container just read as `raw`. A clean value stores its
+/// rows' own IDs, so `raw` projects exactly without reading the container again.
+fn view(doc: &LoroDoc, node: Option<&Node>, cid: &ContainerID, raw: Value, clean: bool) -> Result<Value> {
+    if clean { Ok(project(node, raw)) } else { project_at(doc, node, cid) }
 }
 
 pub(crate) struct Published {
-    pub ops: Vec<Value>,
+    pub ops: Vec<PatchOp>,
     /// The incremental checks could not prove the document still has no issues.
     pub rescan: bool,
+    /// Every place whose issues may have changed.
+    pub dirty: Vec<Dirty>,
 }
 struct Out {
-    ops: Vec<Value>,
+    ops: Vec<PatchOp>,
     fallback: Vec<ContainerID>,
+    dirty: Vec<Dirty>,
     rescan: bool,
+    /// A removed value may have held lists whose indexes must be dropped.
+    detached: bool,
 }
 
+/// `None` when nothing in the document root changed.
 pub(super) fn publish(
     doc: &LoroDoc,
     schema: &Node,
     lists: &mut HashMap<ContainerID, ListState>,
     mut events: Vec<Event>,
-) -> Result<Published> {
+) -> Result<Option<Published>> {
     // Only the document root is projected; other Loro roots are not application data.
     let root = doc.get_map("data").id();
     events.retain(|e| e.path.first().is_some_and(|(c, _)| *c == root));
+    if events.is_empty() {
+        return Ok(None);
+    }
     // Containers created by this change are published whole by whichever event
     // introduced them (a row insertion or a map update); their own events are skipped.
     let mut fresh = HashSet::new();
@@ -298,28 +327,36 @@ pub(super) fn publish(
     let mut out = Out {
         ops: vec![],
         fallback: vec![],
+        dirty: vec![],
         rescan: false,
+        detached: false,
     };
     for e in &events {
         match &e.change {
             Change::Map(updates) => map_ops(doc, schema, lists, e, updates, &mut out)?,
-            Change::Text => match json_path(lists, &e.path) {
+            Change::Text(delta) => match json_path(lists, &e.path) {
                 Ok(path) => {
-                    if !matches!(node_at(schema, &e.path), Some(Node::Text) | None) {
+                    if !matches!(node_at(schema, &e.path), Some(Node::Text {}) | None) {
                         out.rescan = true;
+                        out.dirty.push(Dirty::Container(e.target.clone()));
                     }
-                    let value = doc.get_text(e.target.clone()).to_string();
-                    out.ops.push(json!({"type":"set","path":path,"value":value}));
+                    if !delta.is_empty() {
+                        out.ops.push(PatchOp::Text { path, delta: delta.clone() });
+                    }
                 }
                 Err(c) => out.fallback.push(c),
             },
-            Change::List(items) => list_ops(doc, schema, lists, e, items, &mut out)?,
+            Change::List(items) => {
+                out.dirty.push(Dirty::Container(e.target.clone()));
+                list_ops(doc, schema, lists, e, items, &mut out)?
+            }
             Change::Other => {
+                out.dirty.push(Dirty::Container(e.target.clone()));
                 out.rescan = true;
                 match json_path(lists, &e.path) {
                     Ok(path) => {
                         let value = project_at(doc, node_at(schema, &e.path), &e.target)?;
-                        out.ops.push(json!({"type":"set","path":path,"value":value}));
+                        out.ops.push(PatchOp::Set { path, value });
                     }
                     Err(c) => out.fallback.push(c),
                 }
@@ -332,10 +369,14 @@ pub(super) fn publish(
         }
     }
     finish_fallbacks(doc, schema, lists, &mut out)?;
-    Ok(Published {
+    if out.detached {
+        lists.retain(|cid, _| doc.get_path_to_container(cid).is_some());
+    }
+    Ok(Some(Published {
         ops: out.ops,
         rescan: out.rescan,
-    })
+        dirty: out.dirty,
+    }))
 }
 
 fn map_ops(
@@ -348,14 +389,15 @@ fn map_ops(
 ) -> Result<()> {
     let node = node_at(schema, &e.path);
     // A counter's keys are writer contributions: publish the counter's new sum.
-    if let Some(Node::Counter) = node {
+    if let Some(Node::Counter {}) = node {
+        out.dirty.push(Dirty::Container(e.target.clone()));
         match json_path(lists, &e.path) {
             Ok(path) => {
                 let raw = deep(doc, &e.target)?;
                 if counter_sum(&raw).is_none() {
                     out.rescan = true;
                 }
-                out.ops.push(json!({"type":"set","path":path,"value":project(node, raw)}));
+                out.ops.push(PatchOp::Set { path, value: project(node, raw) });
             }
             Err(c) => out.fallback.push(c),
         }
@@ -367,6 +409,7 @@ fn map_ops(
     };
     let mut sorted: Vec<_> = updates.iter().collect();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    out.dirty.extend(sorted.iter().map(|(key, _)| Dirty::Entry(e.target.clone(), key.clone())));
     // A row identity change re-keys the row: update the index, then publish the
     // whole list exactly, since consumers address rows by their previous ID.
     if let Some(list) = &row_of {
@@ -399,9 +442,11 @@ fn map_ops(
     };
     for (key, s) in sorted {
         let mut path = base.clone();
-        path.push(json!(key));
+        path.push(Segment::Key(key.to_owned()));
         let declared = properties.and_then(|p| p.get(key)).or(entries);
         if declared.is_none() && key != "$id" { out.rescan = true; }
+        // Replacing or removing a value can detach the lists it held.
+        out.detached |= declared.is_none_or(holds_collections);
         if entries.is_some() && !valid_key(key) { out.rescan = true; }
         match s {
             None => {
@@ -410,17 +455,19 @@ fn map_ops(
                 if entries.is_none() && declared.is_some_and(|d| !matches!(d, Node::Optional { .. })) {
                     out.rescan = true;
                 }
-                out.ops.push(json!({"type":"remove","path":path}));
+                out.ops.push(PatchOp::Remove { path });
             }
             Some(s) => {
                 let raw = materialize(doc, s)?;
-                if let Some(child) = declared {
-                    if !out.rescan && !clean_value(child, &raw) {
-                        out.rescan = true;
-                    }
+                let clean = declared.is_none_or(|child| clean_value(child, &raw));
+                if !clean {
+                    out.rescan = true;
                 }
-                let value = match s { Slot::Container(cid) => project_at(doc, declared, cid)?, _ => project(declared, raw) };
-                out.ops.push(json!({"type":"set","path":path,"value":value}));
+                let value = match s {
+                    Slot::Container(cid) => view(doc, declared, cid, raw, clean)?,
+                    Slot::Value(_) => project(declared, raw),
+                };
+                out.ops.push(PatchOp::Set { path, value });
             }
         }
     }
@@ -436,7 +483,8 @@ fn list_ops(
     out: &mut Out,
 ) -> Result<()> {
     let path = json_path(lists, &e.path);
-    let item_node = match node_at(schema, &e.path) {
+    let node = node_at(schema, &e.path);
+    let item_node = match node {
         Some(Node::List { item }) => Some(&**item),
         Some(_) => {
             out.rescan = true;
@@ -444,19 +492,18 @@ fn list_ops(
         }
         None => None,
     };
-    // A scalar list has no row identity: publish it whole. The lists are small, and
-    // issues are checked below only if an element could be invalid.
-    if let Some(item) = item_node.filter(|item| is_scalar(item)) {
-        out.fallback.push(e.target.clone());
-        if e.target.container_type() != ContainerType::MovableList {
+    // A scalar list has no row identity: publish it whole. The lists are small.
+    if item_node.is_some_and(is_scalar) {
+        let (Ok(path), ContainerType::MovableList) = (&path, e.target.container_type()) else {
+            out.fallback.push(e.target.clone());
             out.rescan = true;
-        } else {
-            let list = doc.get_movable_list(e.target.clone());
-            let json = serde_json::to_value(list.get_deep_value()).map_err(engine)?;
-            if !clean_value(&Node::List { item: Box::new(item.clone()) }, &json) {
-                out.rescan = true;
-            }
+            return Ok(());
+        };
+        let value = json(doc.get_movable_list(e.target.clone()).get_deep_value())?;
+        if !clean_value(node.expect("list node"), &value) {
+            out.rescan = true;
         }
+        out.ops.push(PatchOp::Set { path: path.clone(), value: project(node, value) });
         return Ok(());
     }
     // Only movable lists carry row identity; any other list publishes exactly.
@@ -532,8 +579,13 @@ fn list_ops(
     if exact {
         let path = path.as_ref().unwrap();
         let gone: HashSet<_> = removed.iter().flatten().cloned().collect();
+        // The batch is already committed: a row without a unique ID must never turn into
+        // an error here. It falls back to an exact `set` of the list instead.
         for r in removed.iter().flatten() {
-            ops.push(json!({"type":"deleteRow","path":path,"id":state.unique_id(r)}));
+            match state.unique_id(r) {
+                Some(id) => ops.push(PatchOp::DeleteRow { path: path.clone(), id: id.to_owned() }),
+                None => exact = false,
+            }
         }
         let mut sim: Vec<Option<ContainerID>> = state
             .order
@@ -573,20 +625,22 @@ fn list_ops(
             };
             sim.insert(at, entry.clone());
             if is_move {
-                ops.push(json!({"type":"moveRow","path":path,"id":state.unique_id(c),"index":at}));
+                let Some(id) = state.unique_id(c) else {
+                    exact = false;
+                    break;
+                };
+                ops.push(PatchOp::MoveRow { path: path.clone(), id: id.to_owned(), index: at });
             } else {
                 let raw = deep(doc, c)?;
-                if let Some(item) = item_node {
-                    if !clean_value(item, &raw) {
-                        invalid_row = true;
-                    }
-                }
-                let value = project_at(doc, item_node, c)?;
-                ops.push(json!({"type":"insertRow","path":path,"index":at,"value":value}));
+                let clean = item_node.is_none_or(|item| clean_value(item, &raw));
+                invalid_row |= !clean;
+                let value = view(doc, item_node, c, raw, clean)?;
+                ops.push(PatchOp::InsertRow { path: path.clone(), index: at, value });
             }
         }
         exact = exact && sim == next;
     }
+    out.detached |= !removed.is_empty() && item_node.is_none_or(holds_collections);
     for r in &removed {
         match r {
             Some(c) => state.drop_row(c),
@@ -623,7 +677,7 @@ fn finish_fallbacks(
     lists: &HashMap<ContainerID, ListState>,
     out: &mut Out,
 ) -> Result<()> {
-    let mut resolved: Vec<(Vec<Value>, ContainerID, Option<&Node>)> = vec![];
+    let mut resolved: Vec<(Vec<Segment>, ContainerID, Option<&Node>)> = vec![];
     let mut work = std::mem::take(&mut out.fallback);
     while let Some(cid) = work.pop() {
         if resolved.iter().any(|(_, c, _)| *c == cid) {
@@ -638,11 +692,7 @@ fn finish_fallbacks(
             Err(ancestor) => work.push(ancestor),
         }
     }
-    let prefix = |p: &[Value], op: &Value| {
-        op["path"]
-            .as_array()
-            .is_some_and(|q| q.len() >= p.len() && q[..p.len()] == *p)
-    };
+    let prefix = |p: &[Segment], op: &PatchOp| op.path().starts_with(p);
     let outer: Vec<_> = resolved
         .iter()
         .filter(|(p, _, _)| {
@@ -655,7 +705,8 @@ fn finish_fallbacks(
         .retain(|op| !outer.iter().any(|(p, _, _)| prefix(p, op)));
     for (p, cid, node) in outer {
         let value = project_at(doc, *node, cid)?;
-        out.ops.push(json!({"type":"set","path":p,"value":value}));
+        out.ops.push(PatchOp::Set { path: p.clone(), value });
+        out.dirty.push(Dirty::Container(cid.clone()));
     }
     Ok(())
 }

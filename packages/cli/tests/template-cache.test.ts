@@ -7,7 +7,7 @@ import {
   inputs,
   TemplateCache,
   validateTemplate,
-} from "../../../scripts/v1/template-cache";
+} from "../../../scripts/template-cache";
 
 import { defineDocument, s } from "../../document/src/schema";
 
@@ -16,7 +16,7 @@ async function writePackage(output: string, slug = "quick-checklist") {
   await mkdir(join(output, "assets"), { recursive: true });
   await mkdir(join(output, "QuickLook"));
   const manifest = {
-    $schema: "https://api.hitslop.com/schemas/v1/manifest.schema.json",
+    $schema: "https://api.hitslop.com/schemas/manifest.schema.json",
     slug,
     title: "Cache fixture",
     description: "Cache contract",
@@ -28,6 +28,7 @@ async function writePackage(output: string, slug = "quick-checklist") {
     "manifest.json": manifest,
     "state.schema.json": defineDocument({ title: s.text() }).descriptor,
     "initial.json": { title: "Cache fixture" },
+    "assets/theme.json": {},
   };
   for (const [name, value] of Object.entries(files))
     await writeFile(join(output, name), JSON.stringify(value));
@@ -81,7 +82,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     await mkdir(join(directory, "removed-template"));
     await writeFile(
       join(directory, "removed-template/entry.json"),
-      JSON.stringify({ format: 1, key: "old", checksum: "old" }),
+      JSON.stringify({ key: "old", checksum: "old" }),
     );
     await cache.prune(["quick-checklist"]);
     expect(await readdir(directory)).toEqual(["quick-checklist"]);
@@ -157,7 +158,7 @@ test("failed builds never publish cache entries; cached packages reject state an
   }
 });
 
-test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.v1.json"])(
+test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.json"])(
   "changing shared input %s rebuilds every cached template",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "hitslop-shared-input-"));
@@ -172,7 +173,7 @@ test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.v1.json"])
       const skill = "packages/cli/skills/hitslop-document/SKILL.md";
       await mkdir(dirname(join(root, skill)), { recursive: true });
       await writeFile(join(root, skill), "original guidance");
-      await writeFile(join(root, "tsconfig.v1.json"), "{}");
+      await writeFile(join(root, "tsconfig.json"), "{}");
       const paths = await sharedTemplatePaths(root, []);
       for (const path of paths) {
         if (await Bun.file(join(root, path)).exists()) continue;
@@ -222,19 +223,20 @@ test("template artwork is keyed on compiler and copied guidance, not CLI routing
   const paths = await sharedTemplatePaths(repository, []);
   for (const input of [
     "packages/cli/src/build.ts",
-    "packages/cli/src/svelte-plugin.ts",
+    "packages/cli/src/vite.ts",
+    "packages/cli/src/entry.ts",
     "packages/document/src",
     "packages/cli/shell",
     "packages/cli/skills/hitslop-document",
-    "tsconfig.v1.json",
+    "tsconfig.json",
   ])
     expect(paths).toContain(input);
   for (const unrelated of [
     "packages/cli/src/cli.ts",
     "packages/cli/src/app.ts",
     "packages/cli/skills/hitslop-authoring",
-    "scripts/v1/hygiene.ts",
-    "scripts/v1/release-check.ts",
+    "scripts/hygiene.ts",
+    "scripts/release-check.ts",
     "examples/slops/PRODUCT.md",
   ])
     expect(paths.some((path) => path === unrelated || path.startsWith(unrelated + "/"))).toBe(

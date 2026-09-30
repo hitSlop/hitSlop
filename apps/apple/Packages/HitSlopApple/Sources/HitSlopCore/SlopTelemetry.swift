@@ -1,10 +1,12 @@
 import Foundation
 
+/// PNG or PDF: the socket's export format, also used by the window and telemetry.
+public typealias ExportFormat = SocketExportRequestFormat
+
 /// Only fixed product events cross this boundary; document values never enter telemetry.
 public enum SlopTelemetryEvent: Equatable, Sendable {
     public enum TemplateSource: String, Sendable { case bundled, installed }
-    public enum ExportFormat: String, Sendable { case png, pdf }
-    public enum Failure: String, Sendable, CaseIterable {
+    public enum Failure: String, Sendable {
         case create, open, save, export, renderer, duplicate, close, quit, recovery, catalog, artwork
         // Explicit identifiers are persistent Crashlytics grouping keys. Never renumber.
         public var code: Int {
@@ -31,7 +33,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     public enum Reason: String, Sendable {
         case unknown, storage, webContentTerminated, navigation, startup, presentation
         case invalidPackage, missingFile, permission, diskFull, busy
-        case authoredException, operationRejected, preview, icon, teardown, destinationExists
+        case authoredException, operationRejected, preview, icon, destinationExists
         var code: Int {
             switch self {
             case .unknown: 0; case .storage: 1; case .webContentTerminated: 2
@@ -39,15 +41,16 @@ public struct SlopFailureContext: Equatable, Sendable {
             case .invalidPackage: 6; case .missingFile: 7; case .permission: 8
             case .diskFull: 9; case .busy: 10
             case .authoredException: 12; case .operationRejected: 13
-            case .preview: 14; case .icon: 15; case .teardown: 16; case .destinationExists: 17
+            // 16 was retired; codes are never reused.
+            case .preview: 14; case .icon: 15; case .destinationExists: 17
             }
         }
     }
     public let classification: Classification
     public let reason: Reason
-    public var format: SlopTelemetryEvent.ExportFormat?
+    public var format: ExportFormat?
     public init(_ classification: Classification = .platform, reason: Reason = .unknown,
-                format: SlopTelemetryEvent.ExportFormat? = nil) {
+                format: ExportFormat? = nil) {
         self.classification = classification; self.reason = reason
         self.format = format
     }
@@ -122,7 +125,7 @@ public struct SlopDiagnosticError: LocalizedError, SlopDiagnosticProviding {
     public init(send: @escaping (SlopTelemetryEvent) -> Void) { self.receive = send }
     public func send(_ event: SlopTelemetryEvent) { receive(event) }
     public func failure(_ operation: SlopTelemetryEvent.Failure, error: Error,
-                        format: SlopTelemetryEvent.ExportFormat? = nil) {
+                        format: ExportFormat? = nil) {
         if SlopFailureContext.isCancellation(error) { send(.breadcrumb(operation, .cancelled)); return }
         var context = SlopFailureContext.classify(error)
         context.format = format

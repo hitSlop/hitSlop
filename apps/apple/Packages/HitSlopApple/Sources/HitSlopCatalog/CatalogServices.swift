@@ -4,7 +4,7 @@ import ComposableArchitecture
 import HitSlopCore
 import HitSlopFeatures
 import HitSlopHost
-import HitSlopRuntime
+import HitSlopDocument
 
 @MainActor final class CatalogServices {
     let templatesURL: URL
@@ -28,8 +28,9 @@ import HitSlopRuntime
     var client: CatalogClient {
         CatalogClient(
             local: { [self] in await local() },
-            refreshLocal: { [self] in await localStore?.refresh() },
+            refreshLocal: { [self] force in await localStore?.refresh(force: force) },
             recents: { [self] in await recents() },
+            recent: { [self] url in try? await scanner.recent(url) },
             chooseDestination: { [self] entry in
                 do { return try await destination(for: entry) }
                 catch { await telemetry.failure(.create, error: error); throw error }
@@ -75,28 +76,26 @@ import HitSlopRuntime
     }
 
     private func destination(for entry: CatalogEntry) async throws -> URL? {
-        guard case .local(let source) = entry.source else { return nil }
-        let slug = try await SlopPreparation.run { try SlopPackage(rootURL: source).manifest.slug }
-        let destination = await chooseDestination(slug)
+        guard case .local = entry.source else { return nil }
+        let destination = await chooseDestination(entry.slug)
         if destination == nil { telemetry.send(.breadcrumb(.create, .cancelled)) }
         return destination
     }
 
     private func create(_ entry: CatalogEntry, at url: URL) async throws -> URL {
         guard case .local(let source) = entry.source else { throw CocoaError(.fileNoSuchFile) }
-        let factory = DocumentFactory(templatesRoot: templatesURL)
-        try await factory.createLocal(from: source, at: url)
-        await SlopPreviewWriter.installExistingPreviewAsync(for: url)
+        let package = try await SlopPreparation.run { try SlopDuplicator.duplicate(from: source, to: url, fromTemplate: true) }
+        SlopPreviewWriter.installAuthoredIcon(for: package)
         telemetry.send(.breadcrumb(.create, .completed))
         telemetry.send(.created(entry.isBundled ? .bundled : .installed))
         recordRecent(url)
-        return url.standardizedFileURL.resolvingSymlinksInPath()
+        return package.rootURL
     }
 
     private static func chooseDestination(_ slug: String) async -> URL? {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.slop]; panel.canCreateDirectories = true
-        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]; panel.nameFieldStringValue = "\(slug).slop"
+        panel.startOnDesktop(); panel.nameFieldStringValue = "\(slug).slop"
         let response = await withCheckedContinuation { continuation in
             panel.begin { continuation.resume(returning: $0) }
         }
@@ -115,8 +114,9 @@ import HitSlopRuntime
     }
 
     nonisolated static func apply(_ manifest: SlopManifest, to entry: inout CatalogEntry) {
+        entry.slug = manifest.slug
         entry.description = manifest.description
-        entry.categories = manifest.categories.map(\.rawValue)
+        entry.categories = manifest.categories
         entry.authorName = manifest.author.name
         entry.authorURL = manifest.author.url.flatMap(URL.init(string:))
         entry.initialSize = "\(manifest.presentation.width) × \(manifest.presentation.height)"

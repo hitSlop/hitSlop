@@ -2,11 +2,11 @@ import AppKit
 import Foundation
 import HitSlopDocument
 import HitSlopCore
-import HitSlopRuntime
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopHost
 
-extension LoroClientTests {
+extension OwnerClientTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_STARTUP_BENCH"] == "1"))
   @MainActor func documentStartupTimings() async throws {
     _ = NSApplication.shared
@@ -24,7 +24,7 @@ extension LoroClientTests {
         let visible = start.duration(to: .now)
         print("[startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible)")
         // Keep this benchmark focused on opening, without background preview refreshes.
-        try await controller.session.finish()
+        try await controller.session.close()
         controller.close()
       }
     }
@@ -77,7 +77,7 @@ extension LoroClientTests {
         let visible = start.duration(to: .now)
         #expect(controller.isContentReady)
         print("[saved startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)")
-        try await controller.session.finish()
+        try await controller.session.close()
         _ = try await controller.perform(.close)
       }
     }
@@ -103,7 +103,7 @@ extension LoroClientTests {
     #expect(controller.window?.isVisible == true)
     #expect(controller.isContentReady)
     #expect(try Data(contentsOf: previewURL) == before)
-    try await controller.session.finish()
+    try await controller.session.close()
     controller.close()
   }
 
@@ -143,23 +143,23 @@ extension LoroClientTests {
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     var failures: [String] = []
     controller.showWindow(nil)
-    controller.onRuntimeFailure = {
+    controller.onPageFailure = {
       failures.append($0)
-      controller.updatePresentation(pinned: false, commandsEnabled: true, runtimeError: $0)
+      controller.updatePresentation(pinned: false, commandsEnabled: true, pageError: $0)
     }
     await controller.waitForPresentation()
     #expect(controller.openingProgress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(failures.count == 1)
     #expect(failures.first?.contains("startup fixture failure") == true)
-    controller.onRuntimeFailure = nil
+    controller.onPageFailure = nil
     try original.write(to: script)
     _ = try await controller.perform(.retry)
-    #expect(controller.window?.isVisible == false)
     await controller.waitForPresentation()
     #expect(controller.isContentReady)
+    #expect(controller.presentedPageError == nil)
     #expect(controller.window?.isVisible == true)
-    try await controller.session.finish()
+    try await controller.session.close()
     controller.close()
   }
 
@@ -172,7 +172,7 @@ extension LoroClientTests {
     #expect(controller.isContentReady)
     #expect(controller.window?.isVisible == false)
     #expect(controller.openingProgress == nil)
-    try await controller.session.finish()
+    try await controller.session.close()
     controller.close()
   }
 
@@ -182,9 +182,9 @@ extension LoroClientTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let script = root.appendingPathComponent("assets/app.js")
     let original = try String(contentsOf: script, encoding: .utf8)
-    try Data(("Object.defineProperty(document,'fonts',{value:{status:'loading'}});\n" + original).utf8).write(to: script)
+    try Data(("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n" + original).utf8).write(to: script)
+    // Fonts never load, so the page never reports ready and the window stays loading.
     let controller = try await SlopDocumentWindowController.open(packageURL: root, presentsWindow: true)
-    try await controller.session.waitUntilReady()
     let progress = try #require(controller.openingProgress)
     progress.cancelOpening()
     for _ in 0..<200 where controller.isLoading { try await Task.sleep(for: .milliseconds(10)) }
@@ -208,9 +208,8 @@ extension LoroClientTests {
     }
     let script = root.appendingPathComponent("assets/app.js")
     let original = try String(contentsOf: script, encoding: .utf8)
-    try Data(("Object.defineProperty(document,'fonts',{value:{status:'loading',ready:new Promise(()=>{})}});\n" + original).utf8).write(to: script)
+    try Data(("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n" + original).utf8).write(to: script)
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
-    try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     for _ in 0..<200 where controller.openingProgress?.panel == nil {
       try await Task.sleep(for: .milliseconds(10))
@@ -267,7 +266,36 @@ private actor OpeningDelay {
   func release() { continuation?.resume(); continuation = nil }
 }
 
-extension LoroClientTests {
+extension OwnerClientTests {
+  // Failure: close awaited the app's unmount without a deadline, so a teardown that never
+  // settled blocked closing and render-session exports after the document was released.
+  @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data(#"""
+      export default { mount() { return { unmount: () => new Promise(r => setTimeout(r, 3_600_000)) }; } };
+      """#.utf8).write(to: root.appendingPathComponent("assets/app.js"))
+    // The timer keeps the promise reachable: WebKit rejects calls on unreachable ones.
+    // Polls instead of awaiting, so a regression fails at the deadline rather than hanging.
+    func finishes(within limit: Duration, _ work: @escaping @MainActor () async throws -> Void) async throws -> Bool {
+      let finished = Locked(false)
+      let task = Task { @MainActor in try await work(); finished.modify { $0 = true } }
+      let end = ContinuousClock.now.advanced(by: limit)
+      while !finished.value, ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(50)) }
+      if finished.value { try await task.value }
+      return finished.value
+    }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    weak var page = controller.session.webView
+    #expect(try await finishes(within: .seconds(6)) { try await controller.session.close() })
+    controller.close()
+    // An abandoned page is released with its view, ending its scripts.
+    #expect(try await finishes(within: .seconds(3)) { while page != nil { try await Task.sleep(for: .milliseconds(50)) } })
+    _ = try await command("get", url: root)
+    #expect(try await finishes(within: .seconds(10)) { _ = try await SlopRenderer.exportPNGData(packageURL: root) })
+  }
+
   // A subscriber failure must reach native reporting without interrupting the accepted edit.
   @Test @MainActor func observerFailureIsReportedWithoutPreventingDurability() async throws {
     let root = try contractFixture()
@@ -294,8 +322,10 @@ extension LoroClientTests {
     var iterator = incidents.makeAsyncIterator()
     let incident = await iterator.next()
     #expect(incident?.classification == .authored)
-    try await controller.session.finish()
-    let saved = try await DocumentCommand.run(method: "get", url: root)
+    // WebKit's stack lists frames only; the person must still see what went wrong.
+    #expect(controller.guestIssue?.message.hasPrefix("Error: observer failure\n") == true)
+    try await controller.session.close()
+    let saved = try await command("get", url: root)
     #expect(String(decoding: saved, as: UTF8.self).contains("Saved despite observer failure"))
   }
 
@@ -314,6 +344,6 @@ extension LoroClientTests {
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
-    try await controller.session.finish()
+    try await controller.session.close()
   }
 }

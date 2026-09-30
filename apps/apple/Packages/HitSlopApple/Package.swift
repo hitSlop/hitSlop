@@ -7,7 +7,7 @@ let package = Package(
   products: [
     .library(name: "HitSlopCore", targets: ["HitSlopCore"]),
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
-    .library(name: "HitSlopRuntime", targets: ["HitSlopRuntime"]),
+    .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopFeatures", targets: ["HitSlopFeatures"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
@@ -20,12 +20,18 @@ let package = Package(
   ],
   targets: [
     .binaryTarget(name: "HitSlopCoreFFI", path: "Generated/HitSlopCoreFFI.xcframework"),
-    .target(name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding"),
-    .target(name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"], resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit"), .linkedLibrary("sqlite3")]),
-    .testTarget(name: "HitSlopDocumentTests", dependencies: ["HitSlopDocument", "HitSlopCoreBinding"]),
+    // UniFFI's generated callback vtables predate Swift 6 concurrency checking. The core's
+    // store links the platform SQLite.
+    .target(name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding",
+      swiftSettings: [.swiftLanguageMode(.v5)], linkerSettings: [.linkedLibrary("sqlite3")]),
+    .target(name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"], resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit")]),
+    .target(name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopDocument"], path: "Tests/HitSlopTestSupport"),
+    .testTarget(name: "HitSlopDocumentTests", dependencies: ["HitSlopDocument", "HitSlopCoreBinding", "HitSlopTestSupport"]),
     .target(
       name: "HitSlopCore",
-      linkerSettings: [.linkedFramework("ImageIO"), .linkedLibrary("sqlite3")]
+      // The core parses window silhouettes, so manifest geometry has one parser.
+      dependencies: ["HitSlopCoreBinding"],
+      linkerSettings: [.linkedFramework("ImageIO")]
     ),
     .target(
       name: "HitSlopFirebase",
@@ -37,18 +43,9 @@ let package = Package(
       ]
     ),
     .target(
-      name: "HitSlopRuntime",
-      dependencies: [
-        "HitSlopCore", "HitSlopDocument",
-      ],
-      linkerSettings: [
-        .linkedFramework("WebKit"), .linkedFramework("CoreServices", .when(platforms: [.macOS])),
-      ]
-    ),
-    .target(
       name: "HitSlopHost",
-      dependencies: ["HitSlopCore", "HitSlopRuntime", "HitSlopDocument"],
-      linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit"), .linkedLibrary("z")]
+      dependencies: ["HitSlopCore", "HitSlopDocument"],
+      linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
     ),
     .target(
       name: "HitSlopFeatures",
@@ -60,7 +57,7 @@ let package = Package(
     .target(
       name: "HitSlopCatalog",
       dependencies: [
-        "HitSlopHost", "HitSlopCore", "HitSlopRuntime", "HitSlopFeatures", "HitSlopFirebase",
+        "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopFirebase",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       resources: [.process("Resources")],
@@ -71,18 +68,16 @@ let package = Package(
       dependencies: [
         "HitSlopCore",
         "HitSlopHost",
-        "HitSlopRuntime", "HitSlopDocument",
+        "HitSlopDocument",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],
       linkerSettings: [.linkedFramework("AppKit")]
     ),
-    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore"]),
-    .testTarget(
-      name: "HitSlopRuntimeTests", dependencies: ["HitSlopRuntime", "HitSlopCore"]),
-    .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopRuntime", "HitSlopDocument"]),
+    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore", "HitSlopDocument"]),
+    .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(
       name: "HitSlopCatalogTests",
-      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopRuntime", "HitSlopFeatures"]
+      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures"]
     ),
   ],
   swiftLanguageModes: [.v6]

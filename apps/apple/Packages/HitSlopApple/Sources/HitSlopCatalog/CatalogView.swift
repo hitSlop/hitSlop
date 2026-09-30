@@ -2,8 +2,8 @@ import AppKit
 import HitSlopCore
 import HitSlopHost
 import ComposableArchitecture
-@_exported import HitSlopFeatures
-import HitSlopRuntime
+import HitSlopFeatures
+import HitSlopDocument
 import SwiftUI
 
 public struct CatalogView: View {
@@ -36,8 +36,10 @@ public struct CatalogView: View {
                 .frame(width: 1, height: 1).opacity(0)
         }
         .onAppear { store.send(.start) }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { store.send(.refreshSources) } }
-        .onReceive(NotificationCenter.default.publisher(for: .hitSlopPreviewDidChange)) { _ in store.send(.refreshRecents) }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { store.send(.activated) } }
+        .onReceive(NotificationCenter.default.publisher(for: .hitSlopPreviewDidChange)) { notification in
+            if let url = notification.object as? URL { store.send(.packageChanged(url)) }
+        }
         .alert($store.scope(state: \.$alert, action: \.alert))
         .preferredColorScheme(.light)
     }
@@ -113,7 +115,7 @@ private struct IconTile: View {
 
 private struct CatalogSidebar: View {
     let filter: CatalogFilter
-    let categories: [String]
+    let categories: [SlopCategory]
     let recentCount: Int
     let select: (CatalogFilter) -> Void
 
@@ -135,7 +137,7 @@ private struct CatalogSidebar: View {
                     if !categories.isEmpty {
                         SidebarSection("Categories").padding(.top, 14)
                         ForEach(categories, id: \.self) { category in
-                            SidebarButton(title: categoryLabel(category), icon: .emoji(categoryEmoji(category)), selected: filter == .category(category)) { select(.category(category)) }
+                            SidebarButton(title: category.label, icon: .emoji(category.emoji), selected: filter == .category(category)) { select(.category(category)) }
                         }
                     }
                 }
@@ -425,7 +427,7 @@ private struct CatalogRow: View {
             guard let date = entry.updatedAt else { return folder }
             return "\(folder) · \(relativeDate(date))"
         }
-        var parts = entry.categories.prefix(2).map(categoryLabel)
+        var parts = entry.categories.prefix(2).map(\.label)
         if !entry.isBundled { parts.append("Installed") }
         return parts.isEmpty ? entry.title : parts.joined(separator: " · ")
     }
@@ -470,7 +472,7 @@ private struct CatalogDetail: View {
                         if !entry.categories.isEmpty {
                             HStack(spacing: 7) {
                                 ForEach(entry.categories, id: \.self) { category in
-                                    Text(categoryLabel(category)).font(.callout)
+                                    Text(category.label).font(.callout)
                                         .foregroundStyle(CatalogStyle.brand)
                                         .padding(.horizontal, 11).padding(.vertical, 4)
                                         .background(CatalogStyle.selection, in: Capsule())
@@ -641,9 +643,9 @@ private struct PrimaryButton: View {
 }
 
 private struct CatalogFact: Identifiable {
-    let id = UUID()
     let title: String
     let value: String
+    var id: String { title }
 }
 
 private enum CatalogImageFallback { case applicationIcon, preview }
@@ -651,13 +653,18 @@ private enum CatalogImageFallback { case applicationIcon, preview }
 private struct CatalogImageView: View {
     let artwork: [CatalogArtwork]
     let fallback: CatalogImageFallback
-    @State private var image: NSImage?
+    /// The image loaded for `artwork`; a different artwork list shows its cached image or
+    /// the placeholder, never the previous entry's image.
+    @State private var loaded: (artwork: [CatalogArtwork], image: NSImage)?
     private let maxPreviewWidth: CGFloat = 560
     private let maxPreviewHeight: CGFloat = 420
+    /// Decoded pixels: enough for a preview pane or an icon tile on a 2x display.
+    private var maxPixelSize: Int { fallback == .preview ? 1200 : 256 }
 
     var body: some View {
+        let shown = loaded?.artwork == artwork ? loaded?.image : cachedCatalogImage(artwork, maxPixelSize: maxPixelSize)
         Group {
-            if let image {
+            if let image = shown {
                 let preview = Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
                 if fallback == .preview {
                     preview
@@ -678,31 +685,56 @@ private struct CatalogImageView: View {
             }
         }
         .task(id: artwork) {
-            image = nil
             for file in artwork {
-                let loaded = await loadCatalogImage(file)
+                let image = await loadCatalogImage(file, maxPixelSize: maxPixelSize)
                 guard !Task.isCancelled else { return }
-                if let loaded {
-                    image = loaded
+                if let image {
+                    loaded = (artwork, image)
                     return
                 }
             }
+            loaded = nil
         }
     }
 }
 
-/// Catalog artwork keyed by URL, modification date and byte count, so refreshed previews reload
-/// while scrolling and reselecting reuse decoded images.
-@MainActor private let catalogImages = NSCache<NSString, NSImage>()
+/// Catalog artwork keyed by URL, modification date, byte count and decoded size, so
+/// refreshed previews reload while reselecting reuses decoded images.
+@MainActor private let catalogImages: NSCache<NSString, NSImage> = {
+    let cache = NSCache<NSString, NSImage>()
+    cache.totalCostLimit = 128 * 1024 * 1024
+    return cache
+}()
 
-@MainActor private func loadCatalogImage(_ artwork: CatalogArtwork) async -> NSImage? {
-    let url = artwork.url
-    guard url.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
-    let key = "\(url.absoluteString)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)" as NSString
+private func catalogImageKey(_ artwork: CatalogArtwork, maxPixelSize: Int) -> NSString? {
+    guard artwork.url.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
+    return "\(artwork.url.absoluteString)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)|\(maxPixelSize)" as NSString
+}
+
+@MainActor private func cachedCatalogImage(_ artwork: [CatalogArtwork], maxPixelSize: Int) -> NSImage? {
+    for file in artwork {
+        if let key = catalogImageKey(file, maxPixelSize: maxPixelSize), let image = catalogImages.object(forKey: key) { return image }
+    }
+    return nil
+}
+
+/// Decodes a downsampled image off the main thread.
+@MainActor private func loadCatalogImage(_ artwork: CatalogArtwork, maxPixelSize: Int) async -> NSImage? {
+    guard let key = catalogImageKey(artwork, maxPixelSize: maxPixelSize) else { return nil }
     if let cached = catalogImages.object(forKey: key) { return cached }
-    let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
-    guard !Task.isCancelled, let data, let image = NSImage(data: data) else { return nil }
-    catalogImages.setObject(image, forKey: key)
+    let url = artwork.url
+    let decoded = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ] as CFDictionary)
+    }.value
+    guard !Task.isCancelled, let decoded else { return nil }
+    let image = NSImage(cgImage: decoded, size: NSSize(width: decoded.width, height: decoded.height))
+    catalogImages.setObject(image, forKey: key, cost: decoded.bytesPerRow * decoded.height)
     return image
 }
 
@@ -712,8 +744,6 @@ private func brandImage(named name: String) -> NSImage? {
     return image
 }
 
-private func categoryLabel(_ id: String) -> String { id == "developer-tools" ? "Developer Tools" : id.capitalized }
-
 /// Last component of an abbreviated folder path, e.g. "~/Desktop" → "Desktop".
 private func folderName(_ folderPath: String) -> String {
     let name = (folderPath as NSString).lastPathComponent
@@ -722,19 +752,4 @@ private func folderName(_ folderPath: String) -> String {
 
 private func relativeDate(_ date: Date, now: Date = .now) -> String {
     now.timeIntervalSince(date) < 60 ? "Just now" : date.formatted(.relative(presentation: .named))
-}
-
-func categoryEmoji(_ category: String) -> String {
-    switch category.localizedLowercase {
-    case "productivity": "⚡️"
-    case "utilities": "🪄"
-    case "finance": "🤑"
-    case "media": "🎬"
-    case "games": "🎮"
-    case "developer-tools": "👾"
-    case "education": "🎓"
-    case "business": "📊"
-    case "personal": "💖"
-    default: "🎲"
-    }
 }

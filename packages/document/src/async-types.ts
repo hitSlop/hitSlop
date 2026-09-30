@@ -1,5 +1,5 @@
-import type { Handle, At } from "./handle-types";
-import type { Node, ObjectNode, Snapshot } from "./schema";
+import type { Handle } from "./handle-types";
+import type { Node, Snapshot } from "./schema";
 /** Ordinary writes are accepted asynchronously; transaction handles remain synchronous. */
 export type AsyncHandle<H> = {
   readonly [K in keyof H]: H[K] extends (...args: infer A) => infer R
@@ -11,4 +11,3 @@ export type AsyncHandle<H> = {
     : AsyncHandle<H[K]>;
 };
 export type AsyncAt = <N extends Node>(value: Snapshot<N>) => AsyncHandle<Handle<N>>;
-export type Transaction<N extends ObjectNode> = { readonly fields: Handle<N>; readonly at: At };

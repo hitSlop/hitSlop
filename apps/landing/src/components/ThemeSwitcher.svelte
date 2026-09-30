@@ -106,7 +106,7 @@
 
   <div class="theme-file">
     <span class="status-dot" aria-hidden="true"></span>
-    <code>state/theme.json</code>
+    <code>slop theme set</code>
     <span><code>{`{ "accent": "${active.accent}" }`}</code></span>
   </div>
   <p class="sr-only" aria-live="polite">{active.label} theme selected.</p>

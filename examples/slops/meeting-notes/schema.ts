@@ -11,5 +11,5 @@ const schema = defineDocument({
   actions: s.list(s.object({ text: s.text(), owner: s.text(), done: s.boolean() })),
 });
 
-export type Meeting = Value<typeof schema.fields.node>;
+export type Meeting = Value<typeof schema.descriptor>;
 export default schema;

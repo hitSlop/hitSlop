@@ -3,7 +3,6 @@ import ArgumentParser
 import Foundation
 import HitSlopCore
 import HitSlopHost
-import HitSlopRuntime
 import HitSlopDocument
 
 @main struct NativeCLI: AsyncParsableCommand {
@@ -39,11 +38,11 @@ struct Screenshot: AsyncParsableCommand {
   @Option var target: Target = .preview
   @Flag var ifPresent = false
   @MainActor func run() async throws {
-    initializeNativeApplication()
+    bootstrapApp()
     let data: Data?
     switch target {
     case .preview: data = try await SlopRenderer.previewPNGData(packageURL: package)
-    case .icon: data = try await SlopRenderer.targetPNGData(packageURL: package, target: .icon)
+    case .icon: data = try await SlopRenderer.iconPNGData(packageURL: package)
     }
     guard let data else {
       if ifPresent { return }
@@ -53,77 +52,84 @@ struct Screenshot: AsyncParsableCommand {
     print(output.path)
   }
 }
+extension ExportFormat: ExpressibleByArgument {}
 struct Export: AsyncParsableCommand {
-  enum Format: String, ExpressibleByArgument { case png, pdf }
   @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
-  @Option var format: Format
+  @Option var format: ExportFormat
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
-    initializeNativeApplication()
+    bootstrapApp()
     try await SlopRenderer.exportDocument(
-      packageURL: package, format: format.rawValue, output: output)
+      packageURL: package, format: format, output: output)
     print(output.path)
   }
 }
 struct DocumentArguments: ParsableArguments {
   @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
 }
-@MainActor private func initializeNativeApplication() {
+/// A windowless app for WebKit rendering. Document commands don't use AppKit, so they
+/// never start one.
+@MainActor func bootstrapApp() {
   _ = NSApplication.shared
   NSApp.setActivationPolicy(.prohibited)
 }
-@MainActor private func printDocument(
-  _ method: String, _ arguments: DocumentArguments, operation: String? = nil,
-  operations: String? = nil
-) async throws {
-  if method != "schema" { initializeNativeApplication() }
-  let result = try await DocumentCommand.run(
-    method: method, url: arguments.package,
-    operation: operation.map { Data($0.utf8) }, operations: operations.map { Data($0.utf8) })
+/// Runs one document command and prints its JSON output.
+@MainActor func printDocument(_ document: URL, _ make: @escaping @Sendable (_ id: String, _ documentPath: String) -> SocketRequest) async throws {
+  let result = try await DocumentCommand.run(url: document) { make(UUID().uuidString, $0) }
   print(String(decoding: result, as: UTF8.self))
 }
 struct Get: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
   @Flag var snapshot = false
-  @MainActor func run() async throws { try await printDocument(snapshot ? "snapshot" : "get", document) }
+  @MainActor func run() async throws {
+    let snapshot = snapshot
+    try await printDocument(document.package) {
+      snapshot ? .snapshot(.init(id: $0, documentPath: $1)) : .get(.init(id: $0, documentPath: $1))
+    }
+  }
 }
 struct Schema: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
-  @MainActor func run() async throws { try await printDocument("schema", document) }
+  func run() throws {
+    let package = try SlopPackage(rootURL: document.package)
+    print(String(decoding: try SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576), as: UTF8.self))
+  }
 }
 struct Apply: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
   @Option var op: String
-  @MainActor func run() async throws { try await printDocument("apply", document, operation: op) }
+  @MainActor func run() async throws {
+    let op = op
+    try await printDocument(document.package) { .apply(.init(id: $0, documentPath: $1, epoch: "", op: op)) }
+  }
 }
 struct Batch: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
   @Option var ops: String
-  @MainActor func run() async throws { try await printDocument("batch", document, operations: ops) }
+  @MainActor func run() async throws {
+    let ops = ops
+    try await printDocument(document.package) { .batch(.init(id: $0, documentPath: $1, epoch: "", ops: ops)) }
+  }
 }
 struct Compact: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
-  @MainActor func run() async throws { try await printDocument("compact", document) }
+  @MainActor func run() async throws {
+    try await printDocument(document.package) { .compact(.init(id: $0, documentPath: $1, epoch: "")) }
+  }
 }
 struct Create: AsyncParsableCommand {
   @Option(name: .customLong("from"), transform: URL.init(fileURLWithPath:)) var source: URL
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
-    let output =
-      self.output.pathExtension.lowercased() == "slop"
-      ? self.output : self.output.appendingPathExtension("slop")
-    let templatesRoot =
-      ProcessInfo.processInfo.environment["HITSLOP_TEMPLATES_ROOT"].map { URL(fileURLWithPath: $0) }
-      ?? DocumentFactory.defaultTemplatesRoot
-    guard !DocumentFactory.isManagedTemplatePackage(output),
-      !DocumentFactory.isManagedTemplatePackage(output, templatesRoot: templatesRoot)
-    else { throw ValidationError("A document cannot be created in the template cache") }
+    let output = SlopDuplicator.packageURL(self.output)
+    guard !SlopTemplateLocation.isMaster(output) else {
+      throw ValidationError("A document cannot be created in the template cache")
+    }
     try FileManager.default.createDirectory(
       at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try DocumentFactory().create(
-      fromLocalPackage: source, at: output)
-    await SlopPreviewWriter.installExistingPreviewAsync(for: output)
-    print(output.path)
+    let package = try SlopDuplicator.duplicate(from: source, to: output, fromTemplate: true)
+    SlopPreviewWriter.installAuthoredIcon(for: package)
+    print(package.rootURL.path)
   }
 }
 
@@ -131,8 +137,8 @@ struct Open: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
   @MainActor func run() async throws {
     _ = try SlopPackage(rootURL: package)
-    guard !DocumentFactory.isManagedTemplatePackage(package) else {
-      throw ValidationError("Create a writable copy of this template first")
+    guard !SlopTemplateLocation.isMaster(package) else {
+      throw ValidationError(SlopTemplateLocation.writableCopyRequired)
     }
     guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app")
     else {
@@ -168,10 +174,7 @@ struct ThemeGet: AsyncParsableCommand {
   static let configuration = CommandConfiguration(commandName: "get")
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @MainActor func run() async throws {
-    initializeNativeApplication()
-    print(
-      String(
-        decoding: try await DocumentCommand.run(method: "theme.get", url: document), as: UTF8.self))
+    try await printDocument(document) { .themeGet(.init(id: $0, documentPath: $1)) }
   }
 }
 struct ThemeSet: AsyncParsableCommand {
@@ -179,11 +182,10 @@ struct ThemeSet: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @Option var values: String
   @MainActor func run() async throws {
-    initializeNativeApplication()
-    print(
-      String(
-        decoding: try await DocumentCommand.run(
-          method: "theme.set", url: document, themeValues: Data(values.utf8)), as: UTF8.self))
+    guard let values = try? JSONSerialization.jsonObject(with: Data(values.utf8)) as? [String: String] else {
+      throw ValidationError("--values must be a JSON object of theme tokens and values")
+    }
+    try await printDocument(document) { .themeSet(.init(id: $0, documentPath: $1, epoch: "", values: values)) }
   }
 }
 struct ThemeReset: AsyncParsableCommand {
@@ -191,10 +193,7 @@ struct ThemeReset: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @Option var token: String?
   @MainActor func run() async throws {
-    initializeNativeApplication()
-    print(
-      String(
-        decoding: try await DocumentCommand.run(
-          method: "theme.reset", url: document, themeToken: token), as: UTF8.self))
+    let token = token
+    try await printDocument(document) { .themeReset(.init(id: $0, documentPath: $1, epoch: "", token: token)) }
   }
 }

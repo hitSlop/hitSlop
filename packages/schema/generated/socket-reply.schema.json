@@ -1,0 +1,50 @@
+{
+  "type": "object",
+  "required": [
+    "ok"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "epoch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "coreBuildId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "state": {},
+    "ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "output": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "error": {
+      "type": "string"
+    },
+    "code": {
+      "enum": [
+        "rejected",
+        "session_changed",
+        "closing",
+        "unavailable",
+        "failed"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

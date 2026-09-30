@@ -1,15 +1,19 @@
 import AppKit
 import HitSlopCatalog
 import HitSlopCore
+import HitSlopDocument
 import HitSlopFirebase
 import HitSlopHost
-import HitSlopRuntime
 import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
 
 @main enum hitSlopApp {
     @MainActor static func main() {
+        if CommandLine.arguments.contains("--core-build") {
+            print(DocumentOwner.coreBuildID)
+            return
+        }
         let application = NSApplication.shared
         let delegate = HitSlopAppDelegate()
         application.delegate = delegate
@@ -33,7 +37,7 @@ private struct UpdateSettingsView: View {
 }
 
 @MainActor final class HitSlopAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
-    private lazy var coordinator = SlopApplicationCoordinator(templatesURL: ProcessInfo.processInfo.environment["HITSLOP_TEMPLATES_ROOT"].map { URL(fileURLWithPath: $0) } ?? DocumentFactory.defaultTemplatesRoot)
+    private lazy var coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
     private var recentMenu: NSMenu?
     private var settingsWindow: NSWindow?
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -96,7 +100,7 @@ private struct UpdateSettingsView: View {
 
     @objc private func openPanel() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.slop]; panel.allowsMultipleSelection = true
-        panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        panel.startOnDesktop()
         guard panel.runModal() == .OK else { return }; panel.urls.forEach(openDocument)
     }
     @objc private func duplicateActive() { coordinator.sendToActiveDocument(.duplicate) }
@@ -160,6 +164,10 @@ private struct UpdateSettingsView: View {
         file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
         let edit = NSMenu(title: "Edit"); editItem.submenu = edit
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
         edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -183,7 +191,7 @@ private struct UpdateSettingsView: View {
         guard menu === recentMenu else { return }
         menu.removeAllItems()
         let urls = NSDocumentController.shared.recentDocumentURLs.filter {
-            $0.pathExtension.lowercased() == "slop" && !DocumentFactory.isManagedTemplatePackage($0)
+            $0.pathExtension.lowercased() == "slop" && !SlopTemplateLocation.isManagedTemplatePackage($0)
         }
         if urls.isEmpty {
             let empty = menu.addItem(withTitle: "No Recent Documents", action: nil, keyEquivalent: "")

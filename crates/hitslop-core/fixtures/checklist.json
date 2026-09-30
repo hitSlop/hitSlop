@@ -1,29 +1,26 @@
 {
   "schema": {
-    "format": 1,
-    "root": {
-      "kind": "object",
-      "properties": {
-        "title": {
-          "kind": "text"
-        },
-        "rows": {
-          "kind": "list",
-          "item": {
-            "kind": "object",
-            "properties": {
-              "text": {
-                "kind": "text"
-              },
-              "done": {
-                "kind": "boolean"
-              }
+    "kind": "object",
+    "properties": {
+      "title": {
+        "kind": "text"
+      },
+      "rows": {
+        "kind": "list",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "text": {
+              "kind": "text"
+            },
+            "done": {
+              "kind": "boolean"
             }
           }
-        },
-        "hits": {
-          "kind": "counter"
         }
+      },
+      "hits": {
+        "kind": "counter"
       }
     }
   },
@@ -200,7 +197,7 @@
     {
       "name": "whole-field text set keeps combining marks",
       "initial": {
-        "title": "a😀é中",
+        "title": "a\ud83d\ude00e\u0301\u4e2d",
         "rows": [],
         "hits": 0
       },
@@ -210,11 +207,11 @@
           "path": [
             "title"
           ],
-          "value": "a🚀é中"
+          "value": "a\ud83d\ude80e\u0301\u4e2d"
         }
       ],
       "after": {
-        "title": "a🚀é中",
+        "title": "a\ud83d\ude80e\u0301\u4e2d",
         "rows": [],
         "hits": 0
       }

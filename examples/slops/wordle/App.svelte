@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+import { ui } from "./ui.svelte";
+
+  import { useDocument } from "@hitslop/document/svelte";
   import { capture } from "@hitslop/document/capture";
   import { Button, Dialog, Progress, Tabs } from "bits-ui";
   import { onMount, tick } from "svelte";
@@ -9,7 +11,7 @@
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Share2 from "@lucide/svelte/icons/share-2";
   import X from "@lucide/svelte/icons/x";
-  import schema, { type Puzzle } from "./schema";
+  import schema from "./schema";
   import {
     evaluateGuess,
     getDailyWord,
@@ -33,7 +35,7 @@
   const doc = useDocument(schema);
   const rowReveals = Array.from({ length: ROWS }, () => new Tween(0, { duration: 0, easing: cubicOut }));
 
-  let currentGuess = $state("");
+
   let shakeRow = $state(false);
   let toastMessage = $state<string | null>(null);
   let announcement = $state("");
@@ -107,7 +109,7 @@
 
   function tileChar(rowIndex: number, colIndex: number, completedGuess: string | undefined, isCurrentRow: boolean): string {
     if (completedGuess) return completedGuess[colIndex] ?? "";
-    if (isCurrentRow) return currentGuess[colIndex] ?? "";
+    if (isCurrentRow) return ui.currentGuess[colIndex] ?? "";
     return "";
   }
 
@@ -194,27 +196,27 @@
     }
     if (isGameOver) return;
     if (c === "BACKSPACE" || c === "DELETE" || c === "⌫") {
-      if (currentGuess.length > 0) currentGuess = currentGuess.slice(0, -1);
+      if (ui.currentGuess.length > 0) ui.currentGuess = ui.currentGuess.slice(0, -1);
       return;
     }
-    if (/^[A-Z]$/.test(c) && currentGuess.length < COLS) currentGuess += c;
+    if (/^[A-Z]$/.test(c) && ui.currentGuess.length < COLS) ui.currentGuess += c;
   }
 
   function submitGuess(): void {
-    if (currentGuess.length < COLS) {
+    if (ui.currentGuess.length < COLS) {
       showToast("Not enough letters");
       announce("Not enough letters.");
       triggerShake();
       return;
     }
-    if (!isValidWord(currentGuess)) {
+    if (!isValidWord(ui.currentGuess)) {
       showToast("Not in word list");
       announce("Not in word list.");
       triggerShake();
       return;
     }
 
-    const guess = currentGuess;
+    const guess = ui.currentGuess;
     const mode = doc.current.mode;
     const game = mode === "daily" ? doc.current.daily : doc.current.practice;
     const target = game.targetWord;
@@ -222,7 +224,7 @@
     const nextCount = game.guesses.length + 1;
     const won = guess === target;
     const lost = !won && nextCount >= ROWS;
-    currentGuess = "";
+    ui.currentGuess = "";
     void doc.change((tx) => {
       const board = mode === "daily" ? tx.fields.daily : tx.fields.practice;
       board.guesses.insert(guess);
@@ -242,7 +244,7 @@
       }
     }).catch(() => {
       // Refused: the guess goes back into the row for another try.
-      currentGuess = guess;
+      ui.currentGuess = guess;
     });
 
     revealing = true;
@@ -280,7 +282,7 @@
 
   function startNewPractice(): void {
     resetPuzzle("practice", { targetWord: getRandomWord() }).catch(() => {});
-    currentGuess = "";
+    ui.currentGuess = "";
     completionSession = false;
     revealing = false;
     showStatsModal = false;
@@ -290,7 +292,7 @@
 
   function setMode(mode: "daily" | "practice"): void {
     if (mode !== doc.current.mode) doc.fields.mode.set(mode);
-    currentGuess = "";
+    ui.currentGuess = "";
     completionSession = false;
     revealing = false;
     announce(mode === "daily" ? "Daily puzzle." : "Practice mode.");
@@ -338,19 +340,6 @@
     for (let i = 0; i < ROWS; i += 1) {
       void rowReveals[i]!.set(i < count ? 1 : 0, { duration, delay: 0 });
     }
-  }
-
-  function exportChar(game: Puzzle, rowIndex: number, colIndex: number): string {
-    const completed = game.guesses[rowIndex];
-    if (completed) return completed[colIndex] ?? "";
-    if (game.status === "playing" && rowIndex === game.guesses.length) return currentGuess[colIndex] ?? "";
-    return "";
-  }
-
-  function exportState(game: Puzzle, rowIndex: number, colIndex: number): TileState | "" {
-    const completed = game.guesses[rowIndex];
-    if (!completed) return "";
-    return evaluateGuess(completed, game.targetWord)[colIndex] ?? "";
   }
 
   // The effect can rerun before the reset is accepted: reset each day at most once.
@@ -401,8 +390,8 @@
   });
 </script>
 
-<Slop>
-  <main class="device" data-slop-selection="none" aria-label="Wordle puzzle chassis">
+
+  <main class="device" aria-label="Wordle puzzle chassis">
     <header class="topNav">
       <div class="navGroup">
         <div class="brandTitle">
@@ -566,75 +555,3 @@
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>
-
-  {#snippet exportView()}
-    {@const game = doc.current.mode === "daily" ? doc.current.daily : doc.current.practice}
-    {@const score = game.status === "won" ? `${game.guesses.length}/6` : game.status === "lost" ? "X/6" : `${Math.min(ROWS, game.guesses.length + 1)} of 6`}
-    {@const meta = doc.current.mode === "daily" ? `Daily · ${game.date ?? ""} · ${score}` : `Practice · ${score}`}
-    <article class="exportDevice" aria-label="Exported Wordle puzzle">
-      <header class="exportHead">
-        <div class="brandTitle">
-          <span class="brandDot"></span>
-          <span>WORDLE</span>
-        </div>
-        <span class="exportMeta">{meta}</span>
-      </header>
-      <div class="exportBoard">
-        <div class="statusLine">
-          {game.status === "won" ? `Solved in ${game.guesses.length}/6` : game.status === "lost" ? "Out of guesses" : `Guess ${Math.min(ROWS, game.guesses.length + 1)} of ${ROWS}`}
-        </div>
-        <div class="grid" role="grid" aria-label="Wordle board">
-          {#each Array(ROWS) as _, rowIndex}
-            <div class="row" role="row">
-              {#each Array(COLS) as _, colIndex}
-                {@const char = exportChar(game, rowIndex, colIndex)}
-                {@const state = exportState(game, rowIndex, colIndex)}
-                <div class="tile" data-filled={Boolean(char)} data-state={state} role="gridcell">{char}</div>
-              {/each}
-            </div>
-          {/each}
-        </div>
-      </div>
-    </article>
-  {/snippet}
-
-  {#snippet icon()}
-    {@const badge = activeState.status === "won" ? `${activeState.guesses.length}/6` : activeState.status === "lost" ? "X/6" : "SLOPS"}
-    <div class="iconSurface" aria-hidden="true">
-      <div class="iconBezel">
-        <div class="iconBrandStrip">
-          <span class="iconBrandDot"></span>
-          <span class="iconBrandTitle">WORDLE</span>
-          <span class="iconBrandDot"></span>
-        </div>
-        <div class="iconGrid">
-          <div class="iconRow">
-            <div class="iconTile" data-tone="absent">W</div>
-            <div class="iconTile" data-tone="present">O</div>
-            <div class="iconTile" data-tone="absent">R</div>
-            <div class="iconTile" data-tone="absent">D</div>
-            <div class="iconTile" data-tone="present">S</div>
-          </div>
-          <div class="iconRow">
-            <div class="iconTile" data-tone="correct">S</div>
-            <div class="iconTile" data-tone="correct">L</div>
-            <div class="iconTile" data-tone="correct">O</div>
-            <div class="iconTile" data-tone="correct">P</div>
-            <div class="iconTile" data-tone="correct">S</div>
-          </div>
-          <div class="iconRow">
-            <div class="iconTile" data-tone="empty"></div>
-            <div class="iconTile" data-tone="empty"></div>
-            <div class="iconTile" data-tone="empty"></div>
-            <div class="iconTile" data-tone="empty"></div>
-            <div class="iconTile" data-tone="empty"></div>
-          </div>
-        </div>
-        <div class="iconIndicator">
-          <div class="iconBar"></div>
-          <span class="iconBadge">{badge}</span>
-        </div>
-      </div>
-    </div>
-  {/snippet}
-</Slop>

@@ -21,4 +21,4 @@ export default {
     { text: "Book studio and photographer", owner: "Maya", done: true },
     { text: "Share updated timeline across channels", owner: "Jordan", done: false },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

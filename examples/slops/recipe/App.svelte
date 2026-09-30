@@ -1,8 +1,10 @@
 <script lang="ts">
+import { ui } from "./ui.svelte";
+
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
-  import { Slop, bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText, useDocument } from "@hitslop/document/svelte";
   import { attachments } from "@hitslop/document/attachments";
   import { capture } from "@hitslop/document/capture";
   import { Dialog, Progress, Select, Checkbox } from "bits-ui";
@@ -85,7 +87,7 @@
   let deadline = 0;
   let tweenReady = false;
   let picker = $state<HTMLInputElement>();
-  let photoUrl = $state("");
+
   let photoError = $state<string | null>(null);
   let photoWait: Promise<void> = Promise.resolve();
 
@@ -103,14 +105,14 @@
     let cancelled = false;
     let url = "";
     if (!current) {
-      photoUrl = "";
+      ui.photoUrl = "";
       photoWait = Promise.resolve();
       return;
     }
     photoWait = attachments.read(current.id, { type: current.mimeType }).then((blob) => {
       if (cancelled) return;
       url = URL.createObjectURL(blob);
-      photoUrl = url;
+      ui.photoUrl = url;
     }).catch(() => {
       if (!cancelled) photoError = "That photo couldn’t be added. Try another image.";
     });
@@ -254,7 +256,7 @@
     photoError = null;
     try {
       // The reference is written in the same step as the stored image.
-      await attachments.import<typeof schema.fields.node>(file, (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
       });
     } catch {
@@ -276,8 +278,8 @@
   </svg>
 {/snippet}
 
-<Slop>
-  <main class="canvas" data-slop-selection="none" aria-label="Recipe card">
+
+  <main class="canvas" aria-label="Recipe card">
     <article class="card" aria-label="Recipe for {doc.current.title}">
       <header class="hero">
         <div class="intro">
@@ -310,7 +312,7 @@
         </div>
 
         <figure class="photoWell" data-photo={photo ? "true" : "false"}>
-          {#if photoUrl}<img src={photoUrl} alt={doc.current.title} />{/if}
+          {#if ui.photoUrl}<img src={ui.photoUrl} alt={doc.current.title} />{/if}
           {#if !photo}<button class="photoInvitation" onclick={() => picker?.click()} data-slop-export="hide"><Camera size={25} strokeWidth={1.5} />Add meal photo</button>{/if}
           {#if photo}<div class="photoActions" data-slop-export="hide">
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>
@@ -333,7 +335,7 @@
           <Dialog.Overlay class="cookOverlay" data-slop-export="hide" />
           <Dialog.Content class="cookDialog" data-slop-export="hide">
             <header class="cookHeader">
-              {#if photoUrl}<img src={photoUrl} alt="" />{:else}<span class="cookBookMark"><div class="iconSurface" aria-hidden="true">{@render cookbook()}</div></span>{/if}
+              {#if ui.photoUrl}<img src={ui.photoUrl} alt="" />{:else}<span class="cookBookMark"><div class="iconSurface" aria-hidden="true">{@render cookbook()}</div></span>{/if}
               <div><span>NOW COOKING</span><strong>{doc.current.title}</strong></div>
               <Dialog.Close class="cookClose" aria-label="Close cooking mode" onclick={pauseTimer}><X size={14} /></Dialog.Close>
             </header>
@@ -449,63 +451,3 @@
       </p>
     {/if}
   </main>
-
-  {#snippet exportView()}
-    <article class="card" aria-label="Exported recipe for {doc.current.title}">
-      <header class="hero" style:grid-template-columns={photoUrl ? undefined : "1fr"}>
-        <div class="intro">
-          <div class="utilityLine">
-            <span class="difficultyTrigger">{doc.current.difficulty}</span>
-          </div>
-          <h1 class="titleText">{doc.current.title.trim() || "Untitled recipe"}</h1>
-          {#if doc.current.description.trim()}<p class="descriptionText">{doc.current.description}</p>{/if}
-          <div class="stats">
-            <div><span>Serves</span><strong>{doc.current.servings ?? "—"}</strong></div>
-            <div><span>Prep</span><span class="number"><strong>{doc.current.prepMinutes ?? "—"}</strong><small>min</small></span></div>
-            <div><span>Cook</span><span class="number"><strong>{doc.current.cookMinutes ?? "—"}</strong><small>min</small></span></div>
-          </div>
-        </div>
-        {#if photoUrl}<figure class="photoWell" data-photo="true">
-          <img src={photoUrl} alt="" />
-        </figure>{/if}
-      </header>
-
-      <div class="body">
-        <section class="section" aria-labelledby="export-ingredients">
-          <div class="sectionTitle"><div><h2 id="export-ingredients">Ingredients</h2></div></div>
-          <ul class="list">
-            {#each doc.current.ingredients as item (item.$id)}
-              <li class="ingredientRow" data-checked={item.checked}>
-                <span data-checkbox-root data-state={item.checked ? "checked" : "unchecked"}></span>
-                <span class="itemText">{item.text.trim() || "Untitled ingredient"}</span>
-              </li>
-            {:else}
-              <li class="empty">No ingredients yet.</li>
-            {/each}
-          </ul>
-        </section>
-        <section class="section" aria-labelledby="export-method">
-          <div class="sectionTitle"><div><h2 id="export-method">Method</h2></div></div>
-          <ol class="list">
-            {#each doc.current.steps as step, index (step.$id)}
-              <li class="stepRow">
-                <span class="stepNumber">{String(index + 1).padStart(2, "0")}</span>
-                <div class="stepCopy">
-                  <h3 class="stepTitleText">{step.title.trim() || `Step ${index + 1}`}</h3>
-                  {#if step.text.trim()}<p class="stepBodyText">{step.text}</p>{/if}
-                </div>
-                {#if step.minutes}<span class="stepTime">{step.minutes} min</span>{/if}
-              </li>
-            {:else}
-              <li class="empty">No steps yet.</li>
-            {/each}
-          </ol>
-        </section>
-      </div>
-    </article>
-  {/snippet}
-
-  {#snippet icon()}
-    <div class="iconSurface" aria-hidden="true">{@render cookbook()}</div>
-  {/snippet}
-</Slop>

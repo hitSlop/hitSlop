@@ -1,5 +1,5 @@
 {
-  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
   "author": {
     "name": "hitSlop",
     "url": "https://hitslop.com"
@@ -13,7 +13,6 @@
   ],
   "presentation": {
     "width": 560,
-    "height": 600,
-    "shape": "rounded"
+    "height": 600
   }
 }

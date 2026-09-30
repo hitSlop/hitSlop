@@ -1,9 +1,10 @@
 # Architecture
 
 hitSlop documents are local packages (`.slop`) that pair an immutable authored app with
-a structured document. One Rust core, `hitslop-core` on Loro, owns document semantics.
-The Swift `DocumentOwner` owns the live core, the writer lock, SQLite and delivery to
-the page. The WebView renders immutable snapshots and holds no CRDT.
+a structured document. One Rust core, `hitslop-core` on Loro, owns document semantics
+and durable storage: SQLite, the writer lock and the save policy. The Swift
+`DocumentOwner` holds the live core, schedules saves and delivers to the page; Loro bytes
+never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
 
 ```text
             page (WebKit)                               host (Swift)                  core (Rust)
@@ -13,22 +14,42 @@ the page. The WebView renders immutable snapshots and holds no CRDT.
  CLI (slop / hitslop-native) ── socket (live) or writer lock (closed) ─┘ persistence queue ──▶ state/document.sqlite
 ```
 
-Descriptor kinds: text (merging), boolean, string, number, integer and enum (last
-writer wins, checked on write), optional (of a scalar or an object; absent until set,
-removed by `clear`), object, list(object) rows with `$id`, and counter.
+Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
+writer wins, checked on write); optional (of a scalar, text or an object); object;
+list of object rows with `$id`; list of scalars by index; record of scalars or objects
+by key; and counter. [Document types](reference/document-types.md) describes each
+kind's snapshot, merge, write rules, handles and CLI paths.
 
-The same core compiles to WASM for `slop dev` and the Bun tests only. The app, helper,
-page shell and CLI are built from one tree; nothing has shipped, so there is no version
-negotiation between them.
+The same core compiles to WASM for `slop dev`, for `slop build`'s validation of
+descriptors, initial values, theme defaults and window shapes, and for the Bun tests.
+It never edits documents outside the app. The app, helper, page shell and CLI are built
+from one tree. The CLI checks its WASM core build identity against the selected native
+helper, and the helper checks the live owner before forwarding document commands.
+These are exact identity checks, not version negotiation. Populated SQLite files must
+carry the hitSlop application ID and supported storage version; no migration is provided.
+
+Manifest acceptance is native-only Rust validation of the TypeBox-generated JSON
+Schema, followed by the shared shape parser. Swift decodes the validated manifest
+into its generated model and owns filesystem, PNG and native path checks. Authoring
+keeps TypeBox manifest validation; the manifest validator dependency is excluded from
+WASM. Package open also validates descriptors, initial values and the required theme
+defaults (`assets/theme.json`) through the core; the owner reuses the validated schema key
+and defaults. The core validates socket and bridge envelopes against the same generated
+schemas (`Envelope`); Swift only serializes them for that check and maps accepted values.
+Document payloads never need that: page batches and text edits, and CLI operations, cross
+as JSON text that only the core parses, and state returns as the core's JSON text, spliced
+into replies unparsed. Shared limits and codes live in TypeBox-free
+`packages/schema/src/constants.ts` and are generated into Rust and Swift.
 
 ## Layers
 
 | Layer | Where | Owns |
 |---|---|---|
-| Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens |
-| Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`); no semantics |
-| Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls), persistence queue (SQLite), save scheduling, epochs, view tokens |
-| Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, socket and discovery |
+| Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
+| Storage | `crates/hitslop-core/src/store.rs` (feature `storage`, native only) | `state/document.sqlite` on the platform SQLite (document and theme overrides), the writer lock, append-or-checkpoint choice, size limits, identity checks, duplicate backup |
+| Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
+| Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls, save jobs), persistence queue (store calls), save scheduling, epochs, view tokens |
+| Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, socket and discovery; the window is its `DocumentSessionDelegate` |
 | Page shell | `packages/document` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | Contracts | `packages/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
 
@@ -37,16 +58,25 @@ negotiation between them.
 1. **Page.** A handle write (`set`, `insert`, `remove`, `move`, `increment`) or a
    `change(tx => …)` collector becomes one batch. Batches go through one FIFO queue, so an
    `insert` followed by a `move` cannot reorder.
-2. **Host.** The page posts `apply {view, batch}`. The owner job checks the view token and
-   epoch, then calls `apply_batch`. The reply is `{sequence, ids}`.
-3. **Push.** The core's publication, `{previous, sequence, version, ops, issues}`, is
+2. **Host.** The page posts `apply {view, batch}`, the batch as JSON text. The owner job
+   checks the view token and epoch, then calls `apply_batch`. The reply is
+   `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
+   document clean.
+3. **Push.** The core's publication, `{previous, sequence, version, ops, issues?}`, is
    appended to the session's push queue on the owner queue, so pushes keep owner order.
    One drain at a time delivers everything buffered through a single awaited
-   `__hitslop.publish(pushes)` call. Swift never parses publications.
+   `__hitslop.publish(pushes)` call. Swift never parses publications. An edit to an
+   existing text field publishes a `text` op with its hunks (retain, insert, delete, in
+   code points of the previous text), not the whole field. `issues`, the complete list,
+   is present only when it changed.
 4. **Store.** The page applies publications in sequence order, ignores any at or below
    its sequence, and copies only the objects on the changed paths; unchanged rows keep
    their identity. The write's promise resolves once the store reaches the reply's
    sequence, so the snapshot has updated when `await` returns.
+
+Issues name rows by their effective `$id`, as edits and the snapshot do. The core keeps
+them current by recomputing only the places a change touched (a map entry, or a list
+whose rows changed); a full recomputation from the stored value remains the test oracle.
 
 A gap (`previous` above the store's sequence) or an apply failure makes the page call
 `open` again and replace its state. Text still in a field survives: bindings keep their
@@ -76,10 +106,16 @@ the owner applies it, through the same precomputed script.
 
 ## Saving
 
-- The owner queue runs core calls; the persistence queue runs every SQLite call. At most
-  one write is in flight, and edits during it coalesce into the next one.
-- Each write records an attempt token in the same transaction. A lost reply is settled by
-  reading the token back; it is never guessed from the generation.
+- Autosave waits 150 ms after an edit, and at most 1 s after the first unsaved one.
+- The owner queue asks the store for a save job, which exports only what it writes: the
+  updates since the last save, or a checkpoint. The persistence queue runs every store
+  call, including the write. At most one write is in flight, and edits during it
+  coalesce into the next one. The job's bytes stay in Rust.
+- A failed or unacknowledged write retains the last confirmed saved version. The store
+  re-reads its stored sizes after the failure, so the retry chooses append or checkpoint
+  again. Overlapping Loro updates are safe to import; only a confirmed write advances the
+  saved version. An unacknowledged commit can therefore show a save failure until retry
+  succeeds.
 - A write that fails keeps ownership and all edits. Failures are typed
   (`full`, `busy`, `moved`, `invalidated`, `io`) and reach the window, which offers retry,
   or discard for a full document.
@@ -89,9 +125,15 @@ the owner applies it, through the same precomputed script.
   refused with `owner_replaced`.
 - Save status flows one way: owner to window, and owner to page as `saved`/`failed` pushes.
 
-Storage is `document(checkpoint, schema_key, generation, doc_id, last_attempt)` plus
-`updates(seq, bytes)`. A checkpoint replaces the log at 256 updates or 4 MiB; the limits
-are 4,096 updates and 32 MiB.
+Storage is `document(doc_id, theme)`, `checkpoint(schema_key, bytes)` (absent until
+the first save), and `updates(seq, bytes)`. Saved updates without a checkpoint are
+refused and preserved for recovery. History-trimmed Loro documents are unsupported;
+rejected-batch rollback requires full history. A checkpoint replaces the log at 256
+updates or 4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`). New
+databases use incremental auto-vacuum, and every checkpoint frees the pages the log
+used. The store links the platform SQLite, the one library every other in-process user
+loads, and is the only code that opens `document.sqlite`; duplicate backup and identity
+renewal live there too.
 
 ## Close, export and capture
 
@@ -107,15 +149,20 @@ admitted past an active barrier, so a blob is never saved without its reference.
 owner's socket, which lives as long as the owner, not the page. Commands run on the owner
 directly: they never blur the field being typed in, and a live `get` returns
 owner-accepted state. If the document is closed, the helper takes the writer lock and
-runs the owner in process, without WebKit or authored code. Edits print
-`{ids, sequence, value}`; mutations are never replayed automatically.
+runs the owner in process, without WebKit or authored code. Socket commands run off the
+main actor, and operations travel as JSON text. Edits print `{ids, sequence, value}`;
+mutations are never replayed automatically. `get --snapshot` prints `{schema, state}`.
 
 ## Themes and attachments
 
-Theme defaults live in `assets/theme.json` and overrides in `state/theme.json`. Swift
-validates every write (known tokens, UTF-16 lengths, no `{};`, known `var(--slop-*)`
-references, 64 KiB); the page only applies values. Attachments are content-addressed
-immutable blobs in `state/attachments`, written through the owner.
+Theme defaults live in `assets/theme.json`; overrides live in the document's database,
+outside Loro. One Rust function applies every theme command (get, set, reset) and
+validates the result (known tokens, UTF-16 lengths, no `{};`, known `var(--slop-*)`
+references, a 64 KiB effective theme). The store saves the overrides it returns in a
+transaction under ownership, a snapshot reads them in the same transaction as the
+document, and Duplicate's backup copies them; the page only applies values.
+Attachments are content-addressed immutable blobs in `state/attachments`, written by
+Swift through the owner.
 
 ## Tests
 
@@ -123,9 +170,13 @@ Tests live at the boundary that owns the behavior; see [testing](testing.md).
 
 | Boundary | Proves |
 |---|---|
-| Rust (`crates/hitslop-core/tests`) | Semantics, publications equal fresh snapshots, text merges (`text.rs`), token validation (`tokens.rs`) |
+| Rust (`crates/hitslop-core/tests`) | Semantics, publications equal fresh snapshots, text merges (`text.rs`), token validation (`tokens.rs`), storage (`store.rs`) |
 | SDK over WASM (`packages/document/tests`) | Write timing, snapshot identity, collectors, text binding, stream recovery, barriers, attachments |
-| Swift (`apps/apple/Packages/HitSlopApple/Tests`) | Persistence scheduling, lost replies, writer lock, view and epoch fences, CLI, WebView bridge, export |
+| Swift (`apps/apple/Packages/HitSlopApple/Tests`) | Persistence scheduling, lost replies, view and epoch fences, CLI, WebView bridge, export |
 
-Performance evidence is in [`evidence/`](evidence/). At 1,000 rows a window opens in about
-0.6 s and a checkbox is accepted in 14 ms (p95).
+Performance evidence is in [`evidence/`](evidence/). At 1,000 rows a window opens in under
+a second and a checkbox is accepted in about 12 to 14 ms (p95); see
+`release-window-measurements-2026-09-30.json`. Publication cost from owner commit to page
+at 1,000 and 5,000 rows is in `codebase-pass-phase2-2026-10-01.json`, edit latency at
+5,000 rows in `edit-latency-2026-10-01.json`, and core keystroke cost at 10,000 and
+100,000 characters (core only, not a system IME) in `long-text-2026-09-30.json`.

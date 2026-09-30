@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { Checkbox } from "bits-ui";
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
+  import { useDocument, bindText } from "@hitslop/document/svelte";
   import { checklist } from "./schema";
 
   const doc = useDocument(checklist);
@@ -27,7 +27,7 @@
     finally { adding = false; }
   }
 </script>
-<Slop>
+
 <main class="slop-paper">
   <div class="slop-eyebrow">Little checklist</div>
   <input class="slop-title" aria-label="List title" use:bindText={title} />
@@ -57,4 +57,3 @@
     <span>Your list, at your pace.</span>
   </footer>
 </main>
-</Slop>

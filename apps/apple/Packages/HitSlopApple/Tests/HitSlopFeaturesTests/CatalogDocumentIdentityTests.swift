@@ -32,7 +32,7 @@ import Testing
 
 @Test func templateIdentityAndSearchStillUseManifestMetadata() {
     var entry = CatalogEntry(id: "template", source: .local(URL(fileURLWithPath: "/Templates/quick-checklist.slop")), title: "Quick Checklist")
-    entry.categories = ["productivity"]
+    entry.categories = [.productivity]
     #expect(entry.displayTitle == "Quick Checklist")
     #expect(entry.documentIdentity == nil)
     #expect(entry.searchableText.contains("productivity"))

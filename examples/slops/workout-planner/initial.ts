@@ -11,4 +11,4 @@ export default {
     { name: "Lying leg curl", sets: 3, reps: 12, weight: "90 lbs", completedSets: 0, completedSetIndices: [] },
     { name: "Standing calf raise", sets: 4, reps: 15, weight: "140 lbs", completedSets: 0, completedSetIndices: [] },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

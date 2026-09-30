@@ -1,37 +1,22 @@
 <script lang="ts">
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+import { ui, fallbackChannels, type Channel, type Playlist } from "./ui.svelte";
+
+  import { useDocument } from "@hitslop/document/svelte";
   import { onMount } from "svelte";
   import { Button, Popover, Slider, Toggle } from "bits-ui";
   import schema from "./schema";
 
   const chromeUrl = "/assets/alien-radio-chrome.png";
 
-  type Playlist = { url: string; format: string; quality: string };
-  type Channel = {
-    id: string;
-    title: string;
-    description: string;
-    genre: string;
-    listeners: string;
-    lastPlaying: string;
-    playlists: Playlist[];
-  };
-
-  const fallbackChannels: Channel[] = [
-    { id: "spacestation", title: "Space Station Soma", description: "Tune in, turn on, space out.", genre: "ambient", listeners: "—", lastPlaying: "Awaiting deep-space telemetry", playlists: [{ url: "https://api.somafm.com/spacestation130.pls", format: "aac", quality: "highest" }] },
-    { id: "missioncontrol", title: "Mission Control", description: "Celebrating NASA and space explorers everywhere.", genre: "ambient|specials", listeners: "—", lastPlaying: "Mission feed standing by", playlists: [{ url: "https://api.somafm.com/missioncontrol130.pls", format: "aac", quality: "highest" }] },
-    { id: "deepspaceone", title: "Deep Space One", description: "Deep ambient electronic and space music.", genre: "ambient", listeners: "—", lastPlaying: "Scanning the outer bands", playlists: [{ url: "https://api.somafm.com/deepspaceone130.pls", format: "aac", quality: "highest" }] },
-    { id: "dronezone", title: "Drone Zone", description: "Atmospheric textures with minimal beats.", genre: "ambient", listeners: "—", lastPlaying: "Long-range carrier detected", playlists: [{ url: "https://api.somafm.com/dronezone130.pls", format: "aac", quality: "highest" }] },
-  ];
 
   const doc = useDocument(schema);
-  let channels = $state<Channel[]>(fallbackChannels);
+
   let browserOpen = $state(false);
   let query = $state("");
   let loading = $state(false);
   let playing = $state(false);
   let online = $state(false);
-  let status = $state("STANDBY");
+
   let error = $state<string | null>(null);
   let canvas: HTMLCanvasElement;
   let animationFrame = 0;
@@ -43,9 +28,9 @@
   let analyser: AnalyserNode | null = null;
   let source: MediaElementAudioSourceNode | null = null;
 
-  const selected = $derived(channels.find(channel => channel.id === doc.current.selectedChannelId) ?? channels[0] ?? fallbackChannels[0]!);
+  const selected = $derived(ui.channels.find(channel => channel.id === doc.current.selectedChannelId) ?? ui.channels[0] ?? fallbackChannels[0]!);
   const isFavorite = $derived(doc.current.favoriteChannelIds.includes(selected.id));
-  const filtered = $derived(channels.filter(channel => `${channel.title} ${channel.description} ${channel.genre}`.toLowerCase().includes(query.trim().toLowerCase())));
+  const filtered = $derived(ui.channels.filter(channel => `${channel.title} ${channel.description} ${channel.genre}`.toLowerCase().includes(query.trim().toLowerCase())));
 
   function preferredPlaylist(channel: Channel): Playlist | undefined {
     return [...channel.playlists].sort((a, b) => {
@@ -84,7 +69,7 @@
   async function playSelected(): Promise<void> {
     loading = true;
     error = null;
-    status = "TUNING";
+    ui.status = "TUNING";
     try {
       const stream = await resolveStream(selected);
       if (audio.src !== stream) audio.src = stream;
@@ -92,7 +77,7 @@
       await audio.play();
     } catch (cause) {
       playing = false;
-      status = "NO SIGNAL";
+      ui.status = "NO SIGNAL";
       error = cause instanceof Error ? cause.message : String(cause);
     } finally {
       loading = false;
@@ -115,8 +100,8 @@
   }
 
   function cycle(direction: -1 | 1): void {
-    const favorites = channels.filter(channel => doc.current.favoriteChannelIds.includes(channel.id));
-    const pool = favorites.length ? favorites : channels;
+    const favorites = ui.channels.filter(channel => doc.current.favoriteChannelIds.includes(channel.id));
+    const pool = favorites.length ? favorites : ui.channels;
     const index = Math.max(0, pool.findIndex(channel => channel.id === selected.id));
     choose(pool[(index + direction + pool.length) % pool.length]!);
   }
@@ -146,7 +131,7 @@
       if (!response.ok) throw new Error(String(response.status));
       const payload = await response.json() as { channels?: Channel[] };
       if (!payload.channels?.length) throw new Error("empty catalog");
-      channels = payload.channels;
+      ui.channels = payload.channels;
       online = true;
     } catch {
       online = false;
@@ -183,10 +168,10 @@
   });
 
   onMount(() => {
-    const onPlaying = () => { playing = true; loading = false; status = "RECEIVING"; error = null; };
-    const onPause = () => { playing = false; status = "PAUSED"; };
-    const onWaiting = () => { loading = true; status = "BUFFERING"; };
-    const onError = () => { playing = false; loading = false; status = "NO SIGNAL"; error = "The stream dropped. Check the connection and retry."; };
+    const onPlaying = () => { playing = true; loading = false; ui.status = "RECEIVING"; error = null; };
+    const onPause = () => { playing = false; ui.status = "PAUSED"; };
+    const onWaiting = () => { loading = true; ui.status = "BUFFERING"; };
+    const onError = () => { playing = false; loading = false; ui.status = "NO SIGNAL"; error = "The stream dropped. Check the connection and retry."; };
     audio.addEventListener("playing", onPlaying);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("waiting", onWaiting);
@@ -207,8 +192,8 @@
   });
 </script>
 
-<Slop>
-  <main class="radio" aria-label="Alien Radio SomaFM receiver" data-slop-selection="none">
+
+  <main class="radio" aria-label="Alien Radio SomaFM receiver">
     <img class="chrome" src={chromeUrl} alt="" draggable="false" />
     <header class="identity">
       <span class="lamp" data-online={online}></span>
@@ -217,7 +202,7 @@
     </header>
     <section class="display" aria-live="polite">
       <div class="topline">
-        <span>{status}</span>
+        <span>{ui.status}</span>
         <span>{online ? "NET LINK" : "LOCAL INDEX"}</span>
         <span>{selected.listeners === "—" ? "—" : `${selected.listeners} EARTHLINGS`}</span>
       </div>
@@ -269,22 +254,3 @@
     {/if}
     <a class="soma" href="https://somafm.com/support/" target="_blank" rel="noreferrer">Powered by listener-supported SomaFM · Support the signal ↗</a>
   </main>
-
-  {#snippet exportView()}
-    <article class="radio" aria-label="Exported Alien Radio">
-      <img class="chrome" src={chromeUrl} alt="" />
-      <header class="identity"><span class="lamp"></span><strong>ALIEN RADIO</strong><small>INTERSTELLAR RECEIVER / AR-01</small></header>
-      <section class="display">
-        <div class="topline"><span>{status}</span><span>LOCAL INDEX</span><span>—</span></div>
-        <div class="station"><span>broadcast</span><strong>{selected.title}</strong></div>
-        <p class="track">{selected.lastPlaying || selected.description}</p>
-      </section>
-    </article>
-  {/snippet}
-
-  {#snippet icon()}
-    <div class="iconSurface" aria-hidden="true">
-      <article class="iconTile"><div class="iconScreen"><i></i><i></i><i></i><i></i><i></i><span>◉</span></div></article>
-    </div>
-  {/snippet}
-</Slop>

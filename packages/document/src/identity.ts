@@ -1,5 +1,6 @@
+import { RowIdRule } from "@hitslop/schema/constants";
 /** Row identity is an application register (`$id`), independent of Loro container IDs. */
-const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
+const alphabet = RowIdRule.mintAlphabet;
 /** 128 random bits as 26 Crockford base32 characters. */
 export function newID(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));

@@ -12,11 +12,11 @@
     "@crustjs/skills": "0.4.1",
     "@hitslop/document": "4.0.0",
     "@hitslop/schema": "4.0.0",
-    "esbuild": "^0.28.2",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
     "svelte": "5.57.1",
-    "svelte-check": "^4.7.6",
-    "typebox": "^1.3.32",
-    "typescript": "5.9.2"
+    "svelte-check": "4.7.6",
+    "typescript": "5.9.2",
+    "vite": "8.3.1"
   },
   "publishConfig": {
     "access": "public"
@@ -31,7 +31,7 @@
   "engines": {
     "bun": ">=1.4.2"
   },
-  "description": "Create, preview, build, register, and edit hitSlop v1 documents.",
+  "description": "Create, preview, build, register, and edit hitSlop documents.",
   "license": "MIT",
   "homepage": "https://hitslop.com",
   "repository": {

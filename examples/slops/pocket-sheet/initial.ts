@@ -14,4 +14,4 @@ export default {
     A9: { input: "Each pays", tint: "mint" }, B9: { input: "=ROUND(B6/B8, 2)", tint: "mint", stamp: "💸" },
   },
   widths: { A: 128 },
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

@@ -28,7 +28,7 @@ const schema = defineDocument({
   })),
 });
 
-export type Deck = Value<typeof schema.fields.node>;
+export type Deck = Value<typeof schema.descriptor>;
 export type Slide = Deck["slides"][number];
 export type SlideLayout = (typeof layouts)[number];
 export type DeckTheme = (typeof themes)[number];

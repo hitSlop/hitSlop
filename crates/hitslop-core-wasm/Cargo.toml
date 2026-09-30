@@ -10,4 +10,6 @@ crate-type = ["cdylib"]
 [dependencies]
 hitslop-core = { path = "../hitslop-core" }
 wasm-bindgen = "=0.2.127"
+serde_json.workspace = true
 
+js-sys = "=0.3.104"

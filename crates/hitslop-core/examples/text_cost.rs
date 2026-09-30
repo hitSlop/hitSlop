@@ -24,7 +24,7 @@ fn main() {
             } else {
                 json!({"type":"set","path":["rows",{"id":id},"text"],"value":format!("x{k} task")})
             };
-            peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
+            peer.apply_batch(&json!({"intents":[op]}).to_string()).unwrap();
         }
         doc.import(&peer.export_since(&base).unwrap()).unwrap();
     }
@@ -33,25 +33,33 @@ fn main() {
         let v: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
         v["value"]["rows"].as_array().unwrap().iter().find(|r| r["$id"] == "r2500").unwrap()["text"].as_str().unwrap().to_owned()
     };
-    let (mut base, mut from) = (doc.version(), text(&doc));
-    let (mut fast, mut slow) = (vec![], vec![]);
-    for i in 0..60 {
-        let to = format!("{from}{}", i % 10);
-        let caret = to.encode_utf16().count();
-        let concurrent = i % 2 == 1;
-        if concurrent {
-            // Another writer prepends to the same field: the next page edit takes the slow path.
-            doc.apply(&json!({"intents":[{"type":"set","path":path,"value":format!("c{from}")}]}).to_string()).unwrap();
+    let checkpoint = doc.checkpoint().unwrap();
+    for length in [1_000, 10_000, 100_000] {
+        let mut doc = Document::open(&schema, &checkpoint, &[]).unwrap();
+        doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":"x".repeat(length)}]}).to_string()).unwrap();
+        let (mut base, mut from) = (doc.version(), text(&doc));
+        let (mut fast, mut slow, mut sets) = (vec![], vec![], vec![]);
+        for i in 0..60 {
+            let to = format!("{from}{}", i % 10);
+            let caret = to.encode_utf16().count();
+            let concurrent = i % 2 == 1;
+            if concurrent {
+                doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":format!("c{from}")}]}).to_string()).unwrap();
+            }
+            let request = json!({"base":base,"path":path,"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string();
+            let started = Instant::now();
+            let reply = doc.edit_text(&request).unwrap();
+            let ms = started.elapsed().as_secs_f64() * 1e3;
+            if concurrent { slow.push(ms) } else { fast.push(ms) }
+            assert!(!reply.authored.is_empty());
+            (base, from) = (doc.version(), text(&doc));
         }
-        let request = json!({"base":base,"path":path,"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string();
-        let started = Instant::now();
-        let reply = doc.edit_text(&request).unwrap();
-        let ms = started.elapsed().as_secs_f64() * 1e3;
-        if concurrent { slow.push(ms) } else { fast.push(ms) }
-        assert!(!reply.authored.is_empty());
-        // The page adopts the pushed merged text before its next edit.
-        (base, from) = (doc.version(), text(&doc));
+        for i in 0..30 {
+            let request = json!({"intents":[{"type":"set","path":path,"value":format!("{}{}", "x".repeat(length), i)}]}).to_string();
+            let started = Instant::now();
+            doc.apply_batch(&request).unwrap();
+            sets.push(started.elapsed().as_secs_f64() * 1e3);
+        }
+        println!("{}", json!({"characters":length,"rows":5000,"peers":21,"checkpointBytes":doc.checkpoint().unwrap().len(),"p95MS":{"fast":p95(fast),"forkSlow":p95(slow),"set":p95(sets)}}));
     }
-    let bytes = doc.checkpoint().unwrap().len();
-    println!("{}", json!({"rows":5000,"peers":21,"checkpointBytes":bytes,"p95MS":{"fast":p95(fast),"forkSlow":p95(slow)}}));
 }

@@ -1,15 +1,15 @@
 // Compile-only boundary checks: unsafe envelopes and replies must not become `any`.
 import type { SocketRequest } from "@hitslop/schema/socket";
 import type { BridgeRequest } from "@hitslop/schema/bridge";
-import type { SlopRuntimeHandle } from "../src/runtime-handle";
+import type { SlopPageHandle } from "../src/page-handle";
 import { hostCall } from "../src/bridge";
 
-function contracts(handle: SlopRuntimeHandle) {
+function contracts(handle: SlopPageHandle) {
   // @ts-expect-error An edit without lifetime identity is unsafe.
   const missingEpoch: SocketRequest = { id: "edit", documentPath: "/doc", method: "apply", op: {} };
-  const error: BridgeRequest<"runtimeError"> = { method: "runtimeError", kind: "application", error: "x" };
+  const error: BridgeRequest<"pageError"> = { method: "pageError", kind: "application", error: "x" };
   // @ts-expect-error A runtime error names its kind.
-  const missingKind: BridgeRequest<"runtimeError"> = { method: "runtimeError", error: "x" };
+  const missingKind: BridgeRequest<"pageError"> = { method: "pageError", error: "x" };
   // @ts-expect-error Attachment reads need an attachment ID, not bytes.
   hostCall({ method: "attachments.read", bytes: "AA==" });
   hostCall({ method: "attachments.list" }).then(reply => {

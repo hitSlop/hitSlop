@@ -53,13 +53,17 @@ _vibe/
 # Historical source stays local, except the approved slop archive with provenance.
 /archive/*
 !/archive/slops/
+!/archive/spikes/
+/archive/spikes/*
+!/archive/spikes/boundary-simplification/
 /deferred/
 /examples/archive/
 /Prototypes/
 
 /generated/
 /apps/apple/Packages/HitSlopApple/Sources/HitSlopFoundation/Resources/
-.v1-build-test-*/
+.build-test-*/
+.dev-test-*/
 
 /apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/
 

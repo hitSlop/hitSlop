@@ -40,15 +40,14 @@ state/
   document.sqlite
   writer.lock
   host.lock               # present while a live session advertises itself
-  theme.json              # optional owner token overrides
   attachments/            # optional immutable, content-addressed blobs
 ```
 
-The app's Rust core (on Loro) owns the live document; the page renders snapshots of it. Swift persists opaque checkpoints and updates in SQLite. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
+The app's Rust core (on Loro) owns the live document and persists opaque checkpoints and updates in SQLite; the page renders snapshots of it. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
 
 The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and edit the document directly. Headless editing never starts a WebView or loads `assets/app.js`.
 
-Owner changes go into `state/theme.json`, a separate, bounded token object. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro or live in SQLite. Direct file edits are not watched. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Use theme commands rather than editing files underneath a running owner. Duplicating a document preserves its saved content and overrides while minting a fresh document ID (`doc_id`) and creating fresh ownership files.
+Owner changes are a separate, bounded token object saved in `state/document.sqlite` beside the document. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Duplicating a document preserves its saved content and overrides while minting a fresh document ID (`doc_id`) and creating fresh ownership files.
 
 ## Masters and copies
 

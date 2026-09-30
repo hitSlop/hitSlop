@@ -340,7 +340,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let refreshCalls = LockIsolated(0)
     let store = TestStore(initialState: CatalogFeature.State()) { CatalogFeature() } withDependencies: {
         $0.catalogClient.local = { localCalls.withValue { $0 += 1 }; return local.stream }
-        $0.catalogClient.refreshLocal = { refreshCalls.withValue { $0 += 1 } }
+        $0.catalogClient.refreshLocal = { _ in refreshCalls.withValue { $0 += 1 } }
         $0.catalogClient.recents = { [] }
     }
     await store.send(.start) { $0.isStarted = true; $0.recentsGeneration = 1 }
@@ -367,15 +367,15 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     }
     await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
     await store.receive(\.operationFailed) { $0.operation = nil; $0.alert = .operationFailure("Save failed") }
-    await store.send(.runtimeFailed("Stopped")) { $0.runtimeError = "Stopped" }
+    await store.send(.pageFailed("Stopped")) { $0.pageError = "Stopped" }
     #expect(store.state.alert != nil)
     await store.send(.alert(.dismiss)) { $0.alert = nil }
-    await store.send(.command(.retry)) { $0.runtimeError = nil; $0.operation = .retry }
-    await store.send(.runtimeFailed("Failed again")) { $0.runtimeError = "Failed again" }
+    await store.send(.command(.retry)) { $0.pageError = nil; $0.operation = .retry }
+    await store.send(.pageFailed("Failed again")) { $0.pageError = "Failed again" }
     gate.continuation.yield(())
     await store.receive(\.operationFinished) { $0.operation = nil }
-    #expect(store.state.runtimeError == "Failed again")
-    await store.send(.runtimeReady) { $0.runtimeError = nil }
+    #expect(store.state.pageError == "Failed again")
+    await store.send(.pageReady) { $0.pageError = nil }
     await store.finish()
 }
 
@@ -510,35 +510,54 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     #expect(events.value == ["prepare:\(documentID)", "prepare:\(secondID)", "cancel:\(documentID)", "cancel:\(secondID)", "reply:false"])
 }
 
+// New artwork for one document rereads that entry, not every recent document.
+@Test @MainActor func artworkChangeRereadsOnlyThatRecentDocument() async {
+    let first = CatalogEntry(id: "recent:/a.slop", source: .recent(URL(fileURLWithPath: "/a.slop")), title: "A")
+    let second = CatalogEntry(id: "recent:/b.slop", source: .recent(URL(fileURLWithPath: "/b.slop")), title: "B")
+    var initial = CatalogFeature.State()
+    initial.isStarted = true; initial.filter = .recents; initial.recents = [first, second]; initial.selectedID = first.id
+    var reread = first
+    reread.packageBytes = 42
+    let changed = reread
+    let recentsCalls = LockIsolated(0)
+    let store = TestStore(initialState: initial) { CatalogFeature() } withDependencies: {
+        $0.catalogClient.recent = { _ in changed }
+        $0.catalogClient.recents = { recentsCalls.withValue { $0 += 1 }; return [] }
+    }
+    await store.send(.packageChanged(URL(fileURLWithPath: "/a.slop")))
+    await store.receive(\.recentReceived) { $0.recents = [changed, second] }
+    #expect(recentsCalls.value == 0)
+}
+
 @Test @MainActor func categoriesFollowLocalManifestsAndRemovedCategoryReturnsToTemplates() async {
     var bundled = CatalogEntry(id: "bundled", source: .local(documentURL), title: "Bundled")
-    bundled.isBundled = true; bundled.categories = ["personal", "productivity"]
+    bundled.isBundled = true; bundled.categories = [.personal, .productivity]
     var installed = CatalogEntry(id: "installed", source: .local(documentURL), title: "Installed")
-    installed.categories = ["finance", "personal"]
+    installed.categories = [.finance, .personal]
     let store = TestStore(initialState: CatalogFeature.State()) { CatalogFeature() }
     await store.send(.localReceived(CatalogSnapshot(entries: [bundled, installed]))) {
         $0.local = [bundled, installed]; $0.selectedID = "bundled"
     }
-    #expect(store.state.categories == ["productivity", "finance", "personal"])
-    await store.send(.filterChanged(.category("finance"))) { $0.filter = .category("finance"); $0.selectedID = "installed" }
+    #expect(store.state.categories == [.productivity, .finance, .personal])
+    await store.send(.filterChanged(.category(.finance))) { $0.filter = .category(.finance); $0.selectedID = "installed" }
     #expect(store.state.visibleEntries == [installed])
     await store.send(.localReceived(CatalogSnapshot(entries: [bundled]))) {
         $0.local = [bundled]; $0.filter = .all; $0.selectedID = "bundled"
     }
-    #expect(store.state.categories == ["productivity", "personal"])
+    #expect(store.state.categories == [.productivity, .personal])
 }
 
 @Test @MainActor func localSearchImmediatelyFiltersAndKeepsCategorySelectionConsistent() async {
     var checklist = CatalogEntry(id: "checklist", source: .local(documentURL), title: "Checklist")
-    checklist.categories = ["personal", "productivity"]
+    checklist.categories = [.personal, .productivity]
     var expenses = CatalogEntry(id: "expenses", source: .local(documentURL), title: "Small Expenses")
-    expenses.categories = ["productivity"]
+    expenses.categories = [.productivity]
     var initial = CatalogFeature.State()
     initial.local = [checklist, expenses]; initial.selectedID = checklist.id
     let store = TestStore(initialState: initial) { CatalogFeature() }
     await store.send(.queryChanged("  EXPENSES  ")) { $0.query = "  EXPENSES  "; $0.selectedID = expenses.id }
     #expect(store.state.visibleEntries == [expenses])
-    await store.send(.filterChanged(.category("personal"))) { $0.filter = .category("personal"); $0.selectedID = nil }
+    await store.send(.filterChanged(.category(.personal))) { $0.filter = .category(.personal); $0.selectedID = nil }
     #expect(store.state.visibleEntries.isEmpty)
     await store.send(.queryChanged("")) { $0.query = ""; $0.selectedID = checklist.id }
     #expect(store.state.visibleEntries == [checklist])

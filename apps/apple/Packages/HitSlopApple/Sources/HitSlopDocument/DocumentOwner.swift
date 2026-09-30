@@ -2,13 +2,23 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 
-/// Document ownership. `queue` owns the core and every field below; SQLite runs only on
-/// `storage.queue`, one write at a time, so a slow write never blocks edits.
-/// Renderer lifetimes never determine the lifetime of this object or its writer lock.
+/// Document ownership. `queue` owns the core and every field below. The Rust store owns
+/// SQLite, the writer lock and the save policy; every store call but `saveJob` runs on
+/// `storageQueue`, one at a time, so a slow write never blocks edits. Loro bytes never
+/// reach Swift. Renderer lifetimes never determine the lifetime of this object or its
+/// writer lock.
 public final class DocumentOwner: @unchecked Sendable {
   public let package: SlopPackage
-  let storage: Storage
+  let mode: StorageMode
+  let store: NativeStore
   let queue = DispatchQueue(label: "hitslop.owner")
+  let storageQueue = DispatchQueue(label: "hitslop.persistence")
+  #if DEBUG
+  /// Fault injection at the storage I/O boundary. Fires on `storageQueue`.
+  var testingPhase: ((String) throws -> Void)? {
+    didSet { store.setPhases(phases: testingPhase.map(PhaseHook.init)) }
+  }
+  #endif
   private var core: NativeDocument
   /// The attached page, set by `open`. Page requests name it; a request from a replaced
   /// page is refused with `owner_replaced` and never applied.
@@ -16,61 +26,37 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Names this owner's live state for socket clients. Minted here, never by the core, and
   /// rotated when unsaved edits are discarded, so a client's queued request cannot apply
   /// to replaced state.
-  public private(set) var epoch = UUID().uuidString
+  private let epochLock = NSLock()
+  private var storedEpoch = UUID().uuidString
+  public var epoch: String { epochLock.withLock { storedEpoch } }
   public let documentID: String
   var onPublication: (@Sendable (String) -> Void)?
-  var onSaveStatus: (@Sendable (String, SaveFailure?, Int) -> Void)?
+  var onSaveStatus: (@Sendable (DocumentSaveStatus, Int) -> Void)?
+  /// New theme overrides (JSON) after a theme command changed them.
+  var onTheme: (@Sendable (String) -> Void)?
   /// The core's publication sequence, and the last one the durable state covers.
   private var sequence = 0
   private var savedSequence = 0
   private var autosave: DispatchWorkItem?
-  private let schemaKey: String
-  private var generation: Int64
-  private var savedVersion: String
+  /// When the oldest edit not yet handed to a write was accepted; autosave waits at most
+  /// `autosaveMaximumMS` after it, so continuous typing still saves.
+  private var unsavedSince: DispatchTime?
   private var saveFailure: SaveFailure?
-  /// Accepted edits, and how many of them the durable state covers.
-  private var edits = 0
-  private var savedEdits = 0
-  /// Bumped by discard; a write completion from an older epoch is ignored.
-  private var writeEpoch = 0
   private var writing = false
   private var saveRequested = false
   private var waiters: [Waiter] = []
-  /// Stored sizes, tracked here so choosing append or checkpoint needs no database read.
-  private var stored: (rows: Int64, updateBytes: Int64, checkpointBytes: Int64)
-  /// A write whose reply was lost and whose outcome is not yet known.
-  private var uncertainWrite: WriteJob?
-  private var closing = false
+  /// `closing` refuses new edits while the final write runs; `closed` refuses everything.
+  private enum Lifecycle { case open, closing, closed }
+  private var lifecycle = Lifecycle.open
+  /// Discard is reloading saved state; requests captured before it are refused.
   private var discarding = false
-  private var closed = false
+  /// The core refused every call; only a discard (or close) remains.
   private var invalidated = false
 
   private struct Waiter {
     let target: Int
     let checkpoint: Bool
-    let continuation: CheckedContinuation<Void, Error>
-  }
-  private struct WriteJob: @unchecked Sendable {
-    let epoch: Int
-    let attempt: String
-    let target: Int
-    let sequence: Int
-    let version: String
-    let checkpoint: Bool
-    let bytes: Int64
-    let generation: Int64
-    let write: Storage.Write
-  }
-  private enum Outcome: Sendable {
-    case committed(Int64)
-    case failed(SaveFailure)
-    /// The reply was lost and the attempt token could not be read.
-    case uncertain(SaveFailure)
-  }
-  private struct Restored: @unchecked Sendable {
-    let core: NativeDocument
-    let generation: Int64
-    let stored: (rows: Int64, updateBytes: Int64, checkpointBytes: Int64)
+    let resume: @Sendable (Result<Void, Error>) -> Void
   }
 
   /// Benchmarks can push autosave out of the edit loop to attribute its cost.
@@ -80,53 +66,39 @@ public final class DocumentOwner: @unchecked Sendable {
     #endif
     return 150
   }()
+  static let autosaveMaximumMS = max(autosaveDelayMS, 1000)
 
   public init(package: SlopPackage, mode: StorageMode = .document) throws {
     self.package = package
-    let descriptor = try SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576)
-    let canonical = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: descriptor), options: [.sortedKeys, .withoutEscapingSlashes])
-    schemaKey = String(decoding: canonical, as: UTF8.self)
-    storage = try Storage(root: package.rootURL, mode: mode)
+    self.mode = mode
+    store = try storeCall { try NativeStore.open(root: package.rootURL.path, mode: mode.store) }
+    // The writer lock is ours, so a discovery file is a crashed session's leftover. A
+    // command that finds the lock busy must wait for this owner's address, not read a dead one.
+    if mode == .document { try? FileManager.default.removeItem(at: package.discoveryURL) }
     do {
-      let loaded = try storage.load()
-      documentID = loaded.docID
-      if loaded.checkpoint != nil {
-        let restored = try Self.restore(loaded, schemaKey: schemaKey, storage: storage)
-        core = restored.core
-        generation = restored.generation
-        stored = restored.stored
-      } else {
-        let initial = try SlopFile.read(package.initialURL, within: package.rootURL)
-        core = try NativeDocument.create(schemaJson: schemaKey, initialJson: String(decoding: initial, as: UTF8.self))
-        let checkpoint = try core.checkpoint()
-        generation = try storage.write(.checkpoint(checkpoint, schemaKey: schemaKey), generation: loaded.generation, attempt: UUID().uuidString)
-        stored = (0, 0, Int64(checkpoint.count))
-      }
-      savedVersion = try core.version()
+      core = try Self.saved(package, store)
+      documentID = store.docId()
       sequence = Int(try core.sequence())
       savedSequence = sequence
     } catch {
-      storage.close()
+      try? store.close()
       throw error
     }
   }
 
-  /// Opens saved bytes as a new core. Runs on the persistence queue during discard; the
-  /// new core is not shared until the owner queue installs it.
-  private static func restore(_ loaded: Storage.Loaded, schemaKey: String, storage: Storage) throws -> Restored {
-    guard loaded.schemaKey == schemaKey else { throw failure("Document schema differs from saved state") }
-    guard let checkpoint = loaded.checkpoint else { throw failure("Missing durable checkpoint") }
-    let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint, updates: loaded.updates)
-    let meta = try storage.metadata()
-    return Restored(core: core, generation: loaded.generation, stored: (meta.rows, meta.updateBytes, meta.checkpointBytes))
+  /// The saved document; a package without saved state starts from its initial value.
+  /// Also the reload after a discard, on the storage queue: the new core is not shared
+  /// until the owner queue installs it.
+  private static func saved(_ package: SlopPackage, _ store: NativeStore) throws -> NativeDocument {
+    let initial = String(decoding: try SlopFile.read(package.initialURL, within: package.rootURL), as: UTF8.self)
+    return try storeCall { try store.document(schemaKey: package.schemaKey, initialJson: initial) }
   }
 
   private func enqueue<T: Sendable>(allowInvalidated: Bool = false, _ action: @escaping @Sendable () throws -> T) async throws -> T {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
         do {
-          guard !self.closed else { throw failure("Document owner is closed") }
-          guard allowInvalidated || !self.invalidated else { throw failure("Owner invalidated; explicit recovery is required") }
+          try self.admit(allowInvalidated: allowInvalidated)
           continuation.resume(returning: try action())
         } catch {
           self.checkPoisoned(error)
@@ -137,18 +109,23 @@ public final class DocumentOwner: @unchecked Sendable {
   }
   private func persist<T: Sendable>(_ action: @escaping @Sendable () throws -> T) async throws -> T {
     try await withCheckedThrowingContinuation { continuation in
-      storage.queue.async { continuation.resume(with: Result { try action() }) }
+      storageQueue.async { continuation.resume(with: Result { try action() }) }
     }
+  }
+  /// Refuses work once closed, or once invalidated unless `allowInvalidated`.
+  private func admit(allowInvalidated: Bool = false) throws {
+    guard lifecycle != .closed else { throw OwnerError.closed }
+    guard allowInvalidated || !invalidated else { throw OwnerError.invalidated }
   }
   private func checkPoisoned(_ error: Error) {
     if case CoreError.Invalidated = error {
       invalidated = true
-      publishStatus("save-failed", .invalidated)
+      publishStatus(.failed(.invalidated))
     }
   }
   private func requireEditable() throws {
-    guard storage.mode == .document else { throw failure("Read-only capture cannot edit") }
-    guard !closing else { throw failure("Document is closing") }
+    guard mode == .document else { throw OwnerError.readOnly }
+    guard lifecycle == .open else { throw OwnerError.closing }
     guard !discarding else { throw OwnerReplaced() }
   }
   /// A request captured before a discard (new epoch) or from a replaced page (new view)
@@ -158,7 +135,10 @@ public final class DocumentOwner: @unchecked Sendable {
     if let view, view != self.view { throw OwnerReplaced() }
   }
 
-  public func state() async throws -> String { try await enqueue { try self.core.snapshot() } }
+  /// `{sequence, version, value, issues}` as the core's JSON.
+  public func state() async throws -> String { try await enqueue { try self.core.state() } }
+  /// The application value as the core's JSON.
+  func value() async throws -> String { try await enqueue { try self.core.value() } }
 
   public struct Applied: Sendable {
     public let sequence: Int
@@ -176,200 +156,176 @@ public final class DocumentOwner: @unchecked Sendable {
     public let saveFailure: String?
   }
 
-  /// Attaches a page: the snapshot and the push stream start at the same owner-queue
-  /// point, so the page misses and repeats nothing.
+  /// Only the native session selects a page; an `open` request cannot replace it.
+  func attach(view: String) { queue.async { self.view = view } }
+
+  private func openOnQueue(view: String) throws -> Opened {
+    try requireCurrent(epoch: nil, view: view)
+    return Opened(state: try core.state(), savedSequence: savedSequence,
+      saveFailure: saveFailure?.localizedDescription)
+  }
   func open(view: String) async throws -> Opened {
-    try await enqueue(allowInvalidated: true) {
-      self.view = view
-      return Opened(state: try self.core.snapshot(), savedSequence: self.savedSequence,
-        saveFailure: self.saveFailure?.localizedDescription)
-    }
+    try await enqueue { try self.openOnQueue(view: view) }
   }
-
-  /// Applies one batch. Callers never resend a request; a lost reply is resolved by
-  /// reading state, never by replaying.
+  private func applyOnQueue(batch: String, epoch: String?, view: String?) throws -> Applied {
+    try requireEditable()
+    try requireCurrent(epoch: epoch, view: view)
+    let result = try core.applyBatch(batchJson: batch)
+    // A batch that changed nothing publishes nothing and leaves the document clean.
+    if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
+    return Applied(sequence: Int(result.sequence), ids: result.ids)
+  }
   public func apply(batch: String, epoch: String? = nil, view: String? = nil) async throws -> Applied {
-    try await enqueue {
-      try self.requireEditable()
-      try self.requireCurrent(epoch: epoch, view: view)
-      guard batch.utf8.count <= 4 * 1024 * 1024 else { throw failure("Request exceeds size limit") }
-      let result = try self.core.applyBatch(batchJson: batch)
-      self.didEdit(result.publication, sequence: Int(result.sequence))
-      return Applied(sequence: Int(result.sequence), ids: result.ids)
-    }
+    try await enqueue { try self.applyOnQueue(batch: batch, epoch: epoch, view: view) }
+  }
+  private func textOnQueue(_ request: String, view: String?) throws -> TextEdit {
+    try requireEditable()
+    try requireCurrent(epoch: nil, view: view)
+    let result = try core.editText(requestJson: request)
+    if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
+    return TextEdit(sequence: Int(result.sequence), authored: result.authored,
+      selectionStart: Int(result.selectionStart), selectionEnd: Int(result.selectionEnd))
   }
 
-  /// A page text field went from `from` at `base` to `to`; the core merges it.
-  func editText(_ request: String, view: String? = nil) async throws -> TextEdit {
-    try await enqueue {
-      try self.requireEditable()
-      try self.requireCurrent(epoch: nil, view: view)
-      let result = try self.core.editText(requestJson: request)
-      if let publication = result.publication { self.didEdit(publication, sequence: Int(result.sequence)) }
-      return TextEdit(sequence: Int(result.sequence), authored: result.authored,
-        selectionStart: Int(result.selectionStart), selectionEnd: Int(result.selectionEnd))
+  /// Enqueues admission synchronously in bridge arrival order. Flush retains its
+  /// completion without blocking subsequent edits behind the persistence queue.
+  func enqueuePage(_ command: PageCommand, view: String,
+    reply: @escaping @Sendable (Result<PageResult, Error>) -> Void
+  ) {
+    queue.async {
+      do {
+        try self.admit()
+        try self.requireCurrent(epoch: nil, view: view)
+        switch command {
+        case .open: reply(.success(.opened(try self.openOnQueue(view: view))))
+        case .apply(let batch): reply(.success(.applied(try self.applyOnQueue(batch: batch, epoch: nil, view: view))))
+        case .text(let request): reply(.success(.text(try self.textOnQueue(request, view: view))))
+        case .flush: self.addWaiter(checkpoint: false) { reply($0.map { .flushed }) }
+        }
+      } catch {
+        self.checkPoisoned(error)
+        reply(.failure(error))
+      }
     }
   }
   /// Reports status with the last saved publication sequence; the page counts anything
   /// after it as unsaved.
-  private func publishStatus(_ status: String, _ error: SaveFailure?) {
-    if status == "save-failed" { saveFailure = error }
-    else if status == "saved" { saveFailure = nil }
-    onSaveStatus?(saveFailure == nil ? status : "save-failed", saveFailure, savedSequence)
+  private func publishStatus(_ status: DocumentSaveStatus) {
+    switch status {
+    case .failed(let failure): saveFailure = failure
+    case .saved: saveFailure = nil
+    case .saving: break
+    }
+    onSaveStatus?(saveFailure.map { .failed($0) } ?? status, savedSequence)
+  }
+  func currentSaveFailure() async throws -> SaveFailure? {
+    try await enqueue(allowInvalidated: true) { self.saveFailure }
   }
   func republishStatus() async throws {
     try await enqueue(allowInvalidated: true) {
-      self.onSaveStatus?(self.saveFailure == nil ? (self.edits > self.savedEdits ? "pending" : "saved") : "save-failed", self.saveFailure, self.savedSequence)
+      self.onSaveStatus?(self.saveFailure.map { .failed($0) } ?? (self.sequence > self.savedSequence ? .saving : .saved), self.savedSequence)
     }
   }
   private func didEdit(_ publication: String, sequence next: Int) {
-    edits += 1
     sequence = next
     onPublication?(publication)
     // Status changes once when the document becomes dirty, not on every keystroke.
-    if edits == savedEdits + 1 { publishStatus("pending", nil) }
+    if sequence == savedSequence + 1 { publishStatus(.saving) }
+    // Each edit restarts the short delay, but never past the maximum wait.
     autosave?.cancel()
+    let now = DispatchTime.now(), since = unsavedSince ?? now
+    unsavedSince = since
     let task = DispatchWorkItem { [weak self] in
-      guard let self, !self.closed, !self.invalidated else { return }
+      guard let self, (try? self.admit()) != nil else { return }
       self.saveRequested = true
       self.pump()
     }
     autosave = task
-    queue.asyncAfter(deadline: .now() + .milliseconds(Self.autosaveDelayMS), execute: task)
+    queue.asyncAfter(deadline: min(now + .milliseconds(Self.autosaveDelayMS), since + .milliseconds(Self.autosaveMaximumMS)), execute: task)
   }
 
-  // MARK: Writes. Everything here runs on `queue`; only `perform` runs on `storage.queue`.
+  // MARK: Writes. Scheduling runs on `queue`; database work runs on `storageQueue`.
 
-  /// Starts the next write when none is in flight and there is something to save.
+  /// Starts the next write when none is in flight and there is something to save. The
+  /// store chooses what to write and exports it here; the write runs on `storageQueue`.
   private func pump() {
-    guard !writing, !closed, !discarding, !invalidated else { return }
-    if let pending = uncertainWrite { resolve(pending); return }
+    guard !writing, !discarding, (try? admit()) != nil else { return }
     let forceCheckpoint = waiters.contains { $0.checkpoint }
-    guard edits > savedEdits || forceCheckpoint else { return settle(checkpointed: false) }
+    guard sequence > savedSequence || forceCheckpoint else { return settle(checkpointed: false) }
     saveRequested = false
+    unsavedSince = nil
     do {
-      let version = try core.version()
-      if version == savedVersion && !forceCheckpoint {
-        savedEdits = edits
+      guard let job = try storeCall({ try core.saveJob(store: store, forceCheckpoint: forceCheckpoint) }) else {
+        // The durable state already covers these edits.
         savedSequence = sequence
-        publishStatus("saved", nil)
+        publishStatus(.saved)
         return settle(checkpointed: false)
       }
-      let job = try makeJob(version: version, forceCheckpoint: forceCheckpoint)
       writing = true
-      storage.queue.async {
-        let outcome = self.perform(job)
-        self.queue.async { self.finish(job, outcome) }
+      let epoch = self.epoch, target = sequence
+      storageQueue.async {
+        let result = Result { try storeCall { try self.store.write(job: job) } }
+        self.queue.async { self.finish(epoch: epoch, target: target, checkpoint: job.isCheckpoint(), result) }
       }
     } catch {
       checkPoisoned(error)
-      fail(error as? SaveFailure ?? .io(error.localizedDescription), upTo: .max)
+      // A poisoned core must keep reporting invalidation, not a generic I/O failure.
+      fail(invalidated ? .invalidated : SaveFailure(error), upTo: .max)
     }
   }
-  private func makeJob(version: String, forceCheckpoint: Bool) throws -> WriteJob {
-    let dirty = version != savedVersion
-    let updates = dirty ? try core.exportSince(version: savedVersion) : Data()
-    let canAppend = dirty && stored.rows < Storage.maximumRows
-      && stored.checkpointBytes + stored.updateBytes + Int64(updates.count) <= Storage.maximumBytes
-    let wantsCheckpoint = forceCheckpoint || !canAppend || stored.rows >= 256 || stored.updateBytes >= 4 * 1024 * 1024
-    let attempt = UUID().uuidString
-    if wantsCheckpoint {
-      let checkpoint = try core.checkpoint()
-      // SQLite also bounds the complete checkpoint row (including its schema key).
-      if Int64(checkpoint.count + schemaKey.utf8.count + 512) <= Storage.maximumBytes {
-        return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, sequence: sequence, version: version, checkpoint: true, bytes: Int64(checkpoint.count),
-          generation: generation, write: .checkpoint(checkpoint, schemaKey: schemaKey))
-      } else if forceCheckpoint || !canAppend {
-        throw SaveFailure.full
-      }
-      // Optional maintenance must not prevent an update that still fits the log.
-    }
-    return WriteJob(epoch: writeEpoch, attempt: attempt, target: edits, sequence: sequence, version: version, checkpoint: false, bytes: Int64(updates.count),
-      generation: generation, write: .append(updates))
-  }
-  /// A successful SQLite commit may lose its reply. The stored attempt token says whether
-  /// the write committed; never guess from the generation, which another writer can advance.
-  private func perform(_ job: WriteJob) -> Outcome {
-    do {
-      return .committed(try storage.write(job.write, generation: job.generation, attempt: job.attempt))
-    } catch {
-      let failure = error as? SaveFailure ?? .io(error.localizedDescription)
-      // BUSY at BEGIN or COMMIT rolls back: a definite failure that needs no recovery read.
-      if failure == .busy { return .failed(failure) }
-      guard let meta = try? storage.metadata() else { return .uncertain(failure) }
-      if meta.lastAttempt == job.attempt { return .committed(meta.generation) }
-      return .failed(failure)
-    }
-  }
-  private func finish(_ job: WriteJob, _ outcome: Outcome) {
-    guard job.epoch == writeEpoch else { return }
+  /// The store re-reads its sizes after a failure, so the next write chooses correctly.
+  private func finish(epoch: String, target: Int, checkpoint: Bool, _ result: Result<Void, Error>) {
+    guard epoch == self.epoch else { return }
     writing = false
-    switch outcome {
-    case .committed(let observed): commit(job, generation: observed)
-    case .failed(let failure): fail(failure, upTo: job.target)
-    case .uncertain(let failure):
-      uncertainWrite = job
-      fail(failure, upTo: job.target)
+    switch result {
+    case .success:
+      savedSequence = max(savedSequence, target)
+      saveFailure = nil
+      publishStatus(sequence > savedSequence ? .saving : .saved)
+      settle(checkpointed: checkpoint)
+    case .failure(let error): fail(SaveFailure(error), upTo: target)
     }
     // After a failure, retry only for work that arrived during the write; never spin.
     if saveRequested || !waiters.isEmpty { pump() }
   }
-  private func commit(_ job: WriteJob, generation observed: Int64) {
-    generation = observed
-    savedVersion = job.version
-    savedEdits = max(savedEdits, job.target)
-    savedSequence = max(savedSequence, job.sequence)
-    stored = job.checkpoint ? (0, 0, job.bytes) : (stored.rows + 1, stored.updateBytes + job.bytes, stored.checkpointBytes)
-    saveFailure = nil
-    publishStatus(edits > savedEdits ? "pending" : "saved", nil)
-    settle(checkpointed: job.checkpoint)
-  }
-  /// Settles a lost reply before the next write, which must build on the right generation.
-  private func resolve(_ pending: WriteJob) {
-    writing = true
-    storage.queue.async {
-      let meta = try? self.storage.metadata()
-      let attempt = meta?.lastAttempt, observed = meta?.generation
-      self.queue.async {
-        guard pending.epoch == self.writeEpoch else { return }
-        self.writing = false
-        guard let observed else { return self.fail(.io("Could not confirm the last save; retry saving"), upTo: .max) }
-        self.uncertainWrite = nil
-        if attempt == pending.attempt { self.commit(pending, generation: observed) } else { self.generation = observed }
-        self.pump()
-      }
-    }
-  }
   /// Resumes waiters whose edits (and requested checkpoint) are durable.
   private func settle(checkpointed: Bool) {
     waiters.removeAll { waiter in
-      guard waiter.target <= savedEdits, !waiter.checkpoint || checkpointed else { return false }
-      waiter.continuation.resume()
+      guard waiter.target <= savedSequence, !waiter.checkpoint || checkpointed else { return false }
+      waiter.resume(.success(()))
       return true
     }
   }
   private func fail(_ failure: SaveFailure, upTo target: Int) {
-    publishStatus("save-failed", failure)
+    publishStatus(.failed(failure))
     waiters.removeAll { waiter in
       guard waiter.target <= target else { return false }
-      waiter.continuation.resume(throwing: failure)
+      waiter.resume(.failure(failure))
       return true
     }
   }
-  /// Waits until every edit accepted before the call is durable.
+  /// Waits until every edit accepted so far is durable. Refused while discarding: the
+  /// restored core restarts its publication sequence, so a waiter captured before the
+  /// restore would wait for a sequence that never arrives.
+  private func addWaiter(checkpoint: Bool, _ resume: @escaping @Sendable (Result<Void, Error>) -> Void) {
+    do { try admit() } catch { return resume(.failure(error)) }
+    if discarding { return resume(.failure(OwnerReplaced())) }
+    waiters.append(Waiter(target: sequence, checkpoint: checkpoint, resume: resume))
+    pump()
+  }
+  private func rejectWaiters(_ error: Error) {
+    let rejected = waiters
+    waiters.removeAll()
+    for waiter in rejected { waiter.resume(.failure(error)) }
+  }
   private func write(checkpoint: Bool) async throws {
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      queue.async {
-        guard !self.closed else { return continuation.resume(throwing: failure("Document owner is closed")) }
-        guard !self.invalidated else { return continuation.resume(throwing: failure("Owner invalidated; explicit recovery is required")) }
-        self.waiters.append(Waiter(target: self.edits, checkpoint: checkpoint, continuation: continuation))
-        self.pump()
-      }
+      queue.async { self.addWaiter(checkpoint: checkpoint) { continuation.resume(with: $0) } }
     }
   }
   public func flush() async throws { try await write(checkpoint: false) }
   public func compact() async throws {
-    guard storage.mode == .document else { throw failure("Read-only capture cannot compact") }
+    guard mode == .document else { throw OwnerError.readOnly }
     try await write(checkpoint: true)
   }
 
@@ -377,109 +333,104 @@ public final class DocumentOwner: @unchecked Sendable {
   /// finishes on the persistence queue before the reload reads, and its reply is ignored.
   public func discardPending() async throws {
     try await enqueue(allowInvalidated: true) {
-      self.writeEpoch += 1
+      guard !self.discarding else { throw OwnerReplaced() }
+      self.epochLock.withLock { self.storedEpoch = UUID().uuidString }
       self.discarding = true
       self.autosave?.cancel()
-      self.fail(.io("Unsaved edits were discarded"), upTo: .max)
+      self.rejectWaiters(OwnerReplaced())
     }
     do {
-      let schemaKey = schemaKey, storage = storage
-      let restored = try await persist { try Self.restore(storage.load(), schemaKey: schemaKey, storage: storage) }
+      let package = package, store = store
+      let restored = try await persist { try Self.saved(package, store) }
       try await enqueue(allowInvalidated: true) {
-        self.core = restored.core
+        // Sequences restart with the restored core; nothing may wait on the old ones.
+        // Read everything that can throw before replacing any state.
+        let sequence = Int(try restored.sequence())
+        self.rejectWaiters(OwnerReplaced())
+        self.core = restored
         self.invalidated = false
-        self.generation = restored.generation
-        self.stored = restored.stored
-        self.uncertainWrite = nil
         self.writing = false
-        self.savedVersion = try restored.core.version()
-        self.epoch = UUID().uuidString
         self.view = nil
-        self.sequence = Int(try restored.core.sequence())
-        self.savedSequence = self.sequence
-        self.savedEdits = self.edits
+        self.sequence = sequence
+        self.savedSequence = sequence
         self.discarding = false
-        self.publishStatus("saved", nil)
+        self.publishStatus(.saved)
         self.pump()
       }
     } catch {
-      queue.async { self.discarding = false }
+      try await enqueue(allowInvalidated: true) {
+        self.discarding = false
+        self.writing = false
+        self.pump()
+      }
       throw error
     }
   }
   // MARK: Host-owned attachments and theme. Page and socket calls go through the owner,
   // so they honor its closed and closing guards.
 
-  private struct Unchecked<T>: @unchecked Sendable { let value: T }
   private func requireWritable() async throws {
-    try await enqueue { guard !self.closing else { throw failure("Document is closing") } }
+    try await enqueue { guard self.lifecycle == .open else { throw OwnerError.closing } }
   }
-  func listAttachments() async throws -> [[String: Any]] {
-    let storage = storage
-    return try await persist { Unchecked(value: try storage.listAttachments()) }.value
-  }
-  func readAttachment(_ id: String) async throws -> Data {
-    let storage = storage
-    return try await persist { try storage.readAttachment(id) }
-  }
-  func putAttachment(_ bytes: Data) async throws -> [String: Any] {
-    try await requireWritable()
-    let storage = storage
-    return try await persist { Unchecked(value: try storage.putAttachment(bytes)) }.value
-  }
-  func loadTheme() async throws -> [String: String] {
-    let storage = storage
-    return try await persist { try storage.loadTheme() }
-  }
-  /// The package's theme tokens and their default values.
-  func themeDefaults() throws -> [String: String] {
-    let bytes = try SlopFile.read(package.rootURL.appendingPathComponent("assets/theme.json"), within: package.rootURL, maximumBytes: 65536)
-    guard let defaults = try JSONSerialization.jsonObject(with: bytes) as? [String: String] else {
-      throw failure("Invalid theme defaults")
+  func listAttachments() async throws -> [AttachmentRef] {
+    let store = store, root = package.rootURL
+    return try await persist {
+      try storeCall { try store.check(writable: false) }
+      return try SlopAttachments.list(in: root)
     }
-    return defaults
   }
-  /// Replaces the theme overrides. The only theme validator: page and CLI writes both
-  /// land here, so the same values are accepted whether or not a window is open.
-  func saveTheme(_ values: [String: String]) async throws {
-    try ThemeRules.validate(values, defaults: themeDefaults())
+  /// Attachment bytes cross the page bridge and the socket as base64, encoded here, off
+  /// the main thread.
+  func readAttachment(_ id: String) async throws -> String {
+    let store = store, root = package.rootURL
+    return try await persist {
+      try storeCall { try store.check(writable: false) }
+      return try SlopAttachments.read(id, in: root).base64EncodedString()
+    }
+  }
+  /// Snapshot renders own nothing, so they can never add attachments.
+  func putAttachment(base64 encoded: String) async throws -> AttachmentRef {
     try await requireWritable()
-    let storage = storage
-    try await persist { try storage.saveTheme(values) }
+    let store = store, root = package.rootURL
+    return try await persist {
+      guard let bytes = Data(base64Encoded: encoded) else { throw OwnerError.rejected("Invalid attachment bytes") }
+      try storeCall { try store.check(writable: true) }
+      return try SlopAttachments.put(bytes, in: root)
+    }
+  }
+  /// The stored theme overrides as JSON (`{}` when none are stored).
+  func loadTheme() async throws -> String {
+    try await applyTheme(.get).overrides
+  }
+  /// Runs a theme command in the store, under the core's one rule set; page and CLI
+  /// writes both land here, so the same values are accepted whether or not a window is
+  /// open. A snapshot answers from the theme it read with its document.
+  func applyTheme(_ change: ThemeChange) async throws -> ThemeState {
+    let changes: Bool = if case .get = change { false } else { true }
+    if changes {
+      guard mode == .document else { throw OwnerError.readOnly }
+      try await requireWritable()
+    }
+    let store = store, defaults = package.themeDefaults
+    let state = try await persist { try storeCall { try store.theme(defaultsJson: defaults, change: change) } }
+    if changes { onTheme?(state.overrides) }
+    return state
   }
   /// Refuses new edits, writes everything accepted, then releases the lock. A failed
   /// final write keeps ownership and the live state so the window can retry.
   public func close() async throws {
     try await enqueue {
-      self.closing = true
+      self.lifecycle = .closing
       self.autosave?.cancel()
     }
-    do { try await flush() } catch {
-      queue.async { self.closing = false }
+    do {
+      try await flush()
+      let store = store
+      try await persist { try storeCall { try store.close() } }
+      try await enqueue(allowInvalidated: true) { self.lifecycle = .closed }
+    } catch {
+      try await enqueue(allowInvalidated: true) { self.lifecycle = .open }
       throw error
-    }
-    let storage = storage
-    try await persist { storage.close() }
-    try await enqueue(allowInvalidated: true) { self.closed = true }
-  }
-}
-
-/// Theme override rules, enforced on writes only: loading never fails on theme, and the
-/// browser ignores CSS it cannot parse.
-enum ThemeRules {
-  static let maximumValue = 4096
-  static func validate(_ overrides: [String: String], defaults: [String: String]) throws {
-    let reference = try NSRegularExpression(pattern: #"var\(\s*--slop-([a-zA-Z0-9-]+)"#)
-    for (key, value) in overrides {
-      guard defaults[key] != nil else { throw failure("Unknown theme token: \(key)") }
-      guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.utf16.count <= maximumValue,
-        value.rangeOfCharacter(from: CharacterSet(charactersIn: "{};")) == nil
-      else { throw failure("Invalid theme value: \(key)") }
-      for match in reference.matches(in: value, range: NSRange(value.startIndex..., in: value)) {
-        guard let range = Range(match.range(at: 1), in: value), defaults[String(value[range])] != nil else {
-          throw failure("Unknown theme reference in \(key)")
-        }
-      }
     }
   }
 }
@@ -487,14 +438,6 @@ enum ThemeRules {
 extension DocumentOwner {
   /// The embedded core's build ID; a release checks the app and helper report the same one.
   public static var coreBuildID: String { coreBuildId() }
-}
-
-extension Error {
-  /// The core or owner refuses every call until saved state is reloaded explicitly.
-  var isOwnerInvalidation: Bool {
-    if case CoreError.Invalidated? = self as? CoreError { return true }
-    return localizedDescription.contains("Owner invalidated")
-  }
 }
 
 /// The page or epoch a request was captured for has been replaced (discard, reload or a

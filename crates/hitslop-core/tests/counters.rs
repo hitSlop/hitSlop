@@ -5,15 +5,16 @@
 // counter-probe.ts) and no hitSlop counter design had convergence evidence.
 mod support;
 use hitslop_core::Document;
+use support::{Edit, View};
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn schema() -> String {
-    json!({"format":1,"root":{"kind":"object","properties":{
+    json!({"kind":"object","properties":{
         "hits":{"kind":"counter"},
         "rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"votes":{"kind":"counter"}}}}
-    }}})
+    }})
     .to_string()
 }
 fn initial() -> String {
@@ -25,12 +26,9 @@ fn snapshot(d: &Document) -> Value {
 fn increment(path: Value, by: i64) -> String {
     json!({"intents":[{"type":"increment","path":path,"by":by}]}).to_string()
 }
-fn checked(d: &mut Document, projected: &mut Value, reply: String) {
-    let reply: Value = serde_json::from_str(&reply).unwrap();
-    support::apply_patches(projected, &reply["ops"]);
-    let fresh = snapshot(d);
-    assert_eq!(*projected, fresh["value"]);
-    assert_eq!(reply["issues"], fresh["issues"]);
+fn checked(d: &mut Document, projected: &mut View, reply: String) {
+    projected.publish(&reply);
+    projected.check(d, "publication");
 }
 
 #[test]
@@ -66,7 +64,7 @@ fn loro_counter_loses_precision_where_the_hitslop_counter_stays_exact() {
     let v0 = d.version();
     d.apply(&increment(json!(["hits"]), 9_000_000_000_000_000)).unwrap();
     let e = d.apply(&increment(json!(["hits"]), 9_000_000_000_000_000)).unwrap_err();
-    assert_eq!(e.code, "out_of_range");
+    assert_eq!(e.code.as_str(), "out_of_range");
     assert_eq!(snapshot(&d)["value"]["hits"], 9_000_000_000_000_000i64);
     for by in [1, -9_000_000_000_000_000, MAX_SAFE - 1, -MAX_SAFE + 1] {
         d.apply(&increment(json!(["hits"]), by)).unwrap();
@@ -94,7 +92,7 @@ fn replicas_converge_to_the_exact_sum_under_any_delivery() {
         let v0 = base.version();
         let mut replicas: Vec<Document> =
             (0..3).map(|_| Document::open(&schema(), &seed, &[]).unwrap()).collect();
-        let mut projected: Vec<Value> = replicas.iter().map(|d| snapshot(d)["value"].clone()).collect();
+        let mut projected: Vec<View> = replicas.iter().map(View::of).collect();
         let (mut hits, mut votes) = (5i64, 0i64);
         let mut sent: Vec<Vec<u8>> = vec![];
         for _ in 0..30 {
@@ -115,7 +113,7 @@ fn replicas_converge_to_the_exact_sum_under_any_delivery() {
             let j = next(&mut rng) as usize % 3;
             let pick = next(&mut rng) as usize % sent.len();
             let known = replicas[j].version();
-            if let Ok(reply) = replicas[j].import(&sent[pick]) {
+            if let Ok(reply) = replicas[j].merge(&sent[pick]) {
                 checked(&mut replicas[j], &mut projected[j], reply);
             } else {
                 // Missing causal dependencies: that delivery simply waits.
@@ -128,7 +126,7 @@ fn replicas_converge_to_the_exact_sum_under_any_delivery() {
                 for i in (0..3).map(|x| (x + j + round) % 3) {
                     if i != j {
                         let bytes = replicas[i].export_since(&v0).unwrap();
-                        let reply = replicas[j].import(&bytes).unwrap();
+                        let reply = replicas[j].merge(&bytes).unwrap();
                         checked(&mut replicas[j], &mut projected[j], reply);
                     }
                 }
@@ -165,14 +163,14 @@ fn restored_checkpoints_and_finder_copies_keep_every_increment() {
 #[test]
 fn anomalous_contributions_are_preserved_flagged_and_block_local_increments() {
     let mut d = Document::create(&schema(), &initial()).unwrap();
-    let mut projected = snapshot(&d)["value"].clone();
+    let mut projected = View::of(&d);
     let peer = LoroDoc::new();
     peer.import(&d.checkpoint().unwrap()).unwrap();
     let from = peer.oplog_vv();
     let hits = peer.get_map("data").get("hits").unwrap().into_container().unwrap().into_map().unwrap();
     hits.insert("remote", 1.5).unwrap();
     peer.commit();
-    let reply = d.import(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
+    let reply = d.merge(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
     checked(&mut d, &mut projected, reply);
     let view = snapshot(&d);
     assert_eq!(view["issues"], json!([{"code":"type_mismatch","path":["hits"]}]));
@@ -181,15 +179,15 @@ fn anomalous_contributions_are_preserved_flagged_and_block_local_increments() {
     preserved.import(&d.checkpoint().unwrap()).unwrap();
     let stored = serde_json::to_value(preserved.get_map("data").get_deep_value()).unwrap();
     assert_eq!(stored["hits"]["remote"], 1.5);
-    assert_eq!(d.apply(&increment(json!(["hits"]), 1)).unwrap_err().code, "type_mismatch");
+    assert_eq!(d.apply(&increment(json!(["hits"]), 1)).unwrap_err().code.as_str(), "type_mismatch");
     // Concurrent writers can together leave the safe range: preserved and flagged.
     let mut x = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
     let mut y = Document::open(&schema(), &x.checkpoint().unwrap(), &[]).unwrap();
     let v0 = x.version();
     x.apply(&increment(json!(["hits"]), MAX_SAFE)).unwrap();
     y.apply(&increment(json!(["hits"]), 1)).unwrap();
-    let mut projected = snapshot(&x)["value"].clone();
-    let reply = x.import(&y.export_since(&v0).unwrap()).unwrap();
+    let mut projected = View::of(&x);
+    let reply = x.merge(&y.export_since(&v0).unwrap()).unwrap();
     checked(&mut x, &mut projected, reply);
     assert_eq!(snapshot(&x)["issues"], json!([{"code":"type_mismatch","path":["hits"]}]));
 }
@@ -203,7 +201,34 @@ fn counters_reject_set_zero_and_non_counter_targets() {
         (increment(json!(["rows", {"id":"r1"}, "text"]), 1), "type_mismatch"),
         (json!({"intents":[{"type":"set","path":["hits"],"value":3}]}).to_string(), "type_mismatch"),
     ] {
-        assert_eq!(d.apply(&batch).unwrap_err().code, code);
+        assert_eq!(d.apply(&batch).unwrap_err().code.as_str(), code);
         assert_eq!(snapshot(&d), before);
+    }
+}
+
+#[test]
+fn cancelling_contributions_are_checked_after_the_complete_sum() {
+    // The literal integer result is MAX_SAFE for every ordering, even if a prefix
+    // exceeds the JS safe range. Raw peers let the oracle control map key order.
+    for negative in 0..3 {
+        let mut d = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
+        let seed = d.checkpoint().unwrap();
+        let v0 = d.version();
+        let raw = LoroDoc::new();
+        raw.import(&seed).unwrap();
+        let from = raw.oplog_vv();
+        let hits = raw.get_map("data").get("hits").unwrap().into_container().unwrap().into_map().unwrap();
+        for (i, key) in ["a", "b", "c"].iter().enumerate() {
+            hits.insert(key, if i == negative { -MAX_SAFE } else { MAX_SAFE }).unwrap();
+        }
+        raw.commit();
+        let mut projected = View::of(&d);
+        let reply = d.merge(&raw.export(ExportMode::updates(&from)).unwrap()).unwrap();
+        checked(&mut d, &mut projected, reply);
+        for view in [snapshot(&d), snapshot(&Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap()),
+            snapshot(&Document::open(&schema(), &seed, &[d.export_since(&v0).unwrap()]).unwrap())] {
+            assert_eq!(view["value"]["hits"], MAX_SAFE);
+            assert_eq!(view["issues"], json!([]));
+        }
     }
 }

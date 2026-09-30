@@ -1,6 +1,7 @@
 import { access, constants } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { coreBuildId } from "./core";
 
 async function executable(path: string): Promise<boolean> {
   try {
@@ -11,7 +12,7 @@ async function executable(path: string): Promise<boolean> {
   }
 }
 
-export async function nativeOverride(): Promise<string | undefined> {
+async function nativeOverride(): Promise<string | undefined> {
   const value = process.env.HITSLOP_NATIVE_CLI;
   if (value === undefined) return;
   const path = resolve(value);
@@ -35,6 +36,16 @@ export async function findNative(): Promise<string> {
 
 export async function runNative(args: string[]) {
   const binary = await findNative();
+  const identity = Bun.spawn([binary, "--core-build"], {
+    stdin: "ignore", stdout: "pipe", stderr: "inherit",
+  });
+  const [id, status] = await Promise.all([
+    new Response(identity.stdout).text(), identity.exited,
+  ]);
+  if (status) process.exit(status);
+  if (!id.trim() || id.trim() !== await coreBuildId()) {
+    throw new Error("hitSlop.app and @hitslop/cli embed different document cores; install matching versions");
+  }
   const child = Bun.spawn([binary, ...args], {
     stdin: "inherit",
     stdout: "inherit",

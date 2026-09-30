@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "required": [
+    "socket",
+    "documentPath"
+  ],
+  "properties": {
+    "socket": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "documentPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  },
+  "additionalProperties": false
+}

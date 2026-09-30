@@ -262,5 +262,5 @@ const initial = {
   ],
   "paletteId": "gameboy",
   "selectedColor": "#0f380f"
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;
 export default initial;

@@ -1,6 +1,8 @@
 // Scalars merge last-writer-wins per field. Failure: replicas that disagree after
 // exchanging updates, an optional object mixed from two writers, or a merged anomaly
 // repaired on read. Oracle: equal snapshots on both replicas and literal issues.
+mod support;
+use support::Edit;
 use hitslop_core::Document;
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
@@ -84,6 +86,6 @@ fn a_merged_out_of_range_value_is_flagged_not_repaired_and_can_be_overwritten() 
     // A value of the right type may be written over; a wrong-typed one is preserved.
     apply(&mut d, json!([{"type":"set","path":["rating"],"value":4}]));
     let refused = d.apply(&json!({"intents":[{"type":"set","path":["currency"],"value":"CAD"}]}).to_string());
-    assert_eq!(refused.unwrap_err().code, "type_mismatch");
+    assert_eq!(refused.unwrap_err().code.as_str(), "type_mismatch");
     assert_eq!(view(&d)["issues"], json!([{"code":"type_mismatch","path":["currency"]}]));
 }

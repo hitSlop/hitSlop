@@ -2,8 +2,37 @@
 use hitslop_core::Document as Core;
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen(js_name = coreBuildId)]
+pub fn core_build_id() -> String {
+    hitslop_core::BUILD_ID.into()
+}
+
 fn error(e: hitslop_core::Error) -> JsValue {
-    JsValue::from_str(&e.to_string())
+    let value = js_sys::Object::new();
+    js_sys::Reflect::set(&value, &"code".into(), &e.code.as_str().into()).expect("plain error object");
+    js_sys::Reflect::set(&value, &"message".into(), &e.message.into()).expect("plain error object");
+    if let Some(index) = e.op_index {
+        js_sys::Reflect::set(&value, &"opIndex".into(), &JsValue::from_f64(index as f64)).expect("plain error object");
+    }
+    value.into()
+}
+
+#[wasm_bindgen]
+pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
+    hitslop_core::validate(schema_json, initial_json).map(|_| ()).map_err(error)
+}
+#[wasm_bindgen(js_name = validateThemeDefaults)]
+pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
+    hitslop_core::theme::validate_defaults(json).map_err(error)
+}
+/// Validates a manifest window `shape` (JSON, or undefined for the default).
+#[wasm_bindgen(js_name = validateWindowShape)]
+pub fn validate_window_shape(shape_json: Option<String>, width: f64, height: f64) -> Result<(), JsValue> {
+    let shape: Option<serde_json::Value> = shape_json
+        .map(|json| serde_json::from_str(&json))
+        .transpose()
+        .map_err(|_| error(hitslop_core::Error { code: hitslop_core::Code::InvalidShape, message: "Invalid window silhouette".into(), op_index: None }))?;
+    hitslop_core::shape::silhouette(shape.as_ref(), width, height).map(|_| ()).map_err(error)
 }
 
 /// Mirrors the native `ApplyResult` record.
@@ -11,7 +40,7 @@ fn error(e: hitslop_core::Error) -> JsValue {
 pub struct ApplyResult {
     pub sequence: f64,
     pub ids: Vec<String>,
-    pub publication: String,
+    pub publication: Option<String>,
 }
 
 /// Mirrors the native `TextResult` record.
@@ -26,11 +55,6 @@ pub struct TextResult {
     pub publication: Option<String>,
 }
 
-#[wasm_bindgen(js_name = coreBuildId)]
-pub fn core_build_id() -> String {
-    hitslop_core::BUILD_ID.into()
-}
-
 #[wasm_bindgen]
 pub struct WasmDocument {
     inner: Core,
@@ -42,19 +66,22 @@ impl WasmDocument {
             inner: Core::create(schema_json, initial_json).map_err(error)?,
         })
     }
-    pub fn open(schema_json: &str, checkpoint: &[u8]) -> Result<WasmDocument, JsValue> {
+    pub fn open(schema_json: &str, checkpoint: &[u8], updates: Vec<js_sys::Uint8Array>) -> Result<WasmDocument, JsValue> {
+        let updates: Vec<Vec<u8>> = updates.iter().map(js_sys::Uint8Array::to_vec).collect();
         Ok(Self {
-            inner: Core::open(schema_json, checkpoint, &[]).map_err(error)?,
+            inner: Core::open(schema_json, checkpoint, &updates).map_err(error)?,
         })
     }
+    /// The owner's current state, as a page opens it.
+    pub fn state(&self) -> Result<String, JsValue> {
+        self.inner.state().map_err(error)
+    }
+    /// The full recomputation that `state` is tested against.
     pub fn snapshot(&self) -> Result<String, JsValue> {
         self.inner.snapshot().map_err(error)
     }
     pub fn version(&self) -> String {
         self.inner.version()
-    }
-    pub fn import_updates(&mut self, bytes: &[u8]) -> Result<String, JsValue> {
-        self.inner.import(bytes).map_err(error)
     }
     #[wasm_bindgen(js_name = applyBatch)]
     pub fn apply_batch(&mut self, batch_json: &str) -> Result<ApplyResult, JsValue> {
@@ -82,6 +109,7 @@ impl WasmDocument {
     pub fn checkpoint(&self) -> Result<Vec<u8>, JsValue> {
         self.inner.checkpoint().map_err(error)
     }
+    #[wasm_bindgen(js_name = exportSince)]
     pub fn export_since(&self, version: &str) -> Result<Vec<u8>, JsValue> {
         self.inner.export_since(version).map_err(error)
     }

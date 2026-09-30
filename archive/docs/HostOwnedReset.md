@@ -1,6 +1,17 @@
 # Host-owned reset: plan, deletions and remaining spikes
 
-Status (2026-09-29): complete; archived. Steps 1–7 are implemented and the live system is described in [architecture](../../docs/architecture.md). Step 8 (scalars) is the next milestone, with its own plan. Step 1 made the Quick Checklist and
+> Update (2026-09-30): The full plan and its original reasoning are preserved below.
+> Subsequent implementation progress, verification evidence and remaining work are
+> tracked in the [architecture implementation plan](../plans/host-owned-architecture-review.md).
+> The dated status and code references below describe the plan at the time they were written.
+
+Status (2026-09-29): steps 1–8 are complete. The live system is described in
+[architecture](architecture.md). Step 8 and its follow-up shipped as separate plans:
+[scalars](ScalarsPlan.md) and [collections](CollectionsPlan.md) (records, scalar lists,
+optional text), with 17 bundled templates. Still open: the release check that the app
+and helper embed the same core `BUILD_ID` (§4.2), the unmeasured spikes in §6
+(publication cost, memory, manual IME and undo), and restoring the 35 slops left in
+`archive/slops`. Step 1 made the Quick Checklist and
 SDK meet the 1k targets (see §7). Step 2 deleted the legacy machinery, replaced runtime
 negotiation with one bundled page shell, and shipped the fresh storage schema with
 attempt-token recovery (bug 1). Step 3 split the owner queue from the persistence queue
@@ -32,7 +43,7 @@ trimmed the page lifecycle, added `docs/architecture.md`, and brought the guides
 landing docs and skills up to date.
 
 Once work starts, this document supersedes the migration machinery in
-[LoroRustCutover.md](LoroRustCutover.md) and [LoroHostPlan.md](LoroHostPlan.md). The
+[LoroRustCutover.md](../archive/docs/LoroRustCutover.md) and [LoroHostPlan.md](../archive/docs/LoroHostPlan.md). The
 architecture decision itself (Rust Loro owned by the host, UniFFI, async SDK) stands.
 
 The plan comes from a full read of `crates/`, `packages/`, `apps/apple/`,

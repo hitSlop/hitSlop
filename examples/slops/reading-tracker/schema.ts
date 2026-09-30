@@ -14,6 +14,6 @@ const schema = defineDocument({
   })),
 });
 
-export type ReadingTracker = Value<typeof schema.fields.node>;
+export type ReadingTracker = Value<typeof schema.descriptor>;
 export type Book = ReadingTracker["books"][number];
 export default schema;

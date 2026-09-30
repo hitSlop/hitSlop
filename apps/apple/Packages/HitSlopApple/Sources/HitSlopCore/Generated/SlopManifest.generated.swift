@@ -154,23 +154,26 @@ public enum SlopCategory: String, Codable, Sendable {
 public struct SlopPresentation: Codable, Sendable {
     public let background: Background?
     public let height: Int
+    public let lockAspect: Bool?
     public let resizable: Bool?
-    public let shape: Shape?
+    public let shape: SlopShape?
     public let width: Int
     public let skin: String?
 
     public enum CodingKeys: String, CodingKey {
         case background = "background"
         case height = "height"
+        case lockAspect = "lockAspect"
         case resizable = "resizable"
         case shape = "shape"
         case width = "width"
         case skin = "skin"
     }
 
-    public init(background: Background?, height: Int, resizable: Bool?, shape: Shape?, width: Int, skin: String?) {
+    public init(background: Background?, height: Int, lockAspect: Bool?, resizable: Bool?, shape: SlopShape?, width: Int, skin: String?) {
         self.background = background
         self.height = height
+        self.lockAspect = lockAspect
         self.resizable = resizable
         self.shape = shape
         self.width = width
@@ -199,14 +202,16 @@ public extension SlopPresentation {
     func with(
         background: Background?? = nil,
         height: Int? = nil,
+        lockAspect: Bool?? = nil,
         resizable: Bool?? = nil,
-        shape: Shape?? = nil,
+        shape: SlopShape?? = nil,
         width: Int? = nil,
         skin: String?? = nil
     ) -> SlopPresentation {
         return SlopPresentation(
             background: background ?? self.background,
             height: height ?? self.height,
+            lockAspect: lockAspect ?? self.lockAspect,
             resizable: resizable ?? self.resizable,
             shape: shape ?? self.shape,
             width: width ?? self.width,
@@ -227,14 +232,99 @@ public enum Background: String, Codable, Sendable {
     case transparent = "transparent"
 }
 
-public enum Shape: String, Codable, Sendable {
-    case capsule = "capsule"
-    case ellipse = "ellipse"
-    case rounded = "rounded"
+public enum SlopShape: Codable, Sendable {
+    case slopPathShape(SlopPathShape)
+    case string(String)
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let x = try? container.decode(String.self) {
+            self = .string(x)
+            return
+        }
+        if let x = try? container.decode(SlopPathShape.self) {
+            self = .slopPathShape(x)
+            return
+        }
+        throw DecodingError.typeMismatch(SlopShape.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Wrong type for SlopShape"))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .slopPathShape(let x):
+            try container.encode(x)
+        case .string(let x):
+            try container.encode(x)
+        }
+    }
+}
+
+// MARK: - SlopPathShape
+public struct SlopPathShape: Codable, Sendable {
+    public let fillRule: FillRule?
+    public let path: String
+    public let viewBox: [Double]?
+
+    public enum CodingKeys: String, CodingKey {
+        case fillRule = "fillRule"
+        case path = "path"
+        case viewBox = "viewBox"
+    }
+
+    public init(fillRule: FillRule?, path: String, viewBox: [Double]?) {
+        self.fillRule = fillRule
+        self.path = path
+        self.viewBox = viewBox
+    }
+}
+
+// MARK: SlopPathShape convenience initializers and mutators
+
+public extension SlopPathShape {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(SlopPathShape.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        fillRule: FillRule?? = nil,
+        path: String? = nil,
+        viewBox: [Double]?? = nil
+    ) -> SlopPathShape {
+        return SlopPathShape(
+            fillRule: fillRule ?? self.fillRule,
+            path: path ?? self.path,
+            viewBox: viewBox ?? self.viewBox
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+public enum FillRule: String, Codable, Sendable {
+    case evenodd = "evenodd"
+    case nonzero = "nonzero"
 }
 
 public enum Schema: String, Codable, Sendable {
-    case httpsAPIHitslopCOMSchemasV1ManifestSchemaJSON = "https://api.hitslop.com/schemas/v1/manifest.schema.json"
+    case httpsAPIHitslopCOMSchemasManifestSchemaJSON = "https://api.hitslop.com/schemas/manifest.schema.json"
 }
 
 // MARK: - Helper functions for creating encoders and decoders

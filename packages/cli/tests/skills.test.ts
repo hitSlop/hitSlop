@@ -11,6 +11,7 @@ import {
   realpath,
   cp,
   lstat,
+  rename,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -110,73 +111,131 @@ test("Crust installs and repairs links without replacing conflicting directories
   }
 });
 
-// The prior app-only harness omitted the shipped cache hook. Exercise the real
-// entrypoint: scope isolation and survival after package eviction are user contracts.
-test("public skills commands preserve scope, survive eviction, repair and uninstall", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-skill-cli-"));
+const skillNames = ["hitslop", "hitslop-authoring", "hitslop-design", "hitslop-document", "hitslop-cli"];
+
+/** A temporary HOME, Bun home and project, and a runner for any CLI copy inside them. */
+async function sandbox(root: string) {
+  const home = join(root, "home"),
+    project = join(root, "project"),
+    bun = join(root, "bun");
+  await mkdir(home);
+  await mkdir(project);
+  const run = async (cli: string, ...args: string[]) => {
+    const child = Bun.spawn([process.execPath, join(cli, "src/cli.ts"), ...args], {
+      cwd: project,
+      env: {
+        ...process.env,
+        HOME: home,
+        BUN_INSTALL: bun,
+        BUN_INSTALL_GLOBAL_DIR: "",
+        HITSLOP_NATIVE_CLI: "/nonexistent",
+        PATH: "/usr/bin:/bin",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { stdout, stderr, code };
+  };
+  return { home, project, bun, run };
+}
+
+/** The CLI laid out as `bun install -g` leaves it: a plain package directory. */
+async function globalCopy(bun: string) {
+  const cli = join(bun, "install/global/node_modules/@hitslop/cli");
+  await mkdir(cli, { recursive: true });
+  await cp("packages/cli/src", join(cli, "src"), { recursive: true });
+  await cp("packages/cli/package.json", join(cli, "package.json"));
+  await cp("packages/cli/skills", join(cli, "skills"), { recursive: true });
+  await symlink(resolve("packages/cli/node_modules"), join(cli, "node_modules"));
+  await buildSkills(join(cli, ".crust/root/skills"));
+  return cli;
+}
+
+const repositoryCli = resolve("packages/cli");
+
+test("agent skills link to the global CLI, follow its upgrades and are repaired by it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hsl-skill-global-"));
   try {
-    const home = join(root, "home"),
-      project = join(root, "project");
-    await mkdir(home);
-    await mkdir(project);
-    const bundle = join(root, "bundle");
-    await mkdir(bundle);
-    await cp("packages/cli/src", join(bundle, "src"), { recursive: true });
-    await cp("packages/cli/package.json", join(bundle, "package.json"));
-    await cp("packages/cli/skills", join(bundle, "skills"), { recursive: true });
-    await symlink(resolve("packages/cli/node_modules"), join(bundle, "node_modules"));
-    const skills = join(bundle, ".crust/root/skills");
-    await buildSkills(skills);
-    const run = async (...args: string[]) => {
-      const child = Bun.spawn([process.execPath, join(bundle, "src/cli.ts"), ...args], {
-        cwd: project,
-        env: { ...process.env, HOME: home, PATH: "/usr/bin:/bin" },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [out, err, code] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
-      expect(code).toBe(0);
-      expect(err).not.toContain("Error");
-      return out;
-    };
-    await run("skills", "update", "--scope", "global");
-    expect(await Bun.file(join(home, ".agents/skills/hitslop-cli/SKILL.md")).exists()).toBe(false);
-    const globalLink = join(home, ".agents/skills/hitslop-cli");
-    await mkdir(join(home, ".agents/skills"), { recursive: true });
-    const packagedTarget = await realpath(join(skills, "hitslop-cli"));
-    await symlink(packagedTarget, globalLink);
-    await run("skills", "--all", "--scope", "project");
-    expect(await readlink(globalLink)).toBe(packagedTarget);
-    for (const name of [
-      "hitslop",
-      "hitslop-authoring",
-      "hitslop-design",
-      "hitslop-document",
-      "hitslop-cli",
-    ])
-      expect(await readlink(join(project, ".agents/skills", name))).not.toStartWith("/");
-    const projectLink = join(project, ".agents/skills/hitslop-cli");
-    const projectTarget = await readlink(projectLink);
-    await run("skill", "install", "--all", "--scope", "global");
-    expect(await readlink(projectLink)).toBe(projectTarget);
+    const { home, project, bun, run } = await sandbox(root);
+    const cli = await globalCopy(bun);
+    const packaged = join(await realpath(cli), ".crust/root/skills");
     const link = join(home, ".agents/skills/hitslop-cli");
+    expect((await run(cli, "skills", "--all", "--scope", "global")).code).toBe(0);
+    expect(await readlink(link)).toBe(join(packaged, "hitslop-cli"));
+    expect((await run(cli, "skill", "install", "--all", "--scope", "project")).code).toBe(0);
+    for (const name of skillNames)
+      expect(await readlink(join(project, ".agents/skills", name))).not.toStartWith("/");
+
+    // `bun install -g` swaps a new package directory in at the same path.
+    const upgraded = join(root, "upgraded");
+    await cp(cli, upgraded, { recursive: true, verbatimSymlinks: true });
+    const skill = join(upgraded, ".crust/root/skills/hitslop-cli/SKILL.md");
+    await writeFile(skill, (await readFile(skill, "utf8")).replace(/version: ".*"/, 'version: "9.9.9"'));
+    await rm(cli, { recursive: true });
+    await rename(upgraded, cli);
+    expect(await readFile(join(link, "SKILL.md"), "utf8")).toContain('version: "9.9.9"');
+
+    // Any command from the global CLI re-points owned links that name another source.
+    const stray = join(home, ".hitslop/cli/4.0.0/skills/hitslop-cli");
+    await cp(join(packaged, "hitslop-cli"), stray, { recursive: true });
     await rm(link);
-    await symlink(join(home, ".hitslop/skills/hitslop-cli"), link);
-    await run("skills", "repair", "--scope", "global");
-    expect(await realpath(link)).toContain("/.hitslop/cli/");
-    await rm(link);
-    await symlink(join(home, ".hitslop/skills/hitslop-cli"), link);
-    await run("skill", "update", "--scope", "global");
-    expect(await realpath(link)).toContain("/.hitslop/cli/");
-    await run("skills", "uninstall", "--all", "--scope", "global");
+    await symlink(stray, link);
+    await run(cli, "schema", join(root, "missing.slop"));
+    expect(await readlink(link)).toBe(join(packaged, "hitslop-cli"));
+
+    // Any copy may remove links; shared content is untouched.
+    expect((await run(repositoryCli, "skills", "uninstall", "--all", "--scope", "global")).code).toBe(0);
     expect(await lstat(link).catch(() => undefined)).toBeUndefined();
-    expect(await readlink(projectLink)).toBe(projectTarget);
-    await rm(bundle, { recursive: true, force: true });
-    expect(await readFile(join(projectLink, "SKILL.md"), "utf8")).toContain("name: hitslop-cli");
+    expect(await Bun.file(join(packaged, "hitslop-cli/SKILL.md")).exists()).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("copies outside the global install never install or repair agent skill links", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hsl-skill-local-"));
+  try {
+    const { home, project, run } = await sandbox(root);
+    for (const args of [
+      ["skills"],
+      ["skills", "--all", "--scope", "global"],
+      ["skill", "install", "--all", "--scope", "project"],
+      ["skills", "repair", "--scope", "global"],
+    ]) {
+      const result = await run(repositoryCli, ...args);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("bun install -g @hitslop/cli");
+    }
+    expect(await lstat(join(home, ".agents")).catch(() => undefined)).toBeUndefined();
+    expect(await lstat(join(project, ".agents")).catch(() => undefined)).toBeUndefined();
+
+    // Ordinary commands from a local copy leave existing links alone.
+    const link = join(home, ".agents/skills/hitslop-cli");
+    const stray = join(home, ".hitslop/cli/4.0.0/skills/hitslop-cli");
+    await mkdir(stray, { recursive: true });
+    await mkdir(join(home, ".agents/skills"), { recursive: true });
+    await symlink(stray, link);
+    await run(repositoryCli, "schema", join(root, "missing.slop"));
+    expect(await readlink(link)).toBe(stray);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the global CLI stays quiet inside a project that keeps guide copies", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hsl-skill-quiet-"));
+  try {
+    const { project, bun, run } = await sandbox(root);
+    const cli = await globalCopy(bun);
+    await cp("packages/cli/skills", join(project, ".agents/skills"), { recursive: true });
+    const result = await run(cli, "schema", join(root, "missing.slop"));
+    expect(result.stderr).not.toContain("Skill conflict");
+    expect(await lstat(join(project, ".agents/skills/hitslop")).then((entry) => entry.isDirectory())).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -43,7 +43,7 @@ public extension DependencyValues {
         public var closeRequested = false
         public var isQuitting = false
         @Presents public var alert: AlertState<ErrorAlertAction>?
-        public var runtimeError: String?
+        public var pageError: String?
         public init(id: UUID, url: URL) { self.id = id; self.url = url; self.title = url.deletingPathExtension().lastPathComponent }
         public var acceptsCommands: Bool { !isOpening && !isQuitting && operation == nil && !closeRequested }
     }
@@ -51,7 +51,7 @@ public extension DependencyValues {
         case command(SlopDocumentCommand)
         case operationFinished(SlopDocumentCommand, URL?)
         case operationFailed(SlopDocumentCommand, String)
-        case runtimeFailed(String), runtimeReady
+        case pageFailed(String), pageReady
         case alert(PresentationAction<ErrorAlertAction>)
     }
     @Dependency(\.documentClient) var client
@@ -66,7 +66,7 @@ public extension DependencyValues {
                     return .none
                 }
                 state.operation = command
-                if command == .retry { state.runtimeError = nil }
+                if command == .retry { state.pageError = nil }
                 let id = state.id
                 return .run { send in
                     do { await send(.operationFinished(command, try await client.perform(id, command))) }
@@ -91,8 +91,8 @@ public extension DependencyValues {
                 guard state.operation == command else { return .none }
                 state.operation = nil; state.closeRequested = false; state.alert = .operationFailure(message)
                 return .none
-            case .runtimeFailed(let message): state.runtimeError = message; return .none
-            case .runtimeReady: state.runtimeError = nil; return .none
+            case .pageFailed(let message): state.pageError = message; return .none
+            case .pageReady: state.pageError = nil; return .none
             case .alert: return .none
             }
         }

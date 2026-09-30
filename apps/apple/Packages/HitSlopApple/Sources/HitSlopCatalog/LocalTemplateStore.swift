@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopFeatures
-import HitSlopRuntime
+import HitSlopDocument
 
 public struct LocalTemplate: Identifiable, Sendable {
     public let packageURL: URL
@@ -29,11 +29,13 @@ public struct LocalTemplateSnapshot: Sendable {
     public let templatesURL: URL
     private let scan: @Sendable (URL) async throws -> LocalTemplateSnapshot
     private var watcher: DispatchSourceFileSystemObject?
+    /// Folder events arrive in bursts while a template installs; one scan follows them.
+    private var pendingScan: Task<Void, Never>?
     private var scanTask: Task<Void, Never>?
     private var generation = 0
     private var stopped = false
 
-    public convenience init(templatesURL: URL = DocumentFactory.defaultTemplatesRoot) {
+    public convenience init(templatesURL: URL = SlopTemplateLocation.defaultTemplatesRoot) {
         let scanner = CatalogScanner()
         self.init(templatesURL: templatesURL, scan: { try await scanner.local(at: $0) })
     }
@@ -45,11 +47,14 @@ public struct LocalTemplateSnapshot: Sendable {
         scheduleScan()
     }
 
-    deinit { watcher?.cancel(); scanTask?.cancel() }
+    deinit { watcher?.cancel(); scanTask?.cancel(); pendingScan?.cancel() }
 
     /// Joins an existing scan instead of restarting the watcher or duplicating disk work.
-    public func refresh() async {
-        guard !stopped else { return }
+    /// Unless `force`, a live folder watcher already covers changes and nothing is scanned.
+    public func refresh(force: Bool = true) async {
+        guard !stopped, force || watcher == nil || pendingScan != nil else { return }
+        pendingScan?.cancel()
+        pendingScan = nil
         if scanTask == nil { scheduleScan() }
         while let task = scanTask, !stopped {
             let requestedGeneration = generation
@@ -62,6 +67,8 @@ public struct LocalTemplateSnapshot: Sendable {
     func stop() {
         stopped = true
         generation += 1
+        pendingScan?.cancel()
+        pendingScan = nil
         scanTask?.cancel()
         scanTask = nil
         watcher?.cancel()
@@ -86,6 +93,16 @@ public struct LocalTemplateSnapshot: Sendable {
         }
     }
 
+    private func scheduleScanSoon() {
+        pendingScan?.cancel()
+        pendingScan = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled, let self else { return }
+            self.pendingScan = nil
+            self.scheduleScan()
+        }
+    }
+
     private func startWatching() {
         guard watcher == nil, !stopped else { return }
         let descriptor = open(templatesURL.path, O_EVTONLY)
@@ -93,7 +110,16 @@ public struct LocalTemplateSnapshot: Sendable {
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor, eventMask: [.write, .rename, .delete, .extend], queue: .main
         )
-        source.setEventHandler { [weak self] in self?.scheduleScan() }
+        source.setEventHandler { [weak self, weak source] in
+            guard let self else { return }
+            // A moved or deleted folder is no longer the templates folder. The scan
+            // recreates it and watches the new one.
+            if let source, !source.data.isDisjoint(with: [.delete, .rename]) {
+                source.cancel()
+                self.watcher = nil
+            }
+            self.scheduleScanSoon()
+        }
         source.setCancelHandler { if descriptor >= 0 { close(descriptor) } }
         watcher = source
         source.resume()

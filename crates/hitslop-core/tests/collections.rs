@@ -5,6 +5,7 @@
 // consumer compared with fresh snapshots over a random workload.
 mod support;
 use hitslop_core::Document;
+use support::{Edit, View};
 use loro::{ExportMode, LoroDoc, LoroMap};
 use serde_json::{json, Value};
 
@@ -91,7 +92,7 @@ fn page_typing_into_an_unset_optional_text_creates_it() {
     // After a clear, an edit from the old text is refused rather than resurrecting it.
     d.apply(&json!({"intents":[{"type":"clear","path":["notes"]}]}).to_string()).unwrap();
     let stale = json!({"base":d.version(),"path":["notes"],"from":"Hi there","to":"Hi there!","selectionStart":9,"selectionEnd":9});
-    assert_eq!(d.edit_text(&stale.to_string()).unwrap_err().code, "path_not_found");
+    assert_eq!(d.edit_text(&stale.to_string()).unwrap_err().code.as_str(), "path_not_found");
 }
 
 #[test]
@@ -117,7 +118,7 @@ fn merged_invalid_entries_and_elements_are_flagged_not_repaired() {
         snapshot["issues"],
         json!([
             {"code":"invalid_key","path":["done","__proto__"]},
-            {"code":"out_of_range","path":["presets",0]},
+            {"code":"out_of_range","path":["presets",{"index":0}]},
             {"code":"type_mismatch","path":["widths","B"]}
         ])
     );
@@ -154,7 +155,7 @@ fn seeded_collection_publications_match_fresh_snapshots() {
     let mut rng = 0x5eed_c011u64;
     for _round in 0..60 {
         let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
-        let mut projected = view(&d)["value"].clone();
+        let mut projected = View::of(&d);
         for step in 0..40 {
             let reply = if step % 4 == 0 {
                 let mut peer = Document::open(&schema, &d.checkpoint().unwrap(), &[]).unwrap();
@@ -163,17 +164,14 @@ fn seeded_collection_publications_match_fresh_snapshots() {
                     let op = random_op(&mut rng, &peer);
                     peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
                 }
-                d.import(&peer.export_since(&base).unwrap()).unwrap()
+                d.merge(&peer.export_since(&base).unwrap()).unwrap()
             } else {
                 let op = random_op(&mut rng, &d);
                 d.apply(&json!({"intents":[op]}).to_string()).unwrap()
             };
-            let reply: Value = serde_json::from_str(&reply).unwrap();
-            support::apply_patches(&mut projected, &reply["ops"]);
-            let fresh = view(&d);
-            assert_eq!(projected, fresh["value"]);
-            assert_eq!(reply["issues"], fresh["issues"]);
-            assert_eq!(fresh["issues"], json!([]));
+            projected.publish(&reply);
+            projected.check(&d, "publication");
+            assert_eq!(projected.issues, json!([]));
         }
     }
 }

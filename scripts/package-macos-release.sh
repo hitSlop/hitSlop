@@ -148,7 +148,7 @@ if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
     cd "$repo_root"
     HITSLOP_APP_BINARY="$app/Contents/MacOS/hitSlop" \
       HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
-      bun scripts/v1/native-crash.ts
+      bun scripts/native-crash.ts
   )
 fi
 

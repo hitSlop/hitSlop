@@ -2,9 +2,9 @@ import { test, expect } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverTemplates, templateInventory } from "../../../scripts/v1/templates";
-import { embedTemplates } from "../../../scripts/v1/embed-templates";
-import { assertNoGeneratedSource, assertSkill } from "../../../scripts/v1/hygiene";
+import { discoverTemplates, templateInventory } from "../../../scripts/templates";
+import { embedTemplates } from "../../../scripts/embed-templates";
+import { assertDocs, assertNoGeneratedSource, assertSkill } from "../../../scripts/hygiene";
 import { parseManifest } from "../../schema/src/manifest";
 
 test("discovery builds an inventory independently of bundled selection and rejects invalid input", async () => {
@@ -37,7 +37,7 @@ test("discovery builds an inventory independently of bundled selection and rejec
     await expect(discoverTemplates(root)).rejects.toThrow("Duplicate template");
     await rm(join(root, "duplicate"), { recursive: true });
     await writeFile(join(root, "beta/manifest.json"), "{}");
-    await expect(discoverTemplates(root)).rejects.toThrow("Invalid v1 manifest");
+    await expect(discoverTemplates(root)).rejects.toThrow("Invalid manifest");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -55,7 +55,6 @@ test("embedding replaces selection and never keeps a deselected starter", async 
       );
     }
     const inventory = (selected: string) => ({
-      format: 1 as const,
       templates: ["alpha", "beta"].map((slug) => ({ slug, bundled: slug === selected })),
     });
     await embedTemplates(root, destination, inventory("alpha"));
@@ -86,6 +85,29 @@ test("hygiene allows authored JS and rejects broken skill links", async () => {
       "---\nname: test\ndescription: Test guide.\n---\n",
     );
     await assertSkill("skill/SKILL.md", root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("docs must link to files that exist and pin the versions the tree is at", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-docs-"));
+  const versions = { cli: "4.0.0", document: "4.0.0", schema: "4.0.0" };
+  try {
+    await mkdir(join(root, "docs/guides"), { recursive: true });
+    await writeFile(join(root, "docs/guides/cli.md"), "# CLI\n");
+    const page = (body: string) => writeFile(join(root, "docs/page.md"), body);
+    await page("[ok](guides/cli.md#top) [site](/docs/x/) [web](https://example.com) `[code](missing.md)`\n\n```\n[fenced](missing.md)\n```\n");
+    await assertDocs(["docs/page.md"], root, versions);
+    await page("[gone](../plans/old.md)\n");
+    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("broken link (../plans/old.md)");
+    await page("Run `bunx @hitslop/cli@1.2.0 init`.\n");
+    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("pins @hitslop/cli@1.2.0, but the tree is at 4.0.0");
+    await page("Run `bunx @hitslop/cli@4.0.0 init`.\n");
+    await assertDocs(["docs/page.md"], root, versions);
+    // A Starlight page links with trailing-slash URLs, which are not files.
+    await writeFile(join(root, "docs/site.mdx"), "[next](./getting-started/)\n");
+    await assertDocs(["docs/site.mdx"], root, versions);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

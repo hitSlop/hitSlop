@@ -1,5 +1,5 @@
-// Host-owned page lifecycle. Everything here ships with the app's runtime and may
-// change in any release; only the ctx handed to SlopApp.mount is a frozen contract.
+// Host-owned page lifecycle. The page shell, SDK, app and host are built from one tree;
+// the ctx handed to SlopApp.mount is the only interface apps use.
 import type { SlopApp, SlopContext } from "./abi";
 import { ownerAttachments } from "./owner/attachments";
 import { hostCall } from "./bridge";
@@ -9,20 +9,17 @@ import { nativeTransport, browserTransport } from "./owner/transport";
 import {
   installPresentationStage,
   presentationStage,
-  type PresentationStage,
 } from "./presentation";
-import { fromDescriptor, type ObjectNode } from "./schema";
-import { OwnerSession as Session } from "./owner/session";
+import type { ObjectNode } from "./schema";
+import { fromDescriptor } from "./descriptor";
 import { openTheme, type ThemeController } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
+import { ErrorTextLimit } from "@hitslop/schema/constants";
 
 const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.hitslop);
-const reportApplicationError = (native: boolean, error: unknown) => {
-  globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
-  if (native)
-    void hostCall({ method: "runtimeError", kind: "application", error: describe(error) }).catch(
-      () => {},
-    );
+/** Reports a page error to the host, or to the console in the browser preview. */
+const report = (native: boolean, kind: "application" | "operation", error: unknown) => {
+  if (native) void hostCall({ method: "pageError", kind, error: describe(error) }).catch(() => {});
   else console.error(error);
 };
 const fetchJSON = async (path: string, missing: string) => {
@@ -31,20 +28,30 @@ const fetchJSON = async (path: string, missing: string) => {
   return response.json();
 };
 
-/** Open the package's document with host or disposable memory storage. */
+type PageConfig = {
+  view: string;
+  documentID: string;
+  readOnly: boolean;
+  presentation?: import("@hitslop/schema").SlopPresentation;
+};
+/** The browser preview's config: a disposable document, with the manifest's stage. */
+async function previewConfig(): Promise<PageConfig> {
+  const manifest = await fetch("/manifest.json").then((r) => (r.ok ? r.json() : undefined));
+  return {
+    view: crypto.randomUUID(),
+    documentID: crypto.randomUUID(),
+    readOnly: false,
+    presentation: manifest?.presentation,
+  };
+}
+
+/** Open the package's document with host or disposable memory storage. The native owner
+ * holds the saved state, so only the preview reads the initial values. */
 async function openDocument(native: boolean) {
   const [config, descriptor, initial, theme] = await Promise.all([
-    native
-      ? hostCall({ method: "config" })
-      : ({ epoch: crypto.randomUUID(), view: crypto.randomUUID(), documentID: crypto.randomUUID(), readOnly: false } as {
-          epoch: string;
-          view: string;
-          documentID: string;
-          readOnly: boolean;
-          presentation?: PresentationStage;
-        }),
+    native ? (hostCall({ method: "config" }) as Promise<PageConfig>) : previewConfig(),
     fetchJSON("/state.schema.json", "Missing document descriptor"),
-    fetchJSON("/initial.json", "Missing initial values"),
+    native ? undefined : fetchJSON("/initial.json", "Missing initial values"),
     openTheme(native),
   ]);
   const doc = await Document.open(
@@ -52,19 +59,14 @@ async function openDocument(native: boolean) {
     native
       ? nativeTransport(config.documentID, config.view, config.readOnly)
       : await browserTransport(descriptor, initial),
-    (error, kind = "operation") => {
-      if (native)
-        void hostCall({ method: "runtimeError", kind, error: describe(error) }).catch(() => {});
-      else console.error(error);
-    },
+    (error, kind = "operation") => report(native, kind, error),
   );
   const attachments = ownerAttachments(doc, native);
-  const session = new Session(doc, theme, attachments);
-  return { config, doc, theme, attachments, session };
+  return { config, doc, theme, attachments };
 }
 
-/** Build the frozen app-facing interface over this release's implementation. */
-export function createContext(
+/** The app-facing interface over this page's document and host services. */
+function createContext(
   doc: Document<ObjectNode>,
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
@@ -96,8 +98,7 @@ export function createContext(
     },
     fields: doc.fields,
     at: ((value: any) => doc.at(value)) as SlopContext["document"]["at"],
-    change: <R>(callback: (tx: any) => R, options?: { message?: string }) =>
-      doc.change(callback, { message: options?.message }),
+    change: <R>(callback: (tx: any) => R) => doc.change(callback),
     flush: () => doc.flush(),
     subscribe: (listener: Parameters<typeof doc.subscribe>[0]) => doc.subscribe(listener),
   });
@@ -121,67 +122,59 @@ export function createContext(
   });
 }
 
-const describe = (error: unknown) =>
-  (error instanceof Error ? (error.stack ?? error.message) : String(error)).slice(0, 4096);
+/** The message first: WebKit's `stack` lists only frames, V8's repeats the message. */
+const describe = (error: unknown) => {
+  if (!(error instanceof Error)) return String(error).slice(0, ErrorTextLimit);
+  const head = `${error.name}: ${error.message}`;
+  const stack = error.stack ?? "";
+  return (stack.startsWith(head) ? stack : stack ? `${head}\n${stack}` : head).slice(0, ErrorTextLimit);
+};
 
 /** Visible sessions: open the document, then mount the package's app module. */
 export async function boot() {
   const native = isNative();
-  try {
-    // Failures inside the package's own module are authored failures, reported as such.
-    const authored = (error: unknown) => {
-      if (native)
-        void hostCall({
-          method: "runtimeError",
-          kind: "application",
-          error: describe(error),
-        }).catch(() => {});
-      throw error;
-    };
-    const app = import(new URL("/assets/app.js", location.href).href).then(
-      (module) => module.default as SlopApp,
-      authored,
-    );
-    app.catch(() => {});
-    const opened = openDocument(native);
-    const { config, doc, theme, attachments, session } = await opened;
-    // The disposable preview derives the stage from the manifest, as the native host does.
-    if (!native) {
-      const manifest = await fetch("/manifest.json").then((r) => (r.ok ? r.json() : undefined));
-      if (manifest?.presentation) config.presentation = presentationStage(manifest.presentation);
-    }
-    if (config.presentation) installPresentationStage(config.presentation);
-    const view = await app;
-    if (!view || typeof view.mount !== "function")
-      throw new Error("assets/app.js must export default { mount(ctx, target) }");
-    const capture = captureController();
-    const reportError = (error: unknown) => reportApplicationError(native, error);
-    const ctx = createContext(doc as Document<ObjectNode>, {
-      attachments,
-      theme,
-      capture,
-      resize: async (size) => {
-        if (native) await hostCall({ method: "window.resize", ...size });
-      },
-      reportError,
-    });
-    const target = globalThis.document.body;
-    globalThis.__slop = await mountViewLifecycle({
-      mount: async () => {
-        const mounted = await Promise.resolve()
-          .then(() => view.mount(ctx, target))
-          .catch(authored);
-        return { rendered: () => mounted?.rendered?.(), unmount: () => mounted?.unmount?.() };
-      },
-      document: doc,
-      target,
-      session,
-      recovered: native ? () => hostCall({ method: "runtimeRecovered" }) : undefined,
-    });
-    if (native) await hostCall({ method: "ready" });
-  } catch (error) {
-    globalThis.document.body.textContent = `Could not open this document: ${String(error)}`;
-    if (native) await hostCall({ method: "failed", error: String(error) }).catch(() => {});
+  // Failures inside the package's own module are authored failures, reported as such.
+  const authored = (error: unknown) => {
+    report(native, "application", error);
     throw error;
-  }
+  };
+  const app = import(new URL("/assets/app.js", location.href).href).then(
+    (module) => module.default as SlopApp,
+    authored,
+  );
+  app.catch(() => {});
+  const opened = openDocument(native);
+  const { config, doc, theme, attachments } = await opened;
+  if (config.presentation) installPresentationStage(presentationStage(config.presentation));
+  const view = await app;
+  if (!view || typeof view.mount !== "function")
+    throw new Error("assets/app.js must export default { mount(ctx, target) }");
+  const capture = captureController();
+  const reportError = (error: unknown) => {
+    globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
+    report(native, "application", error);
+  };
+  const ctx = createContext(doc as Document<ObjectNode>, {
+    attachments,
+    theme,
+    capture,
+    resize: async (size) => {
+      if (native) await hostCall({ method: "window.resize", ...size });
+    },
+    reportError,
+  });
+  const target = globalThis.document.body;
+  globalThis.__slop = await mountViewLifecycle({
+    mount: async () => {
+      const mounted = await Promise.resolve()
+        .then(() => view.mount(ctx, target))
+        .catch(authored);
+      return { rendered: () => mounted?.rendered?.(), unmount: () => mounted?.unmount?.() };
+    },
+    document: doc,
+    theme,
+    target,
+    recovered: native ? () => hostCall({ method: "pageRecovered" }) : undefined,
+  });
+  if (native) await hostCall({ method: "ready" });
 }

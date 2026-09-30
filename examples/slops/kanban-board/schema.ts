@@ -17,7 +17,7 @@ const schema = defineDocument({
   })),
 });
 
-export type Board = Value<typeof schema.fields.node>;
+export type Board = Value<typeof schema.descriptor>;
 export type Lane = Board["lanes"][number];
 export type Card = Board["cards"][number];
 export default schema;

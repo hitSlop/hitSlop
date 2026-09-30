@@ -21,7 +21,9 @@ bun run --cwd apps/landing build
 ```
 
 The template wall reads committed data generated from the real templates. After
-templates change, run `bun apps/landing/scripts/templates.ts` from the repository root.
+templates change, run `bun run build:templates`, then `bun apps/landing/scripts/templates.ts`
+from the repository root; the script replaces `public/assets/templates` with the
+artwork of the templates it finds built.
 Artwork, fonts, the share image and data are described in
 [src/components/Landing.assets.md](src/components/Landing.assets.md).
 

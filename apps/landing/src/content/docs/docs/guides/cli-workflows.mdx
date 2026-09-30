@@ -47,9 +47,9 @@ bunx @hitslop/cli init budget-book --yes \
   --description 'A simple monthly spending tracker.'
 ```
 
-Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. Metadata is validated before files are created, and an existing destination is never overwritten.
+Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The slug comes from the directory name unless you pass `--slug`. Metadata is validated before files are created, and an existing destination is never overwritten.
 
-Read `manifest.json`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh. Stop and restart the preview after source changes.
+Read `manifest.json`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component/CSS updates preserve accepted edits; schema, initial data, theme and manifest changes reset disposable state.
 
 Stop the preview, then package the app and add it to your local catalog:
 
@@ -60,20 +60,18 @@ bun run register
 
 Build writes `dist/weekend-kit.slop`. Register builds it and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
-From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174`, `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
+From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
 
 ## Create and open a writable document
 
 In the Mac app, choose a template and select **Create**. For the terminal equivalent, run these commands from your authoring project:
 
 ```sh
-"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" create \
-  --from dist/weekend-kit.slop --output "$HOME/Documents/Weekend.slop"
-"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" open \
-  "$HOME/Documents/Weekend.slop"
+bunx @hitslop/cli create --from dist/weekend-kit.slop --output "$HOME/Documents/Weekend.slop"
+bunx @hitslop/cli open "$HOME/Documents/Weekend.slop"
 ```
 
-Use the native commands above for `create` and `open`. Create makes a new document with the template's starting data; choose a destination that does not already exist. Open launches it in hitSlop.
+Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.slop` is added if you leave it off. Open launches it in hitSlop. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
 
 ## Read and edit data
 
@@ -95,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint and prints the data; ordinary edits never need it. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
@@ -137,42 +135,43 @@ Export saves your edits and prints the output path. Choose an output outside the
 
 ## Install agent skills
 
-Run the interactive installer to choose scope and agents:
+Agent skills link to your global CLI, so they update whenever you upgrade it. Install the CLI globally, then run the interactive installer to choose skills and agents:
 
 ```sh
-bunx @hitslop/cli skills install
+bun install -g @hitslop/cli
+slop skills install
 ```
 
 Or, from a project directory, install for all detected agents at project scope:
 
 ```sh
-bunx @hitslop/cli skills install --all --scope project
+slop skills install --all --scope project
 ```
 
-Use `--scope global` to make the skills available across projects. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`.
+Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Through `bunx` or a project's own CLI, `skills install` and `skills repair` stop and ask for the global install instead, because links into those copies would go stale.
 
-Repair existing links after updating the CLI package:
+Every command you run with the global `slop` first repairs global hitSlop skill links that are broken or point somewhere else, so you rarely need to repair them yourself. Project links are repaired on request:
 
 ```sh
-bunx @hitslop/cli skills repair --scope project
+slop skills repair --scope project
 ```
 
-`skills repair` repairs existing links; `skills update` remains an alias. To install skills for a new agent, run `skills install` again. Installed links use a durable local copy, so clearing the bunx cache does not break them.
+To install skills for a new agent, run `skills install` again.
 
-Remove installed links explicitly:
+Remove installed links explicitly. Any copy of the CLI can do this:
 
 ```sh
-bunx @hitslop/cli skills uninstall --scope project
+slop skills uninstall --scope project
 # Remove every installed hitSlop skill at this scope without prompts:
-bunx @hitslop/cli skills uninstall --all --scope project
+slop skills uninstall --all --scope project
 ```
 
-The guides copied into a project by `init` are ordinary files. Repair does not update them, and installation does not overwrite them without confirmation. Review those copies when upgrading your project.
+The guides copied into a project by `init` are ordinary files. Upgrading the global CLI does not update them, and installation does not overwrite them without confirmation. Review those copies when upgrading your project.
 
 ## Upgrade the CLI
 
 Install the compatible hitSlop Mac app before upgrading authoring packages. Within a project, update `@hitslop/cli` and `@hitslop/document` to the same released version; update `@hitslop/schema` to that version too if you depend on it directly. Continue using the project's `bun run` scripts. A global CLI update does not change a project's pinned dependencies.
 
-If you use a global installation, update it with `bun install -g @hitslop/cli@VERSION`, replacing `VERSION` with the matching released version. Then run `slop skills repair --scope global` to refresh installed skill links. With bunx, use `bunx @hitslop/cli@VERSION skills repair --scope global` instead.
+Update the global CLI with `bun install -g @hitslop/cli@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
 
-Interactive commands may show an update notice on stderr, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
+Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.

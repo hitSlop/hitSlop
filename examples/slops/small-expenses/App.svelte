@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Checkbox, Tabs } from "bits-ui";
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
+  import { useDocument, bindText } from "@hitslop/document/svelte";
   import { tick } from "svelte";
   import { expenses } from "./schema";
 
@@ -35,12 +35,12 @@
   async function settle() {
     const settling=selectedIDs;
     try {
-      await doc.change(tx=>{for(const id of settling)tx.fields.items.item(id).settled.set(true)},{message:"Settle expenses"});
+      await doc.change(tx=>{for(const id of settling)tx.fields.items.item(id).settled.set(true)});
       selected=[];
     } catch { /* Reported centrally; the selection stays. */ }
   }
 </script>
-<Slop>
+
 <main class="expenses-paper">
   <div class="expenses-eyebrow">Small expenses</div>
   <input class="expenses-title" aria-label="List title" use:bindText={title} />
@@ -86,4 +86,3 @@
   {#if error}<p class="expenses-error" role="alert">{error}</p>{/if}
   <footer class="expenses-footer"><span>Amounts stay as entered; currency changes the label.</span></footer>
 </main>
-</Slop>

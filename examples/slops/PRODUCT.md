@@ -22,7 +22,7 @@ should have enough character that someone wants to keep it on their desktop.
 Slops are portable local documents hosted in native windows, with disposable
 browser previews for development. People can open, duplicate, share, and keep
 them. Loro owns live structured state; the host persists its bytes. Each document owns its UI.
-The supported authored examples use Svelte, Bits UI, the v1 document DSL, and typed themes.
+The supported authored examples use Svelte, Bits UI, the document DSL, and typed themes.
 
 ## Capabilities and Constraints
 

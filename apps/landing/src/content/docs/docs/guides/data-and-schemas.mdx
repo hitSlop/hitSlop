@@ -27,12 +27,14 @@ Choose each field by how edits from several places should merge:
 | --- | --- | --- |
 | `s.text()` | Anything a person types | Character edits merge |
 | `s.string({ maxLength? })`, `s.number({ min?, max? })`, `s.integer({ min?, max? })`, `s.boolean()`, `s.enum([...])` | Settings, amounts, dates, states | Last writer wins |
-| `s.optional(scalar or object)` | Values that may be absent | `set` gives a value, `clear()` removes it |
+| `s.optional(scalar, text or object)` | Values that may be absent | `set` gives a value, `clear()` removes it |
 | `s.object({...})` | Fixed groups of fields | Per field |
 | `s.list(s.object({...}))` | Rows with identity | Insert, remove and move keep `$id` |
+| `s.list(s.string())` (any scalar) | Small lists of plain values: tags, a pixel grid | Inserts are kept; one element: last writer wins |
+| `s.record(value)` | Scalars or objects by key: check-ins by date, cells by `"A1"` | Per key; object entries per field |
 | `s.counter()` | Tallies | Increments add up |
 
-`maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. Records, scalar lists, trees and rich text are not available yet. Keep transient view state (selection, hover, flipped cards) in component state.
+`maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state.
 
 ```ts title="initial.ts"
 export default {
@@ -52,11 +54,10 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 
 ```svelte
 <script lang="ts">
-  import { Slop, useDocument, bindText, bindValue } from "@hitslop/document/svelte";
+  import { useDocument, bindText, bindValue } from "@hitslop/document/svelte";
   import schema from "./schema";
   const doc = useDocument(schema);
 </script>
-<Slop>
   <input aria-label="Title" use:bindText={doc.fields.title} />
   <input type="checkbox" use:bindValue={doc.fields.archived} />
   <input type="range" min="1" max="5" use:bindValue={doc.fields.mood} />
@@ -68,12 +69,11 @@ The builder validates initial values and emits `state.schema.json` and `initial.
     <input type="checkbox" checked={task.done} onchange={() => doc.at(task).done.set(!task.done)} />
     <input aria-label="Task" use:bindText={doc.at(task).text} />
   {/each}
-</Slop>
 ```
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-Writes are asynchronous: `await doc.at(task).done.set(true)` resolves once the app has accepted the edit and `doc.current` shows it. Read the snapshot after awaiting, not before.
+Writes are asynchronous: `await doc.at(task).done.set(true)` resolves once the app has accepted the edit and `doc.current` shows it. Read the snapshot after awaiting, not before. A resolved write is not yet on disk or rendered: use `await doc.flush()` when it must be saved and Svelte's `tick()` when the next step depends on the DOM. A refused write rejects with a code and leaves `doc.current` unchanged, so keep a composer's text until its write is accepted and show success only after acceptance.
 
 `bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field. `bindValue` binds checkboxes to booleans, selects to enums and strings, range and number inputs to numbers and integers, and text, date and time inputs to strings. A range previews while it is dragged and saves on release; clearing a control clears an optional field.
 
@@ -90,11 +90,12 @@ Every row has `$id`. Key Svelte loops and selection state by that ID, not by ind
 ```ts
 const { id } = await doc.fields.tasks.insert({ text: "Book tickets", done: false }, { after: task.$id });
 await doc.fields.tasks.move(id, { before: anotherTask.$id });
+await doc.fields.tasks.item(id).text.set("Book train tickets");
 await doc.fields.tasks.remove(id);
 await doc.fields.visits.increment();
 ```
 
-A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
+`item(id)` is a row's handle by ID. `decrement()` is `increment(-1)`; a counter has no reset. If a counter's merged contributions are invalid, its snapshot is `null`: show it as unavailable and disable its buttons. A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
 
 ## Group changes
 
@@ -107,7 +108,7 @@ await doc.change(tx => {
 });
 ```
 
-A change is one synchronous, all-or-nothing commit. Inside the callback, `insert` returns its `id` immediately so later writes can address the new row. Do not `await` inside the callback or write through `doc` there, and remember `doc.current` still shows the state from before the change until the returned promise resolves. A rejected operation discards the whole change.
+A change is one synchronous, all-or-nothing commit. Inside the callback, `insert` returns its `id` immediately so later writes can address the new row. Do not `await` inside the callback, nest changes, keep `tx` handles after it returns, or write through `doc` there, and remember `doc.current` still shows the state from before the change until the returned promise resolves. A rejected operation discards the whole change.
 
 Prefer a change, or `increment` on a counter, over reading a value and writing it back: the snapshot you read may be a moment old.
 
@@ -125,3 +126,5 @@ bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>
 ```
 
 Edits print `{ids, sequence, value}` and are saved when the command succeeds. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
+
+Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).

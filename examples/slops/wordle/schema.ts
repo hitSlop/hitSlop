@@ -25,6 +25,6 @@ const schema = defineDocument({
   }),
 });
 
-export type Wordle = Value<typeof schema.fields.node>;
+export type Wordle = Value<typeof schema.descriptor>;
 export type Puzzle = Wordle["daily"];
 export default schema;

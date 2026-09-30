@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, resizeWindow, useDocument } from "@hitslop/document/svelte";
+  import { resizeWindow, useDocument } from "@hitslop/document/svelte";
   import { onDestroy, onMount, tick } from "svelte";
   import { capture } from "@hitslop/document/capture";
   import { AlertDialog, Collapsible, Popover, RadioGroup, ToggleGroup } from "bits-ui";
@@ -138,7 +138,7 @@
       if (hit && !active.erased.has(hit.id) && doc.current.strokes.some(stroke => stroke.$id === hit.id)) removed.add(hit.id);
     }
     if (removed.size) {
-      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); }, { message: "Erase strokes" }).catch(() => {});
+      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); }).catch(() => {});
       for (const id of removed) active.erased.add(id);
     }
   }
@@ -200,7 +200,7 @@
   }
   function clearBoard() {
     finish();
-    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); }, { message: "Clear board" }).catch(() => {});
+    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); }).catch(() => {});
     clearDialog = false;
     notice = "Fresh start.";
   }
@@ -216,8 +216,8 @@
 
 <svelte:window onblur={finish} onkeydown={shortcut} />
 
-<Slop>
-  <main bind:this={shell} class="doodle-shell" data-slop-selection="none" data-drawing={drawing}>
+
+  <main bind:this={shell} class="doodle-shell" data-drawing={drawing}>
     <header class="doodle-header">
       <div class="doodle-wordmark"><svg viewBox="0 0 36 32" aria-hidden="true"><path d="M3 20Q10 0 15 12T25 11Q36 3 29 21T14 23Q5 16 3 28" /></svg><h1>Doodle Board</h1></div>
       <Popover.Root bind:open={boardMenu}>
@@ -273,11 +273,3 @@
     <span class="doodle-sr-only" role="status">{notice}</span>
     {#if notice}<div class="doodle-notice" aria-hidden="true">{notice}</div>{/if}
   </main>
-
-  {#snippet exportView()}
-    <div class="doodle-export" style:aspect-ratio={`${board.width} / ${board.height}`}><svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${board.width} ${board.height}`} role="img" aria-label="Doodle Board artwork"><rect width={board.width} height={board.height} fill="var(--slop-board)" />{#each doc.current.strokes as stroke (stroke.$id)}<path d={stroke.geometry} fill={stroke.color} />{/each}</svg></div>
-  {/snippet}
-  {#snippet icon()}
-    <div class="doodle-icon"><div class="doodle-icon-board"><svg viewBox="0 0 240 200" aria-hidden="true"><path d="M30 130Q45 24 79 75T132 60Q188 13 157 108T212 120" fill="none" stroke="var(--slop-blue)" stroke-width="16" stroke-linecap="round" /><path d="m176 32 8-20m9 29 23-5m-27 19 15 15" fill="none" stroke="var(--slop-coral)" stroke-width="8" stroke-linecap="round" /></svg></div><div class="doodle-icon-tray"><i></i><i></i><i></i></div></div>
-  {/snippet}
-</Slop>

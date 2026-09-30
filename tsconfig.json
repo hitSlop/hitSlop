@@ -1,19 +1,19 @@
 {
   "compilerOptions": {
-    "allowImportingTsExtensions": true,
-    "allowJs": true,
-    "checkJs": true,
-    "exactOptionalPropertyTypes": true,
-    "forceConsistentCasingInFileNames": true,
-    "module": "Preserve",
-    "moduleDetection": "force",
-    "moduleResolution": "Bundler",
-    "noEmit": true,
-    "noUncheckedIndexedAccess": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "strict": true,
-    "target": "ES2023",
-    "types": ["bun"]
-  }
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "packages/document/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/schema/src/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": ["**/dist/**"]
 }

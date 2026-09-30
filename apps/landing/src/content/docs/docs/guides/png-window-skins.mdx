@@ -3,7 +3,7 @@ title: PNG window skins
 description: Give a fixed-size slop a custom native silhouette and click-through transparent areas.
 ---
 
-Start with a built-in `rounded`, `ellipse`, or `capsule` shape and
+Start with a radius (`"22px"`, `"50%"`, or `"9999px"`) or SVG path shape and
 `background: "transparent"`. Use a PNG when you need a hole in the window or an
 outline those shapes cannot describe. PNG skins are fixed-size and cannot resize.
 A washer with a transparent center is a useful first test.
@@ -16,7 +16,7 @@ accepts pointer input.
 
 ```json title="manifest.json"
 {
-  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
   "author": { "name": "Your Name" },
   "slug": "pocket-dial",
   "title": "Pocket Dial",
@@ -38,12 +38,12 @@ at the skin's fixed size.
 
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
-transparency with more-specific or `!important` page backgrounds. Wrap the app in `<Slop>`
-or mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
+transparency with more-specific or `!important` page backgrounds. `defineSlop` provides the app root automatically;
+mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
-are needed; use `100%` or `--slop-width`/`--slop-height`. Align controls with opaque areas of the PNG using ordinary CSS.
+are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
 
-The native host exposes initial dimensions as `--slop-width` and `--slop-height`, and
+The native host exposes initial dimensions as `--slop-window-width` and `--slop-window-height`, and
 sets `data-slop-presentation="skin"`. These layout rules are disabled for capture.
 
 Pixels below 10% alpha are click-through. Feathered edge pixels may still

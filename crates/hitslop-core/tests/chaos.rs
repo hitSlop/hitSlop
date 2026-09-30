@@ -5,6 +5,7 @@
 // Gap: publications.rs peers are `Document`s and can only make valid edits.
 mod support;
 use hitslop_core::Document;
+use support::{Edit, View};
 use loro::{
     Container, ExportMode, LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText,
     ValueOrContainer,
@@ -23,13 +24,11 @@ fn peer_of(d: &Document) -> LoroDoc {
     peer
 }
 /// Imports what `peer` did since it was forked and checks the publication.
-fn deliver(d: &mut Document, projected: &mut Value, peer: &LoroDoc, from: &loro::VersionVector) {
+fn deliver(d: &mut Document, projected: &mut View, peer: &LoroDoc, from: &loro::VersionVector) {
     let bytes = peer.export(ExportMode::updates(from)).unwrap();
-    let reply: Value = serde_json::from_str(&d.import(&bytes).unwrap()).unwrap();
-    support::apply_patches(projected, &reply["ops"]);
-    let fresh = snapshot(d);
-    assert_eq!(*projected, fresh["value"], "projection diverged");
-    assert_eq!(reply["issues"], fresh["issues"], "issues diverged");
+    projected.publish(&d.merge(&bytes).unwrap());
+    projected.check(d, "import");
+    assert_eq!(serde_json::from_str::<Value>(&d.state().unwrap()).unwrap(), snapshot(d), "maintained state");
 }
 fn rows(peer: &LoroDoc) -> Option<LoroMovableList> {
     match peer.get_map("data").get("rows") {
@@ -48,7 +47,7 @@ fn row(list: &LoroMovableList, i: usize) -> Option<LoroMap> {
 fn other_roots_do_not_enter_the_projection() {
     let f = fixture();
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
-    let mut projected = snapshot(&d)["value"].clone();
+    let mut projected = View::of(&d);
     let peer = peer_of(&d);
     let from = peer.oplog_vv();
     peer.get_map("unrelated").insert("done", true).unwrap();
@@ -61,7 +60,7 @@ fn other_roots_do_not_enter_the_projection() {
 fn plain_lists_publish_exactly_on_later_updates() {
     let f = fixture();
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
-    let mut projected = snapshot(&d)["value"].clone();
+    let mut projected = View::of(&d);
     for target in ["extra", "rows"] {
         let peer = peer_of(&d);
         let from = peer.oplog_vv();
@@ -81,6 +80,71 @@ fn plain_lists_publish_exactly_on_later_updates() {
         }
         peer.commit();
         deliver(&mut d, &mut projected, &peer, &from);
+    }
+}
+
+#[test]
+fn collection_anomalies_survive_publication_and_reopen() {
+    let f: Value = serde_json::from_str(include_str!("../fixtures/collections.json")).unwrap();
+    let schema = f["schema"].to_string();
+    let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
+    let mut projected = View::of(&d);
+    // Successive imports exercise updates to already-observed containers as well
+    // as replacement containers. None of these values may be repaired on read.
+    for step in 0..3 {
+        let peer = peer_of(&d);
+        let from = peer.oplog_vv();
+        let data = peer.get_map("data");
+        let cells = match data.get("cells").unwrap() {
+            ValueOrContainer::Container(Container::Map(map)) => map,
+            other => panic!("expected record, got {other:?}"),
+        };
+        let done = match data.get("done").unwrap() {
+            ValueOrContainer::Container(Container::Map(map)) => map,
+            other => panic!("expected record, got {other:?}"),
+        };
+        done.insert("__proto__", true).unwrap();
+        let notes = if step == 1 { loro::LoroValue::Bool(true) } else { loro::LoroValue::Null };
+        data.insert("notes", notes).unwrap();
+        if step == 0 {
+            let pixels = data.insert_container("pixels", LoroList::new()).unwrap();
+            pixels.push("valid").unwrap();
+            pixels.push(false).unwrap();
+            pixels.push_container(LoroMap::new()).unwrap().insert("unexpected", true).unwrap();
+        } else {
+            let pixels = data.insert_container("pixels", LoroMovableList::new()).unwrap();
+            pixels.push("valid").unwrap();
+            pixels.push(false).unwrap();
+            pixels.push_container(LoroMap::new()).unwrap().insert("unexpected", true).unwrap();
+        }
+        if step == 1 {
+            cells.insert("A1", 42).unwrap();
+        } else {
+            let cell = cells.insert_container("A1", LoroMap::new()).unwrap();
+            cell.insert("input", "kept").unwrap();
+            cell.insert("tint", loro::LoroValue::Null).unwrap();
+        }
+        peer.commit();
+        deliver(&mut d, &mut projected, &peer, &from);
+        let state = snapshot(&d);
+        assert_eq!(state["value"]["done"]["__proto__"], true);
+        assert_eq!(state["value"]["pixels"], json!(["valid", false, {"unexpected": true}]));
+        assert!(state["value"].as_object().unwrap().contains_key("notes"));
+        assert_eq!(state["value"]["notes"], if step == 1 { json!(true) } else { Value::Null });
+        let issues = state["issues"].as_array().unwrap();
+        for (code, path) in [
+            ("invalid_key", json!(["done", "__proto__"])),
+            ("type_mismatch", json!(["pixels", {"index": 1}])),
+            ("type_mismatch", json!(["pixels", {"index": 2}])),
+            ("type_mismatch", json!(["notes"])),
+            ("type_mismatch", if step == 1 { json!(["cells", "A1"]) } else { json!(["cells", "A1", "tint"]) }),
+        ] {
+            assert!(issues.iter().any(|issue| issue["code"] == code && issue["path"] == path), "missing {code} at {path}: {issues:?}");
+        }
+        let reopened = Document::open(&schema, &d.checkpoint().unwrap(), &[]).unwrap();
+        let fresh = snapshot(&reopened);
+        assert_eq!(fresh["value"], state["value"]);
+        assert_eq!(fresh["issues"], state["issues"]);
     }
 }
 
@@ -206,11 +270,11 @@ fn seeded_chaos_peer_imports_publish_exactly() {
     let f = fixture();
     let mut rng = 0xc4a05u64;
     let mut serial = 0u64;
-    for _round in 0..300 {
+    for _round in 0..support::workload("HITSLOP_CHAOS_ROUNDS", 300) {
         let mut d =
             Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
-        let mut projected = snapshot(&d)["value"].clone();
-        for step in 0..40 {
+        let mut projected = View::of(&d);
+        for step in 0..support::workload("HITSLOP_CHAOS_STEPS", 40) {
             if step % 5 == 4 {
                 // Two peers from the same base: concurrent structural edits.
                 let (a, b) = (peer_of(&d), peer_of(&d));
@@ -240,13 +304,50 @@ fn seeded_chaos_peer_imports_publish_exactly() {
             if let Some(first) = view["value"]["rows"].as_array().and_then(|r| r.first()) {
                 let op = json!({"intents":[{"type":"set","path":["rows",{"id":first["$id"]},"done"],"value":true}]});
                 if let Ok(reply) = d.apply(&op.to_string()) {
-                    let reply: Value = serde_json::from_str(&reply).unwrap();
-                    support::apply_patches(&mut projected, &reply["ops"]);
-                    let fresh = snapshot(&d);
-                    assert_eq!(projected, fresh["value"], "local projection diverged");
-                    assert_eq!(reply["issues"], fresh["issues"]);
+                    projected.publish(&reply);
+                    projected.check(&d, "local");
                 }
             }
         }
     }
+}
+
+// Failure: a duplicated `$id` inside a nested list (a row's tags) must publish that
+// list exactly, be flagged, and leave later local and remote edits exact.
+#[test]
+fn nested_duplicate_row_ids_publish_exactly_and_are_flagged() {
+    let f: Value = serde_json::from_str(include_str!("../fixtures/nested.json")).unwrap();
+    let schema = f["schema"].to_string();
+    let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
+    let mut projected = View::of(&d);
+    let tags = |peer: &LoroDoc| match row(&rows(peer).unwrap(), 0).unwrap().get("tags").unwrap() {
+        ValueOrContainer::Container(Container::MovableList(list)) => list,
+        other => panic!("expected tags list, got {other:?}"),
+    };
+    let peer = peer_of(&d);
+    let from = peer.oplog_vv();
+    let list = tags(&peer);
+    let dup = list.insert_container(list.len(), LoroMap::new()).unwrap();
+    dup.insert("$id", "tag1").unwrap();
+    dup.insert_container("label", LoroText::new()).unwrap().insert(0, "copy").unwrap();
+    dup.insert("on", true).unwrap();
+    peer.commit();
+    deliver(&mut d, &mut projected, &peer, &from);
+    let state = snapshot(&d);
+    let issues = state["issues"].as_array().unwrap();
+    assert!(issues.iter().any(|issue| issue["code"] == "duplicate_id"
+        && issue["path"].as_array().is_some_and(|path| path.contains(&json!("tags")))), "{issues:?}");
+    // A local edit elsewhere and a remote edit inside the anomalous list stay exact.
+    projected.publish(&d.apply(&json!({"intents":[
+        {"type":"set","path":["rows",{"id":"row2"},"meta","pinned"],"value":false}
+    ]}).to_string()).unwrap());
+    projected.check(&d, "local");
+    let peer = peer_of(&d);
+    let from = peer.oplog_vv();
+    row(&tags(&peer), 1).unwrap().insert("on", false).unwrap();
+    peer.commit();
+    deliver(&mut d, &mut projected, &peer, &from);
+    let reopened = Document::open(&schema, &d.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(snapshot(&reopened)["value"], snapshot(&d)["value"]);
+    assert_eq!(snapshot(&reopened)["issues"], snapshot(&d)["issues"]);
 }

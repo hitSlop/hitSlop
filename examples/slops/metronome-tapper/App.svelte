@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, bindValue, useDocument } from "@hitslop/document/svelte";
+  import { bindValue, useDocument } from "@hitslop/document/svelte";
   import Play from "@lucide/svelte/icons/play";
   import Square from "@lucide/svelte/icons/square";
   import Volume2 from "@lucide/svelte/icons/volume-2";
@@ -253,8 +253,8 @@
   });
 </script>
 
-<Slop>
-<main class="metronome-shell" data-slop-selection="none" aria-label="Metronome">
+
+<main class="metronome-shell" aria-label="Metronome">
   <header class="chassis-head">
     <span class="screw" aria-hidden="true"></span>
     <p>PRECISION TEMPO</p>
@@ -392,82 +392,3 @@
     </div>
   </section>
 </main>
-
-{#snippet exportView()}
-  <main class="metronome-shell" aria-label="Exported metronome">
-    <header class="chassis-head">
-      <span class="screw" aria-hidden="true"></span>
-      <p>PRECISION TEMPO</p>
-      <span class="screw" aria-hidden="true"></span>
-    </header>
-
-    <section class="display-card">
-      <div class="display-readout">
-        <strong class="bpm-digits">{doc.current.bpm}</strong>
-        <span class="bpm-unit">BPM</span>
-      </div>
-      <p class="tempo-descriptor">{tempoName}</p>
-      <div class="beat-lights" aria-label={`${beatsPerBar} beats per bar`}>
-        {#each Array(beatsPerBar) as _, index}
-          <span class="beat-dot" class:accent={index === 0}></span>
-        {/each}
-      </div>
-    </section>
-
-    <section class="pendulum-chamber" aria-hidden="true">
-      <div class="scale-grooves">
-        <span>200</span>
-        <span>160</span>
-        <span>120</span>
-        <span>90</span>
-        <span>60</span>
-      </div>
-      <div class="pendulum-arm" style:transform="rotate({CAPTURE_ANGLE}deg)" style:--weight={weight}>
-        <div class="brass-rod"></div>
-        <div class="brass-weight"><i></i></div>
-        <div class="pendulum-pivot"></div>
-      </div>
-    </section>
-
-    <section class="controls-panel">
-      <div class="settings-row">
-        <div class="time-sig-selector" aria-label="Time signature">
-          {#each signatures as value}
-            <span class="sig-btn" data-state={doc.current.signature === value ? "checked" : undefined}>{value}</span>
-          {/each}
-        </div>
-        <span class="mute-toggle" data-state={doc.current.muted ? "on" : undefined}>{doc.current.muted ? "MUTE" : "CLICK"}</span>
-      </div>
-    </section>
-  </main>
-{/snippet}
-
-{#snippet icon()}
-  <div style="width:512px;height:512px;display:grid;place-items:center" aria-hidden="true">
-    <article class="metronome-icon">
-      <div class="icon-top-plate">
-        <span class="icon-brand-dot"></span>
-        <span class="icon-brand-text">TEMPO INSTRUMENT</span>
-      </div>
-      <div class="icon-face">
-        <div class="icon-bpm-card">
-          <span class="icon-bpm-num">{doc.current.bpm}</span>
-          <span class="icon-bpm-lbl">{tempoName}</span>
-        </div>
-        <div class="icon-pendulum-chamber">
-          <div class="icon-scale-lines">
-            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-          </div>
-          <div class="icon-rod">
-            <div class="icon-weight"></div>
-          </div>
-        </div>
-      </div>
-      <div class="icon-controls">
-        <span class="icon-tap-btn">TAP</span>
-        <span class="icon-play-btn">▶</span>
-      </div>
-    </article>
-  </div>
-{/snippet}
-</Slop>

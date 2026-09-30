@@ -26,5 +26,6 @@ XCFramework, so CI test architecture does not dictate the release architecture.
 Generated XCFramework and Swift bindings are disposable and excluded from Git. TypeBox owns wire types;
 run `bun run schema:generate`, never edit `wire.generated.rs` manually.
 
-The Swift owner stores the core's checkpoint and update bytes in
-`state/document.sqlite`; see [the engineering contract](../docs/engineering-contract.md).
+The core's `store` persists the checkpoint, the update log and the theme overrides in
+`state/document.sqlite`, and owns the writer lock; the Swift owner only schedules saves.
+See [the architecture](../docs/architecture.md).

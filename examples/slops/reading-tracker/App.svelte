@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText, useDocument } from "@hitslop/document/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { RadioGroup, Select, ToggleGroup, Button, Dialog } from "bits-ui";
@@ -64,8 +64,8 @@
   }
 </script>
 
-<Slop>
-  <main class="card" data-slop-selection="none" aria-label="Personal reading list">
+
+  <main class="card" aria-label="Personal reading list">
     <article class="pocket">
       <header class="header">
         <div class="identity">
@@ -190,69 +190,3 @@
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>
-
-  {#snippet exportView()}
-    <article class="exportCard" aria-label="Exported reading list">
-      <header class="header">
-        <div class="identity">
-          <h1 class="masthead">Reading list</h1>
-          <div class="memberRow">
-            <span class="memberName">{doc.current.memberName.trim() || "Cardholder"}</span>
-            {#if doc.current.memberName.trim() && doc.current.memberSince.trim()}<span aria-hidden="true">·</span>{/if}
-            <span class="memberSince">{doc.current.memberSince}</span>
-          </div>
-        </div>
-        <div class="finishedCount" aria-label="{readBooks} books finished"><strong>{readBooks}</strong><span>finished</span></div>
-      </header>
-
-      <div class="ledger">
-        <div class="head" aria-hidden="true">
-          <span>Title</span>
-          <span>Author</span>
-          <span>Rating</span>
-          <span>Status</span>
-        </div>
-        <ul class="list" aria-label="Reading list">
-          {#each doc.current.books as book (book.$id)}
-            <li class="row exportRow">
-              <span class="bookSpine" data-status={book.status} aria-hidden="true"><BookOpen size={19} strokeWidth={1.5} /></span>
-              <div class="bookInfo">
-                <span class="titleCell">{book.title.trim() || "Untitled book"}</span>
-                <span class="authorCell">{book.author.trim() || "Unknown Author"}</span>
-              </div>
-              <span class="stars" aria-label="{book.rating} of 5 stars">
-                {#each STARS as star}
-                  <span class="star" data-filled={star <= book.rating} aria-hidden="true"><Star size={15} fill={star <= book.rating ? "currentColor" : "none"} strokeWidth={1.6} /></span>
-                {/each}
-              </span>
-              <span class="statusPill" data-status={book.status}>{book.status || "To Read"}</span>
-              {#if book.notes?.trim()}<div class="exportNotes"><strong>Notes</strong><p>{book.notes}</p></div>{/if}
-            </li>
-          {:else}
-            <li class="empty"><h2>Your next chapter starts here.</h2></li>
-          {/each}
-        </ul>
-      </div>
-
-      <footer class="foot">
-        <span>{readBooks} of {totalBooks} books finished</span>
-        <span>One book at a time.</span>
-      </footer>
-    </article>
-  {/snippet}
-
-  {#snippet icon()}
-    <div class="iconSurface" aria-hidden="true">
-      <svg class="iconGraphic" viewBox="0 0 512 512" fill="none">
-        <rect x="28" y="28" width="456" height="456" rx="104" fill="var(--slop-stamp)"/>
-        <rect x="102" y="111" width="76" height="294" rx="12" fill="#d8c9ed"/>
-        <path d="M120 148H160M120 367H160" stroke="var(--slop-stamp)" stroke-width="8" stroke-linecap="round"/>
-        <rect x="194" y="87" width="100" height="318" rx="12" fill="var(--slop-paper)"/>
-        <path d="M225 87H263V222L244 207L225 222Z" fill="#d994b5"/>
-        <rect x="308" y="144" width="72" height="261" rx="12" transform="rotate(-9 308 144)" fill="#ead7e3"/>
-        <path d="M91 416H429" stroke="#d994b5" stroke-width="12" stroke-linecap="round"/>
-        {#if totalBooks > 0 && readBooks === totalBooks}<path d="M219 322L242 345L274 300" stroke="var(--slop-read)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>{/if}
-      </svg>
-    </div>
-  {/snippet}
-</Slop>

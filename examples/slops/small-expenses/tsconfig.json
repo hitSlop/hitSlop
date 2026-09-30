@@ -1,5 +1,5 @@
 {
-  "extends": "../../../tsconfig.v1.json",
+  "extends": "../../../tsconfig.json",
   "include": [
     "./**/*.svelte",
     "./**/*.ts"

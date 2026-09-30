@@ -1,3 +1,5 @@
+import type { Sheet } from "./schema";
+
 export const RING: [number, number][] = [
   [0, 0], [0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1], [2, 2],
 ];
@@ -67,4 +69,20 @@ export function formatDate(value: string): string {
   const parsed = new Date(`${value}T00:00:00`);
   if (Number.isNaN(parsed.valueOf())) return "";
   return `${parsed.getDate()} ${MONTHS[parsed.getMonth()]} ${parsed.getFullYear()}`;
+}
+
+/** The editor and export read cells and progress from the same snapshot. */
+export function sheetView(sheet: Sheet) {
+  return {
+    doneCount: Object.values(sheet.done).filter(Boolean).length,
+    deadlineText: formatDate(sheet.deadline),
+    isDone: (theme: number, action: number) => sheet.done[keyOf(theme, action)] === true,
+    textOf(cell: Cell): string {
+      if (cell.role === "goal") return sheet.goal;
+      const theme = sheet.themes[cell.theme];
+      if (!theme) return "";
+      if (cell.role === "theme") return theme.title;
+      return theme.cells[cell.action] ?? "";
+    },
+  };
 }

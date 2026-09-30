@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+  import { useDocument } from "@hitslop/document/svelte";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
   import PaintBucket from "@lucide/svelte/icons/paint-bucket";
@@ -176,8 +176,8 @@
   }
 </script>
 
-<Slop>
-<main class="shell" data-slop-selection="none" aria-label="Pixel art studio">
+
+<main class="shell" aria-label="Pixel art studio">
   <header class="brand">
     <span class="brandDot"></span>
     <strong>SPRITE POCKET</strong>
@@ -254,34 +254,3 @@
     </div>
   </footer>
 </main>
-
-{#snippet exportView()}
-  <article class="exportSheet" aria-label="Exported 16 by 16 sprite">
-    <div class="exportBezel">
-      <div class="exportGrid">
-        {#each doc.current.pixels as color, index (index)}
-          <span class="cell" style:background={color || "transparent"}></span>
-        {/each}
-      </div>
-    </div>
-  </article>
-{/snippet}
-
-{#snippet icon()}
-  <div class="iconSurface" aria-hidden="true">
-    <article class="iconBody">
-      <div class="iconBezel">
-        <div class="iconScreen">
-          {#each Array.from({ length: 64 }, (_, index) => index) as index}
-            <i class="iconPixel" data-on={FACE.has(index)}></i>
-          {/each}
-        </div>
-      </div>
-      <div class="iconControls">
-        <span class="iconDpad"></span>
-        <span class="iconBtns"><i class="iconBtn iconBtnOffset"></i><i class="iconBtn"></i></span>
-      </div>
-    </article>
-  </div>
-{/snippet}
-</Slop>

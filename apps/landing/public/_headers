@@ -1,0 +1,6 @@
+/embed/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; frame-src https://www.youtube-nocookie.com; base-uri 'none'; form-action 'none'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Robots-Tag: noindex
+  Cache-Control: public, max-age=3600

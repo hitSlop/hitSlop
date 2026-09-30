@@ -6,7 +6,7 @@ import { readdir, mkdir } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
 // Built apps import nothing from the runtime and reach the host only through ctx.
 test("apps contain no runtime code and cannot reach the engine, bridge or remote boot resources", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await copySourceFixture("examples/slops/quick-checklist", source);
@@ -17,8 +17,8 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
     expect(await readdir(output)).not.toContain("app.html");
     const entry = 'import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);\n';
     for (const [code, error] of [
+      // Apps never embed a document engine; the host's core owns the document.
       ['import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());', "cannot import loro-crdt"],
-      ['import {Document} from "@hitslop/document/runtime"; console.log(Document);', "cannot import @hitslop/document/runtime"],
       ['const runtime = await import("/__shell__/index.js"); console.log(runtime);', "cannot import /__shell__/index.js"],
       ["globalThis.webkit.messageHandlers.storage.postMessage({ method: 'ready' });", "host bridge"],
       ['import "./remote.css";', "remote stylesheets, fonts or scripts"],
@@ -32,8 +32,8 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
   }
 }, 60000);
 
-test("init creates a buildable v1 source and refuses to overwrite it", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+test("init creates a buildable source and refuses to overwrite it", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "starter");
   try {
     const run = () =>
@@ -53,7 +53,7 @@ test("init creates a buildable v1 source and refuses to overwrite it", async () 
 }, 60000);
 
 test("build paths and fresh source evaluation do not depend on authored stdout", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source with spaces");
     await cp("packages/cli/templates/checklist", source, { recursive: true });
@@ -78,7 +78,7 @@ test("build paths and fresh source evaluation do not depend on authored stdout",
 }, 60000);
 
 test("copied fonts retain their URLs without duplicate bundles", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await copySourceFixture("examples/slops/quick-checklist", source);
@@ -123,7 +123,7 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
 // Remote cache keys exclude checkout paths. Identical sources must therefore emit
 // identical portable bytes; the existing build tests use only one source location.
 test("Svelte styles compile identically in different checkout locations", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const outputs: string[] = [];
     for (const location of ["first-checkout", "second-checkout"]) {
@@ -143,5 +143,39 @@ test("Svelte styles compile identically in different checkout locations", async 
     expect(outputs[0]).toBe(outputs[1]);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
+for (const [name, properties, initial, code] of [
+  ["oversized string bound", '{value:s.string({maxLength:5_000_000})}', { value: "" }, "invalid_schema"],
+  ["optional handle name", '{value:s.optional(s.object({set:s.string()}))}', {}, "invalid_schema"],
+  ["invalid row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "bad id", value: "" }] }, "invalid_id"],
+  ["duplicate row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "same", value: "a" }, { $id: "same", value: "b" }] }, "duplicate_id"],
+] as const) test(`build enforces core validation: ${name}`, async () => {
+  const root = await mkdtemp(join(process.cwd(), ".core-validation-test-"));
+  try {
+    const source = join(root, "source");
+    await copySourceFixture("examples/slops/quick-checklist", source);
+    await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from '@hitslop/document'; export default defineDocument(${properties});`);
+    await writeFile(join(source, "initial.ts"), `export default ${JSON.stringify(initial)};`);
+    await expect(buildProject(source, join(root, "invalid.slop"))).rejects.toThrow(code);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("custom main owns registration and conventional capture discovery is exact-case", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    const source = join(root, "source");
+    await cp("packages/cli/templates/checklist", source, { recursive: true });
+    await writeFile(join(source, "Export.svelte"), '<script>const = ;</script>');
+    await writeFile(join(source, "main.ts"), 'export default {mount(){return {rendered(){},unmount(){}}}};');
+    await buildProject(source, join(root, "custom.slop"));
+    await rm(join(source, "main.ts"));
+    await expect(buildProject(source, join(root, "discovered.slop"))).rejects.toThrow();
+    await rm(join(source, "Export.svelte"));
+    await writeFile(join(source, "export.svelte"), '<script>const = ;</script>');
+    await buildProject(source, join(root, "lowercase.slop"));
+  } finally {
+    await rm(root, {recursive: true, force: true});
   }
 }, 60000);

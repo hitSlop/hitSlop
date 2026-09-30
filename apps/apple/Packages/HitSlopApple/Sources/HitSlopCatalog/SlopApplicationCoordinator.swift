@@ -4,7 +4,7 @@ import HitSlopCore
 import HitSlopFeatures
 import HitSlopFirebase
 import HitSlopHost
-import HitSlopRuntime
+import HitSlopDocument
 import SwiftUI
 
 /// The macOS composition root. Stores own decisions; services own native resources.
@@ -20,7 +20,7 @@ import SwiftUI
 
     private var previousDocumentCount = 0
 
-    public convenience init(templatesURL: URL = DocumentFactory.defaultTemplatesRoot) {
+    public convenience init(templatesURL: URL = SlopTemplateLocation.defaultTemplatesRoot) {
         self.init(templatesURL: templatesURL, presentsWindows: true)
     }
 
@@ -43,7 +43,7 @@ import SwiftUI
             if self.presentsWindows, let alert = self.store.alert {
                 self.alerts.enqueue(alert, window: NSApp.keyWindow ?? self.catalogWindow?.window, isCurrent: { [weak self] in
                     self?.store.alert?.id == alert.id
-                }, dismiss: { [weak self] in self?.store.send(.alert(.dismiss)) }, send: { [weak self] action in self?.store.send(.alert(.presented(action))) })
+                }, dismiss: { [weak self] in self?.store.send(.alert(.dismiss)) })
             }
         }
     }
@@ -81,12 +81,12 @@ import SwiftUI
             return
         }
         let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
-        if DocumentFactory.isManagedTemplatePackage(canonical, templatesRoot: catalogServices.templatesURL) {
+        if SlopTemplateLocation.isManagedTemplatePackage(canonical, templatesRoot: catalogServices.templatesURL) {
             showCatalog()
             Task { do {
                 let package = try await SlopPreparation.run {
                     let package = try SlopPackage(rootURL: canonical)
-                    try package.validateAsTemplate(requirePreview: false)
+                    try package.validateAsTemplate()
                     return package
                 }
                 guard store.quitPhase == .running else { return }
@@ -116,15 +116,15 @@ import SwiftUI
     }
     private func connect(_ id: UUID, controller: SlopDocumentWindowController) {
         controller.onCommand = { [weak self] command in self?.send(.command(command), to: id) }
-        controller.onRuntimeReady = { [weak self] in
+        controller.onPageReady = { [weak self] in
             self?.catalogWindow?.window?.orderOut(nil)
-            self?.send(.runtimeReady, to: id)
+            self?.send(.pageReady, to: id)
         }
-        controller.onRuntimeFailure = { [weak self] message in self?.send(.runtimeFailed(message), to: id) }
+        controller.onPageFailure = { [weak self] message in self?.send(.pageFailed(message), to: id) }
         controller.onClose = { [weak self] in self?.documentObservations.removeValue(forKey: id) }
         if let document = store.scope(state: \.documents[id: id], action: \.documents[id: id]) {
             documentObservations[id] = observe { [weak self, weak controller] in
-                controller?.updatePresentation(pinned: document.isPinned, commandsEnabled: document.acceptsCommands, runtimeError: document.runtimeError)
+                controller?.updatePresentation(pinned: document.isPinned, commandsEnabled: document.acceptsCommands, pageError: document.pageError)
                 if self?.presentsWindows == true, let alert = document.alert {
                     self?.alerts.enqueue(alert, window: controller?.window, isCurrent: { [weak self] in
                         self?.store.documents[id: id]?.alert?.id == alert.id
@@ -165,7 +165,7 @@ import SwiftUI
         return controller
     }
     private func open(_ id: UUID, url: URL) async throws -> String {
-        guard !DocumentFactory.isManagedTemplatePackage(url, templatesRoot: templatesURL) else {
+        guard !SlopTemplateLocation.isManagedTemplatePackage(url, templatesRoot: templatesURL) else {
             throw SlopPackageError.invalid("Create a document from this template before opening it.")
         }
         try Task.checkCancellation()

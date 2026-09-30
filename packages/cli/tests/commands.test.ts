@@ -136,7 +136,6 @@ test("help and version do not invoke native or authoring handlers", async () => 
       ["get", "--help"],
       ["skills", "--help"],
       ["skill", "-h"],
-      ["skills", "update", "--help"],
       ["skills", "install", "--help"],
       ["skills", "repair", "--help"],
       ["skills", "uninstall", "--help"],
@@ -164,13 +163,27 @@ test("invalid input fails before opening documents or building source", async ()
     ["get"],
     ["get", "missing.slop", "--wat"],
     ["apply", "missing.slop"],
-    ["import", "missing.slop", "--file", "data.json"],
-    ["compact", "missing.slop", "--id", "retry"],
+    ["batch", "missing.slop"],
+    ["compact", "missing.slop", "--wat"],
+    ["theme", "set", "missing.slop"],
+    ["attachments", "export", "missing.slop", "id"],
     ["export", "missing.slop", "--format", "jpeg", "--output", "x"],
     ...["0", "65536", "1.5", "NaN"].map((port) => ["dev", "missing-source", "--port", port]),
   ]) {
     const result = await run(args, { HITSLOP_NATIVE_CLI: "/nonexistent" });
     expect(result.code).not.toBe(0);
     expect(result.stderr).not.toContain("HITSLOP_NATIVE_CLI");
+  }
+});
+
+test("mistyped commands suggest the intended command", async () => {
+  for (const [args, suggestion] of [
+    [["gte", "missing.slop"], "get"],
+    [["theme", "gett", "missing.slop"], "get"],
+    [["skils"], "skills"],
+  ] as const) {
+    const result = await run([...args], { HITSLOP_NATIVE_CLI: "/nonexistent" });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`Did you mean "${suggestion}"?`);
   }
 });

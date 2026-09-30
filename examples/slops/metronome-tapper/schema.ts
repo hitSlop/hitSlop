@@ -10,6 +10,6 @@ const schema = defineDocument({
   presets: s.list(s.integer({ min: 40, max: 240 })),
 });
 
-export type MetronomeState = Value<typeof schema.fields.node>;
+export type MetronomeState = Value<typeof schema.descriptor>;
 export type TimeSignature = MetronomeState["signature"];
 export default schema;

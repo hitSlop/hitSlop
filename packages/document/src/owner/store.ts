@@ -1,8 +1,11 @@
+import { PushLimits } from "@hitslop/schema/constants";
+import { isOperationRejection, OwnerError } from "../errors";
 // The page's immutable projection of owner state. No CRDT: it applies the owner's
 // publications in sequence order and resyncs from a fresh snapshot on any gap.
 import type { OwnerPatchOp, OwnerPublication, OwnerState, PagePush } from "@hitslop/schema/owner";
+import type { Opened } from "./transport";
 
-export type Segment = string | { id: string } | { index: number };
+import type { Segment } from "../schema";
 
 // Snapshot arrays are immutable, so one `$id → index` map per array serves every reader.
 const rowIndexes = new WeakMap<readonly any[], Map<string, number>>();
@@ -31,6 +34,26 @@ function freeze(value: any, fresh: Set<object>) {
   if (!fresh.has(value)) return;
   for (const child of Object.values(value)) freeze(child, fresh);
   Object.freeze(value);
+}
+/** Applies a text change counted in Unicode code points of `text`, as the core counts. */
+function applyText(text: string, delta: readonly ({ retain: number } | { insert: string } | { delete: number })[]) {
+  let out = "",
+    at = 0;
+  const advance = (count: number) => {
+    const start = at;
+    for (let i = 0; i < count; i++) {
+      if (at >= text.length) throw new Error("Text publication exceeds its field");
+      const unit = text.charCodeAt(at);
+      at += unit >= 0xd800 && unit <= 0xdbff ? 2 : 1;
+    }
+    return text.slice(start, at);
+  };
+  for (const hunk of delta) {
+    if ("retain" in hunk) out += advance(hunk.retain);
+    else if ("delete" in hunk) advance(hunk.delete);
+    else out += hunk.insert;
+  }
+  return out + text.slice(at);
 }
 function deepFreeze(value: any) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return;
@@ -70,15 +93,14 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
     const parentPath = op.path.slice(0, -1) as Segment[];
     const last = op.path.at(-1) as Segment;
     switch (op.type) {
-      case "set": {
-        if (!op.path.length) {
-          root = op.value;
-          break;
-        }
+      case "set":
+      case "text": {
         const parent = owned(parentPath);
         const key = typeof last === "string" ? last : "index" in last ? last.index : indexOf(parent, last.id);
         if (typeof key === "number" && (key < 0 || key >= parent.length)) throw new Error("Missing publication row");
-        parent[key] = op.value;
+        if (op.type === "set") parent[key] = op.value;
+        else if (typeof parent[key] === "string") parent[key] = applyText(parent[key], op.delta);
+        else throw new Error("Text publication for a value that is not text");
         break;
       }
       case "remove": {
@@ -110,119 +132,201 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
   return root;
 }
 
-export type Changes = { paths: Set<string> } | "all";
+export type Changes = { paths: Set<string>; removed?: Segment[][] } | "all";
+
+/** Timing and buffer bounds are injectable for deterministic boundary tests. Buffer bytes
+ * are UTF-8, as the host counts them. */
+export const recoveryPolicy = { stallMS: 2000, deadlineMS: 15000, retryMS: 250, maxRetryMS: 4000,
+  maxItems: PushLimits.items as number, maxBytes: PushLimits.bytes as number };
+const utf8 = new TextEncoder();
 
 /** Sequence-ordered state plus save status, fed by `open` and the push stream. */
 export class Store {
-  state: OwnerState;
-  savedSequence: number;
-  saveFailure: string | null;
+  state: OwnerState = { sequence: 0, version: "", value: undefined, issues: [] };
+  savedSequence = 0;
+  saveFailure: string | null = null;
+  failure: Error | undefined;
   private opened = false;
   private buffered: PagePush[] = [];
+  private bufferedBytes = 0;
+  private bufferGeneration = 0;
   private resyncing?: Promise<void>;
-  private waiters: { sequence: number; resolve(): void; reject(error: unknown): void }[] = [];
+  private watchdog?: ReturnType<typeof setTimeout>;
+  private waiters: { sequence: number; deadline: number; resolve(): void; reject(error: unknown): void }[] = [];
 
   constructor(
-    private readonly reopen: () => Promise<{ state: OwnerState; savedSequence: number; saveFailure: string | null }>,
+    private readonly reopen: () => Promise<Opened>,
     private readonly changed: (changes: Changes) => void,
-  ) {
-    this.state = { sequence: 0, version: "", value: undefined, issues: [] };
-    this.savedSequence = 0;
-    this.saveFailure = null;
-  }
-  /** Installs an `open` reply, then applies pushes that arrived before it. */
-  load(opened: { state: OwnerState; savedSequence: number; saveFailure: string | null }) {
+    private readonly policy = recoveryPolicy,
+  ) {}
+
+  private install(opened: Opened) {
     deepFreeze(opened.state.value);
     deepFreeze(opened.state.issues);
     this.state = opened.state;
-    this.savedSequence = Math.max(this.opened ? this.savedSequence : 0, opened.savedSequence);
+    this.savedSequence = opened.savedSequence;
     this.saveFailure = opened.saveFailure;
     this.opened = true;
-    const buffered = this.buffered;
-    this.buffered = [];
-    this.settle();
-    this.changed("all");
-    if (buffered.length) this.publish(buffered);
   }
-  /** Processes pushes in order; publications at or below the current sequence are old. */
-  publish(pushes: readonly PagePush[]) {
-    if (!this.opened || this.resyncing) {
-      this.buffered.push(...pushes);
-      return;
+  /** Install the snapshot and all buffered publications before resolving writers. */
+  load(opened: Opened) {
+    this.install(opened);
+    const buffered = this.takeBuffer();
+    if (!this.consume(buffered)) { this.recover(); return; }
+    this.changed("all");
+    this.settle();
+  }
+  private buffer(pushes: readonly PagePush[]) {
+    for (const push of pushes) {
+      const bytes = utf8.encode(JSON.stringify(push)).length;
+      if (push.type === "resync" || this.buffered.length >= this.policy.maxItems ||
+          this.bufferedBytes + bytes > this.policy.maxBytes) {
+        this.buffered = [];
+        this.bufferedBytes = 0;
+        this.bufferGeneration++;
+        // A marker forces another snapshot if overflow races an in-flight open.
+        this.buffered.push({ type: "resync", view: push.view });
+        continue;
+      }
+      this.buffered.push(push);
+      this.bufferedBytes += bytes;
     }
+  }
+  private takeBuffer() {
+    const result = this.buffered;
+    this.buffered = [];
+    this.bufferedBytes = 0;
+    return result;
+  }
+  /** A flush or `saved` push confirmed every edit up to `sequence` durable. */
+  markSaved(sequence: number) {
+    this.savedSequence = Math.max(this.savedSequence, sequence);
+    this.saveFailure = null;
+  }
+  markSaveFailed(message: string) {
+    this.saveFailure = message;
+  }
+  publish(pushes: readonly PagePush[]) {
+    if (!this.opened || this.resyncing || this.failure) { this.buffer(pushes); return; }
+    if (!this.consume(pushes)) { this.recover(); return; }
+    this.settle();
+  }
+  /** Returns false when continuity requires a fresh snapshot. */
+  private consume(pushes: readonly PagePush[]): boolean {
     const paths = new Set<string>();
+    const removed: Segment[][] = [];
     let touched = false;
+    // Every exit announces what was applied; `rest` waits for the fresh snapshot.
+    const finish = (complete: boolean, rest: readonly PagePush[] = []) => {
+      this.buffer(rest);
+      if (touched) this.changed({ paths, removed });
+      return complete;
+    };
     for (const [i, push] of pushes.entries()) {
+      if (push.type === "resync") return finish(false, pushes.slice(i + 1));
       if (push.type === "saved") {
-        this.savedSequence = Math.max(this.savedSequence, push.sequence);
-        this.saveFailure = null;
+        this.markSaved(push.sequence);
         touched = true;
       } else if (push.type === "failed") {
-        this.saveFailure = push.error;
+        this.markSaveFailed(push.error);
         touched = true;
       } else {
         const p: OwnerPublication = push.publication;
         if (p.sequence <= this.state.sequence) continue;
-        if (p.previous !== this.state.sequence) {
-          // A gap: never guess. Reload the snapshot; later pushes wait for it.
-          if (touched) this.changed({ paths });
-          this.buffered.push(...pushes.slice(i));
-          void this.resync();
-          return;
-        }
+        if (p.previous !== this.state.sequence) return finish(false, pushes.slice(i));
         let value;
-        try {
-          value = applyOps(this.state.value, p.ops);
-        } catch {
-          this.buffered.push(...pushes.slice(i));
-          void this.resync();
-          return;
-        }
-        deepFreeze(p.issues);
-        this.state = { sequence: p.sequence, version: p.version, value, issues: p.issues };
+        try { value = applyOps(this.state.value, p.ops); }
+        catch { return finish(false, pushes.slice(i)); }
+        // Issues arrive only when they change.
+        const issues = p.issues ?? this.state.issues;
+        deepFreeze(issues);
+        this.state = { sequence: p.sequence, version: p.version, value, issues };
         for (const op of p.ops) {
           const path = op.type === "deleteRow" ? [...op.path, { id: op.id }] : op.path;
-          // Inserting or moving a row changes no bound field; rows are found by ID.
+          if (op.type === "deleteRow" || op.type === "remove") removed.push(path);
           if (op.type !== "insertRow" && op.type !== "moveRow") paths.add(JSON.stringify(path));
         }
         touched = true;
       }
     }
-    this.settle();
-    if (touched) this.changed({ paths });
+    return finish(true);
   }
-  /** Replaces the state with a fresh snapshot after a gap or a failed apply. */
+  private recover() { void this.resync().catch(() => {}); }
+  private timeout() {
+    return new OwnerError("unknown_outcome", "Document publication recovery timed out; retry loading current state before editing");
+  }
+  /** Recovery only reads owner state. Accepted mutations are never replayed. */
   resync(): Promise<void> {
-    return (this.resyncing ??= (async () => {
+    if (this.resyncing) return this.resyncing;
+    clearTimeout(this.watchdog);
+    const deadline = Math.min(Date.now() + this.policy.deadlineMS, ...this.waiters.map(w => w.deadline));
+    const work = (async () => {
+      let delay = this.policy.retryMS;
       try {
-        const opened = await this.reopen();
-        const buffered = this.buffered;
-        this.buffered = [];
-        this.resyncing = undefined;
-        this.opened = false;
-        this.load(opened);
-        if (buffered.length) this.publish(buffered);
+        while (true) {
+          if (Date.now() >= deadline) throw this.timeout();
+          const generation = this.bufferGeneration;
+          // Older buffered pushes are included by the snapshot requested now.
+          this.takeBuffer();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            const opened = await Promise.race([
+              this.reopen(),
+              new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(this.timeout()), Math.max(0, deadline - Date.now()));
+              }),
+            ]);
+            if (generation !== this.bufferGeneration) continue;
+            this.install(opened);
+            if (!this.consume(this.takeBuffer())) continue;
+            this.failure = undefined;
+            this.changed("all");
+            this.settle();
+            return;
+          } catch (error) {
+            if (isOperationRejection(error) || error instanceof OwnerError && ["owner_invalidated", "owner_replaced", "closing"].includes(error.code)) throw error;
+            if (Date.now() >= deadline) throw this.timeout();
+          } finally { clearTimeout(timer); }
+          await new Promise(resolve => setTimeout(resolve, Math.min(delay, Math.max(0, deadline - Date.now()))));
+          delay = Math.min(delay * 2, this.policy.maxRetryMS);
+        }
       } catch (error) {
-        this.resyncing = undefined;
-        this.rejectAll(error);
+        this.failure = error instanceof Error ? error : new Error(String(error));
+        this.rejectAll(this.failure);
+        this.changed("all");
+        throw this.failure;
       }
-    })());
+    })();
+    this.resyncing = work.finally(() => { this.resyncing = undefined; this.armWatchdog(); });
+    return this.resyncing;
   }
-  /** Resolves once the state includes publication `sequence`. */
+  assertWritable() { if (this.failure) throw this.failure; }
   reached(sequence: number): Promise<void> {
-    if (this.state.sequence >= sequence) return Promise.resolve();
-    return new Promise((resolve, reject) => this.waiters.push({ sequence, resolve, reject }));
+    if (this.failure) return Promise.reject(this.failure);
+    if (this.state.sequence >= sequence && !this.resyncing) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ sequence, deadline: Date.now() + this.policy.deadlineMS, resolve, reject });
+      this.armWatchdog();
+    });
   }
-  rejectAll(error: unknown) {
+  private rejectAll(error: unknown) {
+    clearTimeout(this.watchdog);
     const waiters = this.waiters;
     this.waiters = [];
     for (const waiter of waiters) waiter.reject(error);
   }
+  private armWatchdog() {
+    clearTimeout(this.watchdog);
+    if (this.resyncing || this.failure || !this.waiters.length) return;
+    this.watchdog = setTimeout(() => this.recover(), Math.max(0, Math.min(this.policy.stallMS,
+      ...this.waiters.map(w => w.deadline - Date.now()))));
+  }
   private settle() {
-    this.waiters = this.waiters.filter((waiter) => {
+    this.waiters = this.waiters.filter(waiter => {
       if (this.state.sequence < waiter.sequence) return true;
       waiter.resolve();
       return false;
     });
+    this.armWatchdog();
   }
 }

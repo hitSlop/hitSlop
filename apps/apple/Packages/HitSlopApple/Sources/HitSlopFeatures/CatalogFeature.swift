@@ -2,13 +2,31 @@ import ComposableArchitecture
 import Foundation
 import HitSlopCore
 
+extension SlopCategory {
+    public var label: String { self == .developerTools ? "Developer Tools" : rawValue.capitalized }
+    public var emoji: String {
+        switch self {
+        case .productivity: "⚡️"
+        case .utilities: "🪄"
+        case .finance: "🤑"
+        case .media: "🎬"
+        case .games: "🎮"
+        case .developerTools: "👾"
+        case .education: "🎓"
+        case .business: "📊"
+        case .personal: "💖"
+        case .other: "🎲"
+        }
+    }
+}
+
 public enum CatalogFilter: Hashable, Sendable {
-    case all, recents, category(String)
+    case all, recents, category(SlopCategory)
     public var title: String {
         switch self {
         case .all: "Templates"
         case .recents: "Recents"
-        case .category(let id): id == "developer-tools" ? "Developer Tools" : id.capitalized
+        case .category(let category): category.label
         }
     }
 }
@@ -29,9 +47,10 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     public var id: String
     public var source: Source
     public var title: String
+    public var slug = ""
     public var isBundled = false
     public var description = ""
-    public var categories: [String] = []
+    public var categories: [SlopCategory] = []
     public var authorName: String?
     public var authorURL: URL?
     public var icons: [CatalogArtwork] = []
@@ -48,7 +67,8 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     }
     public var displayTitle: String { documentIdentity?.filename ?? title }
     public var searchableText: String {
-        ([title, description, authorName ?? "", documentIdentity?.path ?? "", documentIdentity?.folderPath ?? ""] + categories)
+        ([title, description, authorName ?? "", documentIdentity?.path ?? "", documentIdentity?.folderPath ?? ""]
+            + categories.flatMap { [$0.rawValue, $0.label] })
             .joined(separator: " ").localizedLowercase
     }
 }
@@ -62,8 +82,11 @@ public struct CatalogSnapshot: Equatable, Sendable {
 @DependencyClient
 public struct CatalogClient: Sendable {
     public var local: @Sendable () async -> AsyncStream<CatalogSnapshot> = { .finished }
-    public var refreshLocal: @Sendable () async -> Void
+    /// Rescans installed templates; unless `force`, only when no folder watcher sees changes.
+    public var refreshLocal: @Sendable (_ force: Bool) async -> Void
     public var recents: @Sendable () async -> [CatalogEntry] = { [] }
+    /// The recent document at a URL, read again after its artwork changed.
+    public var recent: @Sendable (URL) async -> CatalogEntry? = { _ in nil }
     /// Returns nil when the destination picker is cancelled.
     public var chooseDestination: @Sendable (CatalogEntry) async throws -> URL?
     /// Copies the template to the chosen destination and returns the new document.
@@ -73,16 +96,17 @@ public struct CatalogClient: Sendable {
 extension CatalogClient: DependencyKey {
     public static let liveValue = Self(
         local: { preconditionFailure("Install CatalogClient at the application root") },
-        refreshLocal: { preconditionFailure("Install CatalogClient at the application root") },
+        refreshLocal: { _ in preconditionFailure("Install CatalogClient at the application root") },
         recents: { preconditionFailure("Install CatalogClient at the application root") },
+        recent: { _ in preconditionFailure("Install CatalogClient at the application root") },
         chooseDestination: { _ in preconditionFailure("Install CatalogClient at the application root") },
         create: { _, _ in preconditionFailure("Install CatalogClient at the application root") }
     )
     public static let testValue = Self()
     /// Explicit fixture for native integration tests that do not display a catalog.
     public static let empty = Self(
-        local: { .finished }, refreshLocal: {},
-        recents: { [] }, chooseDestination: { _ in nil }, create: { _, url in url }
+        local: { .finished }, refreshLocal: { _ in },
+        recents: { [] }, recent: { _ in nil }, chooseDestination: { _ in nil }, create: { _, url in url }
     )
 }
 public extension DependencyValues {
@@ -105,9 +129,9 @@ public extension DependencyValues {
         public var isQuitting = false
         public var recentsGeneration = 0
         public init() {}
-        public var categories: [String] {
+        public var categories: [SlopCategory] {
             let present = Set(local.flatMap(\.categories))
-            return ["productivity", "utilities", "finance", "media", "games", "developer-tools", "education", "business", "personal", "other"].filter { present.contains($0) }
+            return SlopCategory.schemaOrder.filter { present.contains($0) }
         }
         public var visibleEntries: [CatalogEntry] {
             let items: [CatalogEntry]
@@ -126,7 +150,10 @@ public extension DependencyValues {
         }
     }
     public enum Action {
-        case start, refreshRecents, refreshSources
+        /// `refreshSources` rescans everything; `activated` skips templates a watcher covers.
+        case start, refreshRecents, refreshSources, activated
+        /// A package's artwork changed; only its entry is read again.
+        case packageChanged(URL), recentReceived(URL, CatalogEntry?)
         case queryChanged(String), filterChanged(CatalogFilter), selected(String?)
         case localReceived(CatalogSnapshot), recentsReceived(Int, [CatalogEntry])
         case primaryAction(CatalogEntry), destinationChosen(URL?), creationFinished(URL?), creationFailed(String)
@@ -145,11 +172,21 @@ public extension DependencyValues {
                 return .merge(.run { send in
                     for await snapshot in await client.local() { await send(.localReceived(snapshot)) }
                 }.cancellable(id: CancelID.local), recents(&state))
-            case .refreshSources:
+            case .refreshSources, .activated:
                 guard state.isStarted else { return .none }
+                let force = if case .refreshSources = action { true } else { false }
                 return .merge(recents(&state), .run { _ in
-                    await client.refreshLocal()
+                    await client.refreshLocal(force)
                 }.cancellable(id: CancelID.refreshLocal, cancelInFlight: true))
+            case .packageChanged(let url):
+                guard state.isStarted else { return .none }
+                guard state.recents.contains(where: { $0.source == .recent(url) }) else { return recents(&state) }
+                return .run { send in await send(.recentReceived(url, await client.recent(url))) }
+            case .recentReceived(let url, let entry):
+                guard let index = state.recents.firstIndex(where: { $0.source == .recent(url) }) else { return .none }
+                if let entry { state.recents[index] = entry } else { state.recents.remove(at: index) }
+                state.synchronizeSelection()
+                return .none
             case .refreshRecents: return recents(&state)
             case .queryChanged(let query):
                 state.query = query
@@ -168,7 +205,8 @@ public extension DependencyValues {
                 state.synchronizeSelection(); return .none
             case .recentsReceived(let generation, let entries):
                 guard generation == state.recentsGeneration else { return .none }
-                state.recents = entries; state.synchronizeSelection(); return .none
+                state.recents = entries
+                state.synchronizeSelection(); return .none
             case .primaryAction(let entry):
                 guard !state.isQuitting, state.creating == nil else { return .none }
                 if case .recent(let url) = entry.source { return .send(.openDocument(url)) }

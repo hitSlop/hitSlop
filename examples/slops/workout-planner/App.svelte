@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { Dialog, AlertDialog, Checkbox, Progress, Select } from "bits-ui";
-  import { Slop, bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText, useDocument } from "@hitslop/document/svelte";
   import schema, { restPresets, type Exercise, type RestPreset } from "./schema";
   import { checked, sets, complete, count, toggled, nextSet, nextExercise, formatTime } from "./workout";
   import { createRestClock } from "./rest";
@@ -240,7 +240,7 @@
   }
 </script>
 
-<Slop>
+
   <main class="board" aria-label="Workout planner">
     <header class="header">
       <div class="top">
@@ -437,46 +437,3 @@
       </AlertDialog.Content>
     </AlertDialog.Portal>
   </AlertDialog.Root>
-
-  {#snippet exportView()}
-    <article class="export-board" aria-label="Workout summary">
-      <span class="eyebrow">Training / {done} of {total} sets</span>
-      <h1 class="exercise-name">{doc.current.title || "Your workout"}</h1>
-      <div class="progress">
-        <div class="fill" style:width={`${total ? (done / total) * 100 : 0}%`}></div>
-      </div>
-      {#each doc.current.exercises as ex}
-        <section class="export-lift">
-          <h2 class="export-title">{ex.name}</h2>
-          <p class="description">{sets(ex)} sets × {ex.reps} reps · {ex.weight || "Bodyweight"}</p>
-          <div class="ticks">
-            {#each Array.from({ length: sets(ex) }, (_, index) => index) as index}
-              <span class="tick" data-state={checked(ex).includes(index) ? "checked" : "unchecked"} aria-label="Set {index + 1}: {checked(ex).includes(index) ? 'complete' : 'unfinished'}">{checked(ex).includes(index) ? "✓" : index + 1}</span>
-            {/each}
-          </div>
-        </section>
-      {:else}
-        <p class="description">No exercises yet.</p>
-      {/each}
-    </article>
-  {/snippet}
-
-  {#snippet icon()}
-    {@const marks = total ? Math.round((done / total) * 4) : 0}
-    <svg class="icon" viewBox="0 0 512 512" fill="none" aria-hidden="true">
-      <rect x="24" y="30" width="464" height="458" rx="64" fill="#050607" />
-      <rect x="24" y="22" width="464" height="458" rx="64" fill="#191c1f" stroke="#343b3e" stroke-width="3" />
-      <path d="M85 75h110" stroke="#c3f653" stroke-width="9" stroke-linecap="round" />
-      <circle cx="256" cy="242" r="139" fill="#080a0b" stroke="#343b3e" stroke-width="8" />
-      <circle cx="256" cy="236" r="117" fill="#282d30" stroke="#464e50" stroke-width="3" />
-      <circle cx="256" cy="236" r="81" fill="#141719" stroke="#080a0b" stroke-width="12" />
-      <circle cx="256" cy="236" r="32" fill="#080a0b" stroke="#66705c" stroke-width="7" />
-      {#each [0, 120, 240] as angle}
-        <rect x="230" y="134" width="52" height="27" rx="13" transform={`rotate(${angle} 256 236)`} fill="#080a0b" stroke="#59644f" stroke-width="3" />
-      {/each}
-      {#each [0, 1, 2, 3] as index}
-        <rect x={100 + index * 82} y="402" width="66" height="28" rx="7" fill={index < marks ? "#c3f653" : "#303739"} stroke={index < marks ? "#c3f653" : "#505a53"} stroke-width="2" />
-      {/each}
-    </svg>
-  {/snippet}
-</Slop>

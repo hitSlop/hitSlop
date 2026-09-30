@@ -1,21 +1,22 @@
 <script lang="ts">
+import { ui } from "./ui.svelte";
+
   import { onMount, tick } from "svelte";
   import { AlertDialog, Checkbox, Dialog, RadioGroup, Tabs } from "bits-ui";
-  import { Slop, useDocument } from "@hitslop/document/svelte";
+  import { useDocument } from "@hitslop/document/svelte";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import Pencil from "@lucide/svelte/icons/pencil";
   import X from "@lucide/svelte/icons/x";
   import schema, { colors, type Habit, type HabitColor } from "./schema";
-  import { calendarDays, completedDays, dayKey, labelDay, localDate, shortDay, streak } from "./calendar";
+  import { calendarWeeks, completedDays, dayKey, labelDay, shortDay, streak, weekdays } from "./calendar";
 
   const doc = useDocument(schema);
   let selectedID = $state<string | null>(null);
-  let today = $state(dayKey(new Date()));
-  const days = $derived(calendarDays(today));
+
+  const { days, labels } = $derived(calendarWeeks(ui.today));
   const active = $derived(doc.current.habits.find(habit => habit.$id === selectedID) ?? doc.current.habits[0]);
-  const weeks = $derived(days.filter((_, i) => i % 7 === 0));
-  let highlightedDay = $state<string | null>(null);
+
   let dialogOpen = $state(false);
   let removeOpen = $state(false);
   let removeError = $state("");
@@ -24,11 +25,9 @@
   let draftName = $state("");
   let draftColor = $state<HabitColor>("mint");
   let formError = $state("");
-  let notice = $state("");
-  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   onMount(() => {
-    const update = () => { today = dayKey(new Date()); };
+    const update = () => { ui.today = dayKey(new Date()); };
     const timer = setInterval(update, 30_000);
     window.addEventListener("focus", update);
     return () => { clearInterval(timer); window.removeEventListener("focus", update); };
@@ -53,10 +52,10 @@
           return editingID;
         }
         return tx.fields.habits.insert({ name, color: draftColor, checkins: {} }).id;
-      }, { message: editingID ? "Edit habit" : "Add habit" });
+      });
       selectedID = id;
       dialogOpen = false;
-      notice = editingID ? "Habit updated." : "Habit added. Choose a day to begin.";
+      ui.notice = editingID ? "Habit updated." : "Habit added. Choose a day to begin.";
     } catch (error) { formError = error instanceof Error ? error.message : "Could not update this habit."; }
   }
   async function restoreEditorFocus(event: Event) {
@@ -76,48 +75,43 @@
     try {
       await doc.fields.habits.remove(editingID);
       selectedID = next?.$id ?? null;
-      highlightedDay = null;
+      ui.highlightedDay = null;
       removeOpen = false;
       dialogOpen = false;
-      notice = "Habit removed.";
+      ui.notice = "Habit removed.";
     } catch (error) { removeError = error instanceof Error ? error.message : "Could not remove this habit."; }
   }
   function toggle(habit: Habit, day: string) {
-    if (day > today) return;
+    if (day > ui.today) return;
     const checkins = doc.at(habit).checkins;
     const done = Boolean(habit.checkins[day]);
     (done ? checkins.delete(day) : checkins.put(day, 1)).then(
-      () => (notice = `${habit.name}: ${shortDay(day)} ${done ? "cleared" : "complete"}.`),
+      () => (ui.notice = `${habit.name}: ${shortDay(day)} ${done ? "cleared" : "complete"}.`),
       () => {},
     );
-  }
-  function weekLabel(day: string, index: number) {
-    return index === 0 || day.slice(0, 7) !== weeks[index - 1]?.slice(0, 7)
-      ? new Intl.DateTimeFormat(undefined, { month: "short" }).format(localDate(day))
-      : String(localDate(day).getDate());
   }
 </script>
 
 {#snippet calendar(habit: Habit, editable: boolean)}
   <div class="habit-calendar" data-tone={habit.color}>
     <div class="habit-week-labels" aria-hidden="true">
-      {#each weeks as week, i}<span>{weekLabel(week, i)}</span>{/each}
+      {#each labels as label}<span>{label}</span>{/each}
     </div>
     <div class="habit-weekdays" aria-hidden="true">{#each weekdays as day}<span>{day}</span>{/each}</div>
     <div class="habit-grid" role="group" aria-label={`${habit.name}: daily check-ins`}>
       {#each days as day}
         {#if editable}
-          <Checkbox.Root class="habit-cell" checked={Boolean(habit.checkins[day])} disabled={day > today}
+          <Checkbox.Root class="habit-cell" checked={Boolean(habit.checkins[day])} disabled={day > ui.today}
             onCheckedChange={() => toggle(habit, day)} aria-label={labelDay(day)}
-            title={`${labelDay(day)}${day > today ? " · not yet" : habit.checkins[day] ? " · complete" : " · not complete"}`}
-            data-day={day} data-today={day === today ? "" : undefined}
-            onpointerenter={() => highlightedDay = day} onpointerleave={() => highlightedDay = null}
-            onfocus={() => highlightedDay = day} onblur={() => highlightedDay = null}>
+            title={`${labelDay(day)}${day > ui.today ? " · not yet" : habit.checkins[day] ? " · complete" : " · not complete"}`}
+            data-day={day} data-today={day === ui.today ? "" : undefined}
+            onpointerenter={() => ui.highlightedDay = day} onpointerleave={() => ui.highlightedDay = null}
+            onfocus={() => ui.highlightedDay = day} onblur={() => ui.highlightedDay = null}>
             {#if habit.checkins[day]}<Check size={14} strokeWidth={2.5} />{/if}
           </Checkbox.Root>
         {:else}
           <span class="habit-cell" data-state={habit.checkins[day] ? "checked" : "unchecked"}
-            data-future={day > today ? "" : undefined} aria-label={`${labelDay(day)}: ${habit.checkins[day] ? "complete" : "not complete"}`}>
+            data-future={day > ui.today ? "" : undefined} aria-label={`${labelDay(day)}: ${habit.checkins[day] ? "complete" : "not complete"}`}>
             {#if habit.checkins[day]}<Check size={14} strokeWidth={2.5} />{/if}
           </span>
         {/if}
@@ -126,16 +120,16 @@
   </div>
 {/snippet}
 
-<Slop>
+
   <main class="habit-shell">
     <header class="habit-header">
       <div><p class="habit-eyebrow">Daily practice / 12 weeks</p><h1>Keep the thread</h1></div>
-      <div class="habit-score" aria-label={`${active ? streak(active.checkins, today) : 0} day streak`}>
-        <strong>{String(active ? streak(active.checkins, today) : 0).padStart(2, "0")}</strong><span>day<br />streak</span>
+      <div class="habit-score" aria-label={`${active ? streak(active.checkins, ui.today) : 0} day streak`}>
+        <strong>{String(active ? streak(active.checkins, ui.today) : 0).padStart(2, "0")}</strong><span>day<br />streak</span>
       </div>
     </header>
     <section class="habit-panel" aria-label="Habit record">
-      <Tabs.Root activationMode="manual" value={active?.$id ?? ""} onValueChange={value => { selectedID = value; highlightedDay = null; }}>
+      <Tabs.Root activationMode="manual" value={active?.$id ?? ""} onValueChange={value => { selectedID = value; ui.highlightedDay = null; }}>
         <div class="habit-tab-bar">
           <Tabs.List class="habit-tabs" aria-label="Habits">
             {#each doc.current.habits as habit (habit.$id)}
@@ -149,12 +143,12 @@
             <div class="habit-detail">
               <h2>{active.name || "Untitled habit"}</h2>
               <button class="habit-edit" onclick={() => begin(active)} aria-label="Edit habit"><Pencil size={14} /> Edit</button>
-              <p><strong>{completedDays(active.checkins, days, today)}</strong> check-ins</p>
+              <p><strong>{completedDays(active.checkins, days, ui.today)}</strong> check-ins</p>
             </div>
             {@render calendar(active, true)}
             <div class="habit-caption">
-              <span>{shortDay(days[0]!)} — {shortDay(today)}</span>
-              <span>{highlightedDay ? shortDay(highlightedDay) : "One square, one day."}</span>
+              <span>{shortDay(days[0]!)} — {shortDay(ui.today)}</span>
+              <span>{ui.highlightedDay ? shortDay(ui.highlightedDay) : "One square, one day."}</span>
             </div>
           </Tabs.Content>
         {:else}
@@ -163,7 +157,7 @@
       </Tabs.Root>
     </section>
     <footer class="habit-footer">Small things, repeated.</footer>
-    <p class="habit-sr-only" aria-live="polite">{notice}</p>
+    <p class="habit-sr-only" aria-live="polite">{ui.notice}</p>
   </main>
   <Dialog.Root bind:open={dialogOpen}>
     <Dialog.Portal>
@@ -201,20 +195,3 @@
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>
-
-  {#snippet exportView()}
-    <article class="habit-export">
-      <header><p class="habit-eyebrow">Daily practice / 12 weeks</p><h1>Keep the thread</h1><p>{shortDay(days[0]!)} — {shortDay(today)} · {localDate(today).getFullYear()}</p></header>
-      {#each doc.current.habits as habit (habit.$id)}
-        <section class="habit-export-record">
-          <div class="habit-detail"><h2>{habit.name || "Untitled habit"}</h2><p>{completedDays(habit.checkins, days, today)} check-ins · {streak(habit.checkins, today)} day streak</p></div>
-          {@render calendar(habit, false)}
-        </section>
-      {:else}<p>No habits yet.</p>{/each}
-      <footer>Small things, repeated. · Habit Heatmap</footer>
-    </article>
-  {/snippet}
-  {#snippet icon()}
-    <div class="habit-icon" aria-label="Habit Heatmap"><div class="habit-icon-paper"><span>DAILY PRACTICE</span><div class="habit-icon-grid">{#each Array.from({ length: 35 }) as _, i}<i class:filled={(i * 7 + 3) % 11 < 6}></i>{/each}</div><strong>Keep the thread</strong></div></div>
-  {/snippet}
-</Slop>

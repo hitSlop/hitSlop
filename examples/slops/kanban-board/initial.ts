@@ -18,4 +18,4 @@ export default {
     { laneKey: "review", title: "Check the gauge tolerances", note: "Two pieces sit 0.04mm over. Decide scrap or rework.", tag: "qa", order: 0 },
     { laneKey: "shipped", title: "Crate the Hutton order", note: "Left on the Thursday truck.", tag: "logistics", order: 0 },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

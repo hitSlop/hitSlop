@@ -4,6 +4,7 @@ import type {
   BridgeReply as Result,
 } from "@hitslop/schema/bridge";
 import { OperationRejectedError } from "./errors";
+import { postToHost } from "./bridge-client";
 // Safari 18.2+ has native base64 on Uint8Array; the fallbacks avoid per-byte callbacks.
 const native = Uint8Array as unknown as {
   fromBase64?: (text: string) => Uint8Array;
@@ -26,7 +27,7 @@ const decode = (text: string) => {
 export const base64 = { encode, decode };
 /** Native replies `{ rejected }` for refusals that retrying cannot fix; thrown errors stay retryable. */
 export async function hostCall<M extends Method>(args: Message<M>): Promise<Result<M>> {
-  const reply = await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(args);
-  if (reply && typeof reply.rejected === "string") throw new OperationRejectedError(reply.rejected);
+  const reply = await postToHost(args);
+  if (reply && typeof reply.rejected === "string") throw new OperationRejectedError(reply.rejected, reply.reason, reply.opIndex);
   return reply;
 }

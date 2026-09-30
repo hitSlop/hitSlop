@@ -142,31 +142,32 @@ struct SlopToolbar: View {
   let identity: SlopDocumentIdentity
   let menuTrackingChanged: (Bool) -> Void
   let drag: (NSEvent) -> Void
-  let pinned: Bool, commandsEnabled: Bool, close: () -> Void, minimize: () -> Void, pin: () -> Void,
-    duplicate: () -> Void, png: () -> Void, pdf: () -> Void, reveal: () -> Void,
-    copyPath: () -> Void
-  let editors: [(String, URL)], openEditor: (URL) -> Void
+  let pinned: Bool, commandsEnabled: Bool
+  let minimize: () -> Void
+  /// Document commands go to the window, which runs them like the menu bar's.
+  let send: (SlopDocumentCommand) -> Void
+  let editors: [(String, URL)]
   var body: some View {
     HStack(spacing: 6) {
       ToolbarDragHandle(onDrag: drag).frame(width: 18, height: 28).help("Drag window")
       HStack(spacing: 0) {
-        windowControl("xmark", "Close", .red, close)
+        windowControl("xmark", "Close", .red) { send(.close) }
         windowControl("minus", "Minimize", .yellow, minimize)
       }.fixedSize().background(SlopToolbarControlRegion())
       Divider().frame(height: 20).padding(.horizontal, 2)
-      ToolbarFileMenu(identity: identity, reveal: reveal, copyPath: copyPath)
+      ToolbarFileMenu(identity: identity, reveal: { send(.reveal) }, copyPath: { send(.copyPath) })
         .frame(minWidth: 0, maxWidth: .infinity).frame(height: 28)
         .disabled(!commandsEnabled)
-      icon(pinned ? "pin.fill" : "pin", pinned ? "Unpin" : "Always on Top", pin).disabled(
+      icon(pinned ? "pin.fill" : "pin", pinned ? "Unpin" : "Always on Top") { send(.pin(!pinned)) }.disabled(
         !commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
-        Button("Duplicate…", action: duplicate)
+        Button("Duplicate…") { send(.duplicate) }
         Divider()
-        Button("Export PNG…", action: png)
-        Button("Export PDF…", action: pdf)
+        Button("Export PNG…") { send(.exportPNG) }
+        Button("Export PDF…") { send(.exportPDF) }
         if !editors.isEmpty {
           Divider()
-          ForEach(editors, id: \.1) { editor in Button(editor.0) { openEditor(editor.1) } }
+          ForEach(editors, id: \.1) { editor in Button(editor.0) { send(.openEditor(editor.1)) } }
         }
       } label: {
         Image(systemName: "ellipsis").frame(width: 28, height: 28).contentShape(Rectangle())

@@ -1,42 +1,104 @@
 {
   "schema": {
-    "format": 1,
-    "root": {
-      "kind": "object",
-      "properties": {
-        "title": { "kind": "text" },
-        "done": { "kind": "record", "value": { "kind": "boolean" } },
-        "widths": { "kind": "record", "value": { "kind": "integer", "min": 56, "max": 320 } },
-        "cells": {
-          "kind": "record",
-          "value": {
-            "kind": "object",
-            "properties": {
-              "input": { "kind": "string", "maxLength": 10 },
-              "tint": { "kind": "optional", "inner": { "kind": "enum", "values": ["red", "blue"] } }
-            }
-          }
-        },
-        "pages": {
-          "kind": "record",
-          "value": { "kind": "object", "properties": { "text": { "kind": "text" } } }
-        },
-        "pixels": { "kind": "list", "item": { "kind": "string" } },
-        "presets": { "kind": "list", "item": { "kind": "integer", "min": 40, "max": 240 } },
-        "notes": { "kind": "optional", "inner": { "kind": "text" } },
-        "habits": {
-          "kind": "list",
-          "item": {
-            "kind": "object",
-            "properties": {
-              "name": { "kind": "text" },
-              "checkins": { "kind": "record", "value": { "kind": "integer", "min": 1 } }
-            }
-          }
-        },
-        "stats": {
+    "kind": "object",
+    "properties": {
+      "title": {
+        "kind": "text"
+      },
+      "done": {
+        "kind": "record",
+        "value": {
+          "kind": "boolean"
+        }
+      },
+      "widths": {
+        "kind": "record",
+        "value": {
+          "kind": "integer",
+          "min": 56,
+          "max": 320
+        }
+      },
+      "cells": {
+        "kind": "record",
+        "value": {
           "kind": "object",
-          "properties": { "guesses": { "kind": "list", "item": { "kind": "string" } } }
+          "properties": {
+            "input": {
+              "kind": "string",
+              "maxLength": 10
+            },
+            "tint": {
+              "kind": "optional",
+              "inner": {
+                "kind": "enum",
+                "values": [
+                  "red",
+                  "blue"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "pages": {
+        "kind": "record",
+        "value": {
+          "kind": "object",
+          "properties": {
+            "text": {
+              "kind": "text"
+            }
+          }
+        }
+      },
+      "pixels": {
+        "kind": "list",
+        "item": {
+          "kind": "string"
+        }
+      },
+      "presets": {
+        "kind": "list",
+        "item": {
+          "kind": "integer",
+          "min": 40,
+          "max": 240
+        }
+      },
+      "notes": {
+        "kind": "optional",
+        "inner": {
+          "kind": "text"
+        }
+      },
+      "habits": {
+        "kind": "list",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "name": {
+              "kind": "text"
+            },
+            "checkins": {
+              "kind": "record",
+              "value": {
+                "kind": "integer",
+                "min": 1
+              }
+            }
+          }
+        }
+      },
+      "stats": {
+        "kind": "object",
+        "properties": {
+          "guesses": {
+            "kind": "list",
+            "item": {
+              "kind": "string"
+            }
+          }
         }
       }
     }
@@ -44,173 +106,696 @@
   "initial": {
     "title": "Board",
     "done": {},
-    "widths": { "A": 100 },
+    "widths": {
+      "A": 100
+    },
     "cells": {},
     "pages": {},
-    "pixels": ["#fff", "#fff", "#fff"],
-    "presets": [60, 90],
-    "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }],
-    "stats": { "guesses": [] }
+    "pixels": [
+      "#fff",
+      "#fff",
+      "#fff"
+    ],
+    "presets": [
+      60,
+      90
+    ],
+    "habits": [
+      {
+        "$id": "h1",
+        "name": "Walk",
+        "checkins": {}
+      }
+    ],
+    "stats": {
+      "guesses": []
+    }
   },
   "scenarios": [
     {
       "name": "record entries are put, replaced and deleted by key",
       "intents": [
-        { "type": "set", "path": ["done", "3:5"], "value": true },
-        { "type": "set", "path": ["widths", "B"], "value": 120 },
-        { "type": "set", "path": ["widths", "A"], "value": 200 },
-        { "type": "clear", "path": ["widths", "A"] },
-        { "type": "clear", "path": ["done", "never set"] }
+        {
+          "type": "set",
+          "path": [
+            "done",
+            "3:5"
+          ],
+          "value": true
+        },
+        {
+          "type": "set",
+          "path": [
+            "widths",
+            "B"
+          ],
+          "value": 120
+        },
+        {
+          "type": "set",
+          "path": [
+            "widths",
+            "A"
+          ],
+          "value": 200
+        },
+        {
+          "type": "clear",
+          "path": [
+            "widths",
+            "A"
+          ]
+        },
+        {
+          "type": "clear",
+          "path": [
+            "done",
+            "never set"
+          ]
+        }
       ],
       "after": {
-        "title": "Board", "done": { "3:5": true }, "widths": { "B": 120 }, "cells": {}, "pages": {},
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 90],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": [] }
+        "title": "Board",
+        "done": {
+          "3:5": true
+        },
+        "widths": {
+          "B": 120
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
       }
     },
     {
       "name": "object entries are created, edited field by field and replaced",
       "intents": [
-        { "type": "set", "path": ["cells", "A1"], "value": { "input": "hi" } },
-        { "type": "set", "path": ["cells", "A1", "tint"], "value": "red" },
-        { "type": "set", "path": ["cells", "A1", "input"], "value": "yo" },
-        { "type": "set", "path": ["cells", "B2"], "value": { "input": "x", "tint": "blue" } },
-        { "type": "clear", "path": ["cells", "B2", "tint"] },
-        { "type": "set", "path": ["pages", "2026-09-23"], "value": { "text": "Dear diary" } }
+        {
+          "type": "set",
+          "path": [
+            "cells",
+            "A1"
+          ],
+          "value": {
+            "input": "hi"
+          }
+        },
+        {
+          "type": "set",
+          "path": [
+            "cells",
+            "A1",
+            "tint"
+          ],
+          "value": "red"
+        },
+        {
+          "type": "set",
+          "path": [
+            "cells",
+            "A1",
+            "input"
+          ],
+          "value": "yo"
+        },
+        {
+          "type": "set",
+          "path": [
+            "cells",
+            "B2"
+          ],
+          "value": {
+            "input": "x",
+            "tint": "blue"
+          }
+        },
+        {
+          "type": "clear",
+          "path": [
+            "cells",
+            "B2",
+            "tint"
+          ]
+        },
+        {
+          "type": "set",
+          "path": [
+            "pages",
+            "2026-09-23"
+          ],
+          "value": {
+            "text": "Dear diary"
+          }
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 },
-        "cells": { "A1": { "input": "yo", "tint": "red" }, "B2": { "input": "x" } },
-        "pages": { "2026-09-23": { "text": "Dear diary" } },
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 90],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": [] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {
+          "A1": {
+            "input": "yo",
+            "tint": "red"
+          },
+          "B2": {
+            "input": "x"
+          }
+        },
+        "pages": {
+          "2026-09-23": {
+            "text": "Dear diary"
+          }
+        },
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
       }
     },
     {
       "name": "a record inside a row and a list inside an object",
       "intents": [
-        { "type": "set", "path": ["habits", { "id": "h1" }, "checkins", "2026-09-23"], "value": 1 },
-        { "type": "set", "path": ["habits", { "id": "h1" }, "checkins", "2026-09-24"], "value": 1 },
-        { "type": "clear", "path": ["habits", { "id": "h1" }, "checkins", "2026-09-23"] },
-        { "type": "insert", "path": ["stats", "guesses"], "value": "crane" }
+        {
+          "type": "set",
+          "path": [
+            "habits",
+            {
+              "id": "h1"
+            },
+            "checkins",
+            "2026-09-23"
+          ],
+          "value": 1
+        },
+        {
+          "type": "set",
+          "path": [
+            "habits",
+            {
+              "id": "h1"
+            },
+            "checkins",
+            "2026-09-24"
+          ],
+          "value": 1
+        },
+        {
+          "type": "clear",
+          "path": [
+            "habits",
+            {
+              "id": "h1"
+            },
+            "checkins",
+            "2026-09-23"
+          ]
+        },
+        {
+          "type": "insert",
+          "path": [
+            "stats",
+            "guesses"
+          ],
+          "value": "crane"
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 }, "cells": {}, "pages": {},
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 90],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": { "2026-09-24": 1 } }],
-        "stats": { "guesses": ["crane"] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {
+              "2026-09-24": 1
+            }
+          }
+        ],
+        "stats": {
+          "guesses": [
+            "crane"
+          ]
+        }
       }
     },
     {
       "name": "scalar list elements are inserted, set and removed by index",
       "intents": [
-        { "type": "insert", "path": ["pixels"], "value": "#000", "index": 1 },
-        { "type": "set", "path": ["pixels", { "index": 0 }], "value": "#f00" },
-        { "type": "remove", "path": ["pixels"], "index": 2, "count": 2 },
-        { "type": "insert", "path": ["presets"], "value": 120 },
-        { "type": "remove", "path": ["presets"], "index": 0 }
+        {
+          "type": "insert",
+          "path": [
+            "pixels"
+          ],
+          "value": "#000",
+          "index": 1
+        },
+        {
+          "type": "set",
+          "path": [
+            "pixels",
+            {
+              "index": 0
+            }
+          ],
+          "value": "#f00"
+        },
+        {
+          "type": "remove",
+          "path": [
+            "pixels"
+          ],
+          "index": 2,
+          "count": 2
+        },
+        {
+          "type": "insert",
+          "path": [
+            "presets"
+          ],
+          "value": 120
+        },
+        {
+          "type": "remove",
+          "path": [
+            "presets"
+          ],
+          "index": 0
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 }, "cells": {}, "pages": {},
-        "pixels": ["#f00", "#000"], "presets": [90, 120],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": [] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#f00",
+          "#000"
+        ],
+        "presets": [
+          90,
+          120
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
       }
     },
     {
       "name": "a whole scalar list is replaced",
       "intents": [
-        { "type": "set", "path": ["presets"], "value": [60, 70, 90, 200] },
-        { "type": "set", "path": ["stats", "guesses"], "value": ["crane", "slate"] }
+        {
+          "type": "set",
+          "path": [
+            "presets"
+          ],
+          "value": [
+            60,
+            70,
+            90,
+            200
+          ]
+        },
+        {
+          "type": "set",
+          "path": [
+            "stats",
+            "guesses"
+          ],
+          "value": [
+            "crane",
+            "slate"
+          ]
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 }, "cells": {}, "pages": {},
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 70, 90, 200],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": ["crane", "slate"] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          70,
+          90,
+          200
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": [
+            "crane",
+            "slate"
+          ]
+        }
       }
     },
     {
       "name": "an optional text is created, edited and cleared",
       "intents": [
-        { "type": "set", "path": ["notes"], "value": "hello" },
-        { "type": "set", "path": ["notes"], "value": "hello there" }
+        {
+          "type": "set",
+          "path": [
+            "notes"
+          ],
+          "value": "hello"
+        },
+        {
+          "type": "set",
+          "path": [
+            "notes"
+          ],
+          "value": "hello there"
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 }, "cells": {}, "pages": {},
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 90], "notes": "hello there",
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": [] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "notes": "hello there",
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
       }
     },
     {
       "name": "clearing an optional text removes it",
       "intents": [
-        { "type": "set", "path": ["notes"], "value": "draft" },
-        { "type": "clear", "path": ["notes"] }
+        {
+          "type": "set",
+          "path": [
+            "notes"
+          ],
+          "value": "draft"
+        },
+        {
+          "type": "clear",
+          "path": [
+            "notes"
+          ]
+        }
       ],
       "after": {
-        "title": "Board", "done": {}, "widths": { "A": 100 }, "cells": {}, "pages": {},
-        "pixels": ["#fff", "#fff", "#fff"], "presets": [60, 90],
-        "habits": [{ "$id": "h1", "name": "Walk", "checkins": {} }], "stats": { "guesses": [] }
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {},
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
       }
     },
     {
       "name": "a field of a missing entry is not found",
-      "intents": [{ "type": "set", "path": ["cells", "Z9", "input"], "value": "x" }],
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "cells",
+            "Z9",
+            "input"
+          ],
+          "value": "x"
+        }
+      ],
       "error": "path_not_found"
     },
     {
       "name": "reserved record keys are refused",
-      "intents": [{ "type": "set", "path": ["done", "__proto__"], "value": true }],
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "done",
+            "__proto__"
+          ],
+          "value": true
+        }
+      ],
       "error": "invalid_key"
     },
     {
       "name": "an entry value of the wrong kind is refused",
-      "intents": [{ "type": "set", "path": ["widths", "C"], "value": "wide" }],
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "widths",
+            "C"
+          ],
+          "value": "wide"
+        }
+      ],
       "error": "type_mismatch"
     },
     {
       "name": "an entry value outside its bounds is refused",
-      "intents": [{ "type": "set", "path": ["widths", "C"], "value": 400 }],
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "widths",
+            "C"
+          ],
+          "value": 400
+        }
+      ],
       "error": "out_of_range"
     },
     {
       "name": "an entry holding text is never replaced",
       "intents": [
-        { "type": "set", "path": ["pages", "d1"], "value": { "text": "a" } },
-        { "type": "set", "path": ["pages", "d1"], "value": { "text": "b" } }
+        {
+          "type": "set",
+          "path": [
+            "pages",
+            "d1"
+          ],
+          "value": {
+            "text": "a"
+          }
+        },
+        {
+          "type": "set",
+          "path": [
+            "pages",
+            "d1"
+          ],
+          "value": {
+            "text": "b"
+          }
+        }
       ],
       "error": "exists"
     },
     {
       "name": "a scalar list element outside its bounds is refused",
-      "intents": [{ "type": "insert", "path": ["presets"], "value": 300 }],
+      "intents": [
+        {
+          "type": "insert",
+          "path": [
+            "presets"
+          ],
+          "value": 300
+        }
+      ],
       "error": "out_of_range"
     },
     {
       "name": "a scalar list index past the end is not found",
-      "intents": [{ "type": "set", "path": ["pixels", { "index": 9 }], "value": "#000" }],
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "pixels",
+            {
+              "index": 9
+            }
+          ],
+          "value": "#000"
+        }
+      ],
       "error": "path_not_found"
     },
     {
       "name": "removing past the end of a scalar list is refused",
-      "intents": [{ "type": "remove", "path": ["presets"], "index": 1, "count": 5 }],
+      "intents": [
+        {
+          "type": "remove",
+          "path": [
+            "presets"
+          ],
+          "index": 1,
+          "count": 5
+        }
+      ],
       "error": "out_of_range"
     },
     {
       "name": "rows insert by anchor, not index",
-      "intents": [{ "type": "insert", "path": ["habits"], "value": { "name": "Read", "checkins": {} }, "index": 0 }],
+      "intents": [
+        {
+          "type": "insert",
+          "path": [
+            "habits"
+          ],
+          "value": {
+            "name": "Read",
+            "checkins": {}
+          },
+          "index": 0
+        }
+      ],
       "error": "invalid_request"
     },
     {
       "name": "scalar lists are not moved",
-      "intents": [{ "type": "move", "path": ["presets"], "id": "x" }],
+      "intents": [
+        {
+          "type": "move",
+          "path": [
+            "presets"
+          ],
+          "id": "x"
+        }
+      ],
       "error": "type_mismatch"
     },
     {
       "name": "a batch refused at its last intent leaves nothing applied",
       "intents": [
-        { "type": "set", "path": ["done", "1:1"], "value": true },
-        { "type": "insert", "path": ["pixels"], "value": "#000" },
-        { "type": "set", "path": ["widths", "Z"], "value": 1 }
+        {
+          "type": "set",
+          "path": [
+            "done",
+            "1:1"
+          ],
+          "value": true
+        },
+        {
+          "type": "insert",
+          "path": [
+            "pixels"
+          ],
+          "value": "#000"
+        },
+        {
+          "type": "set",
+          "path": [
+            "widths",
+            "Z"
+          ],
+          "value": 1
+        }
       ],
       "error": "out_of_range"
     }

@@ -7,4 +7,4 @@ export default {
     { name: "Walk outside", color: "coral", checkins: {} },
     { name: "Read 20 min", color: "butter", checkins: {} },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

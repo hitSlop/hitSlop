@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@hitslop/document": "3.0.0",
+    "@hitslop/document": "4.0.0",
     "svelte": "5.57.1",
     "bits-ui": "^2.19.2"
   }

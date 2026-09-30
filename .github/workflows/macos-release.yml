@@ -53,7 +53,7 @@ jobs:
           templates: release
       - name: Check release identity
         if: github.event_name == 'push'
-        run: bun scripts/v1/release-bundle.ts --preflight
+        run: bun scripts/release-bundle.ts --preflight
       - run: bun install --cwd apps/landing --frozen-lockfile
       - run: brew install xcodegen
       # Tags accept the signed Release app during packaging instead of building a Debug app.
@@ -87,8 +87,8 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p .hitslop/v1-evidence
-          scripts/package-macos-release.sh 2>&1 | tee .hitslop/v1-evidence/packaging.log
+          mkdir -p .hitslop/evidence
+          scripts/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
       - name: Verify Gatekeeper
         if: github.event_name == 'push'
         run: |
@@ -104,7 +104,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"
-          bun scripts/v1/release-artifact.ts "$APP"
+          bun scripts/release-artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
           ditto -x -k "dist/macos/hitSlop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
@@ -113,7 +113,7 @@ jobs:
       - name: Retain tested npm packages
         if: github.event_name == 'push'
         run: |
-          bun scripts/v1/release-bundle.ts
+          bun scripts/release-bundle.ts
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
       - name: Publish GitHub Release
         if: github.event_name == 'push'
@@ -123,17 +123,16 @@ jobs:
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#macos-v}"
           NOTES="$RUNNER_TEMP/release-notes.md"
-          SDK_VERSION=$(bun -e 'console.log((await Bun.file("dist/macos/release-record.json").json()).runtime.sdkVersion)')
+          SDK_VERSION=$(bun -e 'console.log((await Bun.file("dist/macos/release-record.json").json()).packageVersions.document)')
           CLI_VERSION=$(bun -e 'console.log((await Bun.file("dist/macos/release-record.json").json()).packageVersions.cli)')
           cat > "$NOTES" <<EOF
           hitSlop $VERSION for Apple silicon Macs.
 
           Signed and notarized by Apple (Developer ID: Mushroom DAO Holdings Corp.).
-          Requires a Mac with an Apple M-series processor and macOS 14 or newer.
+          Requires a Mac with an Apple M-series processor and macOS 15.2 or newer.
           Drag hitSlop.app into Applications, then create a document from the included template collection.
 
-          This release uses hitSlop document runtime contract 2. Documents created with pre-release 1.0.x builds are not supported; create them again from the included templates.
-          The compatible authoring packages are @hitslop/schema and @hitslop/document $SDK_VERSION, with @hitslop/cli $CLI_VERSION.
+          The included authoring packages are @hitslop/schema and @hitslop/document $SDK_VERSION, with @hitslop/cli $CLI_VERSION.
           EOF
           gh release create "$GITHUB_REF_NAME" \
             --title "hitSlop $VERSION" \
@@ -160,7 +159,7 @@ jobs:
         with:
           name: release-evidence
           path: |
-            .hitslop/v1-evidence
+            .hitslop/evidence
             dist/macos/release-record.json
             dist/macos/SHA256SUMS
           include-hidden-files: true

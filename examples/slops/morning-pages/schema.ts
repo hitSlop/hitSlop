@@ -9,6 +9,6 @@ const schema = defineDocument({
   })),
 });
 
-export type MorningPages = Value<typeof schema.fields.node>;
+export type MorningPages = Value<typeof schema.descriptor>;
 export type DayEntry = MorningPages["entries"][string];
 export default schema;

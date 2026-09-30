@@ -6,4 +6,4 @@ export default {
   favoriteChannelIds: ["spacestation", "missioncontrol", "deepspaceone", "dronezone"],
   volume: 0.72,
   muted: false,
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

@@ -61,4 +61,4 @@ export default {
       notes: "Wrap up key pillars and open the floor to Q&A.",
     },
   ],
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

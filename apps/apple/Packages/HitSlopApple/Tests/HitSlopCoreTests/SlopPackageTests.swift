@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 import ImageIO
-import SQLite3
 import Testing
 @testable import HitSlopCore
+@testable import HitSlopDocument
 
 @Test func rejectsTraversal() { #expect(!SlopPackage.isSafeRelativePath("../data.json")); #expect(SlopPackage.isSafeRelativePath("assets/theme.css")) }
 
@@ -17,7 +17,7 @@ import Testing
     try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
     try Data([0xff]).write(to: references.appendingPathComponent("app-guide.md"))
     #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
-    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: false) }
+    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate() }
 }
 
 @Test func validatesSchemaAndRuntimeBoundary() throws {
@@ -27,11 +27,33 @@ import Testing
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
 
+// A saved database may contain free pages beyond the authored-asset limit. The
+// package walker must identify state correctly even across /var's filesystem alias.
+@Test func largeSavedDatabaseIsNotCountedAsAnAuthoredAsset() async throws {
+    let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let before = try await owner.state()
+    try await owner.close()
+    let file = try FileHandle(forWritingTo: root.appendingPathComponent("state/document.sqlite"))
+    try file.truncate(atOffset: UInt64(SlopFile.maximumBytes + 4096))
+    try file.close()
+    let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+    #expect(try await reopened.state() == before)
+    try await reopened.close()
+    // The exception must remain confined to state, not enlarge the asset allowance.
+    let asset = root.appendingPathComponent("assets/oversized.bin")
+    try Data().write(to: asset)
+    let authored = try FileHandle(forWritingTo: asset)
+    try authored.truncate(atOffset: UInt64(SlopFile.maximumBytes + 4096))
+    try authored.close()
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+}
+
 @Test func allowsHostFinderIconOnlyInDocuments() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
     try Data().write(to: root.appendingPathComponent("Icon\r"))
     #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
-    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: false) }
+    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate() }
     try Data().write(to: root.appendingPathComponent("other-icon"))
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
@@ -39,9 +61,9 @@ import Testing
 @Test func duplicateKeepsManifestIdenticalAndCreatesWritableState() throws {
     let source = try fixture(), temporary = source.deletingLastPathComponent(); defer { try? FileManager.default.removeItem(at: temporary) }
     try extendManifest(source)
-    try SlopDuplicator.makeImmutable(source)
+    try SlopPermissions.makeImmutable(source)
     let destination = temporary.appendingPathComponent("copy.slop")
-    let openedURL = try SlopDuplicator.duplicate(from: source, to: destination)
+    let openedURL = try SlopDuplicator.duplicate(from: source, to: destination).rootURL
     // Recents canonicalizes an existing directory. Duplicate must return that same
     // identity, or reopening its live window attempts a second writer.
     #expect(openedURL == destination.standardizedFileURL.resolvingSymlinksInPath())
@@ -52,29 +74,39 @@ import Testing
     let destinationMode = try FileManager.default.attributesOfItem(atPath: destination.path)[.posixPermissions] as? NSNumber
     #expect((sourceMode?.intValue ?? 0) & 0o222 == 0)
     #expect((destinationMode?.intValue ?? 0) & 0o200 != 0)
+    // Theme overrides live in the database; a stray state file is refused.
     try FileManager.default.createDirectory(at: destination.appendingPathComponent("state"), withIntermediateDirectories: true)
     try Data(#"{}"#.utf8).write(to: destination.appendingPathComponent("state/theme.json"))
+    #expect(throws: (any Error).self) { _ = try SlopPackage(rootURL: destination) }
 }
 
-@Test func manifestReadsPreserveUnknownMetadataAndRejectMalformedKnownFields() throws {
+// Nothing has shipped: a manifest is valid exactly when it matches the contract. Unknown
+// fields and values are refused like malformed known ones.
+@Test func manifestsAreStrict() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
     try extendManifest(root)
     let url = root.appendingPathComponent("manifest.json")
     let original = try Data(contentsOf: url)
     let package = try SlopPackage(rootURL: root)
     #expect(package.manifest.categories == [.productivity, .other])
-    #expect(package.shape == .rounded)
+    #expect(package.silhouette.path(in: CGRect(x: 0, y: 0, width: 320, height: 240)).contains(CGPoint(x: 160, y: 120)))
     #expect(!package.usesTransparentBackground)
-    #expect(package.manifestData == original)
     var manifest = try #require(JSONSerialization.jsonObject(with: original) as? [String: Any])
-    for categories in [["future-a", "future-b"], ["other", "future"]] {
-        manifest["categories"] = categories
-        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
-        #expect(try SlopPackage(rootURL: root).manifest.categories == [.other])
+    for (key, value): (String, Any) in [
+        ("lineage", ["template": "future"]),
+        ("author", ["name": "Fixture Author", "handle": "future"]),
+        ("categories", ["productivity", "future-category"]),
+        ("presentation", ["width": 320, "height": 240, "future": true]),
+        ("presentation", ["width": 320, "height": 240, "background": "future-background"]),
+    ] {
+        var changed = manifest
+        changed[key] = value
+        try JSONSerialization.data(withJSONObject: changed).write(to: url)
+        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
     }
     manifest["categories"] = ["utilities"]
     try writeSkin(to: root.appendingPathComponent("assets/skin.png"), width: 320, height: 240)
-    manifest["presentation"] = ["width": 320, "height": 240, "skin": "assets/skin.png", "future": true]
+    manifest["presentation"] = ["width": 320, "height": 240, "skin": "assets/skin.png"]
     try JSONSerialization.data(withJSONObject: manifest).write(to: url)
     #expect(try SlopPackage(rootURL: root).isSkinned)
     for presentation: [String: Any] in [
@@ -85,11 +117,10 @@ import Testing
         ["width": 320, "height": 240, "skin": "assets/skin.png", "resizable": "wrong"],
         ["width": 320, "height": 240, "skin": "assets/skin.png", "resizable": true],
         ["width": 320, "height": 240, "skin": "assets/skin.png", "shape": 42],
-        ["width": 320, "height": 240, "skin": "assets/skin.png", "shape": "rounded"],
+        ["width": 320, "height": 240, "skin": "assets/skin.png", "shape": "22px"],
         ["width": 320, "height": 240, "skin": "assets/skin.png", "background": NSNull()],
     ] {
         manifest["presentation"] = presentation
-        #expect(!PlatformContract.valid(manifest, against: manifestReadSchema))
         try JSONSerialization.data(withJSONObject: manifest).write(to: url)
         #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
     }
@@ -99,52 +130,14 @@ import Testing
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
 
+/// Every optional field the contract allows, with non-default values.
 private func extendManifest(_ root: URL) throws {
     let url = root.appendingPathComponent("manifest.json")
     var object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-    object["lineage"] = ["template": "future"]
-    object["author"] = ["name": "Fixture Author", "handle": "future"]
-    object["categories"] = ["productivity", "future-category"]
-    object["presentation"] = ["width": 320, "height": 240, "shape": "future-shape", "background": "future-background", "future": true]
+    object["author"] = ["name": "Fixture Author", "url": "https://example.com"]
+    object["categories"] = ["productivity", "other"]
+    object["presentation"] = ["width": 320, "height": 240, "shape": "12px 30% / 20px", "resizable": true, "lockAspect": true]
     try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]).write(to: url)
-}
-
-// Package validation precedes copying; the SQLite open must also reject a source
-// swapped to a symlink after validation, while still copying ordinary databases.
-@Test func databaseBackupRejectsSymlinkSource() throws {
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: folder) }
-    let state = folder.appendingPathComponent("state")
-    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-    let source = folder.appendingPathComponent("source.sqlite")
-    let link = state.appendingPathComponent("document.sqlite")
-    let destination = folder.appendingPathComponent("copy.sqlite")
-    var db: OpaquePointer?
-    try #require(sqlite3_open(source.path, &db) == SQLITE_OK)
-    try #require(sqlite3_exec(db, "CREATE TABLE marker(value TEXT); INSERT INTO marker VALUES('preserved');", nil, nil, nil) == SQLITE_OK)
-    sqlite3_close(db)
-    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
-    #expect(throws: SlopPackageError.self) { try SlopDuplicator.backup(folder, to: destination) }
-    #expect(!FileManager.default.fileExists(atPath: destination.path))
-    try FileManager.default.removeItem(at: link)
-    try FileManager.default.moveItem(at: source, to: link)
-    // Also reject a swapped state directory without following it during canonicalization.
-    let savedState = folder.appendingPathComponent("saved-state")
-    try FileManager.default.moveItem(at: state, to: savedState)
-    try FileManager.default.createSymbolicLink(at: state, withDestinationURL: savedState)
-    #expect(throws: SlopPackageError.self) { try SlopDuplicator.backup(folder, to: destination) }
-    #expect(!FileManager.default.fileExists(atPath: destination.path))
-    try FileManager.default.removeItem(at: state)
-    try FileManager.default.moveItem(at: savedState, to: state)
-    try SlopDuplicator.backup(folder, to: destination)
-    try #require(sqlite3_open_v2(destination.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK)
-    defer { sqlite3_close(db) }
-    var statement: OpaquePointer?
-    try #require(sqlite3_prepare_v2(db, "SELECT value FROM marker", -1, &statement, nil) == SQLITE_OK)
-    defer { sqlite3_finalize(statement) }
-    try #require(sqlite3_step(statement) == SQLITE_ROW)
-    #expect(String(cString: sqlite3_column_text(statement, 0)) == "preserved")
 }
 
 @Test func rejectsInvalidSchemaMetadataAndMutableThemeStores() throws {
@@ -195,19 +188,12 @@ private func extendManifest(_ root: URL) throws {
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
 
-@Test func templatesRequireTwoIndependentlyValidStaticPreviews() throws {
+// Failure: a package without theme defaults opened, and its theme commands then failed.
+@Test func packagesRequireThemeDefaults() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-    let quickLook = root.appendingPathComponent("QuickLook", isDirectory: true)
-    try FileManager.default.createDirectory(at: quickLook, withIntermediateDirectories: true)
-    let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
-    try png.write(to: quickLook.appendingPathComponent("Preview.png"))
-    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: true) }
-    try writeSkin(to: quickLook.appendingPathComponent("Icon.png"), width: 512, height: 512)
-    #expect(throws: Never.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: true) }
-    try writeSkin(to: quickLook.appendingPathComponent("Icon.png"), width: 2, height: 1)
-    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: true) }
-    try Data("different".utf8).write(to: quickLook.appendingPathComponent("Icon.png"))
-    #expect(throws: SlopPackageError.self) { try SlopPackage(rootURL: root).validateAsTemplate(requirePreview: true) }
+    _ = try SlopPackage(rootURL: root)
+    try FileManager.default.removeItem(at: root.appendingPathComponent("assets/theme.json"))
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
 
 private func fixture(skin: Bool = false) throws -> URL {
@@ -215,10 +201,11 @@ private func fixture(skin: Bool = false) throws -> URL {
     let root = directory.appendingPathComponent("tiny-counter.slop", isDirectory: true)
     try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
     try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    try Data(#"{"format":1,"root":{"kind":"object","properties":{}}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
+    try Data(#"{"kind":"object","properties":{}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
+    try Data("{}".utf8).write(to: root.appendingPathComponent("assets/theme.json"))
     let presentation = skin ? #"{"width":320,"height":240,"skin":"assets/skin.png"}"# : #"{"width":320,"height":240}"#
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/v1/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation)}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation)}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
     try writeCanonicalDocumentSkill(to: root)
     if skin { try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true); try writeSkin(to: root.appendingPathComponent("assets/skin.png"), width: 320, height: 240) }
@@ -238,4 +225,60 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
           let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { throw SlopPackageError.invalid("could not create test skin") }
     CGImageDestinationAddImage(destination, image, nil)
     guard CGImageDestinationFinalize(destination) else { throw SlopPackageError.invalid("could not write test skin") }
+}
+
+// Shared with the baseline: these acceptance regressions must fail before extraction.
+@Test func nativeManifestParityRegressions() throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let url = root.appendingPathComponent("manifest.json")
+    let original = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    for count in [40, 41, 80, 81] {
+        var value = original
+        value["title"] = String(repeating: "😀", count: count)
+        try JSONSerialization.data(withJSONObject: value).write(to: url)
+        let accepted = (try? SlopPackage(rootURL: root)) != nil
+        #expect(accepted == (count <= 80), "title with \(count) emoji")
+    }
+    var value = original
+    value["author"] = ["name": "\u{0085}"]
+    try JSONSerialization.data(withJSONObject: value).write(to: url)
+    #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
+    value["author"] = ["name": "Author", "url": "https://[bad]"]
+    try JSONSerialization.data(withJSONObject: value).write(to: url)
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+    value = original
+    value["presentation"] = ["width": 320, "height": 240, "skin": "assets/skin.png\n"]
+    try writeSkin(to: root.appendingPathComponent("assets/skin.png\n"), width: 320, height: 240)
+    try JSONSerialization.data(withJSONObject: value).write(to: url)
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+}
+
+@Test func manifestInputBoundaryRemainsStrict() throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let url = root.appendingPathComponent("manifest.json")
+    let original = try Data(contentsOf: url)
+    for invalid in [Data([0xff]), Data("{".utf8)] {
+        try invalid.write(to: url)
+        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+    }
+    var boundary = original
+    boundary.append(Data(repeating: 32, count: 65536 - original.count))
+    try boundary.write(to: url)
+    #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
+    boundary.append(32)
+    try boundary.write(to: url)
+    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+}
+
+@Test func invalidShapesAreRefusedAsInvalidPackages() throws {
+    let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let url = root.appendingPathComponent("manifest.json")
+    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    for shape: Any in ["1em", ["path": "M0 0L1"]] {
+        manifest["presentation"] = ["width": 320, "height": 240, "shape": shape]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+    }
 }

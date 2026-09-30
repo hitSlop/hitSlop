@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { Slop, bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText, useDocument } from "@hitslop/document/svelte";
   import Check from "@lucide/svelte/icons/check";
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -11,6 +11,7 @@
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
   import schema, { type Card, type Lane } from "./schema";
+  import { boardView, pad } from "./model";
 
   const doc = useDocument(schema);
   let draggingCardId = $state<string | null>(null);
@@ -24,25 +25,12 @@
   let draftTag = $state("");
   let titleField = $state<HTMLInputElement>();
 
-  const laneCards = $derived.by(() => {
-    const grouped = new Map<string, Card[]>();
-    for (const lane of doc.current.lanes) grouped.set(lane.laneKey, []);
-    for (const card of doc.current.cards) grouped.get(card.laneKey)?.push(card);
-    for (const cards of grouped.values()) cards.sort((a, b) => a.order - b.order);
-    return grouped;
-  });
-  const doneCount = $derived(doc.current.doneLaneKey ? cardsFor(doc.current.doneLaneKey).length : 0);
-  const openCount = $derived(doc.current.cards.length - doneCount);
-  const overLimitCount = $derived(doc.current.lanes.filter(isOverLimit).length);
+  const { cardsFor, isOverLimit, isDone, doneCount, openCount, overLimitCount } = $derived(boardView(doc.current));
   const composingLaneTitle = $derived(composingLaneKey ? laneTitle(composingLaneKey) : "lane");
 
-  function cardsFor(laneKey: string): Card[] { return laneCards.get(laneKey) ?? []; }
-  function isOverLimit(lane: Lane): boolean { return lane.limit !== undefined && lane.limit > 0 && cardsFor(lane.laneKey).length > lane.limit; }
   function laneIndex(laneKey: string): number { return doc.current.lanes.findIndex((lane) => lane.laneKey === laneKey); }
   function laneTitle(laneKey: string): string { return doc.current.lanes.find((lane) => lane.laneKey === laneKey)?.title.trim() || "lane"; }
-  function isDone(laneKey: string): boolean { return doc.current.doneLaneKey === laneKey; }
   function nextOrder(laneKey: string): number { return cardsFor(laneKey).reduce((max, card) => Math.max(max, card.order + 1), 0); }
-  function pad(value: number): string { return String(value).padStart(2, "0"); }
 
   // Writes resolve once the snapshot shows them, so announcements read the new state.
   async function toggleDoneLane(lane: Lane) {
@@ -76,7 +64,7 @@
       }
       tx.fields.lanes.remove(lane.$id);
       if (doc.current.doneLaneKey === lane.laneKey) tx.fields.doneLaneKey.clear();
-    }, { message: "Remove board lane" }).catch(() => {});
+    }).catch(() => {});
     announcement = `${lane.title || "Lane"} removed. ${stranded.length} orders moved to ${refuge.title}.`;
   }
 
@@ -141,7 +129,7 @@
       const handle = tx.fields.cards.item(card.$id);
       handle.laneKey.set(target.laneKey);
       handle.order.set(order);
-    }, { message: "Move work order" }).catch(() => {});
+    }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to ${target.title}.`;
   }
 
@@ -153,7 +141,7 @@
     doc.change((tx) => {
       tx.fields.cards.item(card.$id).order.set(neighbour.order);
       tx.fields.cards.item(neighbour.$id).order.set(card.order);
-    }, { message: "Reorder work order" }).catch(() => {});
+    }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to position ${index + direction + 1}.`;
   }
 
@@ -167,7 +155,7 @@
       const handle = tx.fields.cards.item(card.$id);
       handle.laneKey.set(laneKey);
       handle.order.set(order);
-    }, { message: "Move work order" }).catch(() => {});
+    }).catch(() => {});
     announcement = `${card.title.trim() || "Work order"} moved to ${laneTitle(laneKey)}.`;
   }
 
@@ -185,7 +173,7 @@
   }
 </script>
 
-<Slop>
+
   <main class="board-canvas" aria-label="Work-order board">
     <div class="board-chassis">
       <header class="board-rail">
@@ -259,32 +247,6 @@
     </div>
   </main>
 
-  {#snippet exportView()}
-    <main class="board-canvas board-export">
-      <div class="board-chassis">
-        <header class="board-rail"><div class="board-rail-mark" aria-hidden="true"><span></span><span></span></div><div class="board-rail-name"><h1 class="board-rail-title">{doc.current.title}</h1><p>Work-order schedule</p></div><dl class="board-meters"><div><dt>Open</dt><dd>{pad(openCount)}</dd></div><div><dt>Done</dt><dd>{pad(doneCount)}</dd></div><div class="board-meter-wip" data-alert={overLimitCount > 0}><dt>Over WIP</dt><dd>{pad(overLimitCount)}</dd></div></dl></header>
-        <div class="board-deck">
-          {#each doc.current.lanes as lane (lane.$id)}
-            {@const cards = cardsFor(lane.laneKey)}
-            <section class="board-lane" data-over={isOverLimit(lane)} data-done={isDone(lane.laneKey)}>
-              <header class="board-lane-head"><span class="board-lane-title">{lane.title}</span>{#if lane.limit}<span class="board-lane-limit"><span class="board-wip-lamp" data-alert={isOverLimit(lane)}></span>Max {lane.limit}</span>{/if}</header>
-              <div class="board-lane-slot">
-                {#each cards as card, position (card.$id)}
-                  <article class="board-ticket"><div class="board-ticket-stub"><span class="board-punch"></span><span>{pad(position + 1)}</span></div><div class="board-ticket-body"><strong class="board-ticket-title">{card.title}</strong><p class="board-ticket-note">{card.note}</p><span class="board-ticket-tag">{card.tag}</span></div></article>
-                {/each}
-                {#if cards.length === 0}<p class="board-lane-empty">Empty slot</p>{/if}
-              </div>
-            </section>
-          {/each}
-        </div>
-      </div>
-    </main>
-  {/snippet}
-
-  {#snippet icon()}
-    <div class="board-icon" aria-hidden="true"><div class="board-icon-body"><i></i><i></i><i></i><span></span></div></div>
-  {/snippet}
-</Slop>
 
 <Dialog.Root bind:open={composing} onOpenChange={(open) => { if (!open) composingLaneKey = null; }}>
   <Dialog.Portal>

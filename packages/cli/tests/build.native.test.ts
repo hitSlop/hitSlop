@@ -1,16 +1,15 @@
 import { test, expect } from "bun:test";
-import { runtimePlugin } from "../src/build";
-import { build as esbuild } from "esbuild";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { buildTemplate, installTemplate } from "../src/template";
+import { compileAppWithVite } from "../src/vite";
 import { readdir, mkdir } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
 
 // Without the generated theme stylesheet, a missing or late runtime theme would
 // leave the first mounted view unstyled. Existing controller tests do not mount apps.
 test("plain DOM adapter mounts with theme defaults and renders without Svelte or an embedded engine", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("packages/cli/templates/checklist", source, { recursive: true });
@@ -40,19 +39,12 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
       } satisfies SlopApp;
     `,
     );
-    // Only the host-runtime plugin: a non-Svelte app needs no Svelte compiler or runtime.
-    const bundle = await esbuild({
-      entryPoints: [join(source, "main.ts")],
-      bundle: true,
-      write: false,
-      outdir: join(root, "graph"),
-      format: "esm",
-      platform: "browser",
-      metafile: true,
-      plugins: [runtimePlugin],
-    });
-    for (const input of Object.keys(bundle.metafile!.inputs))
-      expect(input).not.toMatch(/svelte|loro-crdt|document\/src\//);
+    // A non-Svelte app bundles neither the Svelte compiler/runtime nor SDK internals.
+    const stage = join(root, "graph");
+    await mkdir(join(stage, "assets"), { recursive: true });
+    const inputs = await compileAppWithVite(source, stage);
+    expect(inputs.some((input) => input.endsWith("main.ts"))).toBe(true);
+    for (const input of inputs) expect(input).not.toMatch(/svelte|loro-crdt|document\/src\//);
     const renderer = join(
       process.cwd(),
       "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
@@ -65,8 +57,8 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
   }
 }, 90000);
 
-test("Slop and child components share the host document", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+test("discovered capture components share the document and receive preview/export mode", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "source");
   const renderer = join(
     process.cwd(),
@@ -90,36 +82,43 @@ test("Slop and child components share the host document", async () => {
       join(source, "App.svelte"),
       `
       <script lang="ts">
-        import {mount} from "svelte";
-        import {Slop, useDocument} from "@hitslop/document/svelte";
+        import {useDocument} from "@hitslop/document/svelte";
         import Child from "./Child.svelte";
         import schema from "./schema";
         (globalThis as any).appFields = useDocument(schema).fields;
-        let missingHost = "";
-        try { mount(Slop, {target: document.createElement("div"), props: {children: () => {}}, context: new Map()}); }
-        catch (error) { missingHost = String(error); }
-        if (!missingHost.includes("Slop requires a host document"))
-          throw new Error("Missing host document was not diagnosed: " + missingHost);
       </script>
-      <Slop>
-        <Child />
-        {#snippet exportView()}<Child />{/snippet}
-        {#snippet icon()}<Child />{/snippet}
-      </Slop>
+      <Child />
     `,
     );
+    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child />');
+    await writeFile(join(source, "Export.svelte"), `<script>
+      import Child from "./Child.svelte";
+      let {mode} = $props();
+      if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
+    </script><Child />`);
     const output = await buildTemplate(source, renderer, join(root, "probe.slop"));
     for (const name of ["Preview", "Icon"]) {
       const png = await readFile(join(output, `QuickLook/${name}.png`));
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     }
+    await writeFile(join(source, "Export.svelte"), `<script>
+      import Child from "./Child.svelte";
+      let {mode} = $props();
+      if (mode !== "export") throw new Error("Expected export mode, got " + mode);
+    </script><Child />`);
+    const { buildProject } = await import("../src/build");
+    const exported = await buildProject(source, join(root, "export.slop"));
+    const child = Bun.spawn([renderer, "export", exported, "--format", "png", "--output", join(root, "export.png")], {stdout: "ignore", stderr: "pipe"});
+    const [error, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+    if (code) throw new Error(error);
+    expect(code).toBe(0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 }, 90000);
 
 test("native template assets are complete before replacing a registered master", async () => {
-  const root = await mkdtemp(join(process.cwd(), ".v1-build-test-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const renderer = join(
     process.cwd(),
     "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
@@ -159,17 +158,14 @@ test("native template assets are complete before replacing a registered master",
       join(badSource, "App.svelte"),
       `
       <script lang="ts">
-        import {Slop,useDocument} from "@hitslop/document/svelte";
+        import {useDocument} from "@hitslop/document/svelte";
         import schema from "./schema";
         const document=useDocument(schema);
-        function broken(){throw new Error("Authored icon failed");}
       </script>
-      <Slop>
-        <h1>{document.current.title}</h1>
-        {#snippet icon()}<span>{broken()}</span>{/snippet}
-      </Slop>
+      <h1>{document.current.title}</h1>
     `,
     );
+    await writeFile(join(badSource, "Icon.svelte"), '<script>function broken(){throw new Error("Authored icon failed");}</script><span>{broken()}</span>');
     await expect(buildTemplate(badSource, renderer, output)).rejects.toThrow(
       "Authored icon failed",
     );

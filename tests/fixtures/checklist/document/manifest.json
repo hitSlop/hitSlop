@@ -1,0 +1,16 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "runtime-conformance",
+  "title": "Runtime conformance",
+  "description": "Checklist fixture replayed by the Bun and Swift host-path tests.",
+  "categories": [
+    "utilities"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 480
+  }
+}

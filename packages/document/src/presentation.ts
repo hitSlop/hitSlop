@@ -1,12 +1,13 @@
 import type { SlopPresentation } from "@hitslop/schema";
+import { DefaultWindowRadius } from "@hitslop/schema/constants";
 
 /** Host-supplied initial geometry, not the current viewport or a live resize API. */
-export type PresentationStage = {
+type PresentationStage = {
   mode: "standard" | "transparent" | "skin";
   width: number;
   height: number;
   resizable: boolean;
-  shape?: "rounded" | "ellipse" | "capsule";
+  radius?: string;
 };
 
 /** Maps a manifest presentation to the stage the native host would configure. */
@@ -23,11 +24,11 @@ export function presentationStage(presentation: SlopPresentation): PresentationS
     width: presentation.width,
     height: presentation.height,
     resizable: presentation.resizable ?? true,
-    shape: presentation.shape ?? "rounded",
+    radius: typeof presentation.shape === "object" ? "0" : (presentation.shape ?? DefaultWindowRadius),
   };
 }
 
-export const hostScrollbarCSS =
+const hostScrollbarCSS =
   "*{scrollbar-width:none!important}*::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}";
 
 /**
@@ -37,7 +38,7 @@ export const hostScrollbarCSS =
  * overriding ordinary authored page backgrounds. Capture keeps the page reset
  * and lays out in normal flow.
  */
-export function presentationStageCSS(stage?: PresentationStage): string {
+function presentationStageCSS(stage?: PresentationStage): string {
   if (!stage) return hostScrollbarCSS;
   const page = `html[data-slop-presentation="${stage.mode}"]`;
   const root = `${page}:not([data-slop-capture])`;
@@ -57,11 +58,11 @@ export function installPresentationStage(stage?: PresentationStage): void {
     const root = document.documentElement;
     if (stage) {
       root.dataset.slopPresentation = stage.mode;
-      if (stage.shape) root.dataset.slopShape = stage.shape;
-      else root.removeAttribute("data-slop-shape");
+      if (stage.radius !== undefined) root.style.setProperty("--slop-window-radius", stage.radius);
+      else root.style.removeProperty("--slop-window-radius");
       root.toggleAttribute("data-slop-resizable", stage.resizable);
-      root.style.setProperty("--slop-width", `${stage.width}px`);
-      root.style.setProperty("--slop-height", `${stage.height}px`);
+      root.style.setProperty("--slop-window-width", `${stage.width}px`);
+      root.style.setProperty("--slop-window-height", `${stage.height}px`);
     }
     let style = document.querySelector<HTMLStyleElement>("style[data-hitslop-host]");
     if (!style) {

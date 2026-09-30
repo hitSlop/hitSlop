@@ -1,31 +1,15 @@
 <script lang="ts">
-  import { Slop, bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText, useDocument } from "@hitslop/document/svelte";
   import { capture } from "@hitslop/document/capture";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Progress } from "bits-ui";
   import schema from "./schema";
-  import Icon from "./Icon.svelte";
-  import Export from "./Export.svelte";
-
-  const TARGET = 750;
+  import { formatDisplayDate, pageView, TARGET } from "./model";
 
   function dateKey(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-  function formatDisplayDate(key: string): string {
-    const [y, m, d] = key.split("-").map(Number);
-    return new Date(y, (m ?? 1) - 1, d).toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-  }
-  function countWords(text: string): number {
-    const trimmed = text.trim();
-    return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
   }
   function todayKey(): string {
     return dateKey(new Date());
@@ -43,12 +27,7 @@
     doc.fields.entries.put(key, { date: key, text: "", completedAt: "" }).catch(() => created.delete(key));
   });
 
-  const active = $derived(doc.current.entries[doc.current.currentKey]);
-  const wordsCount = $derived(countWords(active?.text ?? ""));
-  const progressPct = $derived(Math.min(100, Math.round((wordsCount / TARGET) * 100)));
-  const page1Done = $derived(wordsCount >= 250);
-  const page2Done = $derived(wordsCount >= 500);
-  const page3Done = $derived(wordsCount >= TARGET);
+  const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
   const isToday = $derived(doc.current.currentKey === todayKey());
 
   const odometer = new Tween(untrack(() => wordsCount), { duration: 350, easing: cubicOut });
@@ -115,8 +94,8 @@
   const fillScale = $derived(Math.max(0, Math.min(1, odometer.current / TARGET)));
 </script>
 
-<Slop>
-<main class={"mp-pad"} data-slop-selection="none" aria-label="Morning pages legal pad">
+
+<main class={"mp-pad"} aria-label="Morning pages legal pad">
   <header class={"mp-stub"}>
     <span class={"mp-perforations"} aria-hidden="true"></span>
     <div class={"mp-brandRow"}>
@@ -184,16 +163,3 @@
   </footer>
 
 </main>
-
-{#snippet exportView()}
-  <Export
-    dateLabel={formatDisplayDate(doc.current.currentKey)}
-    text={active?.text ?? ""}
-    words={wordsCount}
-    completed={page3Done}
-  />
-{/snippet}
-{#snippet icon()}
-  <Icon words={wordsCount} />
-{/snippet}
-</Slop>

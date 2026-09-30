@@ -1,0 +1,235 @@
+{
+ "measuredAt": "2026-10-01",
+ "scope": "Phase 2 codebase pass and review fixes: Rust-owned storage and theme overrides, main-thread and capture work, catalog caching, CLI and SDK cleanup, Swift structure (session delegate, one close sequence, window split).",
+ "windows": {
+  "command": "bun run bench:windows",
+  "baseline": "docs/evidence/release-window-measurements-2026-09-30.json",
+  "results": [
+   {
+    "rows": 1000,
+    "windows": 1,
+    "open_ms": {
+     "before": 600.4,
+     "after": 599.7
+    },
+    "mount_sync_ms": {
+     "before": 89,
+     "after": 80.0
+    },
+    "acceptance_p95_ms": {
+     "before": 12,
+     "after": 14.0
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 16,
+     "after": 18
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 5.7,
+     "after": 4.7
+    },
+    "host_footprint_mib": {
+     "before": 35.7,
+     "after": 33.5
+    }
+   },
+   {
+    "rows": 1000,
+    "windows": 10,
+    "open_ms": {
+     "before": 2552.4,
+     "after": 2173.7
+    },
+    "mount_sync_ms": {
+     "before": 93,
+     "after": 76
+    },
+    "acceptance_p95_ms": {
+     "before": 13.0,
+     "after": 9
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 23,
+     "after": 32
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 6.3,
+     "after": 4.9
+    },
+    "host_footprint_mib": {
+     "before": 83.5,
+     "after": 81.7
+    }
+   },
+   {
+    "rows": 1000,
+    "windows": 20,
+    "open_ms": {
+     "before": 13495.0,
+     "after": 3932.6
+    },
+    "mount_sync_ms": {
+     "before": 167,
+     "after": 74.0
+    },
+    "acceptance_p95_ms": {
+     "before": 43,
+     "after": 10.0
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 19.0,
+     "after": 19
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 10.9,
+     "after": 4.8
+    },
+    "host_footprint_mib": {
+     "before": 128.8,
+     "after": 132.4
+    }
+   },
+   {
+    "rows": 5000,
+    "windows": 1,
+    "open_ms": {
+     "before": 1799.0,
+     "after": 664.3
+    },
+    "mount_sync_ms": {
+     "before": 449,
+     "after": 259
+    },
+    "acceptance_p95_ms": {
+     "before": 607,
+     "after": 348
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 414,
+     "after": 218
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 256.6,
+     "after": 157.4
+    },
+    "host_footprint_mib": {
+     "before": 52.0,
+     "after": 81.1
+    }
+   },
+   {
+    "rows": 5000,
+    "windows": 10,
+    "open_ms": {
+     "before": 12699.6,
+     "after": 5979.1
+    },
+    "mount_sync_ms": {
+     "before": 560,
+     "after": 287
+    },
+    "acceptance_p95_ms": {
+     "before": 634,
+     "after": 362
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 358,
+     "after": 331
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 264.3,
+     "after": 160.0
+    },
+    "host_footprint_mib": {
+     "before": 238.9,
+     "after": 237.7
+    }
+   },
+   {
+    "rows": 5000,
+    "windows": 20,
+    "open_ms": {
+     "before": 22351.7,
+     "after": 13309.3
+    },
+    "mount_sync_ms": {
+     "before": 434.0,
+     "after": 305
+    },
+    "acceptance_p95_ms": {
+     "before": 556,
+     "after": 380
+    },
+    "frame_after_edit_p95_ms": {
+     "before": 457,
+     "after": 783.0
+    },
+    "owner_to_js_publication_p50_ms": {
+     "before": 213.6,
+     "after": 176.5
+    },
+    "host_footprint_mib": {
+     "before": 444.2,
+     "after": 444.6
+    }
+   }
+  ],
+  "note": "Single samples; frame-after-edit p95 tails vary between runs. The page loads each declared @font-face directly instead of forcing layout to find the faces in use, and skips the wait when it declares none: forcing layout of large hidden pages had cost 18 s across 20 windows of 5,000 rows."
+ },
+ "render": {
+  "command": "bun run test:render",
+  "totalSeconds": {
+   "before": 32.2,
+   "after": 27.8
+  }
+ },
+ "releaseCheck": {
+  "command": "bun run release:check --built",
+  "passed": true,
+  "stages": [
+   "hygiene",
+   "check",
+   "check:built",
+   "test",
+   "swift:test",
+   "test:native",
+   "test:render",
+   "test:native-helper",
+   "packages:pack",
+   "test:packed --native",
+   "landing:check",
+   "landing:build",
+   "apple:build",
+   "test:native-crash"
+  ],
+  "note": "Run before the font-wait change; the Swift, TypeScript and window-benchmark runs after it passed."
+ },
+ "tests": {
+  "rust": 94,
+  "typescript": 104,
+  "swift": 175,
+  "native": 11
+ },
+ "storage": "docs/evidence/rust-storage-2026-10-01.json",
+ "secondReview": {
+  "theme": "Overrides moved from state/theme.json into state/document.sqlite. Fixes the staging-file, state/ link swap and FIFO findings. Crash matrix gained theme:uncommitted and theme:committed.",
+  "close": "App unmount gets a 2 s grace after close; the call holds no reference to the page, so an abandoned page is released with its view.",
+  "pageErrors": "Reported page errors lead with name and message; WebKit's stack lists frames only.",
+  "editLatency": "docs/evidence/edit-latency-2026-10-01.json",
+  "releaseCheck": "bun run release:check --built passed with the theme and latency changes; the unmount-release change came after and passed bun run swift:test (176).",
+  "tests": {
+   "rust": 95,
+   "typescript": 108,
+   "swift": 176
+  }
+ },
+ "storageReview": {
+  "change": "Storage version 3: checkpoint in its own row, document row holds doc_id and theme; unchanged theme commands write nothing; rusqlite transaction guards; duplicate checks and copies in one read transaction with a typed Busy; checkpoint imported from SQLite's buffer. Corrected store_cost (full log per checkpoint sample).",
+  "evidence": "docs/evidence/rust-storage-2026-10-01.json (layoutSplit)",
+  "tests": {
+   "rust": 96,
+   "swift": 176,
+   "crashPhases": 7
+  }
+ }
+}

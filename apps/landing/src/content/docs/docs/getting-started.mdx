@@ -20,7 +20,7 @@ bun run dev
 
 Alternatively, install the CLI with `bun install -g @hitslop/cli` and run `slop init tiny-counter`. The generated project pins its own CLI and SDK versions; prefer its `bun run` scripts after creation.
 
-See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, import, export, and agent skill installation.
+See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, moving data between documents, export, and agent skill installation.
 
 `init` asks you to describe your slop and who the author is. It starts from a working Checklist, saves your idea in `BRIEF.md`, and includes `AGENTS.md` and authoring/design skills in `.agents/skills/`.
 
@@ -28,7 +28,7 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `manifest.json` first. Its slug comes from the directory name unless you supplied `--slug`. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime. Keep `runtime` set to `hitslop-v1`.
+Read `manifest.json` first. Its slug comes from the directory name unless you supplied `--slug`. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
 - `schema.ts` defines document fields; `initial.ts` provides creation-only values.
 - `App.svelte` renders and edits the document through typed handles.
@@ -37,7 +37,7 @@ Read `manifest.json` first. Its slug comes from the directory name unless you su
 
 The builder generates the entry for `App.svelte` and `styles.css` through `defineSlop`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
 
-The browser preview uses disposable memory. Refreshing resets document state. Restart `bun run dev` after source changes; native persistence is tested in a writable document copy.
+The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; metadata changes reset disposable state. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 
@@ -56,24 +56,39 @@ Replace `App.svelte` with:
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
+  import { useDocument, bindText } from "@hitslop/document/svelte";
   import schema from "./schema";
   const doc = useDocument(schema);
 </script>
+<main class="counter">
+  <input aria-label="Counter title" use:bindText={doc.fields.title} />
+  <p class="counter-value">{doc.current.count}</p>
+  <button onclick={() => doc.fields.count.increment()}>
+    Count one
+  </button>
+</main>
+```
 
-<Slop>
-  <main class="counter">
-    <input aria-label="Counter title" use:bindText={doc.fields.title} />
-    <p class="counter-value">{doc.current.count}</p>
-    <button onclick={() => doc.fields.count.increment()}>
-      Count one
-    </button>
-  </main>
-  {#snippet icon()}<strong class="counter-icon">{doc.current.count}</strong>{/snippet}
-  {#snippet exportView()}
-    <article class="counter"><h1>{doc.current.title}</h1><p>{doc.current.count}</p></article>
-  {/snippet}
-</Slop>
+`Export.svelte`:
+
+```svelte title="Export.svelte"
+<script lang="ts">
+  import { useDocument } from "@hitslop/document/svelte";
+  import schema from "./schema";
+  const doc = useDocument(schema);
+</script>
+<article class="counter"><h1>{doc.current.title}</h1><p>{doc.current.count}</p></article>
+```
+
+`Icon.svelte`:
+
+```svelte title="Icon.svelte"
+<script lang="ts">
+  import { useDocument } from "@hitslop/document/svelte";
+  import schema from "./schema";
+  const doc = useDocument(schema);
+</script>
+<strong class="counter-icon">{doc.current.count}</strong>
 ```
 
 Give it ordinary CSS, using the starter's declared tokens:

@@ -16,7 +16,7 @@ required-features = ["cli"]
 cli = ["uniffi/cli"]
 
 [dependencies]
-hitslop-core = { path = "../hitslop-core" }
+hitslop-core = { path = "../hitslop-core", features = ["schema-validation", "storage"] }
 uniffi = "=0.31.1"
 thiserror.workspace = true
 

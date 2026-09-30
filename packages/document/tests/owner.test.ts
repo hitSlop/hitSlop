@@ -7,11 +7,11 @@ import { wasmTransport, type OwnerTransport } from "../src/owner/transport";
 import { defineDocument, s } from "../src/schema";
 import { Check } from "typebox/value";
 import { OwnerStateSchema, OwnerPublicationSchema, type PagePush } from "@hitslop/schema/owner";
-const moduleURL = new URL("../../../generated/v1/core/wasm/hitslop_core_wasm.js", import.meta.url);
+const moduleURL = new URL("../../../generated/core/wasm/hitslop_core_wasm.js", import.meta.url);
 const wasm = await import(moduleURL.href);
 wasm.initSync({
   module: await Bun.file(
-    new URL("../../../generated/v1/core/wasm/hitslop_core_wasm_bg.wasm", import.meta.url),
+    new URL("../../../generated/core/wasm/hitslop_core_wasm_bg.wasm", import.meta.url),
   ).bytes(),
 });
 const definition = defineDocument({
@@ -47,15 +47,21 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
       const version = core.version();
       const batch = JSON.stringify({ intents: scenario.intents });
       if (scenario.error) {
-        expect(() => core.applyBatch(batch)).toThrow(scenario.error);
+        let failure: unknown;
+        try { core.applyBatch(batch); } catch (error) { failure = error; }
+        expect(failure).toMatchObject({ code: scenario.error });
+        await expect(wasmTransport(core).apply({ intents: scenario.intents })).rejects.toMatchObject({
+          name: "OperationRejectedError", reason: scenario.error,
+        });
         expect(core.snapshot()).toBe(before);
       } else {
         const applied = core.applyBatch(batch);
-        expect(Check(OwnerPublicationSchema, JSON.parse(applied.publication))).toBe(true);
+        // A batch that changes nothing publishes nothing.
+        if (applied.publication === undefined) expect(core.snapshot()).toBe(before);
+        else expect(Check(OwnerPublicationSchema, JSON.parse(applied.publication))).toBe(true);
         expect(JSON.parse(core.snapshot()).value).toEqual(scenario.after);
-        const reopened = wasm.WasmDocument.open(JSON.stringify(fixture.schema), seed);
+        const reopened = wasm.WasmDocument.open(JSON.stringify(fixture.schema), seed, [core.exportSince(version)]);
         try {
-          reopened.import_updates(core.export_since(version));
           expect(JSON.parse(reopened.snapshot()).value).toEqual(scenario.after);
         } finally {
           reopened.free();
@@ -273,7 +279,7 @@ test("a publication older than the current state is ignored", async () => {
     const current = doc.current;
     (doc as any).store.publish([
       {
-        type: "publication",
+        view: "test", type: "publication",
         publication: { previous: 0, sequence: 1, version: "old", ops: [{ type: "set", path: ["hits"], value: 99 }], issues: [] },
       },
     ]);
@@ -461,13 +467,8 @@ test("view reload remounts against the same document and keeps flushed edits", a
         return { rendered: () => {}, unmount: () => {} };
       },
       document: doc,
+      theme: { load: () => {} },
       target,
-      session: {
-        flush: () => doc.flush(),
-        applyTheme: () => {},
-        prepareClose: () => doc.prepareClose(),
-        cancelClose: () => doc.cancelClose(),
-      },
       recovered: async () => {
         recovered++;
       },
@@ -481,4 +482,258 @@ test("view reload remounts against the same document and keeps flushed edits", a
   } finally {
     core.free();
   }
+});
+
+// Regressions: detached/retargeted controls must drain their own last value, and an
+// unset optional is editable only while its containing row still exists.
+for (const retarget of [false, true]) {
+  test(`${retarget ? "retarget" : "destroy"} drains newer text behind an in-flight reply`, async () => {
+    const { core, doc, transport, errors } = await open();
+    const input = field();
+    const binding = doc.bindText(input, doc.fields.rows.item("a").text);
+    const held = gate(), entered = gate();
+    const send = transport.text;
+    let first = true;
+    transport.text = async request => {
+      if (first) { first = false; entered.release(); await held.promise; }
+      return send(request);
+    };
+    try {
+      input.type("First!");
+      await entered.promise;
+      input.type("First!!");
+      if (retarget) {
+        binding.update(doc.fields.rows.item("b").text);
+        input.type("Second!");
+      } else binding.destroy();
+      held.release();
+      await doc.flush();
+      expect(doc.current.rows[0]!.text).toBe("First!!");
+      expect(doc.current.rows[1]!.text).toBe(retarget ? "Second!" : "Second");
+      expect(errors).toEqual([]);
+    } finally { held.release(); binding.destroy(); core.free(); }
+  });
+}
+
+for (const editNewTarget of [false, true]) test(`retarget drains queued scalar values before new target input: ${editNewTarget}`, async () => {
+  const def = defineDocument({ a: s.string(), b: s.string() });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ a: "A", b: "B" }));
+  const transport = wasmTransport(core);
+  const doc = await OwnerDocument.open(def, transport);
+  const input = field();
+  const binding = doc.bindValue(input, doc.fields.a);
+  const held = gate(), entered = gate();
+  const apply = transport.apply;
+  let first = true;
+  transport.apply = async batch => {
+    if (first) { first = false; entered.release(); await held.promise; }
+    return apply(batch);
+  };
+  try {
+    input.type("A1"); await entered.promise;
+    input.type("A2"); binding.update(doc.fields.b);
+    if (editNewTarget) input.type("B1");
+    held.release(); await doc.flush();
+    expect(doc.current.a).toBe("A2");
+    expect(doc.current.b).toBe(editNewTarget ? "B1" : "B");
+    expect(input.value).toBe(editNewTarget ? "B1" : "B");
+  } finally { held.release(); binding.destroy(); core.free(); }
+});
+
+test("optional bindings disable when their parent row disappears", async () => {
+  const def = defineDocument({ rows: s.list(s.object({ text: s.optional(s.text()), value: s.optional(s.string()) })) });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ rows: [{ $id: "a" }] }));
+  const transport = wasmTransport(core);
+  const errors: unknown[] = [];
+  const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
+  const text = field(), value = field();
+  const tb = doc.bindText(text, doc.fields.rows.item("a").text);
+  const vb = doc.bindValue(value, doc.fields.rows.item("a").value);
+  try {
+    expect(text.disabled).toBe(false); expect(value.disabled).toBe(false);
+    await doc.fields.rows.remove("a");
+    expect(text.disabled).toBe(true); expect(value.disabled).toBe(true);
+    await doc.flush();
+    expect(errors).toEqual([]);
+  } finally { tb.destroy(); vb.destroy(); core.free(); }
+});
+
+for (const outcome of [false, true]) {
+  test(`${outcome ? "outcome failure retains" : "semantic rejection reverts"} a preview at a close barrier`, async () => {
+    const { OwnerError } = await import("../src/errors");
+    const def = defineDocument({ n: s.integer({ max: 10 }), valid: s.integer() });
+    const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ n: 1, valid: 0 }));
+    const transport = wasmTransport(core);
+    const errors: unknown[] = [];
+    const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
+    const apply = transport.apply;
+    try {
+      doc.fields.n.preview(outcome ? 2 : 11);
+      doc.fields.valid.preview(3);
+      if (outcome) transport.apply = async () => { throw new OwnerError("unknown_outcome", "connection lost"); };
+      if (outcome) {
+        await expect(doc.prepareClose()).rejects.toThrow("connection lost");
+        expect(doc.current.n).toBe(2);
+        transport.apply = apply;
+        await doc.prepareClose();
+        expect(doc.current.n).toBe(2);
+      } else {
+        await doc.prepareClose();
+        expect(doc.current.n).toBe(1);
+        expect(errors).toHaveLength(1);
+      }
+      expect(doc.current.valid).toBe(3);
+      expect(JSON.parse(core.snapshot()).value).toEqual({ n: outcome ? 2 : 1, valid: 3 });
+    } finally { core.free(); }
+  });
+}
+
+test("caught ordinary rejections are not reported as unhandled errors", async () => {
+  const { core, doc, errors } = await open();
+  try {
+    await expect(doc.fields.hits.increment(0)).rejects.toThrow();
+    await expect(doc.change(() => { throw Error("author handled"); })).rejects.toThrow();
+    expect(errors).toEqual([]);
+  } finally { core.free(); }
+});
+
+// A final lost publication has no later sequence gap to trigger recovery.
+test("a lost final publication settles without replaying the accepted mutation", async () => {
+  const { core, transport, doc } = await open();
+  transport.onPush(() => {});
+  try {
+    await doc.fields.hits.increment(3);
+    expect(doc.current.hits).toBe(3);
+    expect(JSON.parse(core.snapshot()).value.hits).toBe(3);
+  } finally { core.free(); }
+}, 4000);
+
+for (const text of [false, true]) test(`an unknown ${text ? "text" : "scalar"} outcome retains input and fails the barrier`, async () => {
+  const { OwnerError } = await import("../src/errors");
+  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "before" }));
+  const transport = wasmTransport(core);
+  const errors: unknown[] = [];
+  const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
+  const input = field();
+  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const refused = async () => { throw new OwnerError("unknown_outcome", "connection lost"); };
+  transport.text = refused; transport.apply = refused;
+  try {
+    input.type("unsent draft");
+    await expect(doc.prepareClose()).rejects.toThrow("connection lost");
+    expect(input.value).toBe("unsent draft");
+    expect(errors).toHaveLength(1);
+  } finally { binding.destroy(); core.free(); }
+});
+
+for (const text of [false, true]) test(`recovery confirms a lost ${text ? "text" : "scalar"} reply before draining newer input`, async () => {
+  const { OwnerError } = await import("../src/errors");
+  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "A" }));
+  const transport = wasmTransport(core);
+  const doc = await OwnerDocument.open(def, transport, () => {});
+  const input = field();
+  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const held = gate(), entered = gate();
+  let calls = 0;
+  const apply = transport.apply, send = transport.text;
+  const lost = async <T>(operation: () => Promise<T>) => {
+    const result = await operation();
+    if (++calls === 1) { entered.release(); await held.promise; throw new OwnerError("unknown_outcome", "lost reply"); }
+    return result;
+  };
+  transport.apply = batch => lost(() => apply(batch));
+  transport.text = request => lost(() => send(request));
+  try {
+    input.type("AB"); await entered.promise;
+    input.type("ABC"); held.release();
+    await doc.flush();
+    expect(doc.current.value).toBe("ABC");
+    expect(JSON.parse(core.snapshot()).value.value).toBe("ABC");
+    expect(calls).toBe(2);
+  } finally { held.release(); binding.destroy(); core.free(); }
+});
+
+// Failure: text typed while recovery had failed was refused before it left the page,
+// but was recorded as an uncertain outcome that no snapshot could ever confirm, so every
+// later flush and close failed. Oracle: after recovery the typed text is saved once.
+test("text refused before sending is sent once the document recovers", async () => {
+  const { OwnerError } = await import("../src/errors");
+  const { core, transport, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
+  const reopen = transport.open;
+  try {
+    transport.open = async () => { throw new OwnerError("owner_invalidated", "owner unavailable"); };
+    await expect((doc as any).store.resync()).rejects.toThrow("owner unavailable");
+    input.type("Hello again");
+    await Bun.sleep(1);
+    transport.open = reopen;
+    await doc.flush();
+    expect(doc.current.title).toBe("Hello again");
+    expect(JSON.parse(core.snapshot()).value.title).toBe("Hello again");
+    await doc.flush();
+  } finally { transport.open = reopen; binding.destroy(); core.free(); }
+});
+
+// Failure: bindValue registered its close barrier before checking the handle, so a
+// rejected binding left a barrier that crashed every later flush.
+test("binding a value to a non-scalar handle leaves no barrier behind", async () => {
+  const { core, doc } = await open();
+  try {
+    expect(() => doc.bindValue(field(), doc.fields.rows as any)).toThrow("scalar handle");
+    await doc.flush();
+    await doc.prepareClose();
+  } finally { core.free(); }
+});
+
+// Failure: a destroyed binding whose final draft could not be committed stayed in the
+// barrier set, so every later close failed with no control left to fix it.
+for (const text of [false, true]) test(`a destroyed ${text ? "text" : "value"} binding with an unresolvable draft does not block close`, async () => {
+  const { OwnerError } = await import("../src/errors");
+  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "before" }));
+  const transport = wasmTransport(core);
+  const errors: unknown[] = [];
+  const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
+  const input = field();
+  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const refused = async () => { throw new OwnerError("unknown_outcome", "connection lost"); };
+  transport.text = refused; transport.apply = refused;
+  try {
+    input.type("unsent draft");
+    binding.destroy();
+    await Bun.sleep(5);
+    await doc.prepareClose();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(JSON.parse(core.snapshot()).value.value).toBe("before");
+  } finally { core.free(); }
+});
+
+// Failure: only a plain handle set/clear settled a preview, so writes through change(),
+// replace() or insert() left stale previews covering the saved value (Pixel Art's undo
+// looked ignored) and the next flush wrote them back. A preview beneath an unset
+// optional object also invented that object.
+test("accepted writes covering a preview clear it, and previews never invent parents", async () => {
+  const def = defineDocument({
+    pixels: s.list(s.string()),
+    note: s.optional(s.object({ text: s.string() })),
+  });
+  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ pixels: ["", "", ""] }));
+  const doc = await OwnerDocument.open(def, wasmTransport(core));
+  try {
+    doc.fields.pixels.preview(1, "red");
+    expect(doc.current.pixels[1]).toBe("red");
+    await doc.change((tx) => tx.fields.pixels.set(1, "red"));
+    await doc.change((tx) => tx.fields.pixels.set(1, ""));
+    expect(doc.current.pixels).toEqual(["", "", ""]);
+    doc.fields.pixels.preview(2, "blue");
+    await doc.fields.pixels.insert("x", 0);
+    expect(doc.current.pixels).toEqual(["x", "", "", ""]);
+    doc.fields.note.text.preview("draft");
+    expect(doc.current.note).toBeUndefined();
+    await doc.prepareClose();
+    expect(JSON.parse(core.snapshot()).value).toEqual({ pixels: ["x", "", "", ""] });
+  } finally { core.free(); }
 });

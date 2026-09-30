@@ -7,6 +7,7 @@
     "./svelte": "./src/app/store.svelte.ts",
     "./capture": "./src/app/capture.ts",
     "./attachments": "./src/app/attachments.ts",
+    "./embed": "./src/app/embed.ts",
     "./theme": "./src/theme.ts",
     "./abi": "./src/abi.ts"
   },
@@ -27,9 +28,9 @@
   "files": [
     "src/app",
     "src/abi.ts",
-    "src/contracts.ts",
     "src/handle-types.ts",
     "src/schema.ts",
+    "src/descriptor.ts",
     "src/errors.ts",
     "src/theme.ts",
     "src/async-types.ts"
@@ -37,7 +38,7 @@
   "engines": {
     "bun": ">=1.4.2"
   },
-  "description": "Typed local-first documents and Svelte bindings for hitSlop v1.",
+  "description": "Typed local-first documents and Svelte bindings for hitSlop.",
   "license": "MIT",
   "homepage": "https://hitslop.com",
   "repository": {

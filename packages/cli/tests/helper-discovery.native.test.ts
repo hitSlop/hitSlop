@@ -3,6 +3,22 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+test.each(["another-core", ""])("helper identity %j is refused before the document command runs", async (id) => {
+  if (process.platform !== "darwin") return;
+  const root = await mkdtemp(join(tmpdir(), "hsl-core-mismatch-"));
+  try {
+    const helper = join(root, "helper");
+    const touched = join(root, "command-ran");
+    await writeFile(helper, `#!${process.execPath}\nif (process.argv[2] === "--core-build") console.log(${JSON.stringify(id)});\nelse await Bun.write(${JSON.stringify(touched)}, "changed");\n`, { mode: 0o755 });
+    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "get", "example.slop"], {
+      env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
+    });
+    expect(await child.exited).not.toBe(0);
+    expect(await new Response(child.stderr).text()).toContain("hitSlop.app and @hitslop/cli embed different document cores; install matching versions");
+    expect(await Bun.file(touched).exists()).toBe(false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("explicit native helper overrides fail without falling back or retrying", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-native-discovery-"));
   const run = async (helper: string) => {

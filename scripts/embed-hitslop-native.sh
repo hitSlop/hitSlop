@@ -72,10 +72,6 @@ fi
 # SwiftPM executables locate Bundle.module resources beside the executable.
 # Host resources are not visible to this independently-built helper.
 /bin/mkdir -p "$app/Contents/Helpers"
-# Remove retired skill and placeholder bridge bundles from incremental artifacts.
-for module in HitSlopCore HitSlopRuntime; do
-  /bin/rm -rf "$app/Contents/Helpers/HitSlopApple_${module}.bundle" "$app/Contents/Resources/HitSlopApple_${module}.bundle"
-done
 /bin/cp "$helper" "$app/Contents/Helpers/hitslop-native"
 /bin/chmod 755 "$app/Contents/Helpers/hitslop-native"
 

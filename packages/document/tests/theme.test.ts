@@ -1,42 +1,19 @@
-// Guards persisted token overrides and failed writes. Value rules live in the native owner.
+// The page only applies themes: the native owner validates and saves every write.
 import { test, expect } from "bun:test";
 import { ThemeController } from "../src/theme-runtime";
 import { defineTheme } from "../src/theme";
 
-test("theme overrides persist before application and failed writes preserve the visible theme", async () => {
+test("saved overrides apply over defaults without validation on load", () => {
   const defaults = defineTheme({ accent: "red", paper: "white" });
-  let persisted = {},
-    visible = {},
-    fail = false;
-  const theme = new ThemeController(
-    defaults.defaults,
-    async (values) => {
-      if (fail) throw new Error("disk full");
-      persisted = structuredClone(values);
-    },
-    (values) => {
-      visible = values;
-    },
-  );
-  theme.load({});
-  await theme.set({ accent: "blue" });
-  expect(persisted).toEqual({ accent: "blue" });
+  let visible = {};
+  const theme = new ThemeController(defaults.defaults, (values) => { visible = values; });
+  theme.load({ accent: "blue" });
   expect(visible).toEqual({ accent: "blue", paper: "white" });
-  fail = true;
-  await expect(theme.set({ accent: "green" })).rejects.toThrow("disk full");
-  expect(theme.get().overrides).toEqual({ accent: "blue" });
-  expect(visible).toEqual({ accent: "blue", paper: "white" });
-  fail = false;
-  const reopened = new ThemeController(defaults.defaults, async () => {});
-  reopened.load(persisted);
-  expect(reopened.get()).toEqual(theme.get());
-  await theme.reset("accent");
-  expect(visible).toEqual(defaults.defaults);
-  await theme.set({ accent: "blue", paper: "black" });
-  await theme.reset();
-  expect(persisted).toEqual({});
-});
-
-test("theme definitions refuse invalid token names", () => {
-  expect(() => defineTheme({ "invalid token": "red" })).toThrow();
+  // Loading never fails on theme; the browser ignores CSS it cannot parse.
+  theme.load({ accent: "not a colour;" });
+  expect(theme.get()).toEqual({
+    defaults: { accent: "red", paper: "white" },
+    overrides: { accent: "not a colour;" },
+    effective: { accent: "not a colour;", paper: "white" },
+  });
 });

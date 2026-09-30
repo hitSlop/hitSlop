@@ -7,31 +7,45 @@ The editor, Finder artwork, and exported document should feel like the same obje
 
 ## Declare capture views
 
-`<Slop>` accepts optional `icon` and `exportView` snippets:
+The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.svelte`. An authored `main.ts` takes precedence and registers components explicitly with `defineSlop(App, { export: Export, icon: Icon })`. Export receives `mode: "preview" | "export"`:
 
 ```svelte
-<Slop>
-  <main class="note-editor">
-    <input aria-label="Title" use:bindText={doc.fields.title} />
-    <button onclick={addItem}>Add item</button>
-  </main>
-  {#snippet icon()}
-    <div class="note-icon">{doc.current.tasks.length}</div>
-  {/snippet}
-  {#snippet exportView()}
-    <article class="note-export">
-      <h1>{doc.current.title}</h1>
-      <ul>{#each doc.current.tasks as task (task.$id)}<li>{task.text}</li>{/each}</ul>
-    </article>
-  {/snippet}
-</Slop>
+<main class="note-editor">
+  <input aria-label="Title" use:bindText={doc.fields.title} />
+  <button onclick={addItem}>Add item</button>
+</main>
 ```
 
-Use your app's existing document facade; never open a second store for capture. Snippets mount lazily, so they should derive content from current state, not keep a private copy of it. A rendering failure in an export or icon snippet rejects that capture without replacing the editor or reporting an application-render error. Capture restores the editor and clears the snippet's failure state; a later attempt renders it again. Editor rendering failures still use the native application-error recovery path.
+`Export.svelte`:
+
+```svelte
+<script lang="ts">
+  import { useDocument } from "@hitslop/document/svelte";
+  import schema from "./schema";
+  const doc = useDocument(schema);
+</script>
+<article class="note-export">
+  <h1>{doc.current.title}</h1>
+  <ul>{#each doc.current.tasks as task (task.$id)}<li>{task.text}</li>{/each}</ul>
+</article>
+```
+
+`Icon.svelte`:
+
+```svelte
+<script lang="ts">
+  import { useDocument } from "@hitslop/document/svelte";
+  import schema from "./schema";
+  const doc = useDocument(schema);
+</script>
+<div class="note-icon">{doc.current.tasks.length}</div>
+```
+
+Without `Icon.svelte`, build prints a notice and the host uses its generic icon. Use your app's existing document facade; never open a second store for capture. When an export should reflect the editor's selected tab, share pure presentation helpers and pass that view state explicitly. Capture components mount lazily, so they should derive content from current state, not keep a private copy of it. A rendering failure in an export or icon component rejects that capture without replacing the editor or reporting an application-render error. Capture restores the editor and clears the component's failure state; a later attempt renders it again. Editor rendering failures still use the native application-error recovery path.
 
 ## Design an icon at 512 × 512
 
-The native icon canvas is 512 × 512, and `<Slop>` centers the snippet in it. Give the design breathing room; for example, a tile around 456 pixels wide. Prefer a recognizable silhouette and a few strong marks over tiny text or a screenshot of every control. The icon may summarize current content. Keep its theme tokens aligned with the editor.
+The native icon canvas is 512 × 512, and the host centers the artwork in it. Give the design breathing room; for example, a tile around 456 pixels wide. Prefer a recognizable silhouette and a few strong marks over tiny text or a screenshot of every control. The icon may summarize current content. Keep its theme tokens aligned with the editor.
 
 The artwork can be rectangular or another shape; only the canvas must be square. Size the artwork to fit within the canvas, including its shadows. For example, a square tile can use:
 
@@ -49,7 +63,7 @@ An absent icon is optional. If you declare an icon and it throws, capture fails 
 
 ## Make exports readable
 
-Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. If no dedicated export view is declared, the editor is the fallback; mark editing-only elements with `data-slop-export="hide"`.
+Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `Export.svelte`, the editor is never captured. If no dedicated export view is declared, the editor is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 
@@ -71,10 +85,16 @@ bunx @hitslop/cli export My.slop --format pdf --output My.pdf
 
 The destination must be outside the package. Open documents export the selected live view after sending unsent text and saving. Closed documents render a private saved snapshot using their initial view. Theme overrides apply in both cases. The original document is not used as a scratch rendering workspace.
 
+Capture waits for fonts, visible images and a stable layout, and blocks edits while it runs; afterwards the editor's focus, selection and scroll are restored. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
+
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
+
+## Other frameworks
+
+An app without `defineSlop` registers capture views itself with `ctx.capture.registerTarget("export" | "icon", { element, prepare, restore })`. Targets must be direct children of `body`. `capture.onPrepare` supports asynchronous readiness. Dispose registrations on unmount, and never change saved state to prepare a view.
 
 ## QuickLook and Finder artwork
 
-Native build/registration captures initial artwork into `QuickLook/Preview.png` and, when declared, `QuickLook/Icon.png`. Writable documents refresh artwork through the host's saved-document capture flow. Artwork is a derived preview, not document state.
+Native build/registration captures initial artwork into `QuickLook/Preview.png` and, when declared, `QuickLook/Icon.png`. Closing a writable document refreshes both images from its saved contents and theme, and installs the same icon image as its Finder custom icon. Recents reads the updated PNG, so its icons follow the document too. Template masters keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, live selected views, and closed exports. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

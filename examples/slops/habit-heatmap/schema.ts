@@ -9,5 +9,5 @@ const schema = defineDocument({
     checkins: s.record(s.integer({ min: 1 })),
   })),
 });
-export type Habit = Value<typeof schema.fields.node>["habits"][number];
+export type Habit = Value<typeof schema.descriptor>["habits"][number];
 export default schema;

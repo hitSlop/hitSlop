@@ -11,7 +11,7 @@
   "properties": {
     "$schema": {
       "type": "string",
-      "const": "https://api.hitslop.com/schemas/v1/manifest.schema.json"
+      "const": "https://api.hitslop.com/schemas/manifest.schema.json"
     },
     "author": {
       "type": "object",
@@ -95,11 +95,56 @@
               "type": "boolean"
             },
             "shape": {
-              "enum": [
-                "rounded",
-                "ellipse",
-                "capsule"
-              ]
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3}(?:[ \t\r\n]*/[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3})?[ \t\r\n]*$"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "viewBox": {
+                      "type": "array",
+                      "additionalItems": false,
+                      "items": [
+                        {
+                          "type": "number",
+                          "minimum": 1,
+                          "maximum": 16384
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 1,
+                          "maximum": 16384
+                        }
+                      ],
+                      "minItems": 2
+                    },
+                    "fillRule": {
+                      "enum": [
+                        "nonzero",
+                        "evenodd"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "title": "SlopPathShape"
+                }
+              ],
+              "title": "SlopShape"
+            },
+            "lockAspect": {
+              "type": "boolean"
             },
             "background": {
               "type": "string",
@@ -131,7 +176,7 @@
               "type": "string",
               "minLength": 12,
               "maxLength": 240,
-              "pattern": "^assets/(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+\\.[pP][nN][gG]$"
+              "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$)|.*//)assets/[A-Za-z0-9._/-]+\\.[pP][nN][gG]$"
             }
           },
           "additionalProperties": false,

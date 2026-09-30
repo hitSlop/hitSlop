@@ -1,8 +1,8 @@
 import { input, resolvePromptIO, type PromptIO } from "@crustjs/prompts";
 import { SlopManifestSchema, parseManifest, type SlopCategory } from "@hitslop/schema";
 import { validate } from "@hitslop/schema/validation";
+import { ManifestText } from "@hitslop/schema/constants";
 import { cp, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import type { TStringOptions } from "typebox";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import metadata from "../package.json";
@@ -19,10 +19,6 @@ export interface InitOptions {
 
 const cliRoot = fileURLToPath(new URL("../", import.meta.url));
 const fields = SlopManifestSchema.properties;
-// TypeBox 1.3 keeps JSON Schema annotations on the value but omits them from
-// builder return types. Read the authored bounds rather than duplicating them.
-const slugBounds = fields.slug as typeof fields.slug & TStringOptions;
-const titleBounds = fields.title as typeof fields.title & TStringOptions;
 
 export async function initProject(target: string, options: InitOptions = {}, streams?: PromptIO) {
   const destination = resolve(target);
@@ -40,7 +36,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, slugBounds.maxLength)
+      .slice(0, ManifestText.slug.maxLength)
       .replace(/-+$/g, "") || "my-slop";
   if (slug.length === 1) slug += "-slop";
   slug = options.slug ?? slug;
@@ -55,9 +51,9 @@ export async function initProject(target: string, options: InitOptions = {}, str
     supplied: string | undefined,
     fallback: string,
     schema: typeof fields.title,
+    limits: { minLength: number; maxLength: number; pattern?: string },
     prompt = interactive,
   ) {
-    const limits = schema as typeof schema & TStringOptions;
     const check = (value: string) => {
       try {
         validate(schema, value);
@@ -93,8 +89,9 @@ export async function initProject(target: string, options: InitOptions = {}, str
   const title = await text(
     "Title",
     options.title,
-    basename(destination).slice(0, titleBounds.maxLength).trim() || "My slop",
+    basename(destination).slice(0, ManifestText.title.maxLength).trim() || "My slop",
     fields.title,
+    ManifestText.title,
     false,
   );
   const categories: SlopCategory[] = options.category ?? ["productivity"];
@@ -103,12 +100,13 @@ export async function initProject(target: string, options: InitOptions = {}, str
   } catch {
     throw new Error("Choose one or two distinct manifest categories");
   }
-  const author = await text("Author", options.author, "Anonymous", fields.author.properties.name);
+  const author = await text("Author", options.author, "Anonymous", fields.author.properties.name, ManifestText.authorName);
   const description = await text(
     "Description",
     options.description,
     "A hitSlop mini app.",
     fields.description,
+    ManifestText.description,
     false,
   );
   const manifest = parseManifest({
@@ -153,7 +151,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
     await cp(join(cliRoot, "skills"), join(destination, ".agents/skills"), { recursive: true });
     await writeFile(
       join(destination, "AGENTS.md"),
-      "Read manifest.json, BRIEF.md, .agents/skills/hitslop-authoring/SKILL.md, and .agents/skills/hitslop-design/SKILL.md first. Build the slop described in BRIEF.md. Update manifest.json's title, description, and categories to match what you build; the user can edit them later. Choose a visual direction suited to its purpose; the checklist is a functional starting point whose layout and appearance should be adapted to the task. Use plain CSS, defineTheme tokens, and typed document handles. Install dependencies with bun install, then run bun run check and bun run build.\n\nThe project includes portable copies of its agent guides. slop skills repair repairs installed links; it does not update these copies. Review guide changes manually when upgrading the project. CLI and SDK versions may differ; use the SDK version declared by the CLI's @hitslop/document dependency.\n",
+      "Read manifest.json, BRIEF.md, .agents/skills/hitslop-authoring/SKILL.md, and .agents/skills/hitslop-design/SKILL.md first. Build the slop described in BRIEF.md. Update manifest.json's title, description, and categories to match what you build; the user can edit them later. Choose a visual direction suited to its purpose; the checklist is a functional starting point whose layout and appearance should be adapted to the task. Use plain CSS, defineTheme tokens, and typed document handles. Install dependencies with bun install, then run bun run check and bun run build.\n\nThe project includes portable copies of its agent guides. Installed agent skills update with the global CLI; these copies do not, so review guide changes when you upgrade the project's @hitslop/cli and @hitslop/document versions. CLI and SDK versions may differ; use the SDK version declared by the CLI's @hitslop/document dependency.\n",
     );
   } catch (error) {
     await rm(destination, { recursive: true, force: true });

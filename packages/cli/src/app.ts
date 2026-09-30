@@ -1,8 +1,9 @@
 import { Crust, defineCommand } from "@crustjs/core";
-import { help, version } from "@crustjs/extensions";
+import { didYouMean, help, version } from "@crustjs/extensions";
 import { skill } from "@crustjs/skills";
-import { SlopCategorySchema } from "@hitslop/schema";
+import { SlopCategories } from "@hitslop/schema/constants";
 import metadata from "../package.json";
+import { isGlobalInstall } from "./paths";
 
 export const skillExtras = [
   "hitslop",
@@ -30,23 +31,33 @@ const retrySection = {
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
 };
 
-async function forward(
-  command: string,
-  target: string,
-  flags: Record<string, string | boolean | undefined>,
-) {
-  const argv = Object.entries(flags).flatMap(([name, value]) =>
-    typeof value === "string" ? [`--${name}`, value] : value === true ? [`--${name}`] : [],
-  );
-  if (command === "export") {
-    if (process.platform !== "darwin")
-      throw new Error("PNG/PDF export requires the macOS native renderer");
-    await (await import("./native")).runNative([command, target, ...argv]);
-  } else await (await import("./documents")).runDocumentCommand(command, target, argv);
+/** Document commands run in the macOS helper, which reaches a live window or owns a
+ * closed document. */
+async function native(...argv: string[]) {
+  if (process.platform !== "darwin")
+    throw new Error("Document commands require macOS and the installed hitSlop app.");
+  await (await import("./native")).runNative(argv);
 }
+/** CLI flags as helper arguments: `--name value`, or `--name` for a set boolean. */
+const flagArgs = (flags: Record<string, unknown>) =>
+  Object.entries(flags).flatMap(([name, value]) =>
+    typeof value === "string" || typeof value === "number"
+      ? [`--${name}`, String(value)]
+      : value === true
+        ? [`--${name}`]
+        : [],
+  );
+const forward = (command: string, target: string, flags: Record<string, unknown>) =>
+  native(command, target, ...flagArgs(flags));
+
+const themeDescriptions = {
+  get: "Print theme defaults, overrides and effective values",
+  set: "Override declared theme tokens",
+  reset: "Remove one theme override, or all of them",
+};
 
 function themeCommand(command: "get" | "set" | "reset") {
-  return defineCommand(command, { description: `${command} theme overrides` }, (sub) => {
+  return defineCommand(command, { description: themeDescriptions[command] }, (sub) => {
     const configured = sub.args(document).flags(
       ...(command === "set"
         ? [
@@ -68,12 +79,7 @@ function themeCommand(command: "get" | "set" | "reset") {
           ]
         : []),
     );
-    return configured.action(async ({ args, flags }) => {
-      const rest = Object.entries(flags).flatMap(([key, value]) =>
-        typeof value === "string" ? [`--${key}`, value] : [],
-      );
-      await (await import("./native")).runNative(["theme", command, args.document, ...rest]);
-    });
+    return configured.action(({ args, flags }) => native("theme", command, args.document, ...flagArgs(flags)));
   });
 }
 
@@ -89,6 +95,7 @@ export const app = new Crust("slop", {
 })
   .extend(version())
   .extend(help())
+  .extend(didYouMean())
   .add(
     defineCommand(
       "attachments",
@@ -97,9 +104,7 @@ export const app = new Crust("slop", {
         c
           .add(
             defineCommand("list", { description: "List attachment IDs and sizes" }, (c) =>
-              c.args(document).action(async ({ args }) => {
-                await (await import("./native")).runNative(["attachments", "list", args.document]);
-              }),
+              c.args(document).action(({ args }) => native("attachments", "list", args.document)),
             ),
           )
           .add(
@@ -109,11 +114,7 @@ export const app = new Crust("slop", {
               (c) =>
                 c
                   .args(document, { name: "file", type: "string", required: true })
-                  .action(async ({ args }) => {
-                    await (
-                      await import("./native")
-                    ).runNative(["attachments", "import", args.document, args.file]);
-                  }),
+                  .action(({ args }) => native("attachments", "import", args.document, args.file)),
             ),
           )
           .add(
@@ -124,18 +125,9 @@ export const app = new Crust("slop", {
                 c
                   .args(document, { name: "id", type: "string", required: true })
                   .flags({ name: "output", type: "string", required: true })
-                  .action(async ({ args, flags }) => {
-                    await (
-                      await import("./native")
-                    ).runNative([
-                      "attachments",
-                      "export",
-                      args.document,
-                      args.id,
-                      "--output",
-                      flags.output,
-                    ]);
-                  }),
+                  .action(({ args, flags }) =>
+                    native("attachments", "export", args.document, args.id, ...flagArgs(flags)),
+                  ),
             ),
           ),
     ),
@@ -179,7 +171,7 @@ export const app = new Crust("slop", {
               name: "category",
               type: "string",
               multiple: true,
-              choices: SlopCategorySchema.enum,
+              choices: [...SlopCategories],
               description: "Catalog category; repeat for a second category",
             },
             { name: "author", type: "string", description: "Author name (default: Anonymous)" },
@@ -232,14 +224,14 @@ export const app = new Crust("slop", {
         .action(async ({ args, flags }) => {
           if (!Number.isInteger(flags.port) || flags.port < 1 || flags.port > 65535)
             throw new Error("Port must be an integer from 1 to 65535");
-          await (await import("./authoring")).runAuthoring("dev", args.source, flags.port);
+          await (await import("./authoring")).dev(args.source, flags.port);
         }),
     ),
   )
   .add(
     defineCommand("build", { description: "Build a runtime template with native previews" }, (c) =>
       c.args(source).action(async ({ args }) => {
-        await (await import("./authoring")).runAuthoring("build", args.source);
+        await (await import("./authoring")).build(args.source);
       }),
     ),
   )
@@ -249,8 +241,36 @@ export const app = new Crust("slop", {
       { description: "Build and register an immutable local template" },
       (c) =>
         c.args(source).action(async ({ args }) => {
-          await (await import("./authoring")).runAuthoring("register", args.source);
+          await (await import("./authoring")).register(args.source);
         }),
+    ),
+  )
+  .add(
+    defineCommand(
+      "create",
+      { description: "Create a writable document from a built or registered template" },
+      (c) =>
+        c
+          .flags(
+            {
+              name: "from",
+              type: "string",
+              required: true,
+              description: "Template .slop to copy",
+            },
+            {
+              name: "output",
+              type: "string",
+              required: true,
+              description: "Path for the new writable document",
+            },
+          )
+          .action(({ flags }) => native("create", ...flagArgs(flags))),
+    ),
+  )
+  .add(
+    defineCommand("open", { description: "Open a document in the hitSlop app" }, (c) =>
+      c.args(document).action(({ args }) => native("open", args.document)),
     ),
   )
   .add(
@@ -265,7 +285,7 @@ export const app = new Crust("slop", {
         .flags({
           name: "snapshot",
           type: "boolean",
-          description: "Include schema and a version token for replacement",
+          description: "Print the schema with the current state ({schema, state})",
         })
         .action(({ args, flags }) => forward("get", args.document, flags)),
     ),
@@ -347,4 +367,14 @@ export const app = new Crust("slop", {
       c.add(themeCommand("get")).add(themeCommand("set")).add(themeCommand("reset")),
     ),
   )
-  .extend(skill({ name: skillName, extras: skillExtras, autoUpdate: false }));
+  // Only the global install repairs links: other copies would point agents at a bunx
+  // cache or a project's node_modules. Repairs stay global, where the links follow the
+  // global CLI; projects keep init's guide copies, which repair must not report.
+  .extend(
+    skill({
+      name: skillName,
+      extras: skillExtras,
+      defaultScope: "global",
+      autoUpdate: isGlobalInstall,
+    }),
+  );

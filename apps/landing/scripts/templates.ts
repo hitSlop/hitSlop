@@ -83,6 +83,8 @@ for (const source of sources) {
     const manifestPath = join(dir, "manifest.json");
     if (!existsSync(manifestPath)) continue;
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    // Developer acceptance workload; never advertise it as a product template.
+    if (manifest.slug === "shape-lab") continue;
     if (templates.some((t) => t.slug === manifest.slug)) continue;
     const colors = themeColors(dir);
     const background = pick(colors, backgroundKeys, "#f4efff");
@@ -96,7 +98,8 @@ for (const source of sources) {
       title: manifest.title,
       description: manifest.description ?? "",
       categories: manifest.categories ?? [],
-      shape: presentation.shape ?? "rectangle",
+      shape: presentation.shape === "50%" ? "ellipse" :
+        presentation.skin || typeof presentation.shape === "object" ? "rectangle" : "rounded",
       width: presentation.width ?? 480,
       height: presentation.height ?? 600,
       emoji: emoji[manifest.slug] ?? "✨",

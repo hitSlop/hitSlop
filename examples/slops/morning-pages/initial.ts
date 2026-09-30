@@ -10,4 +10,4 @@ export default {
       "completedAt": ""
     }
   }
-} satisfies Input<typeof schema.fields.node>;
+} satisfies Input<typeof schema.descriptor>;

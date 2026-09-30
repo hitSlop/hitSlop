@@ -97,9 +97,9 @@ and PDF behavior.
   app-prefixed classes, including explicit classes on Bits UI portal content.
   Read [references/css.md](references/css.md) for the authoring pattern.
 - Owners inspect and change declared tokens through `slop theme get/set/reset`.
-  The host writes overrides to `state/theme.json`; never edit it or compiled assets
+  The host saves overrides in the document's database; never edit it or compiled assets
   directly. Layout changes require authoring source and a rebuild.
-- Keep exportable content in normal flow. Without an `exportView`, mark
+- Keep exportable content in normal flow. Without an `Export.svelte`, mark
   editing-only UI with `data-slop-export="hide"`; with one, the editor is never
   captured.
 - Make each slop purpose-specific. Shared SDK patterns must not make unrelated

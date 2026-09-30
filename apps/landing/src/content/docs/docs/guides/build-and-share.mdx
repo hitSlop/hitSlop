@@ -16,7 +16,7 @@ bun run build
 
 Build validates the manifest and initial values, compiles Svelte and plain CSS, emits the schema and theme defaults, and uses the installed Mac app to capture native artwork. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-The project SDK and CLI identities must match. Native capture requires a Mac app supporting the requested runtime contract and minimum revision. An incompatibility is an update instruction, not a reason to compile Swift or install another document engine.
+Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
 
 ## Register a local template
 
@@ -24,13 +24,13 @@ The project SDK and CLI identities must match. Native capture requires a Mac app
 bun run register
 ```
 
-Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering updates the master; it does not modify documents already created from it.
+Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering backs up the previous master outside the catalog, then replaces it; it does not modify documents already created from it.
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
 
 ## Share a template or a document
 
-For a reusable app, distribute the freshly built `.slop` template. A `.slop` is a directory package; zip it when transferring through a service that does not preserve directory bundles. The recipient needs a Mac app supporting the template’s runtime contract and minimum revision. Unpack the download first, then place the complete `.slop` template in `~/.hitslop/templates`. Refresh the Mac catalog and choose **Create** to make a writable copy.
+For a reusable app, distribute the freshly built `.slop` template. A `.slop` is a directory package; zip it when transferring through a service that does not preserve directory bundles. The recipient needs the hitSlop app. Unpack the download first, then place the complete `.slop` template in `~/.hitslop/templates`. Refresh the Mac catalog and choose **Create** to make a writable copy.
 
 For a filled document, save and close it before copying or zipping the complete package. Its `state/` contains the actual private document and theme overrides. Inspect that content before sharing a writable copy; distributing source or a clean template does not include it. Keep active documents outside synced folders.
 

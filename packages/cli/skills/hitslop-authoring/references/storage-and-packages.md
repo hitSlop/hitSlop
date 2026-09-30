@@ -13,7 +13,7 @@ Use typed handles or the native CLI; `flush()` acknowledges persistence.
 
 assets/theme.json declares token defaults; the page shell applies defaults and overrides
 before mounting the app. assets/app.css contains compiled app styling.
-state/theme.json contains bounded declared-token overrides written by the host.
+state/document.sqlite also holds bounded declared-token overrides saved by the host.
 Use slop theme get/set/reset, never direct edits to these files. Layout changes require
 authoring source and a rebuild. Close before moving documents; synced folders are unsupported.
 

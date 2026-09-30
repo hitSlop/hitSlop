@@ -2,6 +2,8 @@
 // to `to`; the owner merges it with whatever else changed. Failure: lost or duplicated
 // characters, a misplaced caret, a resurrected row, or a panic on a bad base.
 // Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
+mod support;
+use support::Edit;
 use hitslop_core::{Document, TextEdit};
 use serde_json::{json, Value};
 
@@ -55,9 +57,9 @@ impl Binding {
     }
     fn refused(&self, d: &mut Document, to: &str) -> String {
         let before = view(d);
-        let code = d.edit_text(&self.request(to, utf16(to))).unwrap_err().code;
+        let code = d.edit_text(&self.request(to, utf16(to))).unwrap_err().code.as_str();
         assert_eq!(view(d), before, "a refused edit changed the document");
-        code
+        code.to_owned()
     }
 }
 /// Another writer (the CLI) inserts at a UTF-16 offset of the current title.
@@ -142,7 +144,7 @@ fn emoji_selection_maps_in_utf16_and_a_split_surrogate_is_refused() {
     assert_eq!(reply.selection_start, 6);
     let before = view(&d);
     let bad = json!({"base":page.base,"path":["title"],"from":page.text,"to":"abc😀!","selectionStart":4,"selectionEnd":4});
-    assert_eq!(d.edit_text(&bad.to_string()).unwrap_err().code, "out_of_range");
+    assert_eq!(d.edit_text(&bad.to_string()).unwrap_err().code.as_str(), "out_of_range");
     assert_eq!(view(&d), before);
 }
 
@@ -197,8 +199,8 @@ fn bad_bases_are_refused_on_every_path_without_panicking() {
         for (from, to) in [("Rabc", "RabcX"), ("abc", "abc"), ("abc", "abcX")] {
             let before = view(&d);
             let request = json!({"base":base,"path":["title"],"from":from,"to":to,"selectionStart":0,"selectionEnd":0});
-            let code = d.edit_text(&request.to_string()).unwrap_err().code;
-            assert!(["stale_base", "invalid_version"].contains(&code.as_str()), "{base} {from}->{to}: {code}");
+            let code = d.edit_text(&request.to_string()).unwrap_err().code.as_str();
+            assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
             assert_eq!(view(&d), before);
         }
     }
@@ -223,4 +225,21 @@ fn whole_field_set_is_exact_and_atomic_in_a_batch() {
         {"type":"set","path":["rows",{"id":ROW},"done"],"value":"not a boolean"}]});
     assert_eq!(d.apply(&batch.to_string()).unwrap_err().op_index, Some(1));
     assert_eq!(view(&d), before);
+}
+
+// Failure: every keystroke republishes the whole field. Oracle: the publication of one
+// typed character carries only that change, whatever the field's length.
+#[test]
+fn a_keystroke_publishes_only_its_change() {
+    for length in [10, 100_000] {
+        let mut d = setup();
+        let from = "é".repeat(length);
+        d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
+        let to = format!("{}x{}", &from[..2 * (length / 2)], &from[2 * (length / 2)..]);
+        let caret = utf16(&to[..2 * (length / 2) + 1]);
+        let edit = d.edit_text(&json!({"base":d.version(),"path":["title"],"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string()).unwrap();
+        let publication: Value = serde_json::from_str(&edit.publication.unwrap()).unwrap();
+        assert_eq!(publication["ops"], json!([{"type":"text","path":["title"],"delta":[{"retain":length / 2},{"insert":"x"}]}]));
+        assert_eq!(title(&d), to);
+    }
 }

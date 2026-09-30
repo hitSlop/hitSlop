@@ -1,8 +1,8 @@
 import Foundation
-import SQLite3
 import HitSlopCore
 import HitSlopCoreBinding
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopDocument
 
 /// Pauses the persistence queue at one storage phase until released.
@@ -35,7 +35,7 @@ final class StorageGate: @unchecked Sendable {
   func fixture() throws -> URL {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/4-1/document", toPath: root.path)
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
     let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
     for (file, key) in [("state.schema.json", "schema"), ("initial.json", "initial")] {
       try JSONSerialization.data(withJSONObject: spec[key]!).write(to: root.appendingPathComponent(file))
@@ -43,18 +43,61 @@ final class StorageGate: @unchecked Sendable {
     return root
   }
 
-  /// The saved value, decoded from SQLite without the owner (snapshot mode takes no lock).
+  /// The saved value, read without the owner (snapshot mode takes no lock).
   func savedHits(_ root: URL) throws -> Int? {
-    let storage = try Storage(root: root, mode: .snapshot)
-    defer { storage.close() }
-    let loaded = try storage.load()
-    let core = try NativeDocument.open(schemaJson: loaded.schemaKey!, checkpoint: loaded.checkpoint!, updates: loaded.updates)
-    let frame = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
+    let package = try SlopPackage(rootURL: root)
+    let core = try NativeStore.open(root: root.path, mode: .snapshot)
+      .document(schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self))
+    let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
 
   func edit(_ owner: DocumentOwner) async throws {
     _ = try await owner.apply(batch: increment)
+  }
+
+  // An accepted increment survives an in-flight committed save even if discard
+  // replaces the owner before its socket reply. The CLI must not promise safe replay.
+  @Test @MainActor func socketMutationAfterDiscardReportsUnknownWithoutReplay() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let package = try SlopPackage(rootURL: root)
+    let owner = try DocumentOwner(package: package)
+    let gate = StorageGate("append:committed")
+    defer { gate.release() }
+    owner.testingPhase = gate.hook
+    let mutations = Locked(0)
+    let mutationCode = Locked<SocketReplyCode?>(nil)
+    let server = try SocketServer { request, _ in
+      if request.method == .apply { mutations.modify { $0 += 1 } }
+      let reply = await owner.request(request)
+      if request.method == .apply { mutationCode.modify { $0 = try? decodeReply(reply).code } }
+      return reply
+    }
+    defer { server.stop() }
+    try JSONSerialization.data(withJSONObject: [
+      "socket": server.path, "documentPath": package.rootURL.path,
+    ]).write(to: package.rootURL.appendingPathComponent("state/host.lock"))
+    let command = Task { @MainActor () -> String in
+      do {
+        _ = try await command("apply", url: root,
+          operation: Data(#"{"type":"increment","path":["hits"],"by":3}"#.utf8))
+        return "Unexpected successful reply"
+      } catch { return error.localizedDescription }
+    }
+    await gate.reached()
+    let discarding = Task { try await owner.discardPending() }
+    // Discard rejects the socket's flush before waiting for the gated storage queue.
+    let message = await command.value
+    gate.release()
+    try await discarding.value
+    owner.testingPhase = nil
+    #expect(mutationCode.value == .failed)
+    #expect(message.contains("Outcome unknown. Run slop get before issuing another edit."))
+    #expect(!message.contains("Not applied."))
+    #expect(mutations.value == 1)
+    #expect(try savedHits(root) == 3)
+    try await owner.close()
   }
 
   /// True when `work` finishes before the deadline. The deadline only bounds a failure;
@@ -73,6 +116,23 @@ final class StorageGate: @unchecked Sendable {
     }
   }
 
+  // Failure: autosave waited for a pause in editing, so a document edited continuously
+  // never saved, and a crash lost everything since the last pause.
+  @Test func continuousEditingStillAutosaves() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let saved = Locked(0)
+    owner.onSaveStatus = { _, sequence in saved.modify { $0 = max($0, sequence) } }
+    let start = ContinuousClock.now
+    while saved.value == 0, ContinuousClock.now - start < .seconds(3) {
+      try await edit(owner)
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(saved.value > 0)
+    try await owner.close()
+  }
+
   // Failure: a slow SQLite write blocked every edit, and a flush that joined an in-flight
   // write could be acknowledged by it although its edits were not in those bytes.
   @Test func editsProceedWhileASaveIsInFlightAndFlushCoversThem() async throws {
@@ -81,7 +141,7 @@ final class StorageGate: @unchecked Sendable {
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     try await edit(owner)
     let gate = StorageGate("append:uncommitted")
-    owner.storage.testingPhase = gate.hook
+    owner.testingPhase = gate.hook
     let first = Task { try await owner.flush() }
     await gate.reached()
     let proceeded = await finishes(within: 2) { try await edit(owner) }
@@ -89,7 +149,7 @@ final class StorageGate: @unchecked Sendable {
     gate.release()
     try await first.value
     try await second.value
-    owner.storage.testingPhase = nil
+    owner.testingPhase = nil
     #expect(proceeded)
     #expect(try savedHits(root) == 6)
     try await owner.close()
@@ -103,14 +163,14 @@ final class StorageGate: @unchecked Sendable {
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     try await edit(owner)
     let gate = StorageGate("append:committed")
-    owner.storage.testingPhase = gate.hook
+    owner.testingPhase = gate.hook
     let saving = Task { try await owner.flush() }
     await gate.reached()
     let discarding = Task { try await owner.discardPending() }
     gate.release()
     _ = try? await saving.value
     try await discarding.value
-    owner.storage.testingPhase = nil
+    owner.testingPhase = nil
     try await edit(owner)
     #expect(await finishes(within: 2) { try await owner.flush() })
     #expect(try savedHits(root) == 6)
@@ -125,31 +185,147 @@ final class StorageGate: @unchecked Sendable {
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     try await edit(owner)
     let gate = StorageGate("append:uncommitted")
-    owner.storage.testingPhase = gate.hook
+    owner.testingPhase = gate.hook
     let closing = Task { try await owner.close() }
     await gate.reached()
     await #expect(throws: (any Error).self) { try await edit(owner) }
-    #expect(throws: DocumentWriterLock.Busy.self) { _ = try DocumentWriterLock(root: root) }
+    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
     gate.release()
     try await closing.value
-    let lock = try DocumentWriterLock(root: root)
-    lock.close()
+    try WriterLock.acquire(root).release()
     #expect(try savedHits(root) == 3)
   }
 
   // Failure: another process holding the database (a backup during Duplicate) must be a
-  // definite, retryable failure, never mistaken for a lost reply or a conflict.
+  // definite, retryable failure, never mistaken for a lost reply or a conflict. The
+  // store's own tests hold a real competing connection.
   @Test func busyDatabaseIsARetryableFailure() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     try await edit(owner)
-    var reader: OpaquePointer?
-    #expect(sqlite3_open(root.appendingPathComponent("state/document.sqlite").path, &reader) == SQLITE_OK)
-    #expect(sqlite3_exec(reader, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+    owner.testingPhase = { phase in if phase == "append:uncommitted" { throw CoreError.Busy } }
     await #expect(throws: SaveFailure.busy) { try await owner.flush() }
-    #expect(sqlite3_exec(reader, "COMMIT", nil, nil, nil) == SQLITE_OK)
-    sqlite3_close_v2(reader)
+    owner.testingPhase = nil
+    try await owner.flush()
+    #expect(try savedHits(root) == 3)
+    try await owner.close()
+  }
+}
+
+
+extension PersistenceSchedulingTests {
+  // Failure: discard fences an active save, then a failed restore leaves writing
+  // latched forever. Oracle: another edit becomes durable and close releases ownership.
+  @Test func failedDiscardDuringWriteKeepsSavingUsable() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    try await edit(owner)
+    let gate = StorageGate("append:uncommitted")
+    owner.testingPhase = { phase in
+      gate.hook(phase)
+      if phase == "load" { throw failure("injected restore failure") }
+    }
+    let saving = Task { try await owner.flush() }
+    await gate.reached()
+    let discarding = Task { try await owner.discardPending() }
+    // Discard rejects the old save waiter before waiting for the persistence queue.
+    _ = await saving.result
+    gate.release()
+    await #expect(throws: (any Error).self) { try await discarding.value }
+    owner.testingPhase = nil
+    try await edit(owner)
+    let completed = await finishes(within: 2) { try await owner.flush() }
+    #expect(completed)
+    if completed { #expect(try savedHits(root) == 6) }
+    // Also makes failure cleanup finite on the pre-fix implementation.
+    try await owner.discardPending()
+    try await owner.close()
+  }
+
+  @Test func discardDoesNotPublishSaveFailure() async throws {
+    final class Statuses: @unchecked Sendable {
+      let lock = NSLock()
+      var values: [DocumentSaveStatus] = []
+      func append(_ value: DocumentSaveStatus) { lock.withLock { values.append(value) } }
+      var failed: Bool { lock.withLock { values.contains { if case .failed = $0 { true } else { false } } } }
+    }
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let statuses = Statuses()
+    owner.onSaveStatus = { status, _ in statuses.append(status) }
+    try await edit(owner)
+    try await owner.discardPending()
+    #expect(!statuses.failed)
+    try await owner.close()
+  }
+}
+
+
+extension PersistenceSchedulingTests {
+  @Test func failedCloseRetainsOwnershipAndAllowsRetry() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    try await edit(owner)
+    owner.testingPhase = { phase in
+      if phase == "close" { throw failure("injected close failure") }
+    }
+    await #expect(throws: (any Error).self) { try await owner.close() }
+    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
+    owner.testingPhase = nil
+    try await edit(owner)
+    try await owner.close()
+    try WriterLock.acquire(root).release()
+    #expect(try savedHits(root) == 6)
+  }
+}
+
+
+extension PersistenceSchedulingTests {
+  // Failure: a flush admitted while discard restored saved bytes waited for the old
+  // publication sequence, which the restored core (sequence 0) never reaches, so the
+  // page hung. Oracle: the flush settles promptly as replaced, and saving still works.
+  @Test func flushDuringDiscardRestoreSettlesAsReplaced() async throws {
+    final class Reply: @unchecked Sendable {
+      let lock = NSLock()
+      var result: Result<PageResult, Error>?
+      var continuation: CheckedContinuation<Void, Never>?
+      func set(_ value: Result<PageResult, Error>) {
+        lock.withLock { result = value; continuation?.resume(); continuation = nil }
+      }
+      func wait() async {
+        await withCheckedContinuation { next in
+          lock.withLock { if result == nil { continuation = next } else { next.resume() } }
+        }
+      }
+    }
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.attach(view: "page")
+    try await edit(owner)
+    try await edit(owner)
+    let gate = StorageGate("load")
+    owner.testingPhase = { gate.hook($0) }
+    let discarding = Task { try await owner.discardPending() }
+    await gate.reached()
+    let reply = Reply()
+    owner.enqueuePage(.flush, view: "page") { reply.set($0) }
+    _ = try await owner.state()
+    gate.release()
+    try await discarding.value
+    owner.testingPhase = nil
+    let settled = await finishes(within: 2) { await reply.wait() }
+    #expect(settled)
+    if settled, case .failure(let error)? = reply.lock.withLock({ reply.result }) {
+      #expect(error is OwnerReplaced)
+    } else {
+      Issue.record("flush during discard did not settle as replaced")
+    }
+    try await edit(owner)
     try await owner.flush()
     #expect(try savedHits(root) == 3)
     try await owner.close()

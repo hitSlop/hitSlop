@@ -1,0 +1,82 @@
+{
+  "commit": "4c12ea89db2c186e6157efde02bab3770bf4d5d1",
+  "dirty": true,
+  "reusedBuild": true,
+  "skippedApp": false,
+  "platform": "darwin",
+  "arch": "arm64",
+  "bun": "1.4.2",
+  "passed": true,
+  "stages": [
+    {
+      "command": "hygiene",
+      "code": 0,
+      "seconds": 0.5869060410000001
+    },
+    {
+      "command": "check",
+      "code": 0,
+      "seconds": 23.354051583
+    },
+    {
+      "command": "check:built",
+      "code": 0,
+      "seconds": 0.06597612499999742
+    },
+    {
+      "command": "test",
+      "code": 0,
+      "seconds": 46.908643792
+    },
+    {
+      "command": "swift:test",
+      "code": 0,
+      "seconds": 105.85476425
+    },
+    {
+      "command": "test:native",
+      "code": 0,
+      "seconds": 26.90283470800001
+    },
+    {
+      "command": "test:render",
+      "code": 0,
+      "seconds": 38.75488562499999
+    },
+    {
+      "command": "test:native-helper",
+      "code": 0,
+      "seconds": 8.565307834000006
+    },
+    {
+      "command": "packages:pack",
+      "code": 0,
+      "seconds": 0.7545874170000024
+    },
+    {
+      "command": "test:packed --native",
+      "code": 0,
+      "seconds": 29.92522658300004
+    },
+    {
+      "command": "landing:check",
+      "code": 0,
+      "seconds": 8.308989457999996
+    },
+    {
+      "command": "landing:build",
+      "code": 0,
+      "seconds": 6.627166666999983
+    },
+    {
+      "command": "apple:build",
+      "code": 0,
+      "seconds": 47.46817083300004
+    },
+    {
+      "command": "test:native-crash",
+      "code": 0,
+      "seconds": 13.613383624999958
+    }
+  ]
+}

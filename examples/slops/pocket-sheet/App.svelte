@@ -1,7 +1,9 @@
 <script lang="ts">
+import { ui, type Point } from "./ui.svelte";
+
   import { onMount, tick } from "svelte";
   import { Popover } from "bits-ui";
-  import { Slop, useDocument, bindText, type DocumentScope } from "@hitslop/document/svelte";
+  import { useDocument, bindText, type DocumentScope } from "@hitslop/document/svelte";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
   import schema, { stamps, tints, type Tint } from "./schema";
@@ -9,25 +11,18 @@
 
   const doc = useDocument(schema);
   const DEFAULT_WIDTH = 96;
-  type Point = { column: number; row: number };
+
 
   const inputs = $derived(Object.fromEntries(Object.entries(doc.current.cells).map(([key, cell]) => [key, cell.input])));
   const results = $derived(evaluate(inputs));
-  let anchor = $state<Point>({ column: 1, row: 8 });
-  let cursor = $state<Point>({ column: 1, row: 8 });
-  let editing = $state<{ key: string; from: "cell" | "bar" } | null>(null);
-  let draft = $state("");
-  let dragging = $state(false);
-  let resizing = $state<{ letter: string; width: number } | null>(null);
-  let bouncing = $state<ReadonlySet<string>>(new Set());
-  let notice = $state("");
-  let stampOpen = $state(false);
+
+
   let grid: HTMLElement;
 
-  const activeKey = $derived(cellKey(cursor.column, cursor.row));
+  const activeKey = $derived(cellKey(ui.cursor.column, ui.cursor.row));
   const bounds = $derived({
-    left: Math.min(anchor.column, cursor.column), right: Math.max(anchor.column, cursor.column),
-    top: Math.min(anchor.row, cursor.row), bottom: Math.max(anchor.row, cursor.row),
+    left: Math.min(ui.anchor.column, ui.cursor.column), right: Math.max(ui.anchor.column, ui.cursor.column),
+    top: Math.min(ui.anchor.row, ui.cursor.row), bottom: Math.max(ui.anchor.row, ui.cursor.row),
   });
   const selection = $derived(allKeys.filter((_, i) => {
     const row = Math.floor(i / COLUMNS), column = i % COLUMNS;
@@ -38,7 +33,7 @@
   const total = $derived(numbers.reduce((a, b) => a + b, 0));
   const widthOf = (column: number) => {
     const letter = columnName(column);
-    return resizing?.letter === letter ? resizing.width : doc.current.widths[letter] ?? DEFAULT_WIDTH;
+    return ui.resizing?.letter === letter ? ui.resizing.width : doc.current.widths[letter] ?? DEFAULT_WIDTH;
   };
   const template = $derived(`40px ${Array.from({ length: COLUMNS }, (_, c) => `${widthOf(c)}px`).join(" ")}`);
   const kind = (value: Value | undefined) =>
@@ -56,22 +51,22 @@
       shown.set(key, text);
     }
     if (!changed.length) return;
-    bouncing = new Set(changed);
+    ui.bouncing = new Set(changed);
     clearTimeout(bounceTimer);
-    bounceTimer = setTimeout(() => bouncing = new Set(), 700);
+    bounceTimer = setTimeout(() => ui.bouncing = new Set(), 700);
   });
   onMount(() => {
-    const stop = () => { dragging = false; };
+    const stop = () => { ui.dragging = false; };
     window.addEventListener("pointerup", stop);
     return () => { window.removeEventListener("pointerup", stop); clearTimeout(bounceTimer); };
   });
 
   function select(point: Point, extend = false) {
     const next = { column: Math.max(0, Math.min(COLUMNS - 1, point.column)), row: Math.max(0, Math.min(ROWS - 1, point.row)) };
-    cursor = next;
-    if (!extend) anchor = next;
+    ui.cursor = next;
+    if (!extend) ui.anchor = next;
   }
-  function write(entries: [string, string][], message: string) {
+  function write(entries: [string, string][]) {
     void doc.change(tx => {
       for (const [key, input] of entries) {
         const cell = doc.current.cells[key];
@@ -79,10 +74,10 @@
         if (!input && cell.tint === undefined && cell.stamp === undefined) tx.fields.cells.delete(key);
         else if (cell.input !== input) tx.fields.cells.entry(key).input.set(input);
       }
-    }, { message }).catch(() => {});
+    }).catch(() => {});
   }
-  type CellHandle = ReturnType<DocumentScope<typeof schema.fields.node>["fields"]["cells"]["entry"]>;
-  function decorate(apply: (key: string, handle: CellHandle) => void, empty: (key: string) => boolean, message: string) {
+  type CellHandle = ReturnType<DocumentScope<typeof schema.descriptor>["fields"]["cells"]["entry"]>;
+  function decorate(apply: (key: string, handle: CellHandle) => void, empty: (key: string) => boolean) {
     void doc.change(tx => {
       for (const key of selection) {
         if (!doc.current.cells[key]) {
@@ -93,37 +88,37 @@
         const cell = doc.current.cells[key];
         if (empty(key) && !cell?.input) tx.fields.cells.delete(key);
       }
-    }, { message }).catch(() => {});
+    }).catch(() => {});
   }
   function paint(tint: Tint | null) {
     const clearing = tint === null || selection.every(key => doc.current.cells[key]?.tint === tint);
     const empty = (key: string) => clearing && doc.current.cells[key]?.stamp === undefined;
-    decorate((_, cell) => clearing ? cell.tint.clear() : cell.tint.set(tint!), empty, clearing ? "Erase crayon" : "Color cells");
-    notice = clearing ? "Crayon erased." : `Colored ${rangeLabel} ${tint}.`;
+    decorate((_, cell) => clearing ? cell.tint.clear() : cell.tint.set(tint!), empty);
+    ui.notice = clearing ? "Crayon erased." : `Colored ${rangeLabel} ${tint}.`;
   }
   function stamp(mark: string | null) {
     const empty = (key: string) => mark === null && doc.current.cells[key]?.tint === undefined;
-    decorate((_, cell) => mark === null ? cell.stamp.clear() : cell.stamp.set(mark), empty, mark ? "Stamp cells" : "Remove stamp");
-    stampOpen = false;
-    notice = mark ? `Stamped ${rangeLabel} ${mark}.` : "Stamp removed.";
+    decorate((_, cell) => mark === null ? cell.stamp.clear() : cell.stamp.set(mark), empty);
+    ui.stampOpen = false;
+    ui.notice = mark ? `Stamped ${rangeLabel} ${mark}.` : "Stamp removed.";
     grid.focus();
   }
 
   async function beginEdit(from: "cell" | "bar", initial?: string) {
-    editing = { key: activeKey, from };
-    draft = initial ?? doc.current.cells[activeKey]?.input ?? "";
-    anchor = cursor;
+    ui.editing = { key: activeKey, from };
+    ui.draft = initial ?? doc.current.cells[activeKey]?.input ?? "";
+    ui.anchor = ui.cursor;
     if (from === "cell") { await tick(); grid.querySelector<HTMLInputElement>(".pocket-cell-input")?.focus(); }
   }
   function commit(move?: Point) {
-    if (!editing) return;
-    const { key } = editing;
-    editing = null;
-    if (draft !== (doc.current.cells[key]?.input ?? "")) write([[key, draft]], "Edit cell");
-    if (move) select({ column: cursor.column + move.column, row: cursor.row + move.row });
+    if (!ui.editing) return;
+    const { key } = ui.editing;
+    ui.editing = null;
+    if (ui.draft !== (doc.current.cells[key]?.input ?? "")) write([[key, ui.draft]]);
+    if (move) select({ column: ui.cursor.column + move.column, row: ui.cursor.row + move.row });
     grid.focus();
   }
-  function cancel() { editing = null; grid.focus(); }
+  function cancel() { ui.editing = null; grid.focus(); }
   function editKeys(event: KeyboardEvent) {
     if (event.isComposing) return;
     const moves: Record<string, Point> = { Enter: { column: 0, row: event.shiftKey ? -1 : 1 }, Tab: { column: event.shiftKey ? -1 : 1, row: 0 } };
@@ -132,29 +127,29 @@
     else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancel(); }
   }
   function gridKeys(event: KeyboardEvent) {
-    if (editing || event.isComposing) return;
+    if (ui.editing || event.isComposing) return;
     const arrows: Record<string, Point> = { ArrowUp: { column: 0, row: -1 }, ArrowDown: { column: 0, row: 1 }, ArrowLeft: { column: -1, row: 0 }, ArrowRight: { column: 1, row: 0 } };
     const command = event.metaKey || event.ctrlKey;
     if (arrows[event.key]) {
       event.preventDefault();
       const step = arrows[event.key]!;
-      select(command ? { column: step.column ? (step.column < 0 ? 0 : COLUMNS - 1) : cursor.column, row: step.row ? (step.row < 0 ? 0 : ROWS - 1) : cursor.row }
-        : { column: cursor.column + step.column, row: cursor.row + step.row }, event.shiftKey);
+      select(command ? { column: step.column ? (step.column < 0 ? 0 : COLUMNS - 1) : ui.cursor.column, row: step.row ? (step.row < 0 ? 0 : ROWS - 1) : ui.cursor.row }
+        : { column: ui.cursor.column + step.column, row: ui.cursor.row + step.row }, event.shiftKey);
     } else if (event.key === "Tab") {
       event.preventDefault();
-      select({ column: cursor.column + (event.shiftKey ? -1 : 1), row: cursor.row });
+      select({ column: ui.cursor.column + (event.shiftKey ? -1 : 1), row: ui.cursor.row });
     } else if (event.key === "Enter" || event.key === "F2") {
       event.preventDefault();
       void beginEdit("cell");
     } else if (event.key === "Backspace" || event.key === "Delete") {
       event.preventDefault();
-      write(selection.map(key => [key, ""]), "Clear cells");
-      notice = `Cleared ${rangeLabel}.`;
+      write(selection.map(key => [key, ""]));
+      ui.notice = `Cleared ${rangeLabel}.`;
     } else if (event.key === "Escape") {
-      anchor = cursor;
+      ui.anchor = ui.cursor;
     } else if (command && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      anchor = { column: 0, row: 0 }; cursor = { column: COLUMNS - 1, row: ROWS - 1 };
+      ui.anchor = { column: 0, row: 0 }; ui.cursor = { column: COLUMNS - 1, row: ROWS - 1 };
     } else if (command && (event.key.toLowerCase() === "c" || event.key.toLowerCase() === "x")) {
       event.preventDefault();
       void copy(event.key.toLowerCase() === "x");
@@ -174,33 +169,33 @@
     }
     try {
       await navigator.clipboard.writeText(rows.join("\n"));
-      if (cut) write(selection.map(key => [key, ""]), "Cut cells");
-      notice = `${cut ? "Cut" : "Copied"} ${rangeLabel}.`;
-    } catch { notice = "The clipboard is not available here."; }
+      if (cut) write(selection.map(key => [key, ""]));
+      ui.notice = `${cut ? "Cut" : "Copied"} ${rangeLabel}.`;
+    } catch { ui.notice = "The clipboard is not available here."; }
   }
   function paste(event: ClipboardEvent) {
-    if (editing || document.activeElement !== grid) return;
+    if (ui.editing || document.activeElement !== grid) return;
     const text = event.clipboardData?.getData("text/plain");
     if (!text) return;
     event.preventDefault();
     const entries: [string, string][] = [];
     text.replace(/\r/g, "").replace(/\n$/, "").split("\n").forEach((line, r) => line.split("\t").forEach((value, c) => {
-      const column = cursor.column + c, row = cursor.row + r;
+      const column = ui.cursor.column + c, row = ui.cursor.row + r;
       if (column < COLUMNS && row < ROWS) entries.push([cellKey(column, row), value.slice(0, 500)]);
     }));
-    write(entries, "Paste cells");
-    notice = `Pasted ${entries.length} cell${entries.length === 1 ? "" : "s"}.`;
+    write(entries);
+    ui.notice = `Pasted ${entries.length} cell${entries.length === 1 ? "" : "s"}.`;
   }
 
   function resize(node: HTMLElement, column: number) {
     let start = 0, width = 0;
     const letter = columnName(column);
-    const move = (event: PointerEvent) => { resizing = { letter, width: Math.max(56, Math.min(320, Math.round(width + event.clientX - start))) }; };
+    const move = (event: PointerEvent) => { ui.resizing = { letter, width: Math.max(56, Math.min(320, Math.round(width + event.clientX - start))) }; };
     const up = () => {
       node.removeEventListener("pointermove", move);
       // Keep the dragged width shown until the saved width replaces it.
-      if (resizing) doc.fields.widths.put(letter, resizing.width).finally(() => (resizing = null)).catch(() => {});
-      else resizing = null;
+      if (ui.resizing) doc.fields.widths.put(letter, ui.resizing.width).finally(() => (ui.resizing = null)).catch(() => {});
+      else ui.resizing = null;
     };
     const down = (event: PointerEvent) => {
       event.preventDefault(); event.stopPropagation();
@@ -225,14 +220,14 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
-    notice = "CSV ready. Formulas recalculate when opened in Numbers or Excel.";
+    ui.notice = "CSV ready. Formulas recalculate when opened in Numbers or Excel.";
   }
 </script>
 
 {#snippet sheet(interactive: boolean)}
   <div class="pocket-grid" style:grid-template-columns={template}
     role="grid" aria-readonly={interactive ? undefined : "true"} aria-label={`${doc.current.title || "Pocket Sheet"} cells`} aria-rowcount={ROWS + 1} aria-colcount={COLUMNS + 1}
-    aria-multiselectable={interactive ? "true" : undefined} aria-activedescendant={interactive && !editing ? `pocket-${activeKey}` : undefined}
+    aria-multiselectable={interactive ? "true" : undefined} aria-activedescendant={interactive && !ui.editing ? `pocket-${activeKey}` : undefined}
     tabindex={interactive ? 0 : -1} bind:this={() => grid, node => { if (interactive) grid = node; }}
     onkeydown={interactive ? gridKeys : undefined}>
     <div class="pocket-row" role="row">
@@ -257,17 +252,17 @@
             aria-label={`${key}${cell?.stamp ? ` ${cell.stamp}` : ""}: ${display(value ?? "") || "empty"}${cell?.input.startsWith("=") ? `, formula ${cell.input}` : ""}`}
             data-tint={cell?.tint} data-kind={kind(value)} data-formula={cell?.input.startsWith("=") ? "" : undefined}
             data-selected={inside && selection.length > 1 ? "" : undefined} data-active={interactive && key === activeKey ? "" : undefined}
-            data-bounce={bouncing.has(key) ? "" : undefined}
-            onpointerdown={interactive ? event => { if (event.button !== 0 || editing?.key === key) return; if (editing) commit(); event.preventDefault(); select({ column, row }, event.shiftKey); dragging = true; grid.focus(); } : undefined}
-            onpointerenter={interactive ? () => { if (dragging) select({ column, row }, true); } : undefined}
+            data-bounce={ui.bouncing.has(key) ? "" : undefined}
+            onpointerdown={interactive ? event => { if (event.button !== 0 || ui.editing?.key === key) return; if (ui.editing) commit(); event.preventDefault(); select({ column, row }, event.shiftKey); ui.dragging = true; grid.focus(); } : undefined}
+            onpointerenter={interactive ? () => { if (ui.dragging) select({ column, row }, true); } : undefined}
             ondblclick={interactive ? () => { select({ column, row }); void beginEdit("cell"); } : undefined}>
-            {#if interactive && editing?.key === key && editing.from === "cell"}
-              <input class="pocket-cell-input" aria-label={`Edit ${key}`} bind:value={draft} maxlength="500" spellcheck="false" autocomplete="off"
-                onkeydown={editKeys} onblur={() => { if (editing?.key === key) commit(); }} />
+            {#if interactive && ui.editing?.key === key && ui.editing.from === "cell"}
+              <input class="pocket-cell-input" aria-label={`Edit ${key}`} bind:value={ui.draft} maxlength="500" spellcheck="false" autocomplete="off"
+                onkeydown={editKeys} onblur={() => { if (ui.editing?.key === key) commit(); }} />
             {:else}
               {#if cell?.stamp}<span class="pocket-stamp" aria-hidden="true">{cell.stamp}</span>{/if}
               <span class="pocket-value" title={isError(value ?? "") ? "This formula can't be worked out. Check its references." : undefined}>{display(value ?? "")}</span>
-              {#if bouncing.has(key)}<span class="pocket-sparkle" aria-hidden="true">✨</span>{/if}
+              {#if ui.bouncing.has(key)}<span class="pocket-sparkle" aria-hidden="true">✨</span>{/if}
             {/if}
           </div>
         {/each}
@@ -276,7 +271,7 @@
   </div>
 {/snippet}
 
-<Slop>
+
   <main class="pocket-desk" onpaste={paste}>
     <section class="pocket-paper">
       <header class="pocket-header">
@@ -291,10 +286,10 @@
         <span class="pocket-fx" aria-hidden="true">fx</span>
         <input class="pocket-bar-input" aria-label={`Contents of ${activeKey}`} spellcheck="false" autocomplete="off" maxlength="500"
           placeholder="Type a number, words, or =SUM(B2:B5)"
-          value={editing ? draft : doc.current.cells[activeKey]?.input ?? ""}
-          oninput={event => { if (editing?.from !== "bar") void beginEdit("bar"); draft = event.currentTarget.value; }}
-          onfocus={() => { if (!editing) void beginEdit("bar"); }}
-          onkeydown={editKeys} onblur={() => { if (editing?.from === "bar") commit(); }} />
+          value={ui.editing ? ui.draft : doc.current.cells[activeKey]?.input ?? ""}
+          oninput={event => { if (ui.editing?.from !== "bar") void beginEdit("bar"); ui.draft = event.currentTarget.value; }}
+          onfocus={() => { if (!ui.editing) void beginEdit("bar"); }}
+          onkeydown={editKeys} onblur={() => { if (ui.editing?.from === "bar") commit(); }} />
       </div>
       <div class="pocket-scroll">{@render sheet(true)}</div>
       <footer class="pocket-tray">
@@ -305,7 +300,7 @@
           {/each}
           <button class="pocket-crayon pocket-eraser" aria-label="Erase crayon" title="Erase crayon" onclick={() => { paint(null); grid.focus(); }}><Eraser size={16} /></button>
         </div>
-        <Popover.Root bind:open={stampOpen}>
+        <Popover.Root bind:open={ui.stampOpen}>
           <Popover.Trigger class="pocket-stamp-trigger"><span aria-hidden="true">{doc.current.cells[activeKey]?.stamp ?? "⭐"}</span>Stamp</Popover.Trigger>
           <Popover.Portal>
             <Popover.Content class="pocket-stamp-pad" side="top" sideOffset={8} onCloseAutoFocus={event => { event.preventDefault(); grid.focus(); }}>
@@ -324,24 +319,5 @@
         </output>
       </footer>
     </section>
-    <p class="pocket-sr-only" aria-live="polite">{notice}</p>
+    <p class="pocket-sr-only" aria-live="polite">{ui.notice}</p>
   </main>
-
-  {#snippet exportView()}
-    <article class="pocket-export-view">
-      <p class="pocket-eyebrow">Pocket Sheet</p>
-      <h1>{doc.current.title || "Untitled sheet"}</h1>
-      {@render sheet(false)}
-    </article>
-  {/snippet}
-  {#snippet icon()}
-    <div class="pocket-icon" aria-label="Pocket Sheet">
-      <div class="pocket-icon-sheet">
-        <span></span><b>A</b><b>B</b>
-        <b>1</b><i>🍕</i><em>24</em>
-        <b>2</b><i></i><em class="pocket-icon-hi">=Σ</em>
-      </div>
-      <span class="pocket-icon-spark">✨</span>
-    </div>
-  {/snippet}
-</Slop>

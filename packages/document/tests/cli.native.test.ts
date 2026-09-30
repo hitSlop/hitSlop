@@ -8,7 +8,7 @@ const schema = defineDocument({ title: s.text() });
 // A configured catalog root must be refused before a command can create mutable state.
 test("native CLI refuses an environment-configured template master before mutation", async () => {
   if (process.platform !== "darwin") return;
-  const parent = await mkdtemp(join(tmpdir(), "hsl-master-v1-"));
+  const parent = await mkdtemp(join(tmpdir(), "hsl-master-"));
   const root = join(parent, "Master.slop");
   try {
     await mkdir(join(root, "assets"), { recursive: true });
@@ -59,7 +59,7 @@ test("native CLI refuses an environment-configured template master before mutati
 }, 60000);
 test("native CLI rejects invalid packages and malformed commands before mutation", async () => {
   if (process.platform !== "darwin") return;
-  const parent = await mkdtemp(join(tmpdir(), "hsl-cli-v1-"));
+  const parent = await mkdtemp(join(tmpdir(), "hsl-cli-"));
   const root = join(parent, "Document.slop");
   await (await import("node:fs/promises")).mkdir(root);
   const cli = async (command: string, ...args: string[]) => {
@@ -83,7 +83,9 @@ test("native CLI rejects invalid packages and malformed commands before mutation
   };
   try {
     await writeFile(join(root, "manifest.json"), JSON.stringify({ slug: "not-a-manifest" }));
-    expect((await cli("get")).error).toContain("invalid v1 manifest");
+    const refused = await cli("get");
+    expect(refused.code).not.toBe(0);
+    expect(refused.error).toContain("Invalid manifest.json at /");
     expect(await readdir(root)).toEqual(["manifest.json"]);
     const manifest = JSON.parse(
       await readFile("examples/slops/quick-checklist/manifest.json", "utf8"),
@@ -113,6 +115,7 @@ test("native CLI rejects invalid packages and malformed commands before mutation
     expect((await cli("batch", "--ops", "null")).code).not.toBe(0);
     const changed = defineDocument({ title: s.text(), extra: s.boolean() });
     await writeFile(join(root, "state.schema.json"), JSON.stringify(changed.descriptor));
+    await writeFile(join(root, "initial.json"), JSON.stringify({ title: "Initial", extra: false }));
     expect((await cli("get")).error).toContain("schema differs from saved state");
     expect(await readFile(join(root, "state/document.sqlite"))).toEqual(before);
   } finally {

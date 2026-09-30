@@ -1,19 +1,13 @@
 <script lang="ts">
-  
-  const TARGET = 750;
-  let { dateLabel, text, words, completed }: {
-    dateLabel: string;
-    text: string;
-    words: number;
-    completed: boolean;
-  } = $props();
-  const progressPct = $derived(Math.min(100, Math.round((words / TARGET) * 100)));
-  const fillScale = $derived(Math.max(0, Math.min(1, words / TARGET)));
-  const page1Done = $derived(words >= 250);
-  const page2Done = $derived(words >= 500);
+import { useDocument } from "@hitslop/document/svelte";
+import schema from "./schema";
+import { formatDisplayDate, pageView, TARGET } from "./model";
+const doc = useDocument(schema);
+const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
+const text = $derived(active?.text ?? "");
 </script>
 
-<article class={"mp-exportPad"} aria-label="Exported morning pages for {dateLabel}">
+<article class={"mp-exportPad"} aria-label="Exported morning pages for {formatDisplayDate(doc.current.currentKey)}">
   <header class={"mp-stub"}>
     <span class={"mp-perforations"} aria-hidden="true"></span>
     <div class={"mp-brandRow"}>
@@ -23,22 +17,22 @@
       </div>
     </div>
     <div class={"mp-headlineRow"}>
-      <h1 class={"mp-dateHeadline"}>{dateLabel}</h1>
-      {#if completed}<span class={"mp-stamp"}>3 pages cleared</span>{/if}
+      <h1 class={"mp-dateHeadline"}>{formatDisplayDate(doc.current.currentKey)}</h1>
+      {#if page3Done}<span class={"mp-stamp"}>3 pages cleared</span>{/if}
     </div>
     <div class={"mp-odometer"}>
       <div class={"mp-odometerReadout"}>
-        <span class={"mp-odometerDigits"} data-complete={completed}>{String(words).padStart(3, "0")}</span>
-        <span class={"mp-odometerPrecise"}>{words} / {TARGET} words · {progressPct}%</span>
+        <span class={"mp-odometerDigits"} data-complete={page3Done}>{String(wordsCount).padStart(3, "0")}</span>
+        <span class={"mp-odometerPrecise"}>{wordsCount} / {TARGET} words · {progressPct}%</span>
       </div>
       <div class={"mp-pagesTrack"}>
         <div class={"mp-fillTrack"} aria-hidden="true">
-          <div class={"mp-fill"} data-complete={completed} style:transform={`scaleX(${fillScale})`}></div>
+          <div class={"mp-fill"} data-complete={page3Done} style:transform={`scaleX(${Math.min(1, wordsCount / TARGET)})`}></div>
         </div>
         <div class={"mp-segments"} aria-hidden="true">
           <span class={"mp-segment"} data-done={page1Done}>Page 1 · 250</span>
           <span class={"mp-segment"} data-done={page2Done}>Page 2 · 500</span>
-          <span class={"mp-segment"} data-done={completed}>Page 3 · 750</span>
+          <span class={"mp-segment"} data-done={page3Done}>Page 3 · 750</span>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { writeSkills } from "@crustjs/skills";
 import { fileURLToPath } from "node:url";
 import { app, cliVersion, skillExtras, skillName } from "./app";
 
-export const packagedSkillsDirectory = fileURLToPath(
+const packagedSkillsDirectory = fileURLToPath(
   new URL("../.crust/root/skills", import.meta.url),
 );
 

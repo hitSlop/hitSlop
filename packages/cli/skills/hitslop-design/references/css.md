@@ -17,7 +17,7 @@ Keep public defaults in `theme.ts` using `defineTheme` from
 `@hitslop/document/theme`. The builder writes defaults to `assets/theme.json`;
 the runtime applies defaults and document overrides before mounting the app.
 Compiled app styling lives in `assets/app.css`. Owners use `slop theme get/set/reset`;
-the host writes overrides separately in `state/theme.json`. Never edit these built
+the host saves overrides in the document's database. Never edit these built
 files directly. Layout changes require authoring source and a rebuild.
 Do not add mutable CSS files or duplicate token defaults.
 

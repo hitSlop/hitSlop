@@ -1,6 +1,6 @@
 # Habit Heatmap
 
-A bundled v1 habit tracker. Pick a habit and tap a day to mark or clear it.
+A bundled habit tracker. Pick a habit and tap a day to mark or clear it.
 Add and edit habits with the plus and Edit buttons. Choose from twelve colors.
 Remove a habit and its check-in history from Edit, then confirm removal. The calendar shows twelve
 Monday-based weeks, including the current week; future days are disabled.

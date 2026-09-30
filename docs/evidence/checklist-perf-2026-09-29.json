@@ -6,7 +6,7 @@
     "acceptance_p95": "100 back-to-back checkbox writes; each waits for the host reply and snapshot update",
     "idle_acceptance_p95": "40 checkbox writes, each started 100 ms after the previous one (like a real click)",
     "frame_after_edit": "time from acceptance until the main thread is free (JS flush + WebKit layout)",
-    "click_split": "click -> DOM mutation (js), forced layout, remainder; same probe in scripts/v1/bench-webkit.ts (Playwright WebKit) and scripts/v1/bench-wkwebview.swift (plain system WKWebView)"
+    "click_split": "click -> DOM mutation (js), forced layout, remainder; same probe in scripts/bench-webkit.ts (Playwright WebKit) and scripts/bench-wkwebview.swift (plain system WKWebView)"
   },
   "baseline": {
     "1000": { "open_ms": 2082, "acceptance_p95_ms": 329, "drain_ms": 133, "webcontent_mib": 239 },

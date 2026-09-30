@@ -16,6 +16,6 @@ const schema = defineDocument({
   })),
 });
 
-export type WorkoutPlanner = Value<typeof schema.fields.node>;
+export type WorkoutPlanner = Value<typeof schema.descriptor>;
 export type Exercise = WorkoutPlanner["exercises"][number];
 export default schema;

@@ -1,11 +1,14 @@
 import { Type, type Static } from "typebox";
+import { CoreErrorCodes, IssueCodes, PageErrorCodes, PagePayloadLimit, RowIdRule } from "./constants";
+export { CoreErrorCodes, IssueCodes, PageErrorCodes, PagePayloadLimit, RowIdRule };
 
 // Document core and page wire. TypeBox is authoritative; Rust and Swift are generated.
 // Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
+export const RowId = Type.String({ pattern: `^[${RowIdRule.characters}]{1,${RowIdRule.maximum}}$` });
 export const Segment = Type.Union([
   Type.String({ minLength: 1 }),
   Type.Object(
-    { id: Type.String({ pattern: "^[0-9A-Za-z_-]{1,64}$" }) },
+    { id: RowId },
     { additionalProperties: false },
   ),
   Type.Object({ index: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
@@ -37,7 +40,7 @@ export const variants = {
   // Removes an optional field's value; a no-op when it is not set.
   clear: { path },
   // Counters: a nonzero safe-integer delta; the core also bounds the resulting sum.
-  increment: { path, by: Type.Integer({ minimum: -9007199254740991, maximum: 9007199254740991 }) },
+  increment: { path, by: Type.Integer({ minimum: -Number.MAX_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }) },
 } as const;
 export const Intent = Type.Union([
   Type.Object({ type: Type.Literal("set"), ...variants.set }, { additionalProperties: false }),
@@ -66,11 +69,22 @@ export const editTextFields = {
   selectionStart: Type.Integer({ minimum: 0 }),
   selectionEnd: Type.Integer({ minimum: 0 }),
 };
-export const EditTextRequest = Type.Object(editTextFields, { additionalProperties: false });
+const EditTextRequest = Type.Object(editTextFields, { additionalProperties: false });
 
+/** One hunk of a text change, in Unicode code points of the field's previous text. */
+export const TextHunk = Type.Union([
+  Type.Object({ retain: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+  Type.Object({ insert: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  Type.Object({ delete: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+]);
 export const PatchOp = Type.Union([
   Type.Object(
     { type: Type.Literal("set"), path, value: Type.Unknown() },
+    { additionalProperties: false },
+  ),
+  // An edit to an existing text field; the rest of the field is retained.
+  Type.Object(
+    { type: Type.Literal("text"), path, delta: Type.Array(TextHunk, { minItems: 1 }) },
     { additionalProperties: false },
   ),
   Type.Object({ type: Type.Literal("remove"), path }, { additionalProperties: false }),
@@ -95,11 +109,14 @@ export const PatchOp = Type.Union([
 
 const identity = Type.String({ minLength: 1, maxLength: 128 });
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
-// Issues address stored anomalies. They do not authorize a repair on read.
+// Issues address stored anomalies. They do not authorize a repair on read. Rows are
+// addressed by their effective `$id`, as in the snapshot; scalar-list elements and
+// rows that are not objects by `{index}`.
+const IssueCodeSchema = Type.Enum(IssueCodes);
 export const OwnerIssueSchema = Type.Object(
   {
-    code: Type.String({ minLength: 1 }),
-    path: Type.Array(Type.Unknown()),
+    code: IssueCodeSchema,
+    path: Type.Array(Segment, { maxItems: 64 }),
   },
   { additionalProperties: false },
 );
@@ -112,76 +129,72 @@ export const OwnerStateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-/** One accepted change. `previous` lets the page prove the stream is contiguous. */
+/** One accepted change. `previous` lets the page prove the stream is contiguous;
+ * `issues`, the complete current list, is present only when it changed. */
 export const OwnerPublicationSchema = Type.Object(
   {
     previous: sequence,
     sequence,
     version: Type.String(),
     ops: Type.Array(PatchOp),
-    issues: Type.Array(OwnerIssueSchema),
+    issues: Type.Optional(Type.Array(OwnerIssueSchema)),
   },
   { additionalProperties: false },
 );
 
 // Page → host. `view` names the attached page; a request from a replaced page, or one
-// queued before discard, is refused with `owner_replaced` and never applied.
+// queued before discard, is refused with `owner_replaced` and never applied. Document
+// payloads cross as JSON text that only the core parses: a `Batch` or an `EditText`.
 const pageBase = { id: identity, view: identity };
-export const PageRequestSchema = Type.Union([
+const payload = Type.String({ minLength: 2, maxLength: PagePayloadLimit });
+const PageRequestSchema = Type.Union([
   Type.Object({ ...pageBase, method: Type.Literal("open") }, { additionalProperties: false }),
   Type.Object(
-    { ...pageBase, method: Type.Literal("apply"), batch: Batch },
+    { ...pageBase, method: Type.Literal("apply"), batch: payload },
     { additionalProperties: false },
   ),
   Type.Object(
-    { ...pageBase, method: Type.Literal("text"), request: EditTextRequest },
+    { ...pageBase, method: Type.Literal("text"), request: payload },
     { additionalProperties: false },
   ),
   Type.Object({ ...pageBase, method: Type.Literal("flush") }, { additionalProperties: false }),
 ]);
-export const PageErrorCodeSchema = Type.Enum([
-  "rejected",
-  "owner_replaced",
-  "closing",
-  "save_failed",
-  "owner_invalidated",
-  "unknown_outcome",
+export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes);
+export type CoreErrorCode = Static<typeof CoreErrorCodeSchema>;
+
+const PageErrorCodeSchema = Type.Enum(PageErrorCodes);
+const ReplyFailure = Type.Object(
+  { id: identity, ok: Type.Literal(false), code: PageErrorCodeSchema, error: Type.String(),
+    reason: Type.Optional(CoreErrorCodeSchema), opIndex: Type.Optional(sequence) },
+  { additionalProperties: false },
+);
+const success = { id: identity, ok: Type.Literal(true) };
+// `state` is the core's snapshot JSON (an `OwnerState`), passed through unparsed.
+export const OpenReplySchema = Type.Union([
+  Type.Object({ ...success, state: Type.String(), savedSequence: sequence,
+    saveFailure: Type.Union([Type.String(), Type.Null()]) }, { additionalProperties: false }),
+  ReplyFailure,
 ]);
-export const PageReplySchema = Type.Union([
-  Type.Object(
-    {
-      id: identity,
-      ok: Type.Literal(true),
-      // open: the snapshot the push stream continues from, and save status.
-      state: Type.Optional(OwnerStateSchema),
-      savedSequence: Type.Optional(sequence),
-      saveFailure: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-      // apply and text: the publication sequence that carries the change.
-      sequence: Type.Optional(sequence),
-      ids: Type.Optional(Type.Array(Type.String())),
-      // text: the version right after this edit on its own branch, and the caret.
-      authored: Type.Optional(Type.String()),
-      selectionStart: Type.Optional(sequence),
-      selectionEnd: Type.Optional(sequence),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { id: identity, ok: Type.Literal(false), code: PageErrorCodeSchema, error: Type.String() },
-    { additionalProperties: false },
-  ),
+export const ApplyReplySchema = Type.Union([
+  Type.Object({ ...success, sequence, ids: Type.Array(Type.String()) }, { additionalProperties: false }),
+  ReplyFailure,
 ]);
-/** Host → page, in order, through `__hitslop.publish(pushes)`. */
+export const TextReplySchema = Type.Union([
+  Type.Object({ ...success, sequence, authored: Type.String(), selectionStart: sequence, selectionEnd: sequence },
+    { additionalProperties: false }),
+  ReplyFailure,
+]);
+export const FlushReplySchema = Type.Union([
+  Type.Object(success, { additionalProperties: false }), ReplyFailure,
+]);
+const PageReplySchema = Type.Union([OpenReplySchema, ApplyReplySchema, TextReplySchema, FlushReplySchema]);
+/** Host → page, fenced to the view that was current when delivery was enqueued. */
 export const PagePushSchema = Type.Union([
-  Type.Object(
-    { type: Type.Literal("publication"), publication: OwnerPublicationSchema },
-    { additionalProperties: false },
-  ),
-  Type.Object({ type: Type.Literal("saved"), sequence }, { additionalProperties: false }),
-  Type.Object(
-    { type: Type.Literal("failed"), error: Type.String() },
-    { additionalProperties: false },
-  ),
+  Type.Object({ view: identity, type: Type.Literal("publication"), publication: OwnerPublicationSchema },
+    { additionalProperties: false }),
+  Type.Object({ view: identity, type: Type.Literal("saved"), sequence }, { additionalProperties: false }),
+  Type.Object({ view: identity, type: Type.Literal("failed"), error: Type.String() }, { additionalProperties: false }),
+  Type.Object({ view: identity, type: Type.Literal("resync") }, { additionalProperties: false }),
 ]);
 
 export type OwnerState = Static<typeof OwnerStateSchema>;
@@ -191,7 +204,6 @@ export type OwnerPath = Static<typeof path>;
 export type OwnerPatchOp = Static<typeof PatchOp>;
 export type EditText = Static<typeof EditTextRequest>;
 export type PageRequest = Static<typeof PageRequestSchema>;
-export type PageReply = Static<typeof PageReplySchema>;
 export type PageErrorCode = Static<typeof PageErrorCodeSchema>;
 export type PagePush = Static<typeof PagePushSchema>;
 

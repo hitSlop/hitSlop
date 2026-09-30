@@ -4,96 +4,72 @@ import HitSlopCore
 
 /// Native CLI transport. The document interpreter is the shared native Rust owner.
 @MainActor public enum DocumentCommand {
-  public static func run(
-    method: String, url: URL, operation: Data? = nil, operations: Data? = nil,
-    themeValues: Data? = nil, themeToken: String? = nil,
-    attachmentBytes: Data? = nil, attachmentID: String? = nil
-  )
-    async throws -> Data
-  {
+  /// One command for the document at `url`: forwarded to its live owner, or run by an
+  /// owner opened here under the writer lock. `make` builds the request for the package's
+  /// path; `hello` supplies the epoch a mutation needs. Returns the output as JSON.
+  public static func run(url: URL, _ make: @escaping @Sendable (_ documentPath: String) -> SocketRequest) async throws -> Data {
     let deadline = ContinuousClock.now + .seconds(2)
+    // The package is validated once per command, off MainActor; retries reuse it.
+    let package = try await SlopPreparation.run {
+      try SlopLocalDocument.requireLocal(url)
+      return try SlopPackage(rootURL: url)
+    }
+    guard !SlopTemplateLocation.isMaster(package.rootURL) else {
+      throw failure(SlopTemplateLocation.writableCopyRequired)
+    }
+    let request = make(package.rootURL.path)
+    // Refuse a malformed command before acquiring ownership or creating document state.
+    try validate(request)
     while true {
       do {
-        return try await runAttempt(method: method, url: url, operation: operation, operations: operations,
-          themeValues: themeValues, themeToken: themeToken, attachmentBytes: attachmentBytes,
-          attachmentID: attachmentID, admissionDeadline: deadline)
+        return try await attempt(request, package: package, admissionDeadline: deadline)
       } catch let retry as AdmissionRetry {
         guard ContinuousClock.now < deadline else {
-          throw failure((retry.reply.error ?? "Document is closing") + retryHint(retry.reply))
+          throw failure(retry.message)
         }
         try await Task.sleep(for: .milliseconds(50))
       }
     }
   }
-  private struct AdmissionRetry: Error { let reply: SocketReply }
+  private struct AdmissionRetry: Error {
+    let message: String
+    init(reply: SocketReply) {
+      message = (reply.error ?? "Document is closing") + DocumentCommand.retryHint(reply)
+    }
+  }
+  private static func validate(_ request: SocketRequest) throws {
+    let probe = request.requiresEpoch ? request.with(epoch: String(repeating: "x", count: 128)) : request
+    guard JSONSerialization.isValidJSONObject(probe.json),
+      let encoded = try? JSONSerialization.data(withJSONObject: probe.json, options: .withoutEscapingSlashes),
+      encoded.count <= requestLimit(request.method), Envelope.valid(.socketRequest, encoded)
+    else { throw failure("Invalid document command") }
+    // Operations are JSON text the core parses; only their outer shape is checked here.
+    let shaped: Bool
+    switch request {
+    case .apply(let r): shaped = (try? JSONSerialization.jsonObject(with: Data(r.op.utf8))) is [String: Any]
+    case .batch(let r): shaped = (try? JSONSerialization.jsonObject(with: Data(r.ops.utf8))) is [Any]
+    default: shaped = true
+    }
+    guard shaped else { throw failure("Invalid document command") }
+  }
 
-  private static func runAttempt(
-    method: String, url: URL, operation: Data? = nil, operations: Data? = nil,
-    themeValues: Data? = nil, themeToken: String? = nil,
-    attachmentBytes: Data? = nil, attachmentID: String? = nil, admissionDeadline: ContinuousClock.Instant
-  )
-    async throws -> Data
-  {
-    try SlopLocalDocument.requireLocal(url)
-    let package = try SlopPackage(rootURL: url)
+  private static func attempt(
+    _ request: SocketRequest, package: SlopPackage, admissionDeadline: ContinuousClock.Instant
+  ) async throws -> Data {
     let root = package.rootURL
-    guard let command = SocketRequest.Method(rawValue: method) else { throw failure("Invalid document command") }
-    if command == .schema {
-      return try SlopFile.read(package.dataSchemaURL, within: root, maximumBytes: 1_048_576)
-    }
-    let templatesRoot = ProcessInfo.processInfo.environment["HITSLOP_TEMPLATES_ROOT"]
-      .map { URL(fileURLWithPath: $0) } ?? SlopTemplateLocation.defaultTemplatesRoot
-    guard !SlopTemplateLocation.isManagedTemplatePackage(root),
-      !SlopTemplateLocation.isManagedTemplatePackage(root, templatesRoot: templatesRoot) else {
-      throw failure("Create a writable copy of this template first")
-    }
-    var input: [String: Any] = [
-      "id": UUID().uuidString, "method": method, "documentPath": root.path,
-    ]
-    if let themeValues { input["values"] = try JSONSerialization.jsonObject(with: themeValues) }
-    if let themeToken { input["token"] = themeToken }
-    if let operation { input["op"] = try JSONSerialization.jsonObject(with: operation) }
-    if let operations { input["ops"] = try JSONSerialization.jsonObject(with: operations) }
-    if let attachmentBytes { input["bytes"] = attachmentBytes.base64EncodedString() }
-    if let attachmentID { input["attachmentID"] = attachmentID }
-    // Validate before acquiring ownership or creating any document state.
-    // hello supplies the real epoch before any epoch-requiring request is dispatched.
-    if command.requiresEpoch { input["epoch"] = String(repeating: "x", count: 128) }
-    guard PlatformContract.valid(input, against: socketRequestSchema) else {
-      throw failure("Invalid document command")
-    }
-    guard try JSONSerialization.data(withJSONObject: input).count <= requestLimit(command) else {
-      throw failure("Document command exceeds the request size limit")
-    }
-    var request = try SocketRequest(json: input)
-    var engine: DocumentOwner?
-    var socket: String?
-    let readyDeadline = admissionDeadline
-    while true {
-      do { engine = try DocumentOwner(package: package); break }
-      catch {
-        guard DocumentWriterLock.isBusy(error) else { throw error }
-        do { socket = try liveSocket(for: root); break }
-        catch {
-          guard ContinuousClock.now < readyDeadline else { throw error }
-          try await Task.sleep(for: .milliseconds(50))
-        }
-      }
+    let connection: Connection
+    switch try await connect(root: root, until: admissionDeadline, own: { try DocumentOwner(package: package) }) {
+    case .owned(let owner): connection = .owner(owner)
+    case .live(let socket): connection = .socket(socket)
     }
     do {
-      if request.requiresEpoch {
-        do {
-          let hello = SocketRequest.hello(.init(id: UUID().uuidString, documentPath: root.path))
-          let opening = try await send(hello, engine: engine, socket: socket)
-          if opening.code == .closing { throw AdmissionRetry(reply: opening) }
-          guard opening.ok, let current = opening.epoch else {
-            throw failure(opening.error ?? "Cannot open session")
-          }
-          request = request.with(epoch: current)
-        }
-      }
+      let hello = SocketRequest.hello(.init(id: UUID().uuidString, documentPath: root.path))
+      let opening = try await send(hello, over: connection)
+      if opening.code == .closing { throw AdmissionRetry(reply: opening) }
+      let current = try checkedEpoch(opening)
+      let request = request.requiresEpoch ? request.with(epoch: current) : request
       let reply: SocketReply
-      do { reply = try await send(request, engine: engine, socket: socket) } catch {
+      do { reply = try await send(request, over: connection) } catch {
         throw failure(error.localizedDescription + (request.requiresEpoch ? retryHint(nil) : ""))
       }
       if reply.code == .closing { throw AdmissionRetry(reply: reply) }
@@ -105,20 +81,20 @@ import HitSlopCore
       guard let state = reply.state else { throw failure("Missing document state in response") }
       // Edits also report the inserted row IDs (minted IDs are new on every run) and the
       // owner sequence, so an agent can address new rows without another read.
-      let output: Any = command == .apply || command == .batch
+      let output: Any = request.method == .apply || request.method == .batch
         ? ["ids": reply.ids ?? [], "sequence": reply.sequence ?? 0, "value": state] : state
       let data = try JSONSerialization.data(
         withJSONObject: output, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-      try await engine?.close()
+      try await connection.close()
       return data
     } catch {
-      try? await engine?.close()
+      try? await connection.close()
       throw error
     }
   }
 
   /// Coded refusals were never applied. Only transport loss or "failed" leaves the outcome unknown.
-  private static func retryHint(_ reply: SocketReply?) -> String {
+  nonisolated private static func retryHint(_ reply: SocketReply?) -> String {
     switch reply?.code {
     case .rejected, .unavailable: return "\nNot applied."
     case .sessionChanged, .closing: return "\nNot applied. Run slop get before issuing another edit."
@@ -127,13 +103,33 @@ import HitSlopCore
   }
 
   /// Discovery is consulted only after the caller observes a busy OS writer lock.
-  public static func liveSocket(for root: URL) throws -> String {
+  public enum Access<Owned: Sendable>: Sendable { case owned(Owned), live(socket: String) }
+  /// Takes a closed document's writer lock through `own`, or finds its live owner's
+  /// socket. A busy lock with no socket yet (an owner still opening) retries until
+  /// `deadline`. Never bypasses a busy lock.
+  public static func connect<Owned: Sendable>(
+    root: URL, until deadline: ContinuousClock.Instant, own: @escaping @Sendable () throws -> Owned
+  ) async throws -> Access<Owned> {
+    while true {
+      do { return .owned(try await SlopPreparation.run(own)) }
+      catch {
+        guard error is DocumentLocked else { throw error }
+        do { return .live(socket: try liveSocket(for: root)) }
+        catch {
+          guard ContinuousClock.now < deadline else { throw error }
+          try await Task.sleep(for: .milliseconds(50))
+        }
+      }
+    }
+  }
+
+  static func liveSocket(for root: URL) throws -> String {
     let url = root.appendingPathComponent("state/host.lock")
     do {
       let bytes = try SlopFile.read(url, within: root, maximumBytes: 16384)
       guard bytes.count <= 16384,
-        let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-        PlatformContract.valid(value, against: socketDiscoverySchema)
+        Envelope.valid(.socketDiscovery, bytes),
+        let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
       else { throw failure("Invalid live session discovery") }
       let discovery = try SocketDiscovery(json: value)
       guard discovery.documentPath == root.path else { throw failure("Invalid live session discovery") }
@@ -144,18 +140,15 @@ import HitSlopCore
     }
   }
 
-  public static func exportLive(root: URL, socket: String, format: String, output: URL) async throws
+  public static func exportLive(root: URL, socket: String, format: ExportFormat, output: URL) async throws
   {
     let base = SocketRequest.hello(.init(id: UUID().uuidString, documentPath: root.path))
-    let hello = try await send(base, engine: nil, socket: socket)
-    guard hello.ok, let epoch = hello.epoch else {
-      throw failure(hello.error ?? "Cannot open session")
-    }
-    guard let format = SocketExportRequestFormat(rawValue: format) else { throw failure("Invalid export format") }
+    let hello = try await send(base, over: .socket(socket))
+    let epoch = try checkedEpoch(hello)
     let request = SocketRequest.export(.init(
       id: UUID().uuidString, documentPath: root.path, epoch: epoch, format: format, output: output.path))
     let reply: SocketReply
-    do { reply = try await send(request, engine: nil, socket: socket) } catch {
+    do { reply = try await send(request, over: .socket(socket)) } catch {
       throw failure(
         "Export outcome may be unknown; inspect the destination before retrying. \(error.localizedDescription)"
       )
@@ -165,49 +158,53 @@ import HitSlopCore
     }
   }
 
-  private static func send(_ request: SocketRequest, engine: DocumentOwner?, socket: String?)
+  private static func checkedEpoch(_ hello: SocketReply) throws -> String {
+    guard hello.ok else { throw failure(hello.error ?? "Cannot open session") }
+    guard hello.coreBuildId == DocumentOwner.coreBuildID else {
+      throw failure("hitSlop.app and the native helper embed different document cores; install matching versions and reopen the app")
+    }
+    guard let epoch = hello.epoch else { throw failure("Cannot open session") }
+    return epoch
+  }
+
+  private enum Connection {
+    case owner(DocumentOwner)
+    case socket(String)
+
+    func close() async throws {
+      if case .owner(let owner) = self { try await owner.close() }
+    }
+  }
+
+  /// An owner opened here answers directly; a live owner's reply is checked as it arrives.
+  private static func send(_ request: SocketRequest, over connection: Connection)
     async throws -> SocketReply
   {
-    guard PlatformContract.valid(request.json, against: socketRequestSchema) else {
-      throw failure("Invalid socket request")
-    }
-    let encoded = try JSONSerialization.data(withJSONObject: request.json)
-    guard encoded.count <= requestLimit(request.method) else {
-      throw failure("Document command exceeds the request size limit")
-    }
-    let object: [String: Any]
-    if let engine {
-      object = await engine.request(request).json
-    } else {
-      guard let socket else { throw failure("Missing live session") }
-      let bytes = encoded
-      let result: Data = try await withCheckedThrowingContinuation { continuation in
+    let replyBytes: Data
+    switch connection {
+    case .owner(let owner): replyBytes = await owner.request(request)
+    case .socket(let socket):
+      let encoded = try JSONSerialization.data(withJSONObject: request.json, options: .withoutEscapingSlashes)
+      replyBytes = try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
-          continuation.resume(with: Result { try SocketClient.call(path: socket, request: bytes) })
+          continuation.resume(with: Result { try SocketClient.call(path: socket, request: encoded) })
         }
       }
-      guard let value = try JSONSerialization.jsonObject(with: result) as? [String: Any] else {
-        throw failure("Invalid socket response")
-      }
-      object = value
+      guard Envelope.valid(.socketReply, replyBytes) else { throw failure("Invalid socket response") }
     }
-    guard PlatformContract.valid(object, against: socketReplySchema) else {
-      throw failure("Invalid socket response")
-    }
+    guard let object = try JSONSerialization.jsonObject(with: replyBytes) as? [String: Any]
+    else { throw failure("Invalid socket response") }
     return try SocketReply(json: object)
   }
 
   private static func requestLimit(_ method: SocketRequest.Method) -> Int {
-    method == .attachmentsPut ? 16 * 1024 * 1024 : 1_048_576
+    method == .attachmentsPut ? Limits.socketAttachment : Limits.socketRequest
   }
 }
 enum SocketClient {
   static func call(path: String, request: Data) throws -> Data {
-    guard request.count <= 16 * 1024 * 1024 else { throw failure("Oversized socket request") }
-    if request.count > 1_048_576 {
-      guard let value = try? JSONSerialization.jsonObject(with: request) as? [String: Any],
-        ["attachments.put"].contains(value["method"] as? String ?? "") else { throw failure("Oversized socket request") }
-    }
+    // Callers bound each method's request; this bounds every message.
+    guard request.count <= Limits.socketAttachment else { throw failure("Oversized socket request") }
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { throw failure("Cannot create client socket") }
     defer { Darwin.close(fd) }
@@ -234,8 +231,7 @@ enum SocketClient {
     guard connected == 0 else {
       throw failure("Live document unavailable; writer lock remains authoritative")
     }
-    var payload = request
-    payload.append(10)
+    let payload = request + [10]
     try payload.withUnsafeBytes { bytes in
       var offset = 0
       while offset < bytes.count {
@@ -246,7 +242,7 @@ enum SocketClient {
     }
     var result = Data()
     var buffer = [UInt8](repeating: 0, count: 8192)
-    while result.count <= 16 * 1024 * 1024 {
+    while result.count <= Limits.socketAttachment {
       let count = read(fd, &buffer, buffer.count)
       guard count > 0 else {
         throw failure("Host disconnected or timed out; outcome may be unknown")
@@ -256,7 +252,7 @@ enum SocketClient {
       // Prior chunks contain no delimiter; keep large replies linear to read.
       if let delimiter = buffer.prefix(count).firstIndex(of: 10) {
         let end = start + delimiter
-        guard end <= 16 * 1024 * 1024 else { throw failure("Oversized socket response") }
+        guard end <= Limits.socketAttachment else { throw failure("Oversized socket response") }
         return result.prefix(upTo: end)
       }
     }

@@ -1,7 +1,8 @@
+import { isOperationRejection } from "../errors";
 // Stateless text binding. The DOM keeps the user's text; the owner merges each change
 // from the text the binding last confirmed. No draft identity survives a request.
 import type { EditText } from "@hitslop/schema/owner";
-import type { Segment } from "./store";
+import type { Segment } from "../schema";
 
 export type TextReply = {
   sequence: number;
@@ -9,11 +10,12 @@ export type TextReply = {
   selectionStart: number;
   selectionEnd: number;
 };
-export interface TextHost {
+interface TextHost {
   /** The store's text at `path` (not a string when the field is gone) and its version. */
   read(path: readonly Segment[]): { text: unknown; version: string; sequence: number };
   send(request: EditText): Promise<TextReply>;
   reached(sequence: number): Promise<void>;
+  recover(): Promise<void>;
   readOnly(): boolean;
   /** Registers in-flight work so close and capture barriers wait for it. */
   track(work: Promise<unknown>): void;
@@ -50,16 +52,21 @@ export function bindText(
   initialPath: readonly Segment[],
   host: TextHost,
 ) {
-  let path = initialPath;
+  const path = initialPath;
   let composing = false;
-  let disposed = false;
+  let detached: { text: string; selectionStart: number; selectionEnd: number } | undefined;
+  let drain: Promise<void> | undefined;
   let removed = false;
+  let outcomeFailure: unknown;
+  /** A dispatched request whose outcome is unknown: the text before it and the text sent. */
+  let uncertainText: { from: string; sent: string } | undefined;
   let inflight: Promise<void> | undefined;
+  let barrierResend = false;
   // The text this binding last knew to be the field's value at `version`.
   let confirmed = { text: "", version: "" };
 
   const write = (next: string) => {
-    if (element.value === next) return;
+    if (detached || element.value === next) return;
     const old = element.value;
     const start = element.selectionStart ?? old.length;
     const end = element.selectionEnd ?? start;
@@ -74,6 +81,7 @@ export function bindText(
   };
   /** Adopts the store's text when the DOM has nothing unsent for this field. */
   const adopt = () => {
+    if (detached) return;
     const current = host.read(path);
     if (typeof current.text !== "string") {
       if (!removed) {
@@ -90,17 +98,22 @@ export function bindText(
     confirmed = { text: current.text, version: current.version };
     write(current.text);
   };
-  const dirty = () => !removed && !disposed && element.value !== confirmed.text;
+  const value = () => detached?.text ?? element.value;
   /** Sends the DOM value as one change from `confirmed`; one request at a time. */
   const send = () => {
-    if (inflight || composing || removed || host.readOnly() || element.value === confirmed.text) return;
+    if (outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed.text) return;
     const target = path;
     const from = confirmed;
-    const sent = element.value;
-    const selectionStart = element.selectionStart ?? sent.length;
-    const selectionEnd = element.selectionEnd ?? selectionStart;
+    const sent = value();
+    const selectionStart = detached?.selectionStart ?? element.selectionStart ?? sent.length;
+    const selectionEnd = detached?.selectionEnd ?? element.selectionEnd ?? selectionStart;
+    // A refusal thrown before the request leaves the page (for example while recovery
+    // has failed) is definitely not applied: keep the draft and resend after recovery.
+    let dispatched = false;
+    // A barrier's own resend fails the barrier; reporting it too would duplicate it.
+    const quiet = barrierResend;
     const work = (async () => {
-      const reply = await host.send({
+      const request = host.send({
         base: from.version,
         path: target as EditText["path"],
         from: from.text,
@@ -108,8 +121,13 @@ export function bindText(
         selectionStart,
         selectionEnd,
       });
+      dispatched = true;
+      const reply = await request;
       await host.reached(reply.sequence);
-      if (target !== path) return;
+      if (detached) {
+        confirmed = { text: sent, version: reply.authored };
+        return;
+      }
       const current = host.read(path);
       if (typeof current.text !== "string") return adopt();
       if (!composing && element.value === sent) {
@@ -138,18 +156,26 @@ export function bindText(
     })();
     inflight = work
       .catch((error) => {
-        // Refused edits are never replayed; show the owner's text for the field again.
+        // An uncertain outcome must not erase or automatically replay the draft.
+        if (!isOperationRejection(error)) {
+          outcomeFailure = error;
+          uncertainText = dispatched ? { from: from.text, sent } : undefined;
+          if (!quiet) host.report(error);
+          return;
+        }
+        // Definite refusals show the owner's text again.
         confirmed = { text: "", version: "" };
         const current = host.read(path);
         if (typeof current.text === "string") {
           confirmed = { text: current.text, version: current.version };
           if (!composing) write(current.text);
         }
-        host.report(error);
+        if (detached) detached.text = confirmed.text;
+        if (!quiet) host.report(error);
       })
       .finally(() => {
         inflight = undefined;
-        if (!disposed) send();
+        send();
       });
     host.track(inflight);
   };
@@ -163,8 +189,7 @@ export function bindText(
     composing = false;
     send();
   };
-  const start = (next: readonly Segment[]) => {
-    path = next;
+  const start = () => {
     removed = false;
     const current = host.read(path);
     confirmed =
@@ -174,38 +199,52 @@ export function bindText(
     if (typeof current.text === "string") write(current.text);
     adopt();
   };
-  start(initialPath);
+  start();
   element.addEventListener("input", onInput);
   element.addEventListener("compositionstart", onStart);
   element.addEventListener("compositionend", onEnd);
   return {
-    get path() {
-      return path;
-    },
+    get detached() { return detached !== undefined; },
     refresh: adopt,
-    /** Whether the DOM holds text the owner has not accepted yet. */
-    pending: () => !!inflight || composing || dirty(),
     /** Sends unsent text now, ending a composition; the barrier awaits the result. */
-    commit() {
+    async commit() {
       composing = false;
       send();
-      return inflight;
+      while (inflight) await inflight;
+      if (outcomeFailure) {
+        await host.recover();
+        if (uncertainText) {
+          const current = host.read(path);
+          // Recovery reads a snapshot admitted after the request, so the field shows the
+          // sent text if it applied, or its earlier text if it did not. Anything else is
+          // ambiguous: retain the draft, because replaying could duplicate the edit.
+          if (current.text === uncertainText.sent) confirmed = { text: current.text, version: current.version };
+          else if (current.text !== uncertainText.from) throw outcomeFailure;
+        }
+        outcomeFailure = undefined;
+        uncertainText = undefined;
+        barrierResend = true;
+        try {
+          send();
+          while (inflight) await inflight;
+        } finally { barrierResend = false; }
+        if (outcomeFailure) throw outcomeFailure;
+      }
     },
-    /** Moves to another field. Unsent text for the old one is sent first. */
-    retarget(next: readonly Segment[]) {
-      if (JSON.stringify(next) === JSON.stringify(path)) return;
-      this.commit();
-      const previous = inflight;
-      const move = () => start(next);
-      if (previous) void previous.then(move);
-      else move();
-    },
+    /** Detach immediately, but retain the final draft and target until it drains. */
     destroy() {
-      this.commit();
-      disposed = true;
+      if (drain) return drain;
+      detached = {
+        text: element.value,
+        selectionStart: element.selectionStart ?? element.value.length,
+        selectionEnd: element.selectionEnd ?? element.value.length,
+      };
       element.removeEventListener("input", onInput);
       element.removeEventListener("compositionstart", onStart);
       element.removeEventListener("compositionend", onEnd);
+      drain = this.commit();
+      host.track(drain);
+      return drain;
     },
   };
 }

@@ -1,35 +1,26 @@
 #!/usr/bin/env bun
 import { defineExtension, defineExtensionId } from "@crustjs/core";
 import { app } from "./app";
+import { isGlobalInstall } from "./paths";
 import { interactiveUpdates } from "./updates";
 
-const skillCache = defineExtension(defineExtensionId("hitslop:skill-cache"), () => {
-  let stabilize: (() => Promise<void>) | undefined;
-  return {
-    hooks: {
-      async preRun(context) {
-        if (context.commandPath[1] !== "skills" || context.commandPath[2] === "uninstall") return;
-        const scope = context.flags.scope;
-        const scopes =
-          scope === "project" || scope === "global"
-            ? ([scope] as const)
-            : context.flags.all === true
-              ? (["global"] as const)
-              : (["project", "global"] as const);
-        stabilize = await (await import("./skills-cache")).captureSkillLinks(scopes);
-      },
-      async postRun(_context, outcome) {
-        if (outcome.status === "completed") await stabilize?.();
-      },
+/** Agent skills link to the global install, which `bun install -g` upgrades in place.
+ * Links into a bunx cache or a project would go stale, so other copies only uninstall. */
+const globalSkills = defineExtension(defineExtensionId("hitslop:global-skills"), () => ({
+  hooks: {
+    async preRun(context) {
+      if (isGlobalInstall || context.commandPath[1] !== "skills") return;
+      if (context.commandPath[2] === "uninstall") return;
+      throw new Error(
+        "Agent skills link to the globally installed CLI so they update with it. Run `bun install -g @hitslop/cli`, then `slop skills install`.",
+      );
     },
-  };
-});
+  },
+}));
 
 const argv = process.argv.slice(2);
-// Keep the pre-0.4 public spelling as an alias; generated docs use repair.
-if ((argv[0] === "skills" || argv[0] === "skill") && argv[1] === "update") argv[1] = "repair";
 
 await app
-  .extend(skillCache())
+  .extend(globalSkills())
   .extend(interactiveUpdates())
   .execute({ argv: argv.length ? argv : ["--help"] });

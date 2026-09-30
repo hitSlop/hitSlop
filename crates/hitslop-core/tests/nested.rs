@@ -4,6 +4,7 @@
 // test uses the flat checklist schema.
 mod support;
 use hitslop_core::Document;
+use support::{Edit, View};
 use serde_json::{json, Value};
 fn next(rng: &mut u64) -> u64 {
     *rng ^= *rng << 13;
@@ -40,10 +41,10 @@ fn seeded_nested_local_and_remote_steps() {
     let schema = f["schema"].to_string();
     let mut rng = 0x7e57edu64;
     let mut serial = 0u64;
-    for _round in 0..300 {
+    for _round in 0..support::workload("HITSLOP_NESTED_ROUNDS", 300) {
         let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
-        let mut projected = f["initial"].clone();
-        for step in 0..60 {
+        let mut projected = View::of(&d);
+        for step in 0..support::workload("HITSLOP_NESTED_STEPS", 60) {
             let reply = if step % 4 == 0 {
                 // Several remote edits in one import, possibly a nested edit then
                 // removal of the row that contains it.
@@ -53,16 +54,14 @@ fn seeded_nested_local_and_remote_steps() {
                     let op = random_op(&mut rng, &mut serial, &peer);
                     peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
                 }
-                d.import(&peer.export_since(&base).unwrap()).unwrap()
+                d.merge(&peer.export_since(&base).unwrap()).unwrap()
             } else {
                 let op = random_op(&mut rng, &mut serial, &d);
                 d.apply(&json!({"intents":[op]}).to_string()).unwrap()
             };
+            projected.publish(&reply);
+            projected.check(&d, "publication");
             let reply: Value = serde_json::from_str(&reply).unwrap();
-            support::apply_patches(&mut projected, &reply["ops"]);
-            let fresh: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
-            assert_eq!(projected, fresh["value"]);
-            assert_eq!(reply["issues"], fresh["issues"]);
             // Clean nested lists publish row operations, not a replacement of their row list.
             for op in reply["ops"].as_array().unwrap() {
                 if op["type"] == "set" {
@@ -78,7 +77,7 @@ fn nested_edit_and_removal_of_its_row_in_one_import() {
     let f: Value = serde_json::from_str(include_str!("../fixtures/nested.json")).unwrap();
     let schema = f["schema"].to_string();
     let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
-    let mut projected = f["initial"].clone();
+    let mut projected = View::of(&d);
     let mut peer = Document::open(&schema, &d.checkpoint().unwrap(), &[]).unwrap();
     let base = d.version();
     for op in [
@@ -89,9 +88,9 @@ fn nested_edit_and_removal_of_its_row_in_one_import() {
     ] {
         peer.apply(&json!({"intents":[op]}).to_string()).unwrap();
     }
-    let reply: Value = serde_json::from_str(&d.import(&peer.export_since(&base).unwrap()).unwrap()).unwrap();
-    support::apply_patches(&mut projected, &reply["ops"]);
-    let fresh: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
-    assert_eq!(projected, fresh["value"]);
+    let reply = d.merge(&peer.export_since(&base).unwrap()).unwrap();
+    projected.publish(&reply);
+    projected.check(&d, "import");
+    let reply: Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(reply["ops"], json!([{"type":"deleteRow","path":["rows"],"id":"row1"}]));
 }

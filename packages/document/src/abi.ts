@@ -1,17 +1,18 @@
 import type { AsyncHandle, AsyncAt } from "./async-types";
-import type { OwnerState } from "@hitslop/schema/owner";
 /**
  * The interface between a built slop and the page shell. A package's `assets/app.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
  * `mount(ctx, target)`. Apps reach the host only through `ctx`. Both sides are built
  * from this repository; there is no versioned compatibility promise before release.
  */
-export type Issue = OwnerState["issues"][number];
-import type { Handle, ScalarHandle, TextHandle } from "./handle-types";
+import type { At, Handle, ScalarHandle, TextHandle } from "./handle-types";
 import type { Definition, ObjectNode, Value } from "./schema";
-import type { AttachmentInfo, AttachmentRef } from "./contracts";
-import type { CaptureMode } from "./contracts";
-import type { Scope } from "./contracts";
+export type SaveStatus = "saved" | "pending" | "save-failed";
+export type Scope<N extends ObjectNode> = { readonly fields: Handle<N>; readonly at: At };
+export type Issue = import("@hitslop/schema/owner").OwnerState["issues"][number];
+export type AttachmentInfo = { id: string; byteLength: number };
+export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
+export type CaptureMode = "preview" | "export" | "icon";
 
 export interface SlopApp {
   mount(ctx: SlopContext, target: HTMLElement): SlopView | Promise<SlopView>;
@@ -86,14 +87,14 @@ export interface SlopDocument<N extends ObjectNode> {
   readonly id: string;
   /** Immutable snapshot. Unchanged rows keep identity. */
   readonly current: Value<N>;
-  readonly status: "saved" | "pending" | "save-failed";
+  readonly status: SaveStatus;
   readonly error: string | null;
   /** Merged-state anomalies; stored values are preserved, never repaired. */
-  readonly issues: Readonly<OwnerState["issues"]>;
+  readonly issues: readonly Issue[];
   readonly fields: AsyncHandle<Handle<N>>;
   readonly at: AsyncAt;
   /** Collect synchronously; resolve after acceptance and local publication. */
-  change<R>(callback: (tx: Scope<N>) => R, options?: { message?: string }): Promise<R>;
+  change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
   /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
   flush(): Promise<void>;
   subscribe(listener: () => void): () => void;

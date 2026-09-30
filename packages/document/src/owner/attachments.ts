@@ -1,6 +1,7 @@
 import { HostAttachments, MemoryAttachments, attachmentLimits } from "../attachments";
-import type { AttachmentRef } from "../contracts";
-import type { OwnerDocument, OwnerScope } from "./document";
+import type { AttachmentRef } from "../abi";
+import type { OwnerDocument } from "./document";
+import type { Scope as OwnerScope } from "../abi";
 
 export function ownerAttachments(doc: OwnerDocument<any>, native: boolean) {
   const store = native ? new HostAttachments() : new MemoryAttachments();
@@ -15,8 +16,8 @@ export function ownerAttachments(doc: OwnerDocument<any>, native: boolean) {
       if (
         file.size > attachmentLimits.file ||
         !file.name ||
-        new TextEncoder().encode(file.name).length > 255 ||
-        file.type.length > 255
+        new TextEncoder().encode(file.name).length > attachmentLimits.name ||
+        new TextEncoder().encode(file.type).length > attachmentLimits.name
       )
         return Promise.reject(new Error("Invalid attachment metadata or size"));
       return doc.admit(async () => {

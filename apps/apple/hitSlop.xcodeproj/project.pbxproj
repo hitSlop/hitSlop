@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		0253D4ECB6F151B1F9332ADA /* HitSlopHost in Frameworks */ = {isa = PBXBuildFile; productRef = DB39551676CB8EC1F9FB75DC /* HitSlopHost */; };
 		05E731AEF1C06E492D5D7D18 /* HitSlopCatalog in Frameworks */ = {isa = PBXBuildFile; productRef = F47B3662C054655C373D2A3F /* HitSlopCatalog */; };
-		3F91EC9FC8A44F9B3E911B79 /* HitSlopRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = DFB3D40C542474608A48F2A0 /* HitSlopRuntime */; };
+		3F91EC9FC8A44F9B3E911B79 /* HitSlopDocument in Frameworks */ = {isa = PBXBuildFile; productRef = 7FFB110BADCF65F93C3B0EC8 /* HitSlopDocument */; };
 		50DBB59DA083F780B4FAAE62 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C419462A556663F0047EE34C /* GoogleService-Info.plist */; };
 		55C6D9FAB7F5735305B6FECC /* hitSlopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75719DC5D67261F7EA46EC82 /* hitSlopApp.swift */; };
 		A7BA3F995003EF8564A72C2C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D7F4FFEA3E5F1F8855A530E /* Assets.xcassets */; };
@@ -34,7 +34,7 @@
 			files = (
 				0253D4ECB6F151B1F9332ADA /* HitSlopHost in Frameworks */,
 				05E731AEF1C06E492D5D7D18 /* HitSlopCatalog in Frameworks */,
-				3F91EC9FC8A44F9B3E911B79 /* HitSlopRuntime in Frameworks */,
+				3F91EC9FC8A44F9B3E911B79 /* HitSlopDocument in Frameworks */,
 				B890C72C6C42DAEF9CE89A89 /* HitSlopCore in Frameworks */,
 				D06DA365A1BAD746AA5643F6 /* HitSlopFirebase in Frameworks */,
 				DC322D92933E047AECD219B7 /* Sparkle in Frameworks */,
@@ -118,7 +118,7 @@
 			packageProductDependencies = (
 				DB39551676CB8EC1F9FB75DC /* HitSlopHost */,
 				F47B3662C054655C373D2A3F /* HitSlopCatalog */,
-				DFB3D40C542474608A48F2A0 /* HitSlopRuntime */,
+				7FFB110BADCF65F93C3B0EC8 /* HitSlopDocument */,
 				39ACE8CB8475940A02C89F85 /* HitSlopCore */,
 				800A8F087445A9E33DCEEDEC /* HitSlopFirebase */,
 				91BD7843075E7E977199C386 /* Sparkle */,
@@ -319,7 +319,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/hitSlop.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 29;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -329,7 +329,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hitslop.app;
 				PRODUCT_NAME = hitSlop;
@@ -410,7 +410,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/hitSlop.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 28;
+				CURRENT_PROJECT_VERSION = 29;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = App/macOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -418,7 +418,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				MARKETING_VERSION = 1.1.1;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hitslop.app;
 				PRODUCT_NAME = hitSlop;
@@ -473,6 +473,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = HitSlopCore;
 		};
+		7FFB110BADCF65F93C3B0EC8 /* HitSlopDocument */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HitSlopDocument;
+		};
 		800A8F087445A9E33DCEEDEC /* HitSlopFirebase */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HitSlopFirebase;
@@ -485,10 +489,6 @@
 		DB39551676CB8EC1F9FB75DC /* HitSlopHost */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HitSlopHost;
-		};
-		DFB3D40C542474608A48F2A0 /* HitSlopRuntime */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = HitSlopRuntime;
 		};
 		F47B3662C054655C373D2A3F /* HitSlopCatalog */ = {
 			isa = XCSwiftPackageProductDependency;

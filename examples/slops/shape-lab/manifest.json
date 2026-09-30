@@ -1,0 +1,9 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": { "name": "hitSlop" },
+  "slug": "shape-lab",
+  "title": "Shape Lab",
+  "description": "A developer instrument for window clipping, edge input, resizing and independent captures.",
+  "categories": ["developer-tools"],
+  "presentation": { "width": 480, "height": 360 }
+}

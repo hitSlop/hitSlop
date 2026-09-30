@@ -9,19 +9,13 @@ final class SocketServer: @unchecked Sendable {
   private let source: DispatchSourceRead
   private var clients: [Int32: Connection] = [:]
   private var stopped = false
-  private let handle:
-    @MainActor @Sendable (
-      SocketRequest, NativeCommandDeadline, @escaping @MainActor @Sendable (SocketReply) -> Void
-    ) -> Void
+  /// Answers one request with its reply line (without the newline).
+  typealias Handler = @Sendable (SocketRequest, NativeCommandDeadline) async -> Data
+  private let handle: Handler
 
-  init(
-    handle:
-      @escaping @MainActor @Sendable (
-        SocketRequest, NativeCommandDeadline, @escaping @MainActor @Sendable (SocketReply) -> Void
-      ) -> Void
-  ) throws {
+  init(handle: @escaping Handler) throws {
     self.handle = handle
-    let directory = "/tmp/hitslop-v1-\(getuid())"
+    let directory = "/tmp/hitslop-\(getuid())"
     if mkdir(directory, 0o700) != 0 && errno != EEXIST {
       throw failure("Cannot create socket directory")
     }
@@ -100,51 +94,33 @@ final class SocketServer: @unchecked Sendable {
     }
   }
 
+  /// Runs on the socket queue: parsing and validation happen here, never on the main actor.
   private func dispatch(_ bytes: Data, fd: Int32, token: UUID) {
+    guard !stopped, clients[fd]?.token == token else { return }
     let deadline = NativeCommandDeadline()
-    let handler = handle
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      let active = await withCheckedContinuation { continuation in
-        self.queue.async { [self] in
-          continuation.resume(returning: !stopped && clients[fd]?.token == token)
-        }
-      }
-      guard active else { return }
-      guard let request = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-        bytes.count <= 1_048_576 || ["attachments.put"].contains(request["method"] as? String ?? ""),
-        PlatformContract.valid(request, against: socketRequestSchema),
-        let command = try? SocketRequest(json: request)
-      else {
-        self.respond(
-          .init(ok: false, error: "Invalid socket request", code: .rejected), fd: fd, token: token)
-        return
-      }
-      // A queued request may expire while MainActor is busy; never start it late.
-      do { try deadline.check() } catch {
-        self.respond(
-          .init(ok: false, error: "Command timed out before dispatch", code: .unavailable),
-          fd: fd, token: token)
-        return
-      }
-      handler(command, deadline) { [weak self] reply in self?.respond(reply, fd: fd, token: token) }
+    guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+      bytes.count <= Limits.socketRequest || object["method"] as? String == "attachments.put",
+      Envelope.valid(.socketRequest, bytes),
+      let request = try? SocketRequest(json: object)
+    else {
+      return respond(SocketReply(ok: false, error: "Invalid socket request", code: .rejected).encoded(), fd: fd, token: token)
+    }
+    let handle = handle
+    Task { [weak self] in
+      // A queued request may expire while the owner is busy; never start it late.
+      let reply = (try? deadline.check()) == nil
+        ? SocketReply(ok: false, error: "Command timed out before dispatch", code: .unavailable).encoded()
+        : await handle(request, deadline)
+      guard let server = self else { return }
+      server.queue.async { server.respond(reply, fd: fd, token: token) }
     }
   }
 
-  @MainActor private func respond(_ reply: SocketReply, fd: Int32, token: UUID) {
-    var bytes =
-      PlatformContract.valid(reply.json, against: socketReplySchema)
-      ? try? JSONSerialization.data(withJSONObject: reply.json) : nil
-    if bytes == nil || bytes!.count > 16 * 1024 * 1024 {
-      bytes = Data(
-        #"{"ok":false,"error":"Invalid or oversized response. Outcome unknown; run slop get before another edit."}"#
-          .utf8)
-    }
-    let data = bytes!
-    queue.async { [weak self] in
-      guard let self, !self.stopped, self.clients[fd]?.token == token else { return }
-      self.clients[fd]?.send(data)
-    }
+  /// The client validates the reply; one larger than a socket message cannot be sent.
+  private func respond(_ reply: Data, fd: Int32, token: UUID) {
+    guard !stopped, let client = clients[fd], client.token == token else { return }
+    client.send(reply.count <= Limits.socketAttachment ? reply
+      : Data(#"{"ok":false,"error":"Oversized response. Outcome unknown; run slop get before another edit."}"#.utf8))
   }
 }
 
@@ -219,7 +195,7 @@ private final class Connection: @unchecked Sendable {
       // Scan each byte once, including for bulk imports and attachment payloads.
       if let delimiter = buffer.prefix(count).firstIndex(of: 10) {
         let end = start + delimiter
-        guard end <= 16 * 1024 * 1024 else {
+        guard end <= Limits.socketAttachment else {
           close()
           return
         }
@@ -229,7 +205,7 @@ private final class Connection: @unchecked Sendable {
         input.removeAll()
         return
       }
-      if input.count > 16 * 1024 * 1024 {
+      if input.count > Limits.socketAttachment {
         close()
         return
       }
@@ -238,8 +214,7 @@ private final class Connection: @unchecked Sendable {
 
   func send(_ data: Data) {
     guard !closed, writer == nil else { return }
-    output = data
-    output.append(10)
+    output = data + [10]
     let source = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: queue)
     writer = source
     source.setEventHandler { [weak self] in self?.writeReply() }

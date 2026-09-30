@@ -15,5 +15,5 @@ const schema = defineDocument({
   // Column letter to pixel width, present only after a resize.
   widths: s.record(s.integer({ min: 56, max: 320 })),
 });
-export type Cell = Value<typeof schema.fields.node>["cells"][string];
+export type Cell = Value<typeof schema.descriptor>["cells"][string];
 export default schema;

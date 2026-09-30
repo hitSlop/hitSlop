@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import Testing
 import WebKit
+import HitSlopTestSupport
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentFileSaverTests {
@@ -17,11 +18,11 @@ import WebKit
   @Test @MainActor func blobDownloadSavesOnlyAfterConfirmationAndHonorsGuards() async throws {
     _ = NSApplication.shared
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try SlopDuplicator.duplicate(from: URL(fileURLWithPath: repository + "/generated/v1/native-fixtures/quick-checklist.slop"), to: root)
+    try SlopDuplicator.duplicate(from: URL(fileURLWithPath: repository + "/generated/native-fixtures/quick-checklist.slop"), to: root)
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: folder) }
-    let engine = try DocumentSession(package: SlopPackage(rootURL: root))
+    let engine = try await DocumentSession.open(packageURL: root)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
     window.contentView = engine.webView
     window.orderFront(nil)
@@ -67,7 +68,9 @@ import WebKit
 
     // Cancelling an accepted transfer must not install its bytes or report failure.
     var failures: [String] = []
-    engine.onIssue = { message, _ in failures.append(message) }
+    let events = SessionEvents()
+    events.issue = { failures.append($0.message) }
+    engine.delegate = events
     try await offerAndWait()
     reply?(folder.appendingPathComponent("cancelled.xlsx"))
     engine.fileSaver.cancel()

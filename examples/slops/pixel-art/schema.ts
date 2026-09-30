@@ -6,5 +6,5 @@ const schema = defineDocument({
   selectedColor: s.string(),
 });
 
-export type PixelArt = Value<typeof schema.fields.node>;
+export type PixelArt = Value<typeof schema.descriptor>;
 export default schema;

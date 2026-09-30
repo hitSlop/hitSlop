@@ -11,8 +11,7 @@
     { name: "QuickLook/", note: "Finder preview and icon", emoji: "👀" },
   ];
   const yours = [
-    { name: "state/document.sqlite", note: "everything you’ve saved", emoji: "💾" },
-    { name: "state/theme.json", note: "your colors", emoji: "🎨" },
+    { name: "state/document.sqlite", note: "everything you’ve saved, your colors too", emoji: "💾" },
     { name: "state/attachments/", note: "photos and files you add", emoji: "📎" },
   ];
   // null = server/no-JS: everything visible. After mount it folds, then opens on first view.

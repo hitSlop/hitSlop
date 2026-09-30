@@ -27,7 +27,7 @@ const schema = defineDocument({
   })),
 });
 
-export type Recipe = Value<typeof schema.fields.node>;
+export type Recipe = Value<typeof schema.descriptor>;
 export type Ingredient = Recipe["ingredients"][number];
 export type Step = Recipe["steps"][number];
 export default schema;

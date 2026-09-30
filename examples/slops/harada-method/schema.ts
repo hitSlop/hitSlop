@@ -10,6 +10,6 @@ const schema = defineDocument({
   done: s.record(s.boolean()),
 });
 
-export type Sheet = Value<typeof schema.fields.node>;
+export type Sheet = Value<typeof schema.descriptor>;
 export type Theme = Sheet["themes"][number];
 export default schema;

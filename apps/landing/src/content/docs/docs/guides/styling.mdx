@@ -60,23 +60,22 @@ Themes are files inside the `.slop` package:
 | File | Purpose |
 | --- | --- |
 | `assets/theme.json` | Immutable defaults generated from the author's `theme.ts`. |
-| `state/theme.json` | Optional saved overrides for this writable document. |
-| `state/document.sqlite` | Loro document data; theme overrides are stored separately. |
+| `state/document.sqlite` | Loro document data, plus saved theme overrides for this writable document. |
 
-For example, the override file can contain:
+For example, a document's overrides can be:
 
-```json title="state/theme.json"
+```json
 {"accent":"#7050ad","surface":"#f5efff"}
 ```
 
 Only tokens declared by the author may be overridden. Use `theme get` to inspect them first. The Mac app currently has no built-in theme picker: use these CLI commands or ask an agent to run them. The website palette picker is an interactive illustration of customization.
 
-Overrides live in `state/theme.json` in a writable document. Use the CLI or an agent rather than editing that file while the document is open. Direct file edits are not watched. The live host applies accepted CLI changes after saving; unknown tokens and invalid values are rejected. Layout selectors stay authored and cannot be overridden. Registered masters and generated templates remain unchanged.
+Overrides are saved with a writable document. Change them with the CLI or an agent. The live host applies accepted CLI changes after saving; unknown tokens and invalid values are rejected. Layout selectors stay authored and cannot be overridden. Registered masters and generated templates remain unchanged.
 
 ## Design the window and its captures
 
-Every presentation mode receives host page resets, window sizing, and initial size variables. Wrap the interface in `<Slop>` and prefer `height: 100%`, grid, or flex inside it; override the page sizing deliberately only when your layout needs it. Keep surface styling in your app. Transparent and PNG-skinned modes also override ordinary `html`/`body` backgrounds with transparency, so paint the visible surface inside the wrapper. Use the native toolbar handle for dragging. See [manifest and windows](/docs/guides/manifest-and-windows/) and [PNG window skins](/docs/guides/png-window-skins/).
+Every presentation mode receives host page resets, window sizing, and initial size variables. The automatic app root fills the window; prefer `height: 100%`, grid, or flex inside it; override the page sizing deliberately only when your layout needs it. Keep surface styling in your app. Transparent and PNG-skinned modes also override ordinary `html`/`body` backgrounds with transparency, so paint the visible surface inside the wrapper. Use the native toolbar handle for dragging. See [manifest and windows](/docs/guides/manifest-and-windows/) and [PNG window skins](/docs/guides/png-window-skins/).
 
-Dedicated `icon` and `exportView` snippets use the same current document and theme as the editor. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `exportView`, mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
+Dedicated `Icon.svelte` and `Export.svelte` components use the same current document and theme as the editor. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `Export.svelte`, mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
 
 See [package anatomy](/docs/concepts/how-slop-files-work/) for how theme files travel with a document.
