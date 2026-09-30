@@ -142,6 +142,9 @@ fn project(node: Option<&Node>, value: Value) -> Value {
         (Some(Node::List { item }), Value::Array(rows)) => {
             Value::Array(rows.into_iter().map(|r| project(Some(item), r)).collect())
         }
+        (Some(Node::Record { value: entry }), Value::Object(map)) => {
+            Value::Object(map.into_iter().map(|(k, v)| (k, project(Some(entry), v))).collect())
+        }
         (_, value) => value,
     }
 }
@@ -156,7 +159,17 @@ fn project_container(node: Option<&Node>, value: ValueOrContainer) -> Result<Val
             }
             Ok(result)
         }
-        (Some(Node::List { item }), ValueOrContainer::Container(Container::MovableList(list))) => {
+        (Some(Node::Record { value: entry }), ValueOrContainer::Container(Container::Map(map))) => {
+            let mut result = serde_json::Map::new();
+            for key in map.keys() {
+                let key = key.to_string();
+                if let Some(v) = map.get(&key) {
+                    result.insert(key, project_container(Some(entry), v)?);
+                }
+            }
+            Ok(Value::Object(result))
+        }
+        (Some(Node::List { item }), ValueOrContainer::Container(Container::MovableList(list))) if !is_scalar(item) => {
             let ids = identity::rows(list);
             let mut result = Vec::with_capacity(list.len());
             for (index, id) in ids.into_iter().enumerate() {
@@ -224,7 +237,25 @@ enum Node {
     /// Absent until set; `clear` removes it.
     Optional { inner: Box<Node> },
     Object { properties: BTreeMap<String, Node> },
+    /// Rows (object items with `$id`) or plain scalar elements addressed by index.
     List { item: Box<Node> },
+    /// Entries by string key; each entry behaves like an optional field.
+    Record { value: Box<Node> },
+}
+/// A record key: 1–256 UTF-16 units, not a reserved name.
+fn valid_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.encode_utf16().count() <= 256
+        && !["$id", "__proto__", "constructor", "prototype"].contains(&key)
+}
+/// The stored form of a validated scalar.
+fn loro_scalar(node: &Node, value: &Value) -> loro::LoroValue {
+    match unwrap_optional(node) {
+        Node::Boolean => value.as_bool().unwrap().into(),
+        Node::Number { .. } => value.as_f64().unwrap().into(),
+        Node::Integer { .. } => value.as_i64().unwrap().into(),
+        _ => value.as_str().unwrap().into(),
+    }
 }
 /// The value kind under an optional wrapper.
 fn unwrap_optional(node: &Node) -> &Node {
@@ -242,7 +273,7 @@ fn is_scalar(node: &Node) -> bool {
 /// Whether replacing a value of this kind would discard identity-bearing collections.
 fn holds_collections(node: &Node) -> bool {
     match node {
-        Node::Text | Node::Counter | Node::List { .. } => true,
+        Node::Text | Node::Counter | Node::List { .. } | Node::Record { .. } => true,
         Node::Object { properties } => properties.values().any(holds_collections),
         Node::Optional { inner } => holds_collections(inner),
         _ => false,
@@ -275,10 +306,16 @@ impl Node {
                 }
             }
             Self::List { item } => {
-                if !matches!(**item, Self::Object { .. }) {
-                    return Err(err("invalid_schema", "Lists contain object rows"));
+                if !matches!(**item, Self::Object { .. }) && !is_scalar(item) {
+                    return Err(err("invalid_schema", "Lists contain object rows or scalars"));
                 }
                 item.check(depth + 1)?;
+            }
+            Self::Record { value } => {
+                if !matches!(**value, Self::Object { .. }) && !is_scalar(value) {
+                    return Err(err("invalid_schema", "Record values are scalars or objects"));
+                }
+                value.check(depth + 1)?;
             }
             Self::String { max_length } => {
                 if max_length.is_some_and(|n| n > MAX_JSON as u64) {
@@ -308,8 +345,8 @@ impl Node {
             Self::Optional { inner } => {
                 // Optional text, lists and counters wait for a design that keeps their
                 // identity when two replicas create them concurrently.
-                if !is_scalar(inner) && !matches!(**inner, Self::Object { .. }) {
-                    return Err(err("invalid_schema", "Optional holds a scalar or an object"));
+                if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text) {
+                    return Err(err("invalid_schema", "Optional holds a scalar, text or an object"));
                 }
                 inner.check(depth + 1)?;
             }
@@ -369,6 +406,27 @@ impl Node {
                             "Expected a safe 1–64 character application ID",
                         ));
                     }
+                }
+                Ok(())
+            }
+            Self::List { item } if is_scalar(item) => {
+                let list = value
+                    .as_array()
+                    .ok_or_else(|| err("type_mismatch", "Expected list"))?;
+                if list.len() > 100_000 {
+                    return Err(err("too_large", "List is too long"));
+                }
+                list.iter().try_for_each(|element| item.validate(element, false))
+            }
+            Self::Record { value: entry } => {
+                let map = value
+                    .as_object()
+                    .ok_or_else(|| err("type_mismatch", "Expected record"))?;
+                for (key, value) in map {
+                    if !valid_key(key) {
+                        return Err(err("invalid_key", "Record keys are 1–256 characters and not reserved"));
+                    }
+                    entry.validate(value, false)?;
                 }
                 Ok(())
             }
@@ -440,6 +498,20 @@ fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, writer: &str) -> Re
         Node::Object { .. } => {
             let child = map.insert_container(key, LoroMap::new()).map_err(engine)?;
             fill(&child, node, value, writer)
+        }
+        Node::List { item } if is_scalar(item) => {
+            let list = map.insert_container(key, LoroMovableList::new()).map_err(engine)?;
+            for (index, element) in value.as_array().unwrap().iter().enumerate() {
+                list.insert(index, loro_scalar(item, element)).map_err(engine)?;
+            }
+            Ok(())
+        }
+        Node::Record { value: entry } => {
+            let record = map.insert_container(key, LoroMap::new()).map_err(engine)?;
+            for (key, value) in value.as_object().unwrap() {
+                put(&record, key, entry, value, writer)?;
+            }
+            Ok(())
         }
         Node::List { item } => {
             let list = map.insert_container(key, LoroMovableList::new()).map_err(engine)?;
@@ -552,8 +624,13 @@ struct Location {
     node: Node,
     value: ValueOrContainer,
     parent: Option<(LoroMap, String)>,
-    /// The final segment names an optional field that is not set (`value` is null).
+    /// The final segment names an optional field or record entry that is not set
+    /// (`value` is null).
     absent: bool,
+    /// The final segment is a record key: the entry is created by `set`, removed by `clear`.
+    entry: bool,
+    /// The final segment is a scalar-list element: the list and its index.
+    element: Option<(LoroMovableList, usize)>,
 }
 fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Result<Location> {
     if path.is_empty() || path.len() > 64 {
@@ -563,7 +640,11 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
     let mut value = ValueOrContainer::Container(Container::Map(doc.get_map("data")));
     let mut parent = None;
     let mut absent = false;
+    let mut entry = false;
+    let mut element = None;
     for (index, segment) in path.iter().enumerate() {
+        entry = false;
+        element = None;
         if absent {
             return Err(err("path_not_found", "Optional field is not set"));
         }
@@ -591,10 +672,43 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
                 value = child;
             }
             (
+                Segment::Key(key),
+                Node::Record { value: next },
+                ValueOrContainer::Container(Container::Map(map)),
+            ) => {
+                if !valid_key(key) {
+                    return Err(err("invalid_key", "Record keys are 1–256 characters and not reserved"));
+                }
+                let child = match map.get(key) {
+                    Some(child) => child,
+                    None => {
+                        absent = true;
+                        ValueOrContainer::Value(loro::LoroValue::Null)
+                    }
+                };
+                parent = Some((map.clone(), key.clone()));
+                entry = true;
+                node = next;
+                value = child;
+            }
+            (
+                Segment::Index { index },
+                Node::List { item },
+                ValueOrContainer::Container(Container::MovableList(list)),
+            ) if is_scalar(item) => {
+                let child = list
+                    .get(*index)
+                    .ok_or_else(|| err("path_not_found", "No element at that index"))?;
+                element = Some((list.clone(), *index));
+                node = item;
+                value = child;
+                parent = None;
+            }
+            (
                 Segment::Id { id },
                 Node::List { item },
                 ValueOrContainer::Container(Container::MovableList(list)),
-            ) => {
+            ) if !is_scalar(item) => {
                 let map = rows.map(doc, list, id)?;
                 node = item;
                 value = ValueOrContainer::Container(Container::Map(map));
@@ -608,6 +722,8 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
         value,
         parent,
         absent,
+        entry,
+        element,
     })
 }
 
@@ -623,9 +739,22 @@ fn execute(
     let at = resolve(doc, schema, op.path(), rows)?;
     match op {
         Intent::Set { value, .. } => {
+            let kind = unwrap_optional(&at.node);
+            // One scalar-list element: last writer wins.
+            if let Some((list, index)) = &at.element {
+                kind.validate(value, false)?;
+                if let ValueOrContainer::Value(stored) = &at.value {
+                    let stored = serde_json::to_value(stored).map_err(engine)?;
+                    if scalar_issue(kind, &stored) == Some("type_mismatch") {
+                        return Err(err("type_mismatch", "Cannot edit anomalous element"));
+                    }
+                }
+                list.set(*index, loro_scalar(kind, value)).map_err(engine)?;
+                return Ok(());
+            }
             // Whole-field text replaces the text as it is at execution. The script exists
             // before the first mutation, so a slow diff never leaves a batch half applied.
-            if let (Node::Text, ValueOrContainer::Container(Container::Text(text))) = (&at.node, &at.value) {
+            if let (Node::Text, ValueOrContainer::Container(Container::Text(text))) = (kind, &at.value) {
                 let to = value.as_str().ok_or_else(|| err("type_mismatch", "Expected text"))?;
                 let delta = edit::script(&text.to_string(), to, to.chars().count());
                 if !delta.is_empty() {
@@ -633,12 +762,25 @@ fn execute(
                 }
                 return Ok(());
             }
-            let kind = unwrap_optional(&at.node);
-            let replaces_object = matches!(kind, Node::Object { .. }) && matches!(at.node, Node::Optional { .. });
-            if !is_scalar(kind) && !replaces_object {
-                return Err(err("type_mismatch", "set accepts text, scalars and optional objects"));
+            // A whole scalar list: rewrite it, keeping unchanged positions.
+            if let Node::List { item } = kind {
+                if !is_scalar(item) {
+                    return Err(err("type_mismatch", "Rows are edited with insert, remove and move"));
+                }
+                kind.validate(value, false)?;
+                let ValueOrContainer::Container(Container::MovableList(list)) = &at.value else {
+                    return Err(err("type_mismatch", "Cannot edit anomalous list"));
+                };
+                return rewrite_list(list, item, value.as_array().unwrap());
             }
-            at.node.validate(value, false)?;
+            // Optional fields and record entries can be absent, created and replaced.
+            let optional = matches!(at.node, Node::Optional { .. }) || at.entry;
+            let replaces_object = matches!(kind, Node::Object { .. }) && optional;
+            let creates_text = matches!(kind, Node::Text) && optional && at.absent;
+            if !is_scalar(kind) && !replaces_object && !creates_text {
+                return Err(err("type_mismatch", "set accepts text, scalars, optional values and record entries"));
+            }
+            kind.validate(value, false)?;
             if !at.absent {
                 // A stored value of the wrong type is a preserved anomaly: never overwritten.
                 let anomalous = match (&at.value, replaces_object) {
@@ -663,8 +805,8 @@ fn execute(
             put(&map, &key, kind, value, &writer(doc))?;
         }
         Intent::Clear { .. } => {
-            if !matches!(at.node, Node::Optional { .. }) {
-                return Err(err("type_mismatch", "Only optional fields can be cleared"));
+            if !matches!(at.node, Node::Optional { .. }) && !at.entry {
+                return Err(err("type_mismatch", "Only optional fields and record entries can be cleared"));
             }
             if !at.absent {
                 let (map, key) = at
@@ -677,6 +819,7 @@ fn execute(
             id,
             value,
             at: anchor,
+            index,
             ..
         } => {
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
@@ -684,6 +827,21 @@ fn execute(
             else {
                 return Err(err("type_mismatch", "Expected list"));
             };
+            if is_scalar(&item) {
+                if id.is_some() || anchor.is_some() {
+                    return Err(err("invalid_request", "Scalar lists insert by index"));
+                }
+                item.validate(value, false)?;
+                let index = index.unwrap_or(list.len());
+                if index > list.len() {
+                    return Err(err("out_of_range", "Insert index is past the end"));
+                }
+                list.insert(index, loro_scalar(&item, value)).map_err(engine)?;
+                return Ok(());
+            }
+            if index.is_some() {
+                return Err(err("invalid_request", "Rows insert by anchor, not index"));
+            }
             let id = id.clone().map(Ok).unwrap_or_else(application_id)?;
             match rows.map(doc, &list, &id) {
                 Err(e) if e.code == "path_not_found" => {}
@@ -715,17 +873,38 @@ fn execute(
             };
             counter.insert(&key, next).map_err(engine)?;
         }
-        Intent::Remove { id, .. } => {
-            let ValueOrContainer::Container(Container::MovableList(list)) = at.value else {
+        Intent::Remove { id, index, count, .. } => {
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
+                (&at.node, at.value)
+            else {
                 return Err(err("type_mismatch", "Expected list"));
+            };
+            if is_scalar(item) {
+                let (Some(index), None) = (index, id) else {
+                    return Err(err("invalid_request", "Scalar lists remove by index"));
+                };
+                let count = count.unwrap_or(1);
+                if index.checked_add(count).is_none_or(|end| end > list.len()) {
+                    return Err(err("out_of_range", "Remove range is past the end"));
+                }
+                list.delete(*index, count).map_err(engine)?;
+                return Ok(());
+            }
+            let (Some(id), None, None) = (id, index, count) else {
+                return Err(err("invalid_request", "Rows are removed by id"));
             };
             list.delete(rows.index(&list, id)?, 1).map_err(engine)?;
             rows.touch(&list);
         }
         Intent::Move { id, at: anchor, .. } => {
-            let ValueOrContainer::Container(Container::MovableList(list)) = at.value else {
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
+                (&at.node, at.value)
+            else {
                 return Err(err("type_mismatch", "Expected list"));
             };
+            if is_scalar(item) {
+                return Err(err("type_mismatch", "Scalar lists are edited by index"));
+            }
             let from = rows.index(&list, id)?;
             let mut to = position(&list, anchor, rows)?;
             if to > from {
@@ -741,6 +920,39 @@ fn execute(
 }
 // Separate name avoids shadowing the splice's insert string in pattern matches.
 use insert_unchecked as insert_row;
+
+/// Rewrites a scalar list to `values`, keeping the common prefix and suffix and setting
+/// overlapping positions, so concurrent edits outside the changed span survive.
+fn rewrite_list(list: &LoroMovableList, item: &Node, values: &[Value]) -> Result<()> {
+    let current: Vec<Value> = (0..list.len())
+        .map(|i| match list.get(i) {
+            Some(ValueOrContainer::Value(v)) => serde_json::to_value(v).unwrap_or(Value::Null),
+            _ => Value::Null,
+        })
+        .map(|v| project(Some(item), v))
+        .collect();
+    let target: Vec<Value> = values.iter().map(|v| project(Some(item), v.clone())).collect();
+    let prefix = current.iter().zip(&target).take_while(|(a, b)| a == b).count();
+    let suffix = current[prefix..]
+        .iter()
+        .rev()
+        .zip(target[prefix..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (old_mid, new_mid) = (current.len() - prefix - suffix, target.len() - prefix - suffix);
+    for offset in 0..old_mid.min(new_mid) {
+        if current[prefix + offset] != target[prefix + offset] {
+            list.set(prefix + offset, loro_scalar(item, &values[prefix + offset])).map_err(engine)?;
+        }
+    }
+    if old_mid > new_mid {
+        list.delete(prefix + new_mid, old_mid - new_mid).map_err(engine)?;
+    }
+    for offset in old_mid..new_mid {
+        list.insert(prefix + offset, loro_scalar(item, &values[prefix + offset])).map_err(engine)?;
+    }
+    Ok(())
+}
 
 /// Each session writes only its own counter contribution: no key ever has
 /// concurrent writers, so contributions merge without loss.
@@ -805,6 +1017,26 @@ fn issues(node: &Node, value: &Value, path: &mut Vec<Value>, result: &mut Vec<Va
                 path.pop();
             }
         }
+        (Node::List { item }, Value::Array(elements)) if is_scalar(item) => {
+            for (i, element) in elements.iter().enumerate() {
+                if let Some(code) = scalar_issue(item, element) {
+                    path.push(json!(i));
+                    result.push(json!({"code":code,"path":path}));
+                    path.pop();
+                }
+            }
+        }
+        (Node::Record { value: entry }, Value::Object(map)) => {
+            for (key, value) in map {
+                path.push(json!(key));
+                if valid_key(key) {
+                    issues(entry, value, path, result);
+                } else {
+                    result.push(json!({"code":"invalid_key","path":path}));
+                }
+                path.pop();
+            }
+        }
         (Node::List { item }, Value::Array(rows)) => {
             let mut seen = BTreeSet::new();
             for (i, row) in rows.iter().enumerate() {
@@ -845,6 +1077,27 @@ fn container_issues(
             for key in keys.iter().filter(|key| key.as_str() != "$id" && !properties.contains_key(*key)) {
                 path.push(json!(key));
                 result.push(json!({"code":"unknown_field","path":path}));
+                path.pop();
+            }
+        }
+        // A scalar list is a movable list of plain values; its elements are checked as JSON.
+        (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) if is_scalar(item) => {
+            let json = serde_json::to_value(list.get_deep_value()).map_err(engine)?;
+            issues(node, &json, path, result);
+        }
+        (Node::List { item }, Some(ValueOrContainer::Container(_))) if is_scalar(item) => {
+            result.push(json!({"code":"type_mismatch","path":path}));
+        }
+        (Node::Record { value: entry }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
+            let mut keys: Vec<_> = map.keys().map(|key| key.to_string()).collect();
+            keys.sort();
+            for key in keys {
+                path.push(json!(key));
+                if valid_key(&key) {
+                    container_issues(entry, map.get(&key), path, result)?;
+                } else {
+                    result.push(json!({"code":"invalid_key","path":path}));
+                }
                 path.pop();
             }
         }

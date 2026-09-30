@@ -176,6 +176,9 @@ export class OwnerDocument<N extends ObjectNode> {
       for (const row of value)
         if (row && typeof row === "object" && typeof row.$id === "string")
           this.register(row, inner.item, [...path, { id: row.$id }]);
+    } else if (inner.kind === "record" && !Array.isArray(value)) {
+      // Object entries resolve with `doc.at(entry)`, addressed by their key.
+      for (const [key, entry] of Object.entries(value)) this.register(entry, inner.value, [...path, key]);
     }
   }
   /** Tracks work for barriers and status; `notify` reports the pending transition. */
@@ -313,6 +316,8 @@ export class OwnerDocument<N extends ObjectNode> {
         return this.submit([{ type: "clear", path }], undefined).then(() => this.settlePreview(key, preview));
       };
       if (isScalar(node.inner)) return Object.freeze({ ...scalar(), clear });
+      if (node.inner.kind === "text")
+        return Object.freeze({ set: (value: string) => send({ type: "set", path, value }, undefined), clear });
       // An optional object: its fields, plus `set` to create or replace it and `clear`.
       const fields = this.makeHandle(node.inner, path, collect);
       const handle = Object.create(null);
@@ -338,9 +343,37 @@ export class OwnerDocument<N extends ObjectNode> {
         const increment = (by = 1) => send({ type: "increment", path, by }, undefined);
         return Object.freeze({ increment, decrement: (by = 1) => increment(-by) });
       }
-      case "list": {
+      case "record": {
+        const entry = (key: string) => [...path, key];
         return Object.freeze({
-          item: (id: string) => this.handle(node.item, [...path, { id }], collect),
+          entry: (key: string) => this.handle(node.value, entry(key), collect),
+          put: (key: string, value: unknown) => send({ type: "set", path: entry(key), value }, undefined),
+          delete: (key: string) => send({ type: "clear", path: entry(key) }, undefined),
+        });
+      }
+      case "list": {
+        if (node.item.kind !== "object") {
+          const at = (index: number) => [...path, { index }];
+          return Object.freeze({
+            insert: (value: unknown, index?: number) =>
+              send({ type: "insert", path, value, ...(index === undefined ? {} : { index }) }, undefined),
+            set: (index: number, value: unknown) => {
+              if (collect) return send({ type: "set", path: at(index), value }, undefined);
+              const key = JSON.stringify(at(index));
+              const preview = this.previews.get(key);
+              return this.submit([{ type: "set", path: at(index), value }], undefined).then(() =>
+                this.settlePreview(key, preview),
+              );
+            },
+            preview: (index: number, value: unknown) => this.setPreview(at(index), value),
+            remove: (index: number, count = 1) => send({ type: "remove", path, index, count }, undefined),
+            // Rewrites the whole list; the owner keeps unchanged positions.
+            replace: (values: unknown[]) => send({ type: "set", path, value: values }, undefined),
+          });
+        }
+        const item = node.item;
+        return Object.freeze({
+          item: (id: string) => this.handle(item, [...path, { id }], collect),
           insert: (value: unknown, at?: { before: string } | { after: string }) => {
             const id = newID();
             return send({ type: "insert", path, value, id, ...(at ? { at } : {}) }, Object.freeze({ id }));
@@ -521,15 +554,18 @@ export class OwnerDocument<N extends ObjectNode> {
     };
   }
   bindText(element: HTMLInputElement | HTMLTextAreaElement, handle: object) {
+    let optional = false;
     const locate = (next: object) => {
       const location = this.handlePaths.get(next);
-      if (!location || location.node.kind !== "text") throw new Error("Expected this document's text handle");
+      if (!location || unwrap(location.node).kind !== "text") throw new Error("Expected this document's text handle");
+      optional = location.node.kind === "optional";
       return location.path;
     };
     let path = locate(handle);
     const binding = bindField(element, path as Segment[], {
       read: (at) => ({
-        text: readPath(this.store.state.value, at),
+        // An unset optional text reads as "" and stays editable; typing creates it.
+        text: readPath(this.store.state.value, at) ?? (optional ? "" : undefined),
         version: this.store.state.version,
         sequence: this.store.state.sequence,
       }),

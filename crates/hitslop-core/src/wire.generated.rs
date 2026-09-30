@@ -6,6 +6,7 @@ use serde_json::Value;
 pub enum Segment {
     Key(String),
     Id { id: String },
+    Index { index: usize },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
@@ -17,8 +18,8 @@ pub enum Anchor {
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Intent {
     Set { path: Vec<Segment>, value: Value },
-    Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor> },
-    Remove { path: Vec<Segment>, id: String },
+    Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor>, index: Option<usize> },
+    Remove { path: Vec<Segment>, id: Option<String>, index: Option<usize>, count: Option<usize> },
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
     Clear { path: Vec<Segment> },
     Increment { path: Vec<Segment>, by: i64 },

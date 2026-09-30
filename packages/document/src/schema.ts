@@ -21,17 +21,22 @@ export interface ObjectNode<P extends Record<string, Node> = Record<string, Node
   kind: "object";
   properties: P;
 }
-/** Rows with a stable `$id`. */
-export interface ListNode<I extends ObjectNode = ObjectNode> {
+/** Rows with a stable `$id` (object items), or plain values addressed by index (scalar items). */
+export interface ListNode<I extends ObjectNode | Scalar = ObjectNode | Scalar> {
   kind: "list";
   item: I;
 }
-/** Absent until set; `clear()` removes it. Holds a scalar or an object. */
-export interface OptionalNode<S extends Scalar | ObjectNode = Scalar | ObjectNode> {
+/** Entries by string key; each entry is absent until `put` and removed by `delete`. */
+export interface RecordNode<V extends Scalar | ObjectNode = Scalar | ObjectNode> {
+  kind: "record";
+  value: V;
+}
+/** Absent until set; `clear()` removes it. Holds a scalar, text or an object. */
+export interface OptionalNode<S extends Scalar | Text | ObjectNode = Scalar | Text | ObjectNode> {
   kind: "optional";
   inner: S;
 }
-export type Node = Text | Scalar | CounterNode | ObjectNode | ListNode | OptionalNode;
+export type Node = Text | Scalar | CounterNode | ObjectNode | ListNode | RecordNode | OptionalNode;
 
 /** Compile-time provenance only; snapshots contain no symbols or schema data. */
 declare const snapshotNode: unique symbol;
@@ -60,22 +65,28 @@ type ProjectedValue<N extends Node, Origin extends Node = N> = N extends Text | 
           : N extends OptionalNode<infer S>
             ? ProjectedValue<S, Origin> | undefined
             : N extends ListNode<infer I>
-              ? ReadonlyArray<Value<I> & { readonly $id: string }>
-              : N extends ObjectNode<infer P>
+              ? I extends ObjectNode
+                ? ReadonlyArray<Value<I> & { readonly $id: string }>
+                : ReadonlyArray<Value<I>>
+              : N extends RecordNode<infer V>
+                ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
+                : N extends ObjectNode<infer P>
                 ? ObjectValue<P> & Snapshot<Origin>
                 : never;
 export type Input<N extends Node> =
   N extends ListNode<infer I>
     ? Input<I>[]
-    : N extends OptionalNode<infer S>
+    : N extends RecordNode<infer V>
+      ? { [key: string]: Input<V> }
+      : N extends OptionalNode<infer S>
       ? Input<S> | undefined
       : N extends ObjectNode<infer P>
         ? ObjectInput<P>
         : N extends CounterNode
           ? number
           : Value<N>;
-/** Field names, and `{ id }` for a row. */
-export type Segment = string | { id: string };
+/** Field names and record keys, `{ id }` for a row, and `{ index }` for a scalar-list element. */
+export type Segment = string | { id: string } | { index: number };
 export type Path = Segment[];
 export type Field<N extends Node> = { readonly path: Path; readonly node: N };
 type Unwrap<N extends Node> = N extends OptionalNode<infer S> ? S : N;
@@ -83,8 +94,12 @@ export type Fields<N extends Node> = Field<N> &
   (Unwrap<N> extends ObjectNode<infer P>
     ? { [K in keyof P]: Fields<P[K]> }
     : Unwrap<N> extends ListNode<infer I>
-      ? { item(id: string): Fields<I> }
-      : {});
+      ? I extends ObjectNode
+        ? { item(id: string): Fields<I> }
+        : {}
+      : Unwrap<N> extends RecordNode<infer V>
+        ? { entry(key: string): Fields<V> }
+        : {});
 export type Descriptor = { format: 1; root: ObjectNode };
 export type Definition<N extends ObjectNode> = { descriptor: Descriptor; fields: Fields<N> };
 
@@ -104,13 +119,14 @@ export const s = {
     kind: "enum",
     values,
   }),
-  optional: <S extends Scalar | ObjectNode>(inner: S): OptionalNode<S> => ({ kind: "optional", inner }),
+  optional: <S extends Scalar | Text | ObjectNode>(inner: S): OptionalNode<S> => ({ kind: "optional", inner }),
+  record: <V extends Scalar | ObjectNode>(value: V): RecordNode<V> => ({ kind: "record", value }),
   counter: (): CounterNode => ({ kind: "counter" }),
   object: <P extends Record<string, Node>>(properties: P): ObjectNode<P> => ({
     kind: "object",
     properties,
   }),
-  list: <I extends ObjectNode>(item: I): ListNode<I> => ({ kind: "list", item }),
+  list: <I extends ObjectNode | Scalar>(item: I): ListNode<I> => ({ kind: "list", item }),
 };
 export const unwrap = (node: Node): Exclude<Node, OptionalNode> =>
   node.kind === "optional" ? node.inner : node;
@@ -132,7 +148,11 @@ export function fromDescriptor(input: Descriptor): Definition<ObjectNode> {
     if (inner.kind === "object")
       for (const [key, child] of Object.entries(inner.properties))
         field[key] = build(child, [...path, key]);
-    if (inner.kind === "list") field.item = (id: string) => build(inner.item, [...path, { id }]);
+    if (inner.kind === "list" && inner.item.kind === "object") {
+      const item = inner.item;
+      field.item = (id: string) => build(item, [...path, { id }]);
+    }
+    if (inner.kind === "record") field.entry = (key: string) => build(inner.value, [...path, key]);
     return Object.freeze(field);
   };
   freeze(descriptor);
@@ -148,6 +168,7 @@ const allowedKeys: Record<string, string[]> = {
   object: ["properties"],
   list: ["item"],
   optional: ["inner"],
+  record: ["value"],
   enum: ["values"],
   string: ["maxLength"],
   number: ["min", "max"],
@@ -187,12 +208,17 @@ function checkNode(node: Node, depth: number): void {
         throw new Error("Enum needs 1–1024 unique string values");
       return;
     case "optional":
-      if (!node.inner || (!isScalar(node.inner) && node.inner.kind !== "object"))
-        throw new Error("Optional holds a scalar or an object");
+      if (!node.inner || (!isScalar(node.inner) && node.inner.kind !== "object" && node.inner.kind !== "text"))
+        throw new Error("Optional holds a scalar, text or an object");
       return checkNode(node.inner, depth + 1);
     case "list":
-      if (node.item?.kind !== "object") throw new Error("Lists contain object rows");
+      if (!node.item || (node.item.kind !== "object" && !isScalar(node.item)))
+        throw new Error("Lists contain object rows or scalars");
       return checkNode(node.item, depth + 1);
+    case "record":
+      if (!node.value || (node.value.kind !== "object" && !isScalar(node.value)))
+        throw new Error("Record values are scalars or objects");
+      return checkNode(node.value, depth + 1);
     case "object":
       if (!node.properties || typeof node.properties !== "object" || Array.isArray(node.properties))
         throw new Error("Invalid schema node");
@@ -207,6 +233,16 @@ function checkNode(node: Node, depth: number): void {
   }
 }
 const utf16Length = (text: string) => text.length;
+/** Record keys: 1–256 UTF-16 units, not a reserved name. */
+export function checkRecordKey(key: unknown): asserts key is string {
+  if (
+    typeof key !== "string" ||
+    !key.length ||
+    key.length > 256 ||
+    ["$id", "__proto__", "constructor", "prototype"].includes(key)
+  )
+    throw new OperationRejectedError("Record keys are 1–256 characters and not reserved names");
+}
 /** Checks a value (such as `initial.json`) against a descriptor with the core's write
  * rules; rows may carry `$id`, and optional fields may be omitted. */
 export function validate(node: Node, value: unknown, row = false): void {
@@ -244,8 +280,17 @@ export function validate(node: Node, value: unknown, row = false): void {
       return;
     case "list":
       if (!Array.isArray(value)) throw new OperationRejectedError("Expected list");
-      for (const item of value) validate(node.item, item, true);
+      for (const item of value) validate(node.item, item, node.item.kind === "object");
       return;
+    case "record": {
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new OperationRejectedError("Expected record");
+      for (const [key, entry] of Object.entries(value)) {
+        checkRecordKey(key);
+        validate(node.value, entry);
+      }
+      return;
+    }
     case "object": {
       if (!value || typeof value !== "object" || Array.isArray(value))
         throw new OperationRejectedError("Expected object");

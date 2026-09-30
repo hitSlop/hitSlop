@@ -1,0 +1,74 @@
+{
+  "handles": [
+    {
+      "path": [
+        "done"
+      ],
+      "method": "put",
+      "args": [
+        "3:5",
+        true
+      ]
+    },
+    {
+      "path": [
+        "pixels"
+      ],
+      "method": "set",
+      "args": [
+        0,
+        "#000"
+      ]
+    },
+    {
+      "path": [
+        "presets"
+      ],
+      "method": "insert",
+      "args": [
+        120
+      ]
+    },
+    {
+      "path": [
+        "notes"
+      ],
+      "method": "set",
+      "args": [
+        "written"
+      ]
+    }
+  ],
+  "expected": {
+    "title": "Board",
+    "done": {
+      "3:5": true
+    },
+    "widths": {
+      "A": 100
+    },
+    "cells": {},
+    "pages": {},
+    "pixels": [
+      "#000",
+      "#fff",
+      "#fff"
+    ],
+    "presets": [
+      60,
+      90,
+      120
+    ],
+    "habits": [
+      {
+        "$id": "h1",
+        "name": "Walk",
+        "checkins": {}
+      }
+    ],
+    "stats": {
+      "guesses": []
+    },
+    "notes": "written"
+  }
+}

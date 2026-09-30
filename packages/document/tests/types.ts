@@ -73,3 +73,30 @@ export async function scalarTypes(doc: SlopDocument<typeof scalars.fields.node>)
   const valid: Input<typeof scalars.fields.node> = { currency: "CAD", amount: 1, rows: [] };
   return { currency, note, required, valid };
 }
+
+const collections = defineDocument({
+  checkins: s.record(s.integer({ min: 1 })),
+  cells: s.record(s.object({ input: s.string() })),
+  pixels: s.list(s.string()),
+  notes: s.optional(s.text()),
+});
+export async function collectionTypes(doc: SlopDocument<typeof collections.fields.node>) {
+  const count: number | undefined = doc.current.checkins["2026-09-23"];
+  const pixel: string | undefined = doc.current.pixels[0];
+  const notes: string | undefined = doc.current.notes;
+  await doc.fields.checkins.put("2026-09-23", 1);
+  await doc.fields.checkins.delete("2026-09-23");
+  await doc.fields.cells.entry("A1").input.set("x");
+  // @ts-expect-error Record values follow the record's value kind.
+  await doc.fields.checkins.put("2026-09-23", "one");
+  await doc.fields.pixels.insert("#fff", 0);
+  await doc.fields.pixels.set(0, "#000");
+  doc.fields.pixels.preview(0, "#111");
+  await doc.fields.pixels.remove(0, 1);
+  await doc.fields.pixels.replace(["#fff"]);
+  // @ts-expect-error Scalar lists have no row ids.
+  doc.fields.pixels.item("x");
+  await doc.fields.notes.set("text");
+  await doc.fields.notes.clear();
+  return { count, pixel, notes };
+}

@@ -197,6 +197,7 @@ fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s No
     for (_, index) in path.iter().skip(1) {
         node = match (unwrap_optional(node), index) {
             (Node::Object { properties }, Index::Key(key)) => properties.get(&key.to_string())?,
+            (Node::Record { value }, Index::Key(_)) => value,
             (Node::List { item }, Index::Seq(_)) => item,
             _ => return None,
         };
@@ -386,23 +387,27 @@ fn map_ops(
             return Ok(());
         }
     };
-    let properties = match node {
-        Some(Node::Object { properties }) => Some(properties),
+    // Object fields are declared by name; every record key has the record's value kind.
+    let (properties, entries) = match node {
+        Some(Node::Object { properties }) => (Some(properties), None),
+        Some(Node::Record { value }) => (None, Some(&**value)),
         Some(_) => {
             out.rescan = true;
-            None
+            (None, None)
         }
-        None => None,
+        None => (None, None),
     };
     for (key, s) in sorted {
         let mut path = base.clone();
         path.push(json!(key));
-        let declared = properties.and_then(|p| p.get(key));
+        let declared = properties.and_then(|p| p.get(key)).or(entries);
         if declared.is_none() && key != "$id" { out.rescan = true; }
+        if entries.is_some() && !valid_key(key) { out.rescan = true; }
         match s {
             None => {
-                // Clearing an optional is ordinary; removing a required field is an anomaly.
-                if declared.is_some_and(|d| !matches!(d, Node::Optional { .. })) {
+                // Clearing an optional or deleting a record entry is ordinary; removing a
+                // required field is an anomaly.
+                if entries.is_none() && declared.is_some_and(|d| !matches!(d, Node::Optional { .. })) {
                     out.rescan = true;
                 }
                 out.ops.push(json!({"type":"remove","path":path}));
@@ -439,6 +444,21 @@ fn list_ops(
         }
         None => None,
     };
+    // A scalar list has no row identity: publish it whole. The lists are small, and
+    // issues are checked below only if an element could be invalid.
+    if let Some(item) = item_node.filter(|item| is_scalar(item)) {
+        out.fallback.push(e.target.clone());
+        if e.target.container_type() != ContainerType::MovableList {
+            out.rescan = true;
+        } else {
+            let list = doc.get_movable_list(e.target.clone());
+            let json = serde_json::to_value(list.get_deep_value()).map_err(engine)?;
+            if !clean_value(&Node::List { item: Box::new(item.clone()) }, &json) {
+                out.rescan = true;
+            }
+        }
+        return Ok(());
+    }
     // Only movable lists carry row identity; any other list publishes exactly.
     if e.target.container_type() != ContainerType::MovableList {
         out.fallback.push(e.target.clone());

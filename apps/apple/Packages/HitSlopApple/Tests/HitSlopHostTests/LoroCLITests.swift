@@ -218,4 +218,24 @@ extension LoroClientTests {
     #expect(refused.0 != 0)
     #expect(refused.2.contains("out_of_range") && refused.2.contains("Not applied."), "\(refused.2)")
   }
+
+  // Failure: agents could not address record entries by key or scalar-list elements by
+  // index. Oracle: the CLI's printed value.
+  @Test func recordAndListEditsFromTheCLI() async throws {
+    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/collections/document", toPath: root.path)
+    let edited = try await cli(["batch", root.path, "--ops",
+      ##"[{"type":"set","path":["done","3:5"],"value":true},{"type":"set","path":["cells","A1"],"value":{"input":"hi"}},{"type":"insert","path":["presets"],"value":75,"index":1},{"type":"set","path":["pixels",{"index":0}],"value":"#000"}]"##])
+    #expect(edited.0 == 0, "\(edited.2)")
+    let value = try #require((try JSONSerialization.jsonObject(with: Data(edited.1.utf8)) as? [String: Any])?["value"] as? [String: Any])
+    #expect((value["done"] as? [String: Any])?["3:5"] as? Bool == true)
+    #expect(value["presets"] as? [Int] == [60, 75, 90])
+    #expect((value["pixels"] as? [String])?.first == "#000")
+    let cleared = try await cli(["apply", root.path, "--op", #"{"type":"clear","path":["done","3:5"]}"#])
+    #expect(cleared.0 == 0, "\(cleared.2)")
+    let after = try #require((try JSONSerialization.jsonObject(with: Data(cleared.1.utf8)) as? [String: Any])?["value"] as? [String: Any])
+    #expect((after["done"] as? [String: Any])?.isEmpty == true)
+  }
 }

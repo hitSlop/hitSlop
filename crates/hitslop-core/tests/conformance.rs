@@ -26,7 +26,7 @@ fn batch(case: &Value, version: &str) -> String {
 
 /// Every literal scenario file, so a new kind's fixture runs with the rest.
 fn fixtures() -> Vec<Value> {
-    [include_str!("../fixtures/checklist.json"), include_str!("../fixtures/scalars.json")]
+    [include_str!("../fixtures/checklist.json"), include_str!("../fixtures/scalars.json"), include_str!("../fixtures/collections.json")]
         .into_iter()
         .map(|f| serde_json::from_str(f).unwrap())
         .collect()

@@ -2,7 +2,7 @@
 // publications in sequence order and resyncs from a fresh snapshot on any gap.
 import type { OwnerPatchOp, OwnerPublication, OwnerState, PagePush } from "@hitslop/schema/owner";
 
-export type Segment = string | { id: string };
+export type Segment = string | { id: string } | { index: number };
 
 // Snapshot arrays are immutable, so one `$id → index` map per array serves every reader.
 const rowIndexes = new WeakMap<readonly any[], Map<string, number>>();
@@ -19,8 +19,9 @@ function indexOf(rows: readonly any[], id: string): number {
 }
 export function readPath(value: any, path: readonly Segment[]) {
   for (const part of path) {
-    if (typeof part === "string") value = value?.[part];
+    if (typeof part === "string") value = value && typeof value === "object" && Object.hasOwn(value, part) ? value[part] : undefined;
     else if (!Array.isArray(value)) return undefined;
+    else if ("index" in part) value = value[part.index];
     else value = value[indexOf(value, part.id)];
   }
   return value;
@@ -57,7 +58,7 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
     root = own(root);
     let node = root;
     for (const part of path) {
-      const key = typeof part === "string" ? part : indexOf(node, part.id);
+      const key = typeof part === "string" ? part : "index" in part ? part.index : indexOf(node, part.id);
       if (typeof key === "number" && key < 0) throw new Error("Missing publication row");
       node[key] = own(node[key]);
       node = node[key];
@@ -75,8 +76,8 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
           break;
         }
         const parent = owned(parentPath);
-        const key = typeof last === "string" ? last : indexOf(parent, last.id);
-        if (typeof key === "number" && key < 0) throw new Error("Missing publication row");
+        const key = typeof last === "string" ? last : "index" in last ? last.index : indexOf(parent, last.id);
+        if (typeof key === "number" && (key < 0 || key >= parent.length)) throw new Error("Missing publication row");
         parent[key] = op.value;
         break;
       }

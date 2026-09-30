@@ -1,12 +1,14 @@
 import { Type, type Static } from "typebox";
 
 // Document core and page wire. TypeBox is authoritative; Rust and Swift are generated.
+// Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
 export const Segment = Type.Union([
   Type.String({ minLength: 1 }),
   Type.Object(
     { id: Type.String({ pattern: "^[0-9A-Za-z_-]{1,64}$" }) },
     { additionalProperties: false },
   ),
+  Type.Object({ index: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
 ]);
 const path = Type.Array(Segment, { minItems: 1, maxItems: 64 });
 export const Anchor = Type.Union([
@@ -16,13 +18,21 @@ export const Anchor = Type.Union([
 export const variants = {
   // Scalars, optional objects, and whole text fields (as the text is at execution).
   set: { path, value: Type.Unknown() },
+  // Rows take `id`/`at`; scalar-list elements take `index` (default: append).
   insert: {
     path,
     value: Type.Unknown(),
     id: Type.Optional(Type.String()),
     at: Type.Optional(Anchor),
+    index: Type.Optional(Type.Integer({ minimum: 0 })),
   },
-  remove: { path, id: Type.String() },
+  // Rows by `id`; scalar-list elements by `index` and `count` (default 1).
+  remove: {
+    path,
+    id: Type.Optional(Type.String()),
+    index: Type.Optional(Type.Integer({ minimum: 0 })),
+    count: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
   move: { path, id: Type.String(), at: Type.Optional(Anchor) },
   // Removes an optional field's value; a no-op when it is not set.
   clear: { path },

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "collection-conformance",
+  "title": "Collection conformance",
+  "description": "Records, scalar lists and optional text conformance fixture.",
+  "categories": [
+    "utilities"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 480
+  }
+}

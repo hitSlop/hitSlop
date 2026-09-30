@@ -14,7 +14,7 @@ fn text_at(
     lists: &HashMap<ContainerID, ListState>,
 ) -> Result<LoroText> {
     let loc = resolve(doc, schema, path, &Rows::new(lists))?;
-    match (loc.node, loc.value) {
+    match (unwrap_optional(&loc.node), loc.value) {
         (Node::Text, ValueOrContainer::Container(Container::Text(text))) => Ok(text),
         _ => Err(err("type_mismatch", "Expected text")),
     }
@@ -99,6 +99,35 @@ impl Document {
         let r: wire::EditText = parse(request)?;
         // Every path validates the base first: an unknown operation must never reach Loro.
         let (base_at, base_vv) = decode_version(&self.doc, &r.base)?;
+        // An unset optional text reads as "": the first edit from "" creates it.
+        let at = resolve(&self.doc, &self.schema, &r.path, &Rows::new(&self.lists))?;
+        if at.absent && matches!(unwrap_optional(&at.node), Node::Text) {
+            if !r.from.is_empty() {
+                return Err(err("path_not_found", "Text was cleared"));
+            }
+            unicode_offset(&r.to, r.selectionStart)?;
+            unicode_offset(&r.to, r.selectionEnd)?;
+            if r.to.is_empty() {
+                return Ok(TextEdit {
+                    sequence: self.sequence,
+                    authored: r.base,
+                    selection_start: r.selectionStart,
+                    selection_end: r.selectionEnd,
+                    publication: None,
+                });
+            }
+            let (map, key) = at.parent.ok_or_else(|| err("type_mismatch", "Expected a field"))?;
+            put(&map, &key, &Node::Text, &json!(r.to), &writer(&self.doc))?;
+            self.doc.commit();
+            let publication = self.publish()?;
+            return Ok(TextEdit {
+                sequence: self.sequence,
+                authored: self.version(),
+                selection_start: r.selectionStart,
+                selection_end: r.selectionEnd,
+                publication: Some(publication),
+            });
+        }
         let current = text_at(&self.doc, &self.schema, &r.path, &self.lists)?;
         // The field must be the same container the page edited: a row removed and
         // reinserted with the same `$id` has a new text that `base` never saw.

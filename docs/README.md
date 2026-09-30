@@ -5,7 +5,8 @@ hitSlop ships a macOS app and a matching Bun authoring CLI/SDK. Documents stay l
 | Task | Guide |
 | --- | --- |
 | Understand how the system works | [Architecture](architecture.md) |
-| The current milestone: scalar kinds and four restored slops | [Scalars plan](ScalarsPlan.md) |
+| Scalar kinds and four restored slops (done) | [Scalars plan](ScalarsPlan.md) |
+| The current milestone: records, scalar lists and optional text | [Collections plan](CollectionsPlan.md) |
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
 | Build or refine a mini app | [Authoring](guides/authoring.md) |
 | Run common CLI workflows or look up document operations | [CLI workflows and reference](guides/cli.md) |

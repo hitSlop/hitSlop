@@ -52,6 +52,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -94,6 +107,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -131,6 +157,10 @@
                         "additionalProperties": false
                       }
                     ]
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0
                   }
                 },
                 "additionalProperties": false
@@ -139,8 +169,7 @@
                 "type": "object",
                 "required": [
                   "type",
-                  "path",
-                  "id"
+                  "path"
                 ],
                 "properties": {
                   "type": {
@@ -167,6 +196,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -175,6 +217,14 @@
                   },
                   "id": {
                     "type": "string"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "additionalProperties": false
@@ -208,6 +258,19 @@
                             "id": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -282,6 +345,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -320,6 +396,19 @@
                             "id": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -375,6 +464,19 @@
                   "id": {
                     "type": "string",
                     "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "index"
+                ],
+                "properties": {
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0
                   }
                 },
                 "additionalProperties": false
@@ -502,6 +604,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -540,6 +655,19 @@
                             "id": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -582,6 +710,19 @@
                             "id": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -631,6 +772,19 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -673,6 +827,19 @@
                             "id": {
                               "type": "string",
                               "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "index"
+                          ],
+                          "properties": {
+                            "index": {
+                              "type": "integer",
+                              "minimum": 0
                             }
                           },
                           "additionalProperties": false
@@ -811,6 +978,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -853,6 +1033,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -890,6 +1083,10 @@
                                 "additionalProperties": false
                               }
                             ]
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
                           }
                         },
                         "additionalProperties": false
@@ -898,8 +1095,7 @@
                         "type": "object",
                         "required": [
                           "type",
-                          "path",
-                          "id"
+                          "path"
                         ],
                         "properties": {
                           "type": {
@@ -926,6 +1122,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -934,6 +1143,14 @@
                           },
                           "id": {
                             "type": "string"
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 1
                           }
                         },
                         "additionalProperties": false
@@ -967,6 +1184,19 @@
                                     "id": {
                                       "type": "string",
                                       "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     }
                                   },
                                   "additionalProperties": false
@@ -1041,6 +1271,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -1079,6 +1322,19 @@
                                     "id": {
                                       "type": "string",
                                       "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     }
                                   },
                                   "additionalProperties": false
@@ -1160,6 +1416,19 @@
                           "id": {
                             "type": "string",
                             "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "index"
+                        ],
+                        "properties": {
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
                           }
                         },
                         "additionalProperties": false
@@ -1426,6 +1695,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -1464,6 +1746,19 @@
                                     "id": {
                                       "type": "string",
                                       "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     }
                                   },
                                   "additionalProperties": false
@@ -1506,6 +1801,19 @@
                                     "id": {
                                       "type": "string",
                                       "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     }
                                   },
                                   "additionalProperties": false
@@ -1555,6 +1863,19 @@
                                     }
                                   },
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -1597,6 +1918,19 @@
                                     "id": {
                                       "type": "string",
                                       "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "index"
+                                  ],
+                                  "properties": {
+                                    "index": {
+                                      "type": "integer",
+                                      "minimum": 0
                                     }
                                   },
                                   "additionalProperties": false
