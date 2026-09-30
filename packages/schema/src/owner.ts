@@ -14,7 +14,7 @@ export const Anchor = Type.Union([
   Type.Object({ after: Type.String() }, { additionalProperties: false }),
 ]);
 export const variants = {
-  // Booleans, and whole text fields (replacing the text as it is at execution).
+  // Scalars, optional objects, and whole text fields (as the text is at execution).
   set: { path, value: Type.Unknown() },
   insert: {
     path,
@@ -24,6 +24,8 @@ export const variants = {
   },
   remove: { path, id: Type.String() },
   move: { path, id: Type.String(), at: Type.Optional(Anchor) },
+  // Removes an optional field's value; a no-op when it is not set.
+  clear: { path },
   // Counters: a nonzero safe-integer delta; the core also bounds the resulting sum.
   increment: { path, by: Type.Integer({ minimum: -9007199254740991, maximum: 9007199254740991 }) },
 } as const;
@@ -32,6 +34,7 @@ export const Intent = Type.Union([
   Type.Object({ type: Type.Literal("insert"), ...variants.insert }, { additionalProperties: false }),
   Type.Object({ type: Type.Literal("remove"), ...variants.remove }, { additionalProperties: false }),
   Type.Object({ type: Type.Literal("move"), ...variants.move }, { additionalProperties: false }),
+  Type.Object({ type: Type.Literal("clear"), ...variants.clear }, { additionalProperties: false }),
   Type.Object(
     { type: Type.Literal("increment"), ...variants.increment },
     { additionalProperties: false },

@@ -1,0 +1,68 @@
+{
+  "handles": [
+    {
+      "path": [
+        "currency"
+      ],
+      "method": "set",
+      "args": [
+        "USD"
+      ]
+    },
+    {
+      "path": [
+        "rating"
+      ],
+      "method": "set",
+      "args": [
+        5
+      ]
+    },
+    {
+      "path": [
+        "memo"
+      ],
+      "method": "set",
+      "args": [
+        "hi"
+      ]
+    },
+    {
+      "path": [
+        "photo"
+      ],
+      "method": "set",
+      "args": [
+        {
+          "id": "a",
+          "name": "cover"
+        }
+      ]
+    },
+    {
+      "path": [
+        "memo"
+      ],
+      "method": "clear",
+      "args": []
+    }
+  ],
+  "expected": {
+    "title": "Trip",
+    "currency": "USD",
+    "label": "ab",
+    "ratio": 0.5,
+    "rating": 5,
+    "rows": [
+      {
+        "$id": "r1",
+        "text": "Coffee",
+        "amount": 475
+      }
+    ],
+    "photo": {
+      "id": "a",
+      "name": "cover"
+    }
+  }
+}

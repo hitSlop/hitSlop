@@ -194,4 +194,28 @@ extension LoroClientTests {
       method: "apply", url: root, operation: setTitle("Engine only"))
     #expect(String(decoding: data, as: UTF8.self).contains("Engine only"))
   }
+
+  // Failure: scalar edits from agents were refused, clear left a value behind, or an
+  // out-of-range value was stored. Oracle: the CLI's printed value and exit status.
+  @Test func scalarEditsSetClearAndRefuseFromTheCLI() async throws {
+    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/scalars/document", toPath: root.path)
+    let value = { (output: String) throws -> [String: Any] in
+      let reply = try JSONSerialization.jsonObject(with: Data(output.utf8)) as! [String: Any]
+      return reply["value"] as! [String: Any]
+    }
+    let set = try await cli(["batch", root.path, "--ops",
+      #"[{"type":"set","path":["memo"],"value":"hi"},{"type":"set","path":["ratio"],"value":1},{"type":"set","path":["currency"],"value":"EUR"}]"#])
+    #expect(set.0 == 0, "\(set.2)")
+    let written = try value(set.1)
+    #expect(written["memo"] as? String == "hi" && written["ratio"] as? Int == 1 && written["currency"] as? String == "EUR")
+    let cleared = try await cli(["apply", root.path, "--op", #"{"type":"clear","path":["memo"]}"#])
+    #expect(cleared.0 == 0, "\(cleared.2)")
+    #expect(try value(cleared.1)["memo"] == nil)
+    let refused = try await cli(["apply", root.path, "--op", #"{"type":"set","path":["rating"],"value":9}"#])
+    #expect(refused.0 != 0)
+    #expect(refused.2.contains("out_of_range") && refused.2.contains("Not applied."), "\(refused.2)")
+  }
 }

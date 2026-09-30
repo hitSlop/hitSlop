@@ -195,13 +195,13 @@ fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, Lis
 fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s Node> {
     let mut node = schema;
     for (_, index) in path.iter().skip(1) {
-        node = match (node, index) {
+        node = match (unwrap_optional(node), index) {
             (Node::Object { properties }, Index::Key(key)) => properties.get(&key.to_string())?,
             (Node::List { item }, Index::Seq(_)) => item,
             _ => return None,
         };
     }
-    Some(node)
+    Some(unwrap_optional(node))
 }
 /// Converts a Loro container path to a publication path. Rows are addressed by
 /// `$id`; a row without a unique ID makes its list the fallback container.
@@ -401,7 +401,8 @@ fn map_ops(
         if declared.is_none() && key != "$id" { out.rescan = true; }
         match s {
             None => {
-                if declared.is_some() {
+                // Clearing an optional is ordinary; removing a required field is an anomaly.
+                if declared.is_some_and(|d| !matches!(d, Node::Optional { .. })) {
                     out.rescan = true;
                 }
                 out.ops.push(json!({"type":"remove","path":path}));

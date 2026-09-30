@@ -1,4 +1,15 @@
-import type { BooleanNode, CounterNode, Input, ListNode, Node, ObjectNode, Snapshot, Text } from "./schema";
+import type {
+  CounterNode,
+  Input,
+  ListNode,
+  Node,
+  ObjectNode,
+  OptionalNode,
+  Scalar,
+  Snapshot,
+  Text,
+  Value,
+} from "./schema";
 
 export type InsertResult = { readonly id: string };
 /** Resolve a snapshot object (the root, a row or a nested object) to its handle. */
@@ -9,9 +20,12 @@ export type TextHandle = {
 };
 export type ScalarHandle<V> = {
   set(value: V): void;
+  /** Show `value` locally without writing history (for drags and drawing). The next
+   * `set`, `flush`, close or export commits it. */
+  preview(value: V): void;
 };
 export type RowDestination = { before: string } | { after: string };
-export type Handle<N extends Node> =
+type ValueHandle<N extends Node> =
   N extends ObjectNode<infer P>
     ? { readonly [K in keyof P]: Handle<P[K]> }
     : N extends ListNode<infer I>
@@ -26,6 +40,13 @@ export type Handle<N extends Node> =
         ? { increment(by?: number): void; decrement(by?: number): void }
         : N extends Text
           ? TextHandle
-          : N extends BooleanNode
-            ? ScalarHandle<boolean>
+          : N extends Scalar
+            ? ScalarHandle<Value<N>>
             : never;
+export type Handle<N extends Node> =
+  N extends OptionalNode<infer S>
+    ? S extends ObjectNode
+      ? // Fields of an unset object are not found; `set` creates or replaces it.
+        ValueHandle<S> & { set(value: Input<S>): void; clear(): void }
+      : ScalarHandle<Value<S>> & { clear(): void }
+    : ValueHandle<N>;

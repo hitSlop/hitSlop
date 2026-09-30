@@ -31,8 +31,9 @@ const initial = {
 };
 
 test("WASM binding executes literal core fixtures and replays native-compatible bytes", async () => {
+  for (const name of ["checklist", "scalars"]) {
   const fixture = await Bun.file(
-    new URL("../../../crates/hitslop-core/fixtures/checklist.json", import.meta.url),
+    new URL(`../../../crates/hitslop-core/fixtures/${name}.json`, import.meta.url),
   ).json();
   for (const scenario of fixture.scenarios) {
     const core = wasm.WasmDocument.create(
@@ -63,6 +64,7 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
     } finally {
       core.free();
     }
+  }
   }
 });
 

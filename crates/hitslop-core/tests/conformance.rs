@@ -24,54 +24,63 @@ fn batch(case: &Value, version: &str) -> String {
     json!({"intents":intents}).to_string()
 }
 
+/// Every literal scenario file, so a new kind's fixture runs with the rest.
+fn fixtures() -> Vec<Value> {
+    [include_str!("../fixtures/checklist.json"), include_str!("../fixtures/scalars.json")]
+        .into_iter()
+        .map(|f| serde_json::from_str(f).unwrap())
+        .collect()
+}
+
 fn cases(errors: bool) {
-    let f = fixture();
-    for case in f["scenarios"].as_array().unwrap() {
-        if case.get("error").is_some() != errors {
-            continue;
-        }
-        let name = case["name"].as_str().unwrap();
-        let mut d = Document::create(
-            &f["schema"].to_string(),
-            &case.get("initial").unwrap_or(&f["initial"]).to_string(),
-        )
-        .unwrap();
-        let before = snapshot(&d);
-        let seed = d.checkpoint().unwrap();
-        let version = d.version();
-        let result = d.apply(&batch(case, &version));
-        if let Some(expected) = case["error"].as_str() {
-            assert_eq!(result.unwrap_err().code, expected, "{name}");
-            assert_eq!(
-                snapshot(&d),
-                before,
-                "{name}: rejected batch changed state/version/publication"
-            );
-        } else {
-            let reply: Value = serde_json::from_str(&result.unwrap()).unwrap();
-            assert_eq!(snapshot(&d)["value"], case["after"], "{name}");
-            let mut patched = before["value"].clone();
-            apply_patches(&mut patched, &reply["ops"]);
-            assert_eq!(
-                patched, case["after"],
-                "{name}: patch did not reconstruct state"
-            );
-            assert_eq!(reply["issues"], snapshot(&d)["issues"]);
-            let delta = d.export_since(&version).unwrap();
-            let reopened = Document::open(&f["schema"].to_string(), &seed, &[delta]).unwrap();
-            assert_eq!(
-                snapshot(&reopened)["value"],
-                case["after"],
-                "{name}: incremental replay"
-            );
-            assert_eq!(reopened.version(), d.version());
-            let reopened =
-                Document::open(&f["schema"].to_string(), &d.checkpoint().unwrap(), &[]).unwrap();
-            assert_eq!(
-                snapshot(&reopened)["value"],
-                case["after"],
-                "{name}: checkpoint reopen"
-            );
+    for f in fixtures() {
+        for case in f["scenarios"].as_array().unwrap() {
+            if case.get("error").is_some() != errors {
+                continue;
+            }
+            let name = case["name"].as_str().unwrap();
+            let mut d = Document::create(
+                &f["schema"].to_string(),
+                &case.get("initial").unwrap_or(&f["initial"]).to_string(),
+            )
+            .unwrap();
+            let before = snapshot(&d);
+            let seed = d.checkpoint().unwrap();
+            let version = d.version();
+            let result = d.apply(&batch(case, &version));
+            if let Some(expected) = case["error"].as_str() {
+                assert_eq!(result.unwrap_err().code, expected, "{name}");
+                assert_eq!(
+                    snapshot(&d),
+                    before,
+                    "{name}: rejected batch changed state/version/publication"
+                );
+            } else {
+                let reply: Value = serde_json::from_str(&result.unwrap()).unwrap();
+                assert_eq!(snapshot(&d)["value"], case["after"], "{name}");
+                let mut patched = before["value"].clone();
+                apply_patches(&mut patched, &reply["ops"]);
+                assert_eq!(
+                    patched, case["after"],
+                    "{name}: patch did not reconstruct state"
+                );
+                assert_eq!(reply["issues"], snapshot(&d)["issues"]);
+                let delta = d.export_since(&version).unwrap();
+                let reopened = Document::open(&f["schema"].to_string(), &seed, &[delta]).unwrap();
+                assert_eq!(
+                    snapshot(&reopened)["value"],
+                    case["after"],
+                    "{name}: incremental replay"
+                );
+                assert_eq!(reopened.version(), d.version());
+                let reopened =
+                    Document::open(&f["schema"].to_string(), &d.checkpoint().unwrap(), &[]).unwrap();
+                assert_eq!(
+                    snapshot(&reopened)["value"],
+                    case["after"],
+                    "{name}: checkpoint reopen"
+                );
+            }
         }
     }
 }

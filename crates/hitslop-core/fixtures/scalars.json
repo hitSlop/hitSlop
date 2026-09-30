@@ -1,0 +1,187 @@
+{
+  "schema": {
+    "format": 1,
+    "root": {
+      "kind": "object",
+      "properties": {
+        "title": { "kind": "text" },
+        "currency": { "kind": "enum", "values": ["CAD", "USD", "EUR"] },
+        "label": { "kind": "string", "maxLength": 4 },
+        "ratio": { "kind": "number", "min": 0, "max": 1 },
+        "rating": { "kind": "integer", "min": 1, "max": 5 },
+        "memo": { "kind": "optional", "inner": { "kind": "string" } },
+        "limit": { "kind": "optional", "inner": { "kind": "integer", "min": 0, "max": 999 } },
+        "photo": {
+          "kind": "optional",
+          "inner": {
+            "kind": "object",
+            "properties": { "id": { "kind": "string" }, "name": { "kind": "string" } }
+          }
+        },
+        "box": {
+          "kind": "optional",
+          "inner": {
+            "kind": "object",
+            "properties": {
+              "items": {
+                "kind": "list",
+                "item": { "kind": "object", "properties": { "done": { "kind": "boolean" } } }
+              }
+            }
+          }
+        },
+        "rows": {
+          "kind": "list",
+          "item": {
+            "kind": "object",
+            "properties": {
+              "text": { "kind": "text" },
+              "amount": { "kind": "number" },
+              "note": { "kind": "optional", "inner": { "kind": "string" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "initial": {
+    "title": "Trip",
+    "currency": "CAD",
+    "label": "ab",
+    "ratio": 0.5,
+    "rating": 3,
+    "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+  },
+  "scenarios": [
+    {
+      "name": "scalars are set within their bounds",
+      "intents": [
+        { "type": "set", "path": ["currency"], "value": "USD" },
+        { "type": "set", "path": ["label"], "value": "wxyz" },
+        { "type": "set", "path": ["ratio"], "value": 0.25 },
+        { "type": "set", "path": ["rating"], "value": 5 }
+      ],
+      "after": {
+        "title": "Trip", "currency": "USD", "label": "wxyz", "ratio": 0.25, "rating": 5,
+        "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+      }
+    },
+    {
+      "name": "an integral number reads as an integer",
+      "intents": [{ "type": "set", "path": ["ratio"], "value": 1 }],
+      "after": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 1, "rating": 3,
+        "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+      }
+    },
+    {
+      "name": "optional values are set and cleared in one batch",
+      "intents": [
+        { "type": "set", "path": ["memo"], "value": "hi" },
+        { "type": "set", "path": ["limit"], "value": 7 },
+        { "type": "clear", "path": ["memo"] }
+      ],
+      "after": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 0.5, "rating": 3, "limit": 7,
+        "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+      }
+    },
+    {
+      "name": "clearing an unset optional changes nothing",
+      "intents": [{ "type": "clear", "path": ["memo"] }],
+      "after": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 0.5, "rating": 3,
+        "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+      }
+    },
+    {
+      "name": "an inserted row omits its optional field, which is set later",
+      "intents": [
+        { "type": "insert", "path": ["rows"], "id": "r2", "value": { "text": "Train", "amount": 12.5 } },
+        { "type": "set", "path": ["rows", { "id": "r2" }, "note"], "value": "work" }
+      ],
+      "after": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 0.5, "rating": 3,
+        "rows": [
+          { "$id": "r1", "text": "Coffee", "amount": 475 },
+          { "$id": "r2", "text": "Train", "amount": 12.5, "note": "work" }
+        ]
+      }
+    },
+    {
+      "name": "an optional object of scalars is created, replaced and cleared",
+      "intents": [
+        { "type": "set", "path": ["photo"], "value": { "id": "a", "name": "first" } },
+        { "type": "set", "path": ["photo"], "value": { "id": "b", "name": "second" } },
+        { "type": "set", "path": ["photo", "name"], "value": "renamed" }
+      ],
+      "after": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 0.5, "rating": 3,
+        "photo": { "id": "b", "name": "renamed" },
+        "rows": [{ "$id": "r1", "text": "Coffee", "amount": 475 }]
+      }
+    },
+    {
+      "name": "a field of an unset optional object is not found",
+      "intents": [{ "type": "set", "path": ["photo", "id"], "value": "x" }],
+      "error": "path_not_found"
+    },
+    {
+      "name": "maxLength counts UTF-16 units",
+      "intents": [{ "type": "set", "path": ["label"], "value": "😀😀😀" }],
+      "error": "out_of_range"
+    },
+    {
+      "name": "a number outside its bounds is refused",
+      "intents": [{ "type": "set", "path": ["ratio"], "value": 2 }],
+      "error": "out_of_range"
+    },
+    {
+      "name": "an integer below its minimum is refused",
+      "intents": [{ "type": "set", "path": ["rating"], "value": 0 }],
+      "error": "out_of_range"
+    },
+    {
+      "name": "a fractional integer is refused",
+      "intents": [{ "type": "set", "path": ["rating"], "value": 1.5 }],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "an integer beyond the safe range is refused",
+      "intents": [{ "type": "set", "path": ["limit"], "value": 9007199254740992 }],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "an unknown enum value is refused",
+      "intents": [{ "type": "set", "path": ["currency"], "value": "GBP" }],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "null is not a value for an optional",
+      "intents": [{ "type": "set", "path": ["memo"], "value": null }],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "a required field cannot be cleared",
+      "intents": [{ "type": "clear", "path": ["label"] }],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "a set object holding a list is never replaced",
+      "initial": {
+        "title": "Trip", "currency": "CAD", "label": "ab", "ratio": 0.5, "rating": 3,
+        "box": { "items": [] }, "rows": []
+      },
+      "intents": [{ "type": "set", "path": ["box"], "value": { "items": [] } }],
+      "error": "exists"
+    },
+    {
+      "name": "a batch refused at its second intent leaves nothing applied",
+      "intents": [
+        { "type": "set", "path": ["currency"], "value": "USD" },
+        { "type": "set", "path": ["rating"], "value": 9 }
+      ],
+      "error": "out_of_range"
+    }
+  ]
+}

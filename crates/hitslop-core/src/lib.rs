@@ -120,6 +120,13 @@ fn counter_sum(raw: &Value) -> Option<i64> {
 /// Anomalous counters read as null; their stored contributions remain untouched.
 fn project(node: Option<&Node>, value: Value) -> Value {
     match (node, value) {
+        (Some(Node::Optional { inner }), value) => project(Some(inner), value),
+        // JavaScript has one number type: an integral f64 reads as an integer, so a
+        // snapshot compares equal in Rust, Swift and JavaScript.
+        (Some(Node::Number { .. }), Value::Number(n)) => match n.as_f64() {
+            Some(f) if f.fract() == 0.0 && f.abs() <= MAX_SAFE as f64 => json!(f as i64),
+            _ => Value::Number(n),
+        },
         (Some(Node::Counter), raw) => match counter_sum(&raw) {
             Some(sum) => json!(sum),
             None => Value::Null,
@@ -141,6 +148,7 @@ fn project(node: Option<&Node>, value: Value) -> Value {
 /// Container-aware rendering supplies effective row IDs while preserving raw storage.
 fn project_container(node: Option<&Node>, value: ValueOrContainer) -> Result<Value> {
     match (node, &value) {
+        (Some(Node::Optional { inner }), ValueOrContainer::Container(_)) => project_container(Some(inner), value),
         (Some(Node::Object { properties }), ValueOrContainer::Container(Container::Map(map))) => {
             let mut result = serde_json::to_value(map.get_deep_value()).map_err(engine)?;
             for (key, child) in properties {
@@ -193,8 +201,52 @@ enum Node {
     Boolean,
     /// Stored as a map of writer key → integer contribution; projects to their sum.
     Counter,
+    /// Last writer wins. `maxLength` counts UTF-16 units, as JavaScript does.
+    String {
+        #[serde(default, rename = "maxLength")]
+        max_length: Option<u64>,
+    },
+    /// A finite f64. Integral values project as JSON integers.
+    Number {
+        #[serde(default)]
+        min: Option<f64>,
+        #[serde(default)]
+        max: Option<f64>,
+    },
+    /// A safe integer (±2^53−1), stored as i64.
+    Integer {
+        #[serde(default)]
+        min: Option<i64>,
+        #[serde(default)]
+        max: Option<i64>,
+    },
+    Enum { values: Vec<String> },
+    /// Absent until set; `clear` removes it.
+    Optional { inner: Box<Node> },
     Object { properties: BTreeMap<String, Node> },
     List { item: Box<Node> },
+}
+/// The value kind under an optional wrapper.
+fn unwrap_optional(node: &Node) -> &Node {
+    match node {
+        Node::Optional { inner } => inner,
+        node => node,
+    }
+}
+fn utf16_len(s: &str) -> u64 {
+    s.encode_utf16().count() as u64
+}
+fn is_scalar(node: &Node) -> bool {
+    matches!(node, Node::Boolean | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. })
+}
+/// Whether replacing a value of this kind would discard identity-bearing collections.
+fn holds_collections(node: &Node) -> bool {
+    match node {
+        Node::Text | Node::Counter | Node::List { .. } => true,
+        Node::Object { properties } => properties.values().any(holds_collections),
+        Node::Optional { inner } => holds_collections(inner),
+        _ => false,
+    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,11 +276,44 @@ impl Node {
             }
             Self::List { item } => {
                 if !matches!(**item, Self::Object { .. }) {
-                    return Err(err("invalid_schema", "Only object lists in milestone one"));
+                    return Err(err("invalid_schema", "Lists contain object rows"));
                 }
                 item.check(depth + 1)?;
             }
-            _ => {}
+            Self::String { max_length } => {
+                if max_length.is_some_and(|n| n > MAX_JSON as u64) {
+                    return Err(err("invalid_schema", "maxLength is too large"));
+                }
+            }
+            Self::Number { min, max } => {
+                if min.is_some_and(|n| !n.is_finite()) || max.is_some_and(|n| !n.is_finite())
+                    || matches!((min, max), (Some(a), Some(b)) if a > b)
+                {
+                    return Err(err("invalid_schema", "Number bounds must be finite with min ≤ max"));
+                }
+            }
+            Self::Integer { min, max } => {
+                if min.is_some_and(|n| !safe(n)) || max.is_some_and(|n| !safe(n))
+                    || matches!((min, max), (Some(a), Some(b)) if a > b)
+                {
+                    return Err(err("invalid_schema", "Integer bounds must be safe with min ≤ max"));
+                }
+            }
+            Self::Enum { values } => {
+                let unique: BTreeSet<_> = values.iter().collect();
+                if values.is_empty() || values.len() > 1024 || unique.len() != values.len() {
+                    return Err(err("invalid_schema", "Enum needs 1–1024 unique values"));
+                }
+            }
+            Self::Optional { inner } => {
+                // Optional text, lists and counters wait for a design that keeps their
+                // identity when two replicas create them concurrently.
+                if !is_scalar(inner) && !matches!(**inner, Self::Object { .. }) {
+                    return Err(err("invalid_schema", "Optional holds a scalar or an object"));
+                }
+                inner.check(depth + 1)?;
+            }
+            Self::Text | Self::Boolean | Self::Counter => {}
         }
         Ok(())
     }
@@ -237,6 +322,29 @@ impl Node {
             Self::Text if value.is_string() => Ok(()),
             Self::Boolean if value.is_boolean() => Ok(()),
             Self::Counter if value.as_i64().is_some_and(safe) => Ok(()),
+            Self::String { max_length } if value.is_string() => {
+                if max_length.is_some_and(|max| utf16_len(value.as_str().unwrap()) > max) {
+                    return Err(err("out_of_range", "Text is longer than maxLength"));
+                }
+                Ok(())
+            }
+            Self::Number { min, max } if value.as_f64().is_some_and(f64::is_finite) => {
+                let n = value.as_f64().unwrap();
+                if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) {
+                    return Err(err("out_of_range", "Number is outside its bounds"));
+                }
+                Ok(())
+            }
+            Self::Integer { min, max } if value.as_i64().is_some_and(safe) => {
+                let n = value.as_i64().unwrap();
+                if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) {
+                    return Err(err("out_of_range", "Integer is outside its bounds"));
+                }
+                Ok(())
+            }
+            Self::Enum { values } if value.as_str().is_some_and(|v| values.iter().any(|x| x == v)) => Ok(()),
+            // `null` is never a value: an optional is set or absent.
+            Self::Optional { inner } => inner.validate(value, false),
             Self::Object { properties } => {
                 let map = value
                     .as_object()
@@ -248,11 +356,11 @@ impl Node {
                     return Err(err("type_mismatch", "Unknown property"));
                 }
                 for (key, node) in properties {
-                    node.validate(
-                        map.get(key)
-                            .ok_or_else(|| err("type_mismatch", format!("Missing {key}")))?,
-                        false,
-                    )?;
+                    match map.get(key) {
+                        Some(value) => node.validate(value, false)?,
+                        None if matches!(node, Self::Optional { .. }) => {}
+                        None => return Err(err("type_mismatch", format!("Missing {key}"))),
+                    }
                 }
                 if let Some(id) = map.get("$id") {
                     if !id.as_str().is_some_and(valid_id) {
@@ -301,42 +409,52 @@ fn fill(map: &LoroMap, node: &Node, value: &Value, writer: &str) -> Result<()> {
         return Err(err("type_mismatch", "Expected object"));
     };
     for (key, child) in properties {
-        let value = &value[key];
-        match child {
-            Node::Boolean => map.insert(key, value.as_bool().unwrap()).map_err(engine)?,
-            Node::Counter => {
-                let counter = map.insert_container(key, LoroMap::new()).map_err(engine)?;
-                let initial = value.as_i64().unwrap();
-                if initial != 0 {
-                    counter.insert(writer, initial).map_err(engine)?;
-                }
-            }
-            Node::Text => {
-                let text = map.insert_container(key, LoroText::new()).map_err(engine)?;
-                text.insert_utf16(0, value.as_str().unwrap())
-                    .map_err(engine)?;
-            }
-            Node::Object { .. } => {
-                let map = map.insert_container(key, LoroMap::new()).map_err(engine)?;
-                fill(&map, child, value, writer)?;
-            }
-            Node::List { item } => {
-                let list = map
-                    .insert_container(key, LoroMovableList::new())
-                    .map_err(engine)?;
-                for (index, row) in value.as_array().unwrap().iter().enumerate() {
-                    let id = row
-                        .get("$id")
-                        .and_then(Value::as_str)
-                        .map(String::from)
-                        .map(Ok)
-                        .unwrap_or_else(application_id)?;
-                    insert_unchecked(&list, item, index, &id, row, writer)?;
-                }
-            }
+        match value.get(key) {
+            Some(value) => put(map, key, child, value, writer)?,
+            None if matches!(child, Node::Optional { .. }) => {}
+            None => return Err(err("type_mismatch", format!("Missing {key}"))),
         }
     }
     Ok(())
+}
+/// Stores a validated value at `map[key]` in the representation its kind uses.
+fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, writer: &str) -> Result<()> {
+    match node {
+        Node::Optional { inner } => put(map, key, inner, value, writer),
+        Node::Boolean => map.insert(key, value.as_bool().unwrap()).map_err(engine),
+        Node::String { .. } | Node::Enum { .. } => map.insert(key, value.as_str().unwrap()).map_err(engine),
+        Node::Number { .. } => map.insert(key, value.as_f64().unwrap()).map_err(engine),
+        Node::Integer { .. } => map.insert(key, value.as_i64().unwrap()).map_err(engine),
+        Node::Counter => {
+            let counter = map.insert_container(key, LoroMap::new()).map_err(engine)?;
+            let initial = value.as_i64().unwrap();
+            if initial != 0 {
+                counter.insert(writer, initial).map_err(engine)?;
+            }
+            Ok(())
+        }
+        Node::Text => {
+            let text = map.insert_container(key, LoroText::new()).map_err(engine)?;
+            text.insert_utf16(0, value.as_str().unwrap()).map_err(engine)
+        }
+        Node::Object { .. } => {
+            let child = map.insert_container(key, LoroMap::new()).map_err(engine)?;
+            fill(&child, node, value, writer)
+        }
+        Node::List { item } => {
+            let list = map.insert_container(key, LoroMovableList::new()).map_err(engine)?;
+            for (index, row) in value.as_array().unwrap().iter().enumerate() {
+                let id = row
+                    .get("$id")
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                    .map(Ok)
+                    .unwrap_or_else(application_id)?;
+                insert_unchecked(&list, item, index, &id, row, writer)?;
+            }
+            Ok(())
+        }
+    }
 }
 fn insert_unchecked(
     list: &LoroMovableList,
@@ -434,6 +552,8 @@ struct Location {
     node: Node,
     value: ValueOrContainer,
     parent: Option<(LoroMap, String)>,
+    /// The final segment names an optional field that is not set (`value` is null).
+    absent: bool,
 }
 fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Result<Location> {
     if path.is_empty() || path.len() > 64 {
@@ -442,8 +562,14 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
     let mut node = schema;
     let mut value = ValueOrContainer::Container(Container::Map(doc.get_map("data")));
     let mut parent = None;
-    for segment in path {
-        match (segment, node, &value) {
+    let mut absent = false;
+    for (index, segment) in path.iter().enumerate() {
+        if absent {
+            return Err(err("path_not_found", "Optional field is not set"));
+        }
+        // A set optional behaves as its inner kind when a path continues through it.
+        let current = if index == 0 { node } else { unwrap_optional(node) };
+        match (segment, current, &value) {
             (
                 Segment::Key(key),
                 Node::Object { properties },
@@ -452,9 +578,14 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
                 let next = properties
                     .get(key)
                     .ok_or_else(|| err("path_not_found", "Unknown field"))?;
-                let child = map
-                    .get(key)
-                    .ok_or_else(|| err("path_not_found", "Missing field"))?;
+                let child = match map.get(key) {
+                    Some(child) => child,
+                    None if matches!(next, Node::Optional { .. }) => {
+                        absent = true;
+                        ValueOrContainer::Value(loro::LoroValue::Null)
+                    }
+                    None => return Err(err("path_not_found", "Missing field")),
+                };
                 parent = Some((map.clone(), key.clone()));
                 node = next;
                 value = child;
@@ -476,6 +607,7 @@ fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Resul
         node: node.clone(),
         value,
         parent,
+        absent,
     })
 }
 
@@ -501,20 +633,45 @@ fn execute(
                 }
                 return Ok(());
             }
-            if !matches!(at.node, Node::Boolean) {
-                return Err(err(
-                    "type_mismatch",
-                    "set accepts only text and booleans",
-                ));
+            let kind = unwrap_optional(&at.node);
+            let replaces_object = matches!(kind, Node::Object { .. }) && matches!(at.node, Node::Optional { .. });
+            if !is_scalar(kind) && !replaces_object {
+                return Err(err("type_mismatch", "set accepts text, scalars and optional objects"));
             }
             at.node.validate(value, false)?;
-            if !matches!(at.value, ValueOrContainer::Value(loro::LoroValue::Bool(_))) {
-                return Err(err("type_mismatch", "Cannot edit anomalous field"));
+            if !at.absent {
+                // A stored value of the wrong type is a preserved anomaly: never overwritten.
+                let anomalous = match (&at.value, replaces_object) {
+                    (ValueOrContainer::Container(Container::Map(_)), true) => false,
+                    (ValueOrContainer::Container(_), _) | (_, true) => true,
+                    (ValueOrContainer::Value(stored), false) => {
+                        let stored = serde_json::to_value(stored).map_err(engine)?;
+                        scalar_issue(kind, &stored) == Some("type_mismatch")
+                    }
+                };
+                if anomalous {
+                    return Err(err("type_mismatch", "Cannot edit anomalous field"));
+                }
+                // Replacing an object must not discard identity-bearing collections.
+                if replaces_object && holds_collections(kind) {
+                    return Err(err("exists", "Object is already set; edit its fields"));
+                }
             }
             let (map, key) = at
                 .parent
                 .ok_or_else(|| err("type_mismatch", "Cannot replace a row"))?;
-            map.insert(&key, value.as_bool().unwrap()).map_err(engine)?;
+            put(&map, &key, kind, value, &writer(doc))?;
+        }
+        Intent::Clear { .. } => {
+            if !matches!(at.node, Node::Optional { .. }) {
+                return Err(err("type_mismatch", "Only optional fields can be cleared"));
+            }
+            if !at.absent {
+                let (map, key) = at
+                    .parent
+                    .ok_or_else(|| err("type_mismatch", "Cannot clear a row"))?;
+                map.delete(&key).map_err(engine)?;
+            }
         }
         Intent::Insert {
             id,
@@ -593,9 +750,39 @@ fn writer(doc: &LoroDoc) -> String {
 fn raw(doc: &LoroDoc) -> Result<Value> {
     serde_json::to_value(doc.get_map("data").get_deep_value()).map_err(engine)
 }
+/// A scalar's stored value against its descriptor: `None`, or the issue code.
+fn scalar_issue(node: &Node, value: &Value) -> Option<&'static str> {
+    let bounded = |n: f64, min: Option<f64>, max: Option<f64>| {
+        if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) { Some("out_of_range") } else { None }
+    };
+    match (node, value) {
+        (Node::Boolean, Value::Bool(_)) => None,
+        (Node::String { max_length }, Value::String(s)) => {
+            max_length.filter(|max| utf16_len(s) > *max).map(|_| "out_of_range")
+        }
+        (Node::Enum { values }, Value::String(s)) => {
+            (!values.iter().any(|v| v == s)).then_some("type_mismatch")
+        }
+        (Node::Number { min, max }, Value::Number(n)) => match n.as_f64() {
+            Some(f) if f.is_finite() => bounded(f, *min, *max),
+            _ => Some("type_mismatch"),
+        },
+        (Node::Integer { min, max }, Value::Number(n)) => match n.as_i64().filter(|n| safe(*n)) {
+            Some(i) => bounded(i as f64, min.map(|m| m as f64), max.map(|m| m as f64)),
+            None => Some("type_mismatch"),
+        },
+        _ => Some("type_mismatch"),
+    }
+}
 fn issues(node: &Node, value: &Value, path: &mut Vec<Value>, result: &mut Vec<Value>) {
     match (node, value) {
-        (Node::Text, Value::String(_)) | (Node::Boolean, Value::Bool(_)) => {}
+        (Node::Text, Value::String(_)) => {}
+        (Node::Optional { inner }, value) => issues(inner, value, path, result),
+        (node, value) if is_scalar(node) => {
+            if let Some(code) = scalar_issue(node, value) {
+                result.push(json!({"code":code,"path":path}));
+            }
+        }
         (Node::Counter, raw @ Value::Object(_)) => {
             if counter_sum(raw).is_none() {
                 result.push(json!({"code":"type_mismatch","path":path}));
@@ -603,8 +790,13 @@ fn issues(node: &Node, value: &Value, path: &mut Vec<Value>, result: &mut Vec<Va
         }
         (Node::Object { properties }, Value::Object(map)) => {
             for (key, child) in properties {
+                let value = map.get(key);
+                // An absent optional is valid; a stored null is not.
+                if value.is_none() && matches!(child, Node::Optional { .. }) {
+                    continue;
+                }
                 path.push(json!(key));
-                issues(child, map.get(key).unwrap_or(&Value::Null), path, result);
+                issues(child, value.unwrap_or(&Value::Null), path, result);
                 path.pop();
             }
             for key in map.keys().filter(|key| key.as_str() != "$id" && !properties.contains_key(*key)) {
@@ -640,6 +832,8 @@ fn container_issues(
 ) -> Result<()> {
     match (node, value) {
         (Node::Text, Some(ValueOrContainer::Container(Container::Text(_)))) => {}
+        (Node::Optional { .. }, None) => {}
+        (Node::Optional { inner }, value @ Some(_)) => container_issues(inner, value, path, result)?,
         (Node::Object { properties }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             for (key, child) in properties {
                 path.push(json!(key));

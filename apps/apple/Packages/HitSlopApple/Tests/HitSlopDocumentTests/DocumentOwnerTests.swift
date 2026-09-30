@@ -26,20 +26,23 @@ import Testing
 
   @Test func nativeBindingExecutesLiteralFixturesAndReplaysUpdates() throws {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let f = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
     func json(_ value: Any) throws -> String {
       String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
     }
-    for scenario in f["scenarios"] as! [[String: Any]] {
+    // Every literal scenario file (checklist.json, scalars.json, …) runs natively too.
+    let directory = URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures")
+    let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "json" }
+    var ran = 0
+    for file in files {
+    let f = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+    guard let scenarios = f["scenarios"] as? [[String: Any]] else { continue }
+    for scenario in scenarios {
+      ran += 1
       let schema = try json(f["schema"]!)
       let core = try NativeDocument.create(schemaJson: schema, initialJson: json(scenario["initial"] ?? f["initial"]!))
       let before = try core.snapshot(), seed = try core.checkpoint(), version = try core.version()
-      let intents = (scenario["intents"] as! [[String: Any]]).map { value in
-        var op = value
-        if op["base"] as? String == "$current" { op["base"] = version }
-        return op
-      }
-      let batch = try json(["intents": intents])
+      let batch = try json(["intents": scenario["intents"]!])
       if let expected = scenario["error"] as? String {
         do { _ = try core.applyBatch(batchJson: batch); Issue.record("Accepted invalid fixture") }
         catch { #expect(String(describing: error).contains(expected)) }
@@ -53,6 +56,8 @@ import Testing
         #expect(try json(replay["value"]!) == json(scenario["after"]!))
       }
     }
+    }
+    #expect(ran > 20)
   }
 
   @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {

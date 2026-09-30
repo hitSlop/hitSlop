@@ -44,3 +44,32 @@ export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.fields
   doc.at({ text: "new", done: false });
   return sync;
 }
+
+const scalars = defineDocument({
+  currency: s.enum(["CAD", "USD"]),
+  amount: s.number({ min: 0 }),
+  note: s.optional(s.string()),
+  photo: s.optional(s.object({ id: s.string() })),
+  rows: s.list(s.object({ text: s.text(), limit: s.optional(s.integer()) })),
+});
+export async function scalarTypes(doc: SlopDocument<typeof scalars.fields.node>) {
+  const currency: "CAD" | "USD" = doc.current.currency;
+  const note: string | undefined = doc.current.note;
+  // @ts-expect-error An optional value may be absent.
+  const required: string = doc.current.note;
+  await doc.fields.currency.set("USD");
+  // @ts-expect-error Enum writes take declared values only.
+  await doc.fields.currency.set("EUR");
+  await doc.fields.note.clear();
+  // @ts-expect-error Required fields cannot be cleared.
+  await doc.fields.amount.clear();
+  doc.fields.amount.preview(3);
+  await doc.fields.photo.set({ id: "a" });
+  await doc.fields.photo.id.set("b");
+  // Optional keys may be omitted from inserts; required ones may not.
+  await doc.fields.rows.insert({ text: "row" });
+  // @ts-expect-error Required row values cannot be omitted.
+  await doc.fields.rows.insert({ limit: 3 });
+  const valid: Input<typeof scalars.fields.node> = { currency: "CAD", amount: 1, rows: [] };
+  return { currency, note, required, valid };
+}

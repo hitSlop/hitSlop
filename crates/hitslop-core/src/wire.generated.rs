@@ -20,6 +20,7 @@ pub enum Intent {
     Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor> },
     Remove { path: Vec<Segment>, id: String },
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
+    Clear { path: Vec<Segment> },
     Increment { path: Vec<Segment>, by: i64 },
 }
 impl Intent {
@@ -28,6 +29,7 @@ impl Intent {
         Self::Insert { path, .. } => path,
         Self::Remove { path, .. } => path,
         Self::Move { path, .. } => path,
+        Self::Clear { path, .. } => path,
         Self::Increment { path, .. } => path,
     } }
 }

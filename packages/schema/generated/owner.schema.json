@@ -255,6 +255,46 @@
                 "type": "object",
                 "required": [
                   "type",
+                  "path"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "clear"
+                  },
+                  "path": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "id"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 64
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
                   "path",
                   "by"
                 ],
@@ -966,6 +1006,46 @@
                                 "additionalProperties": false
                               }
                             ]
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "type",
+                          "path"
+                        ],
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "clear"
+                          },
+                          "path": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                {
+                                  "type": "object",
+                                  "required": [
+                                    "id"
+                                  ],
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "pattern": "^[0-9A-Za-z_-]{1,64}$"
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              ]
+                            },
+                            "minItems": 1,
+                            "maxItems": 64
                           }
                         },
                         "additionalProperties": false
