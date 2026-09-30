@@ -174,8 +174,7 @@ extension LoroClientTests {
       }
       defer { server.stop() }
       try JSONSerialization.data(withJSONObject: [
-        "socket": server.path, "epoch": "peer", "pid": ProcessInfo.processInfo.processIdentifier,
-        "documentPath": canonical.path,
+        "socket": server.path, "documentPath": canonical.path,
       ]).write(to: canonical.appendingPathComponent("state/host.lock"))
       let result = try await cli(["apply", root.path, "--op", String(decoding: setTitle("refused"), as: UTF8.self)])
       #expect(result.0 != 0)
@@ -188,7 +187,7 @@ extension LoroClientTests {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     try Data(
-      "webkit.messageHandlers.storage.postMessage({method:'failed',error:'AUTHORED CODE RAN'});"
+      "webkit.messageHandlers.hitslop.postMessage({method:'failed',error:'AUTHORED CODE RAN'});"
         .utf8
     ).write(to: root.appendingPathComponent("assets/app.js"))
     let data = try await DocumentCommand.run(

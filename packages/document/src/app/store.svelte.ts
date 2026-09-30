@@ -112,6 +112,11 @@ export function bindValue<V extends string | number | boolean>(
   return current().bind.value(element, handle);
 }
 
+/** Request a window content size; ignored where the host has no window. */
+export function resizeWindow(size: { width: number; height: number }): Promise<void> {
+  return current().window.resize(size);
+}
+
 export { default as Slop } from "./Slop.svelte";
 export type { InsertResult } from "../handle-types";
 export type Handle<N extends import("../schema").Node> = AsyncHandle<

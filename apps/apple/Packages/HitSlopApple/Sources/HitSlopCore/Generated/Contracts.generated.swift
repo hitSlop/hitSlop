@@ -700,14 +700,10 @@ public struct SocketReply {
 
 public struct SocketDiscovery {
   public var `socket`: String
-  public var `epoch`: String
-  public var `pid`: Int
   public var `documentPath`: String
 
-  public init(`socket`: String, `epoch`: String, `pid`: Int, `documentPath`: String) {
+  public init(`socket`: String, `documentPath`: String) {
     self.`socket` = `socket`
-    self.`epoch` = `epoch`
-    self.`pid` = `pid`
     self.`documentPath` = `documentPath`
   }
 
@@ -715,10 +711,6 @@ public struct SocketDiscovery {
   public init(json: [String: Any]) throws {
     guard let `socket` = json["socket"] as? String else { throw ContractMappingError.field("SocketDiscovery.socket") }
     self.`socket` = `socket`
-    guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketDiscovery.epoch") }
-    self.`epoch` = `epoch`
-    guard let `pid` = json["pid"] as? Int else { throw ContractMappingError.field("SocketDiscovery.pid") }
-    self.`pid` = `pid`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketDiscovery.documentPath") }
     self.`documentPath` = `documentPath`
   }
@@ -726,8 +718,6 @@ public struct SocketDiscovery {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["socket"] = `socket`
-    result["epoch"] = `epoch`
-    result["pid"] = `pid`
     result["documentPath"] = `documentPath`
     return result
   }

@@ -1,6 +1,4 @@
-import type { createCaptureController } from "./capture";
-
-/** The lifecycle invoked by the native host in visible and headless WebViews. */
+/** The lifecycle invoked by the native host through `globalThis.__slop`. */
 export interface SlopRuntimeHandle {
   /** Applies theme overrides the native owner already validated and saved. */
   applyTheme(overrides: Record<string, string>): void;
@@ -8,11 +6,7 @@ export interface SlopRuntimeHandle {
   prepareClose(): Promise<void>;
   cancelClose(): void;
   close(): Promise<void>;
-  retrySave(): Promise<boolean>;
-  discardPending(): Promise<void>;
-  reloadInterface?(): Promise<void>;
-  captureBegin?(token: string): ReturnType<ReturnType<typeof createCaptureController>["begin"]>;
-  captureRestore?(token: string): ReturnType<ReturnType<typeof createCaptureController>["restore"]>;
+  reloadInterface(): Promise<void>;
 }
 
 declare global {

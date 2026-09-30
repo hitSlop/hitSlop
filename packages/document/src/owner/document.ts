@@ -279,7 +279,6 @@ export class OwnerDocument<N extends ObjectNode> {
         return Object.freeze({ increment, decrement: (by = 1) => increment(-by) });
       }
       case "list": {
-        if (node.item.kind !== "object") throw new Error("Unsupported descriptor: scalar list");
         return Object.freeze({
           item: (id: string) => this.handle(node.item, [...path, { id }], collect),
           insert: (value: unknown, at?: { before: string } | { after: string }) => {
@@ -295,7 +294,7 @@ export class OwnerDocument<N extends ObjectNode> {
         // Whole-field replacement of the text as it is when the owner runs it.
         return Object.freeze({ set: (value: string) => send({ type: "set", path, value }, undefined) });
       default:
-        throw new Error(`Unsupported descriptor: ${node.kind}`);
+        throw new Error(`Unsupported descriptor: ${(node as Node).kind}`);
     }
   }
   /** Drains bindings, queued writes and attachment work, then saves once. A barrier

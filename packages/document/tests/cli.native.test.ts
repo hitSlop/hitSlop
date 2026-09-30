@@ -111,7 +111,7 @@ test("native CLI rejects invalid packages and malformed commands before mutation
     const before = await readFile(join(root, "state/document.sqlite"));
     expect((await cli("apply", "--op", "null")).code).not.toBe(0);
     expect((await cli("batch", "--ops", "null")).code).not.toBe(0);
-    const changed = defineDocument({ title: s.text(), extra: s.string() });
+    const changed = defineDocument({ title: s.text(), extra: s.boolean() });
     await writeFile(join(root, "state.schema.json"), JSON.stringify(changed.descriptor));
     expect((await cli("get")).error).toContain("schema differs from saved state");
     expect(await readFile(join(root, "state/document.sqlite"))).toEqual(before);

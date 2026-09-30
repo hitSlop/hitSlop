@@ -270,7 +270,7 @@ import WebKit
       try await session.waitUntilReady()
       let accepted = try await session.webView.callAsyncJavaScript("""
         try {
-          const size = await webkit.messageHandlers.storage.postMessage({method:'window.resize',width:600,height:500});
+          const size = await webkit.messageHandlers.hitslop.postMessage({method:'window.resize',width:600,height:500});
           return size.width === 600 && size.height === 500;
         } catch { return false; }
         """, arguments: [:], in: nil, contentWorld: .page)

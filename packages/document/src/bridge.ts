@@ -26,7 +26,7 @@ const decode = (text: string) => {
 export const base64 = { encode, decode };
 /** Native replies `{ rejected }` for refusals that retrying cannot fix; thrown errors stay retryable. */
 export async function hostCall<M extends Method>(args: Message<M>): Promise<Result<M>> {
-  const reply = await (globalThis as any).webkit.messageHandlers.storage.postMessage(args);
+  const reply = await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(args);
   if (reply && typeof reply.rejected === "string") throw new OperationRejectedError(reply.rejected);
   return reply;
 }

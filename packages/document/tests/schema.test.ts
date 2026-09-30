@@ -11,16 +11,15 @@ describe("schema identity", () => {
     const descriptor = {
       root: {
         properties: {
-          b: { max: 5, kind: "integer", min: 1 },
-          a: { kind: "optional", inner: { kind: "enum", values: ["y", "x"] } },
-          c: { kind: "number", min: 0.5 },
+          b: { kind: "counter" },
+          a: { item: { properties: { z: { kind: "text" }, y: { kind: "boolean" } }, kind: "object" }, kind: "list" },
         },
         kind: "object",
       },
       format: 1,
     } as any;
     const golden =
-      '{"format":1,"root":{"kind":"object","properties":{"a":{"inner":{"kind":"enum","values":["y","x"]},"kind":"optional"},"b":{"kind":"integer","max":5,"min":1},"c":{"kind":"number","min":0.5}}}}';
+      '{"format":1,"root":{"kind":"object","properties":{"a":{"item":{"kind":"object","properties":{"y":{"kind":"boolean"},"z":{"kind":"text"}}},"kind":"list"},"b":{"kind":"counter"}}}}';
     expect(schemaKey(descriptor)).toBe(golden);
     expect(schemaKey(fromDescriptor(descriptor).descriptor)).toBe(golden);
   });

@@ -93,7 +93,7 @@ import WebKit
           const doc = globalThis.benchmarkDocument, id = doc.current.tasks[0].$id;
           const acceptance = [], rendered = [], ipc = [], notify = [];
           // Attribution: native round trip vs SDK listeners (incl. framework work they trigger).
-          const handler = globalThis.webkit.messageHandlers.owner;
+          const handler = globalThis.webkit.messageHandlers.hitslop;
           const post = handler.postMessage.bind(handler);
           let ipcMS = 0;
           handler.postMessage = async (m) => { const t = performance.now(); try { return await post(m); } finally { ipcMS += performance.now() - t; } };

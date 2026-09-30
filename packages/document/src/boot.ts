@@ -16,7 +16,7 @@ import { OwnerSession as Session } from "./owner/session";
 import { openTheme, type ThemeController } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
 
-const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.storage);
+const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.hitslop);
 const reportApplicationError = (native: boolean, error: unknown) => {
   globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
   if (native)
@@ -176,7 +176,6 @@ export async function boot() {
       document: doc,
       target,
       session,
-      capture,
       recovered: native ? () => hostCall({ method: "runtimeRecovered" }) : undefined,
     });
     if (native) await hostCall({ method: "ready" });

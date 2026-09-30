@@ -182,9 +182,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     configuration.setURLSchemeHandler(
       SchemeHandler(root: package.rootURL, shell: webViewResources),
       forURLScheme: "slop")
-    configuration.userContentController.addScriptMessageHandler(
-      self, contentWorld: .page, name: "storage")
-    configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "owner")
+    // One handler: document requests go to the owner, everything else to the host bridge.
+    configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "hitslop")
     configuration.userContentController.addUserScript(
       WKUserScript(
         source: """
@@ -197,7 +196,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
             const source = e.target?.src;
             const shellResource = typeof source === 'string' && source.startsWith('slop://app/__shell__/');
             const error = String(shellResource ? 'Could not load page shell resource: ' + source : e.error?.stack ?? e.reason?.stack ?? e.error?.message ?? e.reason ?? e.message).slice(0,4096);
-            webkit.messageHandlers.storage.postMessage(shellResource ? {method:'failed',error} : {method:'runtimeError',kind:'application',error}).catch(()=>{});
+            webkit.messageHandlers.hitslop.postMessage(shellResource ? {method:'failed',error} : {method:'runtimeError',kind:'application',error}).catch(()=>{});
           }, true);
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     let spec = package.manifest.presentation
@@ -253,21 +252,22 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     _ controller: WKUserContentController, didReceive message: WKScriptMessage,
     replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
-    if message.name == "owner" {
-      guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
-        message.frameInfo.securityOrigin.protocol == "slop", message.frameInfo.securityOrigin.host == "app",
-        let args = message.body as? [String: Any],
-        let bytes = try? JSONSerialization.data(withJSONObject: args), bytes.count <= 4 * 1024 * 1024 else {
+    guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
+      message.frameInfo.securityOrigin.protocol == "slop",
+      message.frameInfo.securityOrigin.host == "app",
+      let args = message.body as? [String: Any]
+    else {
+      replyHandler(nil, "Invalid bridge request")
+      return
+    }
+    if let method = args["method"] as? String, ["open", "apply", "text", "flush"].contains(method) {
+      guard let bytes = try? JSONSerialization.data(withJSONObject: args), bytes.count <= 4 * 1024 * 1024 else {
         replyHandler(nil, "Invalid owner request"); return
       }
       Task { replyHandler(await owner.bridge(args), nil) }
       return
     }
-    guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
-      message.frameInfo.securityOrigin.protocol == "slop",
-      message.frameInfo.securityOrigin.host == "app",
-      let args = message.body as? [String: Any],
-      let request = StorageRequest(args),
+    guard let request = StorageRequest(args),
       let rawMethod = args["method"] as? String, let method = BridgeMethod(rawValue: rawMethod)
     else {
       replyHandler(nil, "Invalid bridge request")
@@ -461,8 +461,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     liveWebView?.uiDelegate = nil
     liveWebView?.stopLoading()
     liveWebView?.configuration.userContentController.removeScriptMessageHandler(
-      forName: "storage", contentWorld: .page)
-    liveWebView?.configuration.userContentController.removeScriptMessageHandler(forName: "owner", contentWorld: .page)
+      forName: "hitslop", contentWorld: .page)
     liveWebView?.navigationDelegate = nil
     liveWebView?.removeFromSuperview()
     liveWebView = nil
@@ -479,8 +478,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       Task { reply(await self.request(request, deadline: deadline)) }
     }
     self.server = server
-    let discovery = SocketDiscovery(socket: server.path, epoch: epoch,
-      pid: Int(ProcessInfo.processInfo.processIdentifier), documentPath: package.rootURL.path)
+    let discovery = SocketDiscovery(socket: server.path, documentPath: package.rootURL.path)
     try JSONSerialization.data(withJSONObject: discovery.json).write(
       to: package.rootURL.appendingPathComponent("state/host.lock"), options: .atomic)
   }

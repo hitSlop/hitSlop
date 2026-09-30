@@ -465,10 +465,7 @@ test("view reload remounts against the same document and keeps flushed edits", a
         applyTheme: () => {},
         prepareClose: () => doc.prepareClose(),
         cancelClose: () => doc.cancelClose(),
-        close: () => doc.close(),
-        discardPending: async () => {},
       },
-      capture: { begin: async () => ({}) as any, restore: async () => ({}) as any },
       recovered: async () => {
         recovered++;
       },

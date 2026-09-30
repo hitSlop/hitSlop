@@ -30,7 +30,7 @@ type Distribute<T> = T extends unknown ? Omit<T, "id" | "view"> : never;
 export function nativeTransport(id: string, view: string, readOnly = false): OwnerTransport {
   const call = async (request: Distribute<PageRequest>): Promise<any> => {
     const message = { ...request, id: crypto.randomUUID(), view } as PageRequest;
-    const reply = await (globalThis as any).webkit.messageHandlers.owner.postMessage(message);
+    const reply = await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(message);
     if (!Check(PageReplySchema, reply) || reply.id !== message.id)
       throw new OwnerError("unknown_outcome", "Invalid owner reply; inspect current state");
     if (!reply.ok) throw new OwnerError(reply.code, reply.error);

@@ -14,7 +14,7 @@ test("socket envelopes constrain routing while leaving operations to the documen
     { ...base, method: "batch", epoch: "session", ops: null },
     { ...base, method: "apply", epoch: "session", op: [] },
   ]) expect(Check(SocketRequestSchema, request)).toBe(false);
-  expect(Check(SocketDiscoverySchema, { socket: "/tmp/example.sock", documentPath: base.documentPath, epoch: "e", pid: 12 })).toBe(true);
+  expect(Check(SocketDiscoverySchema, { socket: "/tmp/example.sock", documentPath: base.documentPath })).toBe(true);
   expect(Check(SocketDiscoverySchema, { socket: "/tmp/example.sock" })).toBe(false);
   expect(Check(SocketReplySchema, { ok: false, error: "save failed" })).toBe(true);
 });

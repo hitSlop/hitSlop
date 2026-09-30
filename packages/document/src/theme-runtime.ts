@@ -39,7 +39,7 @@ export async function openTheme(native: boolean) {
   if (!response.ok) throw new Error("Missing theme defaults");
   const defaults = await response.json();
   const call = <M extends Method>(args: Message<M>): Promise<Result<M>> =>
-    (globalThis as any).webkit.messageHandlers.storage.postMessage(args);
+    (globalThis as any).webkit.messageHandlers.hitslop.postMessage(args);
   const theme = new ThemeController(
     defaults,
     async (values) => {

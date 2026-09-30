@@ -138,7 +138,7 @@ extension LoroClientTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let script = root.appendingPathComponent("assets/app.js")
     let original = try Data(contentsOf: script)
-    try Data("await webkit.messageHandlers.storage.postMessage({method:'failed',error:'startup fixture failure'});".utf8)
+    try Data("await webkit.messageHandlers.hitslop.postMessage({method:'failed',error:'startup fixture failure'});".utf8)
       .write(to: root.appendingPathComponent("assets/app.js"))
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     var failures: [String] = []

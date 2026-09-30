@@ -1,6 +1,4 @@
-import type { ObjectNode } from "./schema";
 import type { OwnerSession as Session } from "./owner/session";
-import type { createCaptureController } from "./capture";
 
 /** A mounted view; rendered must wait for pending framework updates. */
 export interface DocumentView {
@@ -8,19 +6,15 @@ export interface DocumentView {
   unmount(): void | Promise<void>;
 }
 
-/** Shared visible-session lifecycle. Headless sessions never mount a view. */
-export async function mountViewLifecycle<N extends ObjectNode>(options: {
+/** The visible page's lifecycle, called by the native host through `globalThis.__slop`. */
+export async function mountViewLifecycle(options: {
   mount(): DocumentView | Promise<DocumentView>;
   document: unknown;
   target: HTMLElement;
-  session: Pick<
-    Session,
-    "flush" | "applyTheme" | "prepareClose" | "cancelClose" | "close" | "discardPending"
-  >;
-  capture: Pick<ReturnType<typeof createCaptureController>, "begin" | "restore">;
+  session: Pick<Session, "flush" | "applyTheme" | "prepareClose" | "cancelClose">;
   recovered?: () => Promise<unknown>;
 }) {
-  const { mount, target, session, capture, recovered } = options;
+  const { mount, target, session, recovered } = options;
   let view = await mount();
   await view.rendered();
   return {
@@ -43,6 +37,7 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
     },
     applyTheme: (overrides: Record<string, string>) => session.applyTheme(overrides),
     flush: () => session.flush(),
+    /** Drains pending page work behind a barrier; the host then saves and closes. */
     prepareClose: async () => {
       await session.prepareClose();
       target.inert = true;
@@ -51,51 +46,12 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
       session.cancelClose();
       target.inert = false;
     },
-    discardPending: async () => {
-      target.inert = true;
-      try {
-        await session.discardPending();
-        await view.unmount();
-        view = await mount();
-        await view.rendered();
-      } finally {
-        target.inert = false;
-      }
-    },
-    retrySave: async () => {
-      try {
-        await session.flush();
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    /** Called after the barrier: only unmounts. The native owner does the final save. */
     close: async () => {
-      await session.close();
       try {
         await view.unmount();
       } catch (error) {
         console.error(error);
-      }
-    },
-    captureBegin: async (token: string) => {
-      await session.prepareClose();
-      target.inert = true;
-      try {
-        await view.rendered();
-        return await capture.begin(token, "export");
-      } catch (error) {
-        session.cancelClose();
-        target.inert = false;
-        throw error;
-      }
-    },
-    captureRestore: async (token: string) => {
-      try {
-        return await capture.restore(token);
-      } finally {
-        session.cancelClose();
-        target.inert = false;
       }
     },
   } satisfies import("./runtime-handle").SlopRuntimeHandle;

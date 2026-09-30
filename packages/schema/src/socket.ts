@@ -36,8 +36,9 @@ export const SocketReplySchema = T.Object({
   /** Every code except "failed" means the request was not applied. Absent or "failed": outcome unknown. */
   code: T.Optional(T.Enum(["rejected", "session_changed", "closing", "unavailable", "failed"])),
 }, { additionalProperties: false });
+/** `state/host.lock`: where a live owner listens. Clients learn the epoch from `hello`. */
 export const SocketDiscoverySchema = T.Object({
-  socket: path, epoch: identity, pid: T.Integer({ minimum: 1 }), documentPath: path,
+  socket: path, documentPath: path,
 }, { additionalProperties: false });
 
 export type SocketRequest = T.Static<typeof SocketRequestSchema>;
