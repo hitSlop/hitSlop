@@ -1,6 +1,6 @@
 # Host-owned reset: plan, deletions and remaining spikes
 
-Status (2026-09-29): steps 1–3 are implemented. Step 1 made the Quick Checklist and
+Status (2026-09-29): steps 1–5 are implemented. Step 1 made the Quick Checklist and
 SDK meet the 1k targets (see §7). Step 2 deleted the legacy machinery, replaced runtime
 negotiation with one bundled page shell, and shipped the fresh storage schema with
 attempt-token recovery (bug 1). Step 3 split the owner queue from the persistence queue
@@ -9,8 +9,17 @@ S-B is `PersistenceSchedulingTests`). Step 4 added, next to the old API: validat
 frontier tokens (bug 2), stateless `edit_text` with precomputed scripts (S-C chose fork;
 `docs/evidence/stateless-text-2026-09-29.json`), text `set`, `sequence()`, `open` with
 updates, UniFFI records, a typed `CoreError` and `BUILD_ID` (`hitslop-native
---core-build`). The release assertion that the app and helper report the same build ID
-moves to step 5, where the app first references the core ID. Steps 5–7 remain.
+--core-build`). Step 5 moved Swift internals: typed `Storage` calls and a typed `SaveFailure`
+(`full`, `busy`, `moved`, `invalidated`, `io`) that reaches the window; no reply cache;
+page attachment/theme calls through the owner (`StorageBridge` deleted); the socket
+lives with the owner and runs commands without a page barrier (a CLI edit no longer
+blurs the focused field); a Swift-minted owner epoch that rotates on discard; one
+Swift theme validator; one-way status with "pending" only on the dirty transition;
+Retry Save and Discard on the owner; startup failure keeps the lock; CLI edits report
+`{ids, sequence, value}`. Still open: view tokens for queued page work (they arrive
+with the step-6 bridge), and a release check that the app and helper embed the same
+core build (needs the app target to reference `DocumentOwner.coreBuildID`, verified
+in an app build). Steps 6–7 remain.
 
 Once work starts, this document supersedes the migration machinery in
 [LoroRustCutover.md](../archive/docs/LoroRustCutover.md) and [LoroHostPlan.md](../archive/docs/LoroHostPlan.md). The

@@ -395,6 +395,16 @@
         "maxLength": 128
       },
       "state": {},
+      "ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "sequence": {
+        "type": "integer",
+        "minimum": 0
+      },
       "schema": {},
       "output": {
         "type": "string",

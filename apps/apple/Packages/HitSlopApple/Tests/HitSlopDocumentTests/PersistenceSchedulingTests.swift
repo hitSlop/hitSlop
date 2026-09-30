@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import HitSlopCore
 import HitSlopCoreBinding
 import Testing
@@ -46,17 +47,14 @@ final class StorageGate: @unchecked Sendable {
   func savedHits(_ root: URL) throws -> Int? {
     let storage = try Storage(root: root, mode: .snapshot)
     defer { storage.close() }
-    let loaded = try storage.call(["method": "load"])
-    let core = try NativeDocument.open(
-      schemaJson: loaded["schemaKey"] as! String,
-      checkpoint: Data(base64Encoded: loaded["checkpoint"] as! String)!,
-      updates: (loaded["updates"] as? [String] ?? []).map { Data(base64Encoded: $0)! })
+    let loaded = try storage.load()
+    let core = try NativeDocument.open(schemaJson: loaded.schemaKey!, checkpoint: loaded.checkpoint!, updates: loaded.updates)
     let frame = try JSONSerialization.jsonObject(with: Data(core.snapshot().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
 
   func edit(_ owner: DocumentOwner) async throws {
-    _ = try await owner.apply(id: UUID().uuidString, session: owner.session, batch: increment)
+    _ = try await owner.apply(session: owner.session, batch: increment)
   }
 
   /// True when `work` finishes before the deadline. The deadline only bounds a failure;
@@ -137,5 +135,23 @@ final class StorageGate: @unchecked Sendable {
     let lock = try DocumentWriterLock(root: root)
     lock.close()
     #expect(try savedHits(root) == 3)
+  }
+
+  // Failure: another process holding the database (a backup during Duplicate) must be a
+  // definite, retryable failure, never mistaken for a lost reply or a conflict.
+  @Test func busyDatabaseIsARetryableFailure() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    try await edit(owner)
+    var reader: OpaquePointer?
+    #expect(sqlite3_open(root.appendingPathComponent("state/document.sqlite").path, &reader) == SQLITE_OK)
+    #expect(sqlite3_exec(reader, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK)
+    await #expect(throws: SaveFailure.busy) { try await owner.flush() }
+    #expect(sqlite3_exec(reader, "COMMIT", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close_v2(reader)
+    try await owner.flush()
+    #expect(try savedHits(root) == 3)
+    try await owner.close()
   }
 }

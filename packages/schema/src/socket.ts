@@ -27,6 +27,9 @@ export const SocketReplySchema = T.Object({
   ok: T.Boolean(),
   epoch: T.Optional(identity),
   state: T.Optional(T.Unknown()),
+  /** apply/batch: the IDs of inserted rows (minted or supplied) and the owner sequence. */
+  ids: T.Optional(T.Array(T.String())),
+  sequence: T.Optional(T.Integer({ minimum: 0 })),
   schema: T.Optional(T.Unknown()),
   output: T.Optional(path),
   error: T.Optional(T.String()),

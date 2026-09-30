@@ -19,11 +19,11 @@ import Testing
     let store = try Storage(root: root)
     defer { store.close() }
     let data = Data("classic skin".utf8)
-    let ref = try store.call(["method": "attachments.put", "bytes": data.base64EncodedString()])
+    let ref = try store.putAttachment(data)
     let id = try #require(ref["id"] as? String)
     #expect(SlopAttachments.validID(id))
     #expect(try SlopAttachments.read(id, in: root) == data)
-    _ = try store.call(["method": "attachments.put", "bytes": data.base64EncodedString()])
+    _ = try store.putAttachment(data)
     #expect(try SlopAttachments.list(in: root).count == 1)
     _ = try SlopPackage(rootURL: root)
     #expect(throws: (any Error).self) { _ = try SlopAttachments.read("../document.sqlite", in: root) }

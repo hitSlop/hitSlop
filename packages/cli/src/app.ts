@@ -27,7 +27,7 @@ const document = {
 } as const;
 const retrySection = {
   title: "Retries",
-  body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get flushes pending edits before returning.",
+  body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
 };
 
 async function forward(

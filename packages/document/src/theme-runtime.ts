@@ -7,27 +7,9 @@ export class ThemeController {
     private save: (values: ThemeValues) => Promise<void>,
     private apply: (values: ThemeValues) => void = () => {},
   ) {}
-  private validate(values: ThemeValues) {
-    if (!values || Array.isArray(values) || typeof values !== "object")
-      throw new Error("Expected a theme token object");
-    if (new TextEncoder().encode(JSON.stringify(values)).length > 65536)
-      throw new Error("Theme exceeds 64 KiB");
-    for (const [key, value] of Object.entries(values)) {
-      if (!Object.hasOwn(this.defaults, key)) throw new Error(`Unknown theme token: ${key}`);
-      if (typeof value !== "string" || !value.trim() || value.length > 4096 || /[{};]/.test(value))
-        throw new Error(`Invalid theme value: ${key}`);
-      if (typeof document !== "undefined") {
-        const style = document.createElement("span").style;
-        style.setProperty(`--slop-${key}`, value);
-        if (!style.getPropertyValue(`--slop-${key}`)) throw new Error(`Invalid CSS value: ${key}`);
-      }
-      for (const ref of value.matchAll(/var\(\s*--slop-([a-zA-Z0-9-]+)/g))
-        if (!Object.hasOwn(this.defaults, ref[1]!))
-          throw new Error(`Unknown theme reference: ${ref[1]}`);
-    }
-  }
+  /** Applies saved overrides as they are: loading never fails on theme, and the browser
+   * ignores CSS it cannot parse. The native owner validates every write. */
   load(values: ThemeValues) {
-    this.validate(values);
     this.overrides = { ...values };
     this.apply(this.get().effective);
   }
@@ -39,16 +21,12 @@ export class ThemeController {
     };
   }
   async set(values: ThemeValues) {
-    this.validate(values);
     const next = { ...this.overrides, ...values };
-    this.validate(next);
     await this.save(next);
     this.load(next);
     return this.get();
   }
   async reset(token?: string) {
-    if (token !== undefined && !Object.hasOwn(this.defaults, token))
-      throw new Error(`Unknown theme token: ${token}`);
     const next = token === undefined ? {} : { ...this.overrides };
     if (token !== undefined) delete next[token];
     await this.save(next);

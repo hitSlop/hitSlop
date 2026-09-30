@@ -55,24 +55,19 @@ import Testing
     }
   }
 
-  @Test func acceptsOnceAndReopensWithoutWebKitOrAuthoredCode() async throws {
+  @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     #expect(throws: DocumentWriterLock.Busy.self) { _ = try DocumentWriterLock(root: root) }
-    let reply = try await owner.apply(id: "one", session: owner.session, batch: increment)
-    let duplicate = try await owner.apply(id: "one", session: owner.session, batch: increment)
-    #expect(reply == duplicate)
-    await #expect(throws: (any Error).self) {
-      _ = try await owner.apply(id: "one", session: owner.session, batch: self.increment.replacingOccurrences(of: ":3", with: ":4"))
-    }
+    _ = try await owner.apply(session: owner.session, batch: increment)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await owner.close()
     let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
     #expect(reopened.session != owner.session)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
-      _ = try await reopened.apply(id: "two", session: owner.session, batch: self.increment)
+      _ = try await reopened.apply(session: owner.session, batch: self.increment)
     }
     try await reopened.close()
   }
@@ -84,7 +79,7 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(id: "first", session: owner.session, batch: increment)
+    _ = try await owner.apply(session: owner.session, batch: increment)
     var committed = false
     owner.storage.testingPhase = { phase in
       if phase == "append:committed" || phase == "checkpoint:committed" {
@@ -97,7 +92,7 @@ import Testing
     }
     await #expect(throws: (any Error).self) { try await owner.flush() }
     owner.storage.testingPhase = nil
-    _ = try await owner.apply(id: "second", session: owner.session, batch: increment)
+    _ = try await owner.apply(session: owner.session, batch: increment)
     try await owner.flush()
     try await owner.close()
     let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -110,7 +105,7 @@ import Testing
     let moved = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(id: "one", session: owner.session, batch: increment)
+    _ = try await owner.apply(session: owner.session, batch: increment)
     // Real I/O boundary: the package temporarily becomes unavailable.
     try FileManager.default.moveItem(at: root, to: moved)
     await #expect(throws: (any Error).self) { try await owner.close() }
@@ -127,12 +122,12 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    _ = try await owner.apply(id: "one", session: owner.session, batch: increment)
+    _ = try await owner.apply(session: owner.session, batch: increment)
     try await owner.flush()
     let capture = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
     #expect((try await value(capture)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
-      _ = try await capture.apply(id: "capture", session: capture.session, batch: self.increment)
+      _ = try await capture.apply(session: capture.session, batch: self.increment)
     }
     try await capture.close()
     try await owner.close()
@@ -141,19 +136,6 @@ import Testing
     try await reopened.close()
   }
 
-  @Test func expiredRequestCannotApplyAgain() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    for i in 0..<257 {
-      _ = try await owner.apply(id: String(i), session: owner.session, batch: increment)
-    }
-    await #expect(throws: (any Error).self) {
-      _ = try await owner.apply(id: "0", session: owner.session, batch: self.increment)
-    }
-    #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 771)
-    try await owner.close()
-  }
   // Gap: direct binding tests cannot prove the production page/ctx bridge or live forwarding.
   // Oracle: the public promise exposes its accepted value, CLI publication reaches the page,
   // and a fresh native owner reads both edits after close without evaluating authored code.
@@ -204,7 +186,14 @@ import Testing
     try await owner.close()
     let result = try await DocumentCommand.run(method: "apply", url: root,
       operation: Data(#"{"type":"increment","path":["hits"],"by":2}"#.utf8))
-    #expect((try JSONSerialization.jsonObject(with: result) as? [String: Any])?["hits"] as? Int == 9)
+    let reply = try #require(try JSONSerialization.jsonObject(with: result) as? [String: Any])
+    #expect((reply["value"] as? [String: Any])?["hits"] as? Int == 9)
+    // A minted row ID is reported, so a caller can address the row it just created.
+    let inserted = try JSONSerialization.jsonObject(with: await DocumentCommand.run(method: "apply", url: root,
+      operation: Data(#"{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}"#.utf8))) as! [String: Any]
+    let ids = try #require(inserted["ids"] as? [String])
+    let rows = (inserted["value"] as? [String: Any])?["rows"] as? [[String: Any]] ?? []
+    #expect(ids.count == 1 && rows.contains { $0["$id"] as? String == ids[0] })
   }
 
   @Test @MainActor func plainAndSvelteConsumersExerciseCtx() async throws {
@@ -245,4 +234,21 @@ import Testing
     try await owner.close()
   }
 
+
+  // Failure: the same `theme set` was accepted or refused depending on whether a window
+  // was open. Oracle: the owner refuses each invalid value and keeps the saved theme.
+  @Test func themeRulesHoldForEveryWriter() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    try await owner.saveTheme(["accent": "var(--slop-accent)"])
+    for values in [
+      ["missing": "blue"], ["accent": " "], ["accent": "red;display:none"], ["accent": "}"],
+      ["accent": String(repeating: "😀", count: 2049)], ["accent": "var(--slop-unknown)"],
+    ] {
+      await #expect(throws: (any Error).self) { try await owner.saveTheme(values) }
+    }
+    #expect(try await owner.loadTheme() == ["accent": "var(--slop-accent)"])
+    try await owner.close()
+  }
 }

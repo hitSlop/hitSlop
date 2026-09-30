@@ -1,9 +1,9 @@
-import type { Request, Reply } from "./session-types";
 import type { createCaptureController } from "./capture";
 
 /** The lifecycle invoked by the native host in visible and headless WebViews. */
 export interface SlopRuntimeHandle {
-  request(request: Request): Promise<Reply>;
+  /** Applies theme overrides the native owner already validated and saved. */
+  applyTheme(overrides: Record<string, string>): void;
   flush(): Promise<void>;
   prepareClose(): Promise<void>;
   cancelClose(): void;

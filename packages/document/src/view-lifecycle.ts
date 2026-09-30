@@ -1,6 +1,5 @@
 import type { ObjectNode } from "./schema";
 import type { OwnerSession as Session } from "./owner/session";
-import type { Request } from "./session-types";
 import type { createCaptureController } from "./capture";
 
 /** A mounted view; rendered must wait for pending framework updates. */
@@ -16,7 +15,7 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
   target: HTMLElement;
   session: Pick<
     Session,
-    "flush" | "handle" | "prepareClose" | "cancelClose" | "close" | "discardPending"
+    "flush" | "applyTheme" | "prepareClose" | "cancelClose" | "close" | "discardPending"
   >;
   capture: Pick<ReturnType<typeof createCaptureController>, "begin" | "restore">;
   recovered?: () => Promise<unknown>;
@@ -42,7 +41,7 @@ export async function mountViewLifecycle<N extends ObjectNode>(options: {
         target.ownerDocument.removeEventListener("hitslop:render-error", failed);
       }
     },
-    request: (request: Request) => session.handle(request),
+    applyTheme: (overrides: Record<string, string>) => session.applyTheme(overrides),
     flush: () => session.flush(),
     prepareClose: async () => {
       await session.prepareClose();

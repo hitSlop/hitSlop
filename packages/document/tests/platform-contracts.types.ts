@@ -1,5 +1,4 @@
 // Compile-only boundary checks: unsafe envelopes and replies must not become `any`.
-import type { Request } from "../src/session-types";
 import type { SocketRequest } from "@hitslop/schema/socket";
 import type { BridgeRequest } from "@hitslop/schema/bridge";
 import type { SlopRuntimeHandle } from "../src/runtime-handle";
@@ -23,11 +22,4 @@ function contracts(handle: SlopRuntimeHandle) {
     // @ts-expect-error Method inference must not widen the reply to any.
     const bytes: string = reply.bytes;
   });
-  // @ts-expect-error The JS session alias excludes native export too.
-  const jsExport: Request = { id: "export", documentPath: "/doc", method: "export", epoch: "current", format: "png", output: "/out.png" };
-  // @ts-expect-error Swift handles export; JS sessions must not accept it.
-  handle.request({ id: "export", documentPath: "/doc", method: "export", epoch: "current", format: "png", output: "/out.png" });
-  handle.request({ id: "read", documentPath: "/doc", method: "get" });
-  // @ts-expect-error Native lifecycle request keeps the socket epoch requirement.
-  handle.request({ id: "edit", documentPath: "/doc", method: "compact" });
 }

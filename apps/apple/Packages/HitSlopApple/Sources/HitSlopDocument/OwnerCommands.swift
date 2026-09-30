@@ -20,7 +20,7 @@ extension DocumentOwner {
     case "flush": try await flush(); return [:]
     case "apply":
       let batch = String(decoding: try JSONSerialization.data(withJSONObject: args["batch"]!), as: UTF8.self)
-      let reply = try await apply(id: args["id"] as! String, session: args["session"] as! String, batch: batch)
+      let reply = try await apply(session: args["session"] as! String, batch: batch)
       return ["publication": try JSONSerialization.jsonObject(with: Data(reply.utf8))]
     case "text":
       let request = try JSONSerialization.data(withJSONObject: args["request"]!)
@@ -35,20 +35,24 @@ extension DocumentOwner {
     guard request.documentPath == package.rootURL.path else {
       return .init(ok: false, error: "Document path mismatch", code: .rejected)
     }
-    if request.requiresEpoch, request.json["epoch"] as? String != session {
-      return .init(ok: false, epoch: session, error: "Owner session changed", code: .sessionChanged)
+    if request.requiresEpoch, request.json["epoch"] as? String != epoch {
+      return .init(ok: false, epoch: epoch, error: "Owner session changed", code: .sessionChanged)
     }
     var accepted = false
+    var applied: (ids: [String], sequence: Int)?
     do {
-      if request.method == .hello { return .init(ok: true, epoch: session) }
+      if request.method == .hello { return .init(ok: true, epoch: epoch) }
       if request.method == .apply || request.method == .batch {
         let intents = request.method == .apply ? [request.json["op"]!] : request.json["ops"]!
         let batch: [String: Any] = ["intents": intents]
         guard Self.validates(batch, contract: "command") else {
-          return .init(ok: false, epoch: session, error: "Invalid contract-4 command", code: .rejected)
+          return .init(ok: false, epoch: epoch, error: "Invalid contract-4 command", code: .rejected)
         }
-        _ = try await apply(id: request.json["id"] as! String, session: session,
+        let reply = try await apply(session: session,
           batch: String(decoding: JSONSerialization.data(withJSONObject: batch), as: UTF8.self), current: true)
+        let publication = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any]
+        applied = (publication?["ids"] as? [String] ?? [],
+          (publication?["patch"] as? [String: Any])?["sequence"] as? Int ?? 0)
       }
       accepted = true
       if request.method == .compact { try await compact() }
@@ -57,24 +61,15 @@ extension DocumentOwner {
       case .get, .apply, .batch, .compact, .snapshot:
         let frame = try JSONSerialization.jsonObject(with: Data(await state().utf8)) as! [String: Any]
         let result: Any = request.method == .snapshot ? ["data": frame["value"]!, "version": frame["version"]!, "issues": frame["issues"]!, "schema": try JSONSerialization.jsonObject(with: SlopFile.read(package.dataSchemaURL, within: package.rootURL))] : frame["value"]!
-        return .init(ok: true, epoch: session, state: result)
+        return .init(ok: true, epoch: epoch, state: result, ids: applied?.ids, sequence: applied?.sequence)
       case .schema:
-        return .init(ok: true, epoch: session, state: try JSONSerialization.jsonObject(with: SlopFile.read(package.dataSchemaURL, within: package.rootURL)))
+        return .init(ok: true, epoch: epoch, state: try JSONSerialization.jsonObject(with: SlopFile.read(package.dataSchemaURL, within: package.rootURL)))
       case .themeGet, .themeSet, .themeReset:
-        let defaults = try JSONSerialization.jsonObject(with: SlopFile.read(package.rootURL.appendingPathComponent("assets/theme.json"), within: package.rootURL, maximumBytes: 65536)) as! [String: String]
-        let loaded = try JSONSerialization.jsonObject(with: await ancillary(Data(#"{"method":"theme.load"}"#.utf8))) as! [String: Any]
-        var overrides = loaded["values"] as? [String: String] ?? [:]
+        let defaults = try themeDefaults()
+        var overrides = try await loadTheme()
         if request.method == .themeSet {
           guard let values = request.json["values"] as? [String: String] else { throw failure("Invalid theme values") }
-          for (key, value) in values {
-            guard defaults[key] != nil, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              value.count <= 4096, value.rangeOfCharacter(from: CharacterSet(charactersIn: "{};")) == nil else { throw failure("Invalid theme token or value") }
-            let regex = try NSRegularExpression(pattern: #"var\(\s*--slop-([a-zA-Z0-9-]+)"#)
-            for match in regex.matches(in: value, range: NSRange(value.startIndex..., in: value)) {
-              guard let range = Range(match.range(at: 1), in: value), defaults[String(value[range])] != nil else { throw failure("Unknown theme reference") }
-            }
-            overrides[key] = value
-          }
+          overrides.merge(values) { _, new in new }
         } else if request.method == .themeReset {
           if let token = request.json["token"] as? String {
             guard defaults[token] != nil else { throw failure("Unknown theme token") }
@@ -82,21 +77,29 @@ extension DocumentOwner {
           } else { overrides.removeAll() }
         }
         if request.method != .themeGet {
-          _ = try await ancillary(JSONSerialization.data(withJSONObject: ["method": "theme.save", "values": overrides]))
+          try await saveTheme(overrides)
         }
-        return .init(ok: true, epoch: session, state: ["defaults": defaults, "overrides": overrides, "effective": defaults.merging(overrides) { _, new in new }])
+        return .init(ok: true, epoch: epoch, state: ["defaults": defaults, "overrides": overrides, "effective": defaults.merging(overrides) { _, new in new }])
       case .attachmentsPut, .attachmentsRead, .attachmentsList:
-        var input = request.json
-        input.removeValue(forKey: "id"); input.removeValue(forKey: "documentPath"); input.removeValue(forKey: "epoch")
-        let result = try JSONSerialization.jsonObject(with: await ancillary(JSONSerialization.data(withJSONObject: input))) as! [String: Any]
-        return .init(ok: true, epoch: session, state: request.method == .attachmentsList ? result["files"] : result)
-      default: return .init(ok: false, epoch: session, error: "Unsupported owner command", code: .rejected)
+        let state: Any
+        switch request.method {
+        case .attachmentsList: state = try await listAttachments()
+        case .attachmentsRead:
+          guard let id = request.json["attachmentID"] as? String else { throw failure("Missing attachment ID") }
+          state = ["bytes": try await readAttachment(id).base64EncodedString()]
+        default:
+          guard let encoded = request.json["bytes"] as? String, encoded.utf8.count <= 13_981_016,
+            let bytes = Data(base64Encoded: encoded) else { throw failure("Invalid attachment bytes") }
+          state = try await putAttachment(bytes)
+        }
+        return .init(ok: true, epoch: epoch, state: state)
+      default: return .init(ok: false, epoch: epoch, error: "Unsupported owner command", code: .rejected)
       }
     } catch {
       if !accepted, case CoreError.Rejected = error {
-        return .init(ok: false, epoch: session, error: error.localizedDescription, code: .rejected)
+        return .init(ok: false, epoch: epoch, error: error.localizedDescription, code: .rejected)
       }
-      return .init(ok: false, epoch: session, error: error.localizedDescription, code: .failed)
+      return .init(ok: false, epoch: epoch, error: error.localizedDescription, code: .failed)
     }
   }
 }

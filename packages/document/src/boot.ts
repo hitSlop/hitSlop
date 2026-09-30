@@ -58,7 +58,7 @@ async function openDocument(native: boolean) {
     },
   );
   const attachments = ownerAttachments(doc, native);
-  const session = new Session(doc, config.epoch, theme, attachments);
+  const session = new Session(doc, theme, attachments);
   return { config, doc, theme, attachments, session };
 }
 
@@ -179,7 +179,6 @@ export async function boot() {
       recovered: native ? () => hostCall({ method: "runtimeRecovered" }) : undefined,
     });
     if (native) {
-      let lastStatus = "";
       (globalThis as any).__ownerEvents = {
         publication: (value: import("@hitslop/schema/owner").OwnerPublication) =>
           doc.receive(value),
@@ -189,16 +188,6 @@ export async function boot() {
           sequence: number,
         ) => doc.saved(status, error, sequence),
       };
-      doc.subscribe(() => {
-        const status = JSON.stringify([doc.status, doc.error]);
-        if (status === lastStatus) return;
-        lastStatus = status;
-        void hostCall({
-          method: "status",
-          status: doc.status === "pending" ? "saving" : doc.status,
-          error: doc.error,
-        }).catch(() => {});
-      });
       await hostCall({ method: "ready" });
     }
   } catch (error) {

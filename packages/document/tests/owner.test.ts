@@ -402,7 +402,7 @@ test("view reload remounts against the same document and keeps flushed edits", a
       target,
       session: {
         flush: () => doc.flush(),
-        handle: async () => ({ ok: true }) as any,
+        applyTheme: () => {},
         prepareClose: () => doc.prepareClose(),
         cancelClose: () => doc.cancelClose(),
         close: () => doc.close(),

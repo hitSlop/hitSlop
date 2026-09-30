@@ -103,8 +103,12 @@ import HitSlopCore
             + (request.requiresEpoch ? retryHint(reply) : ""))
       }
       guard let state = reply.state else { throw failure("Missing document state in response") }
+      // Edits also report the inserted row IDs (minted IDs are new on every run) and the
+      // owner sequence, so an agent can address new rows without another read.
+      let output: Any = command == .apply || command == .batch
+        ? ["ids": reply.ids ?? [], "sequence": reply.sequence ?? 0, "value": state] : state
       let data = try JSONSerialization.data(
-        withJSONObject: state, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        withJSONObject: output, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
       try await engine?.close()
       return data
     } catch {

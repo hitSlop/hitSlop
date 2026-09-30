@@ -86,9 +86,30 @@ extension LoroClientTests {
     #expect(try JSONSerialization.jsonObject(with: reset) as? NSDictionary == JSONSerialization.jsonObject(with: baseline) as? NSDictionary)
   }
 
+  // Failure: every CLI command ran a page close barrier that made the page inert, blurring
+  // the field the user was typing in and cancelling IME composition.
+  @Test @MainActor func cliEditLeavesTheFocusedFieldAlone() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    let view = controller.session.webView
+    let focused = try await view.callAsyncJavaScript(
+      "const input = document.createElement('input'); document.body.append(input); input.focus(); globalThis.__probe = input; return document.activeElement === input",
+      arguments: [:], in: nil, contentWorld: .page)
+    #expect(focused as? Bool == true)
+    _ = try await DocumentCommand.run(method: "apply", url: root, operation: prefixTitle("From the CLI"))
+    let still = try await view.callAsyncJavaScript(
+      "return document.activeElement === globalThis.__probe && !document.body.inert",
+      arguments: [:], in: nil, contentWorld: .page)
+    #expect(still as? Bool == true)
+    try await controller.session.finish()
+  }
+
   #if DEBUG
   // These cases require fault-injection hooks that are absent from production builds.
-  @Test @MainActor func committedWriteSurvivesRendererDeathBeforeAcknowledgement() async throws {
+  @Test @MainActor func committedWriteSurvivesRendererDeathAndLostAcknowledgement() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -103,16 +124,15 @@ extension LoroClientTests {
       Darwin.kill(pid, SIGKILL)
       throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
     }
-    // Renderer death closes the socket; the CLI must report unknown outcome.
-    await #expect(throws: (any Error).self) {
-      _ = try await DocumentCommand.run(
-        method: "apply", url: root, operation: prefixTitle("Committed before renderer death"))
-    }
+    // The socket follows the owner, not the page: the lost acknowledgement is settled by
+    // the stored attempt token, so the CLI learns the edit is durable.
+    _ = try await DocumentCommand.run(
+      method: "apply", url: root, operation: prefixTitle("Committed before renderer death"))
     engine.owner.storage.testingPhase = nil
     for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
     #expect(engine.rendererDead)
     #expect(
-      !FileManager.default.fileExists(atPath: root.appendingPathComponent("state/host.lock").path))
+      FileManager.default.fileExists(atPath: root.appendingPathComponent("state/host.lock").path))
     #expect(throws: (any Error).self) { _ = try DocumentWriterLock(root: root) }
     _ = try await controller.perform(.retry)
     #expect(engine.epoch == epoch)
@@ -194,7 +214,7 @@ extension LoroClientTests {
     controller.session.engine.onStatus = { [weak controller] status in
       guard let controller else { return }
       // Preserve production status handling, without displaying a sheet in the test harness.
-      controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: status.status, error: nil))
+      controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: status.status, failure: nil))
     }
     controller.session.engine.onError = nil
     controller.session.engine.owner.storage.testingPhase = { phase in
@@ -243,11 +263,11 @@ extension LoroClientTests {
     var events: [SlopTelemetryEvent] = []
     controller.telemetry = SlopTelemetry { if case .failed = $0 { events.append($0) } }
     // Status reporting is separate from the existing real failed-save/ownership test.
-    let failed = DocumentSaveStatus(status: "save-failed", error: nil)
+    let failed = DocumentSaveStatus(status: "save-failed", failure: nil)
     controller.runtimeSession(controller.session, saveStatus: failed)
     controller.runtimeSession(controller.session, saveStatus: failed)
     #expect(events == [.failed(.save, .init(reason: .storage))])
-    controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: "saved", error: nil))
+    controller.runtimeSession(controller.session, saveStatus: DocumentSaveStatus(status: "saved", failure: nil))
     controller.runtimeSession(controller.session, saveStatus: failed)
     #expect(events == Array(repeating: .failed(.save, .init(reason: .storage)), count: 2))
     try await controller.session.finish()

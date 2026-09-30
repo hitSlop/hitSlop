@@ -184,6 +184,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   private var documentAttention: NSPanel?
   private var attentionIsSaveFailure = false
   private var attentionMessage: String?
+  private var attentionFailure: SaveFailure?
   private var commandsEnabled = true
   private(set) var openingProgress: SlopOpeningProgress?
   private(set) var isLoading = false
@@ -475,11 +476,13 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       reportedSaveFailure = false
     }
     window?.isDocumentEdited = saveStatus.status != "saved"
-    if let message = saveStatus.error {
-      attentionMessage = message
+    if let failure = saveStatus.failure {
+      attentionMessage = failure.localizedDescription
+      attentionFailure = failure
       showDocumentAttention()
     } else if saveStatus.status == "saved" {
       attentionMessage = nil
+      attentionFailure = nil
       if attentionIsSaveFailure, let panel = documentAttention {
         window?.endSheet(panel, returnCode: .abort)
         panel.orderOut(nil)
@@ -496,12 +499,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard let message = attentionMessage ?? guestIssue?.message else { return }
     let saving = attentionMessage != nil
     let alert = NSAlert()
-    let invalidated = saving && message.hasPrefix("Owner invalidated:")
+    let invalidated = saving && attentionFailure == .invalidated
     alert.messageText = invalidated ? "The document engine needs recovery" : saving ? "Changes could not be saved" : "This slop encountered an error"
     alert.informativeText = message
     alert.addButton(withTitle: invalidated ? "Discard Unsaved Edits and Reload" : saving ? "Retry Save" : "Reload Interface")
     // Unsaved work stays live; offer an explicit way back to the durable state.
-    let full = saving && Self.isCapacityFailure(message)
+    let full = saving && attentionFailure == .full
     if full { alert.addButton(withTitle: "Discard Unsaved Edits") }
     if saving { alert.addButton(withTitle: "Keep Open") }
     if !saving {
@@ -520,8 +523,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
             do {
               if saving {
                 if invalidated { try await self.session.engine.discardPending() }
-                try await self.session.flush()
+                try await self.session.engine.retrySave()
                 self.attentionMessage = nil
+                self.attentionFailure = nil
                 self.showDocumentAttention()
               } else {
                 try await self.session.engine.reloadInterface()
@@ -529,6 +533,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
             } catch {
               if saving {
                 self.attentionMessage = error.localizedDescription
+                self.attentionFailure = error as? SaveFailure
               } else {
                 self.guestIssue = SlopRuntimeIssue(
                   source: .unhandled, message: error.localizedDescription)
@@ -540,10 +545,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
           Task {
             do {
               try await self.session.engine.discardPending()
-              try await self.session.flush()
+              try await self.session.engine.retrySave()
               self.attentionMessage = nil
+              self.attentionFailure = nil
             } catch {
               self.attentionMessage = error.localizedDescription
+              self.attentionFailure = error as? SaveFailure
               self.showDocumentAttention()
             }
           }
@@ -920,7 +927,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         try await finishClose()
       } catch {
         if isLoading { startLoading() }
-        if Self.isCapacityFailure(error.localizedDescription) { offerDiscardAndClose(error) }
+        if Self.isCapacityFailure(error) { offerDiscardAndClose(error) }
         else { present("Changes could not be saved", error) }
       }
     }
@@ -945,7 +952,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     onClose?()
   }
   /// Save failures for storage capacity; the runtime never drops unsaved edits silently.
-  static func isCapacityFailure(_ message: String) -> Bool { message.contains("Document is full") }
+  /// Until the page close path is removed (step 6), it relays the owner's failure as text.
+  static func isCapacityFailure(_ error: Error) -> Bool {
+    error as? SaveFailure == .full || error.localizedDescription.contains(SaveFailure.full.localizedDescription)
+  }
 
   private func offerDiscardAndClose(_ error: Error) {
     let alert = NSAlert(error: error)
@@ -978,7 +988,7 @@ private struct FailureOverlay: View {
       Image(systemName: "exclamationmark.triangle").font(.title)
       Text("This slop stopped responding").font(.headline)
       Text(message).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-      Button("Reopen saved document", action: retry).buttonStyle(.borderedProminent)
+      Button("Reopen interface", action: retry).buttonStyle(.borderedProminent)
     }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(.regularMaterial)
   }
 }

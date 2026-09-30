@@ -7,14 +7,14 @@ Use slop schema PATH and slop get PATH, then slop apply PATH --op JSON or slop b
 
 The native Rust owner applies every command. There is no JSON import or replacement; create documents from immutable templates and their initial values, then edit with typed commands. Mutations are never replayed automatically: after an unknown outcome, run slop get before editing again.
 
-Paths contain field strings and `{"id":"row ID from get"}` segments. Commands are `set {path,value}` for booleans, `insert {path,value,id?,at?}`, `remove {path,id}`, `move {path,id,at?}`, `increment {path,by}`, and `splice {path,index,delete,insert}`. `at` is `{before:id}` or `{after:id}`; omission appends. Text offsets are UTF-16 code-point boundaries, interpreted at host execution time; CLI callers do not supply a base. Use batch for related edits. Negative increment implements decrement.
+Paths contain field strings and `{"id":"row ID from get"}` segments. Commands are `set {path,value}` for booleans and whole text fields, `insert {path,value,id?,at?}`, `remove {path,id}`, `move {path,id,at?}`, `increment {path,by}`, and `splice {path,index,delete,insert}`. `at` is `{before:id}` or `{after:id}`; omission appends. Text offsets are UTF-16 code-point boundaries, interpreted at host execution time; CLI callers do not supply a base. Use batch for related edits. Negative increment implements decrement. apply and batch print `{ids, sequence, value}`: `ids` lists inserted row IDs, including minted ones. Supply `id` for an insert you may need to retry; a rerun with the same `id` is refused as a duplicate, while a minted ID is new every run.
 
 Read schema first. Supported types are text, boolean, object, object-row lists and exact integer counters. Keep manifest, assets, descriptor and initial values immutable. `get --snapshot` includes data, schema, version and issues. Derived row IDs remain addressable; stored anomalies are preserved, never repaired on read. Report issues instead of guessing repairs.
 
 Never edit state/document.sqlite or invent stores/data.json. The CLI routes to the live host or acquires exclusive ownership when closed.
 A failed transport can have an unknown outcome. Run slop get before issuing another edit; never automatically replay a mutation.
 
-get flushes pending edits and returns persisted state; a save failure returns an error. Native export captures the live selected view when open and the initial view when closed; export output must be outside the source package.
+get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export captures the live selected view when open and the initial view when closed; export output must be outside the source package.
 
 Use `slop theme get PATH` to inspect public token defaults and overrides.
 Change declared tokens with `slop theme set PATH --values '{"accent":"#123456"}'`;

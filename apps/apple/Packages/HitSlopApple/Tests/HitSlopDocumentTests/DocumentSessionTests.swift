@@ -23,14 +23,13 @@ import WebKit
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let storage = try Storage(root: root)
-    _ = try storage.call(["method": "checkpoint", "generation": "0", "attempt": "first", "bytes": "AQID", "schemaKey": "key"])
-    #expect(try storage.call(["method": "metadata"])["lastAttempt"] as? String == "first")
-    #expect(throws: (any Error).self) {
-      try storage.call(["method": "append", "generation": "wrong", "attempt": "refused", "updates": ["AQID"]])
-    }
-    #expect(try storage.call(["method": "metadata"])["lastAttempt"] as? String == "first")
-    _ = try storage.call(["method": "append", "generation": "1", "attempt": "second", "updates": ["AQID"]])
-    #expect(try storage.call(["method": "metadata"])["lastAttempt"] as? String == "second")
+    let bytes = Data([1, 2, 3])
+    _ = try storage.write(.checkpoint(bytes, schemaKey: "key"), generation: 0, attempt: "first")
+    #expect(try storage.metadata().lastAttempt == "first")
+    #expect(throws: (any Error).self) { try storage.write(.append(bytes), generation: 7, attempt: "refused") }
+    #expect(try storage.metadata().lastAttempt == "first")
+    _ = try storage.write(.append(bytes), generation: 1, attempt: "second")
+    #expect(try storage.metadata().lastAttempt == "second")
     storage.close()
   }
 
@@ -100,10 +99,8 @@ import WebKit
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let writer = try Storage(root: root)
-    let saved = try writer.call([
-      "method": "append", "attempt": UUID().uuidString, "generation": "0", "updates": [Data([1, 2, 3]).base64EncodedString()],
-    ])
-    _ = try writer.call(["method": "theme.save", "values": ["accent": "#111111"]])
+    let saved = try writer.write(.append(Data([1, 2, 3])), generation: 0, attempt: UUID().uuidString)
+    try writer.saveTheme(["accent": "#111111"])
     writer.close()
     let database = root.appendingPathComponent("state/document.sqlite")
     let theme = root.appendingPathComponent("state/theme.json")
@@ -114,20 +111,15 @@ import WebKit
     // Snapshots take no ownership: the document can still be opened for writing.
     let owner = try Storage(root: root)
     owner.close()
-    let loaded = try snapshot.call(["method": "load"])
-    #expect(loaded["generation"] as? String == saved["generation"] as? String)
+    let loaded = try snapshot.load()
+    #expect(loaded.generation == saved)
     // The document identity is minted with the database and read unchanged by snapshots.
-    let identity = try #require(loaded["docId"] as? String)
-    #expect(identity.count == 32)
-    #expect(loaded["updates"] as? [String] == [Data([1, 2, 3]).base64EncodedString()])
+    #expect(loaded.docID.count == 32)
+    #expect(loaded.updates == [Data([1, 2, 3])])
     // Renderer writes succeed in memory and are discarded.
-    _ = try snapshot.call([
-      "method": "append", "attempt": UUID().uuidString, "generation": loaded["generation"]!, "updates": [Data([4]).base64EncodedString()],
-    ])
-    _ = try snapshot.call(["method": "theme.save", "values": ["accent": "#222222"]])
-    #expect(throws: (any Error).self) {
-      try snapshot.call(["method": "attachments.put", "bytes": Data([9]).base64EncodedString()])
-    }
+    _ = try snapshot.write(.append(Data([4])), generation: loaded.generation, attempt: UUID().uuidString)
+    try snapshot.saveTheme(["accent": "#222222"])
+    #expect(throws: (any Error).self) { try snapshot.putAttachment(Data([9])) }
     snapshot.close()
 
     #expect(try [Data(contentsOf: database), Data(contentsOf: theme)] == before)
@@ -139,14 +131,14 @@ import WebKit
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let writer = try Storage(root: root)
-    _ = try writer.call(["method": "theme.save", "values": ["accent": "#111111"]])
+    try writer.saveTheme(["accent": "#111111"])
     let snapshot = try Storage(root: root, mode: .snapshot)
     defer { snapshot.close() }
-    _ = try writer.call(["method": "theme.save", "values": ["accent": "#333333"]])
+    try writer.saveTheme(["accent": "#333333"])
     writer.close()
-    #expect(try snapshot.call(["method": "theme.load"])["values"] as? [String: String] == ["accent": "#111111"])
-    _ = try snapshot.call(["method": "theme.save", "values": ["accent": "#222222"]])
-    #expect(try snapshot.call(["method": "theme.load"])["values"] as? [String: String] == ["accent": "#222222"])
+    #expect(try snapshot.loadTheme() == ["accent": "#111111"])
+    try snapshot.saveTheme(["accent": "#222222"])
+    #expect(try snapshot.loadTheme() == ["accent": "#222222"])
     let saved = try Data(contentsOf: root.appendingPathComponent("state/theme.json"))
     #expect(try JSONSerialization.jsonObject(with: saved) as? [String: String] == ["accent": "#333333"])
   }
@@ -156,27 +148,21 @@ import WebKit
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let writer = try Storage(root: root)
-    let appended = try writer.call([
-      "method": "append", "attempt": UUID().uuidString, "generation": "0",
-      "updates": [Data(repeating: 7, count: 8 * 1024 * 1024).base64EncodedString()],
-    ])
+    let appended = try writer.write(.append(Data(repeating: 7, count: 8 * 1024 * 1024)), generation: 0, attempt: UUID().uuidString)
     // A checkpoint deletes the log; the file keeps those pages free.
     let checkpoint = Data([1, 2, 3])
-    let saved = try writer.call([
-      "method": "checkpoint", "attempt": UUID().uuidString, "generation": appended["generation"]!,
-      "bytes": checkpoint.base64EncodedString(), "schemaKey": "key",
-    ])
+    let saved = try writer.write(.checkpoint(checkpoint, schemaKey: "key"), generation: appended, attempt: UUID().uuidString)
     writer.close()
     let size = try FileManager.default.attributesOfItem(
       atPath: root.appendingPathComponent("state/document.sqlite").path)[.size] as? Int ?? 0
     #expect(size > 8 * 1024 * 1024)
     let snapshot = try Storage(root: root, mode: .snapshot)
     defer { snapshot.close() }
-    let loaded = try snapshot.call(["method": "load"])
-    #expect(loaded["checkpoint"] as? String == checkpoint.base64EncodedString())
-    #expect(loaded["schemaKey"] as? String == "key")
-    #expect(loaded["generation"] as? String == saved["generation"] as? String)
-    #expect(loaded["updates"] as? [String] == [])
+    let loaded = try snapshot.load()
+    #expect(loaded.checkpoint == checkpoint)
+    #expect(loaded.schemaKey == "key")
+    #expect(loaded.generation == saved)
+    #expect(loaded.updates.isEmpty)
   }
   @Test func snapshotStorageCreatesNoStateForMasters() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -184,9 +170,9 @@ import WebKit
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let snapshot = try Storage(root: root, mode: .snapshot)
-    let loaded = try snapshot.call(["method": "load"])
-    #expect(loaded["updates"] as? [String] == [])
-    _ = try snapshot.call(["method": "append", "attempt": UUID().uuidString, "generation": loaded["generation"]!, "updates": [Data([1]).base64EncodedString()]])
+    let loaded = try snapshot.load()
+    #expect(loaded.updates.isEmpty)
+    _ = try snapshot.write(.append(Data([1])), generation: loaded.generation, attempt: UUID().uuidString)
     snapshot.close()
     #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("state").path))
   }
@@ -211,7 +197,7 @@ import WebKit
     #expect(throws: (any Error).self) { try Storage(root: root, mode: .snapshot) }
     let reopened = try Storage(root: root)
     defer { reopened.close() }
-    #expect(throws: (any Error).self) { try reopened.call(["method": "load"]) }
+    #expect(throws: (any Error).self) { try reopened.load() }
   }
 
   @Test @MainActor func schemeRejectsSymlinkReplacedAfterOpen() throws {

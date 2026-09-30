@@ -612,15 +612,19 @@ public struct SocketReply {
   public var `ok`: Bool
   public var `epoch`: String?
   public var `state`: Any?
+  public var `ids`: [String]?
+  public var `sequence`: Int?
   public var `schema`: Any?
   public var `output`: String?
   public var `error`: String?
   public var `code`: SocketReplyCode?
 
-  public init(`ok`: Bool, `epoch`: String? = nil, `state`: Any? = nil, `schema`: Any? = nil, `output`: String? = nil, `error`: String? = nil, `code`: SocketReplyCode? = nil) {
+  public init(`ok`: Bool, `epoch`: String? = nil, `state`: Any? = nil, `ids`: [String]? = nil, `sequence`: Int? = nil, `schema`: Any? = nil, `output`: String? = nil, `error`: String? = nil, `code`: SocketReplyCode? = nil) {
     self.`ok` = `ok`
     self.`epoch` = `epoch`
     self.`state` = `state`
+    self.`ids` = `ids`
+    self.`sequence` = `sequence`
     self.`schema` = `schema`
     self.`output` = `output`
     self.`error` = `error`
@@ -641,6 +645,18 @@ public struct SocketReply {
       self.`state` = value
     } else {
       self.`state` = nil
+    }
+    if let value = json["ids"] {
+      guard let mapped = value as? [String] else { throw ContractMappingError.field("SocketReply.ids") }
+      self.`ids` = mapped
+    } else {
+      self.`ids` = nil
+    }
+    if let value = json["sequence"] {
+      guard let mapped = value as? Int else { throw ContractMappingError.field("SocketReply.sequence") }
+      self.`sequence` = mapped
+    } else {
+      self.`sequence` = nil
     }
     if let value = json["schema"] {
       self.`schema` = value
@@ -672,6 +688,8 @@ public struct SocketReply {
     result["ok"] = `ok`
     if let value = `epoch` { result["epoch"] = value }
     if let value = `state` { result["state"] = value }
+    if let value = `ids` { result["ids"] = value }
+    if let value = `sequence` { result["sequence"] = value }
     if let value = `schema` { result["schema"] = value }
     if let value = `output` { result["output"] = value }
     if let value = `error` { result["error"] = value }

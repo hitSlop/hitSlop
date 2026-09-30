@@ -1,4 +1,4 @@
-// Guards persisted token overrides, failed writes and invalid values.
+// Guards persisted token overrides and failed writes. Value rules live in the native owner.
 import { test, expect } from "bun:test";
 import { ThemeController } from "../src/theme-runtime";
 import { defineTheme } from "../src/theme";
@@ -37,21 +37,6 @@ test("theme overrides persist before application and failed writes preserve the 
   expect(persisted).toEqual({});
 });
 
-test("theme rejects undeclared tokens, structural CSS and oversized values without saving", async () => {
-  let saves = 0;
-  const theme = new ThemeController({ accent: "red" }, async () => {
-    saves++;
-  });
-  for (const values of [
-    { missing: "blue" },
-    { accent: "red;display:none" },
-    { accent: "}" },
-    { accent: "x".repeat(4097) },
-    { accent: "var(--slop-unknown)" },
-  ] as Record<string, string>[]) {
-    await expect(theme.set(values)).rejects.toThrow();
-  }
-  await expect(theme.reset("missing")).rejects.toThrow();
-  expect(saves).toBe(0);
+test("theme definitions refuse invalid token names", () => {
   expect(() => defineTheme({ "invalid token": "red" })).toThrow();
 });

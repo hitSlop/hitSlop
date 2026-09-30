@@ -22,24 +22,17 @@ import HitSlopCoreBinding
         stop("hold")
         return
       }
-      let disk = try storage.call(["method": "load"])
-      guard let generation = disk["generation"] as? String, let schemaKey = disk["schemaKey"] as? String,
-        let checkpoint = (disk["checkpoint"] as? String).flatMap({ Data(base64Encoded: $0) })
+      let disk = try storage.load()
+      guard let schemaKey = disk.schemaKey, let checkpoint = disk.checkpoint
       else { throw failure("Probe needs a saved document") }
-      let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint,
-        updates: (disk["updates"] as? [String] ?? []).map { Data(base64Encoded: $0)! })
+      let core = try NativeDocument.open(schemaJson: schemaKey, checkpoint: checkpoint, updates: disk.updates)
       let before = try core.version()
       _ = try core.commandCurrent(batchJson: #"{"intents":[{"type":"splice","path":["title"],"index":0,"delete":0,"insert":"Crash edit "}]}"#)
       storage.testingPhase = stop
-      if phase.hasPrefix("append:") {
-        let bytes = try core.exportSince(version: before).base64EncodedString()
-        _ = try storage.call(["method": "append", "attempt": UUID().uuidString, "generation": generation, "updates": [bytes]])
-      } else {
-        _ = try storage.call([
-          "method": "checkpoint", "attempt": UUID().uuidString, "generation": generation,
-          "bytes": try core.checkpoint().base64EncodedString(), "schemaKey": schemaKey,
-        ])
-      }
+      let write: Storage.Write = phase.hasPrefix("append:")
+        ? .append(try core.exportSince(version: before))
+        : .checkpoint(try core.checkpoint(), schemaKey: schemaKey)
+      _ = try storage.write(write, generation: disk.generation, attempt: UUID().uuidString)
     }
   }
 #endif
