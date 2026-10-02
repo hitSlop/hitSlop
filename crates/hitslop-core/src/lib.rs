@@ -9,7 +9,7 @@ use loro::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 mod publication;
 mod identity;
 mod text;
@@ -17,6 +17,7 @@ pub mod theme;
 pub mod shape;
 mod descriptor;
 mod execute;
+mod replace;
 mod project;
 mod issues;
 pub use descriptor::{schema_key, validate};
@@ -170,6 +171,47 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 /// prove the app and its helper embed the same core.
 pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
 
+/// Who made a change: the person in a window, or an agent (the CLI and socket). Both are
+/// undoable; an agent's consecutive batches are one undo step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    Page,
+    Agent,
+}
+/// The commit message of agent edits. Messages are saved with the history, so a later
+/// session can find the agent's edits made while no window was open.
+const AGENT: &str = "agent";
+/// The undo step being extended: a typing run in one text field (its text and caret, in
+/// UTF-16, after the last edit), or a run of agent batches.
+enum Run {
+    Typing { path: Vec<Segment>, text: String, caret: usize },
+    Agent,
+}
+/// One document edit, restored by Loro as a new change. Only version references are
+/// kept here; document values and their history remain in Loro.
+struct Step {
+    before: Frontiers,
+    after: Frontiers,
+}
+/// Includes the trailing agent edits found when opening, if any.
+const UNDO_STEPS: usize = 100;
+/// The version before the agent edits that end this document's history, within the
+/// history it keeps; none when the person's change is last.
+fn agent_tail(doc: &LoroDoc) -> Option<Frontiers> {
+    let trimmed = doc.shallow_since_vv().to_vv();
+    let mut at = doc.oplog_frontiers();
+    let mut moved = false;
+    while let Some(change) = at.as_single().and_then(|id| doc.get_change(id)) {
+        // Stop where the version before this change is no longer kept.
+        if change.message.as_deref() != Some(AGENT) || change.deps.is_empty() || change.deps.iter().any(|id| trimmed.includes_id(id)) {
+            break;
+        }
+        at = change.deps.clone();
+        moved = true;
+    }
+    moved.then_some(at)
+}
+
 /// A committed batch: its publication sequence, the IDs of inserted rows, and the
 /// publication to deliver, absent when the batch changed nothing.
 #[derive(Debug)]
@@ -205,6 +247,11 @@ pub struct Document {
     /// concurrent edit must not branch from before it: its saved operations would depend
     /// on history the checkpoint drops, and the package could not open again.
     floor: VersionVector,
+    undo: VecDeque<Step>,
+    redo: Vec<Step>,
+    /// Consecutive edits at the caret of one text field, or consecutive agent batches,
+    /// are one undo step.
+    run: Option<Run>,
 }
 impl Document {
     /// `scan` is false only for a document just built from validated input.
@@ -213,6 +260,9 @@ impl Document {
         subscribe(&doc, &events);
         let mut this = Self {
             lists: publication::index_all(&doc),
+            undo: agent_tail(&doc).map(|before| Step { before, after: doc.oplog_frontiers() }).into_iter().collect(),
+            redo: vec![],
+            run: None,
             doc,
             schema,
             sequence: 0,
@@ -397,20 +447,20 @@ impl Document {
             &State { version: self.version(), value, issues: found, sequence: self.sequence },
         )
     }
-    /// Loro transactions cannot be rolled back. Validation happens before each
-    /// intent's first mutation, so a batch rejected at its first intent left nothing
-    /// pending. When an earlier intent already mutated, rebuild the owner at the
-    /// pre-batch frontiers (O(document), only on this rejection path). The pending
-    /// operations were never exported; the rebuilt replica uses a fresh peer.
+    /// Rebuilds the owner at the pre-call version after a partial mutation. This also
+    /// handles one replace that failed after changing an earlier field. The history
+    /// references survive replay, including redo; rejected operations were never exported.
     fn abort(&mut self, before: &loro::Frontiers) -> Result<()> {
-        if self.doc.get_pending_txn_len() == 0 {
+        if self.doc.get_pending_txn_len() == 0 && self.doc.state_frontiers() == *before {
             return Ok(());
         }
         let fresh = replica_at(&self.doc, before)?;
         self.events.lock().unwrap().clear();
         subscribe(&fresh, &self.events);
-        // Container IDs survive the rebuild, so the published list indexes stay valid.
         self.doc = fresh;
+        // Publication may have failed after updating indexes; rebuild those too.
+        self.lists = publication::index_all(&self.doc);
+        self.issues = self.scan_issues()?;
         Ok(())
     }
     /// Merges another replica's updates; `None` when they changed nothing here.
@@ -436,7 +486,15 @@ impl Document {
                 "Durable pending-import buffering is not implemented",
             ));
         }
-        match self.doc.import(bytes) {
+        let imported = self.doc.import(bytes);
+        // Whole-document undo must never erase an external replica's edits. Raw imports
+        // form a boundary; JSON replacement and the page's text branch are local edits.
+        if self.doc.oplog_vv() != known {
+            self.undo.clear();
+            self.redo.clear();
+            self.run = None;
+        }
+        match imported {
             Ok(_) => self.publish(),
             // Loro applies the changes it can and refuses those that depend on history
             // this document trimmed; what landed is published before the refusal.
@@ -452,7 +510,7 @@ impl Document {
         self.sequence
     }
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
-    pub fn apply_batch(&mut self, batch: &str) -> Result<Applied> {
+    pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
         let batch: Batch = parse(batch)?;
         if batch.intents.len() > 1000 {
             return Err(err(Code::TooLarge, "Batch exceeds 1000 intents"));
@@ -463,7 +521,7 @@ impl Document {
         {
             let mut rows = Rows::new(&self.lists);
             for (index, op) in batch.intents.iter().enumerate() {
-                if let Err(mut e) = execute(&self.doc, &self.schema, op, &mut ids, &mut rows)
+                if let Err(mut e) = execute(&self.doc, &self.schema, op, &self.issues, &mut ids, &mut rows)
                 {
                     e.op_index = Some(index);
                     failure = Some(e);
@@ -475,9 +533,93 @@ impl Document {
             self.abort(&before)?;
             return Err(e);
         }
+        if origin == Origin::Agent {
+            self.doc.set_next_commit_message(AGENT);
+        }
         self.doc.commit();
-        let publication = self.publish()?;
+        let publication = self.publish_or_abort(&before)?;
+        if publication.is_some() {
+            let continues = origin == Origin::Agent && matches!(self.run, Some(Run::Agent));
+            self.record(before, (origin == Origin::Agent).then_some(Run::Agent), continues);
+        }
         Ok(Applied { sequence: self.sequence, ids, publication })
+    }
+    /// Reverts the person's last undo step, or reapplies the last undone one. Nothing to
+    /// undo publishes nothing.
+    pub fn undo(&mut self) -> Result<Applied> {
+        self.history(true)
+    }
+    pub fn redo(&mut self) -> Result<Applied> {
+        self.history(false)
+    }
+    fn history(&mut self, undo: bool) -> Result<Applied> {
+        let target = if undo {
+            self.undo.back().map(|step| step.before.clone())
+        } else {
+            self.redo.last().map(|step| step.after.clone())
+        };
+        let Some(target) = target else {
+            self.run = None;
+            return Ok(Applied { sequence: self.sequence, ids: vec![], publication: None });
+        };
+        let before = self.doc.state_frontiers();
+        if let Err(error) = self.doc.revert_to(&target) {
+            self.abort(&before)?;
+            return Err(engine(error));
+        }
+        self.doc.commit();
+        let publication = self.publish_or_abort(&before)?;
+        // A failed restore leaves the stacks and grouping untouched.
+        if undo {
+            self.redo.push(self.undo.pop_back().expect("checked"));
+        } else {
+            self.undo.push_back(self.redo.pop().expect("checked"));
+        }
+        self.run = None;
+        Ok(Applied { sequence: self.sequence, ids: vec![], publication })
+    }
+    /// Records only a successfully published edit. No-op edits and refusals preserve
+    /// both the current run and redo. Extending a run keeps its original before-version.
+    fn record(&mut self, before: Frontiers, run: Option<Run>, continues: bool) {
+        let after = self.doc.state_frontiers();
+        self.redo.clear();
+        if let Some(step) = self.undo.back_mut().filter(|_| continues) {
+            step.after = after;
+        } else {
+            self.undo.push_back(Step { before, after });
+            if self.undo.len() > UNDO_STEPS {
+                self.undo.pop_front();
+            }
+        }
+        self.run = run;
+    }
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+    /// Starts a new undo step unless this edit continues the typing run: the same field,
+    /// unchanged since the last edit, changed at the caret that edit left.
+    fn record_typing(&mut self, before: Frontiers, path: &[Segment], from: &str, to: &str, caret: usize) {
+        let continues = matches!(&self.run, Some(Run::Typing { path: p, text, caret: at }) if p == path && text == from && {
+            let (before, after): (Vec<u16>, Vec<u16>) = (from.encode_utf16().collect(), to.encode_utf16().collect());
+            let prefix = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
+            let suffix = before[prefix..].iter().rev().zip(after[prefix..].iter().rev()).take_while(|(a, b)| a == b).count();
+            (prefix..=before.len() - suffix).contains(at)
+        });
+        self.record(before, Some(Run::Typing { path: path.to_vec(), text: to.to_owned(), caret }), continues);
+    }
+    /// No publication has escaped when this fails, so restore the document and indexes
+    /// before reporting a refusal. History is updated only after this succeeds.
+    fn publish_or_abort(&mut self, before: &Frontiers) -> Result<Option<String>> {
+        match self.publish() {
+            Ok(publication) => Ok(publication),
+            Err(error) => {
+                self.abort(before)?;
+                Err(error)
+            }
+        }
     }
     /// Publishes the committed events as one change: `{previous, sequence, version, ops,
     /// issues?}`. Applying it to the previous snapshot yields a fresh snapshot. `None`

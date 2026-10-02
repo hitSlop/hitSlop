@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use hitslop_core::Origin;
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -33,7 +34,7 @@ fn title(doc: &Document) -> String {
     value["title"].as_str().unwrap().into()
 }
 fn set_title(doc: &mut Document, title: &str) {
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string()).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page).unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     let job = store.job(doc, false).unwrap()?;
@@ -235,8 +236,8 @@ fn a_session_too_large_to_keep_closes_with_no_history() {
         let (store, mut doc) = open(&root);
         opened = doc.version();
         for _ in 0..160 {
-            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string()).unwrap();
-            doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string()).unwrap();
+            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
+            doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
         }
         close(store, &mut doc);
@@ -280,6 +281,70 @@ fn a_session_past_its_limit_trims_while_open() {
     assert!(stale(&open(&root).1, &early), "the trimmed history stays trimmed");
 }
 
+// Kept history decides how far undo reaches into an agent's closed edits: a closing
+// session that is itself too large keeps no history, so only later commands remain.
+#[test]
+fn undo_of_closed_agent_edits_reaches_as_far_as_history_is_kept() {
+    let (_dir, root) = package();
+    let mut seed = 9;
+    let agent = |doc: &mut Document, intents: Value| doc.apply_batch(&json!({ "intents": intents }).to_string(), Origin::Agent).unwrap();
+    let (store, mut doc) = open(&root);
+    for _ in 0..160 {
+        let applied = agent(&mut doc, json!([{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]));
+        agent(&mut doc, json!([{"type":"remove","path":["rows"],"id":applied.ids[0]}]));
+        save(&store, &mut doc);
+    }
+    agent(&mut doc, json!([{"type":"set","path":["title"],"value":"First"}]));
+    close(store, &mut doc);
+    let (store, mut doc) = open(&root);
+    agent(&mut doc, json!([{"type":"set","path":["title"],"value":"Second"}]));
+    close(store, &mut doc);
+    let (_store, mut doc) = open(&root);
+    assert!(doc.can_undo());
+    doc.undo().unwrap();
+    assert_eq!(title(&doc), "First", "the first command's history was not kept");
+    assert!(!doc.can_undo());
+}
+
+#[test]
+fn undo_survives_compaction() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    set_title(&mut doc, "Before");
+    set_title(&mut doc, "After");
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    assert!(doc.undo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), "Before");
+    save(&store, &mut doc);
+    let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
+    assert_eq!(title(&snapshot.document(&key(), INITIAL).unwrap()), "Before");
+    assert!(doc.redo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), "After");
+    close(store, &mut doc);
+    assert_eq!(title(&open(&root).1), "After");
+}
+
+// Restoring a row deleted before a checkpoint must produce self-contained updates,
+// not references to the history that compaction removed from the saved document.
+#[test]
+fn restoring_a_deleted_row_after_compaction_survives_reopen() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(), Origin::Page).unwrap();
+    save(&store, &mut doc);
+    let with_row = doc.value().unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page).unwrap();
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    assert!(doc.undo().unwrap().publication.is_some());
+    save(&store, &mut doc);
+    let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
+    assert_eq!(snapshot.document(&key(), INITIAL).unwrap().value().unwrap(), with_row);
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]}).to_string(), Origin::Page).unwrap();
+    let expected = doc.value().unwrap();
+    close(store, &mut doc);
+    assert_eq!(open(&root).1.value().unwrap(), expected);
+}
+
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
 // and saved an update that depends on it; the package could never be opened again.
 #[test]
@@ -291,7 +356,7 @@ fn a_stale_text_base_cannot_make_the_package_unopenable() {
     let store = Store::open(&root, Mode::Document).unwrap();
     let mut doc = store.document(&key, initial).unwrap();
     let base = doc.version();
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string()).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page).unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcX","selectionStart":4,"selectionEnd":4});
     let result = doc.edit_text(&request.to_string()).map(|_| ());
@@ -315,14 +380,14 @@ fn doodle_like_use_stays_bounded() {
     for day in 0..8 {
         let (store, mut doc) = open(&root);
         for stroke in 0..40 {
-            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string()).unwrap();
+            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
-            doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string()).unwrap();
+            doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
             if stroke % 25 == 24 {
                 let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["rows"]
                     .as_array().unwrap().iter().map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]})).collect();
-                doc.apply_batch(&json!({"intents":ids}).to_string()).unwrap();
+                doc.apply_batch(&json!({"intents":ids}).to_string(), Origin::Page).unwrap();
             }
         }
         let value = doc.value().unwrap();
@@ -513,7 +578,7 @@ fn checkpoints_reclaim_free_pages() {
     }
     assert!(std::fs::metadata(database(&root)).unwrap().len() > 3 * 1024 * 1024);
     for _ in 0..48 {
-        doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string()).unwrap();
+        doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(), Origin::Page).unwrap();
         save(&store, &mut doc);
     }
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();

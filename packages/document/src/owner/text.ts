@@ -20,6 +20,8 @@ interface TextHost {
   /** Registers in-flight work so close and capture barriers wait for it. */
   track(work: Promise<unknown>): void;
   report(error: unknown): void;
+  /** The document's undo, which replaces the field's own. */
+  undo(redo: boolean): void;
 }
 
 /** One prefix/suffix replacement from `before` to `after`, on UTF-16 boundaries. */
@@ -189,6 +191,14 @@ export function bindText(
     composing = false;
     send();
   };
+  // Undo belongs to the document: the field's own history knows nothing of edits made
+  // elsewhere, and replaying it would author them again as new typing.
+  const onBeforeInput = (event: Event) => {
+    const { inputType } = event as InputEvent;
+    if (inputType !== "historyUndo" && inputType !== "historyRedo") return;
+    event.preventDefault();
+    host.undo(inputType === "historyRedo");
+  };
   const start = () => {
     removed = false;
     const current = host.read(path);
@@ -203,6 +213,7 @@ export function bindText(
   element.addEventListener("input", onInput);
   element.addEventListener("compositionstart", onStart);
   element.addEventListener("compositionend", onEnd);
+  element.addEventListener("beforeinput", onBeforeInput);
   return {
     get detached() { return detached !== undefined; },
     refresh: adopt,
@@ -242,6 +253,7 @@ export function bindText(
       element.removeEventListener("input", onInput);
       element.removeEventListener("compositionstart", onStart);
       element.removeEventListener("compositionend", onEnd);
+      element.removeEventListener("beforeinput", onBeforeInput);
       drain = this.commit();
       host.track(drain);
       return drain;

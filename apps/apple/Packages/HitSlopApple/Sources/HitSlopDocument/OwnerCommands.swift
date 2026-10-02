@@ -21,9 +21,9 @@ extension DocumentOwner {
       switch method {
       case "apply": command = .apply(try payload("batch"))
       case "text": command = .text(try payload("request"))
-      case "open", "flush":
+      case "open", "flush", "undo", "redo":
         guard args.count == 3 else { throw OwnerError.rejected("Invalid page request") }
-        command = method == "open" ? .open : .flush
+        command = ["open": .open, "flush": .flush, "undo": .undo, "redo": .redo][method]!
       default: throw OwnerError.rejected("Invalid page request")
       }
       enqueuePage(command, view: view) { outcome in
@@ -37,6 +37,7 @@ extension DocumentOwner {
           case .success(.text(let edit)): fields = ["sequence": edit.sequence, "authored": edit.authored,
             "selectionStart": edit.selectionStart, "selectionEnd": edit.selectionEnd]
           case .success(.flushed): fields = [:]
+          case .success(.history(let sequence)): fields = ["sequence": sequence]
           }
           reply(fields.merging(["id": id, "ok": true]) { _, new in new })
         }
@@ -141,7 +142,14 @@ extension SocketReply {
   }
 }
 
-enum PageCommand: Sendable { case open, apply(String), text(String), flush }
+enum PageCommand: Sendable { case open, apply(String), text(String), flush, undo, redo }
 enum PageResult: Sendable {
   case opened(DocumentOwner.Opened), applied(DocumentOwner.Applied), text(DocumentOwner.TextEdit), flushed
+  /// Undo or redo: the publication sequence to wait for.
+  case history(Int)
+}
+/// Whether Edit ▸ Undo and Redo have anything to do.
+public struct UndoAvailability: Sendable, Equatable {
+  public var canUndo = false
+  public var canRedo = false
 }

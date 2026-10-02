@@ -94,6 +94,17 @@ Trees and rich text are not implemented; no slop uses them.
 **Durability.** `await doc.flush()` sends unsent text, waits for pending writes and
 saves. Close, quit and export do the same first. A failed save keeps every edit.
 
+**Undo.** `await doc.undo()` and `doc.redo()` are Edit ▸ Undo and Redo, after sending
+what the person sees. They step back through the person's changes and an agent's (CLI)
+edits, including an agent's edits made while the document was closed. A typing run in one
+field, and an agent's consecutive edits, are each one step.
+
+**Import.** The CLI's `replace` operation (`slop import`) makes any value, or the whole
+document, equal a JSON value by writing only the differences: rows match by `$id`, and
+kept rows and text keep their identity, and unchanged values are not written, so open
+fields and concurrent edits elsewhere survive. The
+[CLI guide](../guides/cli.md#operations) has the rules.
+
 **Merged anomalies.** Imported CRDT state may contain a value that breaks
 the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key.
 - It is preserved as stored, never repaired on read, and reported in `doc.issues` with
@@ -236,7 +247,8 @@ a 16×16 grid of colours.
 - **Handle:**
   - `insert(value, index?)` (default: the end), `set(index, value)`,
     `preview(index, value)`, `remove(index, count = 1)`;
-  - `replace(values)` rewrites the list, keeping unchanged positions.
+  - `replace(values)` rewrites the list, keeping unchanged positions. It sends a `set`
+    of the whole list, not the CLI's `replace` operation.
   - There is no `move`.
 - **Merge:** concurrent inserts are both kept; concurrent sets of one element resolve
   last-writer-wins.

@@ -1,5 +1,5 @@
 //! wasm-bindgen adapter for the shared document core.
-use hitslop_core::Document as Core;
+use hitslop_core::{Applied, Document as Core, Origin};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = coreBuildId)]
@@ -55,6 +55,10 @@ pub struct TextResult {
     pub publication: Option<String>,
 }
 
+fn applied(applied: Applied) -> ApplyResult {
+    ApplyResult { sequence: applied.sequence as f64, ids: applied.ids, publication: applied.publication }
+}
+
 #[wasm_bindgen]
 pub struct WasmDocument {
     inner: Core,
@@ -83,14 +87,16 @@ impl WasmDocument {
     pub fn version(&self) -> String {
         self.inner.version()
     }
+    /// A page's batch, part of the person's undo.
     #[wasm_bindgen(js_name = applyBatch)]
     pub fn apply_batch(&mut self, batch_json: &str) -> Result<ApplyResult, JsValue> {
-        let applied = self.inner.apply_batch(batch_json).map_err(error)?;
-        Ok(ApplyResult {
-            sequence: applied.sequence as f64,
-            ids: applied.ids,
-            publication: applied.publication,
-        })
+        self.inner.apply_batch(batch_json, Origin::Page).map(applied).map_err(error)
+    }
+    pub fn undo(&mut self) -> Result<ApplyResult, JsValue> {
+        self.inner.undo().map(applied).map_err(error)
+    }
+    pub fn redo(&mut self) -> Result<ApplyResult, JsValue> {
+        self.inner.redo().map(applied).map_err(error)
     }
     pub fn sequence(&self) -> f64 {
         self.inner.sequence() as f64

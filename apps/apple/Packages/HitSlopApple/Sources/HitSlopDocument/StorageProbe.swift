@@ -34,7 +34,7 @@ import HitSlopCoreBinding
       let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
       let title = (frame["value"] as? [String: Any])?["title"] as? String ?? ""
       let edit = ["intents": [["type": "set", "path": ["title"], "value": "Crash edit " + title]]]
-      _ = try core.applyBatch(batchJson: String(decoding: JSONSerialization.data(withJSONObject: edit), as: UTF8.self))
+      _ = try core.applyBatch(batchJson: String(decoding: JSONSerialization.data(withJSONObject: edit), as: UTF8.self), origin: .agent)
       store.setPhases(phases: PhaseHook(stop))
       guard let job = try core.saveJob(store: store, forceCheckpoint: phase.hasPrefix("checkpoint:")) else {
         throw failure("Probe edit produced nothing to save")

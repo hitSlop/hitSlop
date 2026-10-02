@@ -41,6 +41,10 @@ export const variants = {
   clear: { path },
   // Counters: a nonzero safe-integer delta; the core also bounds the resulting sum.
   increment: { path, by: Type.Integer({ minimum: -Number.MAX_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }) },
+  // The value at `path` (the whole document when empty) becomes `value`. Only the
+  // differences are written: rows are matched by `$id`, and rows and text keep their
+  // identity, so concurrent edits elsewhere survive.
+  replace: { path: Type.Array(Segment, { maxItems: 64 }), value: Type.Unknown() },
 } as const;
 export const Intent = Type.Union([
   Type.Object({ type: Type.Literal("set"), ...variants.set }, { additionalProperties: false }),
@@ -52,6 +56,7 @@ export const Intent = Type.Union([
     { type: Type.Literal("increment"), ...variants.increment },
     { additionalProperties: false },
   ),
+  Type.Object({ type: Type.Literal("replace"), ...variants.replace }, { additionalProperties: false }),
 ]);
 export const Batch = Type.Object(
   { intents: Type.Array(Intent, { maxItems: 1000 }) },
@@ -158,6 +163,9 @@ const PageRequestSchema = Type.Union([
     { additionalProperties: false },
   ),
   Type.Object({ ...pageBase, method: Type.Literal("flush") }, { additionalProperties: false }),
+  // The person's undo: their last step in this session, or the last one undone.
+  Type.Object({ ...pageBase, method: Type.Literal("undo") }, { additionalProperties: false }),
+  Type.Object({ ...pageBase, method: Type.Literal("redo") }, { additionalProperties: false }),
 ]);
 export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes);
 export type CoreErrorCode = Static<typeof CoreErrorCodeSchema>;
@@ -186,7 +194,11 @@ export const TextReplySchema = Type.Union([
 export const FlushReplySchema = Type.Union([
   Type.Object(success, { additionalProperties: false }), ReplyFailure,
 ]);
-const PageReplySchema = Type.Union([OpenReplySchema, ApplyReplySchema, TextReplySchema, FlushReplySchema]);
+/** Undo and redo: the sequence to wait for; unchanged when there was nothing to do. */
+export const HistoryReplySchema = Type.Union([
+  Type.Object({ ...success, sequence }, { additionalProperties: false }), ReplyFailure,
+]);
+const PageReplySchema = Type.Union([OpenReplySchema, ApplyReplySchema, TextReplySchema, FlushReplySchema, HistoryReplySchema]);
 /** Host → page, fenced to the view that was current when delivery was enqueued. */
 export const PagePushSchema = Type.Union([
   Type.Object({ view: identity, type: Type.Literal("publication"), publication: OwnerPublicationSchema },

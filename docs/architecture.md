@@ -95,8 +95,9 @@ time: `text {base, path, from, to, selection}`, meaning "this field was `from` a
 - The core computes the edit script on a throwaway document (its diff mutates while it
   runs, so it never touches the owner) and checks that the script reproduces `to`.
 - **Fast path:** the owner's field still equals `from`, so the script applies directly.
-- **Slow path:** the field changed concurrently. The script is applied on a fork at
-  `base` and merged with Loro; the caret is mapped through cursors.
+- **Slow path:** the field changed concurrently. The script is applied on a branch at
+  `base` (a state-only copy, which trimmed documents allow) and merged with Loro; the
+  caret is mapped through cursors.
 - The reply names `authored`, the version right after this edit on its own branch. If the
   user kept typing, the next request goes from the sent text at `authored`.
 - During IME composition nothing is sent. Close and export commit a composition.
@@ -106,6 +107,43 @@ time: `text {base, path, from, to, selection}`, meaning "this field was `from` a
 
 A text handle's `set(value)` and the CLI's `set` replace the whole field as it is when
 the owner applies it, through the same precomputed script.
+
+## Undo
+
+Edit ▸ Undo and Redo revert changes to the open document: the person's, and an agent's
+made through the CLI or socket. The core keeps up to 100 steps per open document,
+each holding Loro frontiers before and after the edit. Loro's `revert_to` restores
+either version as a new change; there are no JSON snapshots or persistent undo records.
+
+- **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
+  to one field, each starting at the caret the last one left. Consecutive agent batches
+  are one step, so one undo reverts what the agent just did. Any other change, a
+  concurrent page text merge or undo/redo itself ends a run. The concurrent text edit
+  is its own step, even though the text implementation imports a temporary branch.
+- **Agent edits made while closed.** The steps live in memory, so an edit made
+  by the CLI's own owner leaves no step behind. Agent commits therefore carry the commit
+  message `agent`, which Loro saves. When a document opens, the core walks back from its
+  latest changes while they are an agent's and keeps the version before them. That is one
+  step below the session's own, using the same undo/redo path and counting toward the
+  100-step limit. A new change ends redo. The step reaches as
+  far as the kept history: everything below 4 MiB, otherwise the last closed session at
+  most (see Saving).
+- **Refusals.** A batch or JSON replacement refused after a partial mutation rebuilds
+  the owner at its pre-call version. Its history references survive replay, so undo,
+  redo and the current run remain available. No-op edits also preserve history.
+- **Replica imports.** A raw replica import that adds operations clears the available
+  steps, so whole-document undo cannot erase external changes. Duplicate and refused
+  imports that add nothing leave history alone. This boundary does not apply to JSON
+  import or page typing. Selective undo across remote changes is deferred with collaboration.
+- **Result.** An undo is a new change: it publishes, autosaves and travels like any
+  other. Nothing to undo publishes nothing.
+- **Window.** The document window's `NSUndoManager` (`DocumentUndoManager`) reports
+  whether undo and redo are available and sends them to the page, which first sends
+  unsent text, queued writes and previews (`__slop.undo`, `doc.undo()`), then asks the
+  owner. WebKit's own text-editing undo still registers there, as AppKit's grouping
+  requires, but is never performed. Without a live page the owner undoes directly.
+- **Browser.** In `slop dev`, a text field's own undo (`beforeinput` `historyUndo`) is
+  replaced by the document's.
 
 ## Saving
 

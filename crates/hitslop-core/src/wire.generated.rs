@@ -100,6 +100,7 @@ pub enum Intent {
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
     Clear { path: Vec<Segment> },
     Increment { path: Vec<Segment>, by: i64 },
+    Replace { path: Vec<Segment>, value: Value },
 }
 impl Intent {
     pub fn path(&self) -> &[Segment] { match self {
@@ -109,6 +110,7 @@ impl Intent {
         Self::Move { path, .. } => path,
         Self::Clear { path, .. } => path,
         Self::Increment { path, .. } => path,
+        Self::Replace { path, .. } => path,
     } }
 }
 #[derive(Debug, Deserialize)]

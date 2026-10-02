@@ -6,6 +6,7 @@ use support::{apply_patches, Edit, View};
 use hitslop_core::Document;
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
+use hitslop_core::Origin;
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap()
@@ -79,6 +80,19 @@ fn cases(errors: bool) {
                     case["after"],
                     "{name}: checkpoint reopen"
                 );
+                // Every supported kind must also survive the shared history path,
+                // including optional containers, records and reordered lists.
+                if before["value"] != case["after"] {
+                    let mut view = View::of(&d);
+                    for _ in 0..2 {
+                        view.publish(&d.undo().unwrap().publication.unwrap());
+                        assert_eq!(snapshot(&d)["value"], before["value"], "{name}: undo");
+                        view.check(&d, name);
+                        view.publish(&d.redo().unwrap().publication.unwrap());
+                        assert_eq!(snapshot(&d)["value"], case["after"], "{name}: redo");
+                        view.check(&d, name);
+                    }
+                }
             }
         }
     }
@@ -171,7 +185,7 @@ fn independent_replicas_merge_and_duplicate_delivery_is_idempotent() {
 fn minted_ids_are_application_ids_and_survive_reopen() {
     let f = fixture();
     let mut d = Document::create(&f["schema"].to_string(), r#"{"title":"abc","hits":0,"rows":[]}"#).unwrap();
-    let applied = d.apply_batch(r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#).unwrap();
+    let applied = d.apply_batch(r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#, Origin::Page).unwrap();
     let id = applied.ids[0].as_str();
     assert_eq!(id.len(), 26);
     assert!(id

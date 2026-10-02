@@ -69,6 +69,100 @@ extension OwnerClientTests {
 }
 
 extension OwnerClientTests {
+  // Failure: redoing the page's text after a closed agent undo produced PRSOAGENT.
+  // Exercise the focused window's Edit actions, page publication, and saved reopen.
+  @Test @MainActor func closedAgentAndPageEditsRedoThroughTheWindow() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try await command("apply", url: root, operation: setTitle("AGENT"))
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    let webView = controller.session.webView
+    window.makeFirstResponder(webView)
+    _ = try await webView.callAsyncJavaScript(
+      "const input = document.getElementById('draft'); input.focus(); input.select(); document.execCommand('insertText', false, 'PERSON'); await globalThis.__slop.flush(); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    func title() async throws -> String? {
+      let reply = try JSONSerialization.jsonObject(with: try await command("get", url: root)) as! [String: Any]
+      return (reply["state"] as? [String: Any] ?? reply)["title"] as? String
+    }
+    #expect(try await title() == "PERSON")
+    for _ in 0..<3 {
+      for (action, expected) in [("undo:", "AGENT"), ("undo:", "abc"), ("redo:", "AGENT"), ("redo:", "PERSON")] {
+        #expect(window.firstResponder?.tryToPerform(Selector((action)), with: nil) == true)
+        var current = try await title()
+        for _ in 0..<200 where current != expected {
+          try await Task.sleep(for: .milliseconds(5))
+          current = try await title()
+        }
+        #expect(current == expected)
+        #expect(try await webView.evaluateJavaScript("document.getElementById('draft').value") as? String == expected)
+      }
+    }
+    try await controller.finishClose()
+    #expect(try await title() == "PERSON", "redo was saved before close")
+  }
+
+  // Failure: Edit ▸ Undo reached only WebKit's own text undo, which knows nothing of the
+  // document. Oracle: the undo action, sent from the focused page, reverts the agent's
+  // edit, then the person's typing in the document and in the field.
+  @Test @MainActor func editUndoRevertsThePersonsTypingInTheDocument() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    let webView = controller.session.webView
+    window.makeFirstResponder(webView)
+    #expect(window.undoManager is DocumentUndoManager)
+    #expect(window.undoManager?.canUndo == false)
+    let field = "document.getElementById('draft')"
+    _ = try await webView.callAsyncJavaScript(
+      "const input = \(field); input.focus(); input.setSelectionRange(input.value.length, input.value.length); document.execCommand('insertText', false, 'XYZ'); await globalThis.__slop.flush(); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    _ = try await command("apply", url: root, operation: try JSONSerialization.data(withJSONObject: ["type": "increment", "path": ["hits"], "by": 3]))
+    func saved() async throws -> [String: Any] {
+      let reply = try JSONSerialization.jsonObject(with: try await command("get", url: root)) as! [String: Any]
+      return reply["state"] as? [String: Any] ?? reply
+    }
+    #expect(try await saved()["title"] as? String == "abcXYZ")
+    for _ in 0..<200 where window.undoManager?.canUndo != true { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(window.undoManager?.canUndo == true)
+    #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
+    var state = try await saved()
+    for _ in 0..<200 where state["hits"] as? Int != 0 {
+      try await Task.sleep(for: .milliseconds(5))
+      state = try await saved()
+    }
+    #expect(state["hits"] as? Int == 0, "the agent's edit goes first")
+    #expect(state["title"] as? String == "abcXYZ")
+    #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
+    for _ in 0..<200 where state["title"] as? String != "abc" {
+      try await Task.sleep(for: .milliseconds(5))
+      state = try await saved()
+    }
+    #expect(state["title"] as? String == "abc")
+    #expect(try await webView.evaluateJavaScript("\(field).value") as? String == "abc")
+    for _ in 0..<200 where window.undoManager?.canUndo != false { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(window.undoManager?.canUndo == false)
+    #expect(window.undoManager?.canRedo == true)
+    #expect(window.firstResponder?.tryToPerform(Selector(("redo:")), with: nil) == true)
+    state = try await saved()
+    for _ in 0..<200 where state["title"] as? String != "abcXYZ" {
+      try await Task.sleep(for: .milliseconds(5))
+      state = try await saved()
+    }
+    #expect(state["title"] as? String == "abcXYZ")
+    try await controller.finishClose()
+  }
+
   @Test @MainActor func discardReattachesTheReplacementPageIncludingAfterRendererDeath() async throws {
     _ = NSApplication.shared
     for dead in [false, true] {

@@ -324,6 +324,24 @@ export const app = new Crust("slop", {
   )
   .add(
     defineCommand(
+      "import",
+      {
+        description: "Replace document data with a JSON file's value, writing only the differences",
+        sections: [retrySection],
+      },
+      (c) =>
+        c
+          .args(document, { name: "file", type: "string", required: true, description: "JSON file holding the new value" })
+          .flags({
+            name: "path",
+            type: "string",
+            description: 'Where to replace, as a JSON path (default: the whole document), e.g. \'["rows"]\'',
+          })
+          .action(({ args, flags }) => native("import", args.document, args.file, ...flagArgs(flags))),
+    ),
+  )
+  .add(
+    defineCommand(
       "compact",
       { description: "Checkpoint document storage", sections: [retrySection] },
       (c) => c.args(document).action(({ args, flags }) => forward("compact", args.document, flags)),

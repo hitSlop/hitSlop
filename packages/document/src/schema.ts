@@ -141,6 +141,10 @@ export interface LiveDocument<N extends ObjectNode> {
   change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
   /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
   flush(): Promise<void>;
+  /** Edit ▸ Undo: the last step, the person's or an agent's. Resolves once `current`
+   * shows the result. */
+  undo(): Promise<void>;
+  redo(): Promise<void>;
 }
 export function defineDocument<P extends Record<string, Node>>(
   properties: P,
@@ -157,6 +161,8 @@ export function defineDocument<P extends Record<string, Node>>(
       at: { get: () => live().at },
       change: { value: ((callback) => live().change(callback)) satisfies Live["change"] },
       flush: { value: () => live().flush() },
+      undo: { value: () => live().undo() },
+      redo: { value: () => live().redo() },
     }),
   ) as DocumentDefinition<ObjectNode<P>>;
 }

@@ -33,6 +33,10 @@ test("native forwarding preserves JSON, paths, flags and exit status", async () 
     const result = await run(args, { HITSLOP_NATIVE_CLI: helper });
     expect(result.code).toBe(23);
     expect(JSON.parse(result.stdout)).toEqual(args);
+    const imported = ["import", "a file.slop", "new data.json", "--path", '["rows"]'];
+    const importing = await run(imported, { HITSLOP_NATIVE_CLI: helper });
+    expect(importing.code).toBe(23);
+    expect(JSON.parse(importing.stdout)).toEqual(imported);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

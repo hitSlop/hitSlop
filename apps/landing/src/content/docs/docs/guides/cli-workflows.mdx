@@ -93,11 +93,19 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint and prints the data; ordinary edits never need it. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints the data; ordinary edits never need it. You can edit a document while it is open or closed, and Edit ▸ Undo in the window can revert what the agent changed, open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
-There is no JSON import. To move data into a new document, create it from the template, read the source with `get`, and write the rows with one `batch` of `insert` operations. Give each insert an `id` so a retried command is refused as a duplicate instead of adding the row twice. Copy attachments with the commands below, then write their references.
+`import` writes a JSON file's value into a document, changing only what differs. Rows are matched by `$id`, so rows and text that stay keep their identity, and fields the import leaves unchanged are not written at all; an open window keeps working on them. Pass `--path` to replace one part, such as `'["rows"]'`:
+
+```sh
+bunx @hitslop/cli get Old.slop > data.json
+bunx @hitslop/cli import New.slop data.json
+bunx @hitslop/cli import New.slop rows.json --path '["rows"]'
+```
+
+Both documents must come from the same template, so the data fits its schema; a value that doesn't fit is refused and nothing changes. For a document of another template, map the data to one `batch` of `insert` and `set` operations, giving each insert an `id` so a retried command is refused as a duplicate. Copy attachments with the commands below, then write their references. Edit ▸ Undo in the window reverts an import as one step.
 
 ## Change theme colors
 

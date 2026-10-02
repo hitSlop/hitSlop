@@ -176,6 +176,23 @@ pub struct ApplyResult {
     pub ids: Vec<String>,
     pub publication: Option<String>,
 }
+impl From<hitslop_core::Applied> for ApplyResult {
+    fn from(applied: hitslop_core::Applied) -> Self {
+        Self { sequence: applied.sequence, ids: applied.ids, publication: applied.publication }
+    }
+}
+/// Who made a change: the person in a window, or an agent through the CLI or socket.
+#[derive(uniffi::Enum)]
+pub enum EditOrigin {
+    Page,
+    Agent,
+}
+/// Whether Edit ▸ Undo and Redo have anything to do.
+#[derive(uniffi::Record)]
+pub struct UndoState {
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
 #[derive(uniffi::Record)]
 pub struct TextResult {
     pub sequence: u64,
@@ -234,15 +251,22 @@ impl NativeDocument {
     pub fn sequence(&self) -> Result<u64, CoreError> {
         self.call(|d| Ok(d.sequence()))
     }
-    pub fn apply_batch(&self, batch_json: String) -> Result<ApplyResult, CoreError> {
-        self.call(|d| {
-            let applied = d.apply_batch(&batch_json)?;
-            Ok(ApplyResult {
-                sequence: applied.sequence,
-                ids: applied.ids,
-                publication: applied.publication,
-            })
-        })
+    pub fn apply_batch(&self, batch_json: String, origin: EditOrigin) -> Result<ApplyResult, CoreError> {
+        let origin = match origin {
+            EditOrigin::Page => hitslop_core::Origin::Page,
+            EditOrigin::Agent => hitslop_core::Origin::Agent,
+        };
+        self.call(|d| d.apply_batch(&batch_json, origin).map(Into::into))
+    }
+    /// Reverts the person's last undo step; nothing to undo publishes nothing.
+    pub fn undo(&self) -> Result<ApplyResult, CoreError> {
+        self.call(|d| d.undo().map(Into::into))
+    }
+    pub fn redo(&self) -> Result<ApplyResult, CoreError> {
+        self.call(|d| d.redo().map(Into::into))
+    }
+    pub fn undo_state(&self) -> Result<UndoState, CoreError> {
+        self.call(|d| Ok(UndoState { can_undo: d.can_undo(), can_redo: d.can_redo() }))
     }
     pub fn edit_text(&self, request_json: String) -> Result<TextResult, CoreError> {
         self.call(|d| {

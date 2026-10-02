@@ -396,7 +396,7 @@ for (const delay of [0, 20, 100]) {
 }
 
 // Failure: a CLI or second binding edit to the same field overwrote the user's text.
-test("a concurrent whole-field set and page typing both survive", async () => {
+test("a concurrent whole-field set and page typing survive and undo separately", async () => {
   const { core, transport, doc } = await open();
   const input = field();
   const binding = doc.bindText(input, doc.fields.title);
@@ -411,6 +411,16 @@ test("a concurrent whole-field set and page typing both survive", async () => {
     await doc.fields.title.set("Oh Hello"); // lands while the page's request waits
     hold.release();
     await doc.flush();
+    expect(doc.current.title).toBe("Oh Hello!");
+    expect(input.value).toBe("Oh Hello!");
+    await doc.undo();
+    expect(doc.current.title).toBe("Oh Hello");
+    expect(input.value).toBe("Oh Hello");
+    await doc.undo();
+    expect(input.value).toBe("Hello");
+    await doc.redo();
+    expect(input.value).toBe("Oh Hello");
+    await doc.redo();
     expect(doc.current.title).toBe("Oh Hello!");
     expect(input.value).toBe("Oh Hello!");
   } finally {
@@ -700,4 +710,53 @@ test("accepted writes covering a preview clear it, and previews never invent par
     await doc.prepareClose();
     expect(JSON.parse(core.snapshot()).value).toEqual({ pixels: ["x", "", "", ""] });
   } finally { core.free(); }
+});
+
+// Edit ▸ Undo. Failure: undo skipped what the person had typed but not yet sent, or a
+// field's own undo replayed its history as new typing. Oracle: literal values in the
+// field and the document.
+test("undo sends unsent text first, then reverts the person's steps in order", async () => {
+  const { core, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
+  try {
+    await doc.fields.done.set(true);
+    // Still composing, so nothing is sent until undo drains it.
+    input.dispatchEvent(new Event("compositionstart"));
+    input.type("Hello!");
+    await doc.undo();
+    expect(doc.current.title).toBe("Hello");
+    expect(input.value).toBe("Hello");
+    expect(doc.current.done).toBe(true);
+    await doc.undo();
+    expect(doc.current.done).toBe(false);
+    await doc.undo();
+    expect(doc.current.done).toBe(false);
+    await doc.redo();
+    expect(doc.current.done).toBe(true);
+    await doc.redo();
+    expect(input.value).toBe("Hello!");
+  } finally {
+    binding.destroy();
+    core.free();
+  }
+});
+
+test("a text field's own undo is the document's undo", async () => {
+  const { core, doc } = await open();
+  const input = field();
+  const binding = doc.bindText(input, doc.fields.title);
+  try {
+    input.type("Hello there");
+    await doc.flush();
+    const undo = Object.assign(new Event("beforeinput", { cancelable: true }), { inputType: "historyUndo" });
+    input.dispatchEvent(undo);
+    expect(undo.defaultPrevented).toBe(true);
+    for (let i = 0; i < 100 && doc.current.title !== "Hello"; i++) await Bun.sleep(2);
+    expect(doc.current.title).toBe("Hello");
+    expect(input.value).toBe("Hello");
+  } finally {
+    binding.destroy();
+    core.free();
+  }
 });

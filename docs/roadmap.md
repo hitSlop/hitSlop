@@ -23,7 +23,7 @@ In order, with the reasoning in [ideas](ideas.md):
 2. [Ask from the window](ideas.md#ask-from-the-window): the person's agent, launched
    from the toolbar, editing the open document.
 3. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
-   who made it, and an agent's change can be undone.
+   who made it. Edit ▸ Undo already reverts an agent's edits.
 4. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
    reach slops without a shell.
 5. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
@@ -32,7 +32,8 @@ In order, with the reasoning in [ideas](ideas.md):
 ## Open now
 
 - Restore the templates in `archive/slops` as their document kinds land.
-- Check system IME composition and native undo by hand; no evidence file covers them.
+- Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
+  agent edit between steps); no evidence file covers them.
 - Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
   was not reproduced and has no confirmed cause
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
@@ -57,8 +58,10 @@ Frontier version tokens and stateless text edits already work across replicas: a
 text request names the history it saw, and the core merges it with whatever arrived
 since. Closing trims history to the last editing session at most, so sync will need a
 retention policy compatible with offline replicas.
-Undo can use a Loro `UndoManager` scoped to local origins. Keep credentials outside
-authored code, and add a dedicated sync envelope rather than overloading `apply`.
+Remote edits would arrive as imports. Selective undo that preserves remote changes is
+still needed: today a raw replica import clears the local undo/redo history.
+Keep credentials outside authored code, and add a dedicated sync envelope rather than
+overloading `apply`.
 [Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare
 Durable Objects, the SDK additions, and per-person `s.local` state.
 
@@ -68,8 +71,8 @@ internal import/export do not constitute a shipped collaboration product.
 
 ## Deferred
 
-Media import, account UI/Auth/App Check, undo UI, schema evolution, iCloud and other
-synced folders, and other native platforms. [Ideas](ideas.md) proposes
-pulling additive schema changes and origin-scoped undo forward. Historical source may be
-kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones. There is
-no migration of documents from earlier builds.
+Media import, account UI/Auth/App Check, a document history UI, schema evolution,
+iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
+pulling additive schema changes and undoing an agent's change forward. Historical source
+may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
+There is no migration of documents from earlier builds.

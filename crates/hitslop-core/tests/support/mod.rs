@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use hitslop_core::{Document, Error};
 use serde_json::{json, Value};
+use hitslop_core::Origin;
 /// Keep the everyday tier bounded; use the same knobs for extended stress runs.
 pub fn workload(name: &str, default: usize) -> usize {
     std::env::var(name).map(|v| v.parse::<usize>().expect("positive test workload")).unwrap_or(default).max(1)
@@ -15,7 +16,7 @@ fn unchanged(publication: Option<String>) -> String {
 }
 impl Edit for Document {
     fn apply(&mut self, batch: &str) -> Result<String, Error> {
-        self.apply_batch(batch).map(|applied| unchanged(applied.publication))
+        self.apply_batch(batch, Origin::Page).map(|applied| unchanged(applied.publication))
     }
     fn merge(&mut self, bytes: &[u8]) -> Result<String, Error> {
         self.import(bytes).map(unchanged)

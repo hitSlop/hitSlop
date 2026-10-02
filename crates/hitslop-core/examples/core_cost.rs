@@ -5,6 +5,7 @@
 use hitslop_core::Document;
 use serde_json::{json, Value};
 use std::time::Instant;
+use hitslop_core::Origin;
 
 fn median(mut v: Vec<f64>) -> f64 {
     v.sort_by(f64::total_cmp);
@@ -41,7 +42,7 @@ fn reorder_cost(rows: usize) -> Value {
         for direction in 0..2 {
             let previous = doc.sequence();
             let started = Instant::now();
-            let applied = doc.apply_batch(&requests[direction]).unwrap();
+            let applied = doc.apply_batch(&requests[direction], Origin::Page).unwrap();
             let elapsed = started.elapsed().as_secs_f64() * 1e3;
             assert_eq!(applied.sequence, previous + 1, "each sample must change order");
             assert!(applied.publication.is_some());
@@ -75,7 +76,7 @@ fn main() {
         let mut updates = vec![];
         for i in 0..256 {
             let before = doc.version();
-            doc.apply_batch(&batch(json!([{"type":"set","path":["rows",{"id":format!("r{}", i * 7 % rows)},"done"],"value":i % 2 == 0}]))).unwrap();
+            doc.apply_batch(&batch(json!([{"type":"set","path":["rows",{"id":format!("r{}", i * 7 % rows)},"done"],"value":i % 2 == 0}])), Origin::Page).unwrap();
             updates.push(doc.export_since(&before).unwrap());
         }
         out.insert(format!("openWith256UpdatesMS{rows}"), json!(time(5, || { Document::open(&schema, &checkpoint, &updates).unwrap(); })));
@@ -87,7 +88,7 @@ fn main() {
                 intents.push(json!({"type":"insert","path":["rows"],"id":format!("n{n}-{k}"),"value":{"text":"new","done":false},"at":{"after":format!("n{n}-{}", k - 1)}}));
             }
             n += 1;
-            doc.apply_batch(&batch(json!(intents))).unwrap();
+            doc.apply_batch(&batch(json!(intents)), Origin::Page).unwrap();
         })));
         // Reorders use an isolated document, unaffected by the insert benchmarks.
         out.insert(format!("thousandRowReorderMS{rows}"), reorder_cost(rows));
@@ -97,14 +98,14 @@ fn main() {
             let intents: Vec<Value> = (0..1000)
                 .map(|i| json!({"type":"insert","path":["rows"],"id":format!("a{round}-{i}"),"value":{"text":"new","done":false}}))
                 .collect();
-            doc.apply_batch(&batch(json!(intents))).unwrap();
+            doc.apply_batch(&batch(json!(intents)), Origin::Page).unwrap();
         })));
         // One merged anomaly (two peers insert the same `$id`), then ordinary edits.
         let base = doc.version();
         let saved = doc.checkpoint().unwrap();
         for peer in 0..2 {
             let mut replica = Document::open(&schema, &saved, &[]).unwrap();
-            replica.apply_batch(&batch(json!([{"type":"insert","path":["rows"],"id":"dup","value":{"text":format!("peer {peer}"),"done":false}}]))).unwrap();
+            replica.apply_batch(&batch(json!([{"type":"insert","path":["rows"],"id":"dup","value":{"text":format!("peer {peer}"),"done":false}}])), Origin::Page).unwrap();
             doc.import(&replica.export_since(&base).unwrap()).unwrap();
         }
         let issues: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
@@ -112,14 +113,14 @@ fn main() {
         let mut flag = false;
         out.insert(format!("editWithIssueMS{rows}"), json!(time(20, || {
             flag = !flag;
-            doc.apply_batch(&batch(json!([{"type":"set","path":["rows",{"id":"r1"},"done"],"value":flag}]))).unwrap();
+            doc.apply_batch(&batch(json!([{"type":"set","path":["rows",{"id":"r1"},"done"],"value":flag}])), Origin::Page).unwrap();
         })));
     }
     // Publication bytes for one keystroke in a long text field.
     for length in [10_000, 100_000] {
         let (_, mut doc) = checklist(10);
         let from = "x".repeat(length);
-        doc.apply_batch(&batch(json!([{"type":"set","path":["title"],"value":from}]))).unwrap();
+        doc.apply_batch(&batch(json!([{"type":"set","path":["title"],"value":from}])), Origin::Page).unwrap();
         let to = format!("{from}y");
         let caret = to.len();
         let request = json!({"base":doc.version(),"path":["title"],"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string();

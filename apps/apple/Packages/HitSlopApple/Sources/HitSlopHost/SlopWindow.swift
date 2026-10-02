@@ -108,6 +108,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var issueBadge: NSPanel?
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
+  /// Undo for this window's document; see `DocumentUndoManager`.
+  lazy var documentUndo = DocumentUndoManager(session: session)
   var isLoading = false
   var presentationRequested = false
   public internal(set) var isContentReady = false
@@ -344,6 +346,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public static func finishAssetRefreshesForTermination() async {
     await SlopDocumentAssetRefreshQueue.finishForTermination()
   }
+  public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
   public func windowShouldClose(_ sender: NSWindow) -> Bool {
     if closePrepared { return true }
     if let onCommand {

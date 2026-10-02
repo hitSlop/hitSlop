@@ -7,6 +7,7 @@ use support::{Edit, View};
 use hitslop_core::{Code, Document};
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
+use hitslop_core::Origin;
 
 fn next(rng: &mut u64) -> u64 { *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17; *rng }
 fn value(doc: &Document) -> Value { serde_json::from_str::<Value>(&doc.snapshot().unwrap()).unwrap()["value"].clone() }
@@ -16,7 +17,7 @@ fn trimmed_document() -> (String, Vec<u8>, Vec<u8>) {
     let schema = json!({"kind":"object","properties":{"title":{"kind":"text"}}}).to_string();
     let mut source = Document::create(&schema, r#"{"title":"initial"}"#).unwrap();
     for i in 0..20 {
-        source.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":format!("edit {i}")}]}).to_string()).unwrap();
+        source.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":format!("edit {i}")}]}).to_string(), Origin::Page).unwrap();
     }
     let full = source.checkpoint().unwrap();
     let shallow = trimmed(&full);

@@ -11,7 +11,7 @@ import HitSlopDocument
     subcommands: [
       Theme.self, Attachments.self, Screenshot.self, Export.self,
       Get.self, Schema.self,
-      Apply.self, Batch.self, Compact.self, Create.self, Open.self,
+      Apply.self, Batch.self, Import.self, Compact.self, Create.self, Open.self,
     ] + debugCommands)
 
   @Flag(name: .customLong("core-build"), help: "Print the embedded document core build ID.")
@@ -108,6 +108,25 @@ struct Batch: AsyncParsableCommand {
   @Option var ops: String
   @MainActor func run() async throws {
     let ops = ops
+    try await printDocument(document.package) { .batch(.init(id: $0, documentPath: $1, epoch: "", ops: ops)) }
+  }
+}
+/// One `replace` operation from a file: the value at `--path` (the whole document by
+/// default) becomes the file's JSON, applied like `batch`.
+struct Import: AsyncParsableCommand {
+  @OptionGroup var document: DocumentArguments
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
+  @Option var path = "[]"
+  @MainActor func run() async throws {
+    let bytes = try SlopFile.read(file, within: file.deletingLastPathComponent(), maximumBytes: Limits.socketRequest - 4096)
+    // Each is one complete JSON value, so splicing them into the operation cannot change
+    // its shape; the core parses and validates the result.
+    guard let value = String(data: bytes, encoding: .utf8),
+      (try? JSONSerialization.jsonObject(with: bytes, options: .fragmentsAllowed)) != nil
+    else { throw ValidationError("The file must hold one JSON value in UTF-8") }
+    guard (try? JSONSerialization.jsonObject(with: Data(path.utf8))) is [Any]
+    else { throw ValidationError("--path must be a JSON array, such as '[\"rows\"]'") }
+    let ops = #"[{"type":"replace","path":"# + path + #","value":"# + value + "}]"
     try await printDocument(document.package) { .batch(.init(id: $0, documentPath: $1, epoch: "", ops: ops)) }
   }
 }

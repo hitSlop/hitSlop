@@ -29,7 +29,7 @@ export async function fontsSettled(page: Document, limit = 12_000) {
 /** The visible page's lifecycle, called by the native host through `globalThis.__slop`. */
 export async function mountViewLifecycle(options: {
   mount(): DocumentView | Promise<DocumentView>;
-  document: Pick<OwnerDocument<any>, "flush" | "prepareClose" | "cancelClose">;
+  document: Pick<OwnerDocument<any>, "flush" | "undo" | "redo" | "prepareClose" | "cancelClose">;
   theme: Pick<ThemeController, "load">;
   target: HTMLElement;
   recovered?: () => Promise<unknown>;
@@ -60,6 +60,8 @@ export async function mountViewLifecycle(options: {
     /** Theme writes are validated and saved by the native owner; the page only applies them. */
     applyTheme: (overrides: Record<string, string>) => theme.load(overrides),
     flush: () => doc.flush(),
+    undo: () => doc.undo(),
+    redo: () => doc.redo(),
     /** Drains pending page work behind a barrier; the host then saves and closes. */
     prepareClose: async () => {
       await doc.prepareClose();

@@ -6,6 +6,7 @@ mod support;
 use hitslop_core::Document;
 use support::{Edit, View};
 use serde_json::{json, Value};
+use hitslop_core::Origin;
 fn next(rng: &mut u64) -> u64 {
     *rng ^= *rng << 13;
     *rng ^= *rng >> 7;
@@ -121,7 +122,7 @@ fn a_batch_that_changes_nothing_publishes_nothing() {
     let f: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let (sequence, version) = (d.sequence(), d.version());
-    let applied = d.apply_batch(r#"{"intents":[]}"#).unwrap();
+    let applied = d.apply_batch(r#"{"intents":[]}"#, Origin::Page).unwrap();
     assert!(applied.publication.is_none());
     assert_eq!((applied.sequence, d.sequence(), d.version()), (sequence, sequence, version));
 }

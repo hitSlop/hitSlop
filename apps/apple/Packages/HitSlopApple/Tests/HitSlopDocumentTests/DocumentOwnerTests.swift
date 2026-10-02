@@ -102,12 +102,12 @@ import HitSlopTestSupport
       let before = try core.state()
       let batch = try json(["intents": scenario["intents"]!])
       if let expected = scenario["error"] as? String {
-        do { _ = try core.applyBatch(batchJson: batch); Issue.record("Accepted invalid fixture") }
+        do { _ = try core.applyBatch(batchJson: batch, origin: .page); Issue.record("Accepted invalid fixture") }
         catch { #expect(String(describing: error).contains(expected)) }
         #expect(try core.state() == before)
         try store.close()
       } else {
-        _ = try core.applyBatch(batchJson: batch)
+        _ = try core.applyBatch(batchJson: batch, origin: .page)
         let current = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
         #expect(try json(current["value"]!) == json(scenario["after"]!))
         // The saved update replays to the same value; a batch that changed nothing saves nothing.

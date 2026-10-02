@@ -6,6 +6,7 @@ use hitslop_core::store::{self, Mode, Store};
 use hitslop_core::{theme::Change, Document};
 use serde_json::{json, Value};
 use std::time::Instant;
+use hitslop_core::Origin;
 
 fn summary(mut v: Vec<f64>) -> Value {
     v.sort_by(f64::total_cmp);
@@ -17,7 +18,7 @@ fn ms(started: Instant) -> f64 {
 }
 fn edit(doc: &mut Document, rows: usize, round: usize, i: usize) {
     let id = format!("r{}", (i * 7 + round) % rows);
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":id},"text"],"value":format!("Edit {round}.{i}")}]}).to_string()).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":id},"text"],"value":format!("Edit {round}.{i}")}]}).to_string(), Origin::Page).unwrap();
 }
 /// Fills the update log with `count` single-edit saves, returning each save's time.
 fn fill_log(store: &Store, doc: &mut Document, rows: usize, round: usize, count: usize) -> Vec<f64> {

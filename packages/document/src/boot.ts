@@ -93,6 +93,8 @@ function createContext(
     at: ((value: any) => doc.at(value)) as SlopContext["document"]["at"],
     change: <R>(callback: (tx: any) => R) => doc.change(callback),
     flush: () => doc.flush(),
+    undo: () => doc.undo(),
+    redo: () => doc.redo(),
     subscribe: (listener: Parameters<typeof doc.subscribe>[0]) => doc.subscribe(listener),
     observe: (read: () => void) => doc.observe(read),
   });

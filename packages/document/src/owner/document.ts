@@ -353,6 +353,13 @@ export class OwnerDocument<N extends ObjectNode> {
   /** Drains bindings, queued writes and attachment work, then saves once. A barrier
    * never joins a flush that already passed its drain point. */
   private async drainAndSave(): Promise<void> {
+    await this.drain();
+    // The owner saves; the window shows save failures, and a failed save rejects here.
+    await this.transport.flush();
+  }
+  /** Sends unsent text, waits for queued writes and attachment work, and commits what
+   * is only shown locally: everything the person sees becomes a change. */
+  private async drain(): Promise<void> {
     // Assigned values commit below, with the other previews.
     for (const timer of this.settling.values()) clearTimeout(timer);
     this.settling.clear();
@@ -371,12 +378,29 @@ export class OwnerDocument<N extends ObjectNode> {
       }
     }
     while (this.pending.size) await Promise.allSettled([...this.pending]);
-    // The owner saves; the window shows save failures, and a failed save rejects here.
-    await this.transport.flush();
   }
   flush(): Promise<void> {
     if (this.collecting) throw new Error("Cannot flush inside change()");
     return this.drainAndSave();
+  }
+  /** Edit ▸ Undo: the last step, the person's or an agent's, after what the person sees
+   * is sent. Resolves once `current` shows the result. */
+  undo(): Promise<void> {
+    return this.history("undo");
+  }
+  redo(): Promise<void> {
+    return this.history("redo");
+  }
+  private async history(direction: "undo" | "redo"): Promise<void> {
+    if (this.collecting) throw new Error(`Cannot ${direction} inside change()`);
+    if (this.transport.readOnly) throw readOnly();
+    if (this.blocked) throw barrier();
+    await this.drain();
+    // A barrier waits for the request, so close saves what it changed.
+    await this.track((async () => {
+      const { sequence } = await this.transport[direction]();
+      await this.store.reached(sequence);
+    })());
   }
   /** Close and capture: refuse new work, drain what is pending, then save. Inputs stay
    * enabled so focus and composition survive a barrier that is cancelled. */
@@ -419,6 +443,7 @@ export class OwnerDocument<N extends ObjectNode> {
         readOnly: () => !!this.transport.readOnly,
         track: (work) => void this.track(work),
         report: (error) => this.report(error),
+        undo: (redo) => void (redo ? this.redo() : this.undo()).catch((error) => this.report(error)),
       });
       const drain = async () => {
         await binding.commit();

@@ -66,7 +66,7 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, writer: 
     }
 }
 /// Stores a validated row with its ID.
-fn insert_row(
+pub(super) fn insert_row(
     list: &LoroMovableList,
     item: &Node,
     index: usize,
@@ -88,7 +88,7 @@ pub(crate) struct Rows<'a> {
     lists: &'a HashMap<ContainerID, ListState>,
     touched: HashMap<ContainerID, Option<Vec<String>>>,
 }
-enum Change {
+pub(super) enum Change {
     Inserted(usize, String),
     Removed(usize),
     Moved(usize, usize),
@@ -136,7 +136,7 @@ impl<'a> Rows<'a> {
         }
     }
     /// Records a change already applied to `list`.
-    fn changed(&mut self, list: &LoroMovableList, change: Change) {
+    pub(super) fn changed(&mut self, list: &LoroMovableList, change: Change) {
         match self.touched.get_mut(&list.id()) {
             Some(Some(ids)) => match change {
                 Change::Inserted(index, id) => ids.insert(index, id),
@@ -272,11 +272,17 @@ pub(super) fn execute(
     doc: &LoroDoc,
     schema: &Node,
     op: &Intent,
+    issues: &[Issue],
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
+    // Replace resolves its own path, which may be empty (the whole document).
+    if let Intent::Replace { path, value } = op {
+        return replace::replace(doc, schema, path, value, issues, ids, rows);
+    }
     let at = resolve(doc, schema, op.path(), rows)?;
     match op {
+        Intent::Replace { .. } => unreachable!("handled above"),
         Intent::Set { value, .. } => {
             let kind = unwrap_optional(&at.node);
             // One scalar-list element: last writer wins.

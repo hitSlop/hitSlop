@@ -4,6 +4,7 @@
 use hitslop_core::Document;
 use serde_json::{json, Value};
 use std::time::Instant;
+use hitslop_core::Origin;
 fn p95(mut v: Vec<f64>) -> f64 {
     v.sort_by(f64::total_cmp);
     v[(v.len() * 95 / 100).min(v.len() - 1)]
@@ -24,7 +25,7 @@ fn main() {
             } else {
                 json!({"type":"set","path":["rows",{"id":id},"text"],"value":format!("x{k} task")})
             };
-            peer.apply_batch(&json!({"intents":[op]}).to_string()).unwrap();
+            peer.apply_batch(&json!({"intents":[op]}).to_string(), Origin::Page).unwrap();
         }
         doc.import(&peer.export_since(&base).unwrap()).unwrap();
     }
@@ -36,7 +37,7 @@ fn main() {
     let checkpoint = doc.checkpoint().unwrap();
     for length in [1_000, 10_000, 100_000] {
         let mut doc = Document::open(&schema, &checkpoint, &[]).unwrap();
-        doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":"x".repeat(length)}]}).to_string()).unwrap();
+        doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":"x".repeat(length)}]}).to_string(), Origin::Page).unwrap();
         let (mut base, mut from) = (doc.version(), text(&doc));
         let (mut fast, mut slow, mut sets) = (vec![], vec![], vec![]);
         for i in 0..60 {
@@ -44,7 +45,7 @@ fn main() {
             let caret = to.encode_utf16().count();
             let concurrent = i % 2 == 1;
             if concurrent {
-                doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":format!("c{from}")}]}).to_string()).unwrap();
+                doc.apply_batch(&json!({"intents":[{"type":"set","path":path,"value":format!("c{from}")}]}).to_string(), Origin::Page).unwrap();
             }
             let request = json!({"base":base,"path":path,"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string();
             let started = Instant::now();
@@ -57,7 +58,7 @@ fn main() {
         for i in 0..30 {
             let request = json!({"intents":[{"type":"set","path":path,"value":format!("{}{}", "x".repeat(length), i)}]}).to_string();
             let started = Instant::now();
-            doc.apply_batch(&request).unwrap();
+            doc.apply_batch(&request, Origin::Page).unwrap();
             sets.push(started.elapsed().as_secs_f64() * 1e3);
         }
         println!("{}", json!({"characters":length,"rows":5000,"peers":21,"checkpointBytes":doc.checkpoint().unwrap().len(),"p95MS":{"fast":p95(fast),"branchSlow":p95(slow),"set":p95(sets)}}));

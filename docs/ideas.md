@@ -61,10 +61,10 @@ a person and their agent edit the same live document. What's missing is the slop
   Undo", and Undo reverts that origin's change.
 - **Why:** the manifesto's "who changed what", at the size of one document. Trust is what
   lets people hand an agent their things.
-- **Builds on:** Loro commit messages, and an `UndoManager` scoped by origin, which the
-  collaboration plan in [Direction](roadmap.md#later) already expects. `doc.change` takes
-  no message today.
-- **Contract change:** undo UI is deferred.
+- **Builds on:** Loro commit messages. Agent commits already carry the message `agent`,
+  and Edit ▸ Undo already reverts an agent's edits, including those made while the
+  document was closed. What remains is naming the agent, an optional message (`doc.change`
+  takes none today), and showing them in the window.
 
 ### `slop watch` and `slop mcp`
 
@@ -195,8 +195,8 @@ a person and their agent edit the same live document. What's missing is the slop
     made after the other's trimmed start, and closing trims to the last session at most.
 - **SDK additions (additive):**
   - `presence`;
-  - origin-scoped `undo` and `redo`, which replace authored undo stacks such as Pixel
-    Art's (an authored stack would revert other people's edits);
+  - selective undo that preserves remote changes; today's raw replica imports clear
+    undo/redo history, so they cannot be silently rolled back;
   - `change(fn, { message })` for attribution;
   - base versions on index-addressed scalar-list writes, so a remote insert cannot shift
     a `set(index)`.

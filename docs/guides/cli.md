@@ -33,16 +33,18 @@ npm availability; see [releasing](releasing.md).
 | `remove` | `{"type":"remove","path":[...],"index":0,"count":1}` | Scalar lists; `count` defaults to 1 |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
+| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter adds the difference, and an optional or record entry the value leaves out is removed. Refused where it would overwrite a stored anomaly |
 
-There is no JSON import. To move data between documents, map the source's `get` output to
-one `batch` of `insert` and `set` operations, supplying row `id`s so a retried batch is
-refused as a duplicate.
+`slop import PATH FILE [--path JSON]` sends one `replace` with the file's JSON (up to just
+under 1 MiB), so `slop get` output, edited or from another document of the same
+template, can be written back. To move data between documents of different templates,
+map it to one `batch`, supplying row `id`s so a retried batch is refused as a duplicate.
 
 ## Ownership and retries
 
 The permanent `state/writer.lock` decides ownership. Closed editing runs the native owner in the helper process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. A small `hello` handshake returns the owner's epoch without a document snapshot; ordinary reads need no handshake.
 
-Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
+Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits too, the consecutive ones as one step, including edits made while the document was closed. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
 ## Helper discovery and identity
 

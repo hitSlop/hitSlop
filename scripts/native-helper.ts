@@ -57,6 +57,25 @@ try {
     JSON.stringify({ type: "set", path: ["title"], value: "Relocated native edit" }),
   ]);
   assert.equal(JSON.parse(await run(["get", document])).title, "Relocated native edit");
+  // Import replaces data with a file's value as its differences, keeping row IDs.
+  const state = JSON.parse(await run(["get", document]));
+  const tasks = [{ text: "Imported", done: false, archived: false }, ...state.tasks.map((task: any) => ({ ...task, done: true }))];
+  const file = join(folder, "import.json");
+  await writeFile(file, JSON.stringify({ ...state, tasks }));
+  await run(["import", document, file]);
+  const imported = JSON.parse(await run(["get", document]));
+  assert.deepEqual(imported.tasks.slice(1).map((task: any) => task.$id), state.tasks.map((task: any) => task.$id));
+  assert.ok(imported.tasks.every((task: any) => task.done || task.text === "Imported"));
+  await writeFile(file, JSON.stringify("Imported title"));
+  await run(["import", document, file, "--path", '["title"]']);
+  assert.equal(JSON.parse(await run(["get", document])).title, "Imported title");
+  await writeFile(file, '"one value" "and another"');
+  await run(["import", document, file], "one JSON value");
+  await writeFile(file, JSON.stringify("x"));
+  await run(["import", document, file, "--path", '"title"'], "must be a JSON array");
+  await writeFile(file, JSON.stringify({ title: 5 }));
+  await run(["import", document, file], "type_mismatch");
+  assert.equal(JSON.parse(await run(["get", document])).title, "Imported title", "a refused import changes nothing");
   for (const format of ["png", "pdf"]) {
     const output = join(folder, "export." + format);
     await run(["export", document, "--format", format, "--output", output]);

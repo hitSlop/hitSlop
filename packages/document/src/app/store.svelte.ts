@@ -72,6 +72,8 @@ function createAdapter(doc: SlopContext["document"]) {
     at: doc.at,
     change: (callback) => doc.change(callback),
     flush: () => doc.flush(),
+    undo: () => doc.undo(),
+    redo: () => doc.redo(),
   };
   return { document, dispose };
 }

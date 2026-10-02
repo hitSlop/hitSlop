@@ -46,14 +46,10 @@
 
   let tool = $state<Tool>("pencil");
   let painting = $state(false);
-  let undoStack = $state<string[][]>([]);
   const stroke = new Map<number, string>();
   const paletteId = $derived(isPaletteId(doc.current.paletteId) ? doc.current.paletteId : "gameboy");
   const palette = $derived(PALETTES[paletteId]);
 
-  function snapshot(): void {
-    undoStack = [...undoStack.slice(-29), [...doc.current.pixels]];
-  }
   function previewCell(index: number, color: string): void {
     if ((doc.current.pixels[index] ?? "") === color) return;
     stroke.set(index, color);
@@ -113,7 +109,6 @@
     if (index === null) return;
     if (stroke.size) commitStroke();
     grid.setPointerCapture(event.pointerId);
-    snapshot();
     if (tool === "fill") {
       fill(index, doc.current.selectedColor);
       return;
@@ -131,18 +126,10 @@
     if (!painting && stroke.size === 0) return;
     commitStroke();
   }
+  // The same undo as Edit ▸ Undo: the person's last change, including a stroke in progress.
   function undo(): void {
     if (stroke.size) commitStroke();
-    const previous = undoStack.at(-1);
-    if (!previous) return;
-    undoStack = undoStack.slice(0, -1);
-    const current = doc.current.pixels;
-    doc.change((tx) => {
-      for (let index = 0; index < CELL_COUNT; index += 1) {
-        const color = previous[index] ?? "";
-        if ((current[index] ?? "") !== color) tx.fields.pixels.set(index, color);
-      }
-    });
+    void doc.undo();
   }
   function setPalette(id: string): void {
     if (!isPaletteId(id)) return;
@@ -211,7 +198,7 @@
       <ToggleGroup.Item value="eraser" class="tool" aria-label="Eraser"><Eraser size={16} /></ToggleGroup.Item>
       <ToggleGroup.Item value="fill" class="tool" aria-label="Fill"><PaintBucket size={16} /></ToggleGroup.Item>
     </ToggleGroup.Root>
-    <Button.Root type="button" class="tool" onclick={undo} disabled={undoStack.length === 0} aria-label="Undo">
+    <Button.Root type="button" class="tool" onclick={undo} aria-label="Undo">
       <Undo2 size={16} />
     </Button.Root>
     <Button.Root type="button" class="tool exportTool" onclick={exportPng} aria-label="Export PNG">

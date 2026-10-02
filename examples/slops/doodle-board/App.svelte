@@ -44,6 +44,8 @@
   // Drawn locally: the stroke in progress, then each finished one until its write lands.
   let drawn = $state<Stroke | undefined>();
   let pending = $state.raw<Stroke[]>([]);
+  // Erased locally until the gesture ends, so one gesture is one undo step.
+  let erasing = $state.raw(new Set<string>());
   let hitContext: CanvasRenderingContext2D | null = null;
   let frame = 0;
   let notice = $state("");
@@ -122,6 +124,10 @@
       pending = [...pending, stroke];
       // Writes resolve once the stroke is in the document, so the overlay never flickers.
       void doc.change(tx => { tx.fields.strokes.insert(stroke); }).finally(() => { pending = pending.filter(p => p !== stroke); });
+    } else if (gesture.erased.size) {
+      const erased = gesture.erased;
+      void doc.change(tx => { for (const id of erased) if (doc.current.strokes.some(stroke => stroke.$id === id)) tx.fields.strokes.remove(id); })
+        .finally(() => { erasing = new Set([...erasing].filter(id => !erased.has(id))); });
     }
     drawn = undefined;
     active = undefined;
@@ -139,8 +145,8 @@
       if (hit && !active.erased.has(hit.id) && doc.current.strokes.some(stroke => stroke.$id === hit.id)) removed.add(hit.id);
     }
     if (removed.size) {
-      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); });
       for (const id of removed) active.erased.add(id);
+      erasing = new Set([...erasing, ...removed]);
     }
   }
   function start(event: PointerEvent) {
@@ -228,7 +234,7 @@
     <section bind:this={stage} class="doodle-stage" aria-label="Drawing area">
       <div class="doodle-board" style:aspect-ratio={`${board.width} / ${board.height}`} style:width={`min(100cqw, ${board.width / board.height * 100}cqh)`}>
         <svg bind:this={svg} class="doodle-canvas" class:doodle-erasing={tool === "eraser"} viewBox={`0 0 ${board.width} ${board.height}`} aria-label={`Whiteboard, ${board.label.toLowerCase()}. Draw with a pointer. P for pen, E for eraser.`} role="img" onpointerdown={start} onpointermove={move} onpointerup={end} onpointercancel={end} onlostpointercapture={end}>
-          {#each doc.current.strokes as stroke (stroke.$id)}<path data-stroke={stroke.$id} d={stroke.geometry} fill={stroke.color} />{/each}
+          {#each doc.current.strokes as stroke (stroke.$id)}{#if !erasing.has(stroke.$id)}<path data-stroke={stroke.$id} d={stroke.geometry} fill={stroke.color} />{/if}{/each}
           {#each [...pending, ...(drawn ? [drawn] : [])] as stroke}<path d={stroke.geometry} fill={stroke.color} />{/each}
         </svg>
         {#if !doc.current.strokes.length && !pending.length && !drawn}<div class="doodle-invitation" aria-hidden="true"><span class="doodle-invitation-star">✳</span><p>Make a little<br /><em>something.</em></p><span>No wrong lines here.</span></div>{/if}
@@ -253,7 +259,7 @@
         <button class="doodle-eraser" aria-label="Eraser" aria-pressed={tool === "eraser"} onclick={() => { finish(); tool = tool === "eraser" ? "pen" : "eraser"; }}><span><Eraser size={23} strokeWidth={1.8} /></span><small>Eraser</small></button>
         <AlertDialog.Root bind:open={clearDialog}>
           <AlertDialog.Trigger class="doodle-clear" disabled={!doc.current.strokes.length} onclick={finish}><Trash2 size={17} /><span>Clear board</span></AlertDialog.Trigger>
-          <AlertDialog.Portal><AlertDialog.Overlay class="doodle-dialog-overlay" /><AlertDialog.Content class="doodle-dialog"><Sparkles size={26} /><AlertDialog.Title>Make room for something new?</AlertDialog.Title><AlertDialog.Description>This clears every stroke, including anything tucked outside the board. It can’t be undone.</AlertDialog.Description><div class="doodle-dialog-actions"><AlertDialog.Cancel>Keep drawing</AlertDialog.Cancel><AlertDialog.Action onclick={clearBoard}>Clear board</AlertDialog.Action></div></AlertDialog.Content></AlertDialog.Portal>
+          <AlertDialog.Portal><AlertDialog.Overlay class="doodle-dialog-overlay" /><AlertDialog.Content class="doodle-dialog"><Sparkles size={26} /><AlertDialog.Title>Make room for something new?</AlertDialog.Title><AlertDialog.Description>This clears every stroke, including anything tucked outside the board. Undo (⌘Z) brings them back.</AlertDialog.Description><div class="doodle-dialog-actions"><AlertDialog.Cancel>Keep drawing</AlertDialog.Cancel><AlertDialog.Action onclick={clearBoard}>Clear board</AlertDialog.Action></div></AlertDialog.Content></AlertDialog.Portal>
         </AlertDialog.Root>
       </div>
       <div class="doodle-tray-foot"><span>{tool === "eraser" ? "Touch a line to erase the whole stroke." : "A color, a line, a little possibility."}</span><span class="doodle-key-hint">P <i>pen</i> · E <i>eraser</i> · T <i>tools</i></span></div>

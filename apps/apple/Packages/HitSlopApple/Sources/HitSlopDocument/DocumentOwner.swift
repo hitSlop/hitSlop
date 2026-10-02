@@ -35,6 +35,9 @@ public final class DocumentOwner: @unchecked Sendable {
   var onSaveStatus: (@Sendable (DocumentSaveStatus) -> Void)?
   /// New theme overrides (JSON) after a theme command changed them.
   var onTheme: (@Sendable (String) -> Void)?
+  /// Whether Edit ▸ Undo and Redo have anything to do, sent when that changes.
+  var onUndoState: (@Sendable (UndoAvailability) -> Void)?
+  private var undoAvailability = UndoAvailability()
   /// The core's publication sequence, and the last one the durable state covers.
   private var sequence = 0
   private var savedSequence = 0
@@ -165,20 +168,45 @@ public final class DocumentOwner: @unchecked Sendable {
   func open(view: String) async throws -> Opened {
     try await enqueue { try self.openOnQueue(view: view) }
   }
-  private func applyOnQueue(batch: String, epoch: String?, view: String?) throws -> Applied {
+  private func applyOnQueue(batch: String, epoch: String?, view: String?, origin: EditOrigin) throws -> Applied {
     try requireEditable()
     try requireCurrent(epoch: epoch, view: view)
-    let result = try core.applyBatch(batchJson: batch)
+    defer { refreshUndo() }
+    let result = try core.applyBatch(batchJson: batch, origin: origin)
     // A batch that changed nothing publishes nothing and leaves the document clean.
     if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
     return Applied(sequence: Int(result.sequence), ids: result.ids)
   }
-  public func apply(batch: String, epoch: String? = nil, view: String? = nil) async throws -> Applied {
-    try await enqueue { try self.applyOnQueue(batch: batch, epoch: epoch, view: view) }
+  /// Socket and CLI edits are an agent's: tagged so a later window can still undo them.
+  public func apply(batch: String, epoch: String? = nil, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
+    try await enqueue { try self.applyOnQueue(batch: batch, epoch: epoch, view: view, origin: origin) }
+  }
+  private func historyOnQueue(redo: Bool, view: String?) throws -> Int {
+    try requireEditable()
+    try requireCurrent(epoch: nil, view: view)
+    defer { refreshUndo() }
+    let result = try redo ? core.redo() : core.undo()
+    if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
+    return Int(result.sequence)
+  }
+  /// Edit ▸ Undo or Redo without a page to send its unsent edits first. Returns the
+  /// publication sequence, unchanged when there was nothing to do.
+  public func undo(redo: Bool = false) async throws -> Int {
+    try await enqueue { try self.historyOnQueue(redo: redo, view: nil) }
+  }
+  /// Sends the current undo state: a document can open with an agent's edits to undo.
+  func publishUndoState() { queue.async { self.refreshUndo() } }
+  private func refreshUndo() {
+    guard let state = try? core.undoState() else { return }
+    let next = UndoAvailability(canUndo: state.canUndo, canRedo: state.canRedo)
+    guard next != undoAvailability else { return }
+    undoAvailability = next
+    onUndoState?(next)
   }
   private func textOnQueue(_ request: String, view: String?) throws -> TextEdit {
     try requireEditable()
     try requireCurrent(epoch: nil, view: view)
+    defer { refreshUndo() }
     let result = try core.editText(requestJson: request)
     if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
     return TextEdit(sequence: Int(result.sequence), authored: result.authored,
@@ -196,8 +224,10 @@ public final class DocumentOwner: @unchecked Sendable {
         try self.requireCurrent(epoch: nil, view: view)
         switch command {
         case .open: reply(.success(.opened(try self.openOnQueue(view: view))))
-        case .apply(let batch): reply(.success(.applied(try self.applyOnQueue(batch: batch, epoch: nil, view: view))))
+        case .apply(let batch): reply(.success(.applied(try self.applyOnQueue(batch: batch, epoch: nil, view: view, origin: .page))))
         case .text(let request): reply(.success(.text(try self.textOnQueue(request, view: view))))
+        case .undo, .redo:
+          reply(.success(.history(try self.historyOnQueue(redo: { if case .redo = command { true } else { false } }(), view: view))))
         case .flush: self.addWaiter(checkpoint: false) { reply($0.map { .flushed }) }
         }
       } catch {
@@ -348,6 +378,7 @@ public final class DocumentOwner: @unchecked Sendable {
         let sequence = Int(try restored.sequence())
         self.rejectWaiters(OwnerReplaced())
         self.core = restored
+        self.refreshUndo()
         self.invalidated = false
         self.writing = false
         self.view = nil

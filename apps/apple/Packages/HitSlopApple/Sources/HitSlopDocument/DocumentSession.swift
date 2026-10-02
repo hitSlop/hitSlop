@@ -82,6 +82,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   }
   /// The window that shows this session.
   public weak var delegate: DocumentSessionDelegate?
+  /// Whether Edit ▸ Undo and Redo have anything to do in this document.
+  public private(set) var undoAvailability = UndoAvailability()
   let owner: DocumentOwner
   private var server: SocketServer?
   /// The attached page's token (see `makeWebView`).
@@ -136,6 +138,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           arguments: ["overrides": overrides], in: nil, contentWorld: .page)
       }
     }
+    owner.onUndoState = { [weak self] state in
+      DispatchQueue.main.async { self?.undoAvailability = state }
+    }
+    owner.publishUndoState()
     owner.onSaveStatus = { [weak self] status in
       DispatchQueue.main.async {
         guard let self else { return }
@@ -329,7 +335,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       replyHandler(nil, "Invalid bridge request")
       return
     }
-    if let method = args["method"] as? String, ["open", "apply", "text", "flush"].contains(method) {
+    if let method = args["method"] as? String, ["open", "apply", "text", "flush", "undo", "redo"].contains(method) {
       owner.admitPage(args) { replyHandler($0, nil) }
       return
     }
@@ -413,6 +419,18 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       if let failure = try? await owner.currentSaveFailure() { throw failure }
       throw error
     }
+  }
+
+  /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
+  /// them; otherwise the owner undoes directly.
+  public func undo(redo: Bool = false) async throws {
+    guard isReady, !rendererDead, !closed else {
+      _ = try await owner.undo(redo: redo)
+      return
+    }
+    _ = try await webView.callAsyncJavaScript(
+      redo ? "await globalThis.__slop.redo(); return true" : "await globalThis.__slop.undo(); return true",
+      arguments: [:], in: nil, contentWorld: .page)
   }
 
   /// Retries saving on the owner directly; works whether or not the page is alive.

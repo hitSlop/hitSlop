@@ -196,6 +196,52 @@ final class StorageGate: @unchecked Sendable {
     #expect(try savedHits(root) == 3)
   }
 
+  // Failure: an undo changed the document without saving it. Oracle: the saved bytes,
+  // read back without the owner.
+  @Test func undoSavesLikeAnEdit() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let states = Locked<[UndoAvailability]>([])
+    owner.onUndoState = { state in states.modify { $0.append(state) } }
+    _ = try await owner.apply(batch: increment)
+    _ = try await owner.apply(batch: increment, origin: .page)
+    try await owner.flush()
+    #expect(try savedHits(root) == 6)
+    _ = try await owner.undo()
+    try await owner.flush()
+    #expect(try savedHits(root) == 3)
+    _ = try await owner.undo()
+    try await owner.flush()
+    #expect(try savedHits(root) == 0, "the agent's edit is undone too")
+    #expect(states.value == [UndoAvailability(canUndo: true, canRedo: false), UndoAvailability(canUndo: true, canRedo: true),
+      UndoAvailability(canUndo: false, canRedo: true)])
+    try await owner.close()
+  }
+
+  // Failure: an agent's edit to a closed document lived only in the CLI process's undo,
+  // so the next window could not undo it. Oracle: the saved bytes.
+  @Test func aClosedAgentEditIsUndoneFromTheNextSession() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let agent = try DocumentOwner(package: SlopPackage(rootURL: root))
+    _ = try await agent.apply(batch: increment)
+    try await agent.close()
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let states = Locked<[UndoAvailability]>([])
+    owner.onUndoState = { state in states.modify { $0.append(state) } }
+    owner.publishUndoState()
+    #expect(try savedHits(root) == 3)
+    _ = try await owner.undo()
+    try await owner.flush()
+    #expect(try savedHits(root) == 0)
+    _ = try await owner.undo(redo: true)
+    try await owner.flush()
+    #expect(try savedHits(root) == 3)
+    #expect(states.value.first == UndoAvailability(canUndo: true, canRedo: false))
+    try await owner.close()
+  }
+
   // Failure: a document kept every edit it ever saw. Oracle: closing a session that
   // edited a large document leaves its saved state smaller, holding only that session.
   @Test func closingALargeEditedDocumentTrimsItsHistory() async throws {

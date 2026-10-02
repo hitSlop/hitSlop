@@ -79,6 +79,10 @@ export interface SlopDocument<N extends ObjectNode> {
   /** Durability barrier: sends unsent text, waits for pending writes, then for storage.
    * Rejects when the save fails; the host shows save failures and offers retry. */
   flush(): Promise<void>;
+  /** Edit ▸ Undo: the last step, the person's or an agent's. Sends unsent text first;
+   * resolves once `current` shows the result. */
+  undo(): Promise<void>;
+  redo(): Promise<void>;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). One observer at a time. */

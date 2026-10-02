@@ -20,6 +20,9 @@ export interface OwnerTransport {
   apply(batch: Batch): Promise<{ sequence: number; ids: string[] }>;
   text(request: EditText): Promise<TextReply>;
   flush(): Promise<void>;
+  /** Edit ▸ Undo and Redo; resolves with the sequence to wait for. */
+  undo(): Promise<{ sequence: number }>;
+  redo(): Promise<{ sequence: number }>;
   /** Receives ordered host pushes. Set once, before `open`. */
   onPush(receiver: (pushes: PagePush[]) => void): void;
 }
@@ -34,6 +37,8 @@ const replies: Record<PageRequest["method"], (reply: any) => boolean> = {
   apply: (r) => count(r.sequence) && Array.isArray(r.ids),
   text: (r) => count(r.sequence) && typeof r.authored === "string" && count(r.selectionStart) && count(r.selectionEnd),
   flush: () => true,
+  undo: (r) => count(r.sequence),
+  redo: (r) => count(r.sequence),
 };
 
 /**
@@ -70,6 +75,8 @@ export function nativeTransport(id: string, view: string, readOnly = false): Own
     flush: async () => {
       await call({ method: "flush" });
     },
+    undo: async () => ({ sequence: (await call({ method: "undo" })).sequence }),
+    redo: async () => ({ sequence: (await call({ method: "redo" })).sequence }),
     onPush(receiver) {
       // Swift delivers pushes in order through one awaited call per batch.
       (globalThis as any).__hitslop = { publish: (pushes: unknown) => {
@@ -132,6 +139,16 @@ export function wasmTransport(core: any, id: string = crypto.randomUUID()): Owne
       };
     },
     flush: async () => {},
+    undo: async () => {
+      const applied = run(() => core.undo());
+      publish(applied.publication);
+      return { sequence: applied.sequence };
+    },
+    redo: async () => {
+      const applied = run(() => core.redo());
+      publish(applied.publication);
+      return { sequence: applied.sequence };
+    },
     onPush(next) {
       receiver = next;
     },

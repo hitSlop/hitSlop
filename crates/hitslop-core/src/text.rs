@@ -119,6 +119,16 @@ fn window(old: &[char], new: &[char]) -> Option<Vec<TextDelta>> {
 
 impl Document {
     pub fn edit_text(&mut self, request: &str) -> Result<TextEdit> {
+        let before = self.doc.state_frontiers();
+        match self.edit_text_inner(request, &before) {
+            Ok(edit) => Ok(edit),
+            Err(error) => {
+                self.abort(&before)?;
+                Err(error)
+            }
+        }
+    }
+    fn edit_text_inner(&mut self, request: &str, before: &Frontiers) -> Result<TextEdit> {
         let r: wire::EditText = parse(request)?;
         // Every path validates the base first: an unknown operation must never reach Loro.
         let (base_at, base_vv) = decode_version(&self.doc, &r.base)?;
@@ -143,6 +153,9 @@ impl Document {
             put(&map, &key, &Node::Text {}, &json!(r.to), &writer(&self.doc))?;
             self.doc.commit();
             let publication = self.publish()?;
+            if publication.is_some() {
+                self.record_typing(before.clone(), &r.path, &r.from, &r.to, r.selectionEnd);
+            }
             return Ok(TextEdit {
                 sequence: self.sequence,
                 authored: self.version(),
@@ -178,7 +191,8 @@ impl Document {
             });
         }
         let delta = script(&r.from, &r.to, selection[1]);
-        let (authored, positions) = if current.to_string() == r.from {
+        let concurrent = current.to_string() != r.from;
+        let (authored, positions) = if !concurrent {
             // Nearly every keystroke: nothing else changed this field since `base`.
             current.apply_delta(&delta).map_err(engine)?;
             self.doc.commit();
@@ -189,6 +203,8 @@ impl Document {
             if !base_vv.includes_vv(&self.floor) {
                 return Err(err(Code::StaleBase, "Version precedes the saved history"));
             }
+            // Although merged as an import, this is the person's edit. Its step starts
+            // at the owner's current version, not the page's older base.
             let branch = branch_at(&self.doc, &base_at)?;
             let text = text_at(&branch, &self.schema, &r.path, &HashMap::new())?;
             if text.id() != current.id() {
@@ -217,6 +233,14 @@ impl Document {
             (version_token(&branch.oplog_frontiers()), positions)
         };
         let publication = self.publish()?;
+        if publication.is_some() {
+            if concurrent {
+                // A concurrent merge ends the run and is its own undo step.
+                self.record(before.clone(), None, false);
+            } else {
+                self.record_typing(before.clone(), &r.path, &r.from, &r.to, r.selectionEnd);
+            }
+        }
         Ok(TextEdit {
             sequence: self.sequence,
             authored,
