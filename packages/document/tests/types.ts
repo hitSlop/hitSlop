@@ -100,3 +100,25 @@ export async function collectionTypes(doc: typeof collections) {
   await doc.fields.notes.clear();
   return { count, pixel, notes };
 }
+
+export function transactionCapabilities(doc: typeof scalars, lists: typeof collections) {
+  void doc.change(tx => {
+    // @ts-expect-error Previews are live-only, never part of a collector.
+    tx.fields.amount.preview(2);
+    // @ts-expect-error Binding assignments are live-only.
+    tx.fields.amount.value = 2;
+  });
+  void lists.change(tx => {
+    // @ts-expect-error Scalar-list previews are also live-only.
+    tx.fields.pixels.preview(0, "red");
+  });
+}
+
+// Error narrowing is public; its constructor belongs to the separately bundled shell.
+import { DocumentError, isDocumentError, isRejected } from "../src/schema";
+function documentErrors(error: unknown) {
+  if (isDocumentError(error)) { const typed: DocumentError = error; void typed.code; }
+  if (isRejected(error)) { const code: "rejected" = error.code; void code; }
+  // @ts-expect-error The public DocumentError is a type, not a constructor.
+  new DocumentError("rejected", "bad");
+}

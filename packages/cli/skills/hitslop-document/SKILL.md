@@ -16,15 +16,18 @@ A failed transport can have an unknown outcome. Run slop get before issuing anot
 
 get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export captures the live selected view when open and the initial view when closed; export output must be outside the source package.
 
-Use `slop theme get PATH` to inspect public token defaults and overrides.
-Change declared tokens with `slop theme set PATH --values '{"accent":"#123456"}'`;
-reset one with `slop theme reset PATH --token accent`, or omit the token to reset
-all. These commands preserve the writer lock and update the open view.
-`assets/theme.json` declares tokens and defaults; the host saves document overrides
-in `state/document.sqlite`. Never edit either file directly or patch compiled CSS in
-`assets/`. Layout changes require editing the authoring source and rebuilding.
-After an uncertain result inspect
-`theme get` before another change. PNG/PDF exports include the effective theme.
+A theme is a palette of declared colors. Use `slop theme get PATH` to inspect the
+template's colors, the document's changes and the effective palette. Change declared
+colors with `slop theme set PATH --values '{"accent":"#123456"}'` (lowercase `#rrggbb`,
+or `#rrggbbaa` when translucent); reset one with `slop theme reset PATH --token accent`,
+or omit the token to reset all. `slop theme export PATH [--output FILE]` writes the full
+palette as a theme file, and `slop theme import PATH FILE` replaces the palette with a
+file made for the same template. These commands preserve the writer lock and update the
+open view and its theme panel. `assets/theme.json` declares the colors and defaults; the
+host saves document changes in `state/document.sqlite`. Never edit either file directly
+or patch compiled CSS in `assets/`. Fonts and layout require editing the authoring
+source and rebuilding. After an uncertain result inspect `theme get` before another
+change. PNG/PDF exports include the effective theme.
 
 Use `slop attachments list PATH`, `slop attachments import PATH FILE`, and
 `slop attachments export PATH ID --output FILE`. Import returns a reference with
@@ -32,3 +35,9 @@ id/name/mimeType/byteLength; store it in the app schema through apply/batch.
 Never write `state/attachments` yourself. Limits are 10 MiB per file, 100 MiB and
 256 unique files per document. Removing a reference retains its blob. Export
 refuses existing destinations. Inspect attachments after an uncertain import.
+
+The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
+Catch semantic refusals with `isRejected(error)` and other document outcomes with
+`isDocumentError(error)`, not `instanceof`. Transaction handles collect writes only;
+use live handles for previews and bound `.value` assignments. Explicit `flush()`
+remains available.

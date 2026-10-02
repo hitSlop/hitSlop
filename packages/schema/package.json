@@ -6,9 +6,10 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
     "./socket": "./src/socket.ts",
-    "./bridge": "./src/bridge.ts",
     "./validation": "./src/validation.ts",
-    "./owner": "./src/owner.ts"
+    "./core": "./src/core.ts",
+    "./page": "./src/page.ts",
+    "./values": "./src/values.ts"
   },
   "dependencies": {
     "typebox": "1.3.32"
@@ -23,7 +24,7 @@
   "engines": {
     "bun": ">=1.4.2"
   },
-  "description": "Canonical manifest, bridge, socket and owner contracts for hitSlop.",
+  "description": "Canonical manifest, core, page and socket contracts for hitSlop.",
   "license": "MIT",
   "homepage": "https://hitslop.com",
   "repository": {

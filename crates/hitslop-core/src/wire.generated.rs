@@ -29,10 +29,13 @@ impl std::fmt::Display for Code {
 }
 /// The CSS `border-radius` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
-/// Effective theme JSON, in UTF-8 bytes.
+/// Effective theme JSON, and a theme file, in UTF-8 bytes.
 pub(crate) const THEME_LIMIT: usize = 65536;
-/// A theme value, in UTF-16 units, and the token prefix the host reserves.
-pub(crate) const THEME_VALUE_LIMIT: usize = 4096;
+pub(crate) const THEME_FILE_LIMIT: usize = 66560;
+/// The longest theme token name, the most tokens a palette declares, and the token
+/// prefix the host reserves.
+pub(crate) const THEME_NAME_LIMIT: usize = 64;
+pub(crate) const THEME_TOKENS: usize = 256;
 pub(crate) const THEME_RESERVED_PREFIX: &str = "window-";
 /// The lowercase Crockford alphabet of minted and derived row IDs.
 pub(crate) const ID_ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
@@ -116,6 +119,10 @@ impl Intent {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Batch { pub intents: Vec<Intent> }
+/// A shared theme file: the template it was made for and its palette.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeFile { pub template: String, pub values: std::collections::BTreeMap<String, String> }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

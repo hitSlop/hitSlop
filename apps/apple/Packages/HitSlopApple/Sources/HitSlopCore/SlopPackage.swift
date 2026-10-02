@@ -17,8 +17,10 @@ public struct SlopPackage: Sendable {
   public let rootURL: URL
   private var validatedSkin: (url: URL, image: CGImage)?
   public let schemaKey: String
-  /// `assets/theme.json`, validated: every theme token and its default value.
+  /// `assets/theme.json`, validated: every theme color and its default value.
   public let themeDefaults: String
+  /// The declared colors in the order the author wrote them.
+  public let themeTokens: [ThemeToken]
   public let manifest: SlopManifest
   public let silhouette: SlopSilhouette
   /// Every regular file in the package, state included, in bytes.
@@ -40,7 +42,7 @@ public struct SlopPackage: Sendable {
       }
       schemaKey = try validateDocument(schemaJson: utf8("state.schema.json", maximum: 1_048_576), initialJson: utf8("initial.json", maximum: SlopFile.maximumBytes))
       themeDefaults = try utf8("assets/theme.json", maximum: Limits.theme)
-      try validateThemeDefaults(json: themeDefaults)
+      themeTokens = try validateThemeDefaults(json: themeDefaults)
     } catch let CoreError.Rejected(_, message, _) {
       throw SlopPackageError.invalid(message)
     } catch let CoreError.Invalidated(message) {

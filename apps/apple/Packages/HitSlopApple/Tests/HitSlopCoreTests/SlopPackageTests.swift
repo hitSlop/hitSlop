@@ -191,7 +191,9 @@ private func extendManifest(_ root: URL) throws {
 // Failure: a package without theme defaults opened, and its theme commands then failed.
 @Test func packagesRequireThemeDefaults() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-    _ = try SlopPackage(rootURL: root)
+    try Data(##"{"paper":"#ffffff","accent":"#335577"}"##.utf8).write(to: root.appendingPathComponent("assets/theme.json"))
+    // The panel lists colors in the order the author declared them.
+    #expect(try SlopPackage(rootURL: root).themeTokens.map(\.name) == ["paper", "accent"])
     try FileManager.default.removeItem(at: root.appendingPathComponent("assets/theme.json"))
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }

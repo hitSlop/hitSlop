@@ -1,3 +1,4 @@
+import type { LiveDocument } from "./schema";
 /**
  * The interface between a built slop and the page shell. A package's `assets/app.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
@@ -5,11 +6,14 @@
  * from this repository; there is no versioned compatibility promise before release.
  */
 import type { At, Handle, TextHandle } from "./handle-types";
-import type { Definition, ObjectNode, Value } from "./schema";
+import type { Definition, ObjectNode } from "./schema";
 /** A `change()` transaction: the same handles, collecting synchronously. */
-export type Scope<N extends ObjectNode> = { readonly fields: Handle<N, "tx">; readonly at: At<"tx"> };
-export type Issue = import("@hitslop/schema/owner").OwnerState["issues"][number];
-export type AttachmentInfo = { id: string; byteLength: number };
+export type Scope<N extends ObjectNode> = {
+  readonly fields: Handle<N, "tx">;
+  readonly at: At<"tx">;
+};
+export type Issue = import("@hitslop/schema/core").OwnerState["issues"][number];
+export type AttachmentInfo = import("@hitslop/schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type CaptureMode = "preview" | "export" | "icon";
 
@@ -63,26 +67,9 @@ export interface CaptureTarget {
   restore(): void | Promise<void>;
 }
 
-export interface SlopDocument<N extends ObjectNode> {
+export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
   /** Schema key; an app refuses a document of another schema. */
   readonly key: string;
-  /** Logical document identity. */
-  readonly id: string;
-  /** Immutable snapshot. Unchanged rows keep identity. */
-  readonly current: Value<N>;
-  /** Merged-state anomalies; stored values are preserved, never repaired. */
-  readonly issues: readonly Issue[];
-  readonly fields: Handle<N>;
-  readonly at: At;
-  /** Collect synchronously; resolve after acceptance and local publication. */
-  change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
-  /** Durability barrier: sends unsent text, waits for pending writes, then for storage.
-   * Rejects when the save fails; the host shows save failures and offers retry. */
-  flush(): Promise<void>;
-  /** Edit ▸ Undo: the last step, the person's or an agent's. Sends unsent text first;
-   * resolves once `current` shows the result. */
-  undo(): Promise<void>;
-  redo(): Promise<void>;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). One observer at a time. */

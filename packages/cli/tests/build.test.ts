@@ -32,6 +32,25 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
   }
 }, 60000);
 
+// A theme is the colors a person may override; fonts and derived colors belong in CSS.
+test("build refuses a theme that is not a palette of hex colors", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    for (const [name, theme, error] of [
+      ["font", `{ font: '"Avenir Next", sans-serif' }`, "theme.ts: out_of_range: Theme color font must be lowercase"],
+      ["opaque", `{ accent: "#aabbccff" }`, "theme.ts: out_of_range: Theme color accent"],
+      ["derived", `{ rule: "color-mix(in srgb, var(--slop-ink) 14%, transparent)" }`, "Theme color rule"],
+    ] as const) {
+      const source = join(root, name);
+      await copySourceFixture("examples/slops/quick-checklist", source);
+      await writeFile(join(source, "theme.ts"), `export default { defaults: ${theme} };`);
+      await expect(buildProject(source, join(root, name + ".slop"))).rejects.toThrow(error);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
 test("init creates a buildable source and refuses to overwrite it", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "starter");

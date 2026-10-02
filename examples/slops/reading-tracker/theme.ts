@@ -20,6 +20,4 @@ export default defineTheme({
   readingSoft: "#eee7f8",
   danger: "#b33655",
   onAccent: "#ffffff",
-  font: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-  headingFont: '"Reading Newsreader", Georgia, serif',
 });

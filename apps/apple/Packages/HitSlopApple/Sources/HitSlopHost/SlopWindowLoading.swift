@@ -35,6 +35,8 @@ extension SlopDocumentWindowController {
     stopLoading()
     isContentReady = false
     isLoading = true
+    // A replaced page starts without the panel; it reopens once the new page is ready.
+    closeThemePanel()
     window?.orderOut(nil)
     hideToolbar()
     loadingWebView = session.webView

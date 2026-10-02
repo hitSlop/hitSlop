@@ -74,8 +74,8 @@ struct DocumentArguments: ParsableArguments {
   NSApp.setActivationPolicy(.prohibited)
 }
 /// Runs one document command and prints its JSON output.
-@MainActor func printDocument(_ document: URL, _ make: @escaping @Sendable (_ id: String, _ documentPath: String) -> SocketRequest) async throws {
-  let result = try await DocumentCommand.run(url: document) { make(UUID().uuidString, $0) }
+@MainActor func printDocument(_ document: URL, snapshot: Bool = false, _ make: @escaping @Sendable (_ documentPath: String) -> SocketRequest) async throws {
+  let result = try await DocumentCommand.run(url: document, snapshot: snapshot) { make($0) }
   print(String(decoding: result, as: UTF8.self))
 }
 struct Get: AsyncParsableCommand {
@@ -83,8 +83,8 @@ struct Get: AsyncParsableCommand {
   @Flag var snapshot = false
   @MainActor func run() async throws {
     let snapshot = snapshot
-    try await printDocument(document.package) {
-      snapshot ? .snapshot(.init(id: $0, documentPath: $1)) : .get(.init(id: $0, documentPath: $1))
+    try await printDocument(document.package, snapshot: snapshot) {
+      .get(.init(documentPath: $0))
     }
   }
 }
@@ -100,7 +100,9 @@ struct Apply: AsyncParsableCommand {
   @Option var op: String
   @MainActor func run() async throws {
     let op = op
-    try await printDocument(document.package) { .apply(.init(id: $0, documentPath: $1, epoch: "", op: op)) }
+    guard (try? JSONSerialization.jsonObject(with: Data(op.utf8))) is [String: Any]
+    else { throw ValidationError("--op must be one JSON object") }
+    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: "[" + op + "]")) }
   }
 }
 struct Batch: AsyncParsableCommand {
@@ -108,7 +110,7 @@ struct Batch: AsyncParsableCommand {
   @Option var ops: String
   @MainActor func run() async throws {
     let ops = ops
-    try await printDocument(document.package) { .batch(.init(id: $0, documentPath: $1, epoch: "", ops: ops)) }
+    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
   }
 }
 /// One `replace` operation from a file: the value at `--path` (the whole document by
@@ -127,13 +129,13 @@ struct Import: AsyncParsableCommand {
     guard (try? JSONSerialization.jsonObject(with: Data(path.utf8))) is [Any]
     else { throw ValidationError("--path must be a JSON array, such as '[\"rows\"]'") }
     let ops = #"[{"type":"replace","path":"# + path + #","value":"# + value + "}]"
-    try await printDocument(document.package) { .batch(.init(id: $0, documentPath: $1, epoch: "", ops: ops)) }
+    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
   }
 }
 struct Compact: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
   @MainActor func run() async throws {
-    try await printDocument(document.package) { .compact(.init(id: $0, documentPath: $1, epoch: "")) }
+    try await printDocument(document.package) { .compact(.init(documentPath: $0, epoch: "")) }
   }
 }
 struct Create: AsyncParsableCommand {
@@ -186,14 +188,14 @@ struct StorageProbe: ParsableCommand {
 
 struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(subcommands: [
-    ThemeGet.self, ThemeSet.self, ThemeReset.self,
+    ThemeGet.self, ThemeSet.self, ThemeReset.self, ThemeExport.self, ThemeImport.self,
   ])
 }
 struct ThemeGet: AsyncParsableCommand {
   static let configuration = CommandConfiguration(commandName: "get")
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @MainActor func run() async throws {
-    try await printDocument(document) { .themeGet(.init(id: $0, documentPath: $1)) }
+    try await printDocument(document) { .themeGet(.init(documentPath: $0)) }
   }
 }
 struct ThemeSet: AsyncParsableCommand {
@@ -204,7 +206,7 @@ struct ThemeSet: AsyncParsableCommand {
     guard let values = try? JSONSerialization.jsonObject(with: Data(values.utf8)) as? [String: String] else {
       throw ValidationError("--values must be a JSON object of theme tokens and values")
     }
-    try await printDocument(document) { .themeSet(.init(id: $0, documentPath: $1, epoch: "", values: values)) }
+    try await printDocument(document) { .themeSet(.init(documentPath: $0, epoch: "", values: values)) }
   }
 }
 struct ThemeReset: AsyncParsableCommand {
@@ -213,6 +215,30 @@ struct ThemeReset: AsyncParsableCommand {
   @Option var token: String?
   @MainActor func run() async throws {
     let token = token
-    try await printDocument(document) { .themeReset(.init(id: $0, documentPath: $1, epoch: "", token: token)) }
+    try await printDocument(document) { .themeReset(.init(documentPath: $0, epoch: "", token: token)) }
+  }
+}
+struct ThemeExport: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(commandName: "export")
+  @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
+  @Option(transform: URL.init(fileURLWithPath:)) var output: URL?
+  @MainActor func run() async throws {
+    let file = try await DocumentCommand.run(url: document) { .themeExport(.init(documentPath: $0)) }
+    guard let output else { return print(String(decoding: file, as: UTF8.self)) }
+    try (file + Data("\n".utf8)).write(to: output, options: .atomic)
+    print(output.path)
+  }
+}
+struct ThemeImport: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(commandName: "import")
+  @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
+  @MainActor func run() async throws {
+    let handle = try FileHandle(forReadingFrom: file)
+    defer { try? handle.close() }
+    let bytes = try handle.read(upToCount: Limits.themeFile + 1) ?? Data()
+    guard bytes.count <= Limits.themeFile else { throw ValidationError("Theme file is too large") }
+    guard let text = String(data: bytes, encoding: .utf8) else { throw ValidationError("Theme file must be UTF-8") }
+    try await printDocument(document) { .themeImport(.init(documentPath: $0, epoch: "", file: text)) }
   }
 }

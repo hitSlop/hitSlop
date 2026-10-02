@@ -226,6 +226,8 @@ test("template artwork is keyed on compiler and copied guidance, not CLI routing
     "packages/cli/src/vite.ts",
     "packages/cli/src/entry.ts",
     "packages/document/src",
+    "packages/shell/src",
+    "packages/shell/package.json",
     "packages/cli/shell",
     "packages/cli/skills/hitslop-document",
     "tsconfig.json",

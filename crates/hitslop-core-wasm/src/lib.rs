@@ -23,7 +23,7 @@ pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
 }
 #[wasm_bindgen(js_name = validateThemeDefaults)]
 pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
-    hitslop_core::theme::validate_defaults(json).map_err(error)
+    hitslop_core::theme::validate_defaults(json).map(|_| ()).map_err(error)
 }
 /// Validates a manifest window `shape` (JSON, or undefined for the default).
 #[wasm_bindgen(js_name = validateWindowShape)]

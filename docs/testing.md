@@ -9,7 +9,8 @@ production code to keep an old test compiling.
 |---|---|---|
 | Rust semantics | `crates/hitslop-core/tests`, `cargo test --locked --workspace` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
 | Rust storage | `crates/hitslop-core/tests/store.rs` (feature `storage`) | Writer lock, storage identity, limits before blob reads, busy and full saves, lost acknowledgements, moved packages, snapshots that never write, free-page reclamation, duplicate identity, theme overrides, saved updates without a checkpoint refused |
-| SDK over WASM | `packages/document/tests`, `bun run test` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
+| Shell over WASM | `packages/shell/tests`, `bun run test` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
+| Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run swift:test`, `bun run test:native` | Save scheduling, save/reopen, failed-save retention, lost-reply recovery, CLI live and closed paths, WebView bridge, export, window lifecycle |
 
 `tests/fixtures/*` are small host packages (`document/`, `expected.json`,

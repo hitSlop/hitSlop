@@ -1,6 +1,6 @@
 ---
 title: Edit installed documents
-description: Inspect schemas, edit through the native owner, and customize declared theme tokens.
+description: Inspect schemas, edit through the native owner, and change or share a document's theme colors.
 ---
 
 Document commands read and edit the document through the app's Rust core, which persists it in SQLite. `apply` and `batch` accept JSON operations; `get` returns a read-only JSON snapshot. There is no editable `data.json` file.
@@ -20,12 +20,13 @@ Read the descriptor and current state before choosing operations. The CLI prints
 
 The installed app's helper sends edits to the open document's socket, or edits a closed document directly without loading its interface. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. Installed native editing itself needs no Bun; the `bunx` command is its convenient authoring-CLI entrypoint.
 
-Theme changes use a separate command and are saved beside the Loro data, in the same database:
+Theme colors use separate commands, or the theme panel in the window, and are saved with the document's edits, in the same database:
 
 ```sh
 bunx @hitslop/cli theme get My.slop
 bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad"}'
 bunx @hitslop/cli theme reset My.slop
+bunx @hitslop/cli theme export My.slop --output Mine.json
 ```
 
-Only declared tokens may be changed. They affect the editor and captures, not application data or layout selectors. Do not edit SQLite or initial values underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).
+Only declared colors may be changed. They affect the editor and captures, not application data, fonts or layout. Do not edit SQLite or initial values underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).

@@ -2,12 +2,13 @@ import AppKit
 import HitSlopCore
 import HitSlopDocument
 
-/// Toolbar and menu commands: pin, duplicate, export, reveal, open in editor, retry, close.
+/// Toolbar and menu commands: pin, theme, duplicate, export, reveal, open in editor, retry,
+/// close.
 extension SlopDocumentWindowController {
   func request(_ command: SlopDocumentCommand) {
     if !isContentReady {
       switch command {
-      case .exportPNG, .exportPDF, .duplicate: return
+      case .exportPNG, .exportPDF, .duplicate, .theme(true), .importTheme, .exportTheme: return
       default: break
       }
     }
@@ -24,20 +25,16 @@ extension SlopDocumentWindowController {
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
     switch command {
     case .pin(let pinned): setPinned(pinned)
+    case .theme(let shown): setThemeShown(shown)
+    case .importTheme: try await importTheme()
+    case .exportTheme: try await exportTheme()
     case .duplicate:
       let panel = NSSavePanel()
       panel.allowedContentTypes = [.slop]
       panel.nameFieldStringValue =
         packageURL.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
-      let response = await withCheckedContinuation { continuation in
-        if let window {
-          panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
-        } else {
-          panel.begin { continuation.resume(returning: $0) }
-        }
-      }
-      return try await duplicateDocument(to: response == .OK ? panel.url : nil)
+      return try await duplicateDocument(to: await runSheet(panel))
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
@@ -60,6 +57,18 @@ extension SlopDocumentWindowController {
     case .close: try await closeDocument()
     }
     return nil
+  }
+
+  /// A save or open panel as a sheet on the document window; nil when cancelled.
+  func runSheet(_ panel: NSSavePanel) async -> URL? {
+    let response = await withCheckedContinuation { continuation in
+      if let window {
+        panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+      } else {
+        panel.begin { continuation.resume(returning: $0) }
+      }
+    }
+    return response == .OK ? panel.url : nil
   }
 
   func duplicateDocument(to target: URL?) async throws -> URL? {

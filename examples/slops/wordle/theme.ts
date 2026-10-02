@@ -29,7 +29,6 @@ export default defineTheme({
   focus: "#38bdf8",
   toast: "#f8fafc",
   toastInk: "#0f172a",
-  overlay: "rgba(10, 12, 16, 0.85)",
+  overlay: "#0a0c10d9",
   danger: "#f87171",
-  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
 });

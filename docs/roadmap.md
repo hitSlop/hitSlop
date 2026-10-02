@@ -14,19 +14,18 @@ from using a slop to changing it gentle:
 
 ```text
 use ──▶ tweak ──▶ ask ──▶ remix ──▶ author
- ✓      CLI only  CLI only  missing    ✓
+ ✓        ✓       CLI only  missing    ✓
 ```
 
 In order, with the reasoning in [ideas](ideas.md):
 
-1. [Tweak panel](ideas.md#tweak-panel): theme tokens in the window.
-2. [Ask from the window](ideas.md#ask-from-the-window): the person's agent, launched
+1. [Ask from the window](ideas.md#ask-from-the-window): the person's agent, launched
    from the toolbar, editing the open document.
-3. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
+2. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
    who made it. Edit ▸ Undo already reverts an agent's edits.
-4. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
+3. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
    reach slops without a shell.
-5. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
+4. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
    Both change the engineering contract and need a decision before work starts.
 
 ## Open now

@@ -2,7 +2,7 @@
 // and the base64 codec used for attachment bytes on the host bridge.
 import { describe, test, expect } from "bun:test";
 import { fromDescriptor, schemaKey } from "../src/descriptor";
-import { base64 } from "../src/bridge";
+import { base64 } from "../../shell/src/bridge";
 
 describe("schema identity", () => {
   // Stored documents open only under an identical key, so these rules are frozen:

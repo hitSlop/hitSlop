@@ -1,8 +1,8 @@
 import { cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-// Dedicated integration fixture: independently observable row counts and IDs,
-// public ctx document identity, and one mounted UI detect broken HMR ownership.
+// Dedicated integration fixture: accepted values, row IDs, and one mounted UI
+// detect broken HMR ownership. A marker distinguishes the custom entry from fallback.
 export async function createFixture(repository: string, source: string) {
   await cp(join(repository, "packages/cli/templates/checklist"), source, { recursive: true });
   await writeFile(
@@ -18,7 +18,7 @@ import './styles.css';
 import {defineSlop} from '@hitslop/document/svelte';
 const app = defineSlop(App, { schema });
 export default { mount(ctx, target) {
-  target.dataset.documentId = ctx.document.id;
+  target.dataset.fixtureMounted = "true";
   return app.mount(ctx, target);
 }};
 `,

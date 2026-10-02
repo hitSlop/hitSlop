@@ -14,8 +14,8 @@ NativeCLI. Do not replace it with a playground shell. Read docs/architecture.md 
 error codes and durable storage: the writer lock, SQLite (document and theme
 overrides) and the save policy. `DocumentOwner` schedules saves (one write in flight on
 the persistence queue) and owns the socket and ordered delivery to the page.
-Attachments stay Swift-owned blobs. The page shell
-holds immutable snapshots and no CRDT. Never add a second document engine, a JSON
+Attachments stay Swift-owned blobs. The private `@hitslop/shell` package holds immutable snapshots and no CRDT;
+`@hitslop/document` contains the author SDK. Never add a second document engine, a JSON
 mirror, a JavaScriptCore evaluator or app-specific Swift schemas.
 
 **One edit path.** The CLI forwards to the live owner's socket or takes the lock and runs
@@ -28,9 +28,11 @@ code), replaced, closing, invalidated, save failed, or unknown. Only unknown lea
 outcome uncertain; after it, run `slop get` before another edit. A failed save keeps
 ownership and shows a native retry; close and export flush first.
 
-**Contracts.** TypeBox in packages/schema generates the socket, bridge, manifest and
-owner wire; run `bun run schema:generate` and never edit generated files. The core checks
-envelopes and manifests against those schemas and parses payloads strictly.
+**Contracts.** TypeBox in packages/schema generates the socket, page, manifest and
+core wire; run `bun run schema:generate` and never edit generated files. The core checks
+envelopes and manifests against those schemas and parses payloads strictly. WebKit
+correlates page replies; Swift checks the sender and supplies its native view token.
+Keep native view fences and socket epochs when changing the page protocol.
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
 is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated

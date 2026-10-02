@@ -3,7 +3,7 @@ import Testing
 @testable import HitSlopCore
 
 @Suite struct PackageValidationTests {
-  @Test(arguments: ["descriptor", "initial", "theme", "utf8"])
+  @Test(arguments: ["descriptor", "initial", "theme", "font", "utf8"])
   func refusesInvalidPackageInput(kind: String) throws {
     let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
@@ -13,6 +13,8 @@ import Testing
     case "descriptor": ("state.schema.json", Data(#"{"kind":"object","properties":{"bad":{"kind":"not-a-kind"}}}"#.utf8))
     case "initial": ("initial.json", Data(#"{"title":false,"rows":[],"hits":0}"#.utf8))
     case "theme": ("assets/theme.json", Data(#"{"accent":"red;"}"#.utf8))
+    // A theme is a palette: fonts belong in the slop's CSS.
+    case "font": ("assets/theme.json", Data(#"{"font":"\"Avenir Next\", sans-serif"}"#.utf8))
     default: ("assets/theme.json", Data([0xff]))
     }
     try bytes.write(to: root.appendingPathComponent(file))

@@ -51,13 +51,19 @@ const forward = (command: string, target: string, flags: Record<string, unknown>
   native(command, target, ...flagArgs(flags));
 
 const themeDescriptions = {
-  get: "Print theme defaults, overrides and effective values",
-  set: "Override declared theme tokens",
-  reset: "Remove one theme override, or all of them",
+  get: "Print the palette: template colors, overrides and effective colors",
+  set: "Override declared theme colors",
+  reset: "Return one color, or every color, to the template's",
+  export: "Print or write the full palette as a theme file",
+  import: "Replace the palette with a theme file made for this template",
 };
 
-function themeCommand(command: "get" | "set" | "reset") {
+function themeCommand(command: keyof typeof themeDescriptions) {
   return defineCommand(command, { description: themeDescriptions[command] }, (sub) => {
+    if (command === "import")
+      return sub
+        .args(document, { name: "file", type: "string", required: true, description: "Theme file to import" })
+        .action(({ args }) => native("theme", command, args.document, args.file));
     const configured = sub.args(document).flags(
       ...(command === "set"
         ? [
@@ -65,7 +71,7 @@ function themeCommand(command: "get" | "set" | "reset") {
               name: "values",
               type: "string" as const,
               required: true as const,
-              description: "Theme token values as JSON",
+              description: "Colors as JSON, such as {\"accent\":\"#335577\"}",
             },
           ]
         : []),
@@ -74,7 +80,16 @@ function themeCommand(command: "get" | "set" | "reset") {
             {
               name: "token",
               type: "string" as const,
-              description: "Token to reset; omit to reset all",
+              description: "Color to reset; omit to reset all",
+            },
+          ]
+        : []),
+      ...(command === "export"
+        ? [
+            {
+              name: "output",
+              type: "string" as const,
+              description: "File to write; omit to print",
             },
           ]
         : []),
@@ -381,8 +396,13 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("theme", { description: "Inspect and override declared theme tokens" }, (c) =>
-      c.add(themeCommand("get")).add(themeCommand("set")).add(themeCommand("reset")),
+    defineCommand("theme", { description: "Inspect, override and share a document's palette" }, (c) =>
+      c
+        .add(themeCommand("get"))
+        .add(themeCommand("set"))
+        .add(themeCommand("reset"))
+        .add(themeCommand("export"))
+        .add(themeCommand("import")),
     ),
   )
   // Only the global install repairs links: other copies would point agents at a bunx

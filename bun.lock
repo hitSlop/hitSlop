@@ -76,6 +76,13 @@
         "typebox": "1.3.32",
       },
     },
+    "packages/shell": {
+      "name": "@hitslop/shell",
+      "dependencies": {
+        "@hitslop/document": "workspace:*",
+        "@hitslop/schema": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
@@ -111,6 +118,8 @@
     "@hitslop/document": ["@hitslop/document@workspace:packages/document"],
 
     "@hitslop/schema": ["@hitslop/schema@workspace:packages/schema"],
+
+    "@hitslop/shell": ["@hitslop/shell@workspace:packages/shell"],
 
     "@hitslop/templates": ["@hitslop/templates@workspace:examples/slops"],
 

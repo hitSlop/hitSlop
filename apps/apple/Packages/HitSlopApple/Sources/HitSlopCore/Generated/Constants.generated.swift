@@ -22,12 +22,11 @@ public enum Limits {
   /// A document's saved checkpoint plus updates, in bytes, and its update rows.
   public static let storageBytes = 33554432
   public static let storageRows = 4096
-  /// Effective theme JSON, in UTF-8 bytes.
+  /// Effective theme JSON, and a theme file, in UTF-8 bytes.
   public static let theme = 65536
+  public static let themeFile = 66560
   /// Diagnostic text a page reports, in UTF-16 units.
   public static let errorText = 4096
-  /// The `Symbol.for` key that marks the page's document errors as operation issues.
-  public static let operationErrorBrand = "hitslop.operation-error"
   /// Pushes buffered for one page before a gap forces a fresh snapshot.
   public static let pushItems = 256
   public static let pushBytes = 4194304

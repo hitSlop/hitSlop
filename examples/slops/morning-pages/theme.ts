@@ -12,6 +12,4 @@ export default defineTheme({
   gold: "#9a4a0a",
   goldSoft: "#f3e6b8",
   hole: "#c9b56a",
-  font: "Georgia, \"Times New Roman\", serif",
-  mono: "\"SF Mono\", Menlo, ui-monospace, monospace",
 });

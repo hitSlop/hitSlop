@@ -6,7 +6,8 @@
     ".": "./src/schema.ts",
     "./svelte": "./src/app/store.svelte.ts",
     "./embed": "./src/app/embed.ts",
-    "./abi": "./src/abi.ts"
+    "./abi": "./src/abi.ts",
+    "./internal": "./src/internal.ts"
   },
   "dependencies": {
     "@hitslop/schema": "4.0.0"
@@ -23,13 +24,7 @@
     "access": "public"
   },
   "files": [
-    "src/app",
-    "src/abi.ts",
-    "src/handle-types.ts",
-    "src/schema.ts",
-    "src/descriptor.ts",
-    "src/errors.ts",
-    "src/theme.ts"
+    "src"
   ],
   "engines": {
     "bun": ">=1.4.2"

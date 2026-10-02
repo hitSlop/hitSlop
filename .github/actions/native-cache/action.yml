@@ -15,7 +15,7 @@ runs:
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: apps/apple/Packages/HitSlopApple/.build
-        key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/document/**', 'packages/schema/**', 'bun.lock') }}
+        key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/document/**', 'packages/shell/**', 'packages/schema/**', 'bun.lock') }}
         restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

@@ -77,7 +77,7 @@ export function assertNoGeneratedSource(files: string[]): void {
   const generated = files.filter(
     (path) =>
       // The page shell's static entry module is authored JavaScript.
-      path !== "packages/document/src/boot.js" &&
+      path !== "packages/shell/src/boot.js" &&
       /^packages\/[^/]+\/src\//.test(path) &&
       /\.(?:d\.ts|js)$/.test(path),
   );

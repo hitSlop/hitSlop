@@ -30,13 +30,23 @@ export const AttachmentLimits = { file: 10 * 1024 * 1024, total: 100 * 1024 * 10
 export const base64Length = (bytes: number) => 4 * Math.ceil(bytes / 3);
 /** An attachment's ID: the SHA-256 of its bytes, in lowercase hex. */
 export const AttachmentIdPattern = "^[a-f0-9]{64}$";
-/** Theme token names and values: values in UTF-16 units, and the token prefix the host
- * reserves for window geometry. */
-export const ThemeTokenRule = { name: "^[a-zA-Z][a-zA-Z0-9-]*$", valueLength: 4096, reservedPrefix: "window-" } as const;
+/** A theme is a palette: token names, their longest length, and colors as lowercase
+ * `#rrggbb` or `#rrggbbaa` with one spelling per color (opaque colors omit `ff`). The
+ * host reserves the `window-` prefix for window geometry. */
+export const ThemeTokenRule = {
+  name: "^[a-zA-Z][a-zA-Z0-9-]{0,63}$",
+  nameLength: 64,
+  value: "^#[0-9a-f]{6}(?:[0-9a-e][0-9a-f]|f[0-9a-e])?$",
+  reservedPrefix: "window-",
+  tokens: 256,
+} as const;
 /** A document's saved checkpoint plus updates: bytes, and update rows. */
 export const StorageLimits = { bytes: 32 * 1024 * 1024, rows: 4096 } as const;
 /** Effective theme JSON, in UTF-8 bytes. */
 export const ThemeLimit = 64 * 1024;
+/** A theme file: the largest effective theme plus its template and wrapper, in UTF-8
+ * bytes, so every export can be imported again. */
+export const ThemeFileLimit = ThemeLimit + 1024;
 /** Diagnostic text a page reports to the host, in UTF-16 units. */
 export const ErrorTextLimit = 4096;
 /** The `Symbol.for` key on document errors (refusals and owner outcomes). The page's

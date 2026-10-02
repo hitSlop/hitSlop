@@ -1,9 +1,14 @@
+:root {
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --display: ui-sans-serif, -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
 * {
   box-sizing: border-box;
 }
 :root {
   color-scheme: light;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-synthesis: none;
 }
 html, body, #app {
@@ -90,7 +95,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 .wordmark {
   margin: 0;
   color: var(--slop-accent);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 8px;
   font-weight: 800;
   letter-spacing: .28em;
@@ -99,7 +104,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 .title {
   margin: 3px 0 0;
   color: var(--slop-ink);
-  font-family: var(--slop-display);
+  font-family: var(--display);
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -.03em;
@@ -117,7 +122,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 }
 .target span {
   color: var(--slop-inkSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 7px;
   font-weight: 800;
   letter-spacing: .16em;
@@ -128,7 +133,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
   padding: 0;
   color: var(--slop-ink);
   background: transparent;
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 12px;
   font-weight: 700;
 }
@@ -154,7 +159,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
   align-items: baseline;
   gap: 3px;
   margin: 0;
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
 }
 .tallyCount b {
   font-size: 19px;
@@ -181,7 +186,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 .tallyLabel {
   margin: 0;
   color: var(--slop-inkSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 7px;
   font-weight: 800;
   letter-spacing: .16em;
@@ -190,7 +195,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 .guide {
   margin: 10px 0 0;
   color: var(--slop-inkSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 8px;
   font-weight: 800;
   letter-spacing: .16em;
@@ -220,7 +225,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 .zoomTitle {
   margin: 8px 0 0;
   color: var(--slop-inkSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 8px;
   font-weight: 800;
   letter-spacing: .2em;
@@ -305,7 +310,7 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
 }
 .cell[data-role="goal"] .write {
   color: var(--slop-onAccent);
-  font-family: var(--slop-display);
+  font-family: var(--display);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: -.02em;

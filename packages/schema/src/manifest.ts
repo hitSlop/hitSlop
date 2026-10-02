@@ -1,3 +1,4 @@
+import { Strict } from "./strict";
 import * as Type from "typebox";
 import { validate } from "./validation";
 import { ManifestText, SlopCategories, WindowBounds } from "./constants";
@@ -6,14 +7,14 @@ export const manifestSchemaURL = "https://api.hitslop.com/schemas/manifest.schem
 export const SlopCategorySchema = Type.Enum(SlopCategories, { title: "SlopCategory" });
 const categoryBounds = { minItems: 1, maxItems: 2, uniqueItems: true };
 const categories = Type.Array(SlopCategorySchema, categoryBounds);
-export const SlopAuthorSchema = Type.Object(
+export const SlopAuthorSchema = Strict(
   {
     name: Type.String({ ...ManifestText.authorName }),
     url: Type.Optional(
       Type.String({ maxLength: 2048, format: "uri", pattern: "^https?://[^/?#\\s]+" }),
     ),
   },
-  { additionalProperties: false, title: "SlopAuthor" },
+  { title: "SlopAuthor" },
 );
 const skinPath = Type.String({
   minLength: 12,
@@ -24,17 +25,33 @@ const dimensions = {
   width: Type.Integer({ minimum: WindowBounds.minWidth, maximum: WindowBounds.max }),
   height: Type.Integer({ minimum: WindowBounds.minHeight, maximum: WindowBounds.max }),
 };
-export const SlopPathShapeSchema = Type.Object({
-  path: Type.String({ minLength: 1, maxLength: 4096 }),
-  viewBox: Type.Optional(Type.Tuple([Type.Number({ minimum: 1, maximum: 16384 }), Type.Number({ minimum: 1, maximum: 16384 })])),
-  fillRule: Type.Optional(Type.Enum(["nonzero", "evenodd"])),
-}, { additionalProperties: false, title: "SlopPathShape" });
+export const SlopPathShapeSchema = Strict(
+  {
+    path: Type.String({ minLength: 1, maxLength: 4096 }),
+    viewBox: Type.Optional(
+      Type.Tuple([
+        Type.Number({ minimum: 1, maximum: 16384 }),
+        Type.Number({ minimum: 1, maximum: 16384 }),
+      ]),
+    ),
+    fillRule: Type.Optional(Type.Enum(["nonzero", "evenodd"])),
+  },
+  { title: "SlopPathShape" },
+);
 const radiusValue = "(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))";
 const radiusList = `${radiusValue}(?:[ \t\r\n]+${radiusValue}){0,3}`;
-export const SlopShapeSchema = Type.Union([
-  Type.String({ minLength: 1, maxLength: 256, pattern: `^[ \t\r\n]*${radiusList}(?:[ \t\r\n]*/[ \t\r\n]*${radiusList})?[ \t\r\n]*$` }), SlopPathShapeSchema,
-], { title: "SlopShape" });
-export const SlopStandardPresentationSchema = Type.Object(
+export const SlopShapeSchema = Type.Union(
+  [
+    Type.String({
+      minLength: 1,
+      maxLength: 256,
+      pattern: `^[ \t\r\n]*${radiusList}(?:[ \t\r\n]*/[ \t\r\n]*${radiusList})?[ \t\r\n]*$`,
+    }),
+    SlopPathShapeSchema,
+  ],
+  { title: "SlopShape" },
+);
+export const SlopStandardPresentationSchema = Strict(
   {
     ...dimensions,
     resizable: Type.Optional(Type.Boolean()),
@@ -42,17 +59,17 @@ export const SlopStandardPresentationSchema = Type.Object(
     lockAspect: Type.Optional(Type.Boolean()),
     background: Type.Optional(Type.Literal("transparent")),
   },
-  { additionalProperties: false, title: "SlopStandardPresentation" },
+  { title: "SlopStandardPresentation" },
 );
-export const SlopSkinPresentationSchema = Type.Object(
+export const SlopSkinPresentationSchema = Strict(
   { ...dimensions, skin: skinPath },
-  { additionalProperties: false, title: "SlopSkinPresentation" },
+  { title: "SlopSkinPresentation" },
 );
 export const SlopPresentationSchema = Type.Union(
   [SlopStandardPresentationSchema, SlopSkinPresentationSchema],
   { title: "SlopPresentation" },
 );
-export const SlopManifestSchema = Type.Object(
+export const SlopManifestSchema = Strict(
   {
     $schema: Type.Optional(Type.Literal(manifestSchemaURL)),
     author: SlopAuthorSchema,
@@ -62,11 +79,12 @@ export const SlopManifestSchema = Type.Object(
     categories,
     presentation: SlopPresentationSchema,
   },
-  { additionalProperties: false, title: "SlopManifest" },
+  { title: "SlopManifest" },
 );
 export type SlopCategory = Type.Static<typeof SlopCategorySchema>;
 export type SlopAuthor = Type.Static<typeof SlopAuthorSchema>;
 export type SlopManifest = Type.Static<typeof SlopManifestSchema>;
 export type SlopPresentation = Type.Static<typeof SlopPresentationSchema>;
 /** The manifest's structure. Window shape geometry is validated by the core (WASM). */
-export const parseManifest = (input: unknown): SlopManifest => validate(SlopManifestSchema, input, "Invalid manifest");
+export const parseManifest = (input: unknown): SlopManifest =>
+  validate(SlopManifestSchema, input, "Invalid manifest");

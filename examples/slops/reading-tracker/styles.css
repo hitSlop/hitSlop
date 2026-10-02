@@ -1,3 +1,7 @@
+:root {
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --headingFont: "Reading Newsreader", Georgia, serif;
+}
 @font-face {
   font-family: "Reading Newsreader";
   src: url("./assets/fonts/Newsreader.ttf") format("truetype");
@@ -8,7 +12,7 @@
   box-sizing: border-box;
 }
 :root {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   color-scheme: light;
   font-synthesis: none;
 }
@@ -78,7 +82,7 @@ input, textarea {
 }
 .masthead {
   margin: 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(36px, 8cqw, 48px);
   font-weight: 550;
   line-height: 1.05;
@@ -125,7 +129,7 @@ input, textarea {
   clip-path: polygon(0 0,100% 0,100% 100%,50% 88%,0 100%);
 }
 .finishedCount strong {
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 32px;
   line-height: 1;
   font-weight: 500;
@@ -285,7 +289,7 @@ input, textarea {
   resize: none;
   overflow: hidden;
   background: transparent;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 18px;
   font-weight: 550;
   line-height: 1.2;
@@ -409,7 +413,7 @@ input, textarea {
 }
 .empty h2 {
   margin: 0 0 8px;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 25px;
   color: var(--slop-stamp);
   font-weight: 500;
@@ -518,7 +522,7 @@ html[data-slop-capture="static"] [data-slop-export="hide"] {
 }
 .notesTitle {
   margin: 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 27px;
   font-weight: 550;
   line-height: 1.15;

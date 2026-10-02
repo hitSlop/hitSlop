@@ -4,18 +4,14 @@ import Foundation
 private enum ContractMappingError: Error { case field(String) }
 
 public struct SocketAttachmentsListRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
 
-  public init(`id`: String, `documentPath`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String) {
     self.`documentPath` = `documentPath`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketAttachmentsListRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketAttachmentsListRequest.documentPath") }
     self.`documentPath` = `documentPath`
   }
@@ -23,27 +19,22 @@ public struct SocketAttachmentsListRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "attachments.list"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     return result
   }
 }
 
 public struct SocketAttachmentsReadRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `attachmentID`: String
 
-  public init(`id`: String, `documentPath`: String, `attachmentID`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `attachmentID`: String) {
     self.`documentPath` = `documentPath`
     self.`attachmentID` = `attachmentID`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketAttachmentsReadRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketAttachmentsReadRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `attachmentID` = json["attachmentID"] as? String else { throw ContractMappingError.field("SocketAttachmentsReadRequest.attachmentID") }
@@ -53,7 +44,6 @@ public struct SocketAttachmentsReadRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "attachments.read"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["attachmentID"] = `attachmentID`
     return result
@@ -61,13 +51,11 @@ public struct SocketAttachmentsReadRequest: Sendable {
 }
 
 public struct SocketAttachmentsPutRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
   public var `bytes`: String
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `bytes`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String, `bytes`: String) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
     self.`bytes` = `bytes`
@@ -75,8 +63,6 @@ public struct SocketAttachmentsPutRequest: Sendable {
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketAttachmentsPutRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketAttachmentsPutRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketAttachmentsPutRequest.epoch") }
@@ -88,7 +74,6 @@ public struct SocketAttachmentsPutRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "attachments.put"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     result["bytes"] = `bytes`
@@ -97,18 +82,14 @@ public struct SocketAttachmentsPutRequest: Sendable {
 }
 
 public struct SocketThemeGetRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
 
-  public init(`id`: String, `documentPath`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String) {
     self.`documentPath` = `documentPath`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketThemeGetRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketThemeGetRequest.documentPath") }
     self.`documentPath` = `documentPath`
   }
@@ -116,20 +97,17 @@ public struct SocketThemeGetRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "theme.get"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     return result
   }
 }
 
 public struct SocketThemeSetRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
   public var `values`: [String: String]
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `values`: [String: String]) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String, `values`: [String: String]) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
     self.`values` = `values`
@@ -137,8 +115,6 @@ public struct SocketThemeSetRequest: Sendable {
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketThemeSetRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketThemeSetRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketThemeSetRequest.epoch") }
@@ -150,7 +126,6 @@ public struct SocketThemeSetRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "theme.set"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     result["values"] = `values`
@@ -159,13 +134,11 @@ public struct SocketThemeSetRequest: Sendable {
 }
 
 public struct SocketThemeResetRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
   public var `token`: String?
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `token`: String? = nil) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String, `token`: String? = nil) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
     self.`token` = `token`
@@ -173,8 +146,6 @@ public struct SocketThemeResetRequest: Sendable {
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketThemeResetRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketThemeResetRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketThemeResetRequest.epoch") }
@@ -190,7 +161,6 @@ public struct SocketThemeResetRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "theme.reset"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     if let value = `token` { result["token"] = value }
@@ -198,19 +168,67 @@ public struct SocketThemeResetRequest: Sendable {
   }
 }
 
-public struct SocketHelloRequest: Sendable {
-  public var `id`: String
+public struct SocketThemeExportRequest: Sendable {
   public var `documentPath`: String
 
-  public init(`id`: String, `documentPath`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String) {
     self.`documentPath` = `documentPath`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketHelloRequest.id") }
-    self.`id` = `id`
+    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketThemeExportRequest.documentPath") }
+    self.`documentPath` = `documentPath`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "theme.export"
+    result["documentPath"] = `documentPath`
+    return result
+  }
+}
+
+public struct SocketThemeImportRequest: Sendable {
+  public var `documentPath`: String
+  public var `epoch`: String
+  public var `file`: String
+
+  public init(`documentPath`: String, `epoch`: String, `file`: String) {
+    self.`documentPath` = `documentPath`
+    self.`epoch` = `epoch`
+    self.`file` = `file`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketThemeImportRequest.documentPath") }
+    self.`documentPath` = `documentPath`
+    guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketThemeImportRequest.epoch") }
+    self.`epoch` = `epoch`
+    guard let `file` = json["file"] as? String else { throw ContractMappingError.field("SocketThemeImportRequest.file") }
+    self.`file` = `file`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "theme.import"
+    result["documentPath"] = `documentPath`
+    result["epoch"] = `epoch`
+    result["file"] = `file`
+    return result
+  }
+}
+
+public struct SocketHelloRequest: Sendable {
+  public var `documentPath`: String
+
+  public init(`documentPath`: String) {
+    self.`documentPath` = `documentPath`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketHelloRequest.documentPath") }
     self.`documentPath` = `documentPath`
   }
@@ -218,25 +236,20 @@ public struct SocketHelloRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "hello"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     return result
   }
 }
 
 public struct SocketGetRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
 
-  public init(`id`: String, `documentPath`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String) {
     self.`documentPath` = `documentPath`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketGetRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketGetRequest.documentPath") }
     self.`documentPath` = `documentPath`
   }
@@ -244,82 +257,17 @@ public struct SocketGetRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "get"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
-    return result
-  }
-}
-
-public struct SocketSnapshotRequest: Sendable {
-  public var `id`: String
-  public var `documentPath`: String
-
-  public init(`id`: String, `documentPath`: String) {
-    self.`id` = `id`
-    self.`documentPath` = `documentPath`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketSnapshotRequest.id") }
-    self.`id` = `id`
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketSnapshotRequest.documentPath") }
-    self.`documentPath` = `documentPath`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "snapshot"
-    result["id"] = `id`
-    result["documentPath"] = `documentPath`
-    return result
-  }
-}
-
-public struct SocketApplyRequest: Sendable {
-  public var `id`: String
-  public var `documentPath`: String
-  public var `epoch`: String
-  public var `op`: String
-
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `op`: String) {
-    self.`id` = `id`
-    self.`documentPath` = `documentPath`
-    self.`epoch` = `epoch`
-    self.`op` = `op`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketApplyRequest.id") }
-    self.`id` = `id`
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketApplyRequest.documentPath") }
-    self.`documentPath` = `documentPath`
-    guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketApplyRequest.epoch") }
-    self.`epoch` = `epoch`
-    guard let `op` = json["op"] as? String else { throw ContractMappingError.field("SocketApplyRequest.op") }
-    self.`op` = `op`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "apply"
-    result["id"] = `id`
-    result["documentPath"] = `documentPath`
-    result["epoch"] = `epoch`
-    result["op"] = `op`
     return result
   }
 }
 
 public struct SocketBatchRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
   public var `ops`: String
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `ops`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String, `ops`: String) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
     self.`ops` = `ops`
@@ -327,8 +275,6 @@ public struct SocketBatchRequest: Sendable {
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketBatchRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketBatchRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketBatchRequest.epoch") }
@@ -340,7 +286,6 @@ public struct SocketBatchRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "batch"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     result["ops"] = `ops`
@@ -349,20 +294,16 @@ public struct SocketBatchRequest: Sendable {
 }
 
 public struct SocketCompactRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketCompactRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketCompactRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketCompactRequest.epoch") }
@@ -372,7 +313,6 @@ public struct SocketCompactRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "compact"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     return result
@@ -385,14 +325,12 @@ public enum SocketExportRequestFormat: String, CaseIterable, Sendable {
 }
 
 public struct SocketExportRequest: Sendable {
-  public var `id`: String
   public var `documentPath`: String
   public var `epoch`: String
   public var `format`: SocketExportRequestFormat
   public var `output`: String
 
-  public init(`id`: String, `documentPath`: String, `epoch`: String, `format`: SocketExportRequestFormat, `output`: String) {
-    self.`id` = `id`
+  public init(`documentPath`: String, `epoch`: String, `format`: SocketExportRequestFormat, `output`: String) {
     self.`documentPath` = `documentPath`
     self.`epoch` = `epoch`
     self.`format` = `format`
@@ -401,8 +339,6 @@ public struct SocketExportRequest: Sendable {
 
   /// Validate the envelope with Envelope.valid before mapping it.
   public init(json: [String: Any]) throws {
-    guard let `id` = json["id"] as? String else { throw ContractMappingError.field("SocketExportRequest.id") }
-    self.`id` = `id`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketExportRequest.documentPath") }
     self.`documentPath` = `documentPath`
     guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketExportRequest.epoch") }
@@ -416,7 +352,6 @@ public struct SocketExportRequest: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["method"] = "export"
-    result["id"] = `id`
     result["documentPath"] = `documentPath`
     result["epoch"] = `epoch`
     result["format"] = `format`.rawValue
@@ -432,10 +367,10 @@ public enum SocketRequest: Sendable {
   case `themeGet`(SocketThemeGetRequest)
   case `themeSet`(SocketThemeSetRequest)
   case `themeReset`(SocketThemeResetRequest)
+  case `themeExport`(SocketThemeExportRequest)
+  case `themeImport`(SocketThemeImportRequest)
   case `hello`(SocketHelloRequest)
   case `get`(SocketGetRequest)
-  case `snapshot`(SocketSnapshotRequest)
-  case `apply`(SocketApplyRequest)
   case `batch`(SocketBatchRequest)
   case `compact`(SocketCompactRequest)
   case `export`(SocketExportRequest)
@@ -447,10 +382,10 @@ public enum SocketRequest: Sendable {
     case `themeGet` = "theme.get"
     case `themeSet` = "theme.set"
     case `themeReset` = "theme.reset"
+    case `themeExport` = "theme.export"
+    case `themeImport` = "theme.import"
     case `hello` = "hello"
     case `get` = "get"
-    case `snapshot` = "snapshot"
-    case `apply` = "apply"
     case `batch` = "batch"
     case `compact` = "compact"
     case `export` = "export"
@@ -462,10 +397,10 @@ public enum SocketRequest: Sendable {
       case .`themeGet`: return false
       case .`themeSet`: return true
       case .`themeReset`: return true
+      case .`themeExport`: return false
+      case .`themeImport`: return true
       case .`hello`: return false
       case .`get`: return false
-      case .`snapshot`: return false
-      case .`apply`: return true
       case .`batch`: return true
       case .`compact`: return true
       case .`export`: return true
@@ -481,10 +416,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`: return .`themeGet`
     case .`themeSet`: return .`themeSet`
     case .`themeReset`: return .`themeReset`
+    case .`themeExport`: return .`themeExport`
+    case .`themeImport`: return .`themeImport`
     case .`hello`: return .`hello`
     case .`get`: return .`get`
-    case .`snapshot`: return .`snapshot`
-    case .`apply`: return .`apply`
     case .`batch`: return .`batch`
     case .`compact`: return .`compact`
     case .`export`: return .`export`
@@ -499,10 +434,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`(let value): return value.documentPath
     case .`themeSet`(let value): return value.documentPath
     case .`themeReset`(let value): return value.documentPath
+    case .`themeExport`(let value): return value.documentPath
+    case .`themeImport`(let value): return value.documentPath
     case .`hello`(let value): return value.documentPath
     case .`get`(let value): return value.documentPath
-    case .`snapshot`(let value): return value.documentPath
-    case .`apply`(let value): return value.documentPath
     case .`batch`(let value): return value.documentPath
     case .`compact`(let value): return value.documentPath
     case .`export`(let value): return value.documentPath
@@ -516,10 +451,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`: return nil
     case .`themeSet`(let value): return value.epoch
     case .`themeReset`(let value): return value.epoch
+    case .`themeExport`: return nil
+    case .`themeImport`(let value): return value.epoch
     case .`hello`: return nil
     case .`get`: return nil
-    case .`snapshot`: return nil
-    case .`apply`(let value): return value.epoch
     case .`batch`(let value): return value.epoch
     case .`compact`(let value): return value.epoch
     case .`export`(let value): return value.epoch
@@ -534,10 +469,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`: return self
     case .`themeSet`(var value): value.epoch = epoch; return .`themeSet`(value)
     case .`themeReset`(var value): value.epoch = epoch; return .`themeReset`(value)
+    case .`themeExport`: return self
+    case .`themeImport`(var value): value.epoch = epoch; return .`themeImport`(value)
     case .`hello`: return self
     case .`get`: return self
-    case .`snapshot`: return self
-    case .`apply`(var value): value.epoch = epoch; return .`apply`(value)
     case .`batch`(var value): value.epoch = epoch; return .`batch`(value)
     case .`compact`(var value): value.epoch = epoch; return .`compact`(value)
     case .`export`(var value): value.epoch = epoch; return .`export`(value)
@@ -554,10 +489,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`: self = .`themeGet`(try SocketThemeGetRequest(json: json))
     case .`themeSet`: self = .`themeSet`(try SocketThemeSetRequest(json: json))
     case .`themeReset`: self = .`themeReset`(try SocketThemeResetRequest(json: json))
+    case .`themeExport`: self = .`themeExport`(try SocketThemeExportRequest(json: json))
+    case .`themeImport`: self = .`themeImport`(try SocketThemeImportRequest(json: json))
     case .`hello`: self = .`hello`(try SocketHelloRequest(json: json))
     case .`get`: self = .`get`(try SocketGetRequest(json: json))
-    case .`snapshot`: self = .`snapshot`(try SocketSnapshotRequest(json: json))
-    case .`apply`: self = .`apply`(try SocketApplyRequest(json: json))
     case .`batch`: self = .`batch`(try SocketBatchRequest(json: json))
     case .`compact`: self = .`compact`(try SocketCompactRequest(json: json))
     case .`export`: self = .`export`(try SocketExportRequest(json: json))
@@ -572,10 +507,10 @@ public enum SocketRequest: Sendable {
     case .`themeGet`(let value): return value.json
     case .`themeSet`(let value): return value.json
     case .`themeReset`(let value): return value.json
+    case .`themeExport`(let value): return value.json
+    case .`themeImport`(let value): return value.json
     case .`hello`(let value): return value.json
     case .`get`(let value): return value.json
-    case .`snapshot`(let value): return value.json
-    case .`apply`(let value): return value.json
     case .`batch`(let value): return value.json
     case .`compact`(let value): return value.json
     case .`export`(let value): return value.json
@@ -707,14 +642,209 @@ public struct SocketDiscovery: Sendable {
   }
 }
 
-public enum BridgeMethod: String, CaseIterable, Sendable {
+public enum PageMethod: String, CaseIterable, Sendable {
+  case `open` = "open"
+  case `apply` = "apply"
+  case `text` = "text"
+  case `flush` = "flush"
+  case `undo` = "undo"
+  case `redo` = "redo"
+  case `config` = "config"
   case `attachmentsPut` = "attachments.put"
   case `attachmentsRead` = "attachments.read"
-  case `themeLoad` = "theme.load"
-  case `pageRecovered` = "pageRecovered"
   case `windowResize` = "window.resize"
-  case `config` = "config"
   case `ready` = "ready"
+  case `pageRecovered` = "pageRecovered"
   case `failed` = "failed"
   case `pageError` = "pageError"
+}
+
+public struct PageOpenResult: Sendable {
+  public var `state`: String
+
+  public init(`state`: String) {
+    self.`state` = `state`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["state"] = `state`
+    return result
+  }
+}
+
+public struct PageApplyResult: Sendable {
+  public var `sequence`: Int
+  public var `ids`: [String]
+
+  public init(`sequence`: Int, `ids`: [String]) {
+    self.`sequence` = `sequence`
+    self.`ids` = `ids`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["sequence"] = `sequence`
+    result["ids"] = `ids`
+    return result
+  }
+}
+
+public struct PageTextResult: Sendable {
+  public var `sequence`: Int
+  public var `authored`: String
+  public var `selectionStart`: Int
+  public var `selectionEnd`: Int
+
+  public init(`sequence`: Int, `authored`: String, `selectionStart`: Int, `selectionEnd`: Int) {
+    self.`sequence` = `sequence`
+    self.`authored` = `authored`
+    self.`selectionStart` = `selectionStart`
+    self.`selectionEnd` = `selectionEnd`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["sequence"] = `sequence`
+    result["authored"] = `authored`
+    result["selectionStart"] = `selectionStart`
+    result["selectionEnd"] = `selectionEnd`
+    return result
+  }
+}
+
+public struct PageUndoResult: Sendable {
+  public var `sequence`: Int
+
+  public init(`sequence`: Int) {
+    self.`sequence` = `sequence`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["sequence"] = `sequence`
+    return result
+  }
+}
+
+public struct PageRedoResult: Sendable {
+  public var `sequence`: Int
+
+  public init(`sequence`: Int) {
+    self.`sequence` = `sequence`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["sequence"] = `sequence`
+    return result
+  }
+}
+
+public struct PageConfigResult {
+  public var `readOnly`: Bool
+  public var `presentation`: [String: Any]
+  public var `theme`: [String: String]
+
+  public init(`readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String]) {
+    self.`readOnly` = `readOnly`
+    self.`presentation` = `presentation`
+    self.`theme` = `theme`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["readOnly"] = `readOnly`
+    result["presentation"] = `presentation`
+    result["theme"] = `theme`
+    return result
+  }
+}
+
+public struct PageAttachmentsPutResult: Sendable {
+  public var `id`: String
+  public var `byteLength`: Int
+
+  public init(`id`: String, `byteLength`: Int) {
+    self.`id` = `id`
+    self.`byteLength` = `byteLength`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["id"] = `id`
+    result["byteLength"] = `byteLength`
+    return result
+  }
+}
+
+public struct PageAttachmentsReadResult: Sendable {
+  public var `bytes`: String
+
+  public init(`bytes`: String) {
+    self.`bytes` = `bytes`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["bytes"] = `bytes`
+    return result
+  }
+}
+
+public struct PageWindowResizeResult: Sendable {
+  public var `width`: Double
+  public var `height`: Double
+
+  public init(`width`: Double, `height`: Double) {
+    self.`width` = `width`
+    self.`height` = `height`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["width"] = `width`
+    result["height"] = `height`
+    return result
+  }
+}
+
+/// A successful page reply. `json` adds `ok`; failures use `DocumentOwner.pageFailure`.
+public enum PageResult {
+  case `open`(PageOpenResult)
+  case `apply`(PageApplyResult)
+  case `text`(PageTextResult)
+  case `flush`
+  case `undo`(PageUndoResult)
+  case `redo`(PageRedoResult)
+  case `config`(PageConfigResult)
+  case `attachmentsPut`(PageAttachmentsPutResult)
+  case `attachmentsRead`(PageAttachmentsReadResult)
+  case `windowResize`(PageWindowResizeResult)
+  case `ready`
+  case `pageRecovered`
+  case `failed`
+  case `pageError`
+
+  public var json: [String: Any] {
+    var result: [String: Any]
+    switch self {
+    case .`open`(let value): result = value.json
+    case .`apply`(let value): result = value.json
+    case .`text`(let value): result = value.json
+    case .`flush`: result = [:]
+    case .`undo`(let value): result = value.json
+    case .`redo`(let value): result = value.json
+    case .`config`(let value): result = value.json
+    case .`attachmentsPut`(let value): result = value.json
+    case .`attachmentsRead`(let value): result = value.json
+    case .`windowResize`(let value): result = value.json
+    case .`ready`: result = [:]
+    case .`pageRecovered`: result = [:]
+    case .`failed`: result = [:]
+    case .`pageError`: result = [:]
+    }
+    result["ok"] = true
+    return result
+  }
 }

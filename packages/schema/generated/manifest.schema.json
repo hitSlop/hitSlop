@@ -32,8 +32,8 @@
           "pattern": "^https?://[^/?#\\s]+"
         }
       },
-      "additionalProperties": false,
-      "title": "SlopAuthor"
+      "title": "SlopAuthor",
+      "additionalProperties": false
     },
     "slug": {
       "type": "string",
@@ -137,8 +137,8 @@
                       ]
                     }
                   },
-                  "additionalProperties": false,
-                  "title": "SlopPathShape"
+                  "title": "SlopPathShape",
+                  "additionalProperties": false
                 }
               ],
               "title": "SlopShape"
@@ -151,8 +151,8 @@
               "const": "transparent"
             }
           },
-          "additionalProperties": false,
-          "title": "SlopStandardPresentation"
+          "title": "SlopStandardPresentation",
+          "additionalProperties": false
         },
         {
           "type": "object",
@@ -179,13 +179,13 @@
               "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$)|.*//)assets/[A-Za-z0-9._/-]+\\.[pP][nN][gG]$"
             }
           },
-          "additionalProperties": false,
-          "title": "SlopSkinPresentation"
+          "title": "SlopSkinPresentation",
+          "additionalProperties": false
         }
       ],
       "title": "SlopPresentation"
     }
   },
-  "additionalProperties": false,
-  "title": "SlopManifest"
+  "title": "SlopManifest",
+  "additionalProperties": false
 }

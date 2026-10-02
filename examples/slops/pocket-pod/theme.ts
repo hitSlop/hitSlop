@@ -11,5 +11,4 @@ export default defineTheme({
   wheel: "#f4f4f2",
   wheelInk: "#7b808a",
   button: "#d6d9de",
-  font: '"Helvetica Neue", Helvetica, Arial, sans-serif',
 });

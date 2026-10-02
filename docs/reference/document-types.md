@@ -8,12 +8,16 @@ decides:
 - which handle methods, bindings and CLI operations exist.
 
 The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
-(`packages/document`) only gives it types and handles.
+(`packages/document`) gives authors types and adapters; the private shell implements
+the handles and immutable snapshots.
 
 `defineDocument` produces a plain object-root descriptor. Build validation calls the
 same Rust rules as native editing; the small TypeScript schema module is metadata and
-types, not a second validator. A rejected write exposes `OperationRejectedError.reason`
-and, for a batch, `opIndex`. Uncertain outcomes are separate errors: inspect recovered
+types, not a second validator. Catch document errors with `isDocumentError(error)`
+and semantic refusals with `isRejected(error)`; these guards work across the separately
+bundled app and shell. Transaction handles expose writes only: `preview()` and
+assignable `.value` belong to live handles. A rejected write exposes `DocumentError.reason`
+and, for a batch, `opIndex`. Uncertain outcomes have distinct error codes: inspect recovered
 state before deciding on a new edit.
 
 ```ts

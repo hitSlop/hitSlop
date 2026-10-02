@@ -44,7 +44,7 @@ Bare `skills` means install; use `skills repair` to repair installed links. The
 guides copied into a new project's `.agents/skills` are portable files, not
 managed links, and must be reviewed manually when upgrading the project.
 
-Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS and defineTheme tokens and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
+Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, defineTheme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
 
 Use `App.svelte` for the editor, optional `Export.svelte` for preview/PNG/PDF, and optional `Icon.svelte` for Finder artwork. The CLI discovers them and `defineSlop` mounts the editor boundary automatically. An authored `main.ts` takes precedence and must register its own components with `defineSlop(App, { schema, export: Export, icon: Icon })`, where `schema` is schema.ts's default export. Capture components mount only during capture; Export receives `mode: "preview" | "export"`. Build/register generate Quick Look artwork through the native helper, without bundling Loro. Register backs up and replaces an existing stateless master only after a successful complete build.
 
@@ -63,3 +63,9 @@ Keep high-frequency or transient values (drag positions, playback, timers) in lo
 Counter values read `number | null`: `null` flags invalid stored contributions or merged overflow; render it as unavailable and disable increments.
 
 `slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. Schema, initial data, theme and manifest changes (including their imports) reset disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. Adding/removing conventional entry files reloads the preview.
+
+The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
+Catch semantic refusals with `isRejected(error)` and other document outcomes with
+`isDocumentError(error)`, not `instanceof`. Transaction handles collect writes only;
+use live handles for previews and bound `.value` assignments. Explicit `flush()`
+remains available.

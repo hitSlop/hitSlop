@@ -8,10 +8,11 @@ limits, security, capture and telemetry.
 
 The page shell owns the page and the whole lifecycle: it opens the document, then
 imports the package's `assets/app.js` and calls `default.mount(ctx, target)`
-([abi.ts](../../packages/document/src/abi.ts)). `ctx` is the only thing an app may rely
+([abi.ts](../../packages/document/src/abi.ts)). The private `@hitslop/shell` package supplies the runtime; `@hitslop/document`
+contains only the author SDK. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`,
-`issues`), `bind.text`/`bind.value`, capture hooks, attachments, theme,
-`window.resize` and `reportError`. The returned view supplies `rendered()` (wait for
+`issues`), `bind.text`/`bind.value`, capture hooks, attachments, `window.resize` and
+`reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view supplies `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.
 
@@ -41,7 +42,7 @@ Example.slop/
   assets/                       immutable compiled code, CSS, and resources
     app.js                      app module: export default { mount(ctx, target) }
     app.css                     compiled app styling
-    theme.json                  declared token defaults
+    theme.json                  declared theme colors (the palette's defaults)
   state.schema.json             root object descriptor, not JSON Schema
   initial.json                  immutable creation-only values
   .agents/skills/hitslop-document/SKILL.md
@@ -75,7 +76,7 @@ Failed saves retain ownership and native retry UI; cancel-close restores editing
 
 Opaque imported attachments live at `state/attachments/<sha256>`, outside Loro. `attachments.import(file, (tx, ref) => …)` stores and fsyncs the bytes, then submits the collector's reference edits; the close and capture barriers wait for it, so a blob is never saved without its reference. The owner enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document), rejects links, and verifies hashes on read. Duplication copies attachments; runtime templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
 
-Theme overrides are bounded host presentation state, not a document projection: at most 64 KiB of declared tokens in `state/document.sqlite`, outside Loro, validated on write as [architecture](../architecture.md#themes-and-attachments) describes. The page shell applies defaults and overrides as CSS variables before mounting the app. Loading never validates; the browser ignores CSS it cannot parse. Arbitrary CSS override files are unsupported, and layout changes need authoring source and a rebuild.
+Theme overrides are bounded host presentation state, not a document projection: at most 256 declared colors in `state/document.sqlite`, outside Loro, validated when changed and saved with the document's edits as [architecture](../architecture.md#themes-and-attachments) describes. The page shell applies the effective palette as CSS variables before mounting the app, and again whenever it changes. Loading never validates. Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
 ## Opening and recovery
 
@@ -137,3 +138,16 @@ A stored document opens only under an identical schema key: the canonical JSON o
 descriptor, with keys sorted recursively, array order kept, no whitespace and
 JavaScript JSON number formatting. These rules are frozen by a golden vector in
 `packages/document/tests/schema.test.ts`. Schema evolution is deferred.
+
+The native page protocol has one request/reply envelope for document edits and host
+services. TypeBox owns it in `@hitslop/schema/page`; core payloads are in
+`@hitslop/schema/core`. Requests carry no correlation ID or view token: WebKit
+correlates promises and Swift supplies lifecycle identity after checking the sender.
+The host enters the shell through `__slop` for publications, capture and lifecycle.
+Apps use the restricted `ctx.document` facade and its explicit durability barrier,
+`flush()`. Themes arrive as effective values; `defineTheme` exposes defaults and CSS
+variable references, while authored layout stays in CSS.
+
+Swift encodes replies with the generated `PageResult`, and Rust validates requests
+against the generated schemas. The shell checks only each reply's outcome envelope and
+does not bundle TypeBox.

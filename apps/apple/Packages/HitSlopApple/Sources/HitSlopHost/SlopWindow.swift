@@ -106,6 +106,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?
+  /// The theme panel beside the window, while shown.
+  var themePanel: NSPanel?
+  var themeEditor: SlopThemeEditorModel?
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
   /// Undo for this window's document; see `DocumentUndoManager`.
@@ -261,6 +264,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       visible: window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame)
     window.setFrame(frame, display: true, animate: true)
     if toolbar?.isVisible == true { showToolbar() }
+    layoutThemePanel()
     return frame.size
   }
   public var isPinned: Bool { window?.level == .floating }
@@ -269,6 +273,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     window?.level = pinned ? .floating : .normal
     toolbarHost?.rootView = toolbarView()
     if toolbar?.isVisible == true { showToolbar() }
+    layoutThemePanel()
   }
   public var documentTitle: String { window?.title ?? SlopDocumentIdentity(url: packageURL).filename }
   /// The window's icon, read once at open, at menu size.
@@ -280,7 +285,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public func owns(_ candidate: NSWindow?) -> Bool {
     guard let candidate else { return false }
-    return candidate === window || candidate === toolbar || candidate === openingProgress?.panel
+    return candidate === window || candidate === toolbar || candidate === themePanel
+      || candidate === openingProgress?.panel
   }
   public func updatePresentation(pinned: Bool, commandsEnabled: Bool, pageError: String?) {
     updatePageFailure(pageError)
@@ -370,6 +376,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func windowDidResize(_ notification: Notification) {
     if toolbar?.isVisible == true { showToolbar() }
     refreshIssueBadge()
+    layoutThemePanel()
+  }
+  public func windowDidChangeScreen(_ notification: Notification) {
+    layoutThemePanel()
   }
   public func windowWillMiniaturize(_ notification: Notification) {
     hideToolbar()
@@ -382,6 +392,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     documentAttention = nil
     guestIssue = nil
     refreshIssueBadge()
+    closeThemePanel()
     hideToolbar()
     toolbar?.close()
     toolbar = nil

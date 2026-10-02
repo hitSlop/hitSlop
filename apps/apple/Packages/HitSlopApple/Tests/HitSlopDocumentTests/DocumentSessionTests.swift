@@ -7,16 +7,136 @@ import WebKit
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentSessionTests {
+  // The production shell must open and execute document operations under the page CSP.
+  @Test @MainActor func shellStartupAndOperationsRespectCSP() async throws {
+    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(packageURL: root)
+    session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
+      globalThis.cspViolations = [];
+      addEventListener('securitypolicyviolation', event => cspViolations.push(event.violatedDirective));
+      """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    session.load()
+    do {
+      try await session.waitUntilReady()
+      _ = try await session.webView.callAsyncJavaScript("await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
+      let violations = try await session.webView.callAsyncJavaScript("return cspViolations", arguments: [:], in: nil, contentWorld: .page) as? [String]
+      #expect(violations == [])
+      try await session.close()
+    } catch { try? await session.close(); throw error }
+  }
+
   // The native dispatch boundary must reject an oversized or unknown-field request
   // before base64 decoding or touching SQLite.
   @Test func bridgeRejectsOversizedPayloadsAndUnknownFields() {
-    #expect(BridgeRequest(["method": "config"]) != nil)
-    #expect(BridgeRequest(["method": "config", "extra": "unexpected"]) == nil)
-    #expect(BridgeRequest(["method": "attachments.list"]) == nil)
-    #expect(BridgeRequest(["method": "theme.load"]) != nil)
-    #expect(BridgeRequest(["method": "window.resize", "width": ["nested": 1], "height": 300]) == nil)
+    #expect((try? PageRequest(["method": "config"])) != nil)
+    #expect((try? PageRequest(["method": "config", "extra": "unexpected"])) == nil)
+    #expect((try? PageRequest(["method": "attachments.list"])) == nil)
+    #expect((try? PageRequest(["method": "open"])) != nil)
+    #expect((try? PageRequest(["method": "window.resize", "width": ["nested": 1], "height": 300])) == nil)
     let oversized = String(repeating: "A", count: 15 * 1024 * 1024)
-    #expect(BridgeRequest(["method": "attachments.put", "bytes": oversized]) == nil)
+    #expect((try? PageRequest(["method": "attachments.put", "bytes": oversized])) == nil)
+  }
+
+  // A theme can change after config is read but before the app finishes mounting.
+  @Test @MainActor func themeChangesDuringMountReachTheReadyPage() async throws {
+    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("""
+      export default { async mount() {
+        globalThis.mountStarted = true;
+        await new Promise(resolve => globalThis.finishMount = resolve);
+        return {};
+      }};
+      """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
+    let session = try await DocumentSession.open(packageURL: root)
+    session.load()
+    do {
+      var mounted = false
+      for _ in 0..<200 where !mounted {
+        mounted = (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
+        if !mounted { try await Task.sleep(for: .milliseconds(25)) }
+      }
+      #expect(mounted)
+      _ = try await session.owner.applyTheme(.set(valuesJson: ##"{"accent":"#123456"}"##))
+      _ = try await session.webView.callAsyncJavaScript("finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
+      try await session.waitUntilReady()
+      func accent() async throws -> String? {
+        try await session.webView.callAsyncJavaScript("return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil, contentWorld: .page) as? String
+      }
+      for _ in 0..<100 {
+        if try await accent() == "#123456" { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(try await accent() == "#123456")
+      let reset = try await session.owner.applyTheme(.reset(token: "accent"))
+      let expected = try JSONDecoder().decode([String: String].self, from: Data(reset.effective.utf8))["accent"]
+      for _ in 0..<100 {
+        if try await accent() == expected { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(try await accent() == expected)
+      try await session.close()
+    } catch { try? await session.close(); throw error }
+  }
+
+  // The theme panel's changes are edits: applied in the order made, settled on the page
+  // before a flush returns (so an export shows them), held back from a capture in
+  // progress, reported to the window, and saved by close.
+  @Test @MainActor func panelThemeChangesSettleBeforeFlushAndSaveOnClose() async throws {
+    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
+    let session = try await DocumentSession.open(packageURL: root)
+    let events = SessionEvents()
+    var reported: [String?] = []
+    events.theme = { reported.append($0.effective["accent"]) }
+    session.delegate = events
+    session.load()
+    func accent() async throws -> String? {
+      try await session.webView.callAsyncJavaScript(
+        "return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil,
+        contentWorld: .page) as? String
+    }
+    func saved() async throws -> String? {
+      let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+      defer { Task { try? await snapshot.close() } }
+      return try JSONDecoder().decode([String: String].self, from: Data(try await snapshot.loadTheme().state.effective.utf8))["accent"]
+    }
+    do {
+      try await session.waitUntilReady()
+      #expect(session.canEditTheme)
+      for step in 1...20 { session.changeTheme(.set(["accent": String(format: "#0000%02x", step)])) }
+      try await session.flush()
+      #expect(try await accent() == "#000014")
+      #expect(try await saved() == "#000014")
+      #expect(reported.last == "#000014")
+
+      var refused: Error?
+      session.changeTheme(.set(["accent": "red"])) { if case .failure(let error) = $0 { refused = error } }
+      session.changeTheme(.resetAll)
+      try await session.flush()
+      #expect(refused != nil)
+      #expect(try await accent() == "#335577")
+
+      session.capturing = true
+      session.changeTheme(.set(["accent": "#abcabc"]))
+      try await Task.sleep(for: .milliseconds(150))
+      #expect(try await accent() == "#335577", "a capture in progress is not restyled")
+      session.capturing = false
+      for _ in 0..<100 where try await accent() != "#abcabc" { try await Task.sleep(for: .milliseconds(10)) }
+      #expect(try await accent() == "#abcabc")
+
+      session.changeTheme(.set(["accent": "#fedcba"]))
+      try await session.close()
+      #expect(try await saved() == "#fedcba")
+    } catch { try? await session.close(); throw error }
   }
 
   @Test @MainActor func socketRejectsMalformedEnvelopesBeforeDispatch() async throws {
@@ -29,7 +149,7 @@ import WebKit
     let path = server.path
     for payload in [
       "not json", "{}",
-      #"{"id":"x","method":"export","documentPath":"/tmp/a.slop","format":"pdf","output":"/tmp/a.pdf"}"#,
+      #"{"method":"export","documentPath":"/tmp/a.slop","format":"pdf","output":"/tmp/a.pdf"}"#,
     ] {
       let data = try await Task.detached {
         try SocketClient.call(path: path, request: Data(payload.utf8))
@@ -53,7 +173,7 @@ import WebKit
     }
     defer { server.stop() }
     let path = server.path
-    let request = Data(#"{"id":"x","method":"get","documentPath":"/tmp/a.slop"}"#.utf8)
+    let request = Data(#"{"method":"get","documentPath":"/tmp/a.slop"}"#.utf8)
     // The synchronous client must not occupy Swift's cooperative executor.
     func call() async throws -> Data {
       try await withCheckedThrowingContinuation { continuation in
@@ -208,10 +328,10 @@ import WebKit
         const bridge = frame.contentWindow?.webkit?.messageHandlers?.hitslop;
         let framed = 'unreachable';
         if (bridge) {
-          try { await bridge.postMessage(request); framed = 'accepted'; } catch { framed = 'rejected'; }
+          try { framed = (await bridge.postMessage(request)).ok ? 'accepted' : 'rejected'; } catch { framed = 'rejected'; }
         }
         let main = 'rejected';
-        try { await webkit.messageHandlers.hitslop.postMessage(request); main = 'accepted'; } catch {}
+        try { main = (await webkit.messageHandlers.hitslop.postMessage(request)).ok ? 'accepted' : 'rejected'; } catch {}
         frame.remove();
         return {framed, main};
         """

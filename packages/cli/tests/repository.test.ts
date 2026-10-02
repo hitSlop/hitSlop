@@ -73,7 +73,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
 });
 
 test("hygiene allows authored JS and rejects broken skill links", async () => {
-  expect(() => assertNoGeneratedSource(["packages/document/src/boot.js"])).not.toThrow();
+  expect(() => assertNoGeneratedSource(["packages/shell/src/boot.js"])).not.toThrow();
   expect(() => assertNoGeneratedSource(["packages/document/src/schema.js"])).toThrow();
   const root = await mkdtemp(join(tmpdir(), "hitslop-hygiene-"));
   try {

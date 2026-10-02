@@ -13,5 +13,4 @@ export default defineTheme({
   ink: "#fdfbf7",
   inkMuted: "#9a9086",
   focus: "#f59e0b",
-  bodyFont: '"Avenir Next", "Helvetica Neue", sans-serif',
 });

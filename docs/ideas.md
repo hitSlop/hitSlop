@@ -26,22 +26,12 @@ a person and their agent edit the same live document. What's missing is the slop
 | Rung | Today |
 | --- | --- |
 | Use a slop | The window |
-| Tweak its look | Theme tokens, through the CLI only |
+| Tweak its look | The theme panel in the window, and shared theme files |
 | Ask for a change to its data | An agent you run in a terminal |
 | Change the app | Only with its source project; a `.slop` you receive has none |
 | Make a new one | `slop init` and an agent |
 
 ## Build the slope
-
-### Tweak panel
-
-- **What:** a popover from the hover toolbar with a color or font picker for each declared
-  theme token, and Reset.
-- **Why:** the first rung without a terminal. Today the styling guide has to say "The Mac
-  app currently has no built-in theme picker".
-- **Builds on:** the store's `theme` function (`crates/hitslop-core/src/store.rs`)
-  already validates and saves get, set and reset. Open windows already apply overrides
-  live.
 
 ### Ask from the window
 

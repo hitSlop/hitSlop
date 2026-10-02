@@ -55,6 +55,8 @@ import SwiftUI
         return store.documents[id: id]?.acceptsCommands == true && native.controllers[id]?.isContentReady == true
     }
     public var isActiveDocumentPinned: Bool { activeID.flatMap { store.documents[id: $0]?.isPinned } ?? false }
+    public var isActiveDocumentThemeShown: Bool { activeID.flatMap { native.controllers[$0]?.isThemeShown } ?? false }
+    public var canEditActiveDocumentTheme: Bool { activeID.flatMap { native.controllers[$0]?.session.canEditTheme } ?? false }
     private var activeID: UUID? {
         // Resolve from AppKit at invocation; modal panels cannot retarget an existing operation.
         let candidate = NSApp.keyWindow ?? NSApp.mainWindow

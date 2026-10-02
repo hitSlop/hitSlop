@@ -8,8 +8,9 @@
 //! that is larger. While open, a checkpoint trims only past `SESSION_BYTES`. Compaction
 //! keeps no history.
 //!
-//! A host keeps two serial queues: edits and `Store::job` on one, every other `Store`
-//! call on the other, so a slow write never blocks edits.
+//! A host keeps two serial queues: edits, `Store::theme` and `Store::job` on one, every
+//! other `Store` call on the other, so a slow write never blocks edits. A theme change is
+//! held in memory like an edit and saved by the next job, in the same transaction.
 
 use crate::{theme, Document};
 use loro::{ExportMode, Frontiers, VersionVector};
@@ -19,6 +20,7 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -83,8 +85,8 @@ fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_ {
 
 /// Fault injection for tests at the real I/O boundary: `load`, `append:uncommitted`,
 /// `append:committed`, `checkpoint:uncommitted`, `checkpoint:committed`,
-/// `theme:uncommitted`, `theme:committed` and `close`. A
-/// hook may block or fail the call.
+/// `theme:uncommitted` and `theme:committed` (a job that saves only the theme), and
+/// `close`. A hook may block or fail the call.
 pub trait Phases: Send + Sync {
     fn reached(&self, phase: &str) -> Result<()>;
 }
@@ -237,6 +239,13 @@ struct Account {
     opened: Frontiers,
     schema_key: String,
 }
+/// The document's palette, held in memory from `document` on. `revision` counts accepted
+/// changes; `saved` is the revision the durable state covers.
+struct ThemeSlot {
+    theme: theme::Theme,
+    revision: u64,
+    saved: u64,
+}
 
 /// One package's storage. `Document` mode owns the package: it holds the writer lock and
 /// persists writes. `Snapshot` mode reads the saved rows once, without the lock; its
@@ -246,7 +255,11 @@ pub struct Store {
     inode: u64,
     doc_id: String,
     backing: Mutex<Backing>,
+    /// Whether this store holds the writer lock. Read without `backing`, which a save holds
+    /// for its whole transaction, so checking ownership never waits for a save.
+    owned: AtomicBool,
     account: Mutex<Account>,
+    theme: Mutex<Option<ThemeSlot>>,
     phases: Mutex<Option<Arc<dyn Phases>>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -255,11 +268,14 @@ pub enum Mode {
     Snapshot,
 }
 
-/// Bytes to persist, exported on the edit queue and written on the storage queue.
+/// Bytes to persist, exported on the edit queue and written on the storage queue. A job
+/// with no bytes saves only the theme.
 pub struct SaveJob {
     checkpoint: bool,
     bytes: Vec<u8>,
     version: VersionVector,
+    /// The overrides to save, and the theme revision they cover.
+    theme: Option<(String, u64)>,
 }
 impl SaveJob {
     pub fn is_checkpoint(&self) -> bool {
@@ -353,6 +369,7 @@ impl Store {
             root: root.to_owned(),
             inode,
             doc_id,
+            owned: AtomicBool::new(matches!(backing, Backing::Disk { .. })),
             backing: Mutex::new(backing),
             account: Mutex::new(Account {
                 meta: Metadata::default(),
@@ -360,6 +377,7 @@ impl Store {
                 opened: Frontiers::default(),
                 schema_key: String::new(),
             }),
+            theme: Mutex::new(None),
             phases: Mutex::new(None),
         })
     }
@@ -420,19 +438,31 @@ impl Store {
         if inode(&self.root).ok() != Some(self.inode) {
             return Err(Error::Moved);
         }
-        if writable && !matches!(&*lock(&self.backing), Backing::Disk { lock: Some(_), .. }) {
+        if writable && !self.owned.load(Ordering::Acquire) {
             return Err(Error::Closed);
         }
         Ok(())
     }
 
-    /// The saved document. A package without a checkpoint starts from `initial` and saves
-    /// its first checkpoint. Also the reload after discarding unsaved edits.
-    pub fn document(&self, schema_key: &str, initial: &str) -> Result<Document> {
+    /// The saved document and its palette over `theme_defaults` (the package's
+    /// `assets/theme.json`). A package without a checkpoint starts from `initial` and saves
+    /// its first checkpoint. Also the reload after discarding unsaved edits, which
+    /// discards unsaved theme changes too.
+    pub fn document(&self, schema_key: &str, initial: &str, theme_defaults: &str) -> Result<Document> {
         self.phase("load")?;
         self.check(false)?;
         let core = |e: crate::Error| failed(e);
         let mut backing = lock(&self.backing);
+        let stored = match &*backing {
+            Backing::Memory(saved) => saved.theme.clone(),
+            Backing::Disk { conn, .. } => conn
+                .as_ref()
+                .ok_or(Error::Closed)?
+                .query_row("SELECT theme FROM document WHERE id=1", [], |r| r.get(0))
+                .map_err(sqlite("read theme"))?,
+        };
+        let theme = theme::Theme::new(theme_defaults, &stored).map_err(Error::Rejected)?;
+        *lock(&self.theme) = Some(ThemeSlot { theme, revision: 0, saved: 0 });
         let (doc, meta) = match &mut *backing {
             Backing::Memory(saved) => {
                 if saved.checkpoint.is_some() && saved.schema_key.as_deref() != Some(schema_key) {
@@ -457,7 +487,7 @@ impl Store {
                 None => {
                     drop(backing);
                     let doc = Document::create(schema_key, initial).map_err(core)?;
-                    let job = SaveJob { checkpoint: true, bytes: doc.checkpoint().map_err(core)?, version: doc.doc.oplog_vv() };
+                    let job = SaveJob { checkpoint: true, bytes: doc.checkpoint().map_err(core)?, version: doc.doc.oplog_vv(), theme: None };
                     let mut account = lock(&self.account);
                     account.schema_key = schema_key.into();
                     account.opened = doc.doc.oplog_frontiers();
@@ -481,10 +511,16 @@ impl Store {
             (account.meta, account.schema_key.len() as i64, account.saved.clone(), account.opened.clone())
         };
         let version = doc.doc.oplog_vv();
+        let theme = lock(&self.theme)
+            .as_ref()
+            .filter(|slot| slot.revision > slot.saved)
+            .map(|slot| slot.theme.overrides().map(|json| (json, slot.revision)))
+            .transpose()
+            .map_err(Error::Rejected)?;
         if version == saved && !force_checkpoint {
-            return Ok(None);
+            return Ok(theme.map(|theme| SaveJob { checkpoint: false, bytes: vec![], version, theme: Some(theme) }));
         }
-        let job = |checkpoint, bytes| SaveJob { checkpoint, bytes, version: version.clone() };
+        let job = |checkpoint, bytes| SaveJob { checkpoint, bytes, version: version.clone(), theme: theme.clone() };
         // SQLite also bounds the complete row, including its schema key.
         let fits = |bytes: &[u8]| bytes.len() as i64 + key + 512 <= MAX_BYTES;
         let snapshot = |doc: &mut Document| -> Result<Option<SaveJob>> {
@@ -547,14 +583,14 @@ impl Store {
             Some(bytes) => Some(bytes),
             None => trimmed(doc, &latest, smaller)?,
         };
-        Ok(bytes.map(|bytes| SaveJob { checkpoint: true, bytes, version }))
+        Ok(bytes.map(|bytes| SaveJob { checkpoint: true, bytes, version, theme: None }))
     }
 
     /// Writes a job in one transaction. An error may follow the commit, so the durable
     /// version advances only on success; sizes are re-read either way.
     pub fn write(&self, job: &SaveJob) -> Result<()> {
         self.check(false).map_err(|_| Error::Moved)?;
-        if job.bytes.is_empty() {
+        if job.bytes.is_empty() && job.theme.is_none() {
             return Err(failed("Invalid save bytes"));
         }
         let mut backing = lock(&self.backing);
@@ -565,8 +601,11 @@ impl Store {
                     saved.checkpoint = Some(job.bytes.clone());
                     saved.schema_key = Some(schema_key);
                     saved.updates.clear();
-                } else {
+                } else if !job.bytes.is_empty() {
                     saved.updates.push(job.bytes.clone());
+                }
+                if let Some((theme, _)) = &job.theme {
+                    saved.theme = theme.clone();
                 }
                 saved.metadata()
             }
@@ -586,13 +625,19 @@ impl Store {
         let mut account = lock(&self.account);
         account.meta = meta;
         account.saved = job.version.clone();
+        drop(account);
+        if let (Some((_, revision)), Some(slot)) = (&job.theme, lock(&self.theme).as_mut()) {
+            slot.saved = slot.saved.max(*revision);
+        }
         Ok(())
     }
     /// Dropping the guard rolls back: on any error, after a failed COMMIT, or in a panic.
     fn transaction(&self, conn: &Connection, job: &SaveJob, schema_key: &str) -> Result<Metadata> {
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("begin"))?;
         let size = job.bytes.len() as i64;
-        let (method, meta) = if job.checkpoint {
+        let (method, meta) = if job.bytes.is_empty() {
+            ("theme", lock(&self.account).meta)
+        } else if job.checkpoint {
             if size > MAX_BYTES || schema_key.len() as i64 > MAX_KEY_BYTES {
                 return Err(Error::Full);
             }
@@ -612,39 +657,39 @@ impl Store {
                 .map_err(sqlite("append"))?;
             ("append", Metadata { rows: meta.rows + 1, update_bytes: meta.update_bytes + size, ..meta })
         };
+        if let Some((theme, _)) = &job.theme {
+            tx.prepare_cached("UPDATE document SET theme=? WHERE id=1")
+                .and_then(|mut s| s.execute([theme]))
+                .map_err(sqlite("save theme"))?;
+        }
         self.phase(&format!("{method}:uncommitted"))?;
         tx.commit().map_err(sqlite("commit"))?;
         self.phase(&format!("{method}:committed"))?;
         Ok(meta)
     }
 
-    /// Runs a theme command against the stored overrides, under `theme::apply`'s rules.
-    /// Changes are saved under ownership; a snapshot answers from what it read and
-    /// refuses changes.
-    pub fn theme(&self, defaults: &str, change: theme::Change) -> Result<theme::ThemeState> {
-        let changes = !matches!(change, theme::Change::Get);
-        self.check(changes)?;
-        let backing = lock(&self.backing);
-        let conn = match &*backing {
-            Backing::Memory(saved) => return theme::apply(defaults, &saved.theme, change).map_err(Error::Rejected),
-            Backing::Disk { conn, .. } => conn.as_ref().ok_or(Error::Closed)?,
-        };
-        let stored: String = conn
-            .query_row("SELECT theme FROM document WHERE id=1", [], |r| r.get(0))
-            .map_err(sqlite("read theme"))?;
-        let applied = theme::apply(defaults, &stored, change).map_err(Error::Rejected)?;
-        // A command that changes nothing writes nothing.
-        if changes && applied.overrides != stored {
-            if applied.overrides.len() > crate::wire::THEME_LIMIT {
-                return Err(Error::Full);
-            }
-            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("begin"))?;
-            tx.execute("UPDATE document SET theme=? WHERE id=1", [&applied.overrides]).map_err(sqlite("save theme"))?;
-            self.phase("theme:uncommitted")?;
-            tx.commit().map_err(sqlite("commit"))?;
-            self.phase("theme:committed")?;
+    /// Runs a theme command against the palette held in memory, under the palette rules.
+    /// A change is saved by the next job; a snapshot answers from what it read and refuses
+    /// changes. Returns the theme and whether the command changed it.
+    pub fn theme(&self, change: theme::Change) -> Result<(theme::ThemeState, bool)> {
+        if !matches!(change, theme::Change::Get) {
+            self.check(true)?;
         }
-        Ok(applied)
+        let mut slot = lock(&self.theme);
+        let slot = slot.as_mut().ok_or(Error::Closed)?;
+        let changed = slot.theme.change(change).map_err(Error::Rejected)?;
+        if changed {
+            slot.revision += 1;
+        }
+        Ok((slot.theme.state().map_err(Error::Rejected)?, changed))
+    }
+    /// Whether an accepted theme change is not yet durable.
+    pub fn theme_unsaved(&self) -> bool {
+        lock(&self.theme).as_ref().is_some_and(|slot| slot.revision > slot.saved)
+    }
+    /// The palette as a theme file for `template` (see `theme::Theme::export`).
+    pub fn export_theme(&self, template: &str) -> Result<String> {
+        lock(&self.theme).as_ref().ok_or(Error::Closed)?.theme.export(template).map_err(Error::Rejected)
     }
 
     /// Releases the database, then the writer lock. A failed close keeps ownership.
@@ -658,6 +703,7 @@ impl Store {
                     return Err(failed(format!("close; retaining document ownership: {e}")));
                 }
             }
+            self.owned.store(false, Ordering::Release);
             *lock = None;
         }
         Ok(())

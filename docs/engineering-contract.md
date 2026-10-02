@@ -14,7 +14,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - `hitslop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
   (the OS writer lock, SQLite, the save policy), and is the only code that opens
   `state/document.sqlite`. Swift `DocumentOwner` schedules saves and owns the socket and
-  delivery; Loro bytes never reach Swift. The page shell (`packages/document`) holds no CRDT.
+  delivery; Loro bytes never reach Swift. The page shell (`packages/shell`) holds no CRDT.
 - A slop package contains only its app: `manifest.json`, `assets/` (including
   `app.js`), `state.schema.json`, `initial.json`, optional QuickLook images and the
   embedded `.agents/skills/hitslop-document` guidance. No engine, runtime metadata,

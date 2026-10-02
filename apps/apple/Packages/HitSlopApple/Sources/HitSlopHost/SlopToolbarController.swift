@@ -46,6 +46,7 @@ extension SlopDocumentWindowController {
       },
       drag: { [weak self] event in self?.dragWindow(with: event) }, pinned: isPinned,
       commandsEnabled: commandsEnabled && isContentReady,
+      themeShown: isThemeShown, themeEnabled: commandsEnabled && isContentReady && session.canEditTheme,
       minimize: { [weak self] in self?.miniaturizeFromToolbar() },
       send: { [weak self] command in self?.request(command) }, editors: SlopEditors.installed)
   }

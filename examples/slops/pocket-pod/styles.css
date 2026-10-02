@@ -1,6 +1,9 @@
 :root {
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+:root {
   color-scheme: light;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-synthesis: none;
 }
 

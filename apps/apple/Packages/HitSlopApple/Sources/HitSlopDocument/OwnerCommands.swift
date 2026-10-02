@@ -5,48 +5,41 @@ import HitSlopCoreBinding
 extension DocumentOwner {
   /// Checks the envelope only. Batches and text edits arrive as JSON text that only the
   /// core parses, and the opened state returns as the core's JSON text.
-  @MainActor func admitPage(_ args: [String: Any], reply: @escaping @MainActor @Sendable ([String: Any]) -> Void) {
-    let id = args["id"] as? String ?? "invalid"
-    let refuse = { (error: Error) in reply(Self.pageFailure(error, id: id)) }
-    guard args["id"] is String, (1...128).contains(id.count), let view = args["view"] as? String,
-      (1...128).contains(view.count), let method = args["method"] as? String
-    else { return refuse(OwnerError.rejected("Invalid page request")) }
-    func payload(_ key: String) throws -> String {
-      guard args.count == 4, let text = args[key] as? String else { throw OwnerError.rejected("Invalid page request") }
-      guard text.utf8.count <= Limits.pagePayload else { throw OwnerError.tooLarge }
-      return text
-    }
+  @MainActor func admitPage(_ request: PageRequest, view: String, reply: @escaping @MainActor @Sendable ([String: Any]) -> Void) {
     do {
       let command: PageCommand
-      switch method {
-      case "apply": command = .apply(try payload("batch"))
-      case "text": command = .text(try payload("request"))
-      case "open", "flush", "undo", "redo":
-        guard args.count == 3 else { throw OwnerError.rejected("Invalid page request") }
-        command = ["open": .open, "flush": .flush, "undo": .undo, "redo": .redo][method]!
-      default: throw OwnerError.rejected("Invalid page request")
+      switch request.method {
+      case .apply: command = .apply(request.value["batch"] as! String)
+      case .text: command = .text(request.value["request"] as! String)
+      case .open: command = .open
+      case .flush: command = .flush
+      case .undo: command = .undo
+      case .redo: command = .redo
+      default: throw OwnerError.rejected("Not a document request")
       }
+      let method = request.method
       enqueuePage(command, view: view) { outcome in
         DispatchQueue.main.async {
-          let fields: [String: Any]
+          let result: PageResult
           switch outcome {
-          case .failure(let error): return reply(Self.pageFailure(error, id: id))
-          case .success(.opened(let opened)):
-            fields = ["state": opened.state]
-          case .success(.applied(let applied)): fields = ["sequence": applied.sequence, "ids": applied.ids]
-          case .success(.text(let edit)): fields = ["sequence": edit.sequence, "authored": edit.authored,
-            "selectionStart": edit.selectionStart, "selectionEnd": edit.selectionEnd]
-          case .success(.flushed): fields = [:]
-          case .success(.history(let sequence)): fields = ["sequence": sequence]
+          case .failure(let error): return reply(Self.pageFailure(error))
+          case .success(.opened(let opened)): result = .open(.init(state: opened.state))
+          case .success(.applied(let applied)): result = .apply(.init(sequence: applied.sequence, ids: applied.ids))
+          case .success(.text(let edit)):
+            result = .text(.init(sequence: edit.sequence, authored: edit.authored,
+              selectionStart: edit.selectionStart, selectionEnd: edit.selectionEnd))
+          case .success(.flushed): result = .flush
+          case .success(.history(let sequence)):
+            result = method == .undo ? .undo(.init(sequence: sequence)) : .redo(.init(sequence: sequence))
           }
-          reply(fields.merging(["id": id, "ok": true]) { _, new in new })
+          reply(result.json)
         }
       }
-    } catch { refuse(error) }
+    } catch { reply(Self.pageFailure(error)) }
   }
-  static func pageFailure(_ error: Error, id: String) -> [String: Any] {
+  static func pageFailure(_ error: Error) -> [String: Any] {
     let outcome = RequestOutcome(error)
-    var fields: [String: Any] = ["id": id, "ok": false, "code": outcome.pageCode.rawValue, "error": error.localizedDescription]
+    var fields: [String: Any] = ["ok": false, "code": outcome.pageCode.rawValue, "error": error.localizedDescription]
     if case let .rejected(reason, opIndex) = outcome {
       fields["reason"] = reason.rawValue
       if let opIndex { fields["opIndex"] = opIndex }
@@ -73,31 +66,38 @@ extension DocumentOwner {
       case .hello:
         reply.coreBuildId = Self.coreBuildID
         return reply.encoded()
-      case .get, .snapshot, .apply, .batch, .compact:
+      case .get, .batch, .compact:
         switch request {
-        case .apply(let r): try await accept(#"{"intents":["# + r.op + "]}", epoch: r.epoch, into: &reply)
         case .batch(let r): try await accept(#"{"intents":"# + r.ops + "}", epoch: r.epoch, into: &reply)
         case .compact: try await compact()
         default: break
         }
         mutationAccepted = reply.sequence != nil || request.method == .compact
         try await flush()
-        if case .snapshot = request {
-          let schema = String(decoding: try SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576), as: UTF8.self)
+        if case .get = request {
+          // The socket is newline-delimited; authored descriptors may be pretty-printed.
+          let descriptor = try JSONSerialization.jsonObject(with: SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576))
+          let schema = String(decoding: try JSONSerialization.data(withJSONObject: descriptor, options: .withoutEscapingSlashes), as: UTF8.self)
           state = #"{"schema":"# + schema + #","state":"# + (try await self.state()) + "}"
         } else {
           state = try await value()
         }
-      case .themeGet, .themeSet, .themeReset:
+      case .themeGet, .themeSet, .themeReset, .themeImport:
         let change: ThemeChange
         switch request {
         case .themeSet(let r):
           change = .set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: r.values), as: UTF8.self))
         case .themeReset(let r): change = .reset(token: r.token)
+        case .themeImport(let r): change = importTheme(r.file)
         default: change = .get
         }
         let theme = try await applyTheme(change)
+        // Like a batch, a theme change replies once it is durable.
+        mutationAccepted = theme.changed
+        try await flush()
         state = #"{"defaults":"# + theme.defaults + #","overrides":"# + theme.overrides + #","effective":"# + theme.effective + "}"
+      case .themeExport:
+        state = try await exportTheme()
       case .attachmentsList:
         state = String(decoding: try JSONEncoder().encode(try await listAttachments()), as: UTF8.self)
       case .attachmentsRead(let r):
@@ -143,7 +143,7 @@ extension SocketReply {
 }
 
 enum PageCommand: Sendable { case open, apply(String), text(String), flush, undo, redo }
-enum PageResult: Sendable {
+enum PageOutcome: Sendable {
   case opened(DocumentOwner.Opened), applied(DocumentOwner.Applied), text(DocumentOwner.TextEdit), flushed
   /// Undo or redo: the publication sequence to wait for.
   case history(Int)

@@ -1,3 +1,7 @@
+:root {
+  --font: "Chakra Petch", "Avenir Next", Avenir, sans-serif;
+  --displayFont: "Righteous", "Avenir Next", sans-serif;
+}
 .radio {
   position: relative;
   width: 720px;
@@ -311,7 +315,7 @@
 }
 
 :root {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   color: var(--slop-ink);
   background: transparent;
   font-synthesis: none;
@@ -336,7 +340,7 @@ button:focus-visible, input:focus-visible, [data-slider-thumb]:focus-visible, [d
 }
 
 .identity strong {
-  font: 18px/1 var(--slop-displayFont);
+  font: 18px/1 var(--displayFont);
   letter-spacing: .13em;
 }
 

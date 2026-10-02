@@ -15,7 +15,8 @@ slops not yet on the implemented document kinds are in `archive/slops`.
 - `hitslop-core` (Rust on Loro) owns document semantics and durable storage: SQLite,
   the writer lock and the save policy. The Swift `DocumentOwner` schedules saves and owns
   the socket and delivery to the page; Loro bytes never reach Swift. The page shell
-  holds no CRDT, and slops contain only their app.
+  (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
+  contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or unlink `writer.lock`. Closed edits never
   start WebKit or run authored code.

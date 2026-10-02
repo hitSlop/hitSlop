@@ -9,7 +9,7 @@ rules and standards for templates in this repository.
 | Fields, handles, changes and previews | [Data and schemas](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx) |
 | Attachments, HTTPS and YouTube | [Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx) |
 | Manifest, window shapes and hover controls | [Manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx), [PNG window skins](../../apps/landing/src/content/docs/docs/guides/png-window-skins.mdx) |
-| Plain CSS and theme tokens | [Style a slop](../../apps/landing/src/content/docs/docs/guides/styling.mdx) |
+| Plain CSS and the theme palette | [Style a slop](../../apps/landing/src/content/docs/docs/guides/styling.mdx) |
 | Export views, icons and capture | [Icons, previews, and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) |
 | Build, register and share | [Build and share](../../apps/landing/src/content/docs/docs/guides/build-and-share.mdx) |
 | Every document kind, error code and CLI path | [Document types](../reference/document-types.md) |

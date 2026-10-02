@@ -25,5 +25,4 @@ export default defineTheme({
   navyAccent: "#2563eb",
   navyCard: "#e2e8f0",
   navyBorder: "#cbd5e1",
-  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
 });

@@ -6,8 +6,8 @@ import { compileAppWithVite } from "../src/vite";
 import { readdir, mkdir } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
 
-// Without the generated theme stylesheet, a missing or late runtime theme would
-// leave the first mounted view unstyled. Existing controller tests do not mount apps.
+// The shell applies theme defaults before mount, so the first view is never unstyled.
+// Existing controller tests do not mount apps.
 test("plain DOM adapter mounts with theme defaults and renders without Svelte or an embedded engine", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {

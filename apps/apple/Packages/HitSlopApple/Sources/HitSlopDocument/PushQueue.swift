@@ -26,20 +26,16 @@ final class PushQueue: @unchecked Sendable {
   }
   private func markResync() {
     generation &+= 1
-    items = [#"{"view":"\#(view)","type":"resync"}"#]
+    items = [#"{"type":"resync"}"#]
     bytes = items[0].utf8.count
   }
   func append(_ json: String) -> Bool {
     lock.withLock {
-      // Pushes are non-empty JSON objects built by the owner; publications are passed
-      // through unparsed, so the view is spliced in as the first member.
-      precondition(json.hasPrefix("{") && !json.hasPrefix("{}"), "push must be a non-empty JSON object")
-      let tagged = #"{"view":"\#(view)","# + json.dropFirst()
-      if items.count >= Limits.pushItems || bytes + tagged.utf8.count > Limits.pushBytes {
+      if items.count >= Limits.pushItems || bytes + json.utf8.count > Limits.pushBytes {
         markResync()
       } else {
-        items.append(tagged)
-        bytes += tagged.utf8.count
+        items.append(json)
+        bytes += json.utf8.count
       }
       if draining { return false }
       draining = true

@@ -47,7 +47,9 @@ final class StorageGate: @unchecked Sendable {
   func savedHits(_ root: URL) throws -> Int? {
     let package = try SlopPackage(rootURL: root)
     let core = try NativeStore.open(root: root.path, mode: .snapshot)
-      .document(schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self))
+      .document(
+        schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self),
+        themeDefaultsJson: package.themeDefaults)
     let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
@@ -69,9 +71,9 @@ final class StorageGate: @unchecked Sendable {
     let mutations = Locked(0)
     let mutationCode = Locked<SocketReplyCode?>(nil)
     let server = try SocketServer { request, _ in
-      if request.method == .apply { mutations.modify { $0 += 1 } }
+      if request.method == .batch { mutations.modify { $0 += 1 } }
       let reply = await owner.request(request)
-      if request.method == .apply { mutationCode.modify { $0 = try? decodeReply(reply).code } }
+      if request.method == .batch { mutationCode.modify { $0 = try? decodeReply(reply).code } }
       return reply
     }
     defer { server.stop() }
@@ -122,14 +124,14 @@ final class StorageGate: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    let saved = Locked(false)
-    owner.onSaveStatus = { status in if case .saved = status { saved.modify { $0 = true } } }
     let start = ContinuousClock.now
-    while !saved.value, ContinuousClock.now - start < .seconds(3) {
+    while (try savedHits(root) ?? 0) == 0, ContinuousClock.now - start < .seconds(3) {
       try await edit(owner)
       try await Task.sleep(for: .milliseconds(50))
     }
-    #expect(saved.value)
+    // A completed write can leave newer edits pending, so `.saving` does not mean
+    // autosave failed. Check the durable bytes before close can flush them.
+    #expect((try savedHits(root) ?? 0) > 0)
     try await owner.close()
   }
 
@@ -374,9 +376,9 @@ extension PersistenceSchedulingTests {
   @Test func flushDuringDiscardRestoreSettlesAsReplaced() async throws {
     final class Reply: @unchecked Sendable {
       let lock = NSLock()
-      var result: Result<PageResult, Error>?
+      var result: Result<PageOutcome, Error>?
       var continuation: CheckedContinuation<Void, Never>?
-      func set(_ value: Result<PageResult, Error>) {
+      func set(_ value: Result<PageOutcome, Error>) {
         lock.withLock { result = value; continuation?.resume(); continuation = nil }
       }
       func wait() async {

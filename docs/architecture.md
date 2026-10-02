@@ -8,8 +8,8 @@ never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
 
 ```text
             page (WebKit)                               host (Swift)                  core (Rust)
- Svelte app ─ ctx ─ SDK store/handles ── open/apply/text/flush ──▶ DocumentOwner ── UniFFI ──▶ hitslop-core
-            ◀────────── ordered pushes (__hitslop.publish) ────────┘   │ owner queue                (Loro)
+ Svelte app ─ ctx ─ shell store/handles ── open/apply/text/flush ──▶ DocumentOwner ── UniFFI ──▶ hitslop-core
+            ◀────────── ordered pushes (__slop.publish) ────────┘   │ owner queue                (Loro)
                                                                         ▼
  CLI (slop / hitslop-native) ── socket (live) or writer lock (closed) ─┘ persistence queue ──▶ state/document.sqlite
 ```
@@ -34,11 +34,13 @@ into its generated model and owns filesystem, PNG and native path checks. Author
 keeps TypeBox manifest validation; the manifest validator dependency is excluded from
 WASM. Package open also validates descriptors, initial values and the required theme
 defaults (`assets/theme.json`) through the core; the owner reuses the validated schema key
-and defaults. The core validates socket and bridge envelopes against the same generated
+and defaults. The core validates socket and page envelopes against the same generated
 schemas (`Envelope`); Swift only serializes them for that check and maps accepted values.
 Document payloads never need that: page batches and text edits, and CLI operations, cross
 as JSON text that only the core parses, and state returns as the core's JSON text, spliced
-into replies unparsed. Shared limits and codes live in TypeBox-free
+into replies unparsed. All page methods use one `{ok, ...result}` or `{ok: false, code, error}` reply
+contract. WebKit correlates replies; native view tokens and socket epochs fence
+retired sessions without page-carried identity. Shared limits and codes live in TypeBox-free
 `packages/schema/src/constants.ts` and are generated into Rust and Swift.
 
 ## Layers
@@ -46,11 +48,12 @@ into replies unparsed. Shared limits and codes live in TypeBox-free
 | Layer | Where | Owns |
 |---|---|---|
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
-| Storage | `crates/hitslop-core/src/store.rs` (feature `storage`, native only) | `state/document.sqlite` on the platform SQLite (document and theme overrides), the writer lock, append-or-checkpoint choice, size limits, identity checks, duplicate backup |
+| Storage | `crates/hitslop-core/src/store.rs` (feature `storage`, native only) | `state/document.sqlite` on the platform SQLite (document and theme overrides, saved by the same jobs), the writer lock, append-or-checkpoint choice, size limits, identity checks, duplicate backup |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls, save jobs), persistence queue (store calls), save scheduling, epochs, view tokens |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, socket and discovery; the window is its `DocumentSessionDelegate` |
-| Page shell | `packages/document` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
+| Author SDK | `packages/document` | Descriptors, public types, errors, Svelte adapter; no host runtime |
+| Page shell | `packages/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | Contracts | `packages/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
 
 ## An edit
@@ -61,14 +64,15 @@ into replies unparsed. Shared limits and codes live in TypeBox-free
    `value` also shows at once as a local preview over the snapshot; acceptance settles
    it and a refusal reverts it. Assigned values commit after 150 ms without another
    assignment, or at the next barrier.
-2. **Host.** The page posts `apply {view, batch}`, the batch as JSON text. The owner job
-   checks the view token and epoch, then calls `apply_batch`. The reply is
+2. **Host.** The page posts `apply {batch}`, the batch as JSON text. The native session checks
+   the sending WebView, frame and origin and supplies its view token. The owner job
+   checks that token before calling `apply_batch`. The reply is
    `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
    document clean.
 3. **Push.** The core's publication, `{previous, sequence, version, ops, issues?}`, is
    appended to the session's push queue on the owner queue, so pushes keep owner order.
    One drain at a time delivers everything buffered through a single awaited
-   `__hitslop.publish(pushes)` call. Swift never parses publications. An edit to an
+   `__slop.publish(pushes)` call. Swift never parses publications. An edit to an
    existing text field publishes a `text` op with its hunks (retain, insert, delete, in
    code points of the previous text), not the whole field. `issues`, the complete list,
    is present only when it changed.
@@ -204,16 +208,34 @@ directly: they never blur the field being typed in, and a live `get` returns
 owner-accepted state. If the document is closed, the helper takes the writer lock and
 runs the owner in process, without WebKit or authored code. Socket commands run off the
 main actor, and operations travel as JSON text. Edits print `{ids, sequence, value}`;
-mutations are never replayed automatically. `get --snapshot` prints `{schema, state}`.
+mutations are never replayed automatically. The socket has one edit method, `batch`;
+CLI `apply` validates and wraps one operation. Socket `get` returns `{schema, state}`
+from one owner frame after flushing. The CLI prints `state.value` by default and the
+complete payload with `get --snapshot`.
 
 ## Themes and attachments
 
-Theme defaults live in `assets/theme.json`; overrides live in the document's database,
-outside Loro. One Rust function applies every theme command (get, set, reset) and
-validates the result (known tokens, UTF-16 lengths, no `{};`, known `var(--slop-*)`
-references, a 64 KiB effective theme). The store saves the overrides it returns in a
-transaction under ownership, a snapshot reads them in the same transaction as the
-document, and Duplicate's backup copies them; the page only applies values.
+A theme is a palette: `assets/theme.json` declares the colors a person may change, as
+lowercase `#rrggbb` or `#rrggbbaa` (one spelling per color), and fonts and derived values
+stay in the app's CSS. The overrides live in the document's database, outside Loro.
+`theme.rs` holds every rule (declared tokens, the color spelling, 256 tokens, a 64 KiB
+effective theme) as hand-written checks, so authoring validation in WASM and native
+writes share them. The store keeps the palette in memory from `document` on: a change
+(set, reset or import) is accepted on the edit queue like an edit, drops overrides equal
+to their default, and is saved by the next save job in the same transaction as any Loro
+updates, so flush, close, retry and Duplicate cover it. A snapshot reads the overrides
+with its rows. Socket theme commands reply once saved, as `batch` does. Checking
+ownership reads a flag, never the mutex a save holds, so a theme change never waits for one.
+
+A theme file is `{template, values}` (`ThemeFileSchema`): the manifest slug and the full
+effective palette. Import validates the whole file first, refuses another template or an
+undeclared color, and replaces the overrides; colors it leaves out return to their
+defaults. Export reads the palette and then flushes, so a failing save fails the export. The window's theme panel (`SlopThemePanel.swift`) is a child window beside the
+document; it changes the palette through `DocumentSession.changeTheme`, in the order
+changes are made, and follows CLI and agent changes through `themeChanged`. The page only
+applies effective values: config includes the initial theme, later deliveries are
+serialized, and `flush` waits until the page shows the latest palette, so an export
+captures it. A capture in progress is never restyled.
 Attachments are content-addressed immutable blobs in `state/attachments`, written by
 Swift through the owner.
 
@@ -224,7 +246,7 @@ Tests live at the boundary that owns the behavior; see [testing](testing.md).
 | Boundary | Proves |
 |---|---|
 | Rust (`crates/hitslop-core/tests`) | Semantics, publications equal fresh snapshots, text merges (`text.rs`), token validation (`tokens.rs`), storage (`store.rs`) |
-| SDK over WASM (`packages/document/tests`) | Write timing, snapshot identity, collectors, text binding, stream recovery, barriers, attachments |
+| SDK over WASM (`packages/shell/tests`) | Write timing, snapshot identity, collectors, text binding, stream recovery, barriers, attachments |
 | Swift (`apps/apple/Packages/HitSlopApple/Tests`) | Persistence scheduling, lost replies, view and epoch fences, CLI, WebView bridge, export |
 
 Performance evidence is in [`evidence/`](evidence/). At 1,000 rows a window opens in under
@@ -232,4 +254,5 @@ a second and a checkbox is accepted in about 12 to 14 ms (p95); see
 `release-window-measurements-2026-09-30.json`. Publication cost from owner commit to page
 at 1,000 and 5,000 rows is in `codebase-pass-phase2-2026-10-01.json`, edit latency at
 5,000 rows in `edit-latency-2026-10-01.json`, and core keystroke cost at 10,000 and
-100,000 characters (core only, not a system IME) in `long-text-2026-09-30.json`.
+100,000 characters (core only, not a system IME) in `long-text-2026-09-30.json`. A theme
+panel color drag reaches the page within a frame at 1,000 rows (`theme-drag-2026-10-02.json`).

@@ -27,19 +27,19 @@ struct SocketReply;
 struct SocketDiscovery;
 
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/bridge.schema.json",
+    path = "../../packages/schema/generated/page-request.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = true, validate = false, iter_errors = false }
 )]
-struct BridgeRequest;
+struct PageRequest;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Envelope {
     SocketRequest,
     SocketReply,
     SocketDiscovery,
-    BridgeRequest,
+    PageRequest,
 }
 
 /// The largest envelope is an attachment upload (16 MiB on the socket, less on the
@@ -57,6 +57,6 @@ pub fn is_valid(kind: Envelope, json: &[u8]) -> bool {
         Envelope::SocketRequest => SocketRequest::is_valid(&value),
         Envelope::SocketReply => SocketReply::is_valid(&value),
         Envelope::SocketDiscovery => SocketDiscovery::is_valid(&value),
-        Envelope::BridgeRequest => BridgeRequest::is_valid(&value),
+        Envelope::PageRequest => PageRequest::is_valid(&value),
     }
 }

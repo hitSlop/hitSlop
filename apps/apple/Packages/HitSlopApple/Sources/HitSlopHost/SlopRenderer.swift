@@ -280,7 +280,7 @@ struct SlopDocumentAssets: Sendable {
         return CGRect(x: (value["x"] as? NSNumber)?.doubleValue ?? 0, y: (value["y"] as? NSNumber)?.doubleValue ?? 0, width: width.doubleValue, height: height.doubleValue)
     }
     private static func begin(_ view: WKWebView, token: String, mode: String) async throws -> [String: Any] {
-        guard let value = try await view.callAsyncJavaScript("return await window.__hitslopCapture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not prepare capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not prepare capture") }
         return value
     }
     /// `begin` has already settled at the current size; only a resize needs another settle,
@@ -288,7 +288,7 @@ struct SlopDocumentAssets: Sendable {
     private static func resizeAndSettle(_ view: WKWebView, to size: CGSize, token: String, measurement: inout [String: Any]) async throws {
         guard view.frame.size != size else { return }
         view.frame.size = size
-        guard let value = try await view.callAsyncJavaScript("return await window.__hitslopCapture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not measure capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not measure capture") }
         measurement = value
     }
     /// A user can resize the native window while an asynchronous capture is running.
@@ -302,7 +302,7 @@ struct SlopDocumentAssets: Sendable {
     }
 
     private static func restore(_ view: WKWebView, token: String) async throws {
-        _ = try await view.callAsyncJavaScript("await window.__hitslopCapture.restore(token)", arguments: ["token": token], in: nil, contentWorld: .page)
+        _ = try await view.callAsyncJavaScript("await window.__slop.capture.restore(token)", arguments: ["token": token], in: nil, contentWorld: .page)
     }
 
 }

@@ -138,7 +138,7 @@ extension OwnerClientTests {
             var issues = reported.makeAsyncIterator()
             let issue = try #require(await issues.next())
             #expect(issue.isOperation)
-            #expect(issue.message.hasPrefix("OperationRejectedError: "))
+            #expect(issue.message.hasPrefix("DocumentError: "))
         }
     }
 
@@ -156,7 +156,7 @@ extension OwnerClientTests {
                     let rejected = false;
                     try { await __slop.reloadInterface(); } catch { rejected = true; }
                     if (!rejected || !document.querySelector('[role="alert"]')) return false;
-                    const capture = globalThis.__hitslopCapture;
+                    const capture = globalThis.__slop.capture;
                     try { await capture.begin('falsy-test', 'export'); return false; }
                     catch { return !document.documentElement.hasAttribute('data-slop-capture'); }
                     finally { await capture.restore('falsy-test'); }

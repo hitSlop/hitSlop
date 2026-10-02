@@ -69,6 +69,8 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
     "packages/cli/skills/hitslop-document",
     "tsconfig.json",
     "packages/document/src",
+    "packages/shell/src",
+    "packages/shell/package.json",
     "packages/document/package.json",
     "packages/schema/src",
     "packages/schema/package.json",

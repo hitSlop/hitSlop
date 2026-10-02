@@ -43,6 +43,19 @@ extension OwnerClientTests {
     await #expect(throws: (any Error).self) {
       _ = try await command("theme.set", url: root, themeValues: Data("{\"unknown\":\"red\"}".utf8))
     }
+    // A shared theme file round-trips through the live owner and restyles the page.
+    let shared = try await command("theme.export", url: root)
+    _ = try await command("theme.reset", url: root)
+    _ = try await command("theme.import", url: root, themeFile: shared)
+    try await controller.session.flush()
+    let imported = try await controller.session.webView.callAsyncJavaScript(
+      "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
+      arguments: [:], in: nil, contentWorld: .page)
+    #expect(imported as? String == "#654321")
+    let foreign = String(decoding: shared, as: UTF8.self).replacingOccurrences(of: #""template" : ""#, with: #""template" : "other-"#)
+    await #expect(throws: (any Error).self) {
+      _ = try await command("theme.import", url: root, themeFile: Data(foreign.utf8))
+    }
     do {
       _ = try await command("apply", url: root,
         operation: Data(#"{"type":"set","path":["missing"],"value":1}"#.utf8))
@@ -80,6 +93,9 @@ extension OwnerClientTests {
     _ = try await command("theme.reset", url: root, themeToken: "accent")
     let reset = try await command("theme.get", url: root)
     #expect(try JSONSerialization.jsonObject(with: reset) as? NSDictionary == JSONSerialization.jsonObject(with: baseline) as? NSDictionary)
+    // A closed document imports through the owner the command opens.
+    _ = try await command("theme.import", url: root, themeFile: shared)
+    #expect(try await command("theme.get", url: root) == theme)
   }
 
   // Failure: every CLI command ran a page close barrier that made the page inert, blurring
@@ -314,7 +330,7 @@ extension OwnerClientTests {
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     await controller.waitForPresentation()
     controller.pageSession(controller.session, didReport: SlopPageIssue(
-      message: "OperationRejectedError: out_of_range", isOperation: true))
+      message: "DocumentError: out_of_range", isOperation: true))
     #expect(controller.issueBadge != nil)
     #expect(controller.window?.attachedSheet == nil)
     controller.pageSession(controller.session, saveStatus: .failed(.busy))

@@ -26,6 +26,4 @@ export default defineTheme({
   doneMuted: "#74776f",
   doneTag: "#4f5b42",
   danger: "#ff9a76",
-  font: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-  mono: 'ui-monospace, "SFMono-Regular", Menlo, monospace',
 });
