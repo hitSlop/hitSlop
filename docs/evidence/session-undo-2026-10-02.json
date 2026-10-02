@@ -1,0 +1,108 @@
+{
+ "measuredAt": "2026-10-02",
+ "baseCommit": "b9f082034e59c3980887e76e577c77872cb696a4",
+ "change": "Session-only undo. A document opens with nothing to undo (the closed-agent undo step and its history walk are gone), and a session that edited a document over 4 MiB closes with no history (Store::close_job trims straight to the latest version). Trimming while open is unchanged: past 16 MiB a checkpoint keeps the session's history when that fits, so a concurrent text edit can still branch from where the session opened.",
+ "why": "Undo of an agent's edits made while a document was closed was the only reader of history kept across sessions. Dropping it removes the close-time session step and the open-time walk over agent commits.",
+ "storeCost": {
+  "command": "cargo run --release -p hitslop-core --features storage --example store_cost",
+  "note": "Medians on an otherwise idle machine; baseline is history-trimming-2026-10-02.json storeCost. Within run-to-run noise; neither changed path is on these measurements.",
+  "medians": {
+   "1000x12": {
+    "appendSaveMS": 2.92,
+    "checkpointBytes": 83295,
+    "checkpointExportMS": 2.0,
+    "checkpointWriteMS": 3.78,
+    "compactExportMS": 3.64,
+    "duplicateMS": 1.45,
+    "fileBytes": 139264,
+    "openWith255UpdatesMS": 8.12,
+    "themeSaveMS": 1.94
+   },
+   "20000x12": {
+    "appendSaveMS": 2.21,
+    "checkpointBytes": 1362423,
+    "checkpointExportMS": 11.26,
+    "checkpointWriteMS": 12.37,
+    "compactExportMS": 113.2,
+    "duplicateMS": 4.45,
+    "fileBytes": 1421312,
+    "openWith255UpdatesMS": 118.13,
+    "themeSaveMS": 1.38
+   },
+   "3500x1000": {
+    "appendSaveMS": 2.55,
+    "checkpointBytes": 2066210,
+    "checkpointExportMS": 10.41,
+    "checkpointWriteMS": 39.08,
+    "compactExportMS": 20.29,
+    "duplicateMS": 6.12,
+    "fileBytes": 2121728,
+    "openWith255UpdatesMS": 35.22,
+    "themeSaveMS": 1.75
+   },
+   "5000x12": {
+    "appendSaveMS": 1.92,
+    "checkpointBytes": 354721,
+    "checkpointExportMS": 3.65,
+    "checkpointWriteMS": 5.07,
+    "compactExportMS": 22.29,
+    "duplicateMS": 2.95,
+    "fileBytes": 409600,
+    "openWith255UpdatesMS": 29.83,
+    "themeSaveMS": 1.89
+   }
+  }
+ },
+ "growth": {
+  "evidence": "document-growth-session-undo-2026-10-02.json",
+  "baseline": "document-growth-2026-10-02.json",
+  "releaseBlocked": false,
+  "results": {
+   "doodle-board": {
+    "completedDays": 365,
+    "maxSavedBytes": 5270340,
+    "finalSavedBytes": 3658212,
+    "meanFlushMS": 3.902630532246669
+   },
+   "pixel-art": {
+    "completedDays": 365,
+    "maxSavedBytes": 4232185,
+    "finalSavedBytes": 1606258,
+    "meanFlushMS": 3.102500004777703
+   },
+   "morning-pages": {
+    "completedDays": 365,
+    "maxSavedBytes": 1123150,
+    "finalSavedBytes": 1121434,
+    "meanFlushMS": 3.4392483298672127
+   }
+  },
+  "baselineResults": {
+   "doodle-board": {
+    "completedDays": 365,
+    "maxSavedBytes": 5329299,
+    "finalSavedBytes": 1856364,
+    "meanFlushMS": 3.53413691026124
+   },
+   "pixel-art": {
+    "completedDays": 365,
+    "maxSavedBytes": 4247198,
+    "finalSavedBytes": 1627090,
+    "meanFlushMS": 3.065506850514471
+   },
+   "morning-pages": {
+    "completedDays": 365,
+    "maxSavedBytes": 1115915,
+    "finalSavedBytes": 1114158,
+    "meanFlushMS": 2.2185631679108435
+   }
+  },
+  "note": "Max saved bytes, the bound, is equal or lower for every template. Doodle Board's final size is one sample of a sawtooth that trims above 4 MiB, so it depends on where day 365 falls in the cycle. Flush times vary with machine load; the flush path did not change."
+ },
+ "verification": [
+  "cargo test --locked --workspace",
+  "bun run check && bun run test",
+  "bun run build && bun run swift:test && bun run test:native",
+  "bun run hygiene && bun run landing:check"
+ ]
+}

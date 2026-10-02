@@ -37,7 +37,11 @@ private struct UpdateSettingsView: View {
 }
 
 @MainActor final class HitSlopAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
-    private lazy var coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
+    private lazy var coordinator: SlopApplicationCoordinator = {
+        let coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
+        coordinator.checkForUpdates = { [updaterController] in updaterController.checkForUpdates(nil) }
+        return coordinator
+    }()
     private var recentMenu: NSMenu?
     private var settingsWindow: NSWindow?
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)

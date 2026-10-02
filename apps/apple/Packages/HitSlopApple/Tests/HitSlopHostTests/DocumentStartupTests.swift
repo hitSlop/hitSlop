@@ -141,18 +141,11 @@ extension OwnerClientTests {
     try Data("await webkit.messageHandlers.hitslop.postMessage({method:'failed',error:'startup fixture failure'});".utf8)
       .write(to: root.appendingPathComponent("assets/app.js"))
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
-    var failures: [String] = []
     controller.showWindow(nil)
-    controller.onPageFailure = {
-      failures.append($0)
-      controller.updatePresentation(pinned: false, commandsEnabled: true, pageError: $0)
-    }
     await controller.waitForPresentation()
     #expect(controller.openingProgress == nil)
     #expect(controller.window?.isVisible == true)
-    #expect(failures.count == 1)
-    #expect(failures.first?.contains("startup fixture failure") == true)
-    controller.onPageFailure = nil
+    #expect(controller.presentedPageError?.contains("startup fixture failure") == true)
     try original.write(to: script)
     _ = try await controller.perform(.retry)
     await controller.waitForPresentation()

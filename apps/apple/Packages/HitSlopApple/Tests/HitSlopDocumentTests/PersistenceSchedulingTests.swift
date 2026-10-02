@@ -221,9 +221,9 @@ final class StorageGate: @unchecked Sendable {
     try await owner.close()
   }
 
-  // Failure: an agent's edit to a closed document lived only in the CLI process's undo,
-  // so the next window could not undo it. Oracle: the saved bytes.
-  @Test func aClosedAgentEditIsUndoneFromTheNextSession() async throws {
+  // Undo covers the open session only: an agent's edit saved while the document was
+  // closed is where the next session starts. Oracle: the saved bytes.
+  @Test func aReopenedDocumentStartsWithNothingToUndo() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let agent = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -233,19 +233,15 @@ final class StorageGate: @unchecked Sendable {
     let states = Locked<[UndoAvailability]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     owner.publishUndoState()
-    #expect(try savedHits(root) == 3)
     _ = try await owner.undo()
     try await owner.flush()
-    #expect(try savedHits(root) == 0)
-    _ = try await owner.undo(redo: true)
-    try await owner.flush()
     #expect(try savedHits(root) == 3)
-    #expect(states.value.first == UndoAvailability(canUndo: true, canRedo: false))
+    #expect(!states.value.contains { $0.canUndo }, "the window never offers Undo")
     try await owner.close()
   }
 
   // Failure: a document kept every edit it ever saw. Oracle: closing a session that
-  // edited a large document leaves its saved state smaller, holding only that session.
+  // edited a large document leaves its saved state smaller, holding no history.
   @Test func closingALargeEditedDocumentTrimsItsHistory() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -325,6 +321,29 @@ extension PersistenceSchedulingTests {
     #expect(completed)
     if completed { #expect(try savedHits(root) == 6) }
     // Also makes failure cleanup finite on the pre-fix implementation.
+    try await owner.discardPending()
+    try await owner.close()
+  }
+
+  // Failure: a discard whose reload failed (a moved package) threw without publishing, so
+  // the coordinator, which leaves save failures to the save-failure sheet, showed nothing.
+  // Oracle: the failed reload is published as a save failure.
+  @Test func aFailedDiscardPublishesItsFailure() async throws {
+    final class Statuses: @unchecked Sendable {
+      let lock = NSLock()
+      var values: [DocumentSaveStatus] = []
+      func append(_ value: DocumentSaveStatus) { lock.withLock { values.append(value) } }
+    }
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let statuses = Statuses()
+    owner.onSaveStatus = { status in statuses.append(status) }
+    try await edit(owner)
+    owner.testingPhase = { phase in if phase == "load" { throw CoreError.Moved } }
+    await #expect(throws: SaveFailure.moved) { try await owner.discardPending() }
+    owner.testingPhase = nil
+    #expect(statuses.lock.withLock { statuses.values.contains(.failed(.moved)) })
     try await owner.discardPending()
     try await owner.close()
   }

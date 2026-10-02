@@ -53,7 +53,9 @@ public struct SlopPackage: Sendable {
         guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
         return value
       }
-      schemaKey = try validateDocument(schemaJson: utf8("state.schema.json", maximum: 1_048_576), initialJson: utf8("initial.json", maximum: SlopFile.maximumBytes))
+      // `initial.json` is creation-only: storage creation and `validateAsTemplate` check
+      // it, so a later, stricter rule never refuses a saved document.
+      schemaKey = try documentSchemaKey(schemaJson: utf8("state.schema.json", maximum: 1_048_576))
       themeDefaults = try utf8("assets/theme.json", maximum: Limits.theme)
       themeTokens = try validateThemeDefaults(json: themeDefaults)
     } catch let CoreError.Rejected(_, message, _) {
@@ -120,7 +122,7 @@ public struct SlopPackage: Sendable {
             }
             immutableBytes += size
           }
-          guard immutableCount <= 256, immutableBytes <= 50 * 1024 * 1024 else {
+          guard immutableCount <= Limits.packageEntries, immutableBytes <= Limits.packageBytes else {
             throw SlopPackageError.invalid("immutable package exceeds 256 entries or 50 MiB")
           }
         }
@@ -188,6 +190,17 @@ public struct SlopPackage: Sendable {
 
   public func validateAsTemplate() throws {
     try validateDocumentSkill(strict: true)
+    do {
+      func read(_ file: String, _ maximum: Int) throws -> String {
+        let bytes = try SlopFile.read(rootURL.appendingPathComponent(file), within: rootURL, maximumBytes: maximum)
+        guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
+        return value
+      }
+      _ = try validateDocument(
+        schemaJson: read("state.schema.json", 1_048_576), initialJson: read("initial.json", SlopFile.maximumBytes))
+    } catch let CoreError.Rejected(_, message, _) {
+      throw SlopPackageError.invalid(message)
+    }
     if FileManager.default.fileExists(atPath: stateURL.path) {
       throw SlopPackageError.invalid("templates cannot contain state")
     }
@@ -212,8 +225,8 @@ public struct SlopPackage: Sendable {
     guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
       let imageWidth = properties[kCGImagePropertyPixelWidth] as? Int,
       let imageHeight = properties[kCGImagePropertyPixelHeight] as? Int,
-      imageWidth > 0, imageHeight > 0, imageWidth <= 16_384, imageHeight <= 16_384,
-      imageWidth * imageHeight <= 24_000_000
+      imageWidth > 0, imageHeight > 0, imageWidth <= Limits.imageSide, imageHeight <= Limits.imageSide,
+      imageWidth * imageHeight <= Limits.imagePixels
     else {
       throw SlopPackageError.invalid("\(label) exceeds the PNG dimension limit")
     }

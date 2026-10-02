@@ -52,9 +52,10 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the manifesto's "who changed what", at the size of one document. Trust is what
   lets people hand an agent their things.
 - **Builds on:** Loro commit messages. Agent commits already carry the message `agent`,
-  and Edit ▸ Undo already reverts an agent's edits, including those made while the
-  document was closed. What remains is naming the agent, an optional message (`doc.change`
-  takes none today), and showing them in the window.
+  and Edit ▸ Undo already reverts an agent's edits made while the document is open. What
+  remains is naming the agent, an optional message (`doc.change` takes none today),
+  showing them in the window, and undoing an agent's edits made while it was closed,
+  which needs the kept history to reach them.
 
 ### `slop watch` and `slop mcp`
 
@@ -143,7 +144,7 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
 - **History scrubber.** A timeline of the history a document keeps: all of it below
-  4 MiB, otherwise the last editing session at most. Restore applies an old version as a
+  4 MiB, otherwise only the open session's. Restore applies an old version as a
   new edit. A longer timeline needs a retention rule that bounds the cost of deleted
   content, which Loro keeps in the starting state of any cut before the latest version.
 - **Household sharing.** A family's grocery list as home-cooked software, through the

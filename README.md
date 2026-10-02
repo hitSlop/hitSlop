@@ -208,7 +208,7 @@ export default defineTheme({
 - `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop captures the editor; mark controls with `data-slop-export="hide"` to leave them out.
 - `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, hitSlop uses its generic icon.
 
-Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Build/register generate the template's initial artwork from starting values.
+Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Register renders the template's initial artwork from starting values.
 
 See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 
@@ -258,8 +258,8 @@ bun run dev       # Try it in the browser; preview data resets on refresh
 The preview reloads as you edit. Stop it before continuing.
 
 ```sh
-bun run build     # Create dist/tiny-wins.slop, including preview and icon artwork
-bun run register  # Add Tiny Wins to your local template catalog
+bun run build     # Create dist/tiny-wins.slop (works on Linux too)
+bun run register  # Render its preview and icon, then add Tiny Wins to your catalog
 ```
 
 In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins.slop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.

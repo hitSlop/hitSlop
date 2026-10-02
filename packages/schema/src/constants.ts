@@ -40,6 +40,16 @@ export const ThemeTokenRule = {
   reservedPrefix: "window-",
   tokens: 256,
 } as const;
+/** A package's immutable entries (everything but `state/`): one file's bytes, the entry
+ * count and total bytes. Images a package carries or a capture emits are at most `imageSide`
+ * pixels on a side and `imagePixels` in all. The authoring build and native open both check them. */
+export const PackageLimits = {
+  file: 25 * 1024 * 1024,
+  entries: 256,
+  bytes: 50 * 1024 * 1024,
+  imageSide: 16_384,
+  imagePixels: 24_000_000,
+} as const;
 /** A document's saved checkpoint plus updates: bytes, and update rows. */
 export const StorageLimits = { bytes: 32 * 1024 * 1024, rows: 4096 } as const;
 /** Effective theme JSON, in UTF-8 bytes. */

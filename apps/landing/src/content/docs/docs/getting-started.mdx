@@ -7,7 +7,7 @@ A slop is a focused app and its document in one portable `.slop` package. Start 
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer. For this release, authoring is supported on macOS. Install the matching hitSlop Mac app in `/Applications` or `~/Applications` for native previews, registration, and document exports. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and building a slop need only Bun. To register templates, render Finder artwork, edit documents and export them, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
 
 The public CLI workflow is:
 
@@ -107,6 +107,6 @@ bun run build
 bun run register
 ```
 
-Build emits `dist/tiny-counter.slop` with native artwork. Register installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
+Build emits `dist/tiny-counter.slop`. Register renders its Finder artwork with the Mac app and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "semester-planner",
+  "title": "Semester Planner",
+  "description": "A bird's-eye academic term calendar for mapping syllabus milestones, exam dates, and semester deadlines.",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 920,
+    "height": 580
+  }
+}

@@ -1,0 +1,29 @@
+import type { Input } from "@hitslop/document";
+import schema from "./schema";
+
+export default {
+  termTitle: "Fall Semester 2026",
+  academicYear: "Academic Year 2026–2027",
+  startMonth: "2026-09",
+  courses: [
+    { code: "BIO", name: "AP Biology", colorHex: "#3b7a57" },
+    { code: "CALC", name: "Pre-Calculus", colorHex: "#4f46e5" },
+    { code: "LIT", name: "Honors Lit", colorHex: "#4a5d6e" },
+    { code: "HIST", name: "World History", colorHex: "#d97706" },
+    { code: "SPAN", name: "Spanish III", colorHex: "#c2410c" },
+    { code: "ALL", name: "School Wide", colorHex: "#1f2328" },
+  ],
+  milestones: [
+    { date: "2026-09-08", title: "Add/Drop Class Deadline", courseCode: "ALL", type: "Deadline", notes: "Final schedule lock" },
+    { date: "2026-09-18", title: "AP Bio Unit 1 Exam (Biochemistry)", courseCode: "BIO", type: "Exam", notes: "Chapters 1-4" },
+    { date: "2026-10-02", title: "Pre-Calc Midterm 1", courseCode: "CALC", type: "Exam", notes: "Polynomials & Radicals" },
+    { date: "2026-10-12", title: "Columbus / Indigenous Peoples Day", courseCode: "ALL", type: "Break", notes: "No school" },
+    { date: "2026-10-23", title: "Honors Lit Great Gatsby Essay", courseCode: "LIT", type: "Paper", notes: "5-page critical analysis" },
+    { date: "2026-11-06", title: "World History Revolutions Presentation", courseCode: "HIST", type: "Presentation", notes: "French vs American revolution" },
+    { date: "2026-11-20", title: "AP Bio Midterm 2 (Cellular Bio)", courseCode: "BIO", type: "Exam", notes: "Chapters 5-8" },
+    { date: "2026-11-25", title: "Thanksgiving Recess", courseCode: "ALL", type: "Break", notes: "Nov 25 - Nov 29" },
+    { date: "2026-12-04", title: "Spanish Oral Dialogue Project", courseCode: "SPAN", type: "Project", notes: "Recorded conversational scene" },
+    { date: "2026-12-14", title: "Final Exam Week Begins", courseCode: "ALL", type: "Exam", notes: "Study schedule in effect" },
+    { date: "2026-12-18", title: "Winter Break Starts", courseCode: "ALL", type: "Break", notes: "Classes resume Jan 5" },
+  ],
+} satisfies Input<typeof schema.descriptor>;

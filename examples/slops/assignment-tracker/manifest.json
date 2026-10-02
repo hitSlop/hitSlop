@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "assignment-tracker",
+  "title": "Assignment Tracker",
+  "description": "A plum study pad for assignments, deadlines, course notes, and the satisfaction of checking work off.",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 620,
+    "height": 700
+  }
+}

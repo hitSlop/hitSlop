@@ -99,9 +99,9 @@ Trees and rich text are not implemented; no slop uses them.
 saves. Close, quit and export do the same first. A failed save keeps every edit.
 
 **Undo.** `await doc.undo()` and `doc.redo()` are Edit ▸ Undo and Redo, after sending
-what the person sees. They step back through the person's changes and an agent's (CLI)
-edits, including an agent's edits made while the document was closed. A typing run in one
-field, and an agent's consecutive edits, are each one step.
+what the person sees. They step back through the changes made since the document
+opened, the person's and an agent's (CLI). A typing run in one field, and an agent's
+consecutive edits, are each one step.
 
 **Import.** The CLI's `replace` operation (`slop import`) makes any value, or the whole
 document, equal a JSON value by writing only the differences: rows match by `$id`, and
@@ -291,7 +291,8 @@ widths by column. Values are scalars or objects.
 ## Async patterns
 
 - **Don't read a value and write it back** (`set(qty + 1)`): the snapshot may be a moment
-  old. Use `increment` on a counter, or read and write inside one `change`.
+  old. Use `increment` on a counter, or await the earlier writes before reading. A
+  `change` makes its writes atomic, but reads the same snapshot.
 - **Don't write in `$effect` or on mount.** Put defaults in `initial.ts`. If an effect must
   create something, guard it so it runs once, because it can rerun before the write is
   accepted.

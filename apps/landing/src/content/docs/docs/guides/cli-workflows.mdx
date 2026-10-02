@@ -58,7 +58,7 @@ bun run build
 bun run register
 ```
 
-Build writes `dist/weekend-kit.slop`. Register builds it and adds it to the Mac app's template catalog. Existing documents keep their app version.
+Build writes `dist/weekend-kit.slop` on macOS or Linux. Register, on a Mac, builds it with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
 From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
 

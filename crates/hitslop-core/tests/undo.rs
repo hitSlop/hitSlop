@@ -1,5 +1,5 @@
-// Edit ▸ Undo. Failure: an agent's edit could not be undone (made while the document
-// was open, or while it was closed), a typing run or an agent's run split into many
+// Edit ▸ Undo. Failure: an agent's edit made while the document was open could not be
+// undone, a typing run or an agent's run split into many
 // steps, an agent's mistake erased the history, or the page's view fell behind the
 // document. Oracle: literal values, and every publication applied to the page's view
 // equals a fresh snapshot.
@@ -231,38 +231,24 @@ fn session(checkpoint: &[u8], batches: &[(String, Origin)]) -> Vec<u8> {
     d.checkpoint().unwrap()
 }
 
-// Failure: an agent's edit made while the document was closed lived in another
-// process's undo, which ended with it; the person's next window could not undo it.
+// Undo covers the open session only: edits saved by an earlier session, the person's or
+// an agent's, are the starting point of the next one.
 #[test]
-fn undo_reaches_an_agents_edits_made_while_closed() {
+fn a_reopened_document_starts_with_nothing_to_undo() {
     let (d, _) = setup();
-    let person = session(&d.checkpoint().unwrap(), &[(set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page)]);
-    let agent = session(&person, &[
-        (batch(json!([{"type":"increment","path":["hits"],"by":2}])), Origin::Agent),
+    let saved = session(&d.checkpoint().unwrap(), &[
+        (set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page),
         (set(json!(["title"]), json!("Agent")), Origin::Agent),
     ]);
-    let agent = session(&agent, &[(batch(json!([{"type":"increment","path":["hits"],"by":3}])), Origin::Agent)]);
-    let mut d = Document::open(&schema(), &agent, &[]).unwrap();
+    let mut d = Document::open(&schema(), &saved, &[]).unwrap();
     let mut view = View::of(&d);
-    assert!(d.can_undo() && !d.can_redo());
-    assert!(undo(&mut d, &mut view), "every agent edit since the person's last session");
-    let v = value(&d);
-    assert_eq!((v["hits"].clone(), v["title"].clone(), v["rows"][0]["done"].clone()), (json!(0), json!("abc"), json!(true)));
-    view.check(&d, "after undoing the agent");
-    assert!(!d.can_undo(), "the person's earlier session is not this session's to undo");
-    assert!(redo(&mut d, &mut view));
-    assert_eq!((value(&d)["hits"].clone(), value(&d)["title"].clone()), (json!(5), json!("Agent")));
-    view.check(&d, "after redoing the agent");
-    // The session's own steps come first; the agent's edits are below them.
-    apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(false)), Origin::Page);
-    assert!(undo(&mut d, &mut view) && undo(&mut d, &mut view));
-    assert_eq!((value(&d)["hits"].clone(), value(&d)["rows"][0]["done"].clone()), (json!(0), json!(true)));
-    // A new change ends redo, here of the agent's edits.
+    assert!(!d.can_undo() && !d.can_redo());
+    assert!(!undo(&mut d, &mut view));
     apply(&mut d, &mut view, &set(json!(["title"]), json!("Mine")), Origin::Page);
-    assert!(!d.can_redo());
-    view.check(&d, "after a new change");
-    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
-    assert!(!reopened.can_undo(), "the person's change is last");
+    assert!(undo(&mut d, &mut view));
+    assert_eq!(value(&d)["title"], "Agent", "undo stops where the session opened");
+    assert!(!d.can_undo());
+    view.check(&d, "after undoing the session");
 }
 
 #[test]
@@ -286,32 +272,30 @@ fn undo_survives_a_concurrent_text_edit() {
     view.check(&d, "after redoing concurrent typing");
 }
 
-// Failure: mixing a paused UndoManager with revert_to corrupted the session's redo
-// after undoing the closed agent step. Test text replacement and container restoration.
+// Failure: mixing a paused UndoManager with revert_to corrupted redo after undoing an
+// agent step. Test text replacement and container restoration below an agent's edit.
 #[test]
-fn closed_agent_and_session_steps_round_trip_repeatedly() {
+fn agent_and_person_steps_round_trip_repeatedly() {
     for change in [set(json!(["title"]), json!("PERSON")), batch(json!([
         {"type":"remove","path":["rows"],"id":ROW},
     ]))] {
-        let (d, _) = setup();
+        let (mut d, mut view) = setup();
         let original = value(&d);
-        let saved = session(&d.checkpoint().unwrap(), &[(set(json!(["title"]), json!("AGENT")), Origin::Agent)]);
-        let mut d = Document::open(&schema(), &saved, &[]).unwrap();
+        apply(&mut d, &mut view, &set(json!(["title"]), json!("AGENT")), Origin::Agent);
         let agent = value(&d);
-        let mut view = View::of(&d);
         apply(&mut d, &mut view, &change, Origin::Page);
         let person = value(&d);
         for _ in 0..5 {
             for expected in [&agent, &original] {
                 assert!(undo(&mut d, &mut view));
                 assert_eq!(&value(&d), expected);
-                view.check(&d, "undo across the closed agent step");
+                view.check(&d, "undo across the agent step");
             }
             assert!(!d.can_undo());
             for expected in [&agent, &person] {
                 assert!(redo(&mut d, &mut view));
                 assert_eq!(&value(&d), expected);
-                view.check(&d, "redo across the closed agent step");
+                view.check(&d, "redo across the agent step");
             }
             assert!(!d.can_redo());
         }
@@ -356,24 +340,22 @@ fn undo_works_on_a_trimmed_document() {
 }
 
 #[test]
-fn history_is_bounded_including_the_closed_agent_step() {
-    let (d, _) = setup();
-    let saved = session(&d.checkpoint().unwrap(), &[(set(json!(["title"]), json!("Agent")), Origin::Agent)]);
-    let mut d = Document::open(&schema(), &saved, &[]).unwrap();
-    let mut view = View::of(&d);
-    for _ in 0..101 {
+fn history_is_bounded() {
+    let (mut d, mut view) = setup();
+    apply(&mut d, &mut view, &set(json!(["title"]), json!("Agent")), Origin::Agent);
+    for _ in 0..100 {
         apply(&mut d, &mut view, &batch(json!([{"type":"increment","path":["hits"],"by":1}])), Origin::Page);
     }
-    for expected in (1..=100).rev() {
+    for expected in (0..=99).rev() {
         assert!(undo(&mut d, &mut view));
         assert_eq!(value(&d)["hits"], expected);
         view.check(&d, "undo within the retained steps");
     }
     assert!(!d.can_undo());
-    assert_eq!(value(&d)["title"], "Agent", "the oldest agent step was evicted");
+    assert_eq!(value(&d)["title"], "Agent", "the oldest step was evicted");
     for _ in 0..100 { assert!(redo(&mut d, &mut view)); }
     assert!(!d.can_redo());
-    assert_eq!(value(&d)["hits"], 101);
+    assert_eq!(value(&d)["hits"], 100);
     view.check(&d, "redo every retained step");
 }
 

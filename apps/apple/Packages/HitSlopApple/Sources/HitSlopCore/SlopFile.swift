@@ -3,7 +3,7 @@ import Darwin
 
 /// Reads an untrusted package entry without following links or reopening a checked path.
 public enum SlopFile {
-    public static let maximumBytes = 25 * 1024 * 1024
+    public static let maximumBytes = Limits.packageFile
 
     public static func read(_ url: URL, within root: URL, maximumBytes: Int = maximumBytes) throws -> Data {
         let rootPath = root.standardizedFileURL.path

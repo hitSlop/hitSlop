@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "countdown-milestones",
+  "title": "Countdown & Milestones",
+  "description": "A playful desk-calendar countdown with editable milestones and a date worth remembering.",
+  "categories": [
+    "utilities",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 440,
+    "height": 580
+  }
+}

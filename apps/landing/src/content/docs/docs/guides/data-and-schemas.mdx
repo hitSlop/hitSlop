@@ -118,7 +118,7 @@ Prefer a change, or `increment` on a counter, over reading a value and writing i
 
 ## Save and recover
 
-Edit ▸ Undo and Redo (⌘Z and ⇧⌘Z, including inside text fields) step back through the person's changes and an agent's edits, including edits an agent made while the document was closed. A typing run in one field is one step, each `doc.change` is one step, and an agent's consecutive edits are one step, so write a gesture once when it ends rather than on every move. Call `doc.undo()` and `doc.redo()` for your own buttons.
+Edit ▸ Undo and Redo (⌘Z and ⇧⌘Z, including inside text fields) step back through the changes made since the document opened, the person's and an agent's. A typing run in one field is one step, each `doc.change` is one step, and an agent's consecutive edits are one step, so write a gesture once when it ends rather than on every move. Call `doc.undo()` and `doc.redo()` for your own buttons.
 
 The host autosaves, and `await doc.flush()` sends any unsent text, waits for pending writes, and saves. Close, quit and export do the same first. Failed saves keep every edit and offer native retry. Application errors are reported separately from save failures. A document keeps its edit history until it grows past 4 MiB. Then, when it closes, it keeps only the history of the session that just ended, or none if even that is large.
 

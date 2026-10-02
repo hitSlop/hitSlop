@@ -55,8 +55,8 @@ extension SlopDocumentWindowController {
         self.isContentReady = true
         self.finishLoading()
         if self.presentationRequested { self.revealReadyWindow() }
-        if let onPageReady = self.onPageReady { onPageReady() }
-        else { self.updatePageFailure(nil) }
+        self.updatePageFailure(nil)
+        self.routing.pageReady()
       } catch is CancellationError {
       } catch {
         guard !Task.isCancelled else { return }

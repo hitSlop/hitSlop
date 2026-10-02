@@ -78,20 +78,34 @@ final class ShapedView: HoverView {
   }
 }
 
+/// How a document window reaches the app that coordinates it. Every command, including
+/// close and the save-failure sheet's choices, goes to `command`, so the app runs them
+/// one at a time; a window never runs a command itself.
+public struct SlopDocumentRouting {
+  public var command: @MainActor (SlopDocumentCommand) -> Void
+  /// The page is ready for the first time, or again after a recovery.
+  public var pageReady: @MainActor () -> Void
+  /// The window closed.
+  public var closed: @MainActor () -> Void
+  public init(
+    command: @escaping @MainActor (SlopDocumentCommand) -> Void,
+    pageReady: @escaping @MainActor () -> Void = {}, closed: @escaping @MainActor () -> Void = {}
+  ) {
+    self.command = command; self.pageReady = pageReady; self.closed = closed
+  }
+}
+
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate
 {
   public let packageURL: URL
   public let session: DocumentSession
-  public var onClose: (() -> Void)?
-  public var onCommand: ((SlopDocumentCommand) -> Void)?
-  public var onPageReady: (() -> Void)?
+  let routing: SlopDocumentRouting
   public var telemetry: SlopTelemetry = .disabled
   var reportedSaveFailure = false
   var reportedRendererFailure = false
   /// Issue kinds already reported (operations, authored); each is reported once.
   var reportedIssueKinds = Set<Bool>()
-  public var onPageFailure: ((String) -> Void)?
   var toolbar: NSPanel?, toolbarHost: NSHostingView<SlopToolbar>?
   var toolbarMenuTracking = false
   var toolbarInteracting = false
@@ -126,7 +140,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     preparingProgress[url.standardizedFileURL]?.focus()
   }
 
-  public static func open(packageURL: URL, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled) async throws -> SlopDocumentWindowController {
+  public static func open(
+    packageURL: URL, routing: SlopDocumentRouting, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
+  ) async throws -> SlopDocumentWindowController {
     let started = ContinuousClock.now
     let progress = presentsWindow ? SlopOpeningProgress(started: started) : nil
     let key = packageURL.standardizedFileURL
@@ -136,7 +152,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       let session = try await DocumentSession.open(packageURL: packageURL)
       do {
         try Task.checkCancellation()
-        return try SlopDocumentWindowController(packageURL: packageURL, session: session, started: started, telemetry: telemetry)
+        return try SlopDocumentWindowController(
+          packageURL: packageURL, session: session, routing: routing, started: started, telemetry: telemetry)
       } catch {
         try await session.close()
         throw error
@@ -162,7 +179,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
 
-  private init(packageURL: URL, session: DocumentSession, started: ContinuousClock.Instant, telemetry: SlopTelemetry = .disabled) throws {
+  private init(
+    packageURL: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
+    telemetry: SlopTelemetry = .disabled
+  ) throws {
+    self.routing = routing
     self.telemetry = telemetry
     startupStarted = started
     self.packageURL = packageURL.standardizedFileURL
@@ -288,11 +309,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     return candidate === window || candidate === toolbar || candidate === themePanel
       || candidate === openingProgress?.panel
   }
-  public func updatePresentation(pinned: Bool, commandsEnabled: Bool, pageError: String?) {
-    updatePageFailure(pageError)
-    guard isPinned != pinned || self.commandsEnabled != commandsEnabled else { return }
-    self.commandsEnabled = commandsEnabled
-    setPinned(pinned)
+  /// Whether the coordinator accepts commands now; the toolbar follows it.
+  public func setCommandsEnabled(_ enabled: Bool) {
+    guard commandsEnabled != enabled else { return }
+    commandsEnabled = enabled
+    toolbarHost?.rootView = toolbarView()
   }
   public func revealFromDock() { showWindow(nil) }
 
@@ -321,7 +342,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if toolbar?.isVisible == true { showToolbar() }
   }
   private var closePrepared = false
-  private var preparingClose = false
   public override func close() {
     guard let window, windowShouldClose(window) else { return }
     super.close()
@@ -353,24 +373,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     await SlopDocumentAssetRefreshQueue.finishForTermination()
   }
   public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
+  /// Closing is a command: the coordinator runs it after any command in progress, and
+  /// the window closes once the document has saved and released.
   public func windowShouldClose(_ sender: NSWindow) -> Bool {
     if closePrepared { return true }
-    if let onCommand {
-      onCommand(.close)
-      return false
-    }
-    guard !preparingClose else { return false }
-    preparingClose = true
-    Task {
-      defer { preparingClose = false }
-      do {
-        try await closeDocument()
-      } catch {
-        // A full document never drops unsaved edits silently.
-        if error as? SaveFailure == .full { offerDiscardAndClose(error) }
-        else { present("Changes could not be saved", error) }
-      }
-    }
+    routing.command(.close)
     return false
   }
   public func windowDidResize(_ notification: Notification) {
@@ -396,7 +403,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     hideToolbar()
     toolbar?.close()
     toolbar = nil
-    onClose?()
+    routing.closed()
   }
 }
 

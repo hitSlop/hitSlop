@@ -47,14 +47,14 @@ import HitSlopTestSupport
           operation: method == "apply" ? Data(#"{"type":"increment","path":["hits"],"by":3}"#.utf8) : nil)
         Issue.record("Accepted owner without core identity")
       } catch {
-        #expect(error.localizedDescription.contains("different document cores"))
+        #expect(error.localizedDescription.contains("Quit and reopen hitSlop"))
       }
     }
     let output = root.appendingPathComponent("should-not-exist.png")
     do {
       try await DocumentCommand.exportLive(root: package.rootURL, socket: server.path, format: .png, output: output)
       Issue.record("Accepted export from owner without matching core identity")
-    } catch { #expect(error.localizedDescription.contains("different document cores")) }
+    } catch { #expect(error.localizedDescription.contains("Quit and reopen hitSlop")) }
     #expect(!FileManager.default.fileExists(atPath: output.path))
     #expect(forwarded.value == 0)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 0)

@@ -16,9 +16,9 @@ import HitSlopCore
         case documents(IdentifiedActionOf<DocumentFeature>)
         /// Caller resolves symlinks before dispatching; the reducer performs no filesystem access.
         case openDocument(URL)
-        case openFinished(UUID, String), openFailed(UUID, String), openCancelled(UUID)
+        case openFinished(UUID, String), openFailed(UUID, String, requiresUpdate: Bool = false), openCancelled(UUID)
         case quitDocumentClosed(UUID)
-        case quitRequested, quitFinished, quitFailed(String), externalFailure(String)
+        case quitRequested, quitFinished, quitFailed(SlopDocumentFailure), externalFailure(String)
         case alert(PresentationAction<ErrorAlertAction>)
     }
     @Dependency(\.documentClient) var client
@@ -42,19 +42,19 @@ import HitSlopCore
                 effect = .send(.catalog(.refreshRecents))
             case .openCancelled(let id):
                 state.documents.remove(id: id)
-            case .openFailed(let id, let message):
+            case .openFailed(let id, let message, let requiresUpdate):
                 guard state.documents.remove(id: id) != nil else { return .none }
-                state.alert = .operationFailure(message)
+                state.alert = requiresUpdate ? .requiresUpdate(message) : .operationFailure(message)
             case .quitDocumentClosed(let id):
                 state.documents.remove(id: id)
             case .documents(.element(let id, .operationFinished(.close, _))):
                 state.documents.remove(id: id)
             case .documents(.element(_, .operationFinished(.duplicate, let url))):
                 if let url { effect = open(url, state: &state) }
-            case .documents(.element(let id, .operationFailed(.close, let message))):
+            case .documents(.element(let id, .operationFailed(.close, let failure))):
                 if state.quitPhase == .waiting {
                     state.documents[id: id]?.alert = nil
-                    return cancelQuit(&state, message: message)
+                    return cancelQuit(&state, failure: failure)
                 }
             case .quitRequested:
                 guard state.quitPhase == .running else { return .none }
@@ -64,7 +64,7 @@ import HitSlopCore
             case .quitFinished:
                 state.quitPhase = .finished
                 return .run { _ in await client.replyToQuit(true) }
-            case .quitFailed(let message): return cancelQuit(&state, message: message)
+            case .quitFailed(let failure): return cancelQuit(&state, failure: failure)
             case .externalFailure(let message): state.alert = .operationFailure(message)
             case .alert: break
             case .catalog, .documents: break
@@ -86,7 +86,10 @@ import HitSlopCore
         return .run { send in
             do { await send(.openFinished(id, try await client.open(id, url))) }
             catch is CancellationError { await send(.openCancelled(id)) }
-            catch { await send(.openFailed(id, error.localizedDescription)) }
+            catch {
+                let requiresUpdate = SlopFailureContext.classify(error).reason == .requiresUpdate
+                await send(.openFailed(id, error.localizedDescription, requiresUpdate: requiresUpdate))
+            }
         }
     }
     private func advanceQuit(_ state: inout State) -> Effect<Action> {
@@ -108,12 +111,14 @@ import HitSlopCore
             } catch {
                 // A completed close has destroyed its renderer and cannot be rolled back.
                 for id in remaining { await client.cancelQuit(id) }
-                await send(.quitFailed(error.localizedDescription))
+                await send(.quitFailed(SlopDocumentFailure(error)))
             }
         }
     }
-    private func cancelQuit(_ state: inout State, message: String) -> Effect<Action> {
-        state.quitPhase = .running; state.alert = .operationFailure(message); state.catalog.isQuitting = false
+    /// A save failure is already on its document's save-failure sheet; other failures alert.
+    private func cancelQuit(_ state: inout State, failure: SlopDocumentFailure) -> Effect<Action> {
+        state.quitPhase = .running; state.catalog.isQuitting = false
+        if case .other(let message) = failure { state.alert = .operationFailure(message) }
         for id in state.documents.ids { state.documents[id: id]?.isQuitting = false }
         return .run { _ in await client.replyToQuit(false) }
     }

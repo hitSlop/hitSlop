@@ -79,10 +79,16 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for CoreError {
     }
 }
 
-/// Validates a package's descriptor and initial value; returns the schema key.
+/// Validates a template's descriptor and initial value; returns the schema key.
 #[uniffi::export]
 pub fn validate_document(schema_json: String, initial_json: String) -> Result<String, CoreError> {
     hitslop_core::validate(&schema_json, &initial_json).map_err(rejected)
+}
+/// Parses a package's descriptor; returns its schema key. Opening a document needs only
+/// this: `initial.json` is creation-only and is checked when storage is created.
+#[uniffi::export]
+pub fn document_schema_key(schema_json: String) -> Result<String, CoreError> {
+    hitslop_core::schema_key(&schema_json).map_err(rejected)
 }
 /// A declared theme color.
 #[derive(uniffi::Record)]

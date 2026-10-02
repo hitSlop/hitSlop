@@ -8,7 +8,7 @@ A CLI-only release keeps the shipped SDK packages and Mac app. Publish only the
 CLI; keep SDK versions and Mac tags unchanged. This is supported while the shipped
 app's helper serves the CLI's command protocol (`hitslop-native --protocol`) and can
 read the package format emitted by the builder and run the project's SDK runtime ABI.
-An unsupported requirement needs a compatible Mac release first. A compatible protocol does not replace the installed-consumer smoke
+An unsupported requirement needs a compatible Mac release first: publish the app before an SDK or CLI that raises `runtimeABI`, `packageFormat` or the command protocol. A compatible protocol does not replace the installed-consumer smoke
 checks below.
 
 1. Update the CLI version, lockfile, and user-facing commands. Generated projects
@@ -40,7 +40,7 @@ dependency pins must match the released SDK packages.
 ## Coordinated release sequence
 
 1. Finish release preparation and commit a clean tree. Check package versions, dependency pins and Apple version/build together. Confirm the intended npm versions and Mac tag have not already shipped.
-2. Capture the release's [compatibility corpus](../testing.md#compatibility-corpus) entry from that clean candidate with `bun run compat:capture VERSION --frozen`, adding `--templates` for templates that exercise what the release changed, and commit it (`tests/compat/VERSION`). Capture builds its own inputs, stages scenarios, records producing-input and artifact digests, and freezes only after successful recording. The entry is permanent from then on. The tag workflow refuses a missing or stale entry; only the corpus commit may differ from the producing candidate.
+2. Capture the release's [compatibility corpus](../testing.md#compatibility-corpus) entry from that clean candidate with `bun run compat:capture VERSION --frozen`, adding `--templates` for templates that exercise what the release changed. The first public release's entry passes every template in `examples/slops/bundled.json` (`--templates "$(jq -r 'join(",")' examples/slops/bundled.json)"`), so every document it can create is in the corpus; the pre-launch `dev` entry is never frozen. Commit the entry (`tests/compat/VERSION`). Capture builds its own inputs, stages scenarios, records producing-input and artifact digests, and freezes only after successful recording. The entry is permanent from then on. The tag workflow refuses a missing or stale entry; only the corpus commit may differ from the producing candidate.
 3. Run the complete local gate below on that final commit and record manual acceptance results. A report from a dirty checkout or another commit does not validate the release candidate.
 4. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-vVERSION` and push the tag; this triggers `.github/workflows/macos-release.yml`.
 5. Monitor signing, notarization, Gatekeeper verification, and GitHub Release publication. Verify downloaded artifacts and complete signed-install/Sparkle acceptance. Retain the release record and checksums.

@@ -3,10 +3,10 @@
 //! document's identity and theme overrides; the writer lock beside it names the one
 //! process that may write. SQLite never sees anything but opaque Loro bytes.
 //!
-//! History is trimmed when nothing is editing: as a session closes, a document larger
-//! than `TRIM_BYTES` keeps only the history since that session opened, or none when even
-//! that is larger. While open, a checkpoint trims only past `SESSION_BYTES`. Compaction
-//! keeps no history.
+//! History is trimmed when nothing is editing: a session that edited a document larger
+//! than `TRIM_BYTES` closes with no history. While open, a checkpoint trims only past
+//! `SESSION_BYTES`, keeping the session's history when that fits, so a concurrent text
+//! edit can still branch from where the session opened. Compaction keeps no history.
 //!
 //! A host keeps two serial queues: edits, `Store::theme` and `Store::job` on one, every
 //! other `Store` call on the other, so a slow write never blocks edits. A theme change is
@@ -169,14 +169,29 @@ fn is_new(conn: &Connection) -> Result<bool> {
     if tables > 0 {
         let id: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0)).map_err(sqlite("read identity"))?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(sqlite("read identity"))?;
-        if id == APPLICATION_ID && version > STORAGE_VERSION {
-            return Err(requires_update(format!("This document uses storage version {version}; this hitSlop reads version {STORAGE_VERSION}")));
-        }
-        if id != APPLICATION_ID || version != STORAGE_VERSION {
+        if id != APPLICATION_ID {
             return Err(failed("Unsupported document storage"));
+        }
+        // Each version a released build wrote stays readable. Read-only opens read it as
+        // it is; the writer brings it to `STORAGE_VERSION` with `migrate`.
+        match version {
+            1 => {}
+            newer if newer > STORAGE_VERSION => {
+                return Err(requires_update(format!("This document uses storage version {newer}; this hitSlop reads version {STORAGE_VERSION}")));
+            }
+            _ => return Err(failed("Unsupported document storage")),
         }
     }
     Ok(tables == 0)
+}
+/// Brings a readable database to `STORAGE_VERSION` under the writer lock, each step in one
+/// transaction with its new `user_version`. Version 1 is current, so there are no steps yet.
+fn migrate(conn: &Connection) -> Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(sqlite("read identity"))?;
+    match version {
+        STORAGE_VERSION => Ok(()),
+        _ => Err(failed("Unsupported document storage")),
+    }
 }
 
 /// Stored sizes, refreshed by every write, so choosing append or checkpoint needs no
@@ -248,7 +263,8 @@ struct Account {
     meta: Metadata,
     /// The version the durable state covers.
     saved: VersionVector,
-    /// The version this session opened at: where a closing checkpoint's history starts.
+    /// The version this session opened at: where a checkpoint trimmed while open keeps
+    /// history from, and how close tells whether the session edited.
     opened: Frontiers,
     schema_key: String,
 }
@@ -367,6 +383,8 @@ impl Store {
                         "PRAGMA auto_vacuum=INCREMENTAL; BEGIN IMMEDIATE; PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA} COMMIT;"
                     ))
                     .map_err(sqlite("create"))?;
+                } else {
+                    migrate(&conn)?;
                 }
                 let doc_id = conn
                     .query_row("SELECT doc_id FROM document WHERE id=1", [], |r| r.get(0))
@@ -574,12 +592,11 @@ impl Store {
         snapshot(doc)?.map_or(Err(Error::Full), |job| Ok(Some(job)))
     }
 
-    /// The checkpoint to write as the owner closes, after its last save. A session that
-    /// edited a document larger than `TRIM_BYTES` leaves only its own history behind, so a
-    /// later session can still read what this one changed, when that fits `TRIM_BYTES`;
-    /// otherwise no history. A cut before the latest version keeps, in its starting
-    /// state, everything deleted before it (Loro 1.16.2), so only a cut at the latest
-    /// version reclaims a document that deletes a lot. None when nothing would shrink.
+    /// The checkpoint to write as the owner closes, after its last save: a session that
+    /// edited a document larger than `TRIM_BYTES` leaves no history. Undo covers the open
+    /// session only, so nothing reads it later, and a cut before the latest version would
+    /// keep, in its starting state, everything deleted before it (Loro 1.16.2). None when
+    /// nothing would shrink.
     pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
         let (meta, key, opened) = {
             let account = lock(&self.account);
@@ -592,10 +609,7 @@ impl Store {
         }
         let smaller = |bytes: &[u8]| (bytes.len() as i64) < stored && bytes.len() as i64 + key + 512 <= MAX_BYTES;
         let version = doc.doc.oplog_vv();
-        let bytes = match trimmed(doc, &opened, |b| b.len() as i64 <= TRIM_BYTES && smaller(b))? {
-            Some(bytes) => Some(bytes),
-            None => trimmed(doc, &latest, smaller)?,
-        };
+        let bytes = trimmed(doc, &latest, smaller)?;
         Ok(bytes.map(|bytes| SaveJob { checkpoint: true, bytes, version, theme: None }))
     }
 

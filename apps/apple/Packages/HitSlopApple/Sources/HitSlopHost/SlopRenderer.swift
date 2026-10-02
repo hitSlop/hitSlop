@@ -271,7 +271,7 @@ struct SlopDocumentAssets: Sendable {
         guard width.isFinite, height.isFinite, width > 0, height > 0 else { throw SlopPackageError.invalid("Invalid capture dimensions") }
         // PDF is vector output: a raster pixel budget would reject valid long documents.
         guard output != .pdf else { return }
-        guard width * scale <= 16_384, height * scale <= 16_384, width * height * scale * scale <= 24_000_000 else {
+        guard width * scale <= CGFloat(Limits.imageSide), height * scale <= CGFloat(Limits.imageSide), width * height * scale * scale <= CGFloat(Limits.imagePixels) else {
             throw SlopPackageError.invalid("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
         }
     }

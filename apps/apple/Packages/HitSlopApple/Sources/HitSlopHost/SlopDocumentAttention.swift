@@ -16,11 +16,7 @@ extension SlopDocumentWindowController {
       let context = diagnostic
       if !reportedSaveFailure || context.reason == .webContentTerminated { telemetry.send(.failed(.renderer, context)) }
     }
-    if let onPageFailure {
-      onPageFailure(error.localizedDescription)
-    } else {
-      updatePageFailure(error.localizedDescription)
-    }
+    updatePageFailure(error.localizedDescription)
   }
 
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
@@ -104,24 +100,13 @@ extension SlopDocumentWindowController {
       if actions.indices.contains(index) { self.respond(actions[index].action) }
     }
   }
+  /// Recovery is a command like any other, so it never runs beside a close or export. Its
+  /// outcome returns as save status: saved dismisses the sheet, a new failure shows again.
   private func respond(_ action: AttentionAction) {
     switch action {
-    case .retrySave, .discardAndRetry:
-      Task {
-        do {
-          if action == .discardAndRetry { try await session.discardPending() }
-          try await session.retrySave()
-          attentionMessage = nil
-          attentionFailure = nil
-        } catch {
-          attentionMessage = error.localizedDescription
-          attentionFailure = error as? SaveFailure
-        }
-        // Shows the next failure, if any.
-        showDocumentAttention()
-      }
-    case .keepOpen:
-      break
+    case .retrySave: request(.retrySave)
+    case .discardAndRetry: request(.discardUnsaved)
+    case .keepOpen: break
     }
   }
 
@@ -145,29 +130,6 @@ extension SlopDocumentWindowController {
     content.addSubview(overlay)
     failedOverlay = overlay
     if presentationRequested { revealReadyWindow() }
-  }
-
-  func offerDiscardAndClose(_ error: Error) {
-    let alert = NSAlert(error: error)
-    alert.messageText = "This document is full"
-    alert.informativeText = "Your unsaved changes don't fit. Discard them to close, or cancel to keep this document open."
-    alert.addButton(withTitle: "Discard Unsaved Edits and Close")
-    alert.addButton(withTitle: "Cancel")
-    guard alert.runModal() == .alertFirstButtonReturn else { return }
-    Task {
-      do {
-        try await session.discardPending()
-        window?.performClose(nil)
-      } catch {
-        present("Unsaved changes could not be discarded", error)
-      }
-    }
-  }
-
-  func present(_ title: String, _ error: Error) {
-    let alert = NSAlert(error: error)
-    alert.messageText = title
-    alert.runModal()
   }
 }
 

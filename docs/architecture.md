@@ -22,9 +22,13 @@ kind's snapshot, merge, write rules, handles and CLI paths.
 
 The same core compiles to WASM for `slop dev`, for `slop build`'s validation of
 descriptors, initial values, theme defaults and window shapes, and for the Bun tests.
-It never edits documents outside the app. The CLI and the app update separately: the CLI
+It never edits documents outside the app. Authoring (`init`, `check`, `dev`, `build`)
+needs no helper and runs on macOS and Linux: the build also checks the package entries,
+limits and skin that native open checks (`packages/cli/src/package-check.ts`, with the
+limits shared through `PackageLimits`), and only `--artwork native` and `register`
+render artwork with the app. The CLI and the app update separately: the CLI
 checks that the selected helper serves its command protocol (`hitslop-native
---protocol`), and the helper checks that the live owner has its exact core build, since
+--protocol`) before document commands and native artwork, and the helper checks that the live owner has its exact core build, since
 both ship in one app bundle. Saved documents carry what they need to be read: the
 package's `packageFormat` and `runtimeABI` requirements, the SQLite application ID and storage version, and the
 document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
@@ -57,6 +61,8 @@ retired sessions without page-carried identity. Shared limits and codes live in 
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls, save jobs), persistence queue (store calls), save scheduling, epochs, view tokens |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, socket and discovery; the window is its `DocumentSessionDelegate` |
+| Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, page-failure overlay, the save-failure sheet (from the owner's save status); its commands go to the app |
+| App | `HitSlopFeatures` (TCA), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one command at a time per document (a close or a save recovery requested meanwhile runs next), quit, and alerts for failures that are not save failures |
 | Author SDK | `packages/document` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | Contracts | `packages/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
@@ -119,24 +125,17 @@ the owner applies it, through the same precomputed script.
 
 ## Undo
 
-Edit ▸ Undo and Redo revert changes to the open document: the person's, and an agent's
-made through the CLI or socket. The core keeps up to 100 steps per open document,
-each holding Loro frontiers before and after the edit. Loro's `revert_to` restores
-either version as a new change; there are no JSON snapshots or persistent undo records.
+Edit ▸ Undo and Redo revert changes made since the document opened: the person's, and
+an agent's made through the CLI or socket. A document opens with nothing to undo. The
+core keeps up to 100 steps per open document, each holding Loro frontiers before and
+after the edit. Loro's `revert_to` restores either version as a new change; there are no
+JSON snapshots or persistent undo records.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
   are one step, so one undo reverts what the agent just did. Any other change, a
   concurrent page text merge or undo/redo itself ends a run. The concurrent text edit
   is its own step, even though the text implementation imports a temporary branch.
-- **Agent edits made while closed.** The steps live in memory, so an edit made
-  by the CLI's own owner leaves no step behind. Agent commits therefore carry the commit
-  message `agent`, which Loro saves. When a document opens, the core walks back from its
-  latest changes while they are an agent's and keeps the version before them. That is one
-  step below the session's own, using the same undo/redo path and counting toward the
-  100-step limit. A new change ends redo. The step reaches as
-  far as the kept history: everything below 4 MiB, otherwise the last closed session at
-  most (see Saving).
 - **Refusals.** A batch or JSON replacement refused after a partial mutation rebuilds
   the owner at its pre-call version. Its history references survive replay, so undo,
   redo and the current run remain available. No-op edits also preserve history.
@@ -184,11 +183,12 @@ refused and preserved for recovery. A checkpoint replaces the log at 256 updates
 4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`).
 
 History is trimmed when nothing is editing. After its final save, a session that edited
-a document larger than 4 MiB writes one more checkpoint (`Store::close_job`): it keeps
-that session's history when the result fits 4 MiB, and none otherwise. Loro 1.16.2 keeps
-everything deleted before a cut in the cut's starting state, so only a cut at the latest
-version reclaims a document that deletes a lot. While open, a checkpoint over 16 MiB
-trims the same way, and `compact` trims to the latest version. Only the checkpoint may
+a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
+no history: undo covers the open session only, and Loro 1.16.2 keeps everything deleted
+before a cut in the cut's starting state, so only a cut at the latest version reclaims a
+document that deletes a lot. While open, a checkpoint over 16 MiB keeps the session's
+history when that fits and none otherwise, so a concurrent text edit can still branch
+from where the session opened; `compact` trims to the latest version. Only the checkpoint may
 start history late. Rollback rebuilds from where history starts; a version before it
 is `stale_base`, and a concurrent text edit never branches from before the latest cut,
 so no saved update depends on trimmed history. New

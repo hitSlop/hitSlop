@@ -3,8 +3,7 @@
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
 Contracts: [engineering contract](docs/engineering-contract.md). Tests:
-[testing](docs/testing.md). `examples/slops/bundled.json` selects the bundled templates;
-slops not yet on the implemented document kinds are in `archive/slops`.
+[testing](docs/testing.md). `examples/slops/bundled.json` selects the bundled templates.
 
 ## Non-negotiable
 

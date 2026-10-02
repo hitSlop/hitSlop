@@ -199,29 +199,28 @@ fn session(root: &Path, seed: &mut u64, count: usize) -> String {
 }
 
 // Failure: every checkpoint kept the full history, so a document's file grew with every
-// change it ever saw. Oracle: after a session closes, versions from before it are stale
-// and its own still name the document's history; a session that only reads keeps the
-// previous session's history.
+// change it ever saw. Oracle: a session that edited a large document closes with no
+// history, a session that only reads trims nothing, and compaction keeps no history.
 #[test]
-fn closing_keeps_the_last_session_and_compaction_trims_to_now() {
+fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     let (_dir, root) = package();
     let mut seed = 7;
     let first = session(&root, &mut seed, 100);
     let second = session(&root, &mut seed, 100);
     let (store, mut doc) = open(&root);
-    assert!(stale(&doc, &first), "history before the last session is trimmed");
-    assert!(!stale(&doc, &second), "the last session's history is kept");
+    assert!(stale(&doc, &first) && stale(&doc, &second), "the large document closed with no history");
     let before = store.metadata().unwrap();
     assert_eq!(close(store, &mut doc), None, "a session that only reads trims nothing");
     let (store, mut doc) = open(&root);
     assert_eq!(store.metadata().unwrap(), before);
-    assert!(!stale(&doc, &second));
+    set_title(&mut doc, "Edited");
+    let edited = doc.version();
     set_title(&mut doc, "Compacted");
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     let latest = doc.version();
     store.close().unwrap();
     let doc = open(&root).1;
-    assert!(stale(&doc, &second), "compaction keeps no history");
+    assert!(stale(&doc, &edited), "compaction keeps no history");
     assert!(!stale(&doc, &latest));
     assert_eq!(title(&doc), "Compacted");
 }
@@ -282,31 +281,6 @@ fn a_session_past_its_limit_trims_while_open() {
     assert!(stale(&open(&root).1, &early), "the trimmed history stays trimmed");
 }
 
-// Kept history decides how far undo reaches into an agent's closed edits: a closing
-// session that is itself too large keeps no history, so only later commands remain.
-#[test]
-fn undo_of_closed_agent_edits_reaches_as_far_as_history_is_kept() {
-    let (_dir, root) = package();
-    let mut seed = 9;
-    let agent = |doc: &mut Document, intents: Value| doc.apply_batch(&json!({ "intents": intents }).to_string(), Origin::Agent).unwrap();
-    let (store, mut doc) = open(&root);
-    for _ in 0..160 {
-        let applied = agent(&mut doc, json!([{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]));
-        agent(&mut doc, json!([{"type":"remove","path":["rows"],"id":applied.ids[0]}]));
-        save(&store, &mut doc);
-    }
-    agent(&mut doc, json!([{"type":"set","path":["title"],"value":"First"}]));
-    close(store, &mut doc);
-    let (store, mut doc) = open(&root);
-    agent(&mut doc, json!([{"type":"set","path":["title"],"value":"Second"}]));
-    close(store, &mut doc);
-    let (_store, mut doc) = open(&root);
-    assert!(doc.can_undo());
-    doc.undo().unwrap();
-    assert_eq!(title(&doc), "First", "the first command's history was not kept");
-    assert!(!doc.can_undo());
-}
-
 #[test]
 fn undo_survives_compaction() {
     let (_dir, root) = package();
@@ -346,6 +320,42 @@ fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     assert_eq!(open(&root).1.value().unwrap(), expected);
 }
 
+// A redo restores a version from before the compaction; the live document still holds
+// it, and the restore must save as updates the trimmed checkpoint can replay.
+#[test]
+fn redo_across_compaction_survives_reopen() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    set_title(&mut doc, "Before");
+    set_title(&mut doc, "After");
+    assert!(doc.undo().unwrap().publication.is_some());
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    assert!(doc.redo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), "After");
+    close(store, &mut doc);
+    assert_eq!(title(&open(&root).1), "After");
+}
+
+// A compaction whose write fails leaves the saved state as it was; undo and the retried
+// save must still reopen to what the window showed.
+#[test]
+fn undo_after_a_failed_compaction_saves_on_retry() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    set_title(&mut doc, "Before");
+    save(&store, &mut doc);
+    set_title(&mut doc, "After");
+    store.set_phases(Some(Arc::new(Fail("checkpoint:uncommitted"))));
+    let job = store.job(&mut doc, true).unwrap().unwrap();
+    assert!(store.write(&job).is_err());
+    store.set_phases(None);
+    assert!(doc.undo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), "Before");
+    save(&store, &mut doc);
+    store.close().unwrap();
+    assert_eq!(title(&open(&root).1), "Before");
+}
+
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
 // and saved an update that depends on it; the package could never be opened again.
 #[test]
@@ -372,7 +382,7 @@ fn a_stale_text_base_cannot_make_the_package_unopenable() {
 
 // Failure: a drawing app that saves large strokes and erases them reached the storage
 // limit in weeks while its live value stayed tiny. Oracle: after each session closes,
-// stored bytes stay within that session's history and the live state.
+// stored bytes stay within one session's growth and the live state.
 #[test]
 fn doodle_like_use_stays_bounded() {
     let (_dir, root) = package();

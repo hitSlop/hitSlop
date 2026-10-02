@@ -166,7 +166,8 @@ import HitSlopCore
   private static func checkedEpoch(_ hello: SocketReply) throws -> String {
     guard hello.ok else { throw failure(hello.error ?? "Cannot open session") }
     guard hello.coreBuildId == DocumentOwner.coreBuildID else {
-      throw failure("hitSlop.app and the native helper embed different document cores; install matching versions and reopen the app")
+      // The helper ships in the app bundle, so a mismatch means the running app predates an update.
+      throw failure("hitSlop was updated while this document was open. Quit and reopen hitSlop, then try again")
     }
     guard let epoch = hello.epoch else { throw failure("Cannot open session") }
     return epoch

@@ -419,6 +419,9 @@ public final class DocumentOwner: @unchecked Sendable {
       try await enqueue(allowInvalidated: true) {
         self.discarding = false
         self.writing = false
+        // The save-failure sheet presents every save failure, so a failed reload is
+        // published like a failed write; an invalidated owner publishes nothing else.
+        self.publishStatus(.failed(self.invalidated ? .invalidated : SaveFailure(error)))
         self.pump()
       }
       throw error

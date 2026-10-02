@@ -53,9 +53,8 @@ dist/
 _inspo/
 _vibe/
 
-# Historical source stays local, except the approved slop archive with provenance.
+# Historical source stays local.
 /archive/*
-!/archive/slops/
 !/archive/spikes/
 /archive/spikes/*
 !/archive/spikes/boundary-simplification/

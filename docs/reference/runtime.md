@@ -11,7 +11,7 @@ imports the package's `assets/app.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/document/src/abi.ts)). The private `@hitslop/shell` package supplies the runtime; `@hitslop/document`
 contains only the author SDK. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`,
-`issues`), `bind.text`/`bind.value`, capture hooks, attachments, `window.resize` and
+`issues`), `bind.text`, capture hooks, attachments, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view supplies `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.

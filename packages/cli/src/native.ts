@@ -49,8 +49,8 @@ export function checkProtocol(reported: string) {
     throw new Error("This @hitslop/cli needs a newer hitSlop.app; update hitSlop");
 }
 
-export async function runNative(args: string[]) {
-  const binary = await findNative();
+/** The helper's arguments for this CLI's protocol, once the helper confirms it serves it. */
+export async function negotiate(binary: string): Promise<string[]> {
   const probe = Bun.spawn([binary, "--protocol"], {
     stdin: "ignore", stdout: "pipe", stderr: "inherit",
   });
@@ -59,7 +59,11 @@ export async function runNative(args: string[]) {
   ]);
   if (status) process.exit(status);
   checkProtocol(reported);
-  const child = Bun.spawn([binary, "--client-protocol", String(HelperProtocol.version), ...args], {
+  return [binary, "--client-protocol", String(HelperProtocol.version)];
+}
+
+export async function runNative(args: string[]) {
+  const child = Bun.spawn([...(await negotiate(await findNative())), ...args], {
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

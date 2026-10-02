@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { quicktype, InputData, JSONSchemaInput, FetchingJSONSchemaStore } from "quicktype-core";
 import { SlopManifestSchema, SlopPackageManifestSchema } from "../packages/schema/src/index";
-import { SlopCategories, WindowBounds, AttachmentLimits, base64Length, StorageLimits, ThemeLimit, ThemeFileLimit, ErrorTextLimit, PagePayloadLimit, PushLimits, SocketLimits, PackageFormat, RuntimeABI, HelperProtocol } from "../packages/schema/src/constants";
+import { SlopCategories, WindowBounds, AttachmentLimits, base64Length, StorageLimits, ThemeLimit, ThemeFileLimit, ErrorTextLimit, PagePayloadLimit, PushLimits, SocketLimits, PackageLimits, PackageFormat, RuntimeABI, HelperProtocol } from "../packages/schema/src/constants";
 import { HelperProtocolSchema } from "../packages/schema/src/helper";
 import { rustOwnerWire } from "./rust-contracts";
 import { CoreErrorCodes, PageErrorCodes } from "../packages/schema/src/constants";
@@ -77,6 +77,12 @@ public enum Limits {
   /// Socket requests: every method, and attachment uploads.
   public static let socketRequest = ${SocketLimits.request}
   public static let socketAttachment = ${SocketLimits.attachment}
+  /// A package's immutable entries: one file, the entry count and total bytes; image size.
+  public static let packageFile = ${PackageLimits.file}
+  public static let packageEntries = ${PackageLimits.entries}
+  public static let packageBytes = ${PackageLimits.bytes}
+  public static let imageSide = ${PackageLimits.imageSide}
+  public static let imagePixels = ${PackageLimits.imagePixels}
 }
 `,
     "crates/hitslop-core/src/wire.generated.rs": rustOwnerWire,

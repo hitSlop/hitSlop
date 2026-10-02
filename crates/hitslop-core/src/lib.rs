@@ -151,11 +151,11 @@ fn application_id() -> Result<String> {
     Ok(out)
 }
 
-/// This replica's counter key: its peer ID.
 /// Issues in one canonical order, by path then code, so every walk agrees.
 fn sort_issues(issues: &mut [Issue]) {
     issues.sort_by(|a, b| (&a.path, a.code).cmp(&(&b.path, b.code)));
 }
+/// This replica's counter key: its peer ID.
 fn writer(doc: &LoroDoc) -> String {
     doc.peer_id().to_string()
 }
@@ -173,14 +173,15 @@ pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
 
 /// The document layout: how descriptor kinds map to Loro containers
 /// (docs/reference/document-types.md). A compatibility requirement, not a release number,
-/// written into each document's `meta` map when it is created. A later layout either
-/// reads this one or migrates it losslessly; a build refuses a newer one.
+/// written into each document's `meta` map when it is created. A build refuses a newer one.
 pub const LAYOUT: i64 = 1;
 const META: &str = "meta";
-/// Refuses a document whose layout this build cannot read, before interpreting it.
+/// Refuses a document whose layout this build cannot read, before interpreting it. Each
+/// layout a released build wrote keeps its arm: raising `LAYOUT` adds an arm that reads
+/// the new layout and leaves the old ones reading (or migrating losslessly in memory).
 fn check_layout(doc: &LoroDoc) -> Result<()> {
     match doc.get_map(META).get("layout") {
-        Some(ValueOrContainer::Value(loro::LoroValue::I64(LAYOUT))) => Ok(()),
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(1))) => Ok(()),
         Some(ValueOrContainer::Value(loro::LoroValue::I64(layout))) if layout > LAYOUT => Err(err(
             Code::RequiresUpdate,
             format!("This document uses layout {layout}; this hitSlop reads layout {LAYOUT}"),
@@ -196,8 +197,7 @@ pub enum Origin {
     Page,
     Agent,
 }
-/// The commit message of agent edits. Messages are saved with the history, so a later
-/// session can find the agent's edits made while no window was open.
+/// The commit message of agent edits, saved with the history for attribution.
 const AGENT: &str = "agent";
 /// The undo step being extended: a typing run in one text field (its text and caret, in
 /// UTF-16, after the last edit), or a run of agent batches.
@@ -211,24 +211,8 @@ struct Step {
     before: Frontiers,
     after: Frontiers,
 }
-/// Includes the trailing agent edits found when opening, if any.
+/// Undo covers the open session only: a document opens with nothing to undo.
 const UNDO_STEPS: usize = 100;
-/// The version before the agent edits that end this document's history, within the
-/// history it keeps; none when the person's change is last.
-fn agent_tail(doc: &LoroDoc) -> Option<Frontiers> {
-    let trimmed = doc.shallow_since_vv().to_vv();
-    let mut at = doc.oplog_frontiers();
-    let mut moved = false;
-    while let Some(change) = at.as_single().and_then(|id| doc.get_change(id)) {
-        // Stop where the version before this change is no longer kept.
-        if change.message.as_deref() != Some(AGENT) || change.deps.is_empty() || change.deps.iter().any(|id| trimmed.includes_id(id)) {
-            break;
-        }
-        at = change.deps.clone();
-        moved = true;
-    }
-    moved.then_some(at)
-}
 
 /// A committed batch: its publication sequence, the IDs of inserted rows, and the
 /// publication to deliver, absent when the batch changed nothing.
@@ -278,7 +262,7 @@ impl Document {
         subscribe(&doc, &events);
         let mut this = Self {
             lists: publication::index_all(&doc),
-            undo: agent_tail(&doc).map(|before| Step { before, after: doc.oplog_frontiers() }).into_iter().collect(),
+            undo: VecDeque::new(),
             redo: vec![],
             run: None,
             doc,

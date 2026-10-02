@@ -45,4 +45,10 @@ public enum Limits {
   /// Socket requests: every method, and attachment uploads.
   public static let socketRequest = 1048576
   public static let socketAttachment = 16777216
+  /// A package's immutable entries: one file, the entry count and total bytes; image size.
+  public static let packageFile = 26214400
+  public static let packageEntries = 256
+  public static let packageBytes = 52428800
+  public static let imageSide = 16384
+  public static let imagePixels = 24000000
 }

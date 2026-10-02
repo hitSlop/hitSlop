@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "cornell-notes",
+  "title": "Cornell Notes",
+  "description": "A classic Cornell lecture notebook page with cue column, notes area, summary box, and an active-recall study mask.",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 700,
+    "height": 900
+  }
+}

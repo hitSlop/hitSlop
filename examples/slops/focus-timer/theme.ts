@@ -1,0 +1,16 @@
+import { defineTheme } from "@hitslop/document";
+
+export default defineTheme({
+  surface: "#d94935",
+  surfaceLight: "#f36b50",
+  surfaceDeep: "#a92b22",
+  panel: "#f5edda",
+  panelShade: "#e8ddc4",
+  ink: "#302d28",
+  muted: "#6b604f",
+  accent: "#bd3e2d",
+  restAccent: "#3e654c",
+  action: "#f5edda",
+  focus: "#fff8dc",
+  onSurface: "#fff3df",
+});

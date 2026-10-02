@@ -295,6 +295,37 @@ extension OwnerClientTests {
       String(decoding: try await command("get", url: root), as: UTF8.self)
         .contains("Recovered edit"))
   }
+
+  // Failure: a close stopped by a failed save showed the save-failure sheet and a second,
+  // generic alert. Oracle: the close fails as a save failure, which the coordinator leaves
+  // to the window, and the window shows one sheet, the one that offers Discard.
+  @Test @MainActor func aCloseStoppedByAFullDocumentShowsOneSheet() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    controller.session.owner.testingPhase = { phase in
+      if phase == "append:uncommitted" || phase == "checkpoint:uncommitted" { throw CoreError.Full }
+    }
+    await #expect(throws: (any Error).self) {
+      _ = try await command("apply", url: root, operation: setTitle("Unsaved"))
+    }
+    var failure: SlopDocumentFailure?
+    do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
+    #expect(failure == .save)
+    #expect(window.sheets.count == 1)
+    #expect(controller.attentionFailure == .full)
+    let sheet = try #require(window.attachedSheet)
+    window.endSheet(sheet, returnCode: .abort)
+    sheet.orderOut(nil)
+    controller.session.owner.testingPhase = nil
+    try await controller.session.flush()
+    try await controller.finishClose()
+  }
   #endif
 }
 

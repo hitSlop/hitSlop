@@ -80,9 +80,11 @@ const manifestFields = {
 };
 /** The manifest an author writes. */
 export const SlopManifestSchema = Strict(manifestFields, { title: "SlopManifest" });
-/** Independent package syntax and app runtime requirements, stamped by the builder. */
+/** Independent package syntax and app runtime requirements, stamped by the builder. The
+ * syntax reader is chosen by `packageFormat`; the supported `runtimeABI` is checked before
+ * it, so a reader never caps the runtime a package of its syntax may require. */
 export const SlopPackageManifestSchema = Strict(
-  { ...manifestFields, packageFormat: Type.Integer({ minimum: 1, maximum: PackageFormat }), runtimeABI: Type.Integer({ minimum: 1, maximum: RuntimeABI }) },
+  { ...manifestFields, packageFormat: Type.Integer({ minimum: 1, maximum: PackageFormat }), runtimeABI: Type.Integer({ minimum: 1 }) },
   { title: "SlopPackageManifest" },
 );
 export type SlopCategory = Type.Static<typeof SlopCategorySchema>;
@@ -94,5 +96,9 @@ export type SlopPresentation = Type.Static<typeof SlopPresentationSchema>;
 export const parseManifest = (input: unknown): SlopManifest =>
   validate(SlopManifestSchema, input, "Invalid manifest");
 /** A built package's manifest, at a level this build supports. */
-export const parsePackageManifest = (input: unknown): SlopPackageManifest =>
-  validate(SlopPackageManifestSchema, input, "Invalid package manifest");
+export const parsePackageManifest = (input: unknown): SlopPackageManifest => {
+  const manifest = validate(SlopPackageManifestSchema, input, "Invalid package manifest");
+  if (manifest.runtimeABI > RuntimeABI)
+    throw new Error(`This slop needs runtimeABI ${manifest.runtimeABI}; this build supports ${RuntimeABI}`);
+  return manifest;
+};

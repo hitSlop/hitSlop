@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const landing = fileURLToPath(new URL("..", import.meta.url));
 const repo = resolve(landing, "../..");
-const sources = ["examples/slops", "archive/slops"].map((dir) => join(repo, dir));
+const sources = ["examples/slops"].map((dir) => join(repo, dir));
 const publicDir = join(landing, "public/assets/templates");
 const output = join(landing, "src/data/templates.json");
 

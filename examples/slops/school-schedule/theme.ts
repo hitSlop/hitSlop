@@ -1,0 +1,22 @@
+import { defineTheme } from "@hitslop/document";
+
+export default defineTheme({
+  surface: "#f7faff",
+  panel: "#eaf0fb",
+  paper: "#ffffff",
+  ink: "#172e62",
+  muted: "#657398",
+  rule: "#d8e2f3",
+  cobalt: "#2858db",
+  cobaltDeep: "#1e42b4",
+  onAccent: "#ffffff",
+  accent: "#ff907f",
+  danger: "#ae344b",
+  sage: "#d8f2d5",
+  slate: "#d8eafa",
+  amber: "#ffe0ca",
+  terracotta: "#ffb8aa",
+  indigo: "#e1d9ff",
+  rose: "#f8d8e8",
+  teal: "#c9eeeb",
+});

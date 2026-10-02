@@ -12,15 +12,7 @@ extension SlopDocumentWindowController {
       default: break
       }
     }
-    if let onCommand {
-      onCommand(command)
-      return
-    }
-    Task {
-      do { _ = try await perform(command) } catch {
-        present("Could not complete command", error)
-      }
-    }
+    routing.command(command)
   }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
     switch command {
@@ -55,6 +47,10 @@ extension SlopDocumentWindowController {
         telemetry.send(.breadcrumb(.recovery, .completed))
       } catch { reportLifecycleFailure(.recovery, error: error); throw error }
     case .close: try await closeDocument()
+    case .retrySave: try await session.retrySave()
+    case .discardUnsaved:
+      try await session.discardPending()
+      try await session.retrySave()
     }
     return nil
   }
@@ -127,6 +123,16 @@ extension SlopDocumentWindowController {
     let directory = URL(fileURLWithPath: packageURL.path, isDirectory: true)
     _ = try await NSWorkspace.shared.open(
       [directory], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+  }
+}
+
+extension SlopDocumentFailure {
+  /// How the coordinator treats a failed window command. Flush and close report a failed
+  /// save as the owner's `SaveFailure`, which the save-failure sheet already shows.
+  public init(command error: Error) {
+    if error is SaveFailure { self = .save }
+    else if SlopFailureContext.isCancellation(error) { self = .cancelled }
+    else { self.init(error) }
   }
 }
 

@@ -20,7 +20,15 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, issues, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
 | CLI ↔ app | `hitslop-native --protocol` (`{version, minimum}`) | Selects the adapter named by `--client-protocol`; omission means 1. Keeps serving every protocol from `minimum`; protocol 1 is today's commands, arguments, outputs and exit statuses |
 
-Markers are requirements, not release numbers: refactors never raise them. Saved state
+Markers are requirements, not release numbers: refactors never raise them, and app,
+CLI and SDK versions never stand for them. An additive `ctx` API still raises
+`runtimeABI` once the SDK depends on it; an app may treat an API as optional only where
+it has a real fallback. A syntax reader never caps `runtimeABI`: the supported runtime is
+checked before the reader is chosen. The builder stamps `runtimeABI` from the project's
+SDK and refuses one this CLI cannot validate or preview. Raising one
+adds a reader and leaves every released one as it is: copy `validate_v1` (with the
+manifest schema it validates against), `createContextV1` or the protocol-1 command tree
+rather than editing it, and keep the old layout and storage arms. Saved state
 belongs to its descriptor by meaning (`same_schema`), never by spelling. Checks that run
 on open are versioned by `packageFormat`, so tightening an authoring rule never rejects a
 saved document; a security fix that must reject old documents needs an assessment and a
@@ -80,8 +88,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - Preserve the macOS client: TCA features, catalog and Recents, slop windows and
   toolbar, PNG/PDF export, Finder previews, Firebase Analytics/Crashlytics and Sparkle.
 - Active examples are the manifest-bearing directories under `examples/slops`;
-  `bundled.json` selects shipped templates; slops not yet on the implemented document
-  kinds are in `archive/slops`. Dedicated fixtures own platform semantics. Use plain CSS and
+  `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
   `defineTheme`; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
 - Deferred: collaboration, a document history UI, schema evolution (changing a

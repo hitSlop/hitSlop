@@ -65,7 +65,7 @@ function assertTrackedHygiene(files: string[]): void {
     // Unlisted private archives remain excluded by .gitignore and this gate.
     if (
       /^(archive|examples\/archive|Prototypes)\//.test(path) &&
-      !["archive/slops/", "archive/docs/", "archive/spikes/"].some(prefix => path.startsWith(prefix))
+      !["archive/docs/", "archive/spikes/"].some(prefix => path.startsWith(prefix))
     )
       failures.push(path);
   }

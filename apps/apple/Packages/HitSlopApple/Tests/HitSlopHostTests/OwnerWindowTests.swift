@@ -69,22 +69,23 @@ extension OwnerClientTests {
 }
 
 extension OwnerClientTests {
-  // Failure: redoing the page's text after a closed agent undo produced PRSOAGENT.
+  // Failure: redoing the page's text after undoing an agent's edit produced PRSOAGENT.
   // Exercise the focused window's Edit actions, page publication, and saved reopen.
-  @Test @MainActor func closedAgentAndPageEditsRedoThroughTheWindow() async throws {
+  @Test @MainActor func agentAndPageEditsRedoThroughTheWindow() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    _ = try await command("apply", url: root, operation: setTitle("AGENT"))
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
+    _ = try await command("apply", url: root, operation: setTitle("AGENT"))
     let window = try #require(controller.window)
     let webView = controller.session.webView
     window.makeFirstResponder(webView)
+    // Type over the agent's text once the page shows it.
     _ = try await webView.callAsyncJavaScript(
-      "const input = document.getElementById('draft'); input.focus(); input.select(); document.execCommand('insertText', false, 'PERSON'); await globalThis.__slop.flush(); return true",
+      "const input = document.getElementById('draft'); for (let i = 0; i < 200 && input.value !== 'AGENT'; i++) await new Promise(r => setTimeout(r, 5)); input.focus(); input.select(); document.execCommand('insertText', false, 'PERSON'); await globalThis.__slop.flush(); return true",
       arguments: [:], in: nil, contentWorld: .page)
     func title() async throws -> String? {
       let reply = try JSONSerialization.jsonObject(with: try await command("get", url: root)) as! [String: Any]
