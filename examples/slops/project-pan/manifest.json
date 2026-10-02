@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "project-pan",
+  "title": "Project Pan",
+  "description": "A rose-gold compact for using up your makeup and skincare before buying more: watch each pan hollow out, track expiry, and shelve the empties.",
+  "categories": [
+    "personal",
+    "other"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 740
+  }
+}

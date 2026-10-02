@@ -121,27 +121,27 @@ Ideas from 2026-10 research into what Gen Z and Gen Alpha build in Notion and sh
 
 ### School
 
-- [ ] **Internship & Job Tracker** — Work / Instrument — Move applications through applied, assessment, interview, offer, and rejected, with follow-up dates and a coffee-chat log. **Visual:** lanyard badge with a stamped status per row.
+- [ ] **Internship & Job Tracker** — Work / Instrument — Move applications through applied, assessment, interview, offer, and rejected, with follow-up dates and a coffee-chat log. **Visual:** lanyard badge with a stamped status per row. Built in `examples/slops/internship-tracker`; awaiting the quality review and not yet in `bundled.json`.
 - [ ] **College Apps Tracker** — Planning / Paper — Track reach, target, and safety schools with deadlines, essay and recommendation status, fees, and scholarships, and show what is due next. **Visual:** a stack of admissions folders with coloured tabs.
 - [ ] **Course Card** — Learning / Paper — Keep one class's professor, room, office hours, grading weights, key dates, textbook, and policies on a single reference card. **Visual:** university ID card crossed with a syllabus cover.
 - [ ] **Degree Map** — Learning / Paper + Instrument — Fill gen-ed, major, and elective requirement buckets with courses and watch credits climb toward graduation on a four-year grid. **Visual:** video-game skill tree.
 - [ ] **Exam Prep Board** — Learning / Instrument — Per exam, list weight, date, and topics with a red/amber/green confidence rating, so the weakest topics surface first. **Visual:** mission-control readiness panel.
 - [ ] **Paper Planner** — Writing / Paper — Plan an essay from thesis to argument blocks and sources, with a word-count bar against the deadline. **Visual:** clipboard of index cards with a highlighter.
 - [ ] **Service Hours Log** — School / Paper — Log volunteer and activity hours with date, supervisor, and a signature line, and export a clean sheet to hand in. **Visual:** punch time-card.
-- [ ] **Household Chores** — Home / Instrument + Paper — Rotate chores by person and day for roommates, families, or kids, with tap-to-complete, a fairness tally, optional points, and house rules. Replaces the Cleaning Schedule line in P2. **Visual:** magnetic fridge chore wheel with a spinning dial and coloured person-magnets.
+- [ ] **Household Chores** — Home / Instrument + Paper — Rotate chores by person and day for roommates, families, or kids, with tap-to-complete, a fairness tally, optional points, and house rules. Replaces the Cleaning Schedule line in P2. **Visual:** magnetic fridge chore wheel with a spinning dial and coloured person-magnets. Built in `examples/slops/household-chores`; awaiting the quality review and not yet in `bundled.json`.
 - [ ] **Group Project Split** — Work / Paper — Assign roles, tasks, owners, and deadlines, then export a PNG for the group chat. **Visual:** pie chart cut into slices with owner chips.
 
 ### Fashion, beauty, and lifestyle
 
 - [ ] **Digital Closet** — Fashion / Skin — Photograph clothes, plan a week of outfits, and see cost per wear. **Visual:** closet rail with hangers, or a polaroid grid.
 - [ ] **Wishlist with Cooling-Off** — Money / Paper — Hold wanted items behind a 30-day wait and decide buy or skip, with a dupe or already-own note. **Visual:** shopping tag with a countdown.
-- [ ] **Project Pan** — Beauty / Skin — Track products' fill level, open date, and expiry, and file finished ones on an empties shelf. **Visual:** compact mirror with makeup pans.
+- [ ] **Project Pan** — Beauty / Skin — Track products' fill level, open date, and expiry, and file finished ones on an empties shelf. **Visual:** compact mirror with makeup pans. Built in `examples/slops/project-pan`; awaiting the quality review and not yet in `bundled.json`.
 - [ ] **Skin Routine** — Beauty / Paper — Plan AM and PM steps and an actives rotation so strong products never share a night, with breakout notes. **Visual:** bathroom shelf of labelled bottles.
 - [ ] **Cycle Notebook** — Health / Paper — Mark cycle days, symptoms, and mood with a simple predicted window, kept in a local file with no account. Needs a conservative prediction rule and a not-medical-advice line. **Visual:** soft moon-phase calendar.
 - [ ] **Resale Tracker** — Money / Instrument — Record cost, listing price, fees, sold price, and profit for items sold on Depop, Vinted, or Poshmark. **Visual:** hang-tag price gun.
 - [ ] **Concert & Festival Kit** — Social / Paper + Skin — Gather tickets, travel, outfit, setlist, bracelet list, budget, and who is going, then export a story-ready card. **Visual:** ticket stub with a wristband.
 - [ ] **Gift Radar** — Social / Paper — Keep each person's birthday, sizes, likes, saved ideas, and past gifts. **Visual:** wrapped-gift tags.
-- [ ] **Scratch-Off Bucket List** — Playful / Skin — Hide a summer or semester list under scratch-off foil, reveal and tick items, and export the card. **Visual:** lottery scratch card.
+- [ ] **Scratch-Off Bucket List** — Playful / Skin — Hide a summer or semester list under scratch-off foil, reveal and tick items, and export the card. **Visual:** lottery scratch card. Built in `examples/slops/scratch-off-list`; awaiting the quality review and not yet in `bundled.json`.
 - [ ] **Content Calendar** — Creative / Paper — Plan posts with hook, caption, and shoot, edit, posted status on a monthly grid. **Visual:** film strip or contact sheet.
 
 ### Everyday trackers
@@ -154,7 +154,7 @@ Ideas from 2026-10 research into what Gen Z and Gen Alpha build in Notion and sh
 
 Each ends in one card meant to be exported and posted.
 
-- [ ] **MASH** — Games / Skin — Fill mansion, apartment, shack, and house categories with your own picks, draw the spiral, and eliminate to a shareable future card. **Visual:** spiral-notebook page in gel pen with a pencil spiral.
+- [ ] **MASH** — Games / Skin — Fill mansion, apartment, shack, and house categories with your own picks, draw the spiral, and eliminate to a shareable future card. **Visual:** spiral-notebook page in gel pen with a pencil spiral. Built in `examples/slops/mash`; awaiting the quality review and not yet in `bundled.json`.
 - [ ] **Cootie Catcher** — Games / Skin — Write your own fortunes, colours, and numbers, then fold open the paper to reveal one. **Visual:** folded origami paper with ballpoint scribbles.
 - [ ] **Slam Book** — Social / Paper — Fill a page per friend with favourites, a rate-me, most-likely-to, and a crush question. **Visual:** glittery 2000s autograph book in gel pen.
 - [ ] **Birth Chart Card** — Astrology / Paper + Skin — Enter sun, moon, rising, and optional planets from any chart site, and render a wheel with short readings and a shareable card. No ephemeris needed. **Visual:** celestial star map in navy and gold foil.

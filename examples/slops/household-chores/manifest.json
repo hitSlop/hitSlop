@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "household-chores",
+  "title": "Household Chores",
+  "description": "A fridge-door chore wheel for roommates, families and kids: assign chores, tick them off, rotate each week, and keep the points fair.",
+  "categories": [
+    "personal",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 460,
+    "height": 740
+  }
+}
