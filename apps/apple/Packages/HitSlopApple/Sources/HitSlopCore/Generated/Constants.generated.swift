@@ -26,6 +26,8 @@ public enum Limits {
   public static let theme = 65536
   /// Diagnostic text a page reports, in UTF-16 units.
   public static let errorText = 4096
+  /// The `Symbol.for` key that marks the page's document errors as operation issues.
+  public static let operationErrorBrand = "hitslop.operation-error"
   /// Pushes buffered for one page before a gap forces a fresh snapshot.
   public static let pushItems = 256
   public static let pushBytes = 4194304

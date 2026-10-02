@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { bindText, bindValue, useDocument } from "@hitslop/document/svelte";
+  import { bindText } from "@hitslop/document/svelte";
   import { Checkbox } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
-  import schema from "./schema";
+  import doc from "./schema";
   import { CELLS, formatDeadline, keyOf, ringIndex, sheetView } from "./chart";
 
   type CellBind = {
@@ -54,7 +54,6 @@
     };
   }
 
-  const doc = useDocument(schema);
   const { doneCount, deadlineText, isDone, textOf } = $derived(sheetView(doc.current));
   const deadlineLabel = $derived(formatDeadline(doc.current.deadline));
   const namedThemes = $derived(doc.current.themes.filter((theme) => theme.title.trim()).length);
@@ -101,7 +100,7 @@
         </div>
         <label class="target">
           <span>Target</span>
-          <input type="date" aria-label="Target date" use:bindValue={doc.fields.deadline} />
+          <input type="date" aria-label="Target date" bind:value={doc.fields.deadline.value} />
           <em class="targetNote">{deadlineLabel}</em>
         </label>
         <div class="tally">

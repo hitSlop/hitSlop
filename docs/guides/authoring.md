@@ -30,6 +30,8 @@ adding a template and choosing which templates ship.
   Svelte `$state`; files are attachments, never base64 in fields.
 - Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `initial.ts`,
   which seeds new documents only. Changing the schema makes a new document type.
+- Don't silence writes with `.catch(() => {})`: the host reports a refused write. Catch
+  only to show the template's own message. Order rows with `move`, not a position field.
 - Capture views and export hooks never change saved state to prepare a view.
 
 ## Design standards

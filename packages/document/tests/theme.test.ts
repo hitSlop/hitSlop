@@ -11,9 +11,8 @@ test("saved overrides apply over defaults without validation on load", () => {
   expect(visible).toEqual({ accent: "blue", paper: "white" });
   // Loading never fails on theme; the browser ignores CSS it cannot parse.
   theme.load({ accent: "not a colour;" });
-  expect(theme.get()).toEqual({
-    defaults: { accent: "red", paper: "white" },
-    overrides: { accent: "not a colour;" },
-    effective: { accent: "not a colour;", paper: "white" },
-  });
+  expect(visible).toEqual({ accent: "not a colour;", paper: "white" });
+  // A reset override shows its default again.
+  theme.load({});
+  expect(visible).toEqual({ accent: "red", paper: "white" });
 });

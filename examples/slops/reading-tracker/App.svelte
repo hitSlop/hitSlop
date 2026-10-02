@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText } from "@hitslop/document/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { RadioGroup, Select, ToggleGroup, Button, Dialog } from "bits-ui";
@@ -10,14 +10,13 @@
   import Check from "@lucide/svelte/icons/check";
   import BookOpen from "@lucide/svelte/icons/book-open";
   import Star from "@lucide/svelte/icons/star";
-  import schema, { statuses, type Book } from "./schema";
+  import doc, { statuses, type Book } from "./schema";
   import { grow } from "./grow";
 
   type Status = (typeof statuses)[number];
   const statusItems = statuses.map((value) => ({ value, label: value }));
   const STARS = [1, 2, 3, 4, 5] as const;
 
-  const doc = useDocument(schema);
   let newTitle = $state("");
   let newAuthor = $state("");
   let newStatus = $state<Status>("To Read");

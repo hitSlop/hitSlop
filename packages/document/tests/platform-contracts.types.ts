@@ -12,9 +12,9 @@ function contracts(handle: SlopPageHandle) {
   const missingKind: BridgeRequest<"pageError"> = { method: "pageError", error: "x" };
   // @ts-expect-error Attachment reads need an attachment ID, not bytes.
   hostCall({ method: "attachments.read", bytes: "AA==" });
-  hostCall({ method: "attachments.list" }).then(reply => {
-    const count: number = reply.files.length;
-    // @ts-expect-error A listing does not return config fields.
+  hostCall({ method: "attachments.read", attachmentID: "a".repeat(64) }).then(reply => {
+    const bytes: string = reply.bytes;
+    // @ts-expect-error An attachment read does not return config fields.
     const epoch: string = reply.epoch;
   });
   hostCall({ method: "config" }).then(reply => {

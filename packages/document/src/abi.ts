@@ -1,14 +1,13 @@
-import type { AsyncHandle, AsyncAt } from "./async-types";
 /**
  * The interface between a built slop and the page shell. A package's `assets/app.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
  * `mount(ctx, target)`. Apps reach the host only through `ctx`. Both sides are built
  * from this repository; there is no versioned compatibility promise before release.
  */
-import type { At, Handle, ScalarHandle, TextHandle } from "./handle-types";
+import type { At, Handle, TextHandle } from "./handle-types";
 import type { Definition, ObjectNode, Value } from "./schema";
-export type SaveStatus = "saved" | "pending" | "save-failed";
-export type Scope<N extends ObjectNode> = { readonly fields: Handle<N>; readonly at: At };
+/** A `change()` transaction: the same handles, collecting synchronously. */
+export type Scope<N extends ObjectNode> = { readonly fields: Handle<N, "tx">; readonly at: At<"tx"> };
 export type Issue = import("@hitslop/schema/owner").OwnerState["issues"][number];
 export type AttachmentInfo = { id: string; byteLength: number };
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
@@ -27,15 +26,7 @@ export interface SlopContext {
   readonly document: SlopDocument<ObjectNode>;
   readonly bind: {
     /** Two-way text binding with IME composition and remote-edit transforms. */
-    text(
-      element: HTMLInputElement | HTMLTextAreaElement,
-      handle: AsyncHandle<TextHandle>,
-    ): Binding<AsyncHandle<TextHandle>>;
-    /** Checkbox, range, number, text-like input or select bound to a scalar. */
-    value<V extends string | number | boolean>(
-      element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
-      handle: AsyncHandle<ScalarHandle<V>>,
-    ): Binding<AsyncHandle<ScalarHandle<V>>>;
+    text(element: HTMLInputElement | HTMLTextAreaElement, handle: TextHandle): Binding<TextHandle>;
   };
   readonly capture: {
     /** True inside the host's export renderer. */
@@ -53,14 +44,6 @@ export interface SlopContext {
       reference: (tx: Scope<ObjectNode>, ref: AttachmentRef) => void,
     ): Promise<AttachmentRef>;
     read(id: string, options?: { type?: string }): Promise<Blob>;
-    list(): Promise<AttachmentInfo[]>;
-  };
-  readonly theme: {
-    get(): {
-      defaults: Record<string, string>;
-      overrides: Record<string, string>;
-      effective: Record<string, string>;
-    };
   };
   readonly window: {
     /** Request a window content size; ignored where the host has no window. */
@@ -87,16 +70,18 @@ export interface SlopDocument<N extends ObjectNode> {
   readonly id: string;
   /** Immutable snapshot. Unchanged rows keep identity. */
   readonly current: Value<N>;
-  readonly status: SaveStatus;
-  readonly error: string | null;
   /** Merged-state anomalies; stored values are preserved, never repaired. */
   readonly issues: readonly Issue[];
-  readonly fields: AsyncHandle<Handle<N>>;
-  readonly at: AsyncAt;
+  readonly fields: Handle<N>;
+  readonly at: At;
   /** Collect synchronously; resolve after acceptance and local publication. */
   change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
-  /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
+  /** Durability barrier: sends unsent text, waits for pending writes, then for storage.
+   * Rejects when the save fails; the host shows save failures and offers retry. */
   flush(): Promise<void>;
   subscribe(listener: () => void): () => void;
+  /** Called whenever a scalar handle's `value` is read, so a framework adapter can
+   * record the dependency (Svelte reads its own signal here). One observer at a time. */
+  observe(read: () => void): () => void;
 }
 export type { Definition };

@@ -1,4 +1,4 @@
-import { defineTheme } from "@hitslop/document/theme";
+import { defineTheme } from "@hitslop/document";
 
 export default defineTheme({
   surface: "#e8d48a",

@@ -11,7 +11,7 @@ import { OperationRejectedError, OwnerError } from "../errors";
 import { postToHost } from "../bridge-client";
 import type { TextReply } from "./text";
 
-export type Opened = { state: OwnerState; savedSequence: number; saveFailure: string | null };
+export type Opened = { state: OwnerState };
 /** The page's only path to the owner. Replies never carry document state; pushes do. */
 export interface OwnerTransport {
   readonly id?: string;
@@ -26,11 +26,11 @@ export interface OwnerTransport {
 
 type Distribute<T> = T extends unknown ? Omit<T, "id" | "view"> : never;
 const coreCode = (code: unknown): code is CoreErrorCode => (CoreErrorCodes as readonly unknown[]).includes(code);
-const pushTypes = ["publication", "saved", "failed", "resync"];
+const pushTypes = ["publication", "resync"];
 const count = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 0;
 /** The fields each successful reply must carry. */
 const replies: Record<PageRequest["method"], (reply: any) => boolean> = {
-  open: (r) => typeof r.state === "string" && count(r.savedSequence),
+  open: (r) => typeof r.state === "string",
   apply: (r) => count(r.sequence) && Array.isArray(r.ids),
   text: (r) => count(r.sequence) && typeof r.authored === "string" && count(r.selectionStart) && count(r.selectionEnd),
   flush: () => true,
@@ -60,7 +60,7 @@ export function nativeTransport(id: string, view: string, readOnly = false): Own
     readOnly,
     open: async () => {
       const reply = await call({ method: "open" });
-      return { state: JSON.parse(reply.state), savedSequence: reply.savedSequence, saveFailure: reply.saveFailure ?? null };
+      return { state: JSON.parse(reply.state) };
     },
     apply: async (batch) => {
       const reply = await call({ method: "apply", batch: JSON.stringify(batch) });
@@ -115,7 +115,7 @@ export function wasmTransport(core: any, id: string = crypto.randomUUID()): Owne
   };
   return {
     id,
-    open: async () => ({ state: JSON.parse(core.state()), savedSequence: core.sequence(), saveFailure: null }),
+    open: async () => ({ state: JSON.parse(core.state()) }),
     apply: async (batch) => {
       const applied = run(() => core.applyBatch(JSON.stringify(batch)));
       publish(applied.publication);
@@ -131,9 +131,7 @@ export function wasmTransport(core: any, id: string = crypto.randomUUID()): Owne
         selectionEnd: edit.selectionEnd,
       };
     },
-    flush: async () => {
-      push({ view: id, type: "saved", sequence: core.sequence() });
-    },
+    flush: async () => {},
     onPush(next) {
       receiver = next;
     },

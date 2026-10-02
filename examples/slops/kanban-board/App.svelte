@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { bindText, useDocument } from "@hitslop/document/svelte";
+  import type { Scope } from "@hitslop/document";
+  import { bindText } from "@hitslop/document/svelte";
   import Check from "@lucide/svelte/icons/check";
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -10,10 +11,9 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import schema, { type Card, type Lane } from "./schema";
+  import doc, { type Card, type Lane } from "./schema";
   import { boardView, pad } from "./model";
 
-  const doc = useDocument(schema);
   let draggingCardId = $state<string | null>(null);
   let draggingLaneKey = $state<string | null>(null);
   let dropLaneKey = $state<string | null>(null);
@@ -30,23 +30,25 @@
 
   function laneIndex(laneKey: string): number { return doc.current.lanes.findIndex((lane) => lane.laneKey === laneKey); }
   function laneTitle(laneKey: string): string { return doc.current.lanes.find((lane) => lane.laneKey === laneKey)?.title.trim() || "lane"; }
-  function nextOrder(laneKey: string): number { return cardsFor(laneKey).reduce((max, card) => Math.max(max, card.order + 1), 0); }
+  /** Cards keep their place in one list; a lane shows its cards in list order. Moving a
+   * card to a lane puts it after that lane's last card, so concurrent moves merge. */
+  function moveToLane(tx: Scope<typeof doc.descriptor>, card: Card, laneKey: string) {
+    const last = cardsFor(laneKey).at(-1);
+    tx.fields.cards.item(card.$id).laneKey.set(laneKey);
+    if (last && last.$id !== card.$id) tx.fields.cards.move(card.$id, { after: last.$id });
+  }
 
   // Writes resolve once the snapshot shows them, so announcements read the new state.
   async function toggleDoneLane(lane: Lane) {
-    try {
-      if (isDone(lane.laneKey)) await doc.fields.doneLaneKey.clear();
-      else await doc.fields.doneLaneKey.set(lane.laneKey);
-      announcement = isDone(lane.laneKey) ? `${lane.title} is now the completed lane.` : "No completed lane set.";
-    } catch { /* Reported centrally. */ }
+    if (isDone(lane.laneKey)) await doc.fields.doneLaneKey.clear();
+    else await doc.fields.doneLaneKey.set(lane.laneKey);
+    announcement = isDone(lane.laneKey) ? `${lane.title} is now the completed lane.` : "No completed lane set.";
   }
 
   async function addLane() {
     const laneKey = crypto.randomUUID();
-    try {
-      await doc.fields.lanes.insert({ laneKey, title: `Lane ${doc.current.lanes.length + 1}` });
-      announcement = `Lane added. ${doc.current.lanes.length} lanes on the board.`;
-    } catch { /* Reported centrally. */ }
+    await doc.fields.lanes.insert({ laneKey, title: `Lane ${doc.current.lanes.length + 1}` });
+    announcement = `Lane added. ${doc.current.lanes.length} lanes on the board.`;
   }
 
   function removeLane(lane: Lane) {
@@ -55,16 +57,17 @@
     const refuge = doc.current.lanes[index === 0 ? 1 : index - 1];
     if (!refuge) return;
     const stranded = cardsFor(lane.laneKey);
-    let order = nextOrder(refuge.laneKey);
     void doc.change((tx) => {
+      // Each moved card goes after the previous one, so the lane keeps its order.
+      let after = cardsFor(refuge.laneKey).at(-1)?.$id;
       for (const card of stranded) {
-        const handle = tx.fields.cards.item(card.$id);
-        handle.laneKey.set(refuge.laneKey);
-        handle.order.set(order++);
+        tx.fields.cards.item(card.$id).laneKey.set(refuge.laneKey);
+        if (after) tx.fields.cards.move(card.$id, { after });
+        after = card.$id;
       }
       tx.fields.lanes.remove(lane.$id);
       if (doc.current.doneLaneKey === lane.laneKey) tx.fields.doneLaneKey.clear();
-    }).catch(() => {});
+    });
     announcement = `${lane.title || "Lane"} removed. ${stranded.length} orders moved to ${refuge.title}.`;
   }
 
@@ -73,7 +76,7 @@
     const target = doc.current.lanes.find((lane) => lane.laneKey === targetKey);
     if (!source || !target || source.$id === target.$id) return;
     const destination = laneIndex(laneKey) < laneIndex(targetKey) ? { after: target.$id } : { before: target.$id };
-    return doc.fields.lanes.move(source.$id, destination).catch(() => {});
+    return doc.fields.lanes.move(source.$id, destination);
   }
 
   async function nudgeLane(lane: Lane, direction: -1 | 1) {
@@ -86,11 +89,9 @@
   function setLaneLimit(lane: Lane, event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const handle = doc.at(lane).limit;
-    const write = input.value === ""
-      ? handle.clear()
-      : handle.set(Math.min(999, Math.max(0, Math.floor(Number(input.value) || 0))));
-    // A refused value shows the saved limit again.
-    write.catch(() => { input.value = String(lane.limit ?? ""); });
+    // Writes show at once; a refused value shows the saved limit again.
+    if (input.value === "") handle.clear();
+    else handle.set(Math.min(999, Math.max(0, Math.floor(Number(input.value) || 0))));
   }
 
   function openComposer(laneKey: string) {
@@ -105,31 +106,21 @@
     const title = draftTitle.trim();
     const laneKey = composingLaneKey;
     if (!title || !laneKey) return;
-    try {
-      // The dialog keeps the draft until the ticket is accepted.
-      await doc.fields.cards.insert({ laneKey, title, note: draftNote.trim(), tag: draftTag.trim(), order: nextOrder(laneKey) });
-      announcement = `Work order punched into ${laneTitle(laneKey)}.`;
-      composing = false;
-      composingLaneKey = null;
-    } catch { /* Reported centrally. */ }
+    // The dialog keeps the draft until the ticket is accepted.
+    await doc.fields.cards.insert({ laneKey, title, note: draftNote.trim(), tag: draftTag.trim() });
+    announcement = `Work order punched into ${laneTitle(laneKey)}.`;
+    composing = false;
+    composingLaneKey = null;
   }
 
   function removeCard(card: Card) {
-    doc.fields.cards.remove(card.$id).then(
-      () => (announcement = `${card.title.trim() || "Work order"} removed.`),
-      () => {},
-    );
+    void doc.fields.cards.remove(card.$id).then(() => (announcement = `${card.title.trim() || "Work order"} removed.`));
   }
 
   function shiftLane(card: Card, direction: -1 | 1) {
     const target = doc.current.lanes[laneIndex(card.laneKey) + direction];
     if (!target) return;
-    const order = nextOrder(target.laneKey);
-    doc.change((tx) => {
-      const handle = tx.fields.cards.item(card.$id);
-      handle.laneKey.set(target.laneKey);
-      handle.order.set(order);
-    }).catch(() => {});
+    doc.change((tx) => moveToLane(tx, card, target.laneKey));
     announcement = `${card.title.trim() || "Work order"} moved to ${target.title}.`;
   }
 
@@ -138,10 +129,7 @@
     const index = siblings.findIndex((item) => item.$id === card.$id);
     const neighbour = siblings[index + direction];
     if (!neighbour) return;
-    doc.change((tx) => {
-      tx.fields.cards.item(card.$id).order.set(neighbour.order);
-      tx.fields.cards.item(neighbour.$id).order.set(card.order);
-    }).catch(() => {});
+    doc.fields.cards.move(card.$id, direction < 0 ? { before: neighbour.$id } : { after: neighbour.$id });
     announcement = `${card.title.trim() || "Work order"} moved to position ${index + direction + 1}.`;
   }
 
@@ -150,12 +138,7 @@
     draggingCardId = null;
     dropLaneKey = null;
     if (!card || card.laneKey === laneKey) return;
-    const order = nextOrder(laneKey);
-    doc.change((tx) => {
-      const handle = tx.fields.cards.item(card.$id);
-      handle.laneKey.set(laneKey);
-      handle.order.set(order);
-    }).catch(() => {});
+    doc.change((tx) => moveToLane(tx, card, laneKey));
     announcement = `${card.title.trim() || "Work order"} moved to ${laneTitle(laneKey)}.`;
   }
 

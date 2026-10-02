@@ -1,11 +1,9 @@
 <script lang="ts">
 import { ui } from "./ui.svelte";
-import { useDocument } from "@hitslop/document/svelte";
-import schema, { type Puzzle } from "./schema";
+import doc, { type Puzzle } from "./schema";
 import { evaluateGuess, type TileState } from "./words";
 const ROWS = 6;
 const COLS = 5;
-const doc = useDocument(schema);
 function exportChar(game: Puzzle, rowIndex: number, colIndex: number): string {
   const completed = game.guesses[rowIndex];
   if (completed) return completed[colIndex] ?? "";

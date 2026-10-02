@@ -2,10 +2,17 @@ import type { OwnerIntent, OwnerPath as Path } from "@hitslop/schema/owner";
 import type { Segment } from "../schema";
 import { applyOps, readPath } from "./store";
 
+/** `value` undefined shows an optional field as cleared. */
 export type Preview = { readonly path: Path; readonly value: unknown };
+/** The write that commits a preview. */
+export const commitIntent = (preview: Preview): OwnerIntent =>
+  preview.value === undefined
+    ? { type: "clear", path: preview.path }
+    : { type: "set", path: preview.path, value: preview.value };
 
-/** Local values shown over the snapshot while a control is dragged or drawn. They write
- * no history; a write covering them, or a barrier, commits or settles them. */
+/** Local values shown over the snapshot: drags and drawing, live scalar writes awaiting
+ * acceptance, and `value` assignments awaiting commit. They write no history; a write
+ * covering them, or a barrier, commits or settles them. */
 export class Previews {
   private readonly entries = new Map<string, Preview>();
 
@@ -29,7 +36,10 @@ export class Previews {
     for (const [key, preview] of this.entries)
       if (readPath(value, preview.path.slice(0, -1) as Segment[]) == null) this.entries.delete(key);
     if (!this.entries.size) return value;
-    const set = (preview: Preview) => ({ type: "set", path: preview.path, value: preview.value }) as any;
+    const set = (preview: Preview) =>
+      (preview.value === undefined
+        ? { type: "remove", path: preview.path }
+        : { type: "set", path: preview.path, value: preview.value }) as any;
     // One pass copies each container once; if one preview no longer fits, apply them
     // singly so only that one is dropped.
     try {

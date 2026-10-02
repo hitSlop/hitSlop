@@ -121,6 +121,27 @@ extension OwnerClientTests {
         }
     }
 
+    // Failure: a refused write the app left unhandled reached the window as an authored
+    // failure, and WebKit's frames-only stack hid its message.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil),
+          .timeLimit(.minutes(1)))
+    @MainActor func unhandledRefusalIsReportedAsAnOperationWithItsMessage() async throws {
+        try await withPresentationSession { (session: DocumentSession) async throws in
+            let (reported, report) = AsyncStream.makeStream(of: SlopPageIssue.self)
+            let events = SessionEvents()
+            events.issue = { report.yield($0) }
+            session.delegate = events
+            _ = try await session.webView.callAsyncJavaScript("""
+                globalThis.__presentationIncrement = 0;
+                document.querySelector('.editor button').click();
+                """, arguments: [:], in: nil, contentWorld: .page)
+            var issues = reported.makeAsyncIterator()
+            let issue = try #require(await issues.next())
+            #expect(issue.isOperation)
+            #expect(issue.message.hasPrefix("OperationRejectedError: "))
+        }
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
     @MainActor func falsyEditorFailuresRejectReloadAndCapture() async throws {
         try await withPresentationSession { (session: DocumentSession) async throws in

@@ -31,7 +31,8 @@ public final class DocumentOwner: @unchecked Sendable {
   public var epoch: String { epochLock.withLock { storedEpoch } }
   public let documentID: String
   var onPublication: (@Sendable (String) -> Void)?
-  var onSaveStatus: (@Sendable (DocumentSaveStatus, Int) -> Void)?
+  /// Save status for the window: the edited mark and the save-failure sheet.
+  var onSaveStatus: (@Sendable (DocumentSaveStatus) -> Void)?
   /// New theme overrides (JSON) after a theme command changed them.
   var onTheme: (@Sendable (String) -> Void)?
   /// The core's publication sequence, and the last one the durable state covers.
@@ -152,8 +153,6 @@ public final class DocumentOwner: @unchecked Sendable {
   }
   public struct Opened: Sendable {
     public let state: String
-    public let savedSequence: Int
-    public let saveFailure: String?
   }
 
   /// Only the native session selects a page; an `open` request cannot replace it.
@@ -161,8 +160,7 @@ public final class DocumentOwner: @unchecked Sendable {
 
   private func openOnQueue(view: String) throws -> Opened {
     try requireCurrent(epoch: nil, view: view)
-    return Opened(state: try core.state(), savedSequence: savedSequence,
-      saveFailure: saveFailure?.localizedDescription)
+    return Opened(state: try core.state())
   }
   func open(view: String) async throws -> Opened {
     try await enqueue { try self.openOnQueue(view: view) }
@@ -208,23 +206,16 @@ public final class DocumentOwner: @unchecked Sendable {
       }
     }
   }
-  /// Reports status with the last saved publication sequence; the page counts anything
-  /// after it as unsaved.
   private func publishStatus(_ status: DocumentSaveStatus) {
     switch status {
     case .failed(let failure): saveFailure = failure
     case .saved: saveFailure = nil
     case .saving: break
     }
-    onSaveStatus?(saveFailure.map { .failed($0) } ?? status, savedSequence)
+    onSaveStatus?(saveFailure.map { .failed($0) } ?? status)
   }
   func currentSaveFailure() async throws -> SaveFailure? {
     try await enqueue(allowInvalidated: true) { self.saveFailure }
-  }
-  func republishStatus() async throws {
-    try await enqueue(allowInvalidated: true) {
-      self.onSaveStatus?(self.saveFailure.map { .failed($0) } ?? (self.sequence > self.savedSequence ? .saving : .saved), self.savedSequence)
-    }
   }
   private func didEdit(_ publication: String, sequence next: Int) {
     sequence = next
@@ -329,6 +320,15 @@ public final class DocumentOwner: @unchecked Sendable {
     try await write(checkpoint: true)
   }
 
+  /// After the final write, a session that edited a large document keeps only its own
+  /// history (`Store::close_job`). Housekeeping: on failure the saved state is unchanged
+  /// and closing continues.
+  private func trimHistory() async {
+    let store = store
+    guard let job = try? await enqueue({ try storeCall { try self.core.closeJob(store: store) } }) else { return }
+    _ = try? await persist { try storeCall { try store.write(job: job) } }
+  }
+
   /// Drops unsaved edits and reloads saved state. The epoch fences a write in flight: it
   /// finishes on the persistence queue before the reload reads, and its reply is ignored.
   public func discardPending() async throws {
@@ -425,6 +425,7 @@ public final class DocumentOwner: @unchecked Sendable {
     }
     do {
       try await flush()
+      if mode == .document { await trimHistory() }
       let store = store
       try await persist { try storeCall { try store.close() } }
       try await enqueue(allowInvalidated: true) { self.lifecycle = .closed }

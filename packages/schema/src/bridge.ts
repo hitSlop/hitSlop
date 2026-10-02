@@ -18,7 +18,6 @@ export const ThemeValuesSchema = T.Record(
 export const BridgeMethods = {
   "attachments.put": T.Object({ method: T.Literal("attachments.put"), bytes: AttachmentBytesSchema }, strict),
   "attachments.read": T.Object({ method: T.Literal("attachments.read"), attachmentID: AttachmentIDSchema }, strict),
-  "attachments.list": T.Object({ method: T.Literal("attachments.list") }, strict),
   "theme.load": T.Object({ method: T.Literal("theme.load") }, strict),
   pageRecovered: T.Object({ method: T.Literal("pageRecovered") }, strict),
   "window.resize": T.Object({
@@ -54,7 +53,6 @@ export const BridgeReplies = {
   }),
   "attachments.put": attachmentInfo,
   "attachments.read": T.Object({ bytes: T.String() }),
-  "attachments.list": T.Object({ files: T.Array(attachmentInfo) }),
   "theme.load": T.Object({ values: ThemeValuesSchema }),
   "window.resize": T.Object({ width: T.Number(), height: T.Number() }),
   pageRecovered: T.Object({}),

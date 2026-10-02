@@ -87,7 +87,7 @@ Performance diagnostics are opt-in and not CI gates:
 
 `bun run bench:growth` simulates up to 365 days of heavy Doodle Board, Pixel Art,
 and Morning Pages use through the native owner, with normal checkpoint thresholds
-and daily save/close/reopen checks. Build the templates first. The report records
+and daily save/close/reopen checks; each daily close trims history as the app does. Build the templates first. The report records
 logical checkpoint/update bytes separately from physical SQLite size, retained
 content, and measured versus projected lifetime. A storage-full or reopen failure
 stops that workload and blocks release in the report; it does not change storage

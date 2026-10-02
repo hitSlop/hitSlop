@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { Dialog, AlertDialog, Checkbox, Progress, Select } from "bits-ui";
-  import { bindText, useDocument } from "@hitslop/document/svelte";
-  import schema, { restPresets, type Exercise, type RestPreset } from "./schema";
+  import { bindText } from "@hitslop/document/svelte";
+  import doc, { restPresets, type Exercise } from "./schema";
   import { checked, sets, complete, count, toggled, nextSet, nextExercise, formatTime } from "./workout";
   import { createRestClock } from "./rest";
 
@@ -11,7 +11,6 @@
     label: Number(value) < 120 ? `${value}s` : `${Number(value) / 60}m`,
   }));
 
-  const doc = useDocument(schema);
   const total = $derived(doc.current.exercises.reduce((sum, ex) => sum + sets(ex), 0));
   const done = $derived(doc.current.exercises.reduce((sum, ex) => sum + checked(ex).length, 0));
   const finished = $derived(total > 0 && done === total);
@@ -45,9 +44,6 @@
     weight: string;
   };
 
-  function isPreset(value: string): value is RestPreset {
-    return restPresets.some((preset) => preset === value);
-  }
 
   function preset() {
     const value = Number(doc.current.restPreset);
@@ -117,16 +113,11 @@
 
   async function toggleSet(ex: Exercise, index: number) {
     const next = toggled(ex, index);
-    try {
-      // The snapshot below reflects this change once it resolves.
-      await doc.change((tx) => {
-        const handle = tx.at(ex);
-        handle.completedSetIndices.replace(next.indices);
-        handle.completedSets.set(next.indices.length);
-      });
-    } catch {
-      return;
-    }
+    // The snapshot below reflects this change once it resolves.
+    await doc.change((tx) => {
+      const handle = tx.at(ex);
+      handle.completedSetIndices.replace(next.indices);
+    });
     selectedId = ex.$id;
     reviewCompleted = false;
     const updated = doc.current.exercises.find((item) => item.$id === ex.$id) ?? ex;
@@ -173,29 +164,18 @@
       const original = doc.current.exercises.find((ex) => ex.$id === draft!.id);
       if (!original) return;
       const indices = checked(original).filter((index) => index < setCount);
-      const saved = doc.change((tx) => {
+      // A refused change is reported and keeps the dialog open.
+      await doc.change((tx) => {
         const handle = tx.at(original);
         handle.name.set(name);
         handle.sets.set(setCount);
         handle.reps.set(reps);
         handle.weight.set(weight);
         handle.completedSetIndices.replace(indices);
-        handle.completedSets.set(indices.length);
       });
-      if (!(await saved.then(() => true, () => false))) return;
       if (pendingAdvance === original.$id && indices.length !== setCount) pendingAdvance = null;
     } else {
-      const saved = doc.change((tx) => {
-        tx.fields.exercises.insert({
-          name,
-          sets: setCount,
-          reps,
-          weight,
-          completedSets: 0,
-          completedSetIndices: [],
-        });
-      });
-      if (!(await saved.then(() => true, () => false))) return;
+      await doc.fields.exercises.insert({ name, sets: setCount, reps, weight, completedSetIndices: [] });
     }
     if (doc.current.exercises.every(complete)) stopRest();
     dialogOpen = false;
@@ -204,7 +184,7 @@
   function removeExercise() {
     if (!draft?.id) return;
     const id = draft.id;
-    doc.fields.exercises.remove(id).catch(() => {});
+    doc.fields.exercises.remove(id);
     if (selectedId === id) selectedId = null;
     stopRest();
     dialogOpen = false;
@@ -216,7 +196,7 @@
     const item = exercises[index];
     const neighbor = exercises[next];
     if (!item || !neighbor || next < 0 || next >= exercises.length) return;
-    doc.fields.exercises.move(item.$id, step < 0 ? { before: neighbor.$id } : { after: neighbor.$id }).catch(() => {});
+    doc.fields.exercises.move(item.$id, step < 0 ? { before: neighbor.$id } : { after: neighbor.$id });
   }
 
   function resetProgress() {
@@ -224,10 +204,9 @@
     void doc.change((tx) => {
       for (const ex of exercises) {
         const handle = tx.at(ex);
-        handle.completedSets.set(0);
         handle.completedSetIndices.replace([]);
       }
-    }).catch(() => {});
+    });
     selectedId = null;
     reviewCompleted = false;
     stopRest();
@@ -367,9 +346,8 @@
           {:else}
             <Select.Root
               type="single"
-              value={doc.current.restPreset}
+              bind:value={doc.fields.restPreset.value}
               items={PRESETS}
-              onValueChange={(value) => { if (value && isPreset(value)) doc.fields.restPreset.set(value).catch(() => {}); }}
             >
               <Select.Trigger class="button" aria-label="Rest duration">
                 {PRESETS.find((item) => item.value === doc.current.restPreset)?.label ?? `${preset()}s`} ▾

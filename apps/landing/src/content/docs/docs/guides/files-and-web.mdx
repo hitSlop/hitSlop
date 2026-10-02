@@ -18,7 +18,7 @@ document. Cancelling changes nothing. Background rendering and closed CLI comman
 show a picker. Validate the chosen file in your app before storing it.
 
 ```ts
-import { attachments } from "@hitslop/document/attachments";
+import { attachments } from "@hitslop/document/svelte";
 
 await attachments.import(file, (tx, ref) => {
   tx.fields.cover.set(ref);
@@ -35,7 +35,6 @@ and type are descriptive, never a path.
 ```ts
 const blob = await attachments.read(ref.id, { type: ref.mimeType });
 const url = URL.createObjectURL(blob); // revoke it when you're done
-const stored = await attachments.list(); // IDs and sizes, including unused files
 ```
 
 Files are immutable and deduplicated by content: up to 10 MiB each, 100 MiB and 256 files

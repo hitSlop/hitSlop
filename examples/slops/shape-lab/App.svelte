@@ -1,9 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { useDocument, bindText, resizeWindow } from "@hitslop/document/svelte";
-  import schema from "./schema";
+  import { bindText, resizeWindow } from "@hitslop/document/svelte";
+  import doc from "./schema";
   import variant from "./variant";
-  const doc = useDocument(schema);
   let root: HTMLElement;
   let size = $state({ width: 0, height: 0 });
   let pointer = $state("Move over the grid");

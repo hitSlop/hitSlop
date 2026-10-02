@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { resizeWindow, useDocument } from "@hitslop/document/svelte";
+  import { resizeWindow } from "@hitslop/document/svelte";
   import { onDestroy, onMount, tick } from "svelte";
-  import { capture } from "@hitslop/document/capture";
+  import { capture } from "@hitslop/document/svelte";
   import { AlertDialog, Collapsible, Popover, RadioGroup, ToggleGroup } from "bits-ui";
   import Pin from "@lucide/svelte/icons/pin";
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
@@ -11,11 +11,10 @@
   import Sparkles from "@lucide/svelte/icons/sparkles";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Check from "@lucide/svelte/icons/check";
-  import schema, { boardShapes } from "./schema";
+  import doc, { boardShapes } from "./schema";
   import { boards, markers, widths, StrokeSamples, strokePath, sweep, defaultBrush, fitWindowSize, type Brush, type Point } from "./drawing";
   import BrushControls from "./BrushControls.svelte";
 
-  const doc = useDocument(schema);
   const board = $derived(boards[doc.current.boardShape]);
   let marker = $state<(typeof markers)[number]>("charcoal");
   let brush = $state<Brush>({ ...defaultBrush });
@@ -39,8 +38,12 @@
   let resizeQueue = Promise.resolve();
   let nativeResize = $state(false);
   let svg: SVGSVGElement;
-  // `draw` marks a pen gesture; `id` arrives once its stroke insert is accepted.
-  let active: { pointer: number; draw: boolean; id?: string; inserted?: Promise<string | undefined>; samples: StrokeSamples; brush: Brush; pen: boolean; last: Point; erased: Set<string>; eraserPaths: { id: string; path: Path2D }[] } | undefined;
+  // `draw` marks a pen gesture; its stroke is written once, when the gesture ends.
+  let active: { pointer: number; draw: boolean; color: string; samples: StrokeSamples; brush: Brush; pen: boolean; last: Point; erased: Set<string>; eraserPaths: { id: string; path: Path2D }[] } | undefined;
+  type Stroke = { geometry: string; color: string };
+  // Drawn locally: the stroke in progress, then each finished one until its write lands.
+  let drawn = $state<Stroke | undefined>();
+  let pending = $state.raw<Stroke[]>([]);
   let hitContext: CanvasRenderingContext2D | null = null;
   let frame = 0;
   let notice = $state("");
@@ -108,21 +111,19 @@
   function pathForGesture() { return active ? strokePath(active.samples.points, active.brush, active.pen) : ""; }
   function preview() {
     frame = 0;
-    if (!active?.id || !doc.current.strokes.some(s => s.$id === active!.id)) return;
-    doc.fields.strokes.item(active.id).geometry.preview(pathForGesture());
+    if (active?.draw) drawn = { geometry: pathForGesture(), color: active.color };
   }
   function finish() {
     cancelAnimationFrame(frame); frame = 0;
     if (!active) return;
     const gesture = active;
     if (gesture.draw) {
-      // Commit the final path once the stroke exists; the preview shows it until then.
-      const path = pathForGesture();
-      void gesture.inserted?.then((id) => {
-        if (id && doc.current.strokes.some(s => s.$id === id))
-          return doc.fields.strokes.item(id).geometry.set(path);
-      }).catch(() => {});
+      const stroke = { geometry: pathForGesture(), color: gesture.color };
+      pending = [...pending, stroke];
+      // Writes resolve once the stroke is in the document, so the overlay never flickers.
+      void doc.change(tx => { tx.fields.strokes.insert(stroke); }).finally(() => { pending = pending.filter(p => p !== stroke); });
     }
+    drawn = undefined;
     active = undefined;
     drawing = false;
     if (svg?.hasPointerCapture(gesture.pointer)) svg.releasePointerCapture(gesture.pointer);
@@ -138,7 +139,7 @@
       if (hit && !active.erased.has(hit.id) && doc.current.strokes.some(stroke => stroke.$id === hit.id)) removed.add(hit.id);
     }
     if (removed.size) {
-      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); }).catch(() => {});
+      doc.change(tx => { for (const id of removed) tx.fields.strokes.remove(id); });
       for (const id of removed) active.erased.add(id);
     }
   }
@@ -149,20 +150,10 @@
     drawing = true; hovered = false;
     if (!pinned) { trayOpen = false; (document.activeElement as HTMLElement | null)?.blur(); }
     const samples = new StrokeSamples(); samples.add(p);
-    active = { pointer: event.pointerId, draw: tool === "pen", samples, brush: { ...brush }, pen: event.pointerType === "pen", last: p, erased: new Set(), eraserPaths: [] };
-    if (tool === "pen") {
-      const color = getComputedStyle(svg).getPropertyValue(`--slop-${marker}`).trim();
-      const gesture = active;
-      // Inside change() the minted id is synchronous; the stroke exists once accepted.
-      gesture.inserted = doc.change(tx => tx.fields.strokes.insert({ geometry: pathForGesture(), color }).id).then(
-        (id) => {
-          gesture.id = id;
-          if (active === gesture && !frame) frame = requestAnimationFrame(preview);
-          return id;
-        },
-        () => undefined,
-      );
-    } else {
+    const color = tool === "pen" ? getComputedStyle(svg).getPropertyValue(`--slop-${marker}`).trim() : "";
+    active = { pointer: event.pointerId, draw: tool === "pen", color, samples, brush: { ...brush }, pen: event.pointerType === "pen", last: p, erased: new Set(), eraserPaths: [] };
+    if (tool === "pen") preview();
+    else {
       hitContext ??= document.createElement("canvas").getContext("2d");
       // Freeze hit-test order for this gesture so pointer-up cannot erase a newly exposed stroke.
       active.eraserPaths = [...doc.current.strokes].reverse().map(stroke => ({ id: stroke.$id, path: new Path2D(stroke.geometry) }));
@@ -195,12 +186,12 @@
   }
   function chooseBoard(value: string) {
     if (!boardShapes.includes(value as typeof doc.current.boardShape)) return;
-    finish(); doc.fields.boardShape.set(value as typeof doc.current.boardShape).catch(() => {}); boardMenu = false;
+    finish(); doc.fields.boardShape.set(value as typeof doc.current.boardShape); boardMenu = false;
     fitBoard();
   }
   function clearBoard() {
     finish();
-    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); }).catch(() => {});
+    doc.change(tx => { for (const stroke of doc.current.strokes) tx.fields.strokes.remove(stroke.$id); });
     clearDialog = false;
     notice = "Fresh start.";
   }
@@ -238,8 +229,9 @@
       <div class="doodle-board" style:aspect-ratio={`${board.width} / ${board.height}`} style:width={`min(100cqw, ${board.width / board.height * 100}cqh)`}>
         <svg bind:this={svg} class="doodle-canvas" class:doodle-erasing={tool === "eraser"} viewBox={`0 0 ${board.width} ${board.height}`} aria-label={`Whiteboard, ${board.label.toLowerCase()}. Draw with a pointer. P for pen, E for eraser.`} role="img" onpointerdown={start} onpointermove={move} onpointerup={end} onpointercancel={end} onlostpointercapture={end}>
           {#each doc.current.strokes as stroke (stroke.$id)}<path data-stroke={stroke.$id} d={stroke.geometry} fill={stroke.color} />{/each}
+          {#each [...pending, ...(drawn ? [drawn] : [])] as stroke}<path d={stroke.geometry} fill={stroke.color} />{/each}
         </svg>
-        {#if !doc.current.strokes.length}<div class="doodle-invitation" aria-hidden="true"><span class="doodle-invitation-star">✳</span><p>Make a little<br /><em>something.</em></p><span>No wrong lines here.</span></div>{/if}
+        {#if !doc.current.strokes.length && !pending.length && !drawn}<div class="doodle-invitation" aria-hidden="true"><span class="doodle-invitation-star">✳</span><p>Make a little<br /><em>something.</em></p><span>No wrong lines here.</span></div>{/if}
       </div>
     </section>
 

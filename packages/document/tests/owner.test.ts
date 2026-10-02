@@ -87,6 +87,7 @@ const gate = () => {
   return { promise, release };
 };
 
+// Scalar writes show at once; other writes appear with their publication.
 test("ordinary writes resolve after publication and preserve unaffected snapshot identity", async () => {
   const { core, transport, doc } = await open();
   try {
@@ -99,18 +100,20 @@ test("ordinary writes resolve after publication and preserve unaffected snapshot
     };
     const before = doc.current;
     const pending = doc.fields.rows.item("a").done.set(true);
+    const counted = doc.fields.hits.increment();
     await entered.promise;
-    expect(doc.current).toBe(before);
-    expect(doc.status).toBe("pending");
+    expect(doc.current.rows[0]!.done).toBe(true);
+    expect(doc.current.hits).toBe(0);
+    expect(JSON.parse(core.snapshot()).value.rows[0].done).toBe(false);
     hold.release();
     await pending;
+    await counted;
+    expect(doc.current.hits).toBe(1);
     expect(doc.current.rows[0]!.done).toBe(true);
     expect(doc.current.rows[1]).toBe(before.rows[1]);
     expect(before.rows[0]!.done).toBe(false);
     expect(Object.isFrozen(doc.current.rows[0])).toBe(true);
-    expect(doc.status).toBe("pending");
     await doc.flush();
-    expect(doc.status).toBe("saved");
   } finally {
     core.free();
   }
@@ -147,7 +150,6 @@ test("text composition stays local until it ends, then flush sends the committed
     await doc.flush();
     expect(doc.current.title).toBe("Hello 日本😀");
     expect(input.value).toBe("Hello 日本😀");
-    expect(doc.status).toBe("saved");
   } finally {
     binding.destroy();
     core.free();
@@ -163,7 +165,7 @@ test("collectors insert then address minted IDs synchronously and resolve only a
       tx.fields.rows.item(result.id).text.set("New title");
       tx.fields.rows.item(result.id).text.set("Final");
       tx.fields.hits.increment(4);
-      tx.fields.hits.decrement();
+      tx.fields.hits.increment(-1);
       return result;
     });
     expect(JSON.parse(JSON.stringify(doc.current.rows.at(-1)))).toEqual({
@@ -215,7 +217,7 @@ test("throwing, async, nested and escaped collectors never submit their staged c
   }
 });
 
-test("observer failures cannot reject acceptance; save failure is retained until retry", async () => {
+test("observer failures cannot reject acceptance; a failed save rejects flush until a retry succeeds", async () => {
   const { core, doc, transport, errors } = await open();
   try {
     const dispose = doc.subscribe(() => {
@@ -230,11 +232,9 @@ test("observer failures cannot reject acceptance; save failure is retained until
       throw Error("disk unavailable");
     };
     await expect(doc.flush()).rejects.toThrow("disk unavailable");
-    expect(doc.status).toBe("save-failed");
     expect(doc.current.done).toBe(true);
     transport.flush = flush;
     await doc.flush();
-    expect(doc.status).toBe("saved");
   } finally {
     core.free();
   }
@@ -323,7 +323,6 @@ test("close waits for an import that started while a flush was running", async (
     expect(doc.current.title).toBe("blob");
     await imported;
     expect(doc.current.hits).toBe(0);
-    expect(doc.status).toBe("saved");
     doc.cancelClose();
     await doc.fields.hits.increment();
     expect(doc.current.hits).toBe(1);
@@ -439,10 +438,10 @@ test("attachment import stores the blob before its reference and deduplicates by
     expect(doc.current.title).toBe(ref.id);
     const again = await attachments.import(new File([new Uint8Array([1, 2, 3])], "b.bin"), () => {});
     expect(again.id).toBe(ref.id);
-    expect((await attachments.list()).length).toBe(1);
+    expect(store.files.size).toBe(1);
     const huge = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin");
     await expect(attachments.import(huge, () => {})).rejects.toThrow();
-    expect((await attachments.list()).length).toBe(1);
+    expect(store.files.size).toBe(1);
     // A reference the core refuses rejects the import.
     await expect(
       attachments.import(new File([new Uint8Array([4])], "c.bin"), (tx: any) => tx.fields.rows.remove("missing")),
@@ -478,7 +477,6 @@ test("view reload remounts against the same document and keeps flushed edits", a
     expect(mounts).toBe(2);
     expect(recovered).toBe(1);
     expect(doc.current.title).toBe("Reloaded");
-    expect(doc.status).toBe("saved");
   } finally {
     core.free();
   }
@@ -515,47 +513,21 @@ for (const retarget of [false, true]) {
   });
 }
 
-for (const editNewTarget of [false, true]) test(`retarget drains queued scalar values before new target input: ${editNewTarget}`, async () => {
-  const def = defineDocument({ a: s.string(), b: s.string() });
-  const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ a: "A", b: "B" }));
-  const transport = wasmTransport(core);
-  const doc = await OwnerDocument.open(def, transport);
-  const input = field();
-  const binding = doc.bindValue(input, doc.fields.a);
-  const held = gate(), entered = gate();
-  const apply = transport.apply;
-  let first = true;
-  transport.apply = async batch => {
-    if (first) { first = false; entered.release(); await held.promise; }
-    return apply(batch);
-  };
-  try {
-    input.type("A1"); await entered.promise;
-    input.type("A2"); binding.update(doc.fields.b);
-    if (editNewTarget) input.type("B1");
-    held.release(); await doc.flush();
-    expect(doc.current.a).toBe("A2");
-    expect(doc.current.b).toBe(editNewTarget ? "B1" : "B");
-    expect(input.value).toBe(editNewTarget ? "B1" : "B");
-  } finally { held.release(); binding.destroy(); core.free(); }
-});
-
-test("optional bindings disable when their parent row disappears", async () => {
-  const def = defineDocument({ rows: s.list(s.object({ text: s.optional(s.text()), value: s.optional(s.string()) })) });
+test("an optional text binding disables when its parent row disappears", async () => {
+  const def = defineDocument({ rows: s.list(s.object({ text: s.optional(s.text()) })) });
   const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ rows: [{ $id: "a" }] }));
   const transport = wasmTransport(core);
   const errors: unknown[] = [];
   const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
-  const text = field(), value = field();
+  const text = field();
   const tb = doc.bindText(text, doc.fields.rows.item("a").text);
-  const vb = doc.bindValue(value, doc.fields.rows.item("a").value);
   try {
-    expect(text.disabled).toBe(false); expect(value.disabled).toBe(false);
+    expect(text.disabled).toBe(false);
     await doc.fields.rows.remove("a");
-    expect(text.disabled).toBe(true); expect(value.disabled).toBe(true);
+    expect(text.disabled).toBe(true);
     await doc.flush();
     expect(errors).toEqual([]);
-  } finally { tb.destroy(); vb.destroy(); core.free(); }
+  } finally { tb.destroy(); core.free(); }
 });
 
 for (const outcome of [false, true]) {
@@ -616,25 +588,28 @@ for (const text of [false, true]) test(`an unknown ${text ? "text" : "scalar"} o
   const errors: unknown[] = [];
   const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
   const input = field();
-  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const binding = text ? doc.bindText(input, doc.fields.value as never) : undefined;
   const refused = async () => { throw new OwnerError("unknown_outcome", "connection lost"); };
   transport.text = refused; transport.apply = refused;
   try {
-    input.type("unsent draft");
+    if (text) input.type("unsent draft");
+    else (doc.fields.value as unknown as { value: string }).value = "unsent draft";
     await expect(doc.prepareClose()).rejects.toThrow("connection lost");
-    expect(input.value).toBe("unsent draft");
-    expect(errors).toHaveLength(1);
-  } finally { binding.destroy(); core.free(); }
+    if (text) {
+      expect(input.value).toBe("unsent draft");
+      expect(errors).toHaveLength(1);
+    } else expect(doc.current.value).toBe("unsent draft");
+  } finally { binding?.destroy(); core.free(); }
 });
 
-for (const text of [false, true]) test(`recovery confirms a lost ${text ? "text" : "scalar"} reply before draining newer input`, async () => {
+test("recovery confirms a lost text reply before draining newer input", async () => {
   const { OwnerError } = await import("../src/errors");
-  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const def = defineDocument({ value: s.text() });
   const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "A" }));
   const transport = wasmTransport(core);
   const doc = await OwnerDocument.open(def, transport, () => {});
   const input = field();
-  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const binding = doc.bindText(input, doc.fields.value);
   const held = gate(), entered = gate();
   let calls = 0;
   const apply = transport.apply, send = transport.text;
@@ -677,28 +652,17 @@ test("text refused before sending is sent once the document recovers", async () 
   } finally { transport.open = reopen; binding.destroy(); core.free(); }
 });
 
-// Failure: bindValue registered its close barrier before checking the handle, so a
-// rejected binding left a barrier that crashed every later flush.
-test("binding a value to a non-scalar handle leaves no barrier behind", async () => {
-  const { core, doc } = await open();
-  try {
-    expect(() => doc.bindValue(field(), doc.fields.rows as any)).toThrow("scalar handle");
-    await doc.flush();
-    await doc.prepareClose();
-  } finally { core.free(); }
-});
-
 // Failure: a destroyed binding whose final draft could not be committed stayed in the
 // barrier set, so every later close failed with no control left to fix it.
-for (const text of [false, true]) test(`a destroyed ${text ? "text" : "value"} binding with an unresolvable draft does not block close`, async () => {
+test("a destroyed text binding with an unresolvable draft does not block close", async () => {
   const { OwnerError } = await import("../src/errors");
-  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const def = defineDocument({ value: s.text() });
   const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "before" }));
   const transport = wasmTransport(core);
   const errors: unknown[] = [];
   const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
   const input = field();
-  const binding = text ? doc.bindText(input, doc.fields.value) : doc.bindValue(input, doc.fields.value);
+  const binding = doc.bindText(input, doc.fields.value);
   const refused = async () => { throw new OwnerError("unknown_outcome", "connection lost"); };
   transport.text = refused; transport.apply = refused;
   try {

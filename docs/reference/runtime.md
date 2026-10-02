@@ -16,10 +16,12 @@ pending UI updates) and `unmount()`. Reload replaces only the view; flush, close
 native readiness, themes, attachments and capture coordination stay in the page shell.
 
 `@hitslop/document/svelte` is the Svelte adapter compiled into each app:
-`defineSlop(App, { export: Export, icon: Icon })` is the package entry. The CLI
-discovers optional `Export.svelte`, `Icon.svelte`, and `styles.css` alongside
-`App.svelte`; authored `main.ts` takes precedence. `useDocument`, `bindText`, `bindValue`, `capture` and
-`attachments` forward to `ctx`. Svelte is an optional peer of the SDK. Other
+`defineSlop(App, { schema, export: Export, icon: Icon })` is the package entry. The CLI
+passes `schema.ts`'s default export and discovers optional `Export.svelte`,
+`Icon.svelte`, and `styles.css` alongside `App.svelte`; authored `main.ts` takes
+precedence. Once mounted, the schema's definition is the live document
+(`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
+`ctx.document.observe`). `bindText`, `capture` and `attachments` forward to `ctx`. Svelte is an optional peer of the SDK. Other
 frameworks supply `main.ts` exporting `default { mount(ctx, target) }` (type
 `SlopApp` from `@hitslop/document/abi`), mark their root `data-hitslop-root`, and
 use `ctx.capture` for custom export views.
@@ -65,7 +67,7 @@ The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns `state/do
 
 One OS flock on permanent `state/writer.lock`, taken by the store, owns each local package. Never unlink it or bypass a busy writer. `state/host.lock` is discovery only; an owner removes a leftover one from a crashed session as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer.
 
-Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Checkpoints retain full history. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. There is no JSON import or replacement.
+Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history to that session at most; [architecture](../architecture.md#saving) has the rule. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. There is no JSON import or replacement.
 
 Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. `hello` supplies the owner's core build identity and epoch, which rotates when unsaved edits are discarded.
 

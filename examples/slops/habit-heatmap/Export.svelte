@@ -1,10 +1,8 @@
 <script lang="ts">
 import { ui } from "./ui.svelte";
-import { useDocument } from "@hitslop/document/svelte";
 import Check from "@lucide/svelte/icons/check";
-import schema, { type Habit } from "./schema";
+import doc, { type Habit } from "./schema";
 import { calendarWeeks, completedDays, labelDay, localDate, shortDay, streak, weekdays } from "./calendar";
-const doc = useDocument(schema);
 const { days, labels } = $derived(calendarWeeks(ui.today));
 </script>
 {#snippet calendar(habit: Habit)}

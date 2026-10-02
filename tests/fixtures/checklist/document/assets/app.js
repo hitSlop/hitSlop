@@ -20,9 +20,10 @@ export default {
       });
       if (!doc.current.rows.find(row => row.$id === id)?.done) throw new Error("Collector lost inserted row edit");
       await doc.fields.rows.remove(id);
-      await doc.fields.hits.decrement(2);
+      await doc.fields.hits.increment(-2);
+      // A resolved flush means every accepted edit is saved.
       await doc.flush();
-      return doc.status === "saved";
+      return true;
     };
     return { unmount() { stop(); binding.destroy(); output.remove(); input.remove(); } };
   },

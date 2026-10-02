@@ -1,8 +1,6 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
+import doc from "./schema";
 import { checked, sets } from "./workout";
-const doc = useDocument(schema);
 const total = $derived(doc.current.exercises.reduce((sum, ex) => sum + sets(ex), 0));
 const done = $derived(doc.current.exercises.reduce((sum, ex) => sum + checked(ex).length, 0));
 const marks = $derived(total ? Math.round((done / total) * 4) : 0);

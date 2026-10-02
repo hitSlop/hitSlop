@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { bindText, useDocument } from "@hitslop/document/svelte";
+  import { bindText } from "@hitslop/document/svelte";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import Play from "@lucide/svelte/icons/play";
@@ -8,9 +8,8 @@
   import X from "@lucide/svelte/icons/x";
   import { Dialog } from "bits-ui";
   import { onDestroy } from "svelte";
-  import schema, { layouts, themes, type Slide, type SlideLayout } from "./schema";
+  import doc, { layouts, themes, type Slide, type SlideLayout } from "./schema";
 
-  const doc = useDocument(schema);
   let isPresenting = $state(false);
   let timerSeconds = $state(0);
   let timerInterval: ReturnType<typeof setInterval> | undefined;

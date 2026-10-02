@@ -1,7 +1,5 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema, { type Slide } from "./schema";
-const doc = useDocument(schema);
+import doc, { type Slide } from "./schema";
 const currentSlide = $derived(doc.current.slides[doc.current.activeSlideIndex] ?? doc.current.slides[0]);
 </script>
 {#snippet slideLayouts(slide: Slide)}

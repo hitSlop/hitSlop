@@ -1,7 +1,5 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 const activeState = $derived(doc.current.mode === "daily" ? doc.current.daily : doc.current.practice);
 const badge = $derived(activeState.status === "won" ? `${activeState.guesses.length}/6` : activeState.status === "lost" ? "X/6" : "SLOPS");
 </script>

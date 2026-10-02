@@ -21,14 +21,17 @@ extension OwnerClientTests {
     _ = try await controller.session.webView.callAsyncJavaScript(
       "dispatchEvent(new ErrorEvent('error', {error:new Error('Test application failure')})); return true",
       arguments: [:], in: nil, contentWorld: .page)
-    for _ in 0..<40 where controller.window?.attachedSheet == nil {
+    // An issue that leaves the slop running shows as the badge, not a blocking sheet,
+    // and a CLI edit leaves it until the person dismisses it.
+    for _ in 0..<40 where controller.issueBadge == nil {
       try await Task.sleep(for: .milliseconds(25))
     }
-    let issueSheet = try #require(controller.window?.attachedSheet)
+    let badge = try #require(controller.issueBadge)
+    #expect(controller.window?.attachedSheet == nil)
     _ = try await command("apply", url: root, operation: setTitle("Preserved through interface reload"))
-    #expect(controller.window?.attachedSheet === issueSheet)
-    controller.window?.endSheet(issueSheet, returnCode: .alertSecondButtonReturn)
-    issueSheet.orderOut(nil)
+    #expect(controller.issueBadge === badge)
+    controller.dismissIssue()
+    #expect(controller.issueBadge == nil)
     let baseline = try await command("theme.get", url: root)
     let values = try JSONSerialization.data(withJSONObject: ["accent": "#654321"])
     let theme = try await command("theme.set", url: root, themeValues: values)
@@ -302,6 +305,26 @@ extension OwnerClientTests {
 extension OwnerClientTests {
   // Gap: guest diagnostics are displayed but never reported. Expect a fixed category,
   // with neither the guest's message nor its arbitrary code in the uploaded fields.
+  // Failure: every reported issue opened a blocking sheet, so a refused edit (a typed
+  // number past its bound) interrupted the person. Oracle: only a save failure, which
+  // puts unsaved work at risk, attaches a sheet.
+  @Test @MainActor func onlySaveFailuresBlockTheWindow() async throws {
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    await controller.waitForPresentation()
+    controller.pageSession(controller.session, didReport: SlopPageIssue(
+      message: "OperationRejectedError: out_of_range", isOperation: true))
+    #expect(controller.issueBadge != nil)
+    #expect(controller.window?.attachedSheet == nil)
+    controller.pageSession(controller.session, saveStatus: .failed(.busy))
+    let sheet = try #require(controller.window?.attachedSheet)
+    #expect(controller.issueBadge != nil)
+    controller.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+    sheet.orderOut(nil)
+    try await controller.session.close()
+  }
+
   @Test @MainActor func authoredTelemetryUsesOnlyFixedCategories() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }

@@ -1,10 +1,7 @@
-import type { SlopDocument } from "@hitslop/document/svelte";
-import schema, { repeatModes, stickerKinds, type StickerKind, type Video } from "./schema";
+import doc, { repeatModes, stickerKinds, type StickerKind, type Video } from "./schema";
 import { click } from "./clicker";
 import type { Intent } from "./intents";
 import { LookupError, youtube, type YouTubeHandlers, type YouTubePlayer } from "@hitslop/document/embed";
-
-type Doc = SlopDocument<typeof schema.descriptor>;
 
 export type ScreenId =
   | "menu" | "coverflow" | "videos" | "add" | "playing"
@@ -44,7 +41,7 @@ function stickerSpot(): { x: number; y: number } {
   return { x: pick < 0.75 ? 0.085 : 0.915, y: round(0.6 + Math.random() * 0.25, 3) };
 }
 
-export function createPod(doc: Doc) {
+export function createPod() {
   const ui = $state({
     stack: [{ id: "menu", cursor: 0 }] as Entry[],
     held: false,

@@ -1,9 +1,9 @@
-// Compile-time checks of the async author API (typechecked by `bun run check`).
+// Compile-time checks of the async author API (typechecked by `bun run check`). Each
+// definition is also the live document authors import, so the checks use `typeof`.
 import { defineDocument, s, type Input } from "../src/schema";
-import type { SlopDocument } from "../src/app/store.svelte";
 
 const counters = defineDocument({ count: s.counter() });
-export function counterTypes(doc: SlopDocument<typeof counters.descriptor>) {
+export function counterTypes(doc: typeof counters) {
   const count: number | null = doc.current.count;
   // @ts-expect-error Overflow is observable and callers must handle null.
   const unchecked: number = doc.current.count;
@@ -19,7 +19,7 @@ const checklist = defineDocument({
   title: s.text(),
   tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
 });
-export async function asyncHandleTypes(doc: SlopDocument<typeof checklist.descriptor>) {
+export async function asyncHandleTypes(doc: typeof checklist) {
   const { id } = await doc.fields.tasks.insert({ text: "x", done: false });
   await doc.fields.tasks.item(id).done.set(true);
   await doc.fields.title.set("Packing");
@@ -52,7 +52,7 @@ const scalars = defineDocument({
   photo: s.optional(s.object({ id: s.string() })),
   rows: s.list(s.object({ text: s.text(), limit: s.optional(s.integer()) })),
 });
-export async function scalarTypes(doc: SlopDocument<typeof scalars.descriptor>) {
+export async function scalarTypes(doc: typeof scalars) {
   const currency: "CAD" | "USD" = doc.current.currency;
   const note: string | undefined = doc.current.note;
   // @ts-expect-error An optional value may be absent.
@@ -80,7 +80,7 @@ const collections = defineDocument({
   pixels: s.list(s.string()),
   notes: s.optional(s.text()),
 });
-export async function collectionTypes(doc: SlopDocument<typeof collections.descriptor>) {
+export async function collectionTypes(doc: typeof collections) {
   const count: number | undefined = doc.current.checkins["2026-09-23"];
   const pixel: string | undefined = doc.current.pixels[0];
   const notes: string | undefined = doc.current.notes;

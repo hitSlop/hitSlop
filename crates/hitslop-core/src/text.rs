@@ -7,6 +7,15 @@ use loro::{cursor::Side, event::Diff, TextDelta, UpdateOptions};
 /// Bounds the diff; past it the script falls back to a single caret-hinted splice.
 const SCRIPT_TIMEOUT_MS: f64 = 50.0;
 
+/// A branch at `base` for authoring one concurrent edit: the state there with minimal
+/// history, so trimmed documents branch too (Loro has no `fork_at` for them). Safe where a
+/// long-lived replica is not (see `replica_at`): it lives for one edit, authors only text
+/// operations after checking its text equals `from`, and never imports later changes.
+fn branch_at(doc: &LoroDoc, base: &Frontiers) -> Result<LoroDoc> {
+    let branch = LoroDoc::new();
+    branch.import(&doc.export(ExportMode::state_only(Some(base))).map_err(engine)?).map_err(engine)?;
+    Ok(branch)
+}
 fn text_at(
     doc: &LoroDoc,
     schema: &Node,
@@ -177,11 +186,10 @@ impl Document {
         } else {
             // This field changed concurrently: author the edit on a branch at `base` and
             // let Loro merge it, so neither side's characters are lost.
-            // `fork_at` is safe here and much faster than replay: the branch lives for one
-            // edit, authors only text operations after checking its text equals `from`, and
-            // never imports later changes. (A long-lived replica must not use it; see
-            // `replica_at`.)
-            let branch = self.doc.fork_at(&base_at).map_err(engine)?;
+            if !base_vv.includes_vv(&self.floor) {
+                return Err(err(Code::StaleBase, "Version precedes the saved history"));
+            }
+            let branch = branch_at(&self.doc, &base_at)?;
             let text = text_at(&branch, &self.schema, &r.path, &HashMap::new())?;
             if text.id() != current.id() {
                 return Err(err(Code::PathNotFound, "Text identity changed"));

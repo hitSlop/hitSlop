@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import Download from "@lucide/svelte/icons/download";
+    import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
   import PaintBucket from "@lucide/svelte/icons/paint-bucket";
   import Pencil from "@lucide/svelte/icons/pencil";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import { Tabs, ToggleGroup, RadioGroup, Button } from "bits-ui";
-  import schema from "./schema";
+  import doc from "./schema";
 
   type Tool = "pencil" | "eraser" | "fill";
   const PALETTE_IDS = ["gameboy", "pico8", "cyberpunk", "mono"] as const;
@@ -44,7 +43,6 @@
     return value === "pencil" || value === "eraser" || value === "fill";
   }
 
-  const doc = useDocument(schema);
 
   let tool = $state<Tool>("pencil");
   let painting = $state(false);

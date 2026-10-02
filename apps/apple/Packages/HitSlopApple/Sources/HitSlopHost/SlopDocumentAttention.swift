@@ -31,7 +31,7 @@ extension SlopDocumentWindowController {
     }
     guard guestIssue?.message != issue.message else { return }
     guestIssue = issue
-    showDocumentAttention()
+    refreshIssueBadge()
   }
   public func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
     let context = storageFailure
@@ -49,7 +49,7 @@ extension SlopDocumentWindowController {
     case .saved:
       attentionMessage = nil
       attentionFailure = nil
-      if attentionIsSaveFailure, let panel = documentAttention {
+      if let panel = documentAttention {
         window?.endSheet(panel, returnCode: .abort)
         panel.orderOut(nil)
       }
@@ -72,40 +72,39 @@ extension SlopDocumentWindowController {
   public func pageSessionRecovered(_ session: DocumentSession) {
     if guestIssue != nil { telemetry.send(.breadcrumb(.recovery, .recovered)) }
     guestIssue = nil
+    refreshIssueBadge()
     publishControlsVisibility(toolbar?.isVisible == true, force: true)
   }
-  /// What a button in the attention alert does.
+  /// What a button in the save-failure alert does.
   private enum AttentionAction {
-    case retrySave, discardAndRetry, keepOpen, reloadInterface, dismiss, copyDetails
+    case retrySave, discardAndRetry, keepOpen
   }
+  /// The save-failure sheet: unsaved work is at risk, so it blocks the window. Issues that
+  /// leave the slop running show as the issue badge instead.
   private func showDocumentAttention() {
-    guard let message = attentionMessage ?? guestIssue?.message else { return }
-    let saving = attentionMessage != nil
-    let invalidated = saving && attentionFailure == .invalidated
+    guard let message = attentionMessage else { return }
+    let invalidated = attentionFailure == .invalidated
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
     let actions: [(title: String, action: AttentionAction)] =
-      !saving ? [("Reload Interface", .reloadInterface), ("Dismiss", .dismiss), ("Copy Details", .copyDetails)]
-      : invalidated ? [("Discard Unsaved Edits and Reload", .discardAndRetry), ("Keep Open", .keepOpen)]
+      invalidated ? [("Discard Unsaved Edits and Reload", .discardAndRetry), ("Keep Open", .keepOpen)]
       : attentionFailure == .full ? [("Retry Save", .retrySave), ("Discard Unsaved Edits", .discardAndRetry), ("Keep Open", .keepOpen)]
       : [("Retry Save", .retrySave), ("Keep Open", .keepOpen)]
     let alert = NSAlert()
-    alert.messageText = invalidated ? "The document engine needs recovery" : saving ? "Changes could not be saved" : "This slop encountered an error"
+    alert.messageText = invalidated ? "The document engine needs recovery" : "Changes could not be saved"
     alert.informativeText = message
     for entry in actions { alert.addButton(withTitle: entry.title) }
     guard let window, window.attachedSheet == nil else { return }
     documentAttention = alert.window as? NSPanel
-    attentionIsSaveFailure = saving
     alert.beginSheetModal(for: window) { [weak self] result in
       guard let self else { return }
       self.documentAttention = nil
-      self.attentionIsSaveFailure = false
       // A sheet ended by the window (`.abort`) chose no button.
       let index = result.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-      self.respond(actions.indices.contains(index) ? actions[index].action : nil, to: message, saving: saving)
+      if actions.indices.contains(index) { self.respond(actions[index].action) }
     }
   }
-  private func respond(_ action: AttentionAction?, to message: String, saving: Bool) {
+  private func respond(_ action: AttentionAction) {
     switch action {
     case .retrySave, .discardAndRetry:
       Task {
@@ -118,26 +117,11 @@ extension SlopDocumentWindowController {
           attentionMessage = error.localizedDescription
           attentionFailure = error as? SaveFailure
         }
-        // Shows the next failure, or an authored issue the save failure covered.
+        // Shows the next failure, if any.
         showDocumentAttention()
       }
-    case .reloadInterface:
-      Task {
-        do { try await session.reloadInterface() } catch {
-          guestIssue = SlopPageIssue(message: error.localizedDescription, isOperation: false)
-          showDocumentAttention()
-        }
-      }
-    case .copyDetails:
-      NSPasteboard.general.copy(message)
-      if attentionMessage != nil { showDocumentAttention() }
-    case .dismiss:
-      // A save failure that arrived meanwhile still needs its own alert.
-      if attentionMessage != nil { showDocumentAttention() }
     case .keepOpen:
       break
-    case nil:
-      if !saving { showDocumentAttention() }
     }
   }
 

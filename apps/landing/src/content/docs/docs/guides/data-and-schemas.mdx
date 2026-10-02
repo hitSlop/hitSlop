@@ -34,7 +34,7 @@ Choose each field by how edits from several places should merge:
 | `s.record(value)` | Scalars or objects by key: check-ins by date, cells by `"A1"` | Per key; object entries per field |
 | `s.counter()` | Tallies | Increments add up |
 
-`maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state.
+`maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state; anything an export or icon shows must be a field, because they render from the saved document.
 
 ```ts title="initial.ts"
 export default {
@@ -52,36 +52,40 @@ The builder validates initial values and emits `state.schema.json` and `initial.
 
 ## Read snapshots; write through handles
 
+`schema.ts`'s default export is also the live document. Any component imports it:
+
 ```svelte
 <script lang="ts">
-  import { useDocument, bindText, bindValue } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import { bindText } from "@hitslop/document/svelte";
+  import doc from "./schema";
 </script>
   <input aria-label="Title" use:bindText={doc.fields.title} />
-  <input type="checkbox" use:bindValue={doc.fields.archived} />
-  <input type="range" min="1" max="5" use:bindValue={doc.fields.mood} />
-  <select use:bindValue={doc.fields.lane}>
+  <input type="checkbox" bind:checked={doc.fields.archived.value} />
+  <input type="range" min="1" max="5" bind:value={doc.fields.mood.value} />
+  <select bind:value={doc.fields.lane.value}>
     <option value="todo">To do</option><option value="doing">Doing</option><option value="done">Done</option>
   </select>
-  <input aria-label="Note" use:bindValue={doc.fields.note} />
+  <input aria-label="Note" bind:value={doc.fields.note.value} />
   {#each doc.current.tasks as task (task.$id)}
-    <input type="checkbox" checked={task.done} onchange={() => doc.at(task).done.set(!task.done)} />
-    <input aria-label="Task" use:bindText={doc.at(task).text} />
+    {@const row = doc.at(task)}
+    <input type="checkbox" bind:checked={row.done.value} />
+    <input aria-label="Task" use:bindText={row.text} />
   {/each}
 ```
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-Writes are asynchronous: `await doc.at(task).done.set(true)` resolves once the app has accepted the edit and `doc.current` shows it. Read the snapshot after awaiting, not before. A resolved write is not yet on disk or rendered: use `await doc.flush()` when it must be saved and Svelte's `tick()` when the next step depends on the DOM. A refused write rejects with a code and leaves `doc.current` unchanged, so keep a composer's text until its write is accepted and show success only after acceptance.
+`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
 
-`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field. `bindValue` binds checkboxes to booleans, selects to enums and strings, range and number inputs to numbers and integers, and text, date and time inputs to strings. A range previews while it is dragged and saves on release; clearing a control clears an optional field.
+Scalar fields (booleans, strings, numbers, integers and enums) have a `value` for Svelte's `bind:`, which works with native inputs and with component libraries such as bits-ui. Assigning shows the value at once and saves it once the person pauses, so dragging a range or typing a date writes once. An emptied control clears an optional field. Svelte binds only to a name or a property path, so give a row's handle a name with `{@const row = doc.at(task)}` before binding its fields.
+
+Writes are asynchronous. `set` on a scalar shows the new value in `doc.current` at once; every write's promise resolves once the app has accepted it and `doc.current` shows it, so read row inserts and moves after awaiting. A resolved write is not yet on disk or rendered: use `await doc.flush()` when it must be saved and Svelte's `tick()` when the next step depends on the DOM.
+
+A refused write leaves the saved value in `doc.current`, and hitSlop shows the person what went wrong. You don't need to catch it: `await doc.fields.tasks.insert(...)` followed by clearing a composer keeps the composer's text when the insert is refused. Catch a rejection only to show your own message; one you catch is not reported again.
 
 ## Previews for drags and drawing
 
 While a person drags or draws, call `handle.preview(value)` on each frame: `doc.current` shows the value immediately, but nothing is written. Then `set` the final value. Pending previews are saved by `flush`, close and export.
-
-Child components can call `useDocument(schema)` for the same document; in long lists, pass rows and handles as props instead.
 
 ## Keep row identity stable
 
@@ -95,7 +99,7 @@ await doc.fields.tasks.remove(id);
 await doc.fields.visits.increment();
 ```
 
-`item(id)` is a row's handle by ID. `decrement()` is `increment(-1)`; a counter has no reset. If a counter's merged contributions are invalid, its snapshot is `null`: show it as unavailable and disable its buttons. A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
+`item(id)` is a row's handle by ID. `increment(-1)` subtracts; a counter has no reset. If a counter's merged contributions are invalid, its snapshot is `null`: show it as unavailable and disable its buttons. A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
 
 ## Group changes
 
@@ -110,11 +114,11 @@ await doc.change(tx => {
 
 A change is one synchronous, all-or-nothing commit. Inside the callback, `insert` returns its `id` immediately so later writes can address the new row. Do not `await` inside the callback, nest changes, keep `tx` handles after it returns, or write through `doc` there, and remember `doc.current` still shows the state from before the change until the returned promise resolves. A rejected operation discards the whole change.
 
-Prefer a change, or `increment` on a counter, over reading a value and writing it back: the snapshot you read may be a moment old.
+Prefer a change, or `increment` on a counter, over reading a value and writing it back: the snapshot you read may be a moment old. Order rows by their place in the list and reorder them with `move`, rather than storing positions in a number field that two edits can both rewrite.
 
 ## Save and recover
 
-The host autosaves, and `await doc.flush()` sends any unsent text, waits for pending writes, and saves. Close, quit and export do the same first. Failed saves keep every edit and offer native retry. Application errors are reported separately from save failures. Checkpoints retain edit history; automatic history pruning is deferred.
+The host autosaves, and `await doc.flush()` sends any unsent text, waits for pending writes, and saves. Close, quit and export do the same first. Failed saves keep every edit and offer native retry. Application errors are reported separately from save failures. A document keeps its edit history until it grows past 4 MiB. Then, when it closes, it keeps only the history of the session that just ended, or none if even that is large.
 
 CLI reads and edits go through the same app-owned core:
 

@@ -51,6 +51,6 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Collaboration, document history undo UI, schema evolution, history pruning, synced folders, hosted
+Collaboration, document history undo UI, schema evolution, synced folders, hosted
 catalog/publishing, accounts/auth and sharing. `archive/`, `_docs/` and `deferred/` are
 not active contracts.

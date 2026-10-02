@@ -1,9 +1,7 @@
 <script lang="ts">
 import { ui, fallbackChannels } from "./ui.svelte";
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
+import doc from "./schema";
 const chromeUrl = "/assets/alien-radio-chrome.png";
-const doc = useDocument(schema);
 const selected = $derived(ui.channels.find(channel => channel.id === doc.current.selectedChannelId) ?? ui.channels[0] ?? fallbackChannels[0]!);
 </script>
 

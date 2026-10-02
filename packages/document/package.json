@@ -5,10 +5,7 @@
   "exports": {
     ".": "./src/schema.ts",
     "./svelte": "./src/app/store.svelte.ts",
-    "./capture": "./src/app/capture.ts",
-    "./attachments": "./src/app/attachments.ts",
     "./embed": "./src/app/embed.ts",
-    "./theme": "./src/theme.ts",
     "./abi": "./src/abi.ts"
   },
   "dependencies": {
@@ -32,8 +29,7 @@
     "src/schema.ts",
     "src/descriptor.ts",
     "src/errors.ts",
-    "src/theme.ts",
-    "src/async-types.ts"
+    "src/theme.ts"
   ],
   "engines": {
     "bun": ">=1.4.2"

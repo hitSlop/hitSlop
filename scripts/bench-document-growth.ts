@@ -23,8 +23,7 @@ try {
         y = Math.max(20, Math.min(680, y + (random() - .5) * 18));
         samples.add([x, y, .5]);
       }
-      return { initial: strokePath(samples.points.slice(0, 1), defaultBrush, false),
-        final: strokePath(samples.points, defaultBrush, false) };
+      return strokePath(samples.points, defaultBrush, false);
     });
     await writeFile(join(input, "strokes", `${day}.json`), JSON.stringify(strokes));
   }

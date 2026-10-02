@@ -1,8 +1,6 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
+import doc from "./schema";
 import { boards } from "./drawing";
-const doc = useDocument(schema);
 const board = $derived(boards[doc.current.boardShape]);
 </script>
 

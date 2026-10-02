@@ -1,9 +1,7 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
 import Check from "@lucide/svelte/icons/check";
-import schema from "./schema";
+import doc from "./schema";
 import { CELLS, sheetView } from "./chart";
-const doc = useDocument(schema);
 const { doneCount, deadlineText, isDone, textOf } = $derived(sheetView(doc.current));
 </script>
 

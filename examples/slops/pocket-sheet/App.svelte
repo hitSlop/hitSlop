@@ -3,13 +3,13 @@ import { ui, type Point } from "./ui.svelte";
 
   import { onMount, tick } from "svelte";
   import { Popover } from "bits-ui";
-  import { useDocument, bindText, type DocumentScope } from "@hitslop/document/svelte";
+  import { bindText } from "@hitslop/document/svelte";
+  import type { Scope } from "@hitslop/document";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
-  import schema, { stamps, tints, type Tint } from "./schema";
+  import doc, { stamps, tints, type Tint } from "./schema";
   import { allKeys, cellKey, columnName, COLUMNS, csv, display, evaluate, isError, ROWS, type Value } from "./formula";
 
-  const doc = useDocument(schema);
   const DEFAULT_WIDTH = 96;
 
 
@@ -74,9 +74,9 @@ import { ui, type Point } from "./ui.svelte";
         if (!input && cell.tint === undefined && cell.stamp === undefined) tx.fields.cells.delete(key);
         else if (cell.input !== input) tx.fields.cells.entry(key).input.set(input);
       }
-    }).catch(() => {});
+    });
   }
-  type CellHandle = ReturnType<DocumentScope<typeof schema.descriptor>["fields"]["cells"]["entry"]>;
+  type CellHandle = ReturnType<Scope<typeof doc.descriptor>["fields"]["cells"]["entry"]>;
   function decorate(apply: (key: string, handle: CellHandle) => void, empty: (key: string) => boolean) {
     void doc.change(tx => {
       for (const key of selection) {
@@ -88,7 +88,7 @@ import { ui, type Point } from "./ui.svelte";
         const cell = doc.current.cells[key];
         if (empty(key) && !cell?.input) tx.fields.cells.delete(key);
       }
-    }).catch(() => {});
+    });
   }
   function paint(tint: Tint | null) {
     const clearing = tint === null || selection.every(key => doc.current.cells[key]?.tint === tint);
@@ -194,7 +194,7 @@ import { ui, type Point } from "./ui.svelte";
     const up = () => {
       node.removeEventListener("pointermove", move);
       // Keep the dragged width shown until the saved width replaces it.
-      if (ui.resizing) doc.fields.widths.put(letter, ui.resizing.width).finally(() => (ui.resizing = null)).catch(() => {});
+      if (ui.resizing) doc.fields.widths.put(letter, ui.resizing.width).finally(() => (ui.resizing = null));
       else ui.resizing = null;
     };
     const down = (event: PointerEvent) => {
@@ -204,7 +204,7 @@ import { ui, type Point } from "./ui.svelte";
       node.addEventListener("pointermove", move);
       node.addEventListener("pointerup", up, { once: true });
     };
-    const reset = () => { if (doc.current.widths[letter] !== undefined) doc.fields.widths.delete(letter).catch(() => {}); };
+    const reset = () => { if (doc.current.widths[letter] !== undefined) doc.fields.widths.delete(letter); };
     node.addEventListener("pointerdown", down);
     node.addEventListener("dblclick", reset);
     return { destroy() { node.removeEventListener("pointerdown", down); node.removeEventListener("dblclick", reset); } };

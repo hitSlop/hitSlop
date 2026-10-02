@@ -1,18 +1,16 @@
 <script lang="ts">
-  import { bindValue, useDocument } from "@hitslop/document/svelte";
-  import Play from "@lucide/svelte/icons/play";
+    import Play from "@lucide/svelte/icons/play";
   import Square from "@lucide/svelte/icons/square";
   import Volume2 from "@lucide/svelte/icons/volume-2";
   import VolumeX from "@lucide/svelte/icons/volume-x";
   import { RadioGroup, Toggle } from "bits-ui";
   import { onDestroy, onMount } from "svelte";
   import { Spring, prefersReducedMotion } from "svelte/motion";
-  import schema, { signatures, type TimeSignature } from "./schema";
+  import doc, { signatures, type TimeSignature } from "./schema";
 
   const CAPTURE_ANGLE = -16;
   const SWING_ANGLE = 22;
 
-  const doc = useDocument(schema);
 
   let isPlaying = $state(false);
   let currentBeat = $state(0);
@@ -320,7 +318,7 @@
         step="1"
         aria-label="Tempo"
         style:--bpm={doc.current.bpm}
-        use:bindValue={doc.fields.bpm}
+        bind:value={doc.fields.bpm.value}
       />
       <button type="button" class="nudge-btn" onclick={() => nudgeBpm(1)} aria-label="Add 1 BPM">+1</button>
       <button type="button" class="nudge-btn" onclick={() => nudgeBpm(5)} aria-label="Add 5 BPM">+5</button>
@@ -351,12 +349,11 @@
           step="0.01"
           aria-label="Click volume"
           style:--volume={doc.current.volume}
-          use:bindValue={doc.fields.volume}
+          bind:value={doc.fields.volume.value}
         />
       </label>
       <Toggle.Root
-        pressed={doc.current.muted}
-        onPressedChange={(pressed) => { doc.fields.muted.set(pressed); }}
+        bind:pressed={doc.fields.muted.value}
         class="mute-toggle"
         aria-label={doc.current.muted ? "Unmute click" : "Mute click"}
       >

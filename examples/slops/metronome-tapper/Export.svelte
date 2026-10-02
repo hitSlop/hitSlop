@@ -1,8 +1,6 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema, { signatures } from "./schema";
+import doc, { signatures } from "./schema";
 const CAPTURE_ANGLE = -16;
-const doc = useDocument(schema);
 const beatsPerBar = $derived(Number.parseInt(doc.current.signature.split("/")[0] ?? "4", 10));
 const tempoName = $derived.by(() => {
   const bpm = doc.current.bpm;

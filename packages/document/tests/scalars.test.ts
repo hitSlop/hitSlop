@@ -1,6 +1,6 @@
 // Scalar kinds through the SDK and the real WASM core. Failure: a handle that writes the
-// wrong intent, a preview that leaks into history or outlives its write, or a form
-// control that sends an invalid value. Oracle: literal snapshots and the core's state.
+// wrong intent, a preview that leaks into history or outlives its write, or an assigned
+// value that is committed wrongly. Oracle: literal snapshots and the core's state.
 import { expect, test } from "bun:test";
 import { OwnerDocument } from "../src/owner/document";
 import { wasmTransport, type OwnerTransport } from "../src/owner/transport";
@@ -24,10 +24,16 @@ const initial = { currency: "CAD", label: "ab", ratio: 0.5, rating: 3, rows: [{ 
 async function open() {
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify(initial));
   const errors: unknown[] = [];
+  let reported = () => {};
+  /** Resolves at the next report. */
+  const nextReport = () => new Promise<void>((resolve) => (reported = resolve));
   const transport = wasmTransport(core) as OwnerTransport & Record<string, any>;
-  const doc = await OwnerDocument.open(definition, transport, (error) => errors.push(error));
+  const doc = await OwnerDocument.open(definition, transport, (error) => {
+    errors.push(error);
+    reported();
+  });
   const saved = () => JSON.parse(core.snapshot()).value;
-  return { core, doc, errors, saved };
+  return { core, doc, errors, nextReport, saved, transport };
 }
 
 test("scalar, optional and optional-object handles write through the core", async () => {
@@ -80,76 +86,91 @@ test("previews stay local until set or flush and never enter the core early", as
     expect(doc.current.ratio).toBe(0.9);
     expect(doc.current.rows[0]!.amount).toBe(500);
     expect(saved().ratio).toBe(0.5);
-    expect(doc.status).toBe("pending");
     await doc.fields.ratio.set(0.7);
     expect(doc.current.ratio).toBe(0.7);
     expect(doc.current.rows[0]!.amount).toBe(500);
     await doc.flush();
     expect(saved().rows[0].amount).toBe(500);
-    expect(doc.status).toBe("saved");
     // A preview on a row that is removed disappears with it.
     doc.fields.rows.item("r1").amount.preview(1);
     await doc.fields.rows.remove("r1");
     expect(doc.current.rows).toEqual([]);
-    expect(doc.status).toBe("pending");
     await doc.flush();
-    expect(doc.status).toBe("saved");
+    expect(saved().rows).toEqual([]);
   } finally {
     core.free();
   }
 });
 
-class Control extends EventTarget {
-  value = "";
-  checked = false;
-  disabled = false;
-  constructor(readonly type: string) {
-    super();
-  }
-  enter(value: string, event: "input" | "change") {
-    this.value = value;
-    this.dispatchEvent(new Event(event));
-  }
-}
-const control = (type: string) => new Control(type) as Control & HTMLInputElement;
+/** Resolves on the first document notification where `ready` holds. */
+const until = (doc: OwnerDocument<any>, ready: () => boolean) =>
+  new Promise<void>((resolve) => {
+    if (ready()) return resolve();
+    const stop = doc.subscribe(() => {
+      if (ready()) { stop(); resolve(); }
+    });
+  });
 
-test("bindValue writes each scalar from its control, coalescing text", async () => {
-  const { core, doc, saved } = await open();
-  const range = control("range"), rating = control("number"), select = control("select-one");
-  const label = control("text"), memo = control("text");
-  const bindings = [
-    doc.bindValue(range, doc.fields.ratio),
-    doc.bindValue(rating, doc.fields.rating),
-    doc.bindValue(select, doc.fields.currency),
-    doc.bindValue(label, doc.fields.label),
-    doc.bindValue(memo, doc.fields.memo),
-  ];
+// Failure: a scalar write showed nothing until the owner replied, or a refused one
+// stayed on screen. Oracle: the snapshot before acceptance, and the core's state after.
+test("live scalar writes show at once, and a refused write reverts", async () => {
+  const { core, doc, errors, saved } = await open();
   try {
-    expect([range.value, rating.value, select.value, label.value, memo.value]).toEqual(["0.5", "3", "CAD", "ab", ""]);
-    range.enter("0.8", "input");
-    expect(doc.current.ratio).toBe(0.8);
-    expect(saved().ratio).toBe(0.5);
-    range.dispatchEvent(new Event("change"));
-    rating.enter("4", "change");
-    select.enter("USD", "change");
-    for (const text of ["a", "ab", "abc", "abcd"]) label.enter(text, "input");
-    memo.enter("note", "input");
+    const accepted = doc.fields.rating.set(4);
+    expect(doc.current.rating).toBe(4);
+    expect(saved().rating).toBe(3);
+    await accepted;
+    expect(saved().rating).toBe(4);
+    const refused = doc.fields.rating.set(9);
+    expect(doc.current.rating).toBe(9);
+    await expect(refused).rejects.toThrow();
+    expect(doc.current.rating).toBe(4);
+    await doc.fields.memo.set("note");
+    const cleared = doc.fields.memo.clear();
+    expect(doc.current.memo).toBeUndefined();
+    await cleared;
+    expect("memo" in saved()).toBe(false);
+    // The author caught the refusal, so nothing was reported.
+    expect(errors).toEqual([]);
+  } finally {
+    core.free();
+  }
+});
+
+// Failure: a bound control wrote each keystroke to history, could not clear an optional
+// field, or left a refused value on screen. Oracle: literal snapshots, the core's state
+// and the number of batches sent.
+test("assigned values coalesce into one commit, clear optionals and revert refusals", async () => {
+  const { core, doc, errors, nextReport, saved, transport } = await open();
+  let sent = 0;
+  const apply = transport.apply;
+  transport.apply = (batch) => { sent++; return apply(batch); };
+  try {
+    for (const label of ["a", "ab", "abc", "abcd"]) doc.fields.label.value = label;
+    expect(doc.fields.label.value).toBe("abcd");
+    expect(doc.current.label).toBe("abcd");
+    expect(saved().label).toBe("ab");
+    await until(doc, () => saved().label === "abcd");
     await doc.flush();
-    expect(saved()).toMatchObject({ ratio: 0.8, rating: 4, currency: "USD", label: "abcd", memo: "note" });
-    // Empty clears an optional; an invalid value reverts a required field.
-    memo.enter("", "input");
-    rating.enter("", "change");
+    expect(sent).toBe(1);
+    // An emptied number input assigns null: it clears an optional and is ignored otherwise.
+    doc.fields.memo.value = "note";
+    doc.fields.memo.value = null as never;
+    doc.fields.rating.value = null as never;
+    expect(doc.current.memo).toBeUndefined();
+    expect(doc.current.rating).toBe(3);
     await doc.flush();
     expect("memo" in saved()).toBe(false);
-    expect(saved().rating).toBe(4);
-    expect(rating.value).toBe("4");
-    // A value the core refuses shows the document's value again.
-    label.enter("toolong", "input");
-    await doc.flush().catch(() => {});
+    expect(saved().rating).toBe(3);
+    // Nobody awaits an assignment, so a refusal is reported and the saved value returns.
+    const report = nextReport();
+    doc.fields.label.value = "toolong";
+    expect(doc.current.label).toBe("toolong");
+    await report;
+    expect(doc.current.label).toBe("abcd");
     expect(saved().label).toBe("abcd");
-    expect(label.value).toBe("abcd");
+    expect(errors).toHaveLength(1);
   } finally {
-    bindings.forEach((binding) => binding.destroy());
     core.free();
   }
 });

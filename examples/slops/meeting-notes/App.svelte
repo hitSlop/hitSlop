@@ -4,10 +4,9 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import { bindText, bindValue, useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
+  import { bindText } from "@hitslop/document/svelte";
+  import doc from "./schema";
 
-  const doc = useDocument(schema);
   let newAttendee = $state("");
   const completedAgenda = $derived(doc.current.agenda.filter((item) => item.done).length);
   const completedActions = $derived(doc.current.actions.filter((item) => item.done).length);
@@ -27,9 +26,9 @@
         <div class="metaRow">
           <span class="badge"><span class="badgeDot"></span>Meeting Memo</span>
           <div class="dateRow">
-            <label><span class="srOnly">Meeting date</span><input class="metaField" use:bindValue={doc.fields.date} /></label>
+            <label><span class="srOnly">Meeting date</span><input class="metaField" bind:value={doc.fields.date.value} /></label>
             <span aria-hidden="true">·</span>
-            <label><span class="srOnly">Meeting time or location</span><input class="metaField" use:bindValue={doc.fields.time} /></label>
+            <label><span class="srOnly">Meeting time or location</span><input class="metaField" bind:value={doc.fields.time.value} /></label>
           </div>
         </div>
         <input class="title" aria-label="Meeting title" placeholder="Meeting title" use:bindText={doc.fields.title} />
@@ -61,8 +60,9 @@
             </div>
             <ul class="list">
               {#each doc.current.agenda as item, index (item.$id)}
+                {@const row = doc.at(item)}
                 <li class="agendaItem" data-done={item.done}>
-                  <Checkbox.Root checked={item.done} onCheckedChange={(checked) => doc.at(item).done.set(checked === true)} aria-label="Mark {item.text || 'agenda topic'} {item.done ? 'open' : 'done'}">
+                  <Checkbox.Root bind:checked={row.done.value} aria-label="Mark {item.text || 'agenda topic'} {item.done ? 'open' : 'done'}">
                     {#snippet children({ checked })}{#if checked}<Check size={10} strokeWidth={3} />{/if}{/snippet}
                   </Checkbox.Root>
                   <input class="rowText" aria-label="Agenda topic {index + 1}" placeholder="Agenda topic" use:bindText={doc.at(item).text} />
@@ -106,8 +106,9 @@
             </div>
             <ul class="list">
               {#each doc.current.actions as item, index (item.$id)}
+                {@const row = doc.at(item)}
                 <li class="actionItem" data-done={item.done}>
-                  <Checkbox.Root checked={item.done} onCheckedChange={(checked) => doc.at(item).done.set(checked === true)} aria-label="Mark {item.text || 'action'} {item.done ? 'open' : 'complete'}">
+                  <Checkbox.Root bind:checked={row.done.value} aria-label="Mark {item.text || 'action'} {item.done ? 'open' : 'complete'}">
                     {#snippet children({ checked })}{#if checked}<Check size={10} strokeWidth={3} />{/if}{/snippet}
                   </Checkbox.Root>
                   <input class="rowText" aria-label="Action {index + 1}" placeholder="Follow-up action" use:bindText={doc.at(item).text} />

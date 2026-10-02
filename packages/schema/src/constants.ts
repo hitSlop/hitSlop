@@ -39,6 +39,10 @@ export const StorageLimits = { bytes: 32 * 1024 * 1024, rows: 4096 } as const;
 export const ThemeLimit = 64 * 1024;
 /** Diagnostic text a page reports to the host, in UTF-16 units. */
 export const ErrorTextLimit = 4096;
+/** The `Symbol.for` key on document errors (refusals and owner outcomes). The page's
+ * unhandled-rejection hook reports a branded reason as an operation issue, not as an
+ * application failure. */
+export const OperationErrorBrand = "hitslop.operation-error";
 /** The largest page request payload (a batch or text edit), in UTF-8 bytes. */
 export const PagePayloadLimit = 4 * 1024 * 1024;
 /** Pushes buffered for one page before a gap forces a fresh snapshot. */

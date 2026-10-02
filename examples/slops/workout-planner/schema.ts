@@ -10,7 +10,6 @@ const schema = defineDocument({
     name: s.text(),
     sets: s.integer({ min: 1, max: 12 }),
     reps: s.integer({ min: 1, max: 50 }),
-    completedSets: s.integer({ min: 0, max: 12 }),
     completedSetIndices: s.list(s.integer({ min: 0 })),
     weight: s.string(),
   })),

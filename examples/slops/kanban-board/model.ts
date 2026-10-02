@@ -5,7 +5,6 @@ export function boardView(board: Board) {
   const grouped = new Map<string, Card[]>();
   for (const lane of board.lanes) grouped.set(lane.laneKey, []);
   for (const card of board.cards) grouped.get(card.laneKey)?.push(card);
-  for (const cards of grouped.values()) cards.sort((a, b) => a.order - b.order);
   const cardsFor = (laneKey: string): Card[] => grouped.get(laneKey) ?? [];
   const isOverLimit = (lane: Lane) =>
     lane.limit !== undefined && lane.limit > 0 && cardsFor(lane.laneKey).length > lane.limit;

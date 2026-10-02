@@ -274,6 +274,16 @@ impl NativeDocument {
         })?;
         Ok(result?.map(|job| Arc::new(SaveJob(job))))
     }
+    /// The checkpoint to write as the owner closes, after its last save, or none. Runs on
+    /// the edit queue once edits have stopped.
+    pub fn close_job(&self, store: Arc<NativeStore>) -> Result<Option<Arc<SaveJob>>, CoreError> {
+        let mut result = Ok(None);
+        self.call(|d| {
+            result = store.0.close_job(d);
+            Ok(())
+        })?;
+        Ok(result?.map(|job| Arc::new(SaveJob(job))))
+    }
 }
 
 /// Bytes exported for one write. Opaque to the host.

@@ -83,6 +83,29 @@ fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
     assert_eq!(title(&reopened), "RabcXYZ");
 }
 
+/// The document as it reopens from a checkpoint trimmed to its latest version.
+fn trimmed(d: &Document) -> Document {
+    let loro = loro::LoroDoc::new();
+    loro.import(&d.checkpoint().unwrap()).unwrap();
+    let bytes = loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap();
+    Document::open(&schema(), &bytes, &[]).unwrap()
+}
+
+// Failure: a concurrent edit branched with `LoroDoc::fork_at`, which Loro does not
+// implement for trimmed documents, so it failed on every document after a checkpoint.
+#[test]
+fn a_concurrent_edit_on_a_trimmed_document_merges() {
+    let mut d = trimmed(&setup());
+    let mut page = Binding::new(&d, json!(["title"]));
+    page.edit(&mut d, "abcX", 4);
+    splice(&mut d, 0, "R");
+    let reply = page.edit(&mut d, "abcXY", 5);
+    assert_eq!(title(&d), "RabcXY");
+    assert_eq!(reply.selection_start, 6);
+    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(title(&reopened), "RabcXY");
+}
+
 #[test]
 fn remote_update_and_page_edit_both_survive() {
     let mut d = setup();

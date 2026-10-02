@@ -156,7 +156,7 @@ export default { title: "Tiny wins today", wins: 0 };
 `theme.ts` declares tokens available as CSS variables. The window, icon, and export use these colors. Your agent can change them through hitSlop's theme commands while the document is open, without rebuilding. Overrides stay with that document; the template keeps its defaults.
 
 ```ts
-import { defineTheme } from "@hitslop/document/theme";
+import { defineTheme } from "@hitslop/document";
 
 export default defineTheme({
   surface: "#fff7e6",
@@ -167,19 +167,17 @@ export default defineTheme({
 
 ### 4. Build the app, icon, and export together
 
-`App.svelte` is the whole interface. Read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
+`App.svelte` is the whole interface. Import the document from `schema.ts`, read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
 
 ```svelte
 <script lang="ts">
-  import { useDocument, bindText } from "@hitslop/document/svelte";
-  import schema from "./schema";
-
-  const doc = useDocument(schema);
+  import { bindText } from "@hitslop/document/svelte";
+  import doc from "./schema";
 </script>
 <main class="wins-card">
   <input aria-label="Counter title" use:bindText={doc.fields.title} />
   <p class="wins-number" aria-live="polite">{doc.current.wins}</p>
-  <button onclick={() => doc.fields.wins.increment().catch(() => {})}>A little win +1</button>
+  <button onclick={() => doc.fields.wins.increment()}>A little win +1</button>
 </main>
 ```
 
@@ -187,9 +185,7 @@ export default defineTheme({
 
 ```svelte
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import doc from "./schema";
 </script>
 <article class="wins-card">
   <h1>{doc.current.title}</h1>
@@ -202,9 +198,7 @@ export default defineTheme({
 
 ```svelte
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import doc from "./schema";
 </script>
 <div class="wins-icon">{doc.current.wins}</div>
 ```

@@ -1,8 +1,6 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
+import doc from "./schema";
 import { boardView, pad } from "./model";
-const doc = useDocument(schema);
 const { cardsFor, isOverLimit, isDone, doneCount, openCount, overLimitCount } = $derived(boardView(doc.current));
 </script>
 

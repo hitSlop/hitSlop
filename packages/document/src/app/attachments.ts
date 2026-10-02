@@ -11,5 +11,4 @@ export const attachments = {
     current().attachments.import(file, reference as never),
   /** Pass the saved `mimeType` so object URLs for images and media resolve with the right type. */
   read: (id: string, options?: { type?: string }) => current().attachments.read(id, options),
-  list: () => current().attachments.list(),
 };

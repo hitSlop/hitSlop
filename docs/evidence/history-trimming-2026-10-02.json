@@ -1,0 +1,94 @@
+{
+ "measuredAt": "2026-10-02",
+ "change": "History trimming. A checkpoint may now be a Loro shallow snapshot. After the final save, a session that edited a document over 4 MiB writes one more checkpoint (Store::close_job) keeping that session's history when the result fits 4 MiB, else none. While open, a checkpoint over 16 MiB trims the same way; compaction trims to the latest version. Rollback rebuilds trimmed documents from their starting state; versions before the start are stale_base; concurrent text edits branch from a state-only export instead of fork_at; a retention floor stops a stale text base from saving updates that depend on trimmed history.",
+ "why": "document-growth-2026-10-01.json: Doodle Board filled the 32 MiB limit on day 18.87 (releaseBlocked) while its live value was 39 bytes; every checkpoint kept the full history.",
+ "storeCost": {
+  "command": "cargo run --release -p hitslop-core --features storage --example store_cost",
+  "note": "checkpointExportMS is now a maintenance checkpoint (full snapshot below 16 MiB); compactExportMS is slop compact (trim to the latest version). Baseline: rust-storage-2026-10-01.json layoutSplit.storeCost.after.",
+  "medians": {
+   "1000x12": {
+    "appendSaveMS": 4.74,
+    "checkpointBytes": 83226,
+    "checkpointExportMS": 1.9,
+    "checkpointWriteMS": 3.71,
+    "compactExportMS": 3.81,
+    "duplicateMS": 1.51,
+    "fileBytes": 139264,
+    "openWith255UpdatesMS": 11.17,
+    "themeSaveMS": 1.0
+   },
+   "20000x12": {
+    "appendSaveMS": 4.42,
+    "checkpointBytes": 1359097,
+    "checkpointExportMS": 11.99,
+    "checkpointWriteMS": 17.41,
+    "compactExportMS": 107.67,
+    "duplicateMS": 4.13,
+    "fileBytes": 1417216,
+    "openWith255UpdatesMS": 109.67,
+    "themeSaveMS": 1.99
+   },
+   "3500x1000": {
+    "appendSaveMS": 3.27,
+    "checkpointBytes": 2063791,
+    "checkpointExportMS": 11.12,
+    "checkpointWriteMS": 133.67,
+    "compactExportMS": 21.06,
+    "duplicateMS": 16.76,
+    "fileBytes": 2121728,
+    "openWith255UpdatesMS": 31.03,
+    "themeSaveMS": 2.4
+   },
+   "5000x12": {
+    "appendSaveMS": 1.91,
+    "checkpointBytes": 354611,
+    "checkpointExportMS": 3.65,
+    "checkpointWriteMS": 5.31,
+    "compactExportMS": 22.02,
+    "duplicateMS": 2.31,
+    "fileBytes": 409600,
+    "openWith255UpdatesMS": 26.92,
+    "themeSaveMS": 2.2
+   }
+  }
+ },
+ "growth": {
+  "evidence": "document-growth-2026-10-02.json",
+  "releaseBlocked": false,
+  "results": {
+   "doodle-board": {
+    "completedDays": 365,
+    "maxSavedBytes": 5329299,
+    "finalSavedBytes": 1856364,
+    "meanFlushMS": 3.53
+   },
+   "pixel-art": {
+    "completedDays": 365,
+    "maxSavedBytes": 4247198,
+    "finalSavedBytes": 1627090,
+    "meanFlushMS": 3.07
+   },
+   "morning-pages": {
+    "completedDays": 365,
+    "maxSavedBytes": 1115915,
+    "finalSavedBytes": 1114158,
+    "meanFlushMS": 2.22
+   }
+  }
+ },
+ "verification": [
+  "cargo test --locked --workspace",
+  "bun run check && bun run test",
+  "bun run build && bun run swift:test (continuousEditingStillAutosaves failed intermittently under load; it passes alone and touches no changed path)",
+  "bun run test:restored",
+  "bun run bench:growth"
+ ],
+ "loroFindings": {
+  "forkAtOnShallow": "LoroDoc::fork_at returns NotImplemented(\"fork_at on shallow docs\") in 1.16.2, which failed every concurrent text edit on a trimmed document.",
+  "unopenablePackage": "An update whose dependencies precede a shallow checkpoint's start fails to import (ImportUpdatesThatDependsOnOutdatedVersion), so such a saved update would make the package unopenable; hence the retention floor.",
+  "deletedContentAtACut": "A shallow snapshot at an earlier version keeps everything deleted before the cut in its starting state. Two sessions of 160 inserted-and-removed 32 KB rows: full history 14.5 MB; cut at the last session's start 15.8 MB (state-only export at the cut 5.3 MB with 2 live rows); cut at the latest version 639 bytes.",
+  "trimCost": "A shallow export re-encodes what it keeps instead of reusing Loro's cached snapshot, and a cut at an earlier version first rebuilds the state there: 3500x1000 maintenance trimming to the previous checkpoint took 272 ms on the edit queue against 32 ms to the latest version. Hence trimming at close, not during maintenance.",
+  "partialImport": "Loro applies the changes of a mixed blob that it can and refuses those depending on trimmed history; Document::import publishes what landed before returning stale_base.",
+  "branchCost": "text_cost branch slow path p95: state-only branch 36-41 ms, fork_at 36-39 ms on the same machine."
+ }
+}

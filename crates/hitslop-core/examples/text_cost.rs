@@ -1,5 +1,5 @@
 //! Stateless text cost at 5k rows with a mature history (about 10k operations from 20
-//! peers): the fast path (the field is still `from`) and the fork slow path (the same
+//! peers): the fast path (the field is still `from`) and the branch slow path (the same
 //! field changed concurrently). Run with `cargo run --release --example text_cost`.
 use hitslop_core::Document;
 use serde_json::{json, Value};
@@ -60,6 +60,6 @@ fn main() {
             doc.apply_batch(&request).unwrap();
             sets.push(started.elapsed().as_secs_f64() * 1e3);
         }
-        println!("{}", json!({"characters":length,"rows":5000,"peers":21,"checkpointBytes":doc.checkpoint().unwrap().len(),"p95MS":{"fast":p95(fast),"forkSlow":p95(slow),"set":p95(sets)}}));
+        println!("{}", json!({"characters":length,"rows":5000,"peers":21,"checkpointBytes":doc.checkpoint().unwrap().len(),"p95MS":{"fast":p95(fast),"branchSlow":p95(slow),"set":p95(sets)}}));
     }
 }

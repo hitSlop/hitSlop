@@ -1,8 +1,6 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
+import doc from "./schema";
 import { formatDisplayDate, pageView, TARGET } from "./model";
-const doc = useDocument(schema);
 const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
 const text = $derived(active?.text ?? "");
 </script>

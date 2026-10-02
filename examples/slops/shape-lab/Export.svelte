@@ -1,8 +1,6 @@
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
+    import doc from "./schema";
   import variant from "./variant";
-  const doc = useDocument(schema);
   let { mode }: { mode: "preview" | "export" } = $props();
 </script>
 

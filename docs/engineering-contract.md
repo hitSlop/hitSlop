@@ -55,7 +55,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   kinds are in `archive/slops`. Dedicated fixtures own platform semantics. Use plain CSS and
   `defineTheme`; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
-- Deferred: collaboration, document history undo UI, schema evolution, history pruning, synced folders,
+- Deferred: collaboration, document history undo UI, schema evolution, synced folders,
   hosted catalog/publishing, accounts and sharing.
 
 Testing policy lives in [testing](testing.md). Agent entrypoint: [AGENTS.md](../AGENTS.md).

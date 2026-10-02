@@ -1,8 +1,7 @@
 <script lang="ts">
 import { ui } from "./ui.svelte";
 
-  import { useDocument } from "@hitslop/document/svelte";
-  import { capture } from "@hitslop/document/capture";
+    import { capture } from "@hitslop/document/svelte";
   import { Button, Dialog, Progress, Tabs } from "bits-ui";
   import { onMount, tick } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
@@ -11,7 +10,7 @@ import { ui } from "./ui.svelte";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Share2 from "@lucide/svelte/icons/share-2";
   import X from "@lucide/svelte/icons/x";
-  import schema from "./schema";
+  import doc from "./schema";
   import {
     evaluateGuess,
     getDailyWord,
@@ -32,7 +31,6 @@ import { ui } from "./ui.svelte";
     ["ENTER", "Z", "X", "C", "V", "B", "N", "M", "⌫"],
   ] as const;
 
-  const doc = useDocument(schema);
   const rowReveals = Array.from({ length: ROWS }, () => new Tween(0, { duration: 0, easing: cubicOut }));
 
 
@@ -52,7 +50,7 @@ import { ui } from "./ui.svelte";
 
   const activeState = $derived(doc.current.mode === "daily" ? doc.current.daily : doc.current.practice);
   const isGameOver = $derived(activeState.status !== "playing");
-  const winPercent = $derived(doc.current.stats.played ? Math.round((doc.current.stats.won / doc.current.stats.played) * 100) : 0);
+  const winPercent = $derived(doc.current.stats.played ? Math.round(((doc.current.stats.won ?? 0) / doc.current.stats.played) * 100) : 0);
   const statusLine = $derived(
     activeState.status === "won"
       ? `Solved in ${activeState.guesses.length}/6`
@@ -72,7 +70,7 @@ import { ui } from "./ui.svelte";
       ? `Solved in ${activeState.guesses.length} of ${ROWS}.`
       : completionSession && activeState.status === "lost"
         ? `The word was ${activeState.targetWord}.`
-        : `${doc.current.stats.played} games played.`,
+        : `${doc.current.stats.played ?? 0} games played.`,
   );
 
   const keyboardLetterStates = $derived.by(() => {
@@ -231,9 +229,9 @@ import { ui } from "./ui.svelte";
       if (!won && !lost) return;
       board.status.set(won ? "won" : "lost");
       const stats = doc.current.stats;
-      tx.fields.stats.played.set(stats.played + 1);
+      tx.fields.stats.played.increment();
       if (won) {
-        tx.fields.stats.won.set(stats.won + 1);
+        tx.fields.stats.won.increment();
         const streak = stats.currentStreak + 1;
         tx.fields.stats.currentStreak.set(streak);
         if (streak > stats.maxStreak) tx.fields.stats.maxStreak.set(streak);
@@ -281,7 +279,7 @@ import { ui } from "./ui.svelte";
   }
 
   function startNewPractice(): void {
-    resetPuzzle("practice", { targetWord: getRandomWord() }).catch(() => {});
+    resetPuzzle("practice", { targetWord: getRandomWord() });
     ui.currentGuess = "";
     completionSession = false;
     revealing = false;
@@ -503,7 +501,7 @@ import { ui } from "./ui.svelte";
 
         <div class="statsGrid">
           <div class="statItem">
-            <span class="statValue">{doc.current.stats.played}</span>
+            <span class="statValue">{doc.current.stats.played ?? 0}</span>
             <span class="statLabel">Played</span>
           </div>
           <div class="statItem">

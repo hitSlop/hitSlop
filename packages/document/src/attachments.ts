@@ -8,7 +8,6 @@ export type { AttachmentInfo, AttachmentRef } from "./abi";
 interface AttachmentStore {
   put(bytes: Uint8Array): Promise<AttachmentInfo>;
   read(id: string): Promise<Uint8Array>;
-  list(): Promise<AttachmentInfo[]>;
 }
 const assertAttachmentID = (id: string) => {
   if (!new RegExp(AttachmentIdPattern).test(id)) throw new Error("Invalid attachment ID");
@@ -42,9 +41,6 @@ export class MemoryAttachments implements AttachmentStore {
     if (!bytes) throw new Error("Attachment not found");
     return bytes.slice();
   }
-  async list() {
-    return [...this.files].map(([id, bytes]) => ({ id, byteLength: bytes.length }));
-  }
 }
 export class HostAttachments implements AttachmentStore {
   async put(bytes: Uint8Array): Promise<AttachmentInfo> {
@@ -54,8 +50,5 @@ export class HostAttachments implements AttachmentStore {
   async read(id: string) {
     assertAttachmentID(id);
     return base64.decode((await hostCall({ method: "attachments.read", attachmentID: id })).bytes);
-  }
-  async list(): Promise<AttachmentInfo[]> {
-    return (await hostCall({ method: "attachments.list" })).files;
   }
 }

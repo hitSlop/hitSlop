@@ -28,6 +28,5 @@ export function ownerAttachments(doc: OwnerDocument<any>, native: boolean) {
     async read(id: string, options: { type?: string } = {}) {
       return new Blob([(await store.read(id)) as Uint8Array<ArrayBuffer>], { type: options.type ?? "" });
     },
-    list: () => store.list(),
   };
 }

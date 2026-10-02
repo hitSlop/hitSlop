@@ -171,8 +171,7 @@ const ReplyFailure = Type.Object(
 const success = { id: identity, ok: Type.Literal(true) };
 // `state` is the core's snapshot JSON (an `OwnerState`), passed through unparsed.
 export const OpenReplySchema = Type.Union([
-  Type.Object({ ...success, state: Type.String(), savedSequence: sequence,
-    saveFailure: Type.Union([Type.String(), Type.Null()]) }, { additionalProperties: false }),
+  Type.Object({ ...success, state: Type.String() }, { additionalProperties: false }),
   ReplyFailure,
 ]);
 export const ApplyReplySchema = Type.Union([
@@ -192,8 +191,6 @@ const PageReplySchema = Type.Union([OpenReplySchema, ApplyReplySchema, TextReply
 export const PagePushSchema = Type.Union([
   Type.Object({ view: identity, type: Type.Literal("publication"), publication: OwnerPublicationSchema },
     { additionalProperties: false }),
-  Type.Object({ view: identity, type: Type.Literal("saved"), sequence }, { additionalProperties: false }),
-  Type.Object({ view: identity, type: Type.Literal("failed"), error: Type.String() }, { additionalProperties: false }),
   Type.Object({ view: identity, type: Type.Literal("resync") }, { additionalProperties: false }),
 ]);
 

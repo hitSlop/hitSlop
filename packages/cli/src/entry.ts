@@ -9,12 +9,14 @@ export async function discoverEntry(source: string): Promise<{ code: string; fil
   if (await has("main.ts"))
     return { code: 'export { default } from "./main.ts";', files: ["main.ts"] };
   if (!(await has("App.svelte"))) throw new Error(`${source} needs App.svelte (or main.ts)`);
-  const files = ["App.svelte"];
+  const files = ["App.svelte", "schema.ts"];
+  // schema.ts is required: its default export becomes the live document once mounted.
   const imports = [
     'import App from "./App.svelte";',
+    'import schema from "./schema.ts";',
     'import { defineSlop } from "@hitslop/document/svelte";',
   ];
-  const options: string[] = [];
+  const options = ["schema"];
   if (await has("styles.css")) {
     files.push("styles.css");
     imports.push('import "./styles.css";');

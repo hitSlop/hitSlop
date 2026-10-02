@@ -122,14 +122,14 @@ final class StorageGate: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    let saved = Locked(0)
-    owner.onSaveStatus = { _, sequence in saved.modify { $0 = max($0, sequence) } }
+    let saved = Locked(false)
+    owner.onSaveStatus = { status in if case .saved = status { saved.modify { $0 = true } } }
     let start = ContinuousClock.now
-    while saved.value == 0, ContinuousClock.now - start < .seconds(3) {
+    while !saved.value, ContinuousClock.now - start < .seconds(3) {
       try await edit(owner)
       try await Task.sleep(for: .milliseconds(50))
     }
-    #expect(saved.value > 0)
+    #expect(saved.value)
     try await owner.close()
   }
 
@@ -196,6 +196,43 @@ final class StorageGate: @unchecked Sendable {
     #expect(try savedHits(root) == 3)
   }
 
+  // Failure: a document kept every edit it ever saw. Oracle: closing a session that
+  // edited a large document leaves its saved state smaller, holding only that session.
+  @Test func closingALargeEditedDocumentTrimsItsHistory() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    func stored() throws -> UInt64 {
+      let meta = try NativeStore.open(root: root.path, mode: .snapshot).metadata()
+      return meta.checkpointBytes + meta.updateBytes
+    }
+    var seed: UInt64 = 7
+    func noise() -> String {
+      String((0..<32 * 1024).map { _ in
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Character(UnicodeScalar(97 + UInt8((seed >> 59) % 26)))
+      })
+    }
+    var beforeClose: UInt64 = 0
+    for _ in 0..<2 {
+      let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+      for row in 0..<160 {
+        // A row inserted and removed: history the live value no longer holds.
+        let id = String(format: "%032x", row + 16)
+        let batch: [String: Any] = ["intents": [
+          ["type": "insert", "path": ["rows"], "id": id, "value": ["text": noise(), "done": false]],
+          ["type": "remove", "path": ["rows"], "id": id],
+        ]]
+        _ = try await owner.apply(batch: String(decoding: try JSONSerialization.data(withJSONObject: batch), as: UTF8.self))
+      }
+      try await owner.flush()
+      beforeClose = try stored()
+      try await owner.close()
+    }
+    let afterClose: UInt64
+    do { afterClose = try stored() } catch { Issue.record("\(error)"); return }
+    #expect(afterClose < beforeClose / 2, "\(afterClose) of \(beforeClose) bytes")
+  }
+
   // Failure: another process holding the database (a backup during Duplicate) must be a
   // definite, retryable failure, never mistaken for a lost reply or a conflict. The
   // store's own tests hold a real competing connection.
@@ -255,7 +292,7 @@ extension PersistenceSchedulingTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     let statuses = Statuses()
-    owner.onSaveStatus = { status, _ in statuses.append(status) }
+    owner.onSaveStatus = { status in statuses.append(status) }
     try await edit(owner)
     try await owner.discardPending()
     #expect(!statuses.failed)

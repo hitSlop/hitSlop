@@ -43,9 +43,9 @@ import Testing
         "candidate": "Working tree measurement; harness and concurrent changes may be uncommitted",
         "requestedDays": days, "complete": records.count == 3,
         "releaseBlocked": records.contains { $0["fullAtDay"] != nil || $0["stoppedError"] != nil },
-        "method": "Seed 120029. Synthetic heavy use; accelerated idle periods end with owner.flush, normal checkpoint thresholds unchanged. Daily close/reopen checks exact values. Bytes are measured, lifetimes beyond the run are estimates. No pruning, forced compaction or limit changes. UI/preview rendering is excluded.",
+        "method": "Seed 120029. Synthetic heavy use; accelerated idle periods end with owner.flush, normal checkpoint thresholds unchanged. Each day is one session: the daily close trims history as the app does (a document over 4 MiB keeps that session's history when it fits 4 MiB, else none), and reopen checks exact values. Day samples are taken before the close; closedBytes after it. Bytes are measured, lifetimes beyond the run are estimates. No forced compaction or limit changes. UI/preview rendering is excluded.",
         "workloads": [
-          "doodle-board": "100 strokes/day, 100 pointer samples/stroke through authored StrokeSamples and strokePath; insert dot then final geometry, flush per stroke; clear every 25, flush clear. Preview frames are not document commits.",
+          "doodle-board": "100 strokes/day, 100 pointer samples/stroke through authored StrokeSamples and strokePath; one insert of the final geometry per stroke, as the app writes at stroke end, flush per stroke; clear every 25, flush clear. The stroke in progress is local, not a document commit.",
           "pixel-art": "20 repaints/day of all 256 cells, one 256-intent drag batch and flush per repaint; rotating palette prevents no-op writes.",
           "morning-pages": "5000 ASCII characters/day in 20-character text-binding requests, revise first 1000 characters in 20-character requests; flush every 10 requests (simulated typing pause), retain entries. Deterministic prose varies by day."
         ], "results": records,
@@ -81,13 +81,12 @@ import Testing
       for day in 1...days {
         do {
           if slug == "doodle-board" {
-            let strokes = try JSONSerialization.jsonObject(with: Data(contentsOf: input.appendingPathComponent("strokes/\(day).json"))) as! [[String: String]]
+            let strokes = try JSONSerialization.jsonObject(with: Data(contentsOf: input.appendingPathComponent("strokes/\(day).json"))) as! [String]
             var ids: [String] = []
             for (index, stroke) in strokes.enumerated() {
               progress = Double(day - 1) + Double(index + 1) / 100
-              let inserted = try await apply([["type": "insert", "path": ["strokes"], "value": ["geometry": stroke["initial"]!, "color": "#222222"]]])
-              let id = inserted.ids[0]; ids.append(id)
-              _ = try await apply([["type": "set", "path": ["strokes", ["id": id], "geometry"], "value": stroke["final"]!]])
+              let inserted = try await apply([["type": "insert", "path": ["strokes"], "value": ["geometry": stroke, "color": "#222222"]]])
+              ids.append(inserted.ids[0])
               try await flush()
               if ids.count == 25 {
                 _ = try await apply(ids.map { ["type": "remove", "path": ["strokes"], "id": $0] })
@@ -133,6 +132,8 @@ import Testing
           isClosed = false
           let reopenMS = Date().timeIntervalSince(start) * 1000
           owner.attach(view: "growth")
+          let closed = try owner.storageQueue.sync { try owner.store.metadata() }
+          samples[samples.count - 1]["closedBytes"] = closed.checkpointBytes + closed.updateBytes
           #expect(try await json(frame(owner)["value"]!) == lastSavedValue)
           samples[samples.count - 1]["reopenMS"] = reopenMS
           samples[samples.count - 1]["reopenVerified"] = true
@@ -168,6 +169,10 @@ import Testing
       }
       let measuredBytes = Int64(finalMeta.checkpointBytes + finalMeta.updateBytes)
       var record: [String: Any] = ["template": slug, "completedDays": completedDays, "commits": commits, "intents": intents, "flushes": saves, "meanFlushMS": saveMS / Double(max(saves, 1)), "elapsedSeconds": Date().timeIntervalSince(started), "initialSavedBytes": initialBytes, "finalSavedBytes": measuredBytes, "netBytesPerAcceptedCommit": Double(measuredBytes - initialBytes) / Double(max(commits, 1)), "samples": samples]
+      record["maxSavedBytes"] = samples.compactMap { sample -> UInt64? in
+        guard let checkpoint = sample["checkpointBytes"] as? UInt64, let updates = sample["updateBytes"] as? UInt64 else { return nil }
+        return checkpoint + updates
+      }.max() ?? UInt64(measuredBytes)
       if let fullAt { record["fullAtDay"] = fullAt }
       else if stoppedError == nil { record["projectedDaysToLimitLinear"] = Double(Limits.storageBytes) / Double(max(measuredBytes, 1)) * Double(completedDays) }
       if let stoppedError { record["stoppedError"] = stoppedError; record["stoppedAtDay"] = progress }

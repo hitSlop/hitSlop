@@ -13,9 +13,10 @@ export async function createFixture(repository: string, source: string) {
     join(source, "main.ts"),
     `
 import App from './App.svelte';
+import schema from './schema';
 import './styles.css';
 import {defineSlop} from '@hitslop/document/svelte';
-const app = defineSlop(App);
+const app = defineSlop(App, { schema });
 export default { mount(ctx, target) {
   target.dataset.documentId = ctx.document.id;
   return app.mount(ctx, target);
@@ -27,9 +28,8 @@ export default { mount(ctx, target) {
     join(source, "Child.svelte"),
     `
 <script lang="ts">
-  import {useDocument, bindText} from '@hitslop/document/svelte';
-  import {checklist} from './schema';
-  const doc = useDocument(checklist);
+  import {bindText} from '@hitslop/document/svelte';
+  import doc from './schema';
 </script>
 <input aria-label="Document title" use:bindText={doc.fields.title} />
 <output data-title>{doc.current.title}</output>
@@ -39,12 +39,10 @@ export default { mount(ctx, target) {
     join(source, "App.svelte"),
     `
 <script lang="ts">
-  import {useDocument} from '@hitslop/document/svelte';
   import Circle from '@lucide/svelte/icons/circle';
-  import {checklist} from './schema';
+  import doc from './schema';
   import {local} from './probe.svelte';
   import Child from './Child.svelte';
-  const doc = useDocument(checklist);
   let error = $state('');
   async function add() {
     try { await doc.fields.tasks.insert({text:'Accepted row',done:false}); await doc.flush(); }

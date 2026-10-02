@@ -1,7 +1,5 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 </script>
 
 <article class="exportSheet" aria-label="Exported 16 by 16 sprite">

@@ -1,4 +1,4 @@
-import { defineTheme } from "@hitslop/document/theme";
+import { defineTheme } from "@hitslop/document";
 
 export default defineTheme({
   shell: "#8b8a86",

@@ -1,4 +1,4 @@
-import { defineTheme } from "@hitslop/document/theme";
+import { defineTheme } from "@hitslop/document";
 
 export default defineTheme({
   frame: "#ef7965", board: "#fffcf3", tray: "#f9e4cf", ink: "#382c2a",

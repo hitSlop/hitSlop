@@ -11,13 +11,20 @@ export default {
       const value = doc.current;
       output.textContent = `${value.title}: ${value.currency} ${value.ratio} ${value.memo ?? "(no memo)"}`;
     };
-    const stop = doc.subscribe(render);
-    const bindings = [ctx.bind.value(ratio, doc.fields.ratio), ctx.bind.value(currency, doc.fields.currency)];
+    // Scalar handles expose `value`: assigning shows it at once and commits once it settles.
+    const control = (element, handle, read) => {
+      const commit = () => { handle.value = read(element.value); };
+      element.addEventListener("change", commit);
+      return { sync: () => { element.value = String(handle.value); }, destroy: () => element.removeEventListener("change", commit) };
+    };
+    const controls = [control(ratio, doc.fields.ratio, Number), control(currency, doc.fields.currency, String)];
+    const stop = doc.subscribe(() => { render(); controls.forEach((c) => c.sync()); });
     render();
+    controls.forEach((c) => c.sync());
     return {
       unmount() {
         stop();
-        bindings.forEach((binding) => binding.destroy());
+        controls.forEach((c) => c.destroy());
         target.replaceChildren();
       },
     };

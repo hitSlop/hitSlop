@@ -78,10 +78,9 @@ try {
       "-e",
       `
     import {strict as assert} from "node:assert";
-    import {defineDocument, s} from "@hitslop/document";
-    import {attachments} from "@hitslop/document/attachments";
-    assert.equal(typeof attachments.import, "function");
+    import {defineDocument, defineTheme, s} from "@hitslop/document";
     assert.ok(defineDocument({title: s.text()}).descriptor);
+    assert.equal(defineTheme({accent: "#123456"}).defaults.accent, "#123456");
     assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
     assert.throws(() => Bun.resolveSync("@hitslop/document/runtime", process.cwd()));

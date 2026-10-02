@@ -13,7 +13,6 @@ const schema = defineDocument({
     title: s.text(),
     note: s.text(),
     tag: s.text(),
-    order: s.integer({ min: 0 }),
   })),
 });
 

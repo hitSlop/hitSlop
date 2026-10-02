@@ -1,9 +1,7 @@
 <script lang="ts">
   import { ui } from "./ui.svelte";
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
+    import doc from "./schema";
   import { cellKey, columnName, COLUMNS, display, evaluate, isError, ROWS, type Value } from "./formula";
-  const doc = useDocument(schema);
   const inputs = $derived(Object.fromEntries(Object.entries(doc.current.cells).map(([key, cell]) => [key, cell.input])));
   const results = $derived(evaluate(inputs));
   const widthOf = (column: number) => {

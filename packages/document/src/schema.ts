@@ -1,5 +1,11 @@
 export { OperationRejectedError } from "./errors";
+export { defineTheme } from "./theme";
+export type { Issue, Scope } from "./abi";
+export type { InsertResult } from "./handle-types";
+import type { Issue, Scope } from "./abi";
+import type { At, Handle as ModeHandle } from "./handle-types";
 import { fromDescriptor } from "./descriptor";
+import { documentFor } from "./app/context";
 /**
  * Descriptors are data. Neither the host nor the CLI evaluates authored callbacks.
  * Only kinds the Rust core, the SDK and a fixture implement are offered here; a new
@@ -116,8 +122,41 @@ export const s = {
   }),
   list: <I extends ObjectNode | Scalar>(item: I): ListNode<I> => ({ kind: "list", item }),
 };
+/** A field's write handle. Writes resolve once `current` shows them; inside `change()`
+ * the same handles collect synchronously. */
+export type Handle<N extends Node> = ModeHandle<N, "live">;
+/** What `defineDocument` returns: the descriptor, and, once the app is mounted, the live
+ * document. Components `import doc from "./schema"` and read `doc.current`. */
+export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocument<N>;
+export interface LiveDocument<N extends ObjectNode> {
+  /** Immutable snapshot. Unchanged rows keep their identity. */
+  readonly current: Value<N>;
+  /** Merged-state anomalies; stored values are preserved, never repaired. */
+  readonly issues: readonly Issue[];
+  readonly fields: Handle<N>;
+  /** The handle for an object taken from `current`: the root, a row, a nested object or
+   * a record entry. */
+  readonly at: At;
+  /** Collects synchronously; resolves after acceptance and local publication. */
+  change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
+  /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
+  flush(): Promise<void>;
+}
 export function defineDocument<P extends Record<string, Node>>(
   properties: P,
-): Definition<ObjectNode<P>> {
-  return fromDescriptor(s.object(properties)) as Definition<ObjectNode<P>>;
+): DocumentDefinition<ObjectNode<P>> {
+  type Live = LiveDocument<ObjectNode<P>>;
+  const definition = { ...fromDescriptor(s.object(properties)) };
+  // Non-enumerable, and read only once mounted: build tools see just the descriptor.
+  const live = () => documentFor(definition) as Live;
+  return Object.freeze(
+    Object.defineProperties(definition, {
+      current: { get: () => live().current },
+      issues: { get: () => live().issues },
+      fields: { get: () => live().fields },
+      at: { get: () => live().at },
+      change: { value: ((callback) => live().change(callback)) satisfies Live["change"] },
+      flush: { value: () => live().flush() },
+    }),
+  ) as DocumentDefinition<ObjectNode<P>>;
 }

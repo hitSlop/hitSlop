@@ -86,7 +86,6 @@ test("a preview on a list element stays local until set or flush", async () => {
     expect(doc.current.pixels).toEqual(["#abc", "#456"]);
     await doc.flush();
     expect(saved().pixels).toEqual(["#abc", "#456"]);
-    expect(doc.status).toBe("saved");
   } finally {
     core.free();
   }

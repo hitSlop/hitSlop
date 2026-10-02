@@ -149,12 +149,77 @@ a person and their agent edit the same live document. What's missing is the slop
   instead of "close it, then zip it".
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
-- **History scrubber.** Checkpoints keep full history, so a timeline can show the document
-  at any version. Restore applies an old version as a new edit.
-- **Household sharing.** Exchange Loro updates peer to peer, or through a relay that stores
-  opaque bytes: a family's grocery list as home-cooked software. **Contract change:**
-  collaboration is deferred, and the prerequisites in [Direction](roadmap.md#later)
-  still apply.
+- **History scrubber.** A timeline of the history a document keeps: all of it below
+  4 MiB, otherwise the last editing session at most. Restore applies an old version as a
+  new edit. A longer timeline needs a retention rule that bounds the cost of deleted
+  content, which Loro keeps in the starting state of any cut before the latest version.
+- **Household sharing.** A family's grocery list as home-cooked software, through the
+  room described next.
+
+### Realtime collaboration on Durable Objects
+
+- **What:** a shared document is a room, one Cloudflare Durable Object per share, reached
+  over a hibernating WebSocket. Each Mac keeps its own replica, writer lock and SQLite
+  file. The room keeps an update log plus a compacted snapshot, within the same caps as
+  `StorageLimits`, and relays updates between replicas. It is pinned to the document's
+  schema key and template package.
+- **Protocol:**
+  - On connect, the replica and the room exchange version vectors, and each sends what
+    the other lacks (`export(updates(vv))`). Live local updates follow.
+  - Import is idempotent. Each replica records the last version the room acknowledged
+    in its SQLite file, so a reconnect resends by diff and needs no outbox.
+  - Presence (cursors, who's here) travels as Loro `EphemeralStore` frames: timestamped,
+    last-writer-wins keys that expire. The room relays them and never stores them.
+  - Check Loro's own sync tooling before writing new framing.
+- **Placement:**
+  - The Rust core owns the sync messages and the acknowledged version (a `sync` feature).
+  - Swift owns the socket, authentication and scheduling, and carries frames as opaque
+    bytes.
+  - Remote frames enter the owner queue as `import`. The page sees them as publications,
+    exactly like a CLI edit, and text bindings already merge concurrent edits from the
+    history they saw.
+- **The room is not an authority.** It may run hitslop-core compiled to WASM to check
+  decoding, sizes and history-trimmed bytes, and to compact the log. Replicas keep
+  preserve-and-flag for merged anomalies.
+- **Containers created concurrently.** Two replicas that first create a container at the
+  same map key (a record entry, or an optional object or text that was absent) get two
+  containers, and the map shows one; the other's content is hidden. Create those children
+  with Loro's `ensure_mergeable_*`, whose identity comes from the parent and key, so
+  concurrent creations merge. Rows are list items with their own identity and are
+  unaffected.
+- **Prerequisites:**
+  - the invitee has the same template package (hosted catalog or a package hand-off);
+  - capability links until accounts exist;
+  - rate and connection limits;
+  - history retention that works with offline replicas: a replica merges only updates
+    made after the other's trimmed start, and closing trims to the last session at most.
+- **SDK additions (additive):**
+  - `presence`;
+  - origin-scoped `undo` and `redo`, which replace authored undo stacks such as Pixel
+    Art's (an authored stack would revert other people's edits);
+  - `change(fn, { message })` for attribution;
+  - base versions on index-addressed scalar-list writes, so a remote insert cannot shift
+    a `set(index)`.
+- **Per-person state.** Today, view state that should survive a reopen lives in the shared
+  document: Slide Deck's `activeSlideIndex`; volume and mute in Alien Radio, Metronome and
+  Pocket Pod; Pocket Pod's now-playing, repeat and shuffle; Pixel Art's `selectedColor`;
+  Morning Pages' `currentKey`; Wordle's `mode`. Under collaboration these would sync
+  between people. Add `s.local(node)` for top-level fields: the same handles, snapshot and
+  CLI paths, stored in a second per-replica Loro document in its own SQLite table that is
+  never synced. Marking a field local changes how it replicates, not its data, so it can
+  ship as a compatible upgrade of those templates.
+
+  | Tier | Survives reopen | Synced | Seen by export and Quick Look | For |
+  | --- | --- | --- | --- | --- |
+  | Svelte `$state` | no | no | only in-page captures | selection, hover, drags, menus, tabs |
+  | `s.local(...)` | yes | no | yes | a person's position and preferences |
+  | Field | yes | yes | yes | the document's content |
+  | Presence | no | yes | no | cursors, who's here |
+
+- **Contract change:**
+  - collaboration is deferred;
+  - Swift carrying sync frames relaxes "Loro bytes never reach Swift";
+  - `s.local` is a new descriptor kind, which lands in Rust, the SDK and a fixture together.
 
 ## What we won't take
 

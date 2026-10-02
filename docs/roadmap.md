@@ -55,9 +55,12 @@ with other replicas (it already imports and exports them), authenticate in Swift
 persist opaque updates remotely. Each replica keeps one writer and local SQLite storage.
 Frontier version tokens and stateless text edits already work across replicas: a page's
 text request names the history it saw, and the core merges it with whatever arrived
-since. History pruning will need a retention policy compatible with offline replicas.
+since. Closing trims history to the last editing session at most, so sync will need a
+retention policy compatible with offline replicas.
 Undo can use a Loro `UndoManager` scoped to local origins. Keep credentials outside
 authored code, and add a dedicated sync envelope rather than overloading `apply`.
+[Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare
+Durable Objects, the SDK additions, and per-person `s.local` state.
 
 Do not restore JSON room seeds, command/snapshot authority, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
@@ -65,8 +68,8 @@ internal import/export do not constitute a shipped collaboration product.
 
 ## Deferred
 
-Media import, account UI/Auth/App Check, undo UI, schema evolution, history pruning,
-iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
+Media import, account UI/Auth/App Check, undo UI, schema evolution, iCloud and other
+synced folders, and other native platforms. [Ideas](ideas.md) proposes
 pulling additive schema changes and origin-scoped undo forward. Historical source may be
 kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones. There is
 no migration of documents from earlier builds.

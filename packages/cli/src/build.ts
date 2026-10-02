@@ -29,9 +29,9 @@ export async function buildProjectInBun(
   if (!("skin" in manifest.presentation)) await validateWindowShape(manifest.presentation);
   const out = destination ? resolve(destination) : defaultOutput(source, manifest.slug);
   await assertReplaceable(out, source);
-  const schemaModule = await import(join(source, "schema.ts"));
-  const definition = Object.values(schemaModule).find((v: any) => v?.descriptor) as any;
-  if (!definition) throw new Error("schema.ts must export a document definition");
+  // The app imports this default export as its live document.
+  const { default: definition } = await import(join(source, "schema.ts"));
+  if (!definition?.descriptor) throw new Error("schema.ts must default-export defineDocument(...)");
   const descriptor = definition.descriptor;
   const { default: initial } = await import(join(source, "initial.ts"));
   await validateDocument(descriptor, initial);

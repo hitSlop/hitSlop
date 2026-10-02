@@ -306,7 +306,7 @@ extension OwnerClientTests {
         globalThis.observerProbe = async () => {
           ctx.document.change(tx => tx.fields.title.set('Saved despite observer failure'));
           await ctx.document.flush();
-          return ctx.document.status;
+          return true;
         };
         return {};
       } };
@@ -316,9 +316,9 @@ extension OwnerClientTests {
     let controller = try await SlopDocumentWindowController.open(packageURL: root,
       telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { continuation.yield(context) } })
     try await controller.session.waitUntilReady()
-    let status = try await controller.session.webView.callAsyncJavaScript(
+    let flushed = try await controller.session.webView.callAsyncJavaScript(
       "return await globalThis.observerProbe()", arguments: [:], in: nil, contentWorld: .page)
-    #expect(status as? String == "saved")
+    #expect(flushed as? Bool == true)
     var iterator = incidents.makeAsyncIterator()
     let incident = await iterator.next()
     #expect(incident?.classification == .authored)

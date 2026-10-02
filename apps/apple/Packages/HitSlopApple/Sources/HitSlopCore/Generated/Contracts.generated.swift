@@ -710,7 +710,6 @@ public struct SocketDiscovery: Sendable {
 public enum BridgeMethod: String, CaseIterable, Sendable {
   case `attachmentsPut` = "attachments.put"
   case `attachmentsRead` = "attachments.read"
-  case `attachmentsList` = "attachments.list"
   case `themeLoad` = "theme.load"
   case `pageRecovered` = "pageRecovered"
   case `windowResize` = "window.resize"

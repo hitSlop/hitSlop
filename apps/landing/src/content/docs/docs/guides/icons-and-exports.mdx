@@ -20,9 +20,7 @@ The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.sve
 
 ```svelte
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import doc from "./schema";
 </script>
 <article class="note-export">
   <h1>{doc.current.title}</h1>
@@ -34,9 +32,7 @@ The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.sve
 
 ```svelte
 <script lang="ts">
-  import { useDocument } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import doc from "./schema";
 </script>
 <div class="note-icon">{doc.current.tasks.length}</div>
 ```

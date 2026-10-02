@@ -12,7 +12,7 @@ import {
 } from "./presentation";
 import type { ObjectNode } from "./schema";
 import { fromDescriptor } from "./descriptor";
-import { openTheme, type ThemeController } from "./theme-runtime";
+import { openTheme } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
 import { ErrorTextLimit } from "@hitslop/schema/constants";
 
@@ -70,13 +70,12 @@ function createContext(
   doc: Document<ObjectNode>,
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
-    theme: Pick<ThemeController, "get">;
     capture: ReturnType<typeof captureController>;
     resize(size: { width: number; height: number }): Promise<void>;
     reportError(error: unknown): void;
   },
 ): SlopContext {
-  const { attachments, theme, capture } = options;
+  const { attachments, capture } = options;
   const document = Object.freeze({
     get key() {
       return doc.key;
@@ -87,12 +86,6 @@ function createContext(
     get current() {
       return doc.current;
     },
-    get status() {
-      return doc.status;
-    },
-    get error() {
-      return doc.error;
-    },
     get issues() {
       return doc.issues;
     },
@@ -101,10 +94,11 @@ function createContext(
     change: <R>(callback: (tx: any) => R) => doc.change(callback),
     flush: () => doc.flush(),
     subscribe: (listener: Parameters<typeof doc.subscribe>[0]) => doc.subscribe(listener),
+    observe: (read: () => void) => doc.observe(read),
   });
   return Object.freeze({
     document,
-    bind: Object.freeze({ text: doc.bindText.bind(doc), value: doc.bindValue.bind(doc) }),
+    bind: Object.freeze({ text: doc.bindText.bind(doc) }),
     capture: Object.freeze({
       isRenderer: () => globalThis.document?.documentElement.dataset.slopRenderer === "true",
       onPrepare: capture.onPrepare,
@@ -114,9 +108,7 @@ function createContext(
       import: ((file, reference) =>
         attachments.import(file, reference as any)) as SlopContext["attachments"]["import"],
       read: (id: string, options?: { type?: string }) => attachments.read(id, options),
-      list: () => attachments.list(),
     }),
-    theme: Object.freeze({ get: () => theme.get() }),
     window: Object.freeze({ resize: options.resize }),
     reportError: options.reportError,
   });
@@ -156,7 +148,6 @@ export async function boot() {
   };
   const ctx = createContext(doc as Document<ObjectNode>, {
     attachments,
-    theme,
     capture,
     resize: async (size) => {
       if (native) await hostCall({ method: "window.resize", ...size });

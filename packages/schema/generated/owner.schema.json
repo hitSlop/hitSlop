@@ -1191,9 +1191,7 @@
               "required": [
                 "id",
                 "ok",
-                "state",
-                "savedSequence",
-                "saveFailure"
+                "state"
               ],
               "properties": {
                 "id": {
@@ -1207,21 +1205,6 @@
                 },
                 "state": {
                   "type": "string"
-                },
-                "savedSequence": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "saveFailure": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
                 }
               },
               "additionalProperties": false
@@ -2073,54 +2056,6 @@
                 }
               },
               "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "view",
-            "type",
-            "sequence"
-          ],
-          "properties": {
-            "view": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "type": {
-              "type": "string",
-              "const": "saved"
-            },
-            "sequence": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "view",
-            "type",
-            "error"
-          ],
-          "properties": {
-            "view": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            },
-            "type": {
-              "type": "string",
-              "const": "failed"
-            },
-            "error": {
-              "type": "string"
             }
           },
           "additionalProperties": false

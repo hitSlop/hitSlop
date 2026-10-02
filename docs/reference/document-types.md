@@ -35,12 +35,12 @@ export default defineDocument({
 | Kind | Snapshot value | Merge | Main writes |
 |---|---|---|---|
 | [`s.text()`](#text) | `string` | character edits merge | `set(value)`, `bindText` |
-| [`s.boolean()`](#scalars) | `boolean` | last writer wins | `set`, `preview`, `bindValue` |
-| [`s.string({maxLength?})`](#scalars) | `string` | last writer wins | `set`, `preview`, `bindValue` |
-| [`s.number({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `bindValue` |
-| [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `bindValue` |
-| [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `bindValue` |
-| [`s.counter()`](#counter) | `number \| null` | increments add up | `increment`, `decrement` |
+| [`s.boolean()`](#scalars) | `boolean` | last writer wins | `set`, `preview`, `value` |
+| [`s.string({maxLength?})`](#scalars) | `string` | last writer wins | `set`, `preview`, `value` |
+| [`s.number({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
+| [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
+| [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `value` |
+| [`s.counter()`](#counter) | `number \| null` | increments add up | `increment` |
 | [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` |
 | [`s.object({...})`](#object) | object | per field | its fields' handles |
 | [`s.list(s.object({...}))`](#rows) | array of rows with `$id` | inserts, removes and moves keep identity | `insert`, `remove`, `move`, `item` |
@@ -159,17 +159,13 @@ resolve to one of them (last writer wins).
 | `s.integer({ min, max })` | a safe integer (±2⁵³−1) within inclusive bounds |
 | `s.enum(["a", "b"])` | one of the listed strings; TypeScript narrows to their literal types |
 
-- **Handle:** `set(value)` and `preview(value)`.
-- **`bindValue(control, handle)`:**
-  - checkbox → boolean;
-  - `<select>` → enum or string;
-  - range and number inputs → number or integer;
-  - text, date and time inputs → string.
-  - Behavior:
-    - ranges preview while dragging and save on release;
-    - number inputs save on `change`, text inputs on `input`;
-    - an empty control clears an optional field;
-    - an invalid entry shows the saved value again.
+- **Handle:** `set(value)`, `preview(value)` and `value`.
+  - `set` shows the value at once and resolves when accepted; a refused value reverts.
+  - `value` is for Svelte `bind:` (`bind:checked`, `bind:value`, `bind:group`) on native
+    inputs and component libraries. Assigning previews the value and commits it once
+    assignments pause for 150 ms, or at the next flush, close or export.
+  - Assigning `null` or `undefined` clears an optional field and is ignored otherwise; a
+    refused value reverts and is reported.
 - **CLI:** `{"type":"set","path":["mood"],"value":4}`.
 
 Store amounts in minor units with `s.integer` when exactness matters (cents), and use
@@ -180,7 +176,7 @@ Store amounts in minor units with `s.integer` when exactness matters (cents), an
 `s.counter()` holds a tally. Each writer's increments are kept separately and summed,
 so concurrent increments all count.
 
-- **Handle:** `increment(by = 1)` and `decrement(by = 1)`. There is no concurrent reset.
+- **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no concurrent reset.
 - **Snapshot:** a safe integer, or `null` if the stored contributions are invalid (show
   it as unavailable).
 - **CLI:** `{"type":"increment","path":["visits"],"by":1}`.

@@ -91,6 +91,7 @@ extension SlopDocumentWindowController {
     super.showWindow(nil)
     window?.deminiaturize(nil)
     window?.makeKeyAndOrderFront(nil)
+    refreshIssueBadge()
     if isContentReady {
       window?.makeFirstResponder(session.webView)
       recordStartup("content-visible")

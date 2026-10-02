@@ -1,15 +1,13 @@
 <script lang="ts">
 import { ui, fallbackChannels, type Channel, type Playlist } from "./ui.svelte";
 
-  import { useDocument } from "@hitslop/document/svelte";
-  import { onMount } from "svelte";
+    import { onMount } from "svelte";
   import { Button, Popover, Slider, Toggle } from "bits-ui";
-  import schema from "./schema";
+  import doc from "./schema";
 
   const chromeUrl = "/assets/alien-radio-chrome.png";
 
 
-  const doc = useDocument(schema);
 
   let browserOpen = $state(false);
   let query = $state("");

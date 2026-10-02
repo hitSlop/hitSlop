@@ -15,7 +15,7 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
     expect(js).not.toContain("/__shell__/");
     expect(js).not.toContain("loro_wasm_bg");
     expect(await readdir(output)).not.toContain("app.html");
-    const entry = 'import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);\n';
+    const entry = 'import App from "./App.svelte"; import schema from "./schema.ts"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App, { schema });\n';
     for (const [code, error] of [
       // Apps never embed a document engine; the host's core owns the document.
       ['import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());', "cannot import loro-crdt"],
@@ -97,7 +97,7 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
     );
     await writeFile(
       join(source, "main.ts"),
-      `import "./styles.css"; import App from "./App.svelte"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App);` +
+      `import "./styles.css"; import App from "./App.svelte"; import schema from "./schema.ts"; import { defineSlop } from "@hitslop/document/svelte"; export default defineSlop(App, { schema });` +
         `
       import './font-test.css';
       import fontURL from './assets/fonts/My Font.ttf';

@@ -3,15 +3,13 @@ import { ui } from "./ui.svelte";
 
   import { onMount, tick } from "svelte";
   import { AlertDialog, Checkbox, Dialog, RadioGroup, Tabs } from "bits-ui";
-  import { useDocument } from "@hitslop/document/svelte";
-  import Check from "@lucide/svelte/icons/check";
+    import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import Pencil from "@lucide/svelte/icons/pencil";
   import X from "@lucide/svelte/icons/x";
-  import schema, { colors, type Habit, type HabitColor } from "./schema";
+  import doc, { colors, type Habit, type HabitColor } from "./schema";
   import { calendarWeeks, completedDays, dayKey, labelDay, shortDay, streak, weekdays } from "./calendar";
 
-  const doc = useDocument(schema);
   let selectedID = $state<string | null>(null);
 
   const { days, labels } = $derived(calendarWeeks(ui.today));

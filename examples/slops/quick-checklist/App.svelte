@@ -3,7 +3,7 @@ import Brand from "./Brand.svelte";
 import { checklistView } from "./model";
 import { ui } from "./ui.svelte";
 
-  import { useDocument, bindText } from "@hitslop/document/svelte";
+  import { bindText } from "@hitslop/document/svelte";
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
@@ -13,9 +13,8 @@ import { ui } from "./ui.svelte";
   import Archive from "@lucide/svelte/icons/archive";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
-  import schema from "./schema";
+  import doc from "./schema";
 
-  const doc = useDocument(schema);
 const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, ui.activeView));
 
   let draft = $state("");
@@ -47,38 +46,31 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, 
     const submitted = draft;
     const text = submitted.trim(); if (!text || adding) return;
     adding = true;
+    // A refused insert is reported by the runtime and leaves the draft for retry.
     try {
       await doc.fields.tasks.insert({text, done:false, archived:false});
       if (draft === submitted) draft = "";
       composer?.focus();
-    } catch { /* The runtime reports failures; keep the composer for retry. */ }
-    finally { adding = false; }
+    } finally { adding = false; }
   }
   async function move(id: string, direction: -1 | 1) {
     const index = visible.findIndex(task => task.$id === id);
     const neighbor = visible[index + direction]; if (!neighbor) return;
-    try { await doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id}); } catch {}
+    await doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id});
   }
   async function remove(id: string) {
-    try { await doc.fields.tasks.remove(id); notice = "Task removed."; composer?.focus(); } catch {}
+    await doc.fields.tasks.remove(id);
+    notice = "Task removed.";
+    composer?.focus();
   }
   async function fileFinished() {
     const done = visible.filter(task => task.done);
-    try {
-      await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); });
-      notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
-    } catch {}
+    await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); });
+    notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
   }
   async function restore(task: (typeof filed)[number]) {
-    try {
-      await doc.change(tx => { const row = tx.at(task); row.archived.set(false); row.done.set(false); });
-      notice = "Task moved back to your list.";
-    } catch {}
-  }
-  async function toggle(id: string, input: HTMLInputElement) {
-    const checked = input.checked;
-    try { await doc.fields.tasks.item(id).done.set(checked); }
-    catch { input.checked = !checked; }
+    await doc.change(tx => { const row = tx.at(task); row.archived.set(false); row.done.set(false); });
+    notice = "Task moved back to your list.";
   }
   function openActions(id: string, button: HTMLElement) {
     if (openMenu === id) { openMenu = null; return; }
@@ -181,12 +173,12 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, 
       {#if ui.activeView === "tasks"}
         <ol class="checklist-list">
           {#each visible as task, index (task.$id)}
+            {@const row = doc.at(task)}
             <li class="checklist-row" data-done={task.done}>
               <label class="checklist-box">
                 <input
                   type="checkbox"
-                  checked={task.done}
-                  onchange={(event) => toggle(task.$id, event.currentTarget)}
+                  bind:checked={row.done.value}
                   aria-label={`Mark ${task.text || "untitled task"} ${task.done ? "incomplete" : "complete"}`}
                 />
                 {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
@@ -198,7 +190,7 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, 
                     aria-label={`Task ${index + 1}`}
                     rows="1"
                     oninput={mirror}
-                    use:bindText={doc.at(task).text}
+                    use:bindText={row.text}
                     use:focusEditor={editing.caret}
                     onblur={() => { if (editing?.id === task.$id) editing = null; }}
                     placeholder="Untitled task"

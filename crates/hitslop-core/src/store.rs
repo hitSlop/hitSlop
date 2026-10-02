@@ -3,11 +3,16 @@
 //! document's identity and theme overrides; the writer lock beside it names the one
 //! process that may write. SQLite never sees anything but opaque Loro bytes.
 //!
+//! History is trimmed when nothing is editing: as a session closes, a document larger
+//! than `TRIM_BYTES` keeps only the history since that session opened, or none when even
+//! that is larger. While open, a checkpoint trims only past `SESSION_BYTES`. Compaction
+//! keeps no history.
+//!
 //! A host keeps two serial queues: edits and `Store::job` on one, every other `Store`
 //! call on the other, so a slow write never blocks edits.
 
 use crate::{theme, Document};
-use loro::{ExportMode, VersionVector};
+use loro::{ExportMode, Frontiers, VersionVector};
 use rusqlite::{ffi::ErrorCode, params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
 use std::fs;
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -22,6 +27,11 @@ const MAX_ROWS: i64 = crate::STORAGE_ROWS as i64;
 /// A save checkpoints instead of appending once the log reaches either.
 const CHECKPOINT_ROWS: i64 = 256;
 const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
+/// A closing session that edited a document larger than this trims its history. Trimming
+/// is not free: Loro re-encodes what it keeps instead of reusing its cached snapshot.
+const TRIM_BYTES: i64 = 4 * 1024 * 1024;
+/// A checkpoint larger than this trims history while the session is still open.
+const SESSION_BYTES: usize = 16 * 1024 * 1024;
 const MAX_KEY_BYTES: i64 = 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
 const STORAGE_VERSION: i64 = 3;
@@ -223,6 +233,8 @@ struct Account {
     meta: Metadata,
     /// The version the durable state covers.
     saved: VersionVector,
+    /// The version this session opened at: where a closing checkpoint's history starts.
+    opened: Frontiers,
     schema_key: String,
 }
 
@@ -257,6 +269,17 @@ impl SaveJob {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// A checkpoint keeping only the history since `start`, when `accept` takes its bytes.
+/// The document's edits may no longer branch from before `start`.
+fn trimmed(doc: &mut Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool) -> Result<Option<Vec<u8>>> {
+    let bytes = doc.doc.export(ExportMode::shallow_snapshot(start)).map_err(failed)?;
+    if !accept(&bytes) {
+        return Ok(None);
+    }
+    doc.retain_from(start);
+    Ok(Some(bytes))
 }
 
 /// Opens the saved document, or none before the first save. The checkpoint and every
@@ -331,7 +354,12 @@ impl Store {
             inode,
             doc_id,
             backing: Mutex::new(backing),
-            account: Mutex::new(Account { meta: Metadata::default(), saved: VersionVector::default(), schema_key: String::new() }),
+            account: Mutex::new(Account {
+                meta: Metadata::default(),
+                saved: VersionVector::default(),
+                opened: Frontiers::default(),
+                schema_key: String::new(),
+            }),
             phases: Mutex::new(None),
         })
     }
@@ -430,54 +458,96 @@ impl Store {
                     drop(backing);
                     let doc = Document::create(schema_key, initial).map_err(core)?;
                     let job = SaveJob { checkpoint: true, bytes: doc.checkpoint().map_err(core)?, version: doc.doc.oplog_vv() };
-                    lock(&self.account).schema_key = schema_key.into();
+                    let mut account = lock(&self.account);
+                    account.schema_key = schema_key.into();
+                    account.opened = doc.doc.oplog_frontiers();
+                    drop(account);
                     self.write(&job)?;
                     return Ok(doc);
                 }
             },
         };
-        *lock(&self.account) = Account { meta, saved: doc.doc.oplog_vv(), schema_key: schema_key.into() };
+        *lock(&self.account) =
+            Account { meta, saved: doc.doc.oplog_vv(), opened: doc.doc.oplog_frontiers(), schema_key: schema_key.into() };
         Ok(doc)
     }
 
     /// The next write for `doc`, or none when the durable state already covers it and no
     /// checkpoint is requested. Exports only what it writes: the updates since the last
     /// save, or a checkpoint once the log is long, full or a checkpoint is requested.
-    pub fn job(&self, doc: &Document, force_checkpoint: bool) -> Result<Option<SaveJob>> {
-        let (meta, key, saved) = {
+    pub fn job(&self, doc: &mut Document, force_checkpoint: bool) -> Result<Option<SaveJob>> {
+        let (meta, key, saved, opened) = {
             let account = lock(&self.account);
-            (account.meta, account.schema_key.len() as i64, account.saved.clone())
+            (account.meta, account.schema_key.len() as i64, account.saved.clone(), account.opened.clone())
         };
         let version = doc.doc.oplog_vv();
         if version == saved && !force_checkpoint {
             return Ok(None);
         }
-        let snapshot = || -> Result<Option<Vec<u8>>> {
+        let job = |checkpoint, bytes| SaveJob { checkpoint, bytes, version: version.clone() };
+        // SQLite also bounds the complete row, including its schema key.
+        let fits = |bytes: &[u8]| bytes.len() as i64 + key + 512 <= MAX_BYTES;
+        let snapshot = |doc: &mut Document| -> Result<Option<SaveJob>> {
+            let latest = doc.doc.oplog_frontiers();
+            if force_checkpoint {
+                return Ok(trimmed(doc, &latest, fits)?.map(|bytes| job(true, bytes)));
+            }
             let bytes = doc.doc.export(ExportMode::Snapshot).map_err(failed)?;
-            // SQLite also bounds the complete row, including its schema key.
-            Ok((bytes.len() as i64 + key + 512 <= MAX_BYTES).then_some(bytes))
+            if bytes.len() <= SESSION_BYTES && fits(&bytes) {
+                return Ok(Some(job(true, bytes)));
+            }
+            // A session too large to keep everything keeps its own history, else none.
+            let bytes = match trimmed(doc, &opened, |b| b.len() <= SESSION_BYTES && fits(b))? {
+                Some(bytes) => Some(bytes),
+                None => trimmed(doc, &latest, fits)?,
+            };
+            Ok(bytes.map(|bytes| job(true, bytes)))
         };
-        let updates = || -> Result<Option<Vec<u8>>> {
+        let updates = |doc: &Document| -> Result<Option<SaveJob>> {
             let bytes = doc.doc.export(ExportMode::updates(&saved)).map_err(failed)?;
             Ok((meta.rows < MAX_ROWS && meta.checkpoint_bytes + meta.update_bytes + bytes.len() as i64 <= MAX_BYTES)
-                .then_some(bytes))
+                .then(|| job(false, bytes)))
         };
-        let make = |checkpoint, bytes| Ok(Some(SaveJob { checkpoint, bytes, version: version.clone() }));
         let maintenance = meta.rows >= CHECKPOINT_ROWS || meta.update_bytes >= CHECKPOINT_BYTES;
         if force_checkpoint || maintenance {
-            if let Some(bytes) = snapshot()? {
-                return make(true, bytes);
+            if let Some(job) = snapshot(doc)? {
+                return Ok(Some(job));
             }
             if force_checkpoint {
                 return Err(Error::Full);
             }
             // Optional maintenance must not prevent an update that still fits the log.
-            return updates()?.map_or(Err(Error::Full), |bytes| make(false, bytes));
+            return updates(doc)?.map_or(Err(Error::Full), |job| Ok(Some(job)));
         }
-        if let Some(bytes) = updates()? {
-            return make(false, bytes);
+        if let Some(job) = updates(doc)? {
+            return Ok(Some(job));
         }
-        snapshot()?.map_or(Err(Error::Full), |bytes| make(true, bytes))
+        snapshot(doc)?.map_or(Err(Error::Full), |job| Ok(Some(job)))
+    }
+
+    /// The checkpoint to write as the owner closes, after its last save. A session that
+    /// edited a document larger than `TRIM_BYTES` leaves only its own history behind, so a
+    /// later session can still read what this one changed, when that fits `TRIM_BYTES`;
+    /// otherwise no history. A cut before the latest version keeps, in its starting
+    /// state, everything deleted before it (Loro 1.16.2), so only a cut at the latest
+    /// version reclaims a document that deletes a lot. None when nothing would shrink.
+    pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
+        let (meta, key, opened) = {
+            let account = lock(&self.account);
+            (account.meta, account.schema_key.len() as i64, account.opened.clone())
+        };
+        let stored = meta.checkpoint_bytes + meta.update_bytes;
+        let latest = doc.doc.oplog_frontiers();
+        if latest == opened || stored <= TRIM_BYTES {
+            return Ok(None);
+        }
+        let smaller = |bytes: &[u8]| (bytes.len() as i64) < stored && bytes.len() as i64 + key + 512 <= MAX_BYTES;
+        let version = doc.doc.oplog_vv();
+        let bytes = match trimmed(doc, &opened, |b| b.len() as i64 <= TRIM_BYTES && smaller(b))? {
+            Some(bytes) => Some(bytes),
+            None => trimmed(doc, &latest, smaller)?,
+        };
+        Ok(bytes.map(|bytes| SaveJob { checkpoint: true, bytes, version }))
     }
 
     /// Writes a job in one transaction. An error may follow the commit, so the durable

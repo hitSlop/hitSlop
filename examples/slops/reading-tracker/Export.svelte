@@ -1,10 +1,8 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
 import BookOpen from "@lucide/svelte/icons/book-open";
 import Star from "@lucide/svelte/icons/star";
-import schema from "./schema";
+import doc from "./schema";
 const STARS = [1, 2, 3, 4, 5] as const;
-const doc = useDocument(schema);
 const totalBooks = $derived(doc.current.books.length);
 const readBooks = $derived(doc.current.books.filter((book) => book.status === "Read").length);
 </script>

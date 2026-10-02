@@ -1,10 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { Checkbox } from "bits-ui";
-  import { useDocument, bindText } from "@hitslop/document/svelte";
-  import { checklist } from "./schema";
+  import { bindText } from "@hitslop/document/svelte";
+  import doc from "./schema";
 
-  const doc = useDocument(checklist);
   const { title, tasks } = doc.fields;
   const taskInputs = new Map<string, HTMLInputElement>();
   function taskInput(node: HTMLInputElement, id: string) {
@@ -18,13 +17,13 @@
     if (!newTask.trim() || adding) return;
     const submitted = newTask;
     adding = true;
+    // hitSlop reports a refused write; the typed task stays for another try.
     try {
       const { id } = await tasks.insert({ text: submitted.trim(), done: false });
       if (newTask === submitted) newTask = "";
       await tick();
       taskInputs.get(id)?.focus();
-    } catch { /* The runtime reports the rejection; keep input for retry. */ }
-    finally { adding = false; }
+    } finally { adding = false; }
   }
 </script>
 
@@ -35,16 +34,16 @@
   {#if !doc.current.tasks.length}<p class="slop-summary">A little breathing room. Add your first task below.</p>{/if}
   <ul class="slop-list">
     {#each doc.current.tasks as task, index (task.$id)}
+      {@const row = doc.at(task)}
       <li class="slop-row" data-task-id={task.$id}>
-        <Checkbox.Root class="slop-check" aria-label={`Complete ${task.text}`} checked={task.done}
-          onCheckedChange={(value) => doc.at(task).done.set(value).catch(() => {})}>
+        <Checkbox.Root class="slop-check" aria-label={`Complete ${task.text}`} bind:checked={row.done.value}>
           {#if task.done}<span aria-hidden="true">✓</span>{/if}
         </Checkbox.Root>
-        <input class="slop-text" data-done={task.done} aria-label="Task text" use:bindText={doc.at(task).text} use:taskInput={task.$id} />
+        <input class="slop-text" data-done={task.done} aria-label="Task text" use:bindText={row.text} use:taskInput={task.$id} />
         <div class="slop-actions" data-slop-export="hide">
-          <button class="slop-small" aria-label="Move task up" disabled={index === 0} onclick={() => tasks.move(task.$id, { before: doc.current.tasks[index - 1]!.$id }).catch(() => {})}>↑</button>
-          <button class="slop-small" aria-label="Move task down" disabled={index === doc.current.tasks.length - 1} onclick={() => tasks.move(task.$id, { after: doc.current.tasks[index + 1]!.$id }).catch(() => {})}>↓</button>
-          <button class="slop-small" aria-label="Delete task" onclick={() => tasks.remove(task.$id).catch(() => {})}>×</button>
+          <button class="slop-small" aria-label="Move task up" disabled={index === 0} onclick={() => tasks.move(task.$id, { before: doc.current.tasks[index - 1]!.$id })}>↑</button>
+          <button class="slop-small" aria-label="Move task down" disabled={index === doc.current.tasks.length - 1} onclick={() => tasks.move(task.$id, { after: doc.current.tasks[index + 1]!.$id })}>↓</button>
+          <button class="slop-small" aria-label="Delete task" onclick={() => tasks.remove(task.$id)}>×</button>
         </div>
       </li>
     {/each}

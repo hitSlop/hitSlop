@@ -1,7 +1,5 @@
 <script lang="ts">
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 const totalBooks = $derived(doc.current.books.length);
 const readBooks = $derived(doc.current.books.filter((book) => book.status === "Read").length);
 </script>

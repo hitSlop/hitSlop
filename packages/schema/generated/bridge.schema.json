@@ -46,19 +46,6 @@
       "properties": {
         "method": {
           "type": "string",
-          "const": "attachments.list"
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "method"
-      ],
-      "properties": {
-        "method": {
-          "type": "string",
           "const": "theme.load"
         }
       },

@@ -59,7 +59,7 @@ const checks: Record<string, (page: Page) => Promise<void>> = {
     await page.mouse.down();
     for (let i = 1; i <= 12; i++) await page.mouse.move(box.x + box.width * (0.3 + i * 0.02), box.y + box.height * 0.4 + i * 3);
     await page.mouse.up();
-    // The stroke is inserted, previewed while drawing, then committed with its final path.
+    // Drawn locally, the stroke is written once, with its final path, when the gesture ends.
     await page.waitForFunction(
       (n) => document.querySelectorAll("svg.doodle-canvas path[data-stroke]").length > n,
       before,

@@ -14,7 +14,7 @@ appropriate. Use native nesting for related states and descendants.
 ```
 
 Keep public defaults in `theme.ts` using `defineTheme` from
-`@hitslop/document/theme`. The builder writes defaults to `assets/theme.json`;
+`@hitslop/document`. The builder writes defaults to `assets/theme.json`;
 the runtime applies defaults and document overrides before mounting the app.
 Compiled app styling lives in `assets/app.css`. Owners use `slop theme get/set/reset`;
 the host saves overrides in the document's database. Never edit these built

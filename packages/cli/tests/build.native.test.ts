@@ -15,7 +15,7 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
     await cp("packages/cli/templates/checklist", source, { recursive: true });
     await writeFile(
       join(source, "theme.ts"),
-      'import {defineTheme} from "@hitslop/document/theme"; export default defineTheme({accent: "#123456"});',
+      'import {defineTheme} from "@hitslop/document"; export default defineTheme({accent: "#123456"});',
     );
     await writeFile(
       join(source, "main.ts"),
@@ -70,9 +70,7 @@ test("discovered capture components share the document and receive preview/expor
       join(source, "Child.svelte"),
       `
       <script lang="ts">
-        import {useDocument} from "@hitslop/document/svelte";
-        import schema from "./schema";
-        const doc = useDocument(schema);
+        import doc from "./schema";
         if (doc.fields !== (globalThis as any).appFields) throw new Error("Child received another document");
       </script>
       <h1>{doc.current.title}</h1>
@@ -82,10 +80,9 @@ test("discovered capture components share the document and receive preview/expor
       join(source, "App.svelte"),
       `
       <script lang="ts">
-        import {useDocument} from "@hitslop/document/svelte";
         import Child from "./Child.svelte";
-        import schema from "./schema";
-        (globalThis as any).appFields = useDocument(schema).fields;
+        import doc from "./schema";
+        (globalThis as any).appFields = doc.fields;
       </script>
       <Child />
     `,
@@ -158,11 +155,9 @@ test("native template assets are complete before replacing a registered master",
       join(badSource, "App.svelte"),
       `
       <script lang="ts">
-        import {useDocument} from "@hitslop/document/svelte";
-        import schema from "./schema";
-        const document=useDocument(schema);
+        import doc from "./schema";
       </script>
-      <h1>{document.current.title}</h1>
+      <h1>{doc.current.title}</h1>
     `,
     );
     await writeFile(join(badSource, "Icon.svelte"), '<script>function broken(){throw new Error("Authored icon failed");}</script><span>{broken()}</span>');

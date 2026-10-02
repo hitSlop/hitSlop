@@ -101,10 +101,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var failedOverlay: NSHostingView<FailureOverlay>?
   var presentedPageError: String?
   var documentAttention: NSPanel?
-  var attentionIsSaveFailure = false
   var attentionMessage: String?
   var attentionFailure: SaveFailure?
   var guestIssue: SlopPageIssue?
+  /// The red dot shown while `guestIssue` is set.
+  var issueBadge: NSPanel?
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
   var isLoading = false
@@ -365,6 +366,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public func windowDidResize(_ notification: Notification) {
     if toolbar?.isVisible == true { showToolbar() }
+    refreshIssueBadge()
   }
   public func windowWillMiniaturize(_ notification: Notification) {
     hideToolbar()
@@ -375,6 +377,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     stopLoading()
     documentAttention?.close()
     documentAttention = nil
+    guestIssue = nil
+    refreshIssueBadge()
     hideToolbar()
     toolbar?.close()
     toolbar = nil

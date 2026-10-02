@@ -1,6 +1,6 @@
 //! Storage costs on a real file, with fsync: opening a saved document with a full update
-//! log, appended saves, checkpoint saves (each compacting a full log; export and write
-//! timed separately), theme saves and duplication. Run with
+//! log, appended saves, maintenance checkpoints and compactions (each replacing a full
+//! log; export and write timed separately), theme saves and duplication. Run with
 //! `cargo run --release -p hitslop-core --features storage --example store_cost`.
 use hitslop_core::store::{self, Mode, Store};
 use hitslop_core::{theme::Change, Document};
@@ -15,12 +15,15 @@ fn summary(mut v: Vec<f64>) -> Value {
 fn ms(started: Instant) -> f64 {
     started.elapsed().as_secs_f64() * 1e3
 }
-/// Fills the update log with 255 single-edit saves, returning each save's time.
-fn fill_log(store: &Store, doc: &mut Document, rows: usize, round: usize) -> Vec<f64> {
-    (0..255)
+fn edit(doc: &mut Document, rows: usize, round: usize, i: usize) {
+    let id = format!("r{}", (i * 7 + round) % rows);
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":id},"text"],"value":format!("Edit {round}.{i}")}]}).to_string()).unwrap();
+}
+/// Fills the update log with `count` single-edit saves, returning each save's time.
+fn fill_log(store: &Store, doc: &mut Document, rows: usize, round: usize, count: usize) -> Vec<f64> {
+    (0..count)
         .map(|i| {
-            let id = format!("r{}", (i * 7 + round) % rows);
-            doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":id},"text"],"value":format!("Edit {round}.{i}")}]}).to_string()).unwrap();
+            edit(doc, rows, round, i);
             let started = Instant::now();
             let job = store.job(doc, false).unwrap().unwrap();
             assert!(!job.is_checkpoint());
@@ -28,6 +31,18 @@ fn fill_log(store: &Store, doc: &mut Document, rows: usize, round: usize) -> Vec
             ms(started)
         })
         .collect()
+}
+/// Saves one more edit as a checkpoint, maintenance or compaction, returning the export
+/// and write times.
+fn checkpoint(store: &Store, doc: &mut Document, rows: usize, round: usize, compact: bool) -> (f64, f64) {
+    edit(doc, rows, round, 999);
+    let started = Instant::now();
+    let job = store.job(doc, compact).unwrap().unwrap();
+    assert!(job.is_checkpoint());
+    let export = ms(started);
+    let started = Instant::now();
+    store.write(&job).unwrap();
+    (export, ms(started))
 }
 
 fn main() {
@@ -54,7 +69,7 @@ fn main() {
         let key = hitslop_core::validate(&schema, &initial).unwrap();
         let store = Store::open(&root, Mode::Document).unwrap();
         let mut doc = store.document(&key, &initial).unwrap();
-        let appends = fill_log(&store, &mut doc, rows, 0);
+        let appends = fill_log(&store, &mut doc, rows, 0, 255);
         store.close().unwrap();
         let opens: Vec<f64> = (0..5)
             .map(|_| {
@@ -68,21 +83,20 @@ fn main() {
             .collect();
         let store = Store::open(&root, Mode::Document).unwrap();
         let mut doc = store.document(&key, &initial).unwrap();
-        let (mut exports, mut writes) = (vec![], vec![]);
+        // Every sample replaces a full log, as a real checkpoint does; the first uses the
+        // log saved before reopening.
+        let (mut exports, mut writes, mut compactions) = (vec![], vec![], vec![]);
         for round in 1..=5 {
-            // Every sample compacts a full log, as a real checkpoint does; the first
-            // uses the log saved before reopening.
-            if round > 1 {
-                fill_log(&store, &mut doc, rows, round);
-            }
-            let started = Instant::now();
-            let job = store.job(&doc, true).unwrap().unwrap();
-            exports.push(ms(started));
-            let started = Instant::now();
-            store.write(&job).unwrap();
-            writes.push(ms(started));
+            fill_log(&store, &mut doc, rows, round, if round > 1 { 256 } else { 1 });
+            let (export, write) = checkpoint(&store, &mut doc, rows, round, false);
+            exports.push(export);
+            writes.push(write);
         }
-        fill_log(&store, &mut doc, rows, 6);
+        for round in 6..=10 {
+            fill_log(&store, &mut doc, rows, round, 255);
+            compactions.push(checkpoint(&store, &mut doc, rows, round, true).0);
+        }
+        fill_log(&store, &mut doc, rows, 11, 255);
         let themes: Vec<f64> = (0..7)
             .map(|i| {
                 let values = format!(r##"{{"accent":"#{i:06}"}}"##);
@@ -108,6 +122,7 @@ fn main() {
             "openWith255UpdatesMS": summary(opens),
             "checkpointExportMS": summary(exports),
             "checkpointWriteMS": summary(writes),
+            "compactExportMS": summary(compactions),
             "themeSaveMS": summary(themes),
             "duplicateMS": summary(duplicates),
             "checkpointBytes": meta.checkpoint_bytes,

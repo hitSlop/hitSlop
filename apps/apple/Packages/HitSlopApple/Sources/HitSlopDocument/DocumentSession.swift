@@ -136,13 +136,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           arguments: ["overrides": overrides], in: nil, contentWorld: .page)
       }
     }
-    owner.onSaveStatus = { [weak self] status, savedSequence in
-      if case .failed(let failure) = status {
-        let error = String(decoding: (try? JSONSerialization.data(withJSONObject: failure.localizedDescription, options: .fragmentsAllowed)) ?? Data(#""Save failed""#.utf8), as: UTF8.self)
-        self?.push(#"{"type":"failed","error":"# + error + "}")
-      } else {
-        self?.push(#"{"type":"saved","sequence":\#(savedSequence)}"#)
-      }
+    owner.onSaveStatus = { [weak self] status in
       DispatchQueue.main.async {
         guard let self else { return }
         self.delegate?.pageSession(self, saveStatus: status)
@@ -259,11 +253,18 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
             if (document.documentElement) hideControls();
             else document.addEventListener('DOMContentLoaded', hideControls, {once: true});
           })();
+          // An unhandled document error (a refused write) is an operation issue, not an
+          // authored failure. WebKit's `stack` lists only frames, so the message leads.
           for (const type of ['error','unhandledrejection']) addEventListener(type,e=> {
             const source = e.target?.src;
             const shellResource = typeof source === 'string' && source.startsWith('slop://app/__shell__/');
-            const error = String(shellResource ? 'Could not load page shell resource: ' + source : e.error?.stack ?? e.reason?.stack ?? e.error?.message ?? e.reason ?? e.message).slice(0,\(Limits.errorText));
-            webkit.messageHandlers.hitslop.postMessage(shellResource ? {method:'failed',error} : {method:'pageError',kind:'application',error}).catch(()=>{});
+            const reason = type === 'error' ? e.error : e.reason;
+            const operation = reason?.[Symbol.for('\(Limits.operationErrorBrand)')] === true;
+            const head = reason instanceof Error ? reason.name + ': ' + reason.message : String(reason ?? e.message);
+            const stack = reason instanceof Error && reason.stack ? reason.stack : '';
+            const detail = stack.startsWith(head) ? stack : stack ? head + '\\n' + stack : head;
+            const error = (shellResource ? 'Could not load page shell resource: ' + source : detail).slice(0,\(Limits.errorText));
+            webkit.messageHandlers.hitslop.postMessage(shellResource ? {method:'failed',error} : {method:'pageError',kind:operation ? 'operation' : 'application',error}).catch(()=>{});
           }, true);
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     if renderTargetsEnabled { markRenderTarget(configuration) }
@@ -360,7 +361,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         replyHandler(nil, "Document page is not opening")
         return
       }
-      Task { try? await owner.republishStatus() }
       completeWaiters(.success(()))
       delegate?.pageSessionDidBecomeReady(self)
       replyHandler([:], nil)
@@ -377,7 +377,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
                     classification: authored ? .authored : .platform)
       }
       replyHandler([:], nil)
-    case .attachmentsPut, .attachmentsRead, .attachmentsList, .themeLoad:
+    case .attachmentsPut, .attachmentsRead, .themeLoad:
       servePageStorage(request, reply: replyHandler)
     }
   }

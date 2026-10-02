@@ -2,9 +2,9 @@
 import { onMount } from "svelte";
 import { prefersReducedMotion } from "svelte/motion";
 import { Button } from "bits-ui";
-import { bindText, useDocument } from "@hitslop/document/svelte";
+import { bindText } from "@hitslop/document/svelte";
 import { youtube } from "@hitslop/document/embed";
-import schema from "./schema";
+import doc from "./schema";
 import { createPod, menuItems, stickerItems } from "./pod.svelte";
 import { closeClicker } from "./clicker";
 import AddScreen from "./AddScreen.svelte";
@@ -17,8 +17,7 @@ import RemoveScreen from "./RemoveScreen.svelte";
 import StickerGrid from "./StickerGrid.svelte";
 import StickerLayer from "./StickerLayer.svelte";
 
-const doc = useDocument(schema);
-const pod = createPod(doc);
+const pod = createPod();
 
 let stage = $state<HTMLElement>();
 let stageWidth = $state(360);

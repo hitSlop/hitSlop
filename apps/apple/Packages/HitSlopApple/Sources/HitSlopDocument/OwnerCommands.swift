@@ -32,7 +32,7 @@ extension DocumentOwner {
           switch outcome {
           case .failure(let error): return reply(Self.pageFailure(error, id: id))
           case .success(.opened(let opened)):
-            fields = ["state": opened.state, "savedSequence": opened.savedSequence, "saveFailure": opened.saveFailure as Any? ?? NSNull()]
+            fields = ["state": opened.state]
           case .success(.applied(let applied)): fields = ["sequence": applied.sequence, "ids": applied.ids]
           case .success(.text(let edit)): fields = ["sequence": edit.sequence, "authored": edit.authored,
             "selectionStart": edit.selectionStart, "selectionEnd": edit.selectionEnd]

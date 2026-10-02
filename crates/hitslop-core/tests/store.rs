@@ -35,7 +35,7 @@ fn title(doc: &Document) -> String {
 fn set_title(doc: &mut Document, title: &str) {
     doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string()).unwrap();
 }
-fn save(store: &Store, doc: &Document) -> Option<bool> {
+fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     let job = store.job(doc, false).unwrap()?;
     store.write(&job).unwrap();
     Some(job.is_checkpoint())
@@ -61,7 +61,7 @@ fn missing_checkpoint_is_preserved(access: impl FnOnce(&Path) -> Result<(), Erro
     let (store, mut doc) = open(&root);
     for title in ["First", "Second", "Third"] {
         set_title(&mut doc, title);
-        save(&store, &doc);
+        save(&store, &mut doc);
     }
     store.close().unwrap();
     Connection::open(database(&root)).unwrap().execute("DELETE FROM checkpoint", []).unwrap();
@@ -103,9 +103,9 @@ fn append_refuses_saved_updates_without_a_checkpoint() {
     let (_dir, root) = package();
     let (store, mut doc) = open(&root);
     set_title(&mut doc, "Saved edit");
-    save(&store, &doc);
+    save(&store, &mut doc);
     set_title(&mut doc, "Pending edit");
-    let job = store.job(&doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc, false).unwrap().unwrap();
     assert!(!job.is_checkpoint());
     Connection::open(database(&root)).unwrap().execute("DELETE FROM checkpoint", []).unwrap();
     let before = saved_updates(&root);
@@ -122,11 +122,11 @@ fn a_new_package_saves_its_first_checkpoint_and_reopens_with_its_edits() {
     let id = store.doc_id().to_owned();
     assert_eq!(store.metadata().unwrap().rows, 0);
     assert!(store.metadata().unwrap().checkpoint_bytes > 0);
-    assert!(store.job(&doc, false).unwrap().is_none(), "a clean document has nothing to save");
+    assert!(store.job(&mut doc, false).unwrap().is_none(), "a clean document has nothing to save");
     set_title(&mut doc, "Edited");
-    assert_eq!(save(&store, &doc), Some(false), "an edit appends");
+    assert_eq!(save(&store, &mut doc), Some(false), "an edit appends");
     assert_eq!(store.metadata().unwrap().rows, 1);
-    assert!(store.job(&doc, false).unwrap().is_none());
+    assert!(store.job(&mut doc, false).unwrap().is_none());
     store.close().unwrap();
     let (reopened, doc) = open(&root);
     assert_eq!(title(&doc), "Edited");
@@ -137,18 +137,203 @@ fn a_new_package_saves_its_first_checkpoint_and_reopens_with_its_edits() {
 fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     let (_dir, root) = package();
     let (store, mut doc) = open(&root);
+    let first = doc.version();
     for i in 0..256 {
         set_title(&mut doc, &format!("Edit {i}"));
-        assert_eq!(save(&store, &doc), Some(false));
+        assert_eq!(save(&store, &mut doc), Some(false));
     }
     set_title(&mut doc, "Last");
-    assert_eq!(save(&store, &doc), Some(true), "256 rows checkpoint");
+    assert_eq!(save(&store, &mut doc), Some(true), "256 rows checkpoint");
     assert_eq!(store.metadata().unwrap().rows, 0);
-    let job = store.job(&doc, true).unwrap().expect("a requested checkpoint is written even when clean");
+    store.close().unwrap();
+    let (store, mut doc) = open(&root);
+    assert!(!stale(&doc, &first), "a small checkpoint keeps its whole history");
+    let job = store.job(&mut doc, true).unwrap().expect("a requested checkpoint is written even when clean");
     assert!(job.is_checkpoint());
     store.write(&job).unwrap();
     store.close().unwrap();
     assert_eq!(title(&open(&root).1), "Last");
+}
+
+fn stale(doc: &Document, version: &str) -> bool {
+    match doc.export_since(version) {
+        Ok(_) => false,
+        Err(e) => e.code.as_str() == "stale_base",
+    }
+}
+
+/// Incompressible text of `len` letters.
+fn noise(seed: &mut u64, len: usize) -> String {
+    (0..len)
+        .map(|_| {
+            *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (b'a' + (*seed >> 59) as u8 % 26) as char
+        })
+        .collect()
+}
+
+/// Closes like the owner does: the last save, the closing checkpoint, then the lock.
+fn close(store: Store, doc: &mut Document) -> Option<bool> {
+    save(&store, doc);
+    let job = store.close_job(doc).unwrap();
+    if let Some(job) = &job {
+        store.write(job).unwrap();
+    }
+    store.close().unwrap();
+    job.map(|job| job.is_checkpoint())
+}
+/// One editing session of `count` large edits; returns the version after its first edit.
+fn session(root: &Path, seed: &mut u64, count: usize) -> String {
+    let (store, mut doc) = open(root);
+    set_title(&mut doc, &noise(seed, 32 * 1024));
+    let first = doc.version();
+    save(&store, &mut doc);
+    for _ in 1..count {
+        set_title(&mut doc, &noise(seed, 32 * 1024));
+        save(&store, &mut doc);
+    }
+    close(store, &mut doc);
+    first
+}
+
+// Failure: every checkpoint kept the full history, so a document's file grew with every
+// change it ever saw. Oracle: after a session closes, versions from before it are stale
+// and its own still name the document's history; a session that only reads keeps the
+// previous session's history.
+#[test]
+fn closing_keeps_the_last_session_and_compaction_trims_to_now() {
+    let (_dir, root) = package();
+    let mut seed = 7;
+    let first = session(&root, &mut seed, 100);
+    let second = session(&root, &mut seed, 100);
+    let (store, mut doc) = open(&root);
+    assert!(stale(&doc, &first), "history before the last session is trimmed");
+    assert!(!stale(&doc, &second), "the last session's history is kept");
+    let before = store.metadata().unwrap();
+    assert_eq!(close(store, &mut doc), None, "a session that only reads trims nothing");
+    let (store, mut doc) = open(&root);
+    assert_eq!(store.metadata().unwrap(), before);
+    assert!(!stale(&doc, &second));
+    set_title(&mut doc, "Compacted");
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    let latest = doc.version();
+    store.close().unwrap();
+    let doc = open(&root).1;
+    assert!(stale(&doc, &second), "compaction keeps no history");
+    assert!(!stale(&doc, &latest));
+    assert_eq!(title(&doc), "Compacted");
+}
+
+// Failure: a cut at the session's start kept every row deleted before it, so a document
+// that deletes a lot never shrank. Oracle: it closes to its live value with no history.
+#[test]
+fn a_session_too_large_to_keep_closes_with_no_history() {
+    let (_dir, root) = package();
+    let mut seed = 3;
+    let mut opened = String::new();
+    for _ in 0..2 {
+        let (store, mut doc) = open(&root);
+        opened = doc.version();
+        for _ in 0..160 {
+            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string()).unwrap();
+            doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string()).unwrap();
+            save(&store, &mut doc);
+        }
+        close(store, &mut doc);
+    }
+    let (store, doc) = open(&root);
+    let meta = store.metadata().unwrap();
+    assert!(meta.checkpoint_bytes + meta.update_bytes < 64 * 1024, "{meta:?}");
+    assert!(stale(&doc, &opened), "no history is kept");
+    assert_eq!(title(&doc), "Saved");
+}
+
+#[test]
+fn a_small_document_keeps_its_history_when_closed() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    let first = doc.version();
+    for i in 0..300 {
+        set_title(&mut doc, &format!("Edit {i}"));
+        save(&store, &mut doc);
+    }
+    assert_eq!(close(store, &mut doc), None);
+    assert!(!stale(&open(&root).1, &first));
+}
+
+// Failure: a session that never closes (a window left open for weeks) grew without bound.
+// Oracle: past the session limit the checkpoint trims while open, and edits continue.
+#[test]
+fn a_session_past_its_limit_trims_while_open() {
+    let (_dir, root) = package();
+    let (store, mut doc) = open(&root);
+    let mut seed = 5;
+    set_title(&mut doc, &noise(&mut seed, 1024 * 1024));
+    let early = doc.version();
+    for _ in 0..24 {
+        set_title(&mut doc, &noise(&mut seed, 1024 * 1024));
+        save(&store, &mut doc);
+        let meta = store.metadata().unwrap();
+        assert!(meta.checkpoint_bytes + meta.update_bytes <= 16 * 1024 * 1024 + 4 * 1024 * 1024 + 2 * 1024 * 1024);
+    }
+    store.close().unwrap();
+    assert!(stale(&open(&root).1, &early), "the trimmed history stays trimmed");
+}
+
+// Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
+// and saved an update that depends on it; the package could never be opened again.
+#[test]
+fn a_stale_text_base_cannot_make_the_package_unopenable() {
+    let schema = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
+    let initial = r#"{"title":"abc"}"#;
+    let key = hitslop_core::validate(schema, initial).unwrap();
+    let (_dir, root) = package();
+    let store = Store::open(&root, Mode::Document).unwrap();
+    let mut doc = store.document(&key, initial).unwrap();
+    let base = doc.version();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string()).unwrap();
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcX","selectionStart":4,"selectionEnd":4});
+    let result = doc.edit_text(&request.to_string()).map(|_| ());
+    save(&store, &mut doc);
+    store.close().unwrap();
+    let store = Store::open(&root, Mode::Document).unwrap();
+    let reopened = store.document(&key, initial).expect("the package opens");
+    assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
+    let value: Value = serde_json::from_str(&reopened.value().unwrap()).unwrap();
+    assert_eq!(value["title"], "Rabc");
+}
+
+// Failure: a drawing app that saves large strokes and erases them reached the storage
+// limit in weeks while its live value stayed tiny. Oracle: after each session closes,
+// stored bytes stay within that session's history and the live state.
+#[test]
+fn doodle_like_use_stays_bounded() {
+    let (_dir, root) = package();
+    let mut seed = 11;
+    let bound = 4 * 1024 * 1024 + 2 * 26 * 32 * 1024;
+    for day in 0..8 {
+        let (store, mut doc) = open(&root);
+        for stroke in 0..40 {
+            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string()).unwrap();
+            save(&store, &mut doc);
+            doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string()).unwrap();
+            save(&store, &mut doc);
+            if stroke % 25 == 24 {
+                let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["rows"]
+                    .as_array().unwrap().iter().map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]})).collect();
+                doc.apply_batch(&json!({"intents":ids}).to_string()).unwrap();
+            }
+        }
+        let value = doc.value().unwrap();
+        close(store, &mut doc);
+        let (store, doc) = open(&root);
+        let meta = store.metadata().unwrap();
+        let stored = meta.checkpoint_bytes + meta.update_bytes;
+        assert!(stored <= bound, "day {day}: {stored} bytes stored");
+        assert_eq!(doc.value().unwrap(), value);
+        store.close().unwrap();
+    }
 }
 
 #[test]
@@ -158,7 +343,7 @@ fn the_writer_lock_admits_one_owner_and_snapshots_read_without_it() {
     assert!(matches!(Store::open(&root, Mode::Document), Err(Error::Locked)));
     assert!(matches!(store::WriterLock::acquire(&root), Err(Error::Locked)));
     set_title(&mut doc, "Durable");
-    save(&store, &doc);
+    save(&store, &mut doc);
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
     assert_eq!(title(&snapshot.document(&key(), INITIAL).unwrap()), "Durable");
     // A failed close keeps ownership; a retry releases it.
@@ -176,7 +361,7 @@ fn snapshots_never_create_lock_or_modify_package_files() {
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
     let mut doc = snapshot.document(&key(), INITIAL).unwrap();
     set_title(&mut doc, "In memory");
-    save(&snapshot, &doc);
+    save(&snapshot, &mut doc);
     assert!(!root.join("state").exists(), "a render of an unsaved package writes nothing");
     assert!(matches!(snapshot.check(true), Err(Error::Closed)), "snapshots own nothing");
 
@@ -186,7 +371,7 @@ fn snapshots_never_create_lock_or_modify_package_files() {
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
     let mut doc = snapshot.document(&key(), INITIAL).unwrap();
     set_title(&mut doc, "In memory");
-    save(&snapshot, &doc);
+    save(&snapshot, &mut doc);
     assert_eq!(std::fs::read(database(&root)).unwrap(), before);
     assert!(!root.join("state/writer.lock").exists() || store::WriterLock::acquire(&root).is_ok());
 }
@@ -254,12 +439,12 @@ fn a_busy_database_fails_the_save_and_a_retry_succeeds() {
     let other = Connection::open(database(&root)).unwrap();
     other.busy_timeout(std::time::Duration::ZERO).unwrap();
     other.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    let job = store.job(&doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc, false).unwrap().unwrap();
     let started = std::time::Instant::now();
     assert!(matches!(store.write(&job), Err(Error::Busy)));
     assert!(started.elapsed() >= std::time::Duration::from_secs(1), "waits for the busy timeout");
     other.execute_batch("COMMIT").unwrap();
-    store.write(&store.job(&doc, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut doc, false).unwrap().unwrap()).unwrap();
     store.close().unwrap();
     assert_eq!(title(&open(&root).1), "Retried");
 }
@@ -271,13 +456,13 @@ fn a_lost_acknowledgement_never_advances_the_saved_version() {
         let (store, mut doc) = open(&root);
         set_title(&mut doc, "Crash");
         store.set_phases(Some(Arc::new(Fail(phase))));
-        let job = store.job(&doc, phase.starts_with("checkpoint")).unwrap().unwrap();
+        let job = store.job(&mut doc, phase.starts_with("checkpoint")).unwrap().unwrap();
         assert!(store.write(&job).is_err());
         store.set_phases(None);
         let committed = phase.ends_with(":committed");
         let rows = if phase == "append:committed" { 1 } else { 0 };
         assert_eq!(store.metadata().unwrap().rows, rows, "{phase}: sizes are re-read after a failure");
-        let retry = store.job(&doc, false).unwrap().expect("the unacknowledged edit is saved again");
+        let retry = store.job(&mut doc, false).unwrap().expect("the unacknowledged edit is saved again");
         store.write(&retry).unwrap();
         store.close().unwrap();
         assert_eq!(title(&open(&root).1), "Crash", "{phase} (committed: {committed})");
@@ -289,7 +474,7 @@ fn a_moved_package_refuses_writes() {
     let (dir, root) = package();
     let (store, mut doc) = open(&root);
     set_title(&mut doc, "Unsaved");
-    let job = store.job(&doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc, false).unwrap().unwrap();
     std::fs::rename(&root, dir.path().join("Moved.slop")).unwrap();
     std::fs::create_dir(&root).unwrap();
     assert!(matches!(store.write(&job), Err(Error::Moved)));
@@ -306,12 +491,12 @@ fn a_full_document_refuses_appends_and_keeps_saved_state() {
     conn.execute("INSERT INTO updates(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
     drop(conn);
     set_title(&mut doc, "Too much");
-    let job = store.job(&doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc, false).unwrap().unwrap();
     let result = store.write(&job);
     assert!(matches!(result, Err(Error::Full)), "{result:?}");
     assert!(store.metadata().unwrap().update_bytes > 0, "saved state is intact");
     // Sizes were re-read, so the next save checkpoints, which fits.
-    let retry = store.job(&doc, false).unwrap().unwrap();
+    let retry = store.job(&mut doc, false).unwrap().unwrap();
     assert!(retry.is_checkpoint());
     store.write(&retry).unwrap();
 }
@@ -324,14 +509,14 @@ fn checkpoints_reclaim_free_pages() {
     let text = "x".repeat(64 * 1024);
     for i in 0..48 {
         set_title(&mut doc, &format!("{i}{text}"));
-        save(&store, &doc);
+        save(&store, &mut doc);
     }
     assert!(std::fs::metadata(database(&root)).unwrap().len() > 3 * 1024 * 1024);
     for _ in 0..48 {
         doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string()).unwrap();
-        save(&store, &doc);
+        save(&store, &mut doc);
     }
-    store.write(&store.job(&doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     let logical = store.metadata().unwrap().checkpoint_bytes as u64;
     let file = std::fs::metadata(database(&root)).unwrap().len();
     assert!(file < logical + 256 * 1024, "file {file} bytes for {logical} logical bytes");
@@ -342,7 +527,7 @@ fn a_duplicate_has_the_same_history_and_a_new_identity() {
     let (dir, root) = package();
     let (store, mut doc) = open(&root);
     set_title(&mut doc, "Copied");
-    save(&store, &doc);
+    save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     std::fs::create_dir(&copy).unwrap();
     // The source stays open: the copy is an online backup.

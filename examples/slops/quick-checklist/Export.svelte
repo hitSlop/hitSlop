@@ -2,10 +2,8 @@
 import Brand from "./Brand.svelte";
 import { checklistView } from "./model";
 import { ui } from "./ui.svelte";
-import { useDocument } from "@hitslop/document/svelte";
 import Check from "@lucide/svelte/icons/check";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 const { exported, exportFinished } = $derived(checklistView(doc.current, ui.activeView));
 </script>
 

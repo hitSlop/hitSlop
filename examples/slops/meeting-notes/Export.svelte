@@ -1,8 +1,6 @@
 <script lang="ts">
 import Check from "@lucide/svelte/icons/check";
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 const completedAgenda = $derived(doc.current.agenda.filter((item) => item.done).length);
 const completedActions = $derived(doc.current.actions.filter((item) => item.done).length);
 const data = $derived(doc.current);

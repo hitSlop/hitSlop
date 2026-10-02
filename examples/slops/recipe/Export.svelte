@@ -1,8 +1,6 @@
 <script lang="ts">
 import { ui } from "./ui.svelte";
-import { useDocument } from "@hitslop/document/svelte";
-import schema from "./schema";
-const doc = useDocument(schema);
+import doc from "./schema";
 </script>
 
 <article class="card" aria-label="Exported recipe for {doc.current.title}">

@@ -140,11 +140,9 @@ export const recoveryPolicy = { stallMS: 2000, deadlineMS: 15000, retryMS: 250, 
   maxItems: PushLimits.items as number, maxBytes: PushLimits.bytes as number };
 const utf8 = new TextEncoder();
 
-/** Sequence-ordered state plus save status, fed by `open` and the push stream. */
+/** Sequence-ordered state, fed by `open` and the push stream. */
 export class Store {
   state: OwnerState = { sequence: 0, version: "", value: undefined, issues: [] };
-  savedSequence = 0;
-  saveFailure: string | null = null;
   failure: Error | undefined;
   private opened = false;
   private buffered: PagePush[] = [];
@@ -164,8 +162,6 @@ export class Store {
     deepFreeze(opened.state.value);
     deepFreeze(opened.state.issues);
     this.state = opened.state;
-    this.savedSequence = opened.savedSequence;
-    this.saveFailure = opened.saveFailure;
     this.opened = true;
   }
   /** Install the snapshot and all buffered publications before resolving writers. */
@@ -198,14 +194,6 @@ export class Store {
     this.bufferedBytes = 0;
     return result;
   }
-  /** A flush or `saved` push confirmed every edit up to `sequence` durable. */
-  markSaved(sequence: number) {
-    this.savedSequence = Math.max(this.savedSequence, sequence);
-    this.saveFailure = null;
-  }
-  markSaveFailed(message: string) {
-    this.saveFailure = message;
-  }
   publish(pushes: readonly PagePush[]) {
     if (!this.opened || this.resyncing || this.failure) { this.buffer(pushes); return; }
     if (!this.consume(pushes)) { this.recover(); return; }
@@ -224,30 +212,22 @@ export class Store {
     };
     for (const [i, push] of pushes.entries()) {
       if (push.type === "resync") return finish(false, pushes.slice(i + 1));
-      if (push.type === "saved") {
-        this.markSaved(push.sequence);
-        touched = true;
-      } else if (push.type === "failed") {
-        this.markSaveFailed(push.error);
-        touched = true;
-      } else {
-        const p: OwnerPublication = push.publication;
-        if (p.sequence <= this.state.sequence) continue;
-        if (p.previous !== this.state.sequence) return finish(false, pushes.slice(i));
-        let value;
-        try { value = applyOps(this.state.value, p.ops); }
-        catch { return finish(false, pushes.slice(i)); }
-        // Issues arrive only when they change.
-        const issues = p.issues ?? this.state.issues;
-        deepFreeze(issues);
-        this.state = { sequence: p.sequence, version: p.version, value, issues };
-        for (const op of p.ops) {
-          const path = op.type === "deleteRow" ? [...op.path, { id: op.id }] : op.path;
-          if (op.type === "deleteRow" || op.type === "remove") removed.push(path);
-          if (op.type !== "insertRow" && op.type !== "moveRow") paths.add(JSON.stringify(path));
-        }
-        touched = true;
+      const p: OwnerPublication = push.publication;
+      if (p.sequence <= this.state.sequence) continue;
+      if (p.previous !== this.state.sequence) return finish(false, pushes.slice(i));
+      let value;
+      try { value = applyOps(this.state.value, p.ops); }
+      catch { return finish(false, pushes.slice(i)); }
+      // Issues arrive only when they change.
+      const issues = p.issues ?? this.state.issues;
+      deepFreeze(issues);
+      this.state = { sequence: p.sequence, version: p.version, value, issues };
+      for (const op of p.ops) {
+        const path = op.type === "deleteRow" ? [...op.path, { id: op.id }] : op.path;
+        if (op.type === "deleteRow" || op.type === "remove") removed.push(path);
+        if (op.type !== "insertRow" && op.type !== "moveRow") paths.add(JSON.stringify(path));
       }
+      touched = true;
     }
     return finish(true);
   }

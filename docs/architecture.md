@@ -57,7 +57,10 @@ into replies unparsed. Shared limits and codes live in TypeBox-free
 
 1. **Page.** A handle write (`set`, `insert`, `remove`, `move`, `increment`) or a
    `change(tx => …)` collector becomes one batch. Batches go through one FIFO queue, so an
-   `insert` followed by a `move` cannot reorder.
+   `insert` followed by a `move` cannot reorder. A scalar `set`, `clear` or assigned
+   `value` also shows at once as a local preview over the snapshot; acceptance settles
+   it and a refusal reverts it. Assigned values commit after 150 ms without another
+   assignment, or at the next barrier.
 2. **Host.** The page posts `apply {view, batch}`, the batch as JSON text. The owner job
    checks the view token and epoch, then calls `apply_batch`. The reply is
    `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
@@ -120,16 +123,28 @@ the owner applies it, through the same precomputed script.
   (`full`, `busy`, `moved`, `invalidated`, `io`) and reach the window, which offers retry,
   or discard for a full document.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
-  `close` refuses new edits, flushes, then releases the lock. `discard` rotates the epoch,
+  `close` refuses new edits, flushes, trims history (below), then releases the lock.
+  `discard` rotates the epoch,
   waits for the write in flight, and reloads saved bytes; requests captured before it are
   refused with `owner_replaced`.
-- Save status flows one way: owner to window, and owner to page as `saved`/`failed` pushes.
+- Save status flows one way, owner to window: the edited mark and the failure sheet. The
+  page learns durability only through `flush`, which resolves once saved and rejects
+  when the save fails.
 
 Storage is `document(doc_id, theme)`, `checkpoint(schema_key, bytes)` (absent until
 the first save), and `updates(seq, bytes)`. Saved updates without a checkpoint are
-refused and preserved for recovery. History-trimmed Loro documents are unsupported;
-rejected-batch rollback requires full history. A checkpoint replaces the log at 256
-updates or 4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`). New
+refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
+4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`).
+
+History is trimmed when nothing is editing. After its final save, a session that edited
+a document larger than 4 MiB writes one more checkpoint (`Store::close_job`): it keeps
+that session's history when the result fits 4 MiB, and none otherwise. Loro 1.16.2 keeps
+everything deleted before a cut in the cut's starting state, so only a cut at the latest
+version reclaims a document that deletes a lot. While open, a checkpoint over 16 MiB
+trims the same way, and `compact` trims to the latest version. Only the checkpoint may
+start history late. Rollback rebuilds from where history starts; a version before it
+is `stale_base`, and a concurrent text edit never branches from before the latest cut,
+so no saved update depends on trimmed history. New
 databases use incremental auto-vacuum, and every checkpoint frees the pages the log
 used. The store links the platform SQLite, the one library every other in-process user
 loads, and is the only code that opens `document.sqlite`; duplicate backup and identity

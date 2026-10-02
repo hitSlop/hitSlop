@@ -86,7 +86,8 @@ fn unhex(s: &str) -> Result<Vec<u8>> {
 }
 /// Version tokens are the document's frontiers: the IDs of its latest operations,
 /// sorted, as 12-byte big-endian (peer, counter) records. They grow with concurrent
-/// heads, not with every peer ever seen, and are stable across import and reopen.
+/// heads, not with every peer ever seen, and are stable across import and reopen until a
+/// checkpoint trims the history they name.
 fn version_token(frontiers: &Frontiers) -> String {
     let mut ids: Vec<ID> = frontiers.iter().collect();
     ids.sort();
@@ -102,7 +103,7 @@ fn decode_version(doc: &LoroDoc, s: &str) -> Result<(Frontiers, VersionVector)> 
     if bytes.is_empty() || bytes.len() % 12 != 0 {
         return Err(err(Code::InvalidVersion, "Expected an opaque version token"));
     }
-    let known = doc.oplog_vv();
+    let (known, trimmed) = (doc.oplog_vv(), doc.shallow_since_vv().to_vv());
     let mut ids = Vec::with_capacity(bytes.len() / 12);
     for record in bytes.chunks_exact(12) {
         let peer = u64::from_be_bytes(record[..8].try_into().expect("8 bytes"));
@@ -113,6 +114,10 @@ fn decode_version(doc: &LoroDoc, s: &str) -> Result<(Frontiers, VersionVector)> 
         let id = ID::new(peer, counter);
         if !known.includes_id(id) {
             return Err(err(Code::StaleBase, "Version names operations this document does not have"));
+        }
+        // Loro still resolves some trimmed IDs, but cannot branch or diff from them.
+        if trimmed.includes_id(id) {
+            return Err(err(Code::StaleBase, "Version precedes this document's retained history"));
         }
         ids.push(id);
     }
@@ -196,6 +201,10 @@ pub struct Document {
     /// change-proportional validation; a document with anomalies rescans on publish.
     issues: Vec<Issue>,
     events: Events,
+    /// Where the saved history starts once the latest checkpoint is written. A
+    /// concurrent edit must not branch from before it: its saved operations would depend
+    /// on history the checkpoint drops, and the package could not open again.
+    floor: VersionVector,
 }
 impl Document {
     /// `scan` is false only for a document just built from validated input.
@@ -209,6 +218,7 @@ impl Document {
             sequence: 0,
             issues: vec![],
             events,
+            floor: VersionVector::default(),
         };
         if scan {
             this.issues = this.scan_issues()?;
@@ -244,18 +254,17 @@ impl Document {
     ) -> Result<Self> {
         let schema = descriptor(schema)?;
         let doc = LoroDoc::new();
-        let mut import = |bytes: &[u8]| {
+        // A checkpoint may start its history late; the updates after it never move that start.
+        checked(doc.import(checkpoint))?;
+        let trimmed = doc.shallow_since_vv();
+        // One import per update measured faster than Loro's `import_batch` here.
+        updates(&mut |bytes: &[u8]| {
             checked(doc.import(bytes))?;
-            // Rejected batches rebuild from full history in replica_at. Pruning first
-            // needs reconstruction from a trimmed baseline, not just retained updates.
-            if doc.is_shallow() {
-                return Err(err(Code::InvalidBytes, "History-trimmed documents are not supported"));
+            if doc.shallow_since_vv() != trimmed {
+                return Err(err(Code::InvalidBytes, "Only a checkpoint may trim history"));
             }
             Ok(())
-        };
-        import(checkpoint)?;
-        // One import per update measured faster than Loro's `import_batch` here.
-        updates(&mut import)?;
+        })?;
         Self::from_doc(doc, schema, true)
     }
     /// Same result as `issues` over the full JSON value, without materializing it:
@@ -427,10 +436,16 @@ impl Document {
                 "Durable pending-import buffering is not implemented",
             ));
         }
-        self.doc
-            .import(bytes)
-            .map_err(|e| err(Code::InvalidBytes, e))?;
-        self.publish()
+        match self.doc.import(bytes) {
+            Ok(_) => self.publish(),
+            // Loro applies the changes it can and refuses those that depend on history
+            // this document trimmed; what landed is published before the refusal.
+            Err(loro::LoroError::ImportUpdatesThatDependsOnOutdatedVersion) => {
+                self.publish()?;
+                Err(err(Code::StaleBase, "Updates depend on history this document trimmed"))
+            }
+            Err(e) => Err(err(Code::InvalidBytes, e)),
+        }
     }
     /// The publication sequence: the number of published changes since open.
     pub fn sequence(&self) -> u64 {
@@ -482,6 +497,11 @@ impl Document {
         self.sequence = next;
         Ok(Some(response))
     }
+    /// Storage calls this when a checkpoint keeps only the history since `start`.
+    #[cfg(feature = "storage")]
+    pub(crate) fn retain_from(&mut self, start: &Frontiers) {
+        self.floor = self.doc.frontiers_to_vv(start).unwrap_or_else(|| self.doc.oplog_vv());
+    }
     pub fn checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
     }
@@ -491,14 +511,21 @@ impl Document {
     }
 }
 /// A new long-lived replica holding exactly the history up to `frontiers`, with its own
-/// peer. Built by replaying the operations, never with `LoroDoc::fork_at`: a `fork_at`
+/// peer. Built by replaying the operations from where `doc`'s history starts (a trimmed
+/// document's starting state, else nothing), never with `LoroDoc::fork_at`: a `fork_at`
 /// replica of an older version can later resolve concurrent map writes differently from
 /// every other replica (reproduced with plain Loro 1.16.2; see tests/replica.rs).
 pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
+    // Measured before any export commits pending operations; those lie outside `vv`.
     let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;
-    let bytes = doc.export(ExportMode::updates_till(&vv)).map_err(engine)?;
+    let start = doc.shallow_since_vv().to_vv();
     let replica = LoroDoc::new();
-    replica.import(&bytes).map_err(engine)?;
+    if doc.is_shallow() {
+        let base = doc.export(ExportMode::state_only(Some(&doc.shallow_since_frontiers()))).map_err(engine)?;
+        replica.import(&base).map_err(engine)?;
+    }
+    let spans: Vec<_> = vv.sub_iter(&start).collect();
+    replica.import(&doc.export(ExportMode::updates_in_range(spans)).map_err(engine)?).map_err(engine)?;
     Ok(replica)
 }
 /// Callers bound the total input; a pending status means missing dependencies.

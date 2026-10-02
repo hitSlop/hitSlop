@@ -4,9 +4,9 @@ import { ui } from "./ui.svelte";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
-  import { bindText, useDocument } from "@hitslop/document/svelte";
-  import { attachments } from "@hitslop/document/attachments";
-  import { capture } from "@hitslop/document/capture";
+  import { bindText } from "@hitslop/document/svelte";
+  import { attachments } from "@hitslop/document/svelte";
+  import { capture } from "@hitslop/document/svelte";
   import { Dialog, Progress, Select, Checkbox } from "bits-ui";
   import { grow } from "./grow";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
@@ -23,58 +23,14 @@ import { ui } from "./ui.svelte";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import schema, { difficulties, type Step } from "./schema";
+  import doc, { difficulties, type Step } from "./schema";
 
-  type OptionalNumber = {
-    value: number | undefined;
-    min: number;
-    max: number;
-    set: (value: number) => Promise<unknown>;
-    clear: () => Promise<unknown>;
-  };
-
-  function bindOptionalNumber(node: HTMLInputElement, binding: OptionalNumber) {
-    let current = binding;
-    let focused = false;
-    const sync = () => {
-      if (focused) return;
-      const next = current.value === undefined ? "" : String(current.value);
-      if (node.value !== next) node.value = next;
-    };
-    const commit = () => {
-      const raw = node.value.trim();
-      if (raw === "") {
-        // A refused write shows the saved value again.
-        if (current.value !== undefined) current.clear().catch(sync);
-        return;
-      }
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) return sync();
-      const next = Math.min(current.max, Math.max(current.min, parsed));
-      if (next !== current.value) current.set(next).catch(sync);
-      if (node.value !== String(next)) node.value = String(next);
-    };
-    const onFocus = () => { focused = true; };
-    const onBlur = () => { focused = false; commit(); };
-    node.addEventListener("focus", onFocus);
-    node.addEventListener("change", commit);
-    node.addEventListener("blur", onBlur);
-    sync();
-    return {
-      update(next: OptionalNumber) {
-        current = next;
-        sync();
-      },
-      destroy() {
-        node.removeEventListener("focus", onFocus);
-        node.removeEventListener("change", commit);
-        node.removeEventListener("blur", onBlur);
-      },
-    };
-  }
+  /** Keeps a typed number within the field's bounds; an emptied input clears the field. */
+  const within = (min: number, max: number) => (value: number | null | undefined) =>
+    value == null ? undefined : Math.min(max, Math.max(min, value));
+  const servings = within(1, 999), minutes = within(0, 9999);
 
   const difficultyItems = difficulties.map((value) => ({ value, label: value }));
-  const doc = useDocument(schema);
 
   let cookingOpen = $state(false);
   let currentStepIndex = $state(0);
@@ -140,9 +96,6 @@ import { ui } from "./ui.svelte";
     void remainingMotion.set(remainingMotion.target, { duration: 0, delay: 0 });
   });
 
-  function isDifficulty(value: string): value is (typeof difficulties)[number] {
-    return difficulties.some((item) => item === value);
-  }
   function stepSeconds(step: Step): number {
     return Math.max(0, Math.round(Number(step.minutes) || 0) * 60);
   }
@@ -159,21 +112,21 @@ import { ui } from "./ui.svelte";
     return step.title.trim() || `Step ${index + 1}`;
   }
   function addIngredient(): void {
-    doc.fields.ingredients.insert({ text: "New ingredient", checked: false }).catch(() => {});
+    doc.fields.ingredients.insert({ text: "New ingredient", checked: false });
   }
   function moveRow(kind: "ingredients" | "steps", id: string, direction: -1 | 1): void {
     const items = doc.current[kind];
     const index = items.findIndex((item) => item.$id === id);
     const neighbor = items[index + direction];
     if (index < 0 || !neighbor) return;
-    doc.fields[kind].move(id, direction < 0 ? { before: neighbor.$id } : { after: neighbor.$id }).catch(() => {});
+    doc.fields[kind].move(id, direction < 0 ? { before: neighbor.$id } : { after: neighbor.$id });
   }
   function addStep(): void {
     const number = doc.current.steps.length + 1;
-    doc.fields.steps.insert({ title: `Step ${number}`, text: "Describe the next step." }).catch(() => {});
+    doc.fields.steps.insert({ title: `Step ${number}`, text: "Describe the next step." });
   }
   function removeStep(id: string): void {
-    doc.fields.steps.remove(id).catch(() => {});
+    doc.fields.steps.remove(id);
     delete remainingByStep[id];
     remainingByStep = { ...remainingByStep };
     completedStepIDs = completedStepIDs.filter((stepID) => stepID !== id);
@@ -256,7 +209,7 @@ import { ui } from "./ui.svelte";
     photoError = null;
     try {
       // The reference is written in the same step as the stored image.
-      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
+      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
         tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
       });
     } catch {
@@ -284,7 +237,7 @@ import { ui } from "./ui.svelte";
       <header class="hero">
         <div class="intro">
           <div class="utilityLine">
-            <Select.Root type="single" value={doc.current.difficulty} items={difficultyItems} onValueChange={(value) => { if (isDifficulty(value)) doc.fields.difficulty.set(value).catch(() => {}); }}>
+            <Select.Root type="single" bind:value={doc.fields.difficulty.value} items={difficultyItems}>
               <Select.Trigger class="difficultyTrigger" aria-label="Difficulty">
                 <Select.Value placeholder="Difficulty" />
                 <ChevronDown size={11} strokeWidth={2.2} data-slop-export="hide" />
@@ -305,9 +258,9 @@ import { ui } from "./ui.svelte";
           <textarea rows="1" use:grow={doc.current.title} class="title" aria-label="Recipe title" placeholder="Recipe title" use:bindText={doc.fields.title}></textarea>
           <textarea class="description" aria-label="Recipe description" placeholder="A short note about the dish" use:bindText={doc.fields.description}></textarea>
           <div class="stats">
-            <label><span>Serves</span><input aria-label="Servings" type="number" min="1" use:bindOptionalNumber={{ value: doc.current.servings, min: 1, max: 999, set: (value) => doc.fields.servings.set(value), clear: () => doc.fields.servings.clear() }} /></label>
-            <label><span>Prep</span><span class="number"><input aria-label="Preparation minutes" type="number" min="0" use:bindOptionalNumber={{ value: doc.current.prepMinutes, min: 0, max: 9999, set: (value) => doc.fields.prepMinutes.set(value), clear: () => doc.fields.prepMinutes.clear() }} /><small>min</small></span></label>
-            <label><span>Cook</span><span class="number"><input aria-label="Cooking minutes" type="number" min="0" use:bindOptionalNumber={{ value: doc.current.cookMinutes, min: 0, max: 9999, set: (value) => doc.fields.cookMinutes.set(value), clear: () => doc.fields.cookMinutes.clear() }} /><small>min</small></span></label>
+            <label><span>Serves</span><input aria-label="Servings" type="number" min="1" bind:value={() => doc.current.servings, (value) => (doc.fields.servings.value = servings(value))} /></label>
+            <label><span>Prep</span><span class="number"><input aria-label="Preparation minutes" type="number" min="0" bind:value={() => doc.current.prepMinutes, (value) => (doc.fields.prepMinutes.value = minutes(value))} /><small>min</small></span></label>
+            <label><span>Cook</span><span class="number"><input aria-label="Cooking minutes" type="number" min="0" bind:value={() => doc.current.cookMinutes, (value) => (doc.fields.cookMinutes.value = minutes(value))} /><small>min</small></span></label>
           </div>
         </div>
 
@@ -318,7 +271,7 @@ import { ui } from "./ui.svelte";
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>
               <Camera size={13} />Replace
             </button>
-            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.clear().catch(() => {})}><X size={13} /></button>
+            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.clear()}><X size={13} /></button>
           </div>{/if}
           <input bind:this={picker} class="srOnly" data-slop-export="hide" type="file" accept="image/*" tabindex="-1" onchange={onPhoto} />
         </figure>
@@ -402,15 +355,16 @@ import { ui } from "./ui.svelte";
           <div class="sectionTitle"><div><h2 id="ingredients-heading">Ingredients</h2></div><button data-slop-export="hide" aria-label="Add ingredient" onclick={addIngredient}><Plus size={12} /></button></div>
           <ul class="list">
             {#each doc.current.ingredients as item, index (item.$id)}
+              {@const row = doc.at(item)}
               <li class="ingredientRow" data-checked={item.checked}>
-                <Checkbox.Root checked={item.checked} onCheckedChange={(checked) => doc.at(item).checked.set(checked === true).catch(() => {})} aria-label="Mark {item.text || 'untitled ingredient'} {item.checked ? 'still needed' : 'complete'}">
+                <Checkbox.Root bind:checked={row.checked.value} aria-label="Mark {item.text || 'untitled ingredient'} {item.checked ? 'still needed' : 'complete'}">
                   {#snippet children({ checked })}{#if checked}<Check size={10} strokeWidth={3} />{/if}{/snippet}
                 </Checkbox.Root>
-                <input class="itemCopy" aria-label="Ingredient {index + 1}" use:bindText={doc.at(item).text} />
+                <input class="itemCopy" aria-label="Ingredient {index + 1}" use:bindText={row.text} />
                 <div class="rowActions" data-slop-export="hide">
                   <button aria-label="Move ingredient up" disabled={index === 0} onclick={() => moveRow("ingredients", item.$id, -1)}><ArrowUp size={10} /></button>
                   <button aria-label="Move ingredient down" disabled={index === doc.current.ingredients.length - 1} onclick={() => moveRow("ingredients", item.$id, 1)}><ArrowDown size={10} /></button>
-                  <button aria-label="Remove ingredient" onclick={() => doc.fields.ingredients.remove(item.$id).catch(() => {})}><Trash2 size={10} /></button>
+                  <button aria-label="Remove ingredient" onclick={() => doc.fields.ingredients.remove(item.$id)}><Trash2 size={10} /></button>
                 </div>
               </li>
             {:else}
@@ -429,7 +383,7 @@ import { ui } from "./ui.svelte";
                   <input class="stepTitle" aria-label="Step {index + 1} title" use:bindText={doc.at(step).title} />
                   <textarea use:grow={step.text} aria-label="Step {index + 1} instructions" use:bindText={doc.at(step).text}></textarea>
                 </div>
-                <label class="stepTime" title="Optional timer"><input aria-label="Step {index + 1} timer in minutes" type="number" min="0" placeholder="–" use:bindOptionalNumber={{ value: step.minutes, min: 0, max: 9999, set: (value) => doc.at(step).minutes.set(value), clear: () => doc.at(step).minutes.clear() }} /><span>min</span></label>
+                <label class="stepTime" title="Optional timer"><input aria-label="Step {index + 1} timer in minutes" type="number" min="0" placeholder="–" bind:value={() => step.minutes, (value) => (doc.at(step).minutes.value = minutes(value))} /><span>min</span></label>
                 <div class="rowActions" data-slop-export="hide">
                   <button aria-label="Move step up" disabled={index === 0} onclick={() => moveRow("steps", step.$id, -1)}><ArrowUp size={10} /></button>
                   <button aria-label="Move step down" disabled={index === doc.current.steps.length - 1} onclick={() => moveRow("steps", step.$id, 1)}><ArrowDown size={10} /></button>

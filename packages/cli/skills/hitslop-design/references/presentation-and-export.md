@@ -49,7 +49,7 @@ the application behind a hole, not merely that a DOM element ignores them.
 ## Static output
 
 Use optional `Export.svelte`, discovered alongside `App.svelte`. It receives
-`mode: "preview" | "export"` and reads the same document through `useDocument`.
+`mode: "preview" | "export"` and reads the same document by importing `schema.ts`.
 Pass the current data and selected view; share presentation and theme components.
 Use normal flow rather than viewport heights or scrolling panels. This view also
 supplies the catalog and Quick Look preview (captured at the export object’s

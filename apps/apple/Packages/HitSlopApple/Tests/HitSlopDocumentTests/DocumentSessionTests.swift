@@ -10,8 +10,9 @@ import WebKit
   // The native dispatch boundary must reject an oversized or unknown-field request
   // before base64 decoding or touching SQLite.
   @Test func bridgeRejectsOversizedPayloadsAndUnknownFields() {
-    #expect(BridgeRequest(["method": "attachments.list"]) != nil)
-    #expect(BridgeRequest(["method": "attachments.list", "extra": "unexpected"]) == nil)
+    #expect(BridgeRequest(["method": "config"]) != nil)
+    #expect(BridgeRequest(["method": "config", "extra": "unexpected"]) == nil)
+    #expect(BridgeRequest(["method": "attachments.list"]) == nil)
     #expect(BridgeRequest(["method": "theme.load"]) != nil)
     #expect(BridgeRequest(["method": "window.resize", "width": ["nested": 1], "height": 300]) == nil)
     let oversized = String(repeating: "A", count: 15 * 1024 * 1024)

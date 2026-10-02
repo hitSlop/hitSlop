@@ -17,8 +17,9 @@ const schema = defineDocument({
   daily: puzzle(),
   practice: puzzle(),
   stats: s.object({
-    played: s.number({ min: 0 }),
-    won: s.number({ min: 0 }),
+    // Tallies merge: concurrent games each add one.
+    played: s.counter(),
+    won: s.counter(),
     currentStreak: s.number({ min: 0 }),
     maxStreak: s.number({ min: 0 }),
     guessDistribution: s.record(s.integer({ min: 0 })),

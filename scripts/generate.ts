@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { quicktype, InputData, JSONSchemaInput, FetchingJSONSchemaStore } from "quicktype-core";
 import { SlopManifestSchema } from "../packages/schema/src/index";
-import { SlopCategories, WindowBounds, AttachmentLimits, base64Length, StorageLimits, ThemeLimit, ErrorTextLimit, PagePayloadLimit, PushLimits, SocketLimits } from "../packages/schema/src/constants";
+import { SlopCategories, WindowBounds, AttachmentLimits, base64Length, StorageLimits, ThemeLimit, ErrorTextLimit, OperationErrorBrand, PagePayloadLimit, PushLimits, SocketLimits } from "../packages/schema/src/constants";
 import { rustOwnerWire } from "./rust-contracts";
 import { OwnerContractsSchema, CoreErrorCodes, PageErrorCodes } from "../packages/schema/src/owner";
 import { swiftContracts } from "./swift-contracts";
@@ -54,6 +54,8 @@ public enum Limits {
   public static let theme = ${ThemeLimit}
   /// Diagnostic text a page reports, in UTF-16 units.
   public static let errorText = ${ErrorTextLimit}
+  /// The \`Symbol.for\` key that marks the page's document errors as operation issues.
+  public static let operationErrorBrand = "${OperationErrorBrand}"
   /// Pushes buffered for one page before a gap forces a fresh snapshot.
   public static let pushItems = ${PushLimits.items}
   public static let pushBytes = ${PushLimits.bytes}

@@ -6,8 +6,13 @@ export type Collector = (intent: OwnerIntent) => void;
 interface HandleHost {
   handle(node: Node, path: Path, collect: Collector | undefined): any;
   submit<R>(intents: OwnerIntent[], result: R): Promise<R>;
+  /** A scalar write, shown at once and reverted if refused. */
   write(intent: OwnerIntent): Promise<void>;
   preview(path: Path, value: unknown): void;
+  /** The shown value at `path`, recording a framework dependency. */
+  read(path: Path): unknown;
+  /** Shows `value` now and commits it once it settles; `undefined` clears an optional. */
+  assign(path: Path, value: unknown, optional: boolean): void;
 }
 /** Typed authoring handles; execution and ordering stay with the owner document. */
 export function handleFactory(host: HandleHost) {
@@ -24,12 +29,21 @@ export function handleFactory(host: HandleHost) {
       return host.write({ type: "set", path, value });
     };
     const scalar = () => ({ set, preview: (value: unknown) => host.preview(path, value) });
+    // Live scalar handles expose `value` for Svelte `bind:`; transaction handles do not.
+    const bindable = <T extends object>(handle: T, optional: boolean) =>
+      collect
+        ? handle
+        : Object.defineProperty(handle, "value", {
+            enumerable: true,
+            get: () => host.read(path),
+            set: (value: unknown) => host.assign(path, value, optional),
+          });
     if (node.kind === "optional") {
       const clear = () => {
         if (collect) return send({ type: "clear", path }, undefined);
         return host.write({ type: "clear", path });
       };
-      if (isScalar(node.inner)) return Object.freeze({ ...scalar(), clear });
+      if (isScalar(node.inner)) return Object.freeze(bindable({ ...scalar(), clear }, true));
       if (node.inner.kind === "text")
         return Object.freeze({ set: (value: string) => send({ type: "set", path, value }, undefined), clear });
       // An optional object: its fields, plus `set` to create or replace it and `clear`.
@@ -41,7 +55,7 @@ export function handleFactory(host: HandleHost) {
       Object.defineProperty(handle, "clear", { value: clear });
       return Object.freeze(handle);
     }
-    if (isScalar(node)) return Object.freeze(scalar());
+    if (isScalar(node)) return Object.freeze(bindable(scalar(), false));
     switch (node.kind) {
       case "object": {
         // Children are built on first access and kept by this handle.
@@ -57,7 +71,7 @@ export function handleFactory(host: HandleHost) {
       }
       case "counter": {
         const increment = (by = 1) => send({ type: "increment", path, by }, undefined);
-        return Object.freeze({ increment, decrement: (by = 1) => increment(-by) });
+        return Object.freeze({ increment });
       }
       case "record": {
         const entry = (key: string) => [...path, key];

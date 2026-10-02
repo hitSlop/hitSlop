@@ -30,7 +30,6 @@ extension DocumentSession {
       do {
         let value: [String: Any]
         switch method {
-        case .attachmentsList: value = ["files": try await owner.listAttachments().map(\.json)]
         case .attachmentsRead: value = ["bytes": try await owner.readAttachment(args["attachmentID"] as? String ?? "")]
         case .attachmentsPut: value = try await owner.putAttachment(base64: args["bytes"] as? String ?? "").json
         case .themeLoad:

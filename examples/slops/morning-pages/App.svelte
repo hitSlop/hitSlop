@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { bindText, useDocument } from "@hitslop/document/svelte";
-  import { capture } from "@hitslop/document/capture";
+  import { bindText } from "@hitslop/document/svelte";
+  import { capture } from "@hitslop/document/svelte";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Progress } from "bits-ui";
-  import schema from "./schema";
+  import doc from "./schema";
   import { formatDisplayDate, pageView, TARGET } from "./model";
 
   function dateKey(d: Date): string {
@@ -15,7 +15,6 @@
     return dateKey(new Date());
   }
 
-  const doc = useDocument(schema);
   // Writes are asynchronous, so an effect can rerun before its write is accepted: each
   // page is created (and marked complete) at most once per session.
   const created = new Set<string>();
