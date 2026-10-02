@@ -55,16 +55,17 @@ then `~/Applications/hitSlop.app`. Authoring never compiles Swift, and build and
 require an installed app. Bun is the only JavaScript runtime authoring needs; native
 document editing is macOS-only, with no Bun fallback.
 
-Before each native document command, the CLI compares its core build ID with
-`hitslop-native --core-build`, including `HITSLOP_NATIVE_CLI` overrides. The ID is
-recorded in `shell/core/BUILD_ID` when the WASM core is built, so the comparison never
-compiles the WASM. A missing or mismatched identity refuses the command: install matching
-app and CLI builds. The helper also checks the live owner's `hello` identity before
-reading, editing or exporting through its socket; quit an older running app and reopen
-with the matching build. There is no version negotiation, and these checks do not migrate
-documents from earlier 1.x builds. A CLI-only release may reuse an installed Mac app only
-while the core build ID is unchanged and the installed-consumer checks in
-[releasing](releasing.md) pass.
+The CLI and the Mac app update separately. Before each native document command, the
+CLI asks the helper which command protocols it serves (`hitslop-native --protocol`
+prints `{"version":N,"minimum":M}`), including `HITSLOP_NATIVE_CLI` overrides, and runs
+the command with `--client-protocol VERSION` when its own protocol is in that range, whatever core either embeds. Unversioned native calls mean protocol 1; unsupported selections fail before document access.
+Otherwise it names the side to update. App updates keep serving older protocols:
+protocol 1 is today's commands, arguments, outputs and exit statuses. The helper still
+checks the live owner's exact core build (`hello`) before reading, editing or exporting
+through its socket, because both ship in one app bundle; quit an older running app and
+reopen with the installed one. `hitslop-native --core-build` prints that identity. A
+CLI-only release may reuse an installed Mac app while it serves the CLI's protocol and
+the installed-consumer checks in [releasing](releasing.md) pass.
 
 ## Agent skills
 

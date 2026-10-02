@@ -2,9 +2,15 @@ import type { LiveDocument } from "./schema";
 /**
  * The interface between a built slop and the page shell. A package's `assets/app.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
- * `mount(ctx, target)`. Apps reach the host only through `ctx`. Both sides are built
- * from this repository; there is no versioned compatibility promise before release.
+ * `mount(ctx, target)`. Apps reach the host only through `ctx`.
+ *
+ * Every released app.js keeps running against later shells. `ctx` grows additively;
+ * a change an older app cannot run raises `RuntimeABI`, and the shell keeps the older
+ * behavior for packages built at the lower level. New members of object-like handles
+ * start with `$`, which no field name can, so they never shadow an author's fields.
  */
+/** The runtime ABI this SDK's app-side code needs; `slop build` stamps it. */
+export { RuntimeABI } from "@hitslop/schema/constants";
 import type { At, Handle, TextHandle } from "./handle-types";
 import type { Definition, ObjectNode } from "./schema";
 /** A `change()` transaction: the same handles, collecting synchronously. */

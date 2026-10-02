@@ -1,0 +1,220 @@
+{
+  "ops": [
+    {
+      "type": "set",
+      "path": [
+        "attachment"
+      ],
+      "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
+        "cells",
+        "compat-3"
+      ],
+      "value": {
+        "input": "Compat 3 ✓ café 🦊"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "checkins",
+        "compat-3"
+      ],
+      "value": 3
+    },
+    {
+      "type": "insert",
+      "path": [
+        "colors"
+      ],
+      "value": "compat 3",
+      "index": 0
+    },
+    {
+      "type": "set",
+      "path": [
+        "count"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
+        "done"
+      ],
+      "value": true
+    },
+    {
+      "type": "set",
+      "path": [
+        "epoch"
+      ],
+      "value": 3
+    },
+    {
+      "type": "increment",
+      "path": [
+        "hits"
+      ],
+      "by": 4
+    },
+    {
+      "type": "set",
+      "path": [
+        "label"
+      ],
+      "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
+        "lane"
+      ],
+      "value": "todo"
+    },
+    {
+      "type": "set",
+      "path": [
+        "memo"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    },
+    {
+      "type": "set",
+      "path": [
+        "note"
+      ],
+      "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
+        "ratio"
+      ],
+      "value": 0.75
+    },
+    {
+      "type": "insert",
+      "path": [
+        "rows"
+      ],
+      "id": "compat-3",
+      "value": {
+        "text": "Compat 3 ✓ café 🦊",
+        "done": true,
+        "tags": [],
+        "notes": {}
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "rows"
+      ],
+      "id": "compat-1",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "settings",
+        "muted"
+      ],
+      "value": true
+    },
+    {
+      "type": "set",
+      "path": [
+        "settings",
+        "volume"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
+        "title"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    },
+    {
+      "type": "set",
+      "path": [
+        "version"
+      ],
+      "value": "compat 3"
+    }
+  ],
+  "value": {
+    "attachment": "compat 3",
+    "cells": {
+      "compat-1": {
+        "input": "Compat 1 ✓ café 🦊"
+      },
+      "compat-2": {
+        "input": "Replay 2 é 中文"
+      },
+      "compat-3": {
+        "input": "Compat 3 ✓ café 🦊"
+      }
+    },
+    "checkins": {
+      "compat-1": 1,
+      "compat-2": 2,
+      "compat-3": 3
+    },
+    "colors": [
+      "compat 3",
+      "compat 2",
+      "compat 1"
+    ],
+    "count": 3,
+    "done": true,
+    "epoch": 3,
+    "hits": 9,
+    "label": "compat 3",
+    "lane": "todo",
+    "memo": "Compat 3 ✓ café 🦊",
+    "note": "compat 3",
+    "place": {
+      "name": "compat 1",
+      "visits": 1
+    },
+    "ratio": 0.75,
+    "rows": [
+      {
+        "$id": "compat-2",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "compat-1",
+        "done": true,
+        "notes": {},
+        "tags": [],
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-3",
+        "done": true,
+        "notes": {},
+        "tags": [],
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    ],
+    "settings": {
+      "muted": true,
+      "volume": 3
+    },
+    "title": "Compat 3 ✓ café 🦊",
+    "version": "compat 3"
+  },
+  "issues": []
+}

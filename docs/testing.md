@@ -1,9 +1,9 @@
 # Testing
 
-Tests live at the boundary that owns the behavior. Earlier 1.x builds are unsupported;
-tests cover refusal of unsupported storage and mismatched core identities, not legacy
-compatibility. Delete a test together with the code it protects, and never bend
-production code to keep an old test compiling.
+Tests live at the boundary that owns the behavior. Delete a test together with the code
+it protects, and never bend production code to keep an old test compiling. The one
+exception is the [compatibility corpus](#compatibility-corpus): released documents stay
+openable, so its frozen entries never change.
 
 | Boundary | Where | Proves |
 |---|---|---|
@@ -12,6 +12,7 @@ production code to keep an old test compiling.
 | Shell over WASM | `packages/shell/tests`, `bun run test` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run swift:test`, `bun run test:native` | Save scheduling, save/reopen, failed-save retention, lost-reply recovery, CLI live and closed paths, WebView bridge, export, window lifecycle |
+| Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released package and saved document still opens, renders, edits and reopens |
 
 `tests/fixtures/*` are small host packages (`document/`, `expected.json`,
 `scenario.json`) replayed by both the Bun fast tier and the Swift host-path test.
@@ -101,12 +102,42 @@ an output path the report goes to `docs/evidence/document-growth-<today>.json`. 
 are synthetic workloads, not forecasts of individual users' behavior. A successful benchmark test means the measurements
 completed; inspect `releaseBlocked` and each workload's stopping reason before release.
 
+## Compatibility corpus
+
+`tests/compat/<release>/` stores original built packages, saved databases and attachments,
+expected state, CLI transcripts and explicit page interactions. A small sample includes
+the conformance app, three type fixtures and selected real templates. It is regression
+evidence, not proof of all possible authored apps.
+
+`bun run compat:capture VERSION --frozen` builds the producing tools and templates,
+records their source fingerprint and identities, and captures into a temporary directory.
+It records package/archive content digests, per-file hashes, dependency installation lock,
+and required case inventory. Only a completed capture is published and frozen. Recording
+an existing frozen entry is refused. Before launch `dev` may be recaptured.
+
+- Rust replays saved values, issues, themes, edits, save/close and reopen.
+- Native replay checks inventory/hashes, original app rendering, PNG/PDF, attachments,
+  template creation and direct-helper command behavior.
+- Swift runs frozen explicit UI actions or the old conformance app's own scenario,
+  requires an actual saved edit and checks reopen. Missing controls fail.
+- `bun run test:compat --installed` installs each archived CLI with its frozen lockfile
+  and replays reads, writes, refusals, themes and attachments through its public executable.
+  Envelope metadata can grow; document contents compare exactly. Session metadata is
+  ignored only at documented envelope locations, never inside user values.
+
+Hygiene compares frozen entries with protected Git history and verifies their content
+hashes. Release checks additionally require the tagged entry to match current producing
+inputs, selected shipped templates and npm package contents. A corpus-only commit does
+not change the input fingerprint. Historical entries never need current build identities.
+The release retains the exact tested frozen npm archives. Signed-helper acceptance also
+runs archived CLIs before notarization.
+
 ## CI
 
 | Tier | Runs |
 |---|---|
-| `fast` (Ubuntu) | hygiene, check, Rust tests, Bun tests, packed npm packages, landing check |
-| `native` (macOS, path-filtered) | build, Swift tests, native CLI tests, fixture render, helper, crash matrix |
+| `fast` (Ubuntu) | hygiene (including frozen corpus entries), check, Rust tests (including the corpus), Bun tests, packed npm packages, landing check |
+| `native` (macOS, path-filtered) | build, Swift tests (including the corpus pages), native CLI tests, fixture render, corpus replay, helper, crash matrix |
 | `release-templates` (master) | builds and caches the full template corpus |
 | Release macOS (`macos-v*` tag, or manual dry run) | `release:check`, sign, notarize, publish |
 

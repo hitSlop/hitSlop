@@ -149,6 +149,8 @@ if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
     HITSLOP_APP_BINARY="$app/Contents/MacOS/hitSlop" \
       HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
       bun scripts/native-crash.ts
+    # Every released document still reads, renders and edits with the signed helper.
+    HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" bun scripts/compat-replay.ts --installed
   )
 fi
 

@@ -742,11 +742,13 @@ public struct PageRedoResult: Sendable {
 }
 
 public struct PageConfigResult {
+  public var `runtimeABI`: Int
   public var `readOnly`: Bool
   public var `presentation`: [String: Any]
   public var `theme`: [String: String]
 
-  public init(`readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String]) {
+  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String]) {
+    self.`runtimeABI` = `runtimeABI`
     self.`readOnly` = `readOnly`
     self.`presentation` = `presentation`
     self.`theme` = `theme`
@@ -754,6 +756,7 @@ public struct PageConfigResult {
 
   public var json: [String: Any] {
     var result: [String: Any] = [:]
+    result["runtimeABI"] = `runtimeABI`
     result["readOnly"] = `readOnly`
     result["presentation"] = `presentation`
     result["theme"] = `theme`

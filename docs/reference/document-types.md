@@ -135,8 +135,9 @@ the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
-imported), `invalid_shape` (a manifest window shape) and `engine_error` (an unexpected
-Loro failure).
+imported), `invalid_shape` (a manifest window shape), `requires_update` (a package,
+storage or document layout newer than this build) and `engine_error` (an unexpected Loro
+failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
 
 **Paths** walk the schema from the root. Commands and issues use the same segments; an
 issue names a row by its effective `$id` (the one `doc.current` shows, derived for a row
@@ -299,9 +300,38 @@ widths by column. Values are scalars or objects.
 - **Await writes whose failure you handle**, and read `doc.current` only after the write
   resolves.
 
+## Storage layout
+
+How kinds map to Loro containers is a persisted contract: every saved document records
+its layout in the root map `meta` (`{"layout": 1}`), written with the initial values.
+A build reads every layout it knows, or migrates one losslessly, and refuses a newer one
+with `requires_update` ([engineering contract](../engineering-contract.md#compatibility)).
+
+Layout 1:
+
+| Kind | Stored as |
+|---|---|
+| the document | the root map `data`, one entry per field |
+| `s.text()` | a `LoroText` |
+| `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
+| `s.number()` | an f64 value; integral values project as integers |
+| `s.integer()` | an i64 value |
+| `s.counter()` | a `LoroMap` of writer (Loro peer ID) to that writer's integer total; the snapshot is their sum |
+| `s.optional(inner)` | the inner kind's representation, or no entry when unset |
+| `s.object({...})` | a `LoroMap` created in place (`insert_container`) |
+| `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
+| `s.list(scalar)` | a `LoroMovableList` of values |
+| `s.record(value)` | a `LoroMap` of key to the value's representation |
+
+Optional objects and text and record entries are created in place, so two replicas that
+create one concurrently keep one whole. Agent (CLI and socket) commits carry the commit
+message `agent`. Effective row IDs for rows without a unique stored `$id` are derived
+from container identity by a frozen function (`identity.rs`). Mergeable containers for
+concurrently created children would be a later layout, for new documents.
+
 ## Not supported
 
 Trees, rich text, `optional(list)`, `optional(record)` and `optional(counter)`, and
 `move` on scalar lists are not implemented; no slop needs them. Schema evolution is
 deferred: changing a descriptor makes a new document type. Each new kind lands in the
-core, the SDK and a fixture together.
+core, the SDK and a fixture together, and raises the package/runtime requirements.

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { repository, verifyShellCopies } from "./runtime-artifacts";
+import { releases } from "./compat";
+import { verifyCandidate, verifyCorpus } from "./compat-integrity";
 
 const project = await readFile(join(repository, "apps/apple/project.yml"), "utf8");
 const version = project.match(/MARKETING_VERSION: "([^"]+)"/)?.[1];
@@ -20,13 +22,17 @@ for (const name of ["schema", "document", "cli"]) {
   }
 }
 if (process.argv.includes("--preflight")) process.exit(0);
+const entry = (await releases()).find(entry => entry.name === version && entry.release.frozen);
+if (!entry) throw new Error("Missing frozen release corpus");
+await verifyCorpus(entry.root, entry.release);
+await verifyCandidate(entry.root, entry.release);
 const shell = await verifyShellCopies();
 const output = join(repository, "dist/macos");
 await mkdir(output, { recursive: true });
 const retained: string[] = [];
 for (const name of ["schema", "document", "cli"]) {
   const file = `hitslop-${name}-${packageVersions[name]}.tgz`;
-  await cp(join(repository, "generated/npm", file), join(output, file));
+  await cp(join(entry.root, "cli", file), join(output, file));
   retained.push(file);
 }
 const git = Bun.spawn(["git", "rev-parse", "HEAD"], { cwd: repository, stdout: "pipe" });

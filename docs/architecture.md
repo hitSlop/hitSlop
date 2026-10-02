@@ -22,14 +22,19 @@ kind's snapshot, merge, write rules, handles and CLI paths.
 
 The same core compiles to WASM for `slop dev`, for `slop build`'s validation of
 descriptors, initial values, theme defaults and window shapes, and for the Bun tests.
-It never edits documents outside the app. The app, helper, page shell and CLI are built
-from one tree. The CLI checks its WASM core build identity against the selected native
-helper, and the helper checks the live owner before forwarding document commands.
-These are exact identity checks, not version negotiation. Populated SQLite files must
-carry the hitSlop application ID and supported storage version; no migration is provided.
+It never edits documents outside the app. The CLI and the app update separately: the CLI
+checks that the selected helper serves its command protocol (`hitslop-native
+--protocol`), and the helper checks that the live owner has its exact core build, since
+both ship in one app bundle. Saved documents carry what they need to be read: the
+package's `packageFormat` and `runtimeABI` requirements, the SQLite application ID and storage version, and the
+document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
+[compatibility](engineering-contract.md#compatibility) has the rules, and the
+[compatibility corpus](testing.md#compatibility-corpus) replays every release's
+documents.
 
-Manifest acceptance is native-only Rust validation of the TypeBox-generated JSON
-Schema, followed by the shared shape parser. Swift decodes the validated manifest
+Manifest acceptance is native-only Rust validation of the TypeBox-generated package
+manifest schema (newer `packageFormat` or `runtimeABI` requirements are refused first), followed by the shared shape
+parser. Swift decodes the validated manifest
 into its generated model and owns filesystem, PNG and native path checks. Authoring
 keeps TypeBox manifest validation; the manifest validator dependency is excluded from
 WASM. Package open also validates descriptors, initial values and the required theme

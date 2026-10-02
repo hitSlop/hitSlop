@@ -444,22 +444,70 @@ fn snapshots_never_create_lock_or_modify_package_files() {
 
 #[test]
 fn foreign_databases_are_refused_and_left_unchanged() {
-    // A foreign file, a newer storage version, and the earlier layouts.
-    for sql in [
-        "PRAGMA application_id=1; CREATE TABLE t(x);",
-        "PRAGMA application_id=1213418576; PRAGMA user_version=4; CREATE TABLE t(x);",
-        "PRAGMA application_id=1213418576; PRAGMA user_version=1; CREATE TABLE document(id INTEGER PRIMARY KEY, checkpoint BLOB, schema_key TEXT, doc_id TEXT NOT NULL); CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);",
-        "PRAGMA application_id=1213418576; PRAGMA user_version=2; CREATE TABLE document(id INTEGER PRIMARY KEY, checkpoint BLOB, schema_key TEXT, doc_id TEXT NOT NULL, theme TEXT NOT NULL DEFAULT '{}'); CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);",
-    ] {
-        let (_dir, root) = package();
-        std::fs::create_dir(root.join("state")).unwrap();
-        Connection::open(database(&root)).unwrap().execute_batch(sql).unwrap();
-        let before = std::fs::read(database(&root)).unwrap();
-        for mode in [Mode::Document, Mode::Snapshot] {
-            let error = Store::open(&root, mode).err().expect("refused");
-            assert!(error.to_string().contains("Unsupported document storage"), "{error}");
-        }
-        assert_eq!(std::fs::read(database(&root)).unwrap(), before);
+    let (_dir, root) = package();
+    std::fs::create_dir(root.join("state")).unwrap();
+    Connection::open(database(&root)).unwrap().execute_batch("PRAGMA application_id=1; CREATE TABLE t(x);").unwrap();
+    let before = std::fs::read(database(&root)).unwrap();
+    for mode in [Mode::Document, Mode::Snapshot] {
+        let error = Store::open(&root, mode).err().expect("refused");
+        assert!(error.to_string().contains("Unsupported document storage"), "{error}");
+    }
+    assert_eq!(std::fs::read(database(&root)).unwrap(), before);
+}
+
+// A document a newer build saved asks for an update, from every reader, and is never
+// written: the newer build can still open it.
+#[test]
+fn a_newer_storage_version_asks_for_an_update_and_is_left_unchanged() {
+    let (dir, root) = package();
+    let (store, mut doc) = open(&root);
+    set_title(&mut doc, "Newer");
+    save(&store, &mut doc);
+    store.close().unwrap();
+    Connection::open(database(&root)).unwrap().execute_batch("PRAGMA user_version=2;").unwrap();
+    let before = std::fs::read(database(&root)).unwrap();
+    let copy = dir.path().join("Copy.slop");
+    std::fs::create_dir(&copy).unwrap();
+    let refusals = [
+        Store::open(&root, Mode::Document).err(),
+        Store::open(&root, Mode::Snapshot).err(),
+        store::duplicate(&root, &copy).err(),
+    ];
+    for refusal in refusals {
+        assert!(matches!(refusal, Some(Error::Rejected(ref e)) if e.code == hitslop_core::Code::RequiresUpdate), "{refusal:?}");
+    }
+    assert!(!database(&copy).exists());
+    assert_eq!(std::fs::read(database(&root)).unwrap(), before);
+}
+
+// Failure: saved state recorded its descriptor as a string, and opening compared strings,
+// so a build that spelled the same descriptor differently (field order, `1` for `1.0`)
+// could no longer open any document. Saved state opens under any spelling of the same
+// descriptor, and a different descriptor is still refused.
+#[test]
+fn saved_state_opens_under_any_spelling_of_its_descriptor() {
+    const BOUNDED: &str = r#"{"kind":"object","properties":{"title":{"kind":"string","maxLength":40},"score":{"kind":"number","min":0,"max":10}}}"#;
+    const BOUNDED_INITIAL: &str = r#"{"title":"Saved","score":1}"#;
+    let (_dir, root) = package();
+    let canonical = hitslop_core::validate(BOUNDED, BOUNDED_INITIAL).unwrap();
+    let store = Store::open(&root, Mode::Document).unwrap();
+    let mut doc = store.document(&canonical, BOUNDED_INITIAL, THEME).unwrap();
+    doc.apply_batch(r#"{"intents":[{"type":"set","path":["score"],"value":7}]}"#, Origin::Page).unwrap();
+    save(&store, &mut doc);
+    store.close().unwrap();
+    // Another build's spelling of the same descriptor, recorded with the saved state.
+    let respelled = r#"{"properties":{"score":{"max":10.0,"min":0.0,"kind":"number"},"title":{"maxLength":40,"kind":"string"}},"kind":"object"}"#;
+    Connection::open(database(&root)).unwrap().execute("UPDATE checkpoint SET schema_key=?", [respelled]).unwrap();
+    for mode in [Mode::Document, Mode::Snapshot] {
+        let store = Store::open(&root, mode).unwrap();
+        let doc = store.document(&canonical, BOUNDED_INITIAL, THEME).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["score"], 7);
+        store.close().unwrap();
+    }
+    let different = hitslop_core::validate(&BOUNDED.replace(r#""max":10"#, r#""max":11"#), BOUNDED_INITIAL).unwrap();
+    for mode in [Mode::Document, Mode::Snapshot] {
+        let error = Store::open(&root, mode).unwrap().document(&different, BOUNDED_INITIAL, THEME).err().expect("refused");
+        assert!(error.to_string().contains("Document schema differs"), "{error}");
     }
 }
 

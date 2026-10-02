@@ -24,6 +24,9 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
       - run: bun run hygiene
+        env:
+          # Frozen tests/compat entries are compared with what this change builds on.
+          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
       - run: bun run check
       - run: bun run test
       # Published tarballs installed outside the checkout: exports, types, init and preview.
@@ -86,6 +89,7 @@ jobs:
           bun run swift:test
           bun run test:native
           bun run test:render --fixtures
+          bun run test:compat
           bun run test:native-helper
           bun scripts/crash-matrix.ts
       - name: Native unaffected

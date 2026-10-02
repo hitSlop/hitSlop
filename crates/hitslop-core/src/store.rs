@@ -36,7 +36,9 @@ const TRIM_BYTES: i64 = 4 * 1024 * 1024;
 const SESSION_BYTES: usize = 16 * 1024 * 1024;
 const MAX_KEY_BYTES: i64 = 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
-const STORAGE_VERSION: i64 = 3;
+/// The tables below. A compatibility requirement, not a release number: a later version
+/// migrates this one forward under the writer lock; a build refuses a newer one.
+const STORAGE_VERSION: i64 = 1;
 /// `doc_id` names the logical document. It is minted with the database and renewed by
 /// a duplicate; a plain filesystem copy keeps it, so it never authorizes synchronization.
 /// `document.theme` holds the owner's theme overrides (JSON): presentation state outside
@@ -73,6 +75,14 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 fn failed(message: impl ToString) -> Error {
     Error::Failed(message.to_string())
+}
+fn requires_update(message: String) -> Error {
+    Error::Rejected(crate::err(crate::Code::RequiresUpdate, message))
+}
+/// A core failure while loading: a document this build is too old for is a refusal the
+/// host names; anything else is a storage failure.
+fn load_failure(e: crate::Error) -> Error {
+    if e.code == crate::Code::RequiresUpdate { Error::Rejected(e) } else { failed(e) }
 }
 fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_ {
     move |e| match e.sqlite_error_code() {
@@ -159,6 +169,9 @@ fn is_new(conn: &Connection) -> Result<bool> {
     if tables > 0 {
         let id: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0)).map_err(sqlite("read identity"))?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(sqlite("read identity"))?;
+        if id == APPLICATION_ID && version > STORAGE_VERSION {
+            return Err(requires_update(format!("This document uses storage version {version}; this hitSlop reads version {STORAGE_VERSION}")));
+        }
         if id != APPLICATION_ID || version != STORAGE_VERSION {
             return Err(failed("Unsupported document storage"));
         }
@@ -307,7 +320,7 @@ fn load(conn: &Connection, schema_key: &str) -> Result<Option<(Document, Metadat
     let Some(row) = saved.next().map_err(sqlite("read"))? else {
         return Ok(None);
     };
-    if row.get_ref(0).ok().and_then(|key| key.as_str().ok()) != Some(schema_key) {
+    if !row.get_ref(0).ok().and_then(|key| key.as_str().ok()).is_some_and(|saved| crate::same_schema(saved, schema_key)) {
         return Err(failed("Document schema differs from saved state"));
     }
     let checkpoint = row.get_ref(1).ok().and_then(|bytes| bytes.as_blob().ok()).ok_or_else(|| failed("Invalid checkpoint bytes"))?;
@@ -333,7 +346,7 @@ fn load(conn: &Connection, schema_key: &str) -> Result<Option<(Document, Metadat
     });
     match doc {
         Ok(doc) => Ok(Some((doc, meta))),
-        Err(e) => Err(fault.unwrap_or_else(|| failed(e))),
+        Err(e) => Err(fault.unwrap_or_else(|| load_failure(e))),
     }
 }
 
@@ -451,7 +464,7 @@ impl Store {
     pub fn document(&self, schema_key: &str, initial: &str, theme_defaults: &str) -> Result<Document> {
         self.phase("load")?;
         self.check(false)?;
-        let core = |e: crate::Error| failed(e);
+        let core = load_failure;
         let mut backing = lock(&self.backing);
         let stored = match &*backing {
             Backing::Memory(saved) => saved.theme.clone(),
@@ -465,7 +478,7 @@ impl Store {
         *lock(&self.theme) = Some(ThemeSlot { theme, revision: 0, saved: 0 });
         let (doc, meta) = match &mut *backing {
             Backing::Memory(saved) => {
-                if saved.checkpoint.is_some() && saved.schema_key.as_deref() != Some(schema_key) {
+                if saved.checkpoint.is_some() && !saved.schema_key.as_deref().is_some_and(|saved| crate::same_schema(saved, schema_key)) {
                     return Err(failed("Document schema differs from saved state"));
                 }
                 match &saved.checkpoint {

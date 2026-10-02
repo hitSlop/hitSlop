@@ -419,7 +419,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
             throw error
           }
           replyHandler(PageResult.config(.init(
-            readOnly: owner.mode == .snapshot, presentation: presentation, theme: theme)).json, nil)
+            runtimeABI: package.manifest.runtimeABI, readOnly: owner.mode == .snapshot, presentation: presentation, theme: theme)).json, nil)
         } catch { replyHandler(DocumentOwner.pageFailure(error), nil) }
       }
     case .windowResize:

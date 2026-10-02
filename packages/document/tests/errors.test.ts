@@ -18,3 +18,16 @@ test("an author recognizes a refusal from a separately bundled shell", async () 
   expect(author.isRejected(refusal)).toBe(true);
   expect(author.isRejected(new Error("application failure"))).toBe(false);
 });
+
+// A shell from a later release may report a code this app's SDK never knew. The app must
+// still see an operation outcome, not an application failure.
+test("an unfamiliar branded code is still a document outcome", async () => {
+  const { DocumentError, isDocumentError, isRejected } = await import("../src/errors");
+  const later = Object.assign(new Error("Later outcome"), { code: "a_later_code", reason: "a_later_reason" });
+  Object.defineProperty(later, Symbol.for("hitslop.operation-error"), { value: true });
+  expect(isDocumentError(later)).toBe(true);
+  expect(isRejected(later)).toBe(false);
+  expect(isDocumentError(new DocumentError("closing", "Closing"))).toBe(true);
+  const unbranded = Object.assign(new Error("Authored"), { code: "rejected" });
+  expect(isDocumentError(unbranded)).toBe(false);
+});

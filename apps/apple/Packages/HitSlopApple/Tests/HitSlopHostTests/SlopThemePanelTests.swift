@@ -90,7 +90,7 @@ private func themeWindowFixture() throws -> URL {
   // More colors than fit beside the window, so the list must scroll.
   let extra = (0..<30).map { ",\"color\($0)\":\"#000000\"" }.joined()
   try Data((##"{"paper":"#ffffff","accent":"#335577""## + extra + "}").utf8).write(to: root.appendingPathComponent("assets/theme.json"))
-  let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author"},"slug":"theme-fixture","title":"Theme Fixture","description":"Tests the theme panel.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#
+  let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author"},"slug":"theme-fixture","title":"Theme Fixture","description":"Tests the theme panel.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#
   try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
   let skill = root.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
   try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)

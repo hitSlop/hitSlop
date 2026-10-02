@@ -12,7 +12,9 @@ public struct SlopManifest: Codable, Sendable {
     public let author: SlopAuthor
     public let categories: [SlopCategory]
     public let description: String
+    public let packageFormat: Int
     public let presentation: SlopPresentation
+    public let runtimeABI: Int
     public let slug: String
     public let title: String
 
@@ -21,17 +23,21 @@ public struct SlopManifest: Codable, Sendable {
         case author = "author"
         case categories = "categories"
         case description = "description"
+        case packageFormat = "packageFormat"
         case presentation = "presentation"
+        case runtimeABI = "runtimeABI"
         case slug = "slug"
         case title = "title"
     }
 
-    public init(schema: Schema?, author: SlopAuthor, categories: [SlopCategory], description: String, presentation: SlopPresentation, slug: String, title: String) {
+    public init(schema: Schema?, author: SlopAuthor, categories: [SlopCategory], description: String, packageFormat: Int, presentation: SlopPresentation, runtimeABI: Int, slug: String, title: String) {
         self.schema = schema
         self.author = author
         self.categories = categories
         self.description = description
+        self.packageFormat = packageFormat
         self.presentation = presentation
+        self.runtimeABI = runtimeABI
         self.slug = slug
         self.title = title
     }
@@ -60,7 +66,9 @@ public extension SlopManifest {
         author: SlopAuthor? = nil,
         categories: [SlopCategory]? = nil,
         description: String? = nil,
+        packageFormat: Int? = nil,
         presentation: SlopPresentation? = nil,
+        runtimeABI: Int? = nil,
         slug: String? = nil,
         title: String? = nil
     ) -> SlopManifest {
@@ -69,7 +77,9 @@ public extension SlopManifest {
             author: author ?? self.author,
             categories: categories ?? self.categories,
             description: description ?? self.description,
+            packageFormat: packageFormat ?? self.packageFormat,
             presentation: presentation ?? self.presentation,
+            runtimeABI: runtimeABI ?? self.runtimeABI,
             slug: slug ?? self.slug,
             title: title ?? self.title
         )

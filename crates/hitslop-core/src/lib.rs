@@ -20,7 +20,7 @@ mod execute;
 mod replace;
 mod project;
 mod issues;
-pub use descriptor::{schema_key, validate};
+pub use descriptor::{same_schema, schema_key, validate};
 use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
 use execute::{fill, put, resolve, execute, Rows};
 use identity::stored_id;
@@ -28,7 +28,7 @@ use project::{counter_sum, project, project_at};
 use issues::{issues, container_issues, scalar_issue};
 use publication::{Dirty, Events, ListState};
 use std::sync::Arc;
-pub use wire::{Code, STORAGE_BYTES, STORAGE_ROWS};
+pub use wire::{Code, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
 use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
 
 const MAX_BYTES: usize = wire::STORAGE_BYTES;
@@ -171,6 +171,24 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 /// prove the app and its helper embed the same core.
 pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
 
+/// The document layout: how descriptor kinds map to Loro containers
+/// (docs/reference/document-types.md). A compatibility requirement, not a release number,
+/// written into each document's `meta` map when it is created. A later layout either
+/// reads this one or migrates it losslessly; a build refuses a newer one.
+pub const LAYOUT: i64 = 1;
+const META: &str = "meta";
+/// Refuses a document whose layout this build cannot read, before interpreting it.
+fn check_layout(doc: &LoroDoc) -> Result<()> {
+    match doc.get_map(META).get("layout") {
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(LAYOUT))) => Ok(()),
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(layout))) if layout > LAYOUT => Err(err(
+            Code::RequiresUpdate,
+            format!("This document uses layout {layout}; this hitSlop reads layout {LAYOUT}"),
+        )),
+        _ => Err(err(Code::InvalidBytes, "Document has no supported layout")),
+    }
+}
+
 /// Who made a change: the person in a window, or an agent (the CLI and socket). Both are
 /// undoable; an agent's consecutive batches are one undo step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -280,6 +298,7 @@ impl Document {
         let initial: Value = parse(initial)?;
         schema.validate(&initial, false)?;
         let doc = LoroDoc::new();
+        doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
         fill(&doc.get_map("data"), &schema, &initial, &writer(&doc))?;
         doc.commit();
         Self::from_doc(doc, schema, false)
@@ -315,6 +334,7 @@ impl Document {
             }
             Ok(())
         })?;
+        check_layout(&doc)?;
         Self::from_doc(doc, schema, true)
     }
     /// Same result as `issues` over the full JSON value, without materializing it:

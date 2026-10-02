@@ -13,6 +13,19 @@ public enum SlopPackageError: LocalizedError {
   }
 }
 
+/// A package, its storage or its document needs a newer hitSlop. Nothing was read past the
+/// marker that said so, and nothing was written.
+public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
+  public init() {}
+  public var diagnostic: SlopFailureContext { .init(.rejection, reason: .requiresUpdate) }
+  public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
+  /// Whether the core refused for this reason.
+  public static func matches(_ error: Error) -> Bool {
+    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requires_update.rawValue }
+    return false
+  }
+}
+
 public struct SlopPackage: Sendable {
   public let rootURL: URL
   private var validatedSkin: (url: URL, image: CGImage)?
@@ -242,8 +255,8 @@ public struct SlopPackage: Sendable {
     return try decodeManifest(try SlopFile.read(url, within: root, maximumBytes: 64 * 1024))
   }
 
-  /// The manifest must match the current contract exactly: nothing has shipped, so
-  /// there is no tolerant reader for older or newer fields.
+  /// The core refuses a package above this build's platform level before judging its
+  /// other fields; a package at a supported level must match the contract exactly.
   private static func decodeManifest(_ data: Data) throws -> (manifest: SlopManifest, silhouette: WindowSilhouette) {
     guard let json = String(data: data, encoding: .utf8) else {
       throw SlopPackageError.invalid("manifest.json must be UTF-8")
@@ -251,6 +264,8 @@ public struct SlopPackage: Sendable {
     do {
       let silhouette = try validateManifest(manifestJson: json)
       return (try JSONDecoder().decode(SlopManifest.self, from: data), silhouette)
+    } catch let error where SlopRequiresUpdate.matches(error) {
+      throw SlopRequiresUpdate()
     } catch let CoreError.Rejected(_, message, _) {
       throw SlopPackageError.invalid(message)
     } catch {

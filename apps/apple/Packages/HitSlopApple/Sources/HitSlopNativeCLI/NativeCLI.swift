@@ -6,6 +6,33 @@ import HitSlopHost
 import HitSlopDocument
 
 @main struct NativeCLI: AsyncParsableCommand {
+  /// Select the public adapter before ArgumentParser can execute any document command.
+  /// Unversioned callers retain protocol 1 even when a later adapter is introduced.
+  static func main() async {
+    do {
+      var arguments = Array(CommandLine.arguments.dropFirst())
+      var version = 1
+      if arguments.first == "--client-protocol" {
+        guard arguments.count >= 2, let selected = Int(arguments[1]), selected >= 1 else {
+          throw ValidationError("--client-protocol requires a positive integer")
+        }
+        version = selected
+        arguments.removeFirst(2)
+      }
+      switch version {
+      case 1:
+        var command = try parseAsRoot(arguments)
+        if var asynchronous = command as? AsyncParsableCommand {
+          try await asynchronous.run()
+        } else {
+          try command.run()
+        }
+      default:
+        throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+      }
+    } catch { exit(withError: error) }
+  }
+
   static let configuration = CommandConfiguration(
     commandName: "hitslop-native", abstract: "Read, edit, open, and export hitSlop documents.",
     subcommands: [
@@ -16,8 +43,15 @@ import HitSlopDocument
 
   @Flag(name: .customLong("core-build"), help: "Print the embedded document core build ID.")
   var coreBuild = false
+  @Flag(name: .customLong("protocol"), help: "Print the command protocols this helper serves.")
+  var commandProtocol = false
 
   func run() async throws {
+    if commandProtocol {
+      // The range a CLI checks its own protocol against; any compatible app build serves it.
+      print(#"{"version":\#(HelperProtocol.version),"minimum":\#(HelperProtocol.minimum)}"#)
+      return
+    }
     guard coreBuild else { throw CleanExit.helpRequest(self) }
     print(DocumentOwner.coreBuildID)
   }

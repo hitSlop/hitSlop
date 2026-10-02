@@ -71,6 +71,7 @@ export const PageResults = {
   undo: Strict({ sequence }),
   redo: Strict({ sequence }),
   config: Strict({
+    runtimeABI: T.Integer({ minimum: 1 }),
     readOnly: T.Boolean(),
     presentation: SlopPresentationSchema,
     theme: ThemeValuesSchema,

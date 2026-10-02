@@ -1,7 +1,7 @@
 import { Strict } from "./strict";
 import * as Type from "typebox";
 import { validate } from "./validation";
-import { ManifestText, SlopCategories, WindowBounds } from "./constants";
+import { ManifestText, PackageFormat, RuntimeABI, SlopCategories, WindowBounds } from "./constants";
 
 export const manifestSchemaURL = "https://api.hitslop.com/schemas/manifest.schema.json" as const;
 export const SlopCategorySchema = Type.Enum(SlopCategories, { title: "SlopCategory" });
@@ -69,22 +69,30 @@ export const SlopPresentationSchema = Type.Union(
   [SlopStandardPresentationSchema, SlopSkinPresentationSchema],
   { title: "SlopPresentation" },
 );
-export const SlopManifestSchema = Strict(
-  {
-    $schema: Type.Optional(Type.Literal(manifestSchemaURL)),
-    author: SlopAuthorSchema,
-    slug: Type.String({ ...ManifestText.slug }),
-    title: Type.String({ ...ManifestText.title }),
-    description: Type.String({ ...ManifestText.description }),
-    categories,
-    presentation: SlopPresentationSchema,
-  },
-  { title: "SlopManifest" },
+const manifestFields = {
+  $schema: Type.Optional(Type.Literal(manifestSchemaURL)),
+  author: SlopAuthorSchema,
+  slug: Type.String({ ...ManifestText.slug }),
+  title: Type.String({ ...ManifestText.title }),
+  description: Type.String({ ...ManifestText.description }),
+  categories,
+  presentation: SlopPresentationSchema,
+};
+/** The manifest an author writes. */
+export const SlopManifestSchema = Strict(manifestFields, { title: "SlopManifest" });
+/** Independent package syntax and app runtime requirements, stamped by the builder. */
+export const SlopPackageManifestSchema = Strict(
+  { ...manifestFields, packageFormat: Type.Integer({ minimum: 1, maximum: PackageFormat }), runtimeABI: Type.Integer({ minimum: 1, maximum: RuntimeABI }) },
+  { title: "SlopPackageManifest" },
 );
 export type SlopCategory = Type.Static<typeof SlopCategorySchema>;
 export type SlopAuthor = Type.Static<typeof SlopAuthorSchema>;
 export type SlopManifest = Type.Static<typeof SlopManifestSchema>;
+export type SlopPackageManifest = Type.Static<typeof SlopPackageManifestSchema>;
 export type SlopPresentation = Type.Static<typeof SlopPresentationSchema>;
-/** The manifest's structure. Window shape geometry is validated by the core (WASM). */
+/** The authored manifest's structure. Window shape geometry is validated by the core (WASM). */
 export const parseManifest = (input: unknown): SlopManifest =>
   validate(SlopManifestSchema, input, "Invalid manifest");
+/** A built package's manifest, at a level this build supports. */
+export const parsePackageManifest = (input: unknown): SlopPackageManifest =>
+  validate(SlopPackageManifestSchema, input, "Invalid package manifest");

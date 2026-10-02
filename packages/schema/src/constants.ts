@@ -67,11 +67,21 @@ export const RowIdRule = {
   mintAlphabet: "0123456789abcdefghjkmnpqrstvwxyz",
 } as const;
 export const IssueCodes = ["type_mismatch", "out_of_range", "unknown_field", "invalid_key", "invalid_id", "duplicate_id"] as const;
+/** Codes may grow; apps treat an unfamiliar one as a refusal they cannot name. */
 export const CoreErrorCodes = [
   "type_mismatch", "out_of_range", "path_not_found", "invalid_key", "exists", "duplicate_id",
   "invalid_request", "invalid_id", "invalid_path", "invalid_schema", "too_large", "stale_base",
   "invalid_version", "invalid_bytes", "missing_dependencies", "engine_error", "invalid_shape",
+  "requires_update",
 ] as const;
+/** Persisted package syntax (manifest, resources and descriptor encoding). */
+export const PackageFormat = 1;
+/** App-facing ctx behavior. Independent of package syntax and storage layout. */
+export const RuntimeABI = 1;
+/** The native helper's command line (`hitslop-native`): the version a CLI speaks, and the
+ * oldest one a helper still serves. App updates keep serving every version in the range,
+ * so a CLI keeps working until the minimum passes it. */
+export const HelperProtocol = { version: 1, minimum: 1 } as const;
 export const PageErrorCodes = [
   "rejected",
   "owner_replaced",

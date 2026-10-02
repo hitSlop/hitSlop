@@ -2,7 +2,7 @@
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape }
+pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape, RequiresUpdate }
 impl Code {
     pub fn as_str(self) -> &'static str { match self {
         Self::TypeMismatch => "type_mismatch",
@@ -22,11 +22,15 @@ impl Code {
         Self::MissingDependencies => "missing_dependencies",
         Self::EngineError => "engine_error",
         Self::InvalidShape => "invalid_shape",
+        Self::RequiresUpdate => "requires_update",
     } }
 }
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }
 }
+/// The platform level this build runs; a package above it needs a newer app.
+pub const PACKAGE_FORMAT: u64 = 1;
+pub const RUNTIME_ABI: u64 = 1;
 /// The CSS `border-radius` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
 /// Effective theme JSON, and a theme file, in UTF-8 bytes.

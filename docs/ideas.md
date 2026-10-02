@@ -94,7 +94,10 @@ a person and their agent edit the same live document. What's missing is the slop
   Rust checks that the change is additive, and the document keeps its Loro state.
 - **Why:** remixing is a dead end if every schema change strands existing data.
 - **Builds on:** preserve-and-flag (merged anomalies are kept and reported, never
-  repaired), which already keeps unexpected values safe, and the canonical schema key.
+  repaired), which already keeps unexpected values safe; saved state compared with its
+  descriptor by meaning (`same_schema`), so "additive" is a comparison of two parsed
+  descriptors; and the [compatibility](engineering-contract.md#compatibility) markers
+  and corpus.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
   they were created with. This is the one deferral worth pulling forward.
 
@@ -176,7 +179,10 @@ a person and their agent edit the same live document. What's missing is the slop
   containers, and the map shows one; the other's content is hidden. Create those children
   with Loro's `ensure_mergeable_*`, whose identity comes from the parent and key, so
   concurrent creations merge. Rows are list items with their own identity and are
-  unaffected.
+  unaffected. This is a new [storage layout](reference/document-types.md#storage-layout)
+  for new documents; layout 1 documents keep creating children in place. Loro 1.16.2
+  keeps a mergeable child's state after its key is deleted, so a clear followed by a set
+  would resurface old fields; the layout has to define that first.
 - **Prerequisites:**
   - the invitee has the same template package (hosted catalog or a package hand-off);
   - capability links until accounts exist;

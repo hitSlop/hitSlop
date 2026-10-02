@@ -30,6 +30,8 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Open now
 
+- At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
+  entry; from then on every released document stays openable.
 - Restore the templates in `archive/slops` as their document kinds land.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
@@ -74,4 +76,4 @@ Media import, account UI/Auth/App Check, a document history UI, schema evolution
 iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
-There is no migration of documents from earlier builds.
+Pre-launch documents are not migrated.

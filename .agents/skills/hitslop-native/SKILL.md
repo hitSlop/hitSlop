@@ -32,7 +32,9 @@ ownership and shows a native retry; close and export flush first.
 core wire; run `bun run schema:generate` and never edit generated files. The core checks
 envelopes and manifests against those schemas and parses payloads strictly. WebKit
 correlates page replies; Swift checks the sender and supplies its native view token.
-Keep native view fences and socket epochs when changing the page protocol.
+Keep native view fences and socket epochs when changing the page protocol. Released
+documents stay openable: follow AGENTS.md's Compatibility rules, and keep
+`tests/compat` passing (`CompatCorpusTests`, `bun run test:compat`).
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
 is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated

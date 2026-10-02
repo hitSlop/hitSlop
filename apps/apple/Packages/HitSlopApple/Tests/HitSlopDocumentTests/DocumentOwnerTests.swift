@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import SQLite3
 import HitSlopCoreBinding
 import Testing
 import HitSlopTestSupport
@@ -137,6 +138,26 @@ import HitSlopTestSupport
       _ = try await reopened.apply(batch: self.increment, epoch: owner.epoch)
     }
     try await reopened.close()
+  }
+
+  // A document a newer hitSlop saved asks for an update from every owner mode, through
+  // the binding, and its database is left exactly as that build wrote it.
+  @Test func newerStorageAsksForAnUpdateAndIsLeftUnchanged() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    _ = try await owner.apply(batch: increment)
+    try await owner.close()
+    let database = root.appendingPathComponent("state/document.sqlite")
+    var connection: OpaquePointer?
+    #expect(sqlite3_open(database.path, &connection) == SQLITE_OK)
+    #expect(sqlite3_exec(connection, "PRAGMA user_version=2", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(connection)
+    let before = try Data(contentsOf: database)
+    for mode in [StorageMode.document, .snapshot] {
+      #expect(throws: SlopRequiresUpdate.self) { _ = try DocumentOwner(package: SlopPackage(rootURL: root), mode: mode) }
+    }
+    #expect(try Data(contentsOf: database) == before)
   }
 
   // Failure: a lost commit acknowledgement must retain both the original edit and edits

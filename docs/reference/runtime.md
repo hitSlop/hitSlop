@@ -33,8 +33,7 @@ The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Rec
 
 ## Package layout
 
-TypeBox defines the manifest and platform envelopes. The manifest requires author, slug, title, description, categories, and presentation; `$schema` is an optional editor hint.
-Readers tolerate unknown metadata and named enum values without rewriting manifest bytes; writers and known-field validation remain strict.
+TypeBox defines the manifest and platform envelopes. The authored manifest requires author, slug, title, description, categories, and presentation; `$schema` is an optional editor hint. `slop build` stamps `packageFormat` from the builder and `runtimeABI` from the project's resolved SDK. The host checks these independent requirements before package interpretation; package readers and app-facing context adapters dispatch on their own requirement. Native and browser page configuration carry the runtime ABI.
 
 ```text
 Example.slop/
@@ -60,7 +59,7 @@ Templates contain no `state`, `stores`, source, dependencies, caches, or editabl
 
 The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. App bundles must not embed Loro or the document implementation. Preview serves the same shell plus the WASM core from the CLI, with disposable memory storage. No executable code is downloaded.
 
-Packages carry no runtime metadata: a package is valid when its manifest, descriptor, initial data and assets validate. Earlier 1.x builds are unsupported. Populated SQLite storage must carry the hitSlop application ID and supported storage version. Native commands require matching CLI/helper/live-owner core build identities; there is no negotiation or migration.
+A package is valid when its manifest, descriptor, initial data and assets validate at its package/runtime requirements. Populated SQLite storage must carry the hitSlop application ID and a storage version this build reads, and each document records its layout; newer ones are refused with `requires_update` and left unchanged ([compatibility](../engineering-contract.md#compatibility)). The CLI checks the helper's command protocol; the helper requires the live owner's exact core build.
 
 ## Persistence and ownership
 
@@ -134,10 +133,15 @@ Release validation requires actual Firebase delivery and symbolication; unit tes
 
 ## Schema identity
 
-A stored document opens only under an identical schema key: the canonical JSON of its
-descriptor, with keys sorted recursively, array order kept, no whitespace and
-JavaScript JSON number formatting. These rules are frozen by a golden vector in
-`packages/document/tests/schema.test.ts`. Schema evolution is deferred.
+Saved state belongs to the descriptor it was saved under. The store records the
+descriptor (the core's canonical serialization) with the checkpoint and compares it with
+the package's by meaning when it opens (`same_schema`): key order and number spelling
+never matter, any other difference refuses the saved state. Apps check a second key: the
+SDK compiled into each `app.js` computes the descriptor's canonical JSON (keys sorted
+recursively, array order kept, no whitespace, JavaScript number formatting) and refuses
+to mount under a shell that computes a different one. Every released app.js carries that
+algorithm, so it is frozen by golden vectors in `packages/document/tests/schema.test.ts`.
+Schema evolution is deferred.
 
 The native page protocol has one request/reply envelope for document edits and host
 services. TypeBox owns it in `@hitslop/schema/page`; core payloads are in

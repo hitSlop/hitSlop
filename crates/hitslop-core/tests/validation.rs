@@ -69,3 +69,32 @@ fn descriptor_limits_accept_their_boundaries() {
         assert!(hitslop_core::schema_key(&schema.to_string()).is_err(), "{key}");
     }
 }
+
+// Every document records the layout it was written in. A build refuses bytes with no
+// layout before interpreting them, and a document from a newer layout asks for an update,
+// whether the newer layout arrives in the checkpoint or in a saved update.
+#[test]
+fn documents_record_their_layout_and_a_newer_one_asks_for_an_update() {
+    use hitslop_core::{Code, LAYOUT};
+    use loro::{ExportMode, LoroDoc};
+    let schema = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
+    let checkpoint = Document::create(schema, r#"{"title":"A"}"#).unwrap().checkpoint().unwrap();
+    let inspected = LoroDoc::new();
+    inspected.import(&checkpoint).unwrap();
+    assert_eq!(serde_json::to_value(inspected.get_map("meta").get_deep_value()).unwrap(), json!({"layout": LAYOUT}));
+    assert!(Document::open(schema, &checkpoint, &[]).is_ok());
+
+    let since = inspected.oplog_vv();
+    inspected.get_map("meta").insert("layout", LAYOUT + 1).unwrap();
+    inspected.commit();
+    let newer = inspected.export(ExportMode::Snapshot).unwrap();
+    let newer_update = inspected.export(ExportMode::updates(&since)).unwrap();
+    assert_eq!(Document::open(schema, &newer, &[]).err().map(|e| e.code), Some(Code::RequiresUpdate));
+    assert_eq!(Document::open(schema, &checkpoint, &[newer_update]).err().map(|e| e.code), Some(Code::RequiresUpdate));
+
+    let bare = LoroDoc::new();
+    bare.get_map("data").insert("title", "A").unwrap();
+    bare.commit();
+    let bare = bare.export(ExportMode::Snapshot).unwrap();
+    assert_eq!(Document::open(schema, &bare, &[]).err().map(|e| e.code), Some(Code::InvalidBytes));
+}

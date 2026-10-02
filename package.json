@@ -41,6 +41,8 @@
     "build:templates": "bun scripts/build-templates.ts",
     "test:render": "bun scripts/native-smoke.ts",
     "test:restored": "bun scripts/restored-smoke.ts",
+    "test:compat": "bun scripts/compat-replay.ts",
+    "compat:capture": "bun scripts/compat-capture.ts",
     "core:build": "bun scripts/core-build.ts",
     "core:build:wasm": "bun scripts/core-build.ts --wasm",
     "core:build:native": "bun scripts/core-build.ts --native",

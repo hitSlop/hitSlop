@@ -1,0 +1,77 @@
+{
+  "value": {
+    "cells": {
+      "compat-1": {
+        "input": "compat 1"
+      },
+      "compat-2": {
+        "input": "compat 2"
+      }
+    },
+    "done": {
+      "compat-1": true,
+      "compat-2": false
+    },
+    "habits": [
+      {
+        "$id": "compat-1",
+        "checkins": {},
+        "name": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "h1",
+        "checkins": {},
+        "name": "Walk"
+      },
+      {
+        "$id": "compat-2",
+        "checkins": {},
+        "name": "Replay 2 é 中文"
+      }
+    ],
+    "notes": "Replay 2 é 中文",
+    "pages": {
+      "compat-1": {
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      "compat-2": {
+        "text": "Replay 2 é 中文"
+      }
+    },
+    "pixels": [
+      "compat 2",
+      "compat 1",
+      "#fff",
+      "#fff",
+      "#fff"
+    ],
+    "presets": [
+      40,
+      40,
+      60,
+      90
+    ],
+    "stats": {
+      "guesses": [
+        "compat 2",
+        "compat 1"
+      ]
+    },
+    "title": "Replay 2 é 中文",
+    "widths": {
+      "A": 100,
+      "compat-1": 56,
+      "compat-2": 56
+    }
+  },
+  "issues": [],
+  "theme": {
+    "overrides": {
+      "accent": "#123456"
+    },
+    "effective": {
+      "accent": "#123456"
+    }
+  },
+  "attachments": []
+}

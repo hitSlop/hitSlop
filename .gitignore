@@ -47,6 +47,9 @@ dist/
 .hitslop/
 *.slop
 *.slop.zip
+# The compatibility corpus commits released packages and documents byte for byte.
+!/tests/compat/*/packages/*.slop
+!/tests/compat/*/documents/*.slop
 _inspo/
 _vibe/
 

@@ -8,9 +8,10 @@ fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(deserializer: 
 }
 
 // The descriptor is authored data, never executable application code.
-// Serialize gives the canonical form used for schema identity: fields in declaration
-// order, properties sorted by the BTreeMap, numbers in their parsed type.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+// Serialize gives the canonical form saved state records: fields in declaration order,
+// properties sorted by the BTreeMap, numbers in their parsed type. Identity compares
+// parsed descriptors (`same_schema`), so this spelling may change between builds.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub(super) enum Node {
     // Empty struct variants, not unit variants: serde ignores unknown fields on unit
@@ -259,8 +260,15 @@ pub fn validate(schema: &str, initial: &str) -> Result<String> {
     encode(&schema)
 }
 
-/// Stable descriptor identity: the parsed descriptor serialized canonically, so key
-/// order and number spelling in the authored JSON never change it.
+/// The descriptor's storage key: the parsed descriptor serialized canonically, so key
+/// order and number spelling in the authored JSON never change it. Saved state records
+/// it; `same_schema` compares keys by meaning, so this spelling may change between builds.
 pub fn schema_key(schema: &str) -> Result<String> {
     encode(&descriptor(schema)?)
+}
+
+/// Whether two descriptors mean the same thing: equal once parsed, whatever their
+/// spelling. A descriptor that does not parse matches nothing.
+pub fn same_schema(a: &str, b: &str) -> bool {
+    matches!((descriptor(a), descriptor(b)), (Ok(a), Ok(b)) if a == b)
 }

@@ -1,8 +1,33 @@
 #![cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
-use hitslop_core::{manifest, shape::Silhouette, Code};
+use hitslop_core::{manifest, shape::Silhouette, Code, PACKAGE_FORMAT, RUNTIME_ABI};
 
 fn fixture() -> serde_json::Value {
-    serde_json::json!({"author":{"name":"Author"},"slug":"fixture","title":"Title","description":"Description","categories":["utilities"],"presentation":{"width":320,"height":240}})
+    serde_json::json!({"author":{"name":"Author"},"slug":"fixture","title":"Title","description":"Description","categories":["utilities"],"presentation":{"width":320,"height":240},"packageFormat":1,"runtimeABI":1})
+}
+/// A built package's manifest: the authored one plus the level `slop build` stamps.
+fn built(mut authored: serde_json::Value) -> String {
+    authored["packageFormat"] = serde_json::json!(PACKAGE_FORMAT);
+    authored["runtimeABI"] = serde_json::json!(RUNTIME_ABI);
+    authored.to_string()
+}
+
+#[test]
+fn a_package_names_its_platform_and_a_newer_one_asks_for_an_update() {
+    let mut value = fixture();
+    value.as_object_mut().unwrap().remove("packageFormat");
+    assert_eq!(manifest::validate(&value.to_string()).unwrap_err().code, Code::InvalidRequest, "built packages carry a level");
+    for level in [serde_json::json!(0), serde_json::json!("1"), serde_json::json!(1.5)] {
+        value["packageFormat"] = level;
+        assert_eq!(manifest::validate(&value.to_string()).unwrap_err().code, Code::InvalidRequest);
+    }
+    // A newer package is refused as needing an update before its other fields are judged,
+    // whatever fields this build does not know.
+    let mut newer = fixture();
+    newer["packageFormat"] = serde_json::json!(PACKAGE_FORMAT + 1);
+    newer["presentation"]["future"] = serde_json::json!(true);
+    newer["lineage"] = serde_json::json!({"template": "future"});
+    let error = manifest::validate(&newer.to_string()).unwrap_err();
+    assert_eq!(error.code, Code::RequiresUpdate, "{}", error.message);
 }
 
 #[test]
@@ -51,7 +76,7 @@ fn native_manifest_agrees_with_the_shared_corpus() {
     assert!(cases.len() > 80);
     for case in cases {
         let name = case["name"].as_str().unwrap();
-        let accepted = manifest::validate(&case["manifest"].to_string()).is_ok();
+        let accepted = manifest::validate(&built(case["manifest"].clone())).is_ok();
         assert_eq!(accepted, case["accept"].as_bool().unwrap(), "{name}");
     }
 }
@@ -63,9 +88,22 @@ fn native_manifest_accepts_every_active_example() {
     for entry in std::fs::read_dir(root).unwrap() {
         let file = entry.unwrap().path().join("manifest.json");
         if let Ok(text) = std::fs::read_to_string(&file) {
-            assert!(manifest::validate(&text).is_ok(), "{}", file.display());
+            assert!(manifest::validate(&built(serde_json::from_str(&text).unwrap())).is_ok(), "{}", file.display());
             checked += 1;
         }
     }
     assert!(checked >= 10, "expected the active example manifests, found {checked}");
+}
+
+#[test]
+fn package_syntax_and_runtime_requirements_are_independent() {
+    for field in ["packageFormat", "runtimeABI"] {
+        let mut newer = fixture();
+        newer[field] = serde_json::json!(2);
+        newer["unknown_future_field"] = serde_json::json!(true);
+        assert_eq!(manifest::validate(&newer.to_string()).unwrap_err().code, Code::RequiresUpdate);
+        let mut missing = fixture();
+        missing.as_object_mut().unwrap().remove(field);
+        assert_eq!(manifest::validate(&missing.to_string()).unwrap_err().code, Code::InvalidRequest);
+    }
 }

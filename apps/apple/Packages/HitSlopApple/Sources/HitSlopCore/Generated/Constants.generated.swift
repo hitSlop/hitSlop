@@ -11,6 +11,18 @@ extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
   public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "other")!]
 }
+/// The platform level this build runs; a package above it needs a newer app.
+public enum PackageFormat {
+  public static let level = 1
+}
+public enum RuntimeABI {
+  public static let level = 1
+}
+/// The helper's command-line protocol: the version it speaks and the oldest it serves.
+public enum HelperProtocol {
+  public static let version = 1
+  public static let minimum = 1
+}
 public enum WindowBounds {
   public static let minWidth = 240
   public static let minHeight = 180

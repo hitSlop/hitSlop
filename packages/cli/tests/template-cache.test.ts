@@ -23,6 +23,7 @@ async function writePackage(output: string, slug = "quick-checklist") {
     author: { name: "hitSlop" },
     categories: ["utilities"],
     presentation: { width: 320, height: 240 },
+    packageFormat: 1, runtimeABI: 1,
   };
   const files = {
     "manifest.json": manifest,

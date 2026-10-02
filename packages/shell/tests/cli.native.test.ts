@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PackageFormat, RuntimeABI } from "@hitslop/schema/constants";
 import { defineDocument, s } from "@hitslop/document";
 const schema = defineDocument({ title: s.text() });
 
@@ -12,9 +13,10 @@ test("native CLI refuses an environment-configured template master before mutati
   const root = join(parent, "Master.slop");
   try {
     await mkdir(join(root, "assets"), { recursive: true });
-    const manifest = await readFile("examples/slops/quick-checklist/manifest.json", "utf8");
+    // A built package's manifest: the authored one plus the level `slop build` stamps.
+    const manifest = { ...JSON.parse(await readFile("examples/slops/quick-checklist/manifest.json", "utf8")), packageFormat: PackageFormat, runtimeABI: RuntimeABI };
     const files: Record<string, string> = {
-      "manifest.json": manifest,
+      "manifest.json": JSON.stringify(manifest),
       "assets/app.js": "export default { mount() { return {}; } };",
       "state.schema.json": JSON.stringify(schema.descriptor),
       "initial.json": JSON.stringify({ title: "Master" }),
@@ -82,7 +84,7 @@ test("native CLI rejects invalid packages and malformed commands before mutation
     return { out, error, code };
   };
   try {
-    await writeFile(join(root, "manifest.json"), JSON.stringify({ slug: "not-a-manifest" }));
+    await writeFile(join(root, "manifest.json"), JSON.stringify({ slug: "not-a-manifest", packageFormat: PackageFormat, runtimeABI: RuntimeABI }));
     const refused = await cli("get");
     expect(refused.code).not.toBe(0);
     expect(refused.error).toContain("Invalid manifest.json at /");
@@ -90,7 +92,7 @@ test("native CLI rejects invalid packages and malformed commands before mutation
     const manifest = JSON.parse(
       await readFile("examples/slops/quick-checklist/manifest.json", "utf8"),
     );
-    await writeFile(join(root, "manifest.json"), JSON.stringify(manifest));
+    await writeFile(join(root, "manifest.json"), JSON.stringify({ ...manifest, packageFormat: PackageFormat, runtimeABI: RuntimeABI }));
     await mkdir(join(root, "assets"));
     await writeFile(join(root, "assets/theme.json"), "{}");
     await writeFile(join(root, "assets/app.js"), "export default { mount() { return {}; } };");

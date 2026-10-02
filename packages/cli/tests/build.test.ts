@@ -4,6 +4,7 @@ import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { readdir, mkdir } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
+import { parseManifest, parsePackageManifest, PackageFormat } from "@hitslop/schema";
 // Built apps import nothing from the runtime and reach the host only through ctx.
 test("apps contain no runtime code and cannot reach the engine, bridge or remote boot resources", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
@@ -65,7 +66,12 @@ test("init creates a buildable source and refuses to overwrite it", async () => 
     const metadata = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
     expect(metadata.dependencies["@hitslop/document"]).not.toContain("__HITSLOP");
     const built = await buildProject(source, join(root, "starter.slop"));
-    expect(JSON.parse(await readFile(join(built, "manifest.json"), "utf8")).slug).toBeTruthy();
+    const manifest = JSON.parse(await readFile(join(built, "manifest.json"), "utf8"));
+    expect(manifest.slug).toBeTruthy();
+    // The built package names the level it needs, so an older app refuses it up front.
+    expect(manifest.packageFormat).toBe(PackageFormat);
+    expect(() => parseManifest(manifest)).toThrow();
+    expect(parsePackageManifest(manifest).packageFormat).toBe(PackageFormat);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

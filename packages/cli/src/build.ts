@@ -1,10 +1,19 @@
 import { cp, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { parseManifest } from "@hitslop/schema";
+import { parseManifest, PackageFormat } from "@hitslop/schema";
 import { validateDocument, validateTheme, validateWindowShape } from "./core";
 import { assertReplaceable, defaultOutput, exists } from "./fs";
 import { cliRoot } from "./paths";
 import type { AppCompiler } from "./vite";
+/** The runtime ABI comes from the project SDK, independently of the builder format. */
+async function runtimeABI(source: string): Promise<number> {
+  const sdk = await import(Bun.resolveSync("@hitslop/document/abi", source)).catch(() => {
+    throw new Error("Install @hitslop/document in the project before building");
+  });
+  if (!Number.isInteger(sdk.RuntimeABI)) throw new Error("Update the project's @hitslop/document to build with this CLI");
+  if (sdk.RuntimeABI < 1) throw new Error("Invalid SDK runtime ABI");
+  return sdk.RuntimeABI;
+}
 export async function buildProject(source: string, destination?: string) {
   source = resolve(source);
   const child = Bun.spawn(
@@ -43,7 +52,8 @@ export async function buildProjectInBun(
     await cp(join(source, "assets"), join(stage, "assets"), { recursive: true });
   try {
     await compileApp?.(source, stage);
-    await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest, null, 2));
+    const abi = await runtimeABI(source);
+    await writeFile(join(stage, "manifest.json"), JSON.stringify({ ...manifest, packageFormat: PackageFormat, runtimeABI: abi }, null, 2));
     await writeFile(join(stage, "state.schema.json"), JSON.stringify(descriptor, null, 2));
     await writeFile(join(stage, "initial.json"), JSON.stringify(initial, null, 2));
     await writeFile(join(stage, "assets/theme.json"), JSON.stringify(theme.defaults));

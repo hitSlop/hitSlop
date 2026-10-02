@@ -29,6 +29,7 @@ func storeCall<T>(_ body: () throws -> T) throws -> T {
     case .Moved: throw SaveFailure.moved
     case .Closed: throw OwnerError.closed
     case .Failed(let message): throw failure(message)
+    case .Rejected where SlopRequiresUpdate.matches(error): throw SlopRequiresUpdate()
     case .Rejected, .Invalidated: throw error
     }
   }

@@ -1,0 +1,25 @@
+{
+  "kind": "object",
+  "properties": {
+    "currentKey": {
+      "kind": "string"
+    },
+    "entries": {
+      "kind": "record",
+      "value": {
+        "kind": "object",
+        "properties": {
+          "date": {
+            "kind": "string"
+          },
+          "text": {
+            "kind": "text"
+          },
+          "completedAt": {
+            "kind": "string"
+          }
+        }
+      }
+    }
+  }
+}

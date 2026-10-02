@@ -37,8 +37,10 @@ try {
   const helperCore = (await run(["--core-build"])).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
   assert.equal(appCore, helperCore, "App and helper embed different document cores");
-  const cliCore = (await Bun.file("packages/cli/shell/core/BUILD_ID").text()).trim();
-  assert.equal(cliCore, helperCore, "CLI and helper embed different document cores");
+  // A release is built from one tree, so the CLI's authoring core is the app's core.
+  const wasm = await import(resolve("packages/cli/shell/core/hitslop_core_wasm.js"));
+  wasm.initSync({ module: await Bun.file(resolve("packages/cli/shell/core/hitslop_core_wasm_bg.wasm")).bytes() });
+  assert.equal(wasm.coreBuildId(), helperCore, "CLI and helper embed different document cores");
   const selected = (await builtTemplates()).templates.filter((t) => t.bundled).map((t) => t.slug);
   const starters = join(app, "Contents/Resources/StarterTemplates");
   assert.deepEqual((await readdir(starters)).sort(), selected.map((slug) => slug + ".slop").sort());

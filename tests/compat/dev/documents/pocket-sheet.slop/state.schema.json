@@ -1,0 +1,48 @@
+{
+  "kind": "object",
+  "properties": {
+    "title": {
+      "kind": "text"
+    },
+    "cells": {
+      "kind": "record",
+      "value": {
+        "kind": "object",
+        "properties": {
+          "input": {
+            "kind": "string",
+            "maxLength": 500
+          },
+          "tint": {
+            "kind": "optional",
+            "inner": {
+              "kind": "enum",
+              "values": [
+                "butter",
+                "mint",
+                "sky",
+                "rose",
+                "lilac"
+              ]
+            }
+          },
+          "stamp": {
+            "kind": "optional",
+            "inner": {
+              "kind": "string",
+              "maxLength": 16
+            }
+          }
+        }
+      }
+    },
+    "widths": {
+      "kind": "record",
+      "value": {
+        "kind": "integer",
+        "min": 56,
+        "max": 320
+      }
+    }
+  }
+}

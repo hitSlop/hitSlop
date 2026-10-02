@@ -33,6 +33,7 @@ async function previewConfig(): Promise<PageResult<"config">> {
   const manifest = await fetchJSON("/manifest.json", "Missing manifest");
   return {
     readOnly: false,
+    runtimeABI: manifest.runtimeABI,
     theme: await fetchJSON("/assets/theme.json", "Missing theme defaults"),
     presentation: manifest.presentation,
   };
@@ -63,6 +64,7 @@ async function openDocument(native: boolean) {
 
 /** The app-facing interface over this page's document and host services. */
 function createContext(
+  runtimeABI: number,
   doc: Document<ObjectNode>,
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
@@ -71,6 +73,13 @@ function createContext(
     reportError(error: unknown): void;
   },
 ): SlopContext {
+  switch (runtimeABI) {
+    case 1: return createContextV1(doc, options);
+    default: throw new Error("This slop needs a newer version of hitSlop");
+  }
+}
+
+function createContextV1(doc: Document<ObjectNode>, options: Parameters<typeof createContext>[2]): SlopContext {
   const { attachments, capture } = options;
   const document = Object.freeze({
     get key() {
@@ -148,7 +157,7 @@ export async function boot() {
     globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
     report(native, "application", error);
   };
-  const ctx = createContext(doc as Document<ObjectNode>, {
+  const ctx = createContext(config.runtimeABI, doc as Document<ObjectNode>, {
     attachments,
     capture,
     resize: async (size) => {

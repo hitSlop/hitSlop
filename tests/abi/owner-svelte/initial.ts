@@ -1,1 +1,16 @@
-export default { title: "Svelte ABI 2", done: false, hits: 0, rows: [] };
+export default {
+  title: "Svelte ABI 2",
+  version: "Authored version",
+  epoch: 42,
+  done: false,
+  hits: 0,
+  rows: [],
+  label: "",
+  ratio: 0.5,
+  count: 0,
+  lane: "todo",
+  settings: { volume: 5, muted: false },
+  colors: [],
+  checkins: {},
+  cells: {},
+};

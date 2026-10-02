@@ -36,7 +36,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     public enum Reason: String, Sendable {
         case unknown, storage, webContentTerminated, navigation, startup, presentation
         case invalidPackage, missingFile, permission, diskFull, busy
-        case authoredException, operationRejected, preview, icon, destinationExists
+        case authoredException, operationRejected, preview, icon, destinationExists, requiresUpdate
         var code: Int {
             switch self {
             case .unknown: 0; case .storage: 1; case .webContentTerminated: 2
@@ -46,6 +46,7 @@ public struct SlopFailureContext: Equatable, Sendable {
             case .authoredException: 12; case .operationRejected: 13
             // 16 was retired; codes are never reused.
             case .preview: 14; case .icon: 15; case .destinationExists: 17
+            case .requiresUpdate: 18
             }
         }
     }

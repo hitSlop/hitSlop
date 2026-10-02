@@ -1,4 +1,4 @@
-import { DefaultWindowRadius, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
+import { DefaultWindowRadius, PackageFormat, RuntimeABI, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
 import { ThemeFileSchema } from "../packages/schema/src/values";
 import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, CoreErrorCodes, RowIdRule, IssueCodes, OwnerPatchOpSchema as PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
 
@@ -50,6 +50,9 @@ ${CoreErrorCodes.map(code => `        Self::${pascal(code)} => "${code}",`).join
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }
 }
+/// The platform level this build runs; a package above it needs a newer app.
+pub const PACKAGE_FORMAT: u64 = ${PackageFormat};
+pub const RUNTIME_ABI: u64 = ${RuntimeABI};
 /// The CSS \`border-radius\` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "${DefaultWindowRadius}";
 /// Effective theme JSON, and a theme file, in UTF-8 bytes.

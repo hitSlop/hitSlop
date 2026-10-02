@@ -2,7 +2,8 @@
 
 Source contains the manifest, TypeScript descriptor definition, initial values,
 theme colors, components, and plain CSS. Build compiles the immutable app module (assets/app.js, app.css) and assets,
-state.schema.json, initial.json, runtime requirements, and document guidance.
+state.schema.json, initial.json, the manifest's `packageFormat` and `runtimeABI` requirements (written only by build;
+never add it to source), and document guidance.
 Native capture adds QuickLook artwork. Templates contain no mutable state,
 source, dependencies, caches, or stores.
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "pocket-sheet",
+  "title": "Pocket Sheet",
+  "description": "A little graph-paper spreadsheet for bill splits, tallies, and quick math.",
+  "categories": [
+    "productivity",
+    "personal"
+  ],
+  "presentation": {
+    "width": 700,
+    "height": 640
+  },
+  "packageFormat": 1,
+  "runtimeABI": 1
+}

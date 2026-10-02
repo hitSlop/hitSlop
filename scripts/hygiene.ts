@@ -1,3 +1,5 @@
+import { releases } from "./compat";
+import { verifyCorpus } from "./compat-integrity";
 import { lstat, stat, realpath, readFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
@@ -204,8 +206,37 @@ export async function assertDocs(
     throw new Error(`Docs are out of date:\n${[...new Set(problems)].map((item) => `  - ${item}`).join("\n")}`);
 }
 
+/** Frozen compatibility corpus entries (tests/compat) are permanent: against the
+ * protected branch, a change may only add files to them. Git history is the authority;
+ * hashes stored beside the files could be edited with them. CI names the base
+ * (`HITSLOP_COMPAT_BASE`): the pull request's target, or the commit a push replaced. */
+async function assertFrozenCorpus(): Promise<void> {
+  const base = process.env.HITSLOP_COMPAT_BASE || "origin/master";
+  const resolved = Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", `${base}^{commit}`], { cwd: root });
+  if (resolved.exitCode !== 0) {
+    if (process.env.CI) throw new Error(`Cannot compare tests/compat with ${base}`);
+    process.stdout.write(`! tests/compat not compared: ${base} is unavailable\n`);
+    return;
+  }
+  const mergeBase = (await command(["git", "merge-base", "HEAD", base], root, true)).trim();
+  const listing = Bun.spawnSync(["git", "ls-tree", "--name-only", `${mergeBase}:tests/compat`], { cwd: root, stderr: "ignore" });
+  const entries = listing.exitCode === 0 ? listing.stdout.toString().split("\n").filter(Boolean) : [];
+  const changed: string[] = [];
+  for (const entry of entries) {
+    const release = Bun.spawnSync(["git", "show", `${mergeBase}:tests/compat/${entry}/release.json`], { cwd: root });
+    if (release.exitCode !== 0 || JSON.parse(release.stdout.toString()).frozen !== true) continue;
+    // Committed and uncommitted changes since the base; additions are the only allowed kind.
+    const diff = await command(["git", "diff", "--name-status", "--no-renames", mergeBase, "--", `tests/compat/${entry}`], root, true);
+    changed.push(...diff.split("\n").filter((line) => line && !line.startsWith("A\t")));
+  }
+  if (changed.length)
+    throw new Error(`Frozen compatibility corpus entries changed:\n${changed.map((line) => `  - ${line}`).join("\n")}`);
+}
+
 export async function checkHygiene(): Promise<void> {
   const files = await gitFiles();
+  await assertFrozenCorpus();
+  for (const entry of await releases()) await verifyCorpus(entry.root, entry.release);
   assertTrackedHygiene(files);
   assertNoGeneratedSource(files);
   await assertTextHygiene(files);
