@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-03",
+  "scope": "One document window opened through the production DocumentSession and SchemeHandler, the page in an NSWindow. Swift test harness (PagePolicyProbeTests), system WKWebView on macOS 26.6.2 (25G83), Apple Swift 6.4. Single run per configuration.",
+  "question": "Under the page policy, what can a slop run: workers, AudioWorklets, WebAssembly, cross-origin isolation, and media from its own package?",
+  "method": {
+    "test": "HITSLOP_PROBE_OUT=<file> bun run swift:test --filter PagePolicyProbeTests",
+    "assets": "worker.js, module.js and module.mjs (module workers), worklet.js (an AudioWorkletProcessor), add.wasm (an i32 add), tone.wav (3 s, 8 kHz mono PCM)",
+    "probes": "new Worker from a package file, a blob: URL and a data: URL; OfflineAudioContext.audioWorklet.addModule from the same three; WebAssembly.instantiate(bytes), new WebAssembly.Module(bytes), instantiateStreaming(fetch); crossOriginIsolated and typeof SharedArrayBuffer; <audio> from a package file and from a blob: URL of the fetched bytes, waiting for loadedmetadata and a seek to 1.5 s; decodeAudioData. Each probe settles within 3 s.",
+    "variant": "A temporary SchemeHandler change, reverted after the run: script-src adds 'wasm-unsafe-eval'; .wasm served as application/wasm; every response carries Cross-Origin-Opener-Policy same-origin, Cross-Origin-Embedder-Policy require-corp, Cross-Origin-Resource-Policy same-origin; Range requests answered with 206, Content-Range, Content-Length and Accept-Ranges."
+  },
+  "today": {
+    "worker.asset": "ok",
+    "worker.module.js": "ok",
+    "worker.module.mjs": "ok (served as application/octet-stream)",
+    "worker.blob": "refused (worker-src)",
+    "worker.data": "refused (worker-src)",
+    "worklet.asset": "ok",
+    "worklet.blob": "refused (script-src-elem)",
+    "worklet.data": "refused (script-src-elem)",
+    "wasm.instantiate": "refused: 'unsafe-eval' or 'wasm-unsafe-eval' is not an allowed source of script",
+    "wasm.module": "refused, same message",
+    "wasm.streaming": "refused: response MIME type is application/octet-stream, not application/wasm",
+    "crossOriginIsolated": false,
+    "SharedArrayBuffer": "undefined",
+    "media.asset": "fails: loadstart then MEDIA_ERR_SRC_NOT_SUPPORTED (4). WebKit requests Range: bytes=0-1 and bytes=0-1445; the handler answers 200 with the whole file and no Content-Length.",
+    "media.blob": "ok: duration 3.00 s, seekable to 3.00 s, seeked to 1.50 s",
+    "media.decode": "ok: duration 3.00 s"
+  },
+  "variant": {
+    "media.asset": "ok: duration 3.00 s, seekable to 3.00 s, seeked to 1.50 s. WebKit issued 11 range requests (bytes=0-1 through bytes=47916-47918) before two full reads.",
+    "wasm.instantiate": "ok (2 + 3 = 5)",
+    "wasm.module": "ok",
+    "wasm.streaming": "ok",
+    "crossOriginIsolated": false,
+    "SharedArrayBuffer": "undefined",
+    "inline code": "still refused, same violations"
+  },
+  "findings": [
+    "Packaged workers, module workers (.js and .mjs) and AudioWorklets run under today's policy. Shipping them as files is enough; no policy change is needed for worklets.",
+    "blob: and data: workers and worklets are refused, as intended. A securitypolicyviolation event fires for each (worker-src, script-src-elem), so the shell can report them in plain language.",
+    "WebAssembly is refused by CSP regardless of where the bytes come from, including same-scheme instantiateStreaming. Allowing it is purely a policy decision: 'wasm-unsafe-eval' plus the application/wasm type make all three paths work.",
+    "<audio>/<video> playing a package file fails today, because WebKit's media loader needs byte ranges from the scheme handler. 206 responses fix playback and seeking. No shipped slop plays packaged media (Alien Radio streams over HTTPS), so this was latent. Workarounds today: a blob: URL of the fetched bytes, or decodeAudioData.",
+    "Cross-origin isolation is not available to slop: pages even with COOP, COEP and CORP on every response, so SharedArrayBuffer (threaded WebAssembly, shared-memory audio rings) can't be offered.",
+    "WebKit starts media only for a page in a window; tests that probe media must put the WebView in an NSWindow.",
+    "WebKit fires no securitypolicyviolation event when it refuses to compile WebAssembly; only the thrown error reports it."
+  ],
+  "fixed": {
+    "date": "2026-10-03",
+    "change": "SchemeHandler: script-src adds 'wasm-unsafe-eval'; types for wasm, mjs, wav, ogg, webm, otf; Content-Length on every response; single byte ranges answered with 206 (416 when unsatisfiable).",
+    "why_webassembly": "Not a new allowance but a regression fix: the released 1.0.7 policy is script-src slop: 'wasm-unsafe-eval' (Loro then ran in the page), docs/reference/runtime.md already permitted WASM, and the host-owned reset dropped it. Soma Amp (bundled) creates Butterchurn with onlyUseWASM: true, so on the reset branch every MilkDrop preset failed to compile; slop dev still allowed it.",
+    "after": {
+      "wasm.instantiate": "5",
+      "wasm.module": "5",
+      "wasm.streaming": "5",
+      "media.asset": "duration=3.00 seekableEnd=3.00 seekedTo=1.50",
+      "inline workers and worklets": "still refused",
+      "soma_amp_milkdrop": "2 WebAssembly modules compiled, no page errors"
+    },
+    "tests": "PagePolicyProbeTests asserts WebAssembly runs and packaged media seeks (both failed before the change) and that blob:/data: scripts stay refused; byteRangesFollowHTTP covers suffix, open-ended, inverted and multi-range headers."
+  }
+}

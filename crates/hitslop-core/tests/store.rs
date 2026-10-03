@@ -872,3 +872,45 @@ fn a_duplicate_carries_theme_overrides() {
     store::duplicate(&root, &copy).unwrap();
     assert_eq!(accent(&open(&copy).0), "#123456");
 }
+
+// Failure: a read-only connection beside the writer in the same process (Duplicate of an
+// open document, a snapshot render) intermittently made the platform SQLite fail the
+// writer's locks with EBADF (SQLITE_IOERR_LOCK), and sometimes the reader's too.
+#[test]
+fn readers_beside_an_open_document_never_fail_its_saves() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (dir, root) = package();
+    let (store, mut doc) = open(&root);
+    let stop = Arc::new(AtomicBool::new(false));
+    let reader = {
+        let (root, stop, scratch) = (root.clone(), stop.clone(), dir.path().to_owned());
+        std::thread::spawn(move || {
+            let mut failures = vec![];
+            let mut round = 0;
+            while !stop.load(Ordering::Relaxed) {
+                let copy = scratch.join(format!("Copy{round}.slop"));
+                std::fs::create_dir(&copy).unwrap();
+                if let Err(e) = store::duplicate(&root, &copy) {
+                    failures.push(format!("duplicate: {e}"));
+                }
+                std::fs::remove_dir_all(&copy).unwrap();
+                if let Err(e) = Store::open(&root, Mode::Snapshot).and_then(|s| s.document(&key(), INITIAL, THEME).map(|_| ())) {
+                    failures.push(format!("snapshot: {e}"));
+                }
+                round += 1;
+            }
+            failures
+        })
+    };
+    let mut failures = vec![];
+    for i in 0..300 {
+        set_title(&mut doc, &format!("Title {i}"));
+        let job = store.job(&mut doc, false).unwrap().unwrap();
+        if let Err(e) = store.write(&job) {
+            failures.push(format!("save {i}: {e}"));
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    failures.extend(reader.join().unwrap());
+    assert!(failures.is_empty(), "{} failures, first: {:?}", failures.len(), failures.first());
+}

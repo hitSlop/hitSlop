@@ -162,6 +162,20 @@ fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<Connection> 
     conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, MAX_BYTES as i32).map_err(sqlite("open"))?;
     Ok(conn)
 }
+/// A reader's connection: read-write with `query_only`. A read-only connection beside this
+/// process's writer makes the platform SQLite fail the writer's locks, and sometimes its
+/// own, with EBADF (SQLITE_IOERR_LOCK). Like any opener, it completes the rollback of a
+/// crashed write, which restores the saved state it reads. A file this process can't write
+/// opens read-only; no writer can be in this process then.
+fn reader(path: &Path, busy: Duration) -> Result<Connection> {
+    match connect(path, OpenFlags::SQLITE_OPEN_READ_WRITE, busy) {
+        Ok(conn) => {
+            conn.execute_batch("PRAGMA query_only=ON").map_err(sqlite("open"))?;
+            Ok(conn)
+        }
+        Err(_) => connect(path, OpenFlags::SQLITE_OPEN_READ_ONLY, busy),
+    }
+}
 fn is_new(conn: &Connection) -> Result<bool> {
     let tables: i64 = conn
         .query_row("SELECT count(*) FROM sqlite_master WHERE type='table'", [], |r| r.get(0))
@@ -278,7 +292,8 @@ struct ThemeSlot {
 
 /// One package's storage. `Document` mode owns the package: it holds the writer lock and
 /// persists writes. `Snapshot` mode reads the saved rows once, without the lock; its
-/// writes stay in memory, so a render never creates, locks or modifies package files.
+/// writes stay in memory, so a render never creates or locks package files or changes what
+/// they hold (it may finish rolling back a crashed write, as any reader does).
 pub struct Store {
     root: PathBuf,
     inode: u64,
@@ -429,7 +444,7 @@ impl Store {
         if fs::symlink_metadata(&path).is_err() {
             return empty();
         }
-        let conn = connect(&path, OpenFlags::SQLITE_OPEN_READ_ONLY, Duration::from_secs(5))?;
+        let conn = reader(&path, Duration::from_secs(5))?;
         let read = Transaction::new_unchecked(&conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
         if is_new(&read)? {
             return empty();
@@ -752,7 +767,7 @@ pub fn duplicate(source_root: &Path, destination_root: &Path) -> Result<()> {
     let source = fs::canonicalize(source_root)
         .map_err(|_| failed("Cannot resolve document for snapshot"))?
         .join("state/document.sqlite");
-    let input = connect(&source, OpenFlags::SQLITE_OPEN_READ_ONLY, Duration::from_secs(5))?;
+    let input = reader(&source, Duration::from_secs(5))?;
     // One read transaction: the backup copies exactly what was checked. Refuse what
     // opening would refuse, before anything is created.
     let read = Transaction::new_unchecked(&input, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
