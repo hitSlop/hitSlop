@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "departure-board",
+  "title": "Departure Board",
+  "description": "Your day as a split-flap airport board: set the stops, tap a status to flip it, and watch every letter clack into place.",
+  "categories": [
+    "personal",
+    "utilities"
+  ],
+  "presentation": {
+    "width": 560,
+    "height": 640
+  }
+}

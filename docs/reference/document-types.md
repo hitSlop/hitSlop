@@ -214,8 +214,15 @@ so concurrent increments all count.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
-- **Merge:** two replicas that create the same unset optional object or text at once keep
-  one of them whole.
+- **Merge:**
+  - Two replicas that create the same unset object or text at once share one value: its
+    fields resolve one by one, last writer wins; text, lists and rows keep both sides;
+    counter starting values add.
+  - `set` on an object that is already set writes only the fields that change, so a
+    concurrent edit to another field survives.
+  - `clear` hides concurrent edits to the cleared value. It removes what this replica has
+    seen; an edit it has not seen reappears if a replica that has not seen it either sets
+    the value again.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
@@ -280,8 +287,8 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** Replacing an object entry that holds text or
   a list is refused (`exists`).
-- **Merge:** concurrent puts of one key keep one whole entry; edits to different fields of
-  an existing object entry both survive.
+- **Merge:** as for optional fields: concurrent puts of one key share one entry, and edits
+  to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
   - `{"type":"set","path":["checkins","2026-09-23"],"value":1}`;
@@ -319,16 +326,26 @@ Layout 1:
 | `s.integer()` | an i64 value |
 | `s.counter()` | a `LoroMap` of writer (Loro peer ID) to that writer's integer total; the snapshot is their sum |
 | `s.optional(inner)` | the inner kind's representation, or no entry when unset |
-| `s.object({...})` | a `LoroMap` created in place (`insert_container`) |
+| `s.object({...})` | a `LoroMap` |
 | `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
 | `s.list(scalar)` | a `LoroMovableList` of values |
 | `s.record(value)` | a `LoroMap` of key to the value's representation |
 
-Optional objects and text and record entries are created in place, so two replicas that
-create one concurrently keep one whole. Agent (CLI and socket) commits carry the commit
-message `agent`. Effective row IDs for rows without a unique stored `$id` are derived
-from container identity by a frozen function (`identity.rs`). Mergeable containers for
-concurrently created children would be a later layout, for new documents.
+A container whose path from its nearest row (or the document) passes an optional field or
+a record entry can be created by more than one replica. It is created with Loro's
+`ensure_mergeable_*`, so its identity comes from its parent, key and kind, and concurrent
+creations share it. Every other container is created once, with its row or the document,
+by `insert_container`. Every replica derives the same choice from the descriptor.
+
+Loro keeps a mergeable container after its key is removed, including in history-trimmed
+snapshots. So removing a value, removing a row that holds one, and undoing either first
+empty the mergeable containers inside, and creating one empties it again before filling
+it. Each mergeable container ever created stays in the document, empty, at about 19
+bytes.
+
+Agent (CLI and socket) commits carry the commit message `agent`. Effective row IDs for
+rows without a unique stored `$id` are derived from container identity by a frozen
+function (`identity.rs`).
 
 ## Not supported
 

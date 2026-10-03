@@ -160,10 +160,10 @@ slop skills install --all --scope project
 
 Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Through `bunx` or a project's own CLI, `skills install` and `skills repair` stop and ask for the global install instead, because links into those copies would go stale.
 
-Every command you run with the global `slop` first repairs global hitSlop skill links that are broken or point somewhere else, so you rarely need to repair them yourself. Project links are repaired on request:
+Upgrading the global CLI updates linked skills in place. If a link breaks or points somewhere else, repair it; add `--scope project` for project links:
 
 ```sh
-slop skills repair --scope project
+slop skills repair
 ```
 
 To install skills for a new agent, run `skills install` again.

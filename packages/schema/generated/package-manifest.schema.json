@@ -66,6 +66,9 @@
           "education",
           "business",
           "personal",
+          "health",
+          "creative",
+          "music",
           "other"
         ],
         "title": "SlopCategory"

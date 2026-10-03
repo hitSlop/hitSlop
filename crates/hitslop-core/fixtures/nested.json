@@ -21,6 +21,26 @@
                 }
               }
             },
+            "note": {
+              "kind": "optional",
+              "inner": {
+                "kind": "text"
+              }
+            },
+            "card": {
+              "kind": "optional",
+              "inner": {
+                "kind": "object",
+                "properties": {
+                  "label": {
+                    "kind": "text"
+                  },
+                  "count": {
+                    "kind": "counter"
+                  }
+                }
+              }
+            },
             "tags": {
               "kind": "list",
               "item": {

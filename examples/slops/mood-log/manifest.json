@@ -8,8 +8,8 @@
   "title": "Mood Log",
   "description": "A gentle color journal for recording daily mood, energy, and a short reflection without pressure.",
   "categories": [
-    "personal",
-    "utilities"
+    "health",
+    "personal"
   ],
   "presentation": {
     "width": 480,

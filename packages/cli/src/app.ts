@@ -3,7 +3,6 @@ import { didYouMean, help, version } from "@crustjs/extensions";
 import { skill } from "@crustjs/skills";
 import { SlopCategories } from "@hitslop/schema/constants";
 import metadata from "../package.json";
-import { isGlobalInstall } from "./paths";
 
 export const skillExtras = [
   "hitslop",
@@ -412,14 +411,4 @@ export const app = new Crust("slop", {
         .add(themeCommand("import")),
     ),
   )
-  // Only the global install repairs links: other copies would point agents at a bunx
-  // cache or a project's node_modules. Repairs stay global, where the links follow the
-  // global CLI; projects keep init's guide copies, which repair must not report.
-  .extend(
-    skill({
-      name: skillName,
-      extras: skillExtras,
-      defaultScope: "global",
-      autoUpdate: isGlobalInstall,
-    }),
-  );
+  .extend(skill({ name: skillName, extras: skillExtras, defaultScope: "global" }));

@@ -150,7 +150,7 @@ impl Document {
                 });
             }
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
-            put(&map, &key, &Node::Text {}, &json!(r.to), &writer(&self.doc))?;
+            put(&map, &key, &Node::Text {}, &json!(r.to), &writer(&self.doc), at.shared, &mut Rows::new(&self.lists))?;
             self.doc.commit();
             let publication = self.publish()?;
             if publication.is_some() {

@@ -9,7 +9,7 @@ public enum AttachmentLimits {
 }
 extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
-  public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "other")!]
+  public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "health")!, SlopCategory(rawValue: "creative")!, SlopCategory(rawValue: "music")!, SlopCategory(rawValue: "other")!]
 }
 /// The platform level this build runs; a package above it needs a newer app.
 public enum PackageFormat {

@@ -1,6 +1,6 @@
 // Records, scalar lists and optional text. Failure: replicas that disagree after
-// exchanging updates, a record entry mixed from two writers, a merged anomaly repaired
-// on read, or a publication that drifts from a fresh snapshot.
+// exchanging updates, a merged anomaly repaired on read, or a publication that drifts
+// from a fresh snapshot. Concurrent creation is covered in `concurrent_creation.rs`.
 // Oracle: equal snapshots on both replicas, literal issues, and an independent patch
 // consumer compared with fresh snapshots over a random workload.
 mod support;
@@ -32,17 +32,6 @@ fn exchange(a: &mut Document, b: &mut Document, base: &str) {
 }
 
 #[test]
-fn concurrent_puts_of_one_key_keep_one_whole_entry() {
-    let (mut a, mut b, base) = pair();
-    apply(&mut a, json!([{"type":"set","path":["cells","A1"],"value":{"input":"left","tint":"red"}}]));
-    apply(&mut b, json!([{"type":"set","path":["cells","A1"],"value":{"input":"right"}}]));
-    exchange(&mut a, &mut b, &base);
-    let cell = view(&a)["value"]["cells"]["A1"].clone();
-    assert_eq!(cell, view(&b)["value"]["cells"]["A1"]);
-    assert!(cell == json!({"input":"left","tint":"red"}) || cell == json!({"input":"right"}));
-}
-
-#[test]
 fn concurrent_edits_to_fields_of_one_entry_both_survive() {
     let (mut a, mut b, _) = pair();
     apply(&mut a, json!([{"type":"set","path":["cells","A1"],"value":{"input":"start"}}]));
@@ -65,17 +54,6 @@ fn concurrent_scalar_list_inserts_both_survive_and_sets_converge() {
     assert_eq!(presets, json!([60, 100, 90, 200]));
     assert_eq!(view(&a)["value"], view(&b)["value"]);
     assert!(["#a00", "#0b0"].contains(&view(&a)["value"]["pixels"][0].as_str().unwrap()));
-}
-
-#[test]
-fn concurrent_optional_text_creation_keeps_one_text() {
-    let (mut a, mut b, base) = pair();
-    apply(&mut a, json!([{"type":"set","path":["notes"],"value":"from a"}]));
-    apply(&mut b, json!([{"type":"set","path":["notes"],"value":"from b"}]));
-    exchange(&mut a, &mut b, &base);
-    let notes = view(&a)["value"]["notes"].clone();
-    assert_eq!(notes, view(&b)["value"]["notes"]);
-    assert!(notes == json!("from a") || notes == json!("from b"));
 }
 
 #[test]

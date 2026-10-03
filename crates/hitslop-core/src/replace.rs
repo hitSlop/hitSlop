@@ -3,7 +3,7 @@
 //! container keep their identity, so open text fields, row handles and concurrent edits
 //! survive. An unchanged value writes nothing.
 use super::*;
-use execute::{insert_row, rewrite_list, Change};
+use execute::{insert_row, release, remove, rewrite_list, Change};
 
 /// Validates `value` completely before the first mutation. A stored anomaly under (or
 /// above) the target is preserved and flagged, never repaired, so it refuses the replace.
@@ -26,7 +26,7 @@ pub(super) fn replace(
     let mut to = Reconcile { doc, writer: &writer, ids, rows };
     if path.is_empty() {
         schema.validate(value, false)?;
-        return to.object(&doc.get_map("data"), schema, value);
+        return to.object(&doc.get_map("data"), schema, value, false);
     }
     let at = resolve(doc, schema, path, to.rows)?;
     let kind = unwrap_optional(at.node);
@@ -40,7 +40,7 @@ pub(super) fn replace(
     match &at.parent {
         Some((map, key)) => {
             at.node.validate(value, false)?;
-            to.field(map, key, at.node, value)
+            to.field(map, key, at.node, value, at.shared)
         }
         // A row: its ID stays.
         None => {
@@ -54,9 +54,24 @@ pub(super) fn replace(
             let ValueOrContainer::Container(Container::Map(row)) = &at.value else {
                 return Err(err(Code::TypeMismatch, "Cannot replace an anomalous row"));
             };
-            to.object(row, kind, value)
+            to.object(row, kind, value, at.shared)
         }
     }
+}
+
+/// The present object `map` becomes `value`, written as its differences (`set` of an
+/// object that holds only scalars).
+pub(super) fn object(
+    doc: &LoroDoc,
+    map: &LoroMap,
+    node: &Node,
+    value: &Value,
+    shared: bool,
+    ids: &mut Vec<String>,
+    rows: &mut Rows,
+) -> Result<()> {
+    let writer = writer(doc);
+    Reconcile { doc, writer: &writer, ids, rows }.object(map, node, value, shared)
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
@@ -74,11 +89,13 @@ struct Reconcile<'a, 'b> {
     rows: &'a mut Rows<'b>,
 }
 impl Reconcile<'_, '_> {
-    /// `map[key]` becomes `value`; an absent field or entry is created.
-    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
+    /// `map[key]` becomes `value`; an absent field or entry is created. `shared` as in
+    /// `put`, for the place `map` is.
+    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value, shared: bool) -> Result<()> {
+        let shared = shared || matches!(node, Node::Optional { .. });
         let kind = unwrap_optional(node);
         let Some(current) = map.get(key) else {
-            return put(map, key, kind, value, self.writer);
+            return put(map, key, kind, value, self.writer, shared, self.rows);
         };
         match (kind, current) {
             (scalar, current) if is_scalar(scalar) => {
@@ -99,7 +116,7 @@ impl Reconcile<'_, '_> {
             (Node::Counter {}, ValueOrContainer::Container(Container::Map(counter))) => {
                 self.counter(&counter, value.as_i64().expect("validated counter"))?;
             }
-            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => self.object(&child, kind, value)?,
+            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => self.object(&child, kind, value, shared)?,
             (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(record))) => {
                 self.record(&record, entry, value)?;
             }
@@ -114,14 +131,14 @@ impl Reconcile<'_, '_> {
         Ok(())
     }
     /// Each declared field; an optional the value leaves out is removed.
-    fn object(&mut self, map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
+    fn object(&mut self, map: &LoroMap, node: &Node, value: &Value, shared: bool) -> Result<()> {
         let Node::Object { properties } = node else {
             return Err(anomalous());
         };
         for (key, child) in properties {
             match value.get(key) {
-                Some(value) => self.field(map, key, child, value)?,
-                None if map.get(key).is_some() => map.delete(key).map_err(engine)?,
+                Some(value) => self.field(map, key, child, value, shared)?,
+                None if map.get(key).is_some() => remove(map, key, self.rows)?,
                 None => {}
             }
         }
@@ -132,10 +149,10 @@ impl Reconcile<'_, '_> {
         let wanted = value.as_object().expect("validated record");
         let gone: Vec<String> = map.keys().map(|key| key.to_string()).filter(|key| !wanted.contains_key(key)).collect();
         for key in gone {
-            map.delete(&key).map_err(engine)?;
+            remove(map, &key, self.rows)?;
         }
         for (key, value) in wanted {
-            self.field(map, key, entry, value)?;
+            self.field(map, key, entry, value, true)?;
         }
         Ok(())
     }
@@ -167,6 +184,9 @@ impl Reconcile<'_, '_> {
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
         for (index, id) in current.iter().enumerate().rev() {
             if !keep.contains(id.as_str()) {
+                if let Some(ValueOrContainer::Container(row)) = list.get(index) {
+                    release(&row, self.rows)?;
+                }
                 list.delete(index, 1).map_err(engine)?;
                 self.rows.changed(list, Change::Removed(index));
             }
@@ -183,7 +203,7 @@ impl Reconcile<'_, '_> {
             };
             if existing.contains(id.as_str()) {
                 let row = self.rows.map(self.doc, list, id)?;
-                self.object(&row, item, value)?;
+                self.object(&row, item, value, false)?;
                 let from = self.rows.index(list, id)?;
                 let to = if after > from { after - 1 } else { after };
                 if !staying.contains(id.as_str()) && from != to {
@@ -191,7 +211,7 @@ impl Reconcile<'_, '_> {
                     self.rows.changed(list, Change::Moved(from, to));
                 }
             } else {
-                insert_row(list, item, after, id, value, self.writer)?;
+                insert_row(list, item, after, id, value, self.writer, self.rows)?;
                 self.rows.changed(list, Change::Inserted(after, id.clone()));
                 self.ids.push(id.clone());
             }

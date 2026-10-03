@@ -12,6 +12,9 @@ export const SlopCategories = [
   "education",
   "business",
   "personal",
+  "health",
+  "creative",
+  "music",
   "other",
 ] as const;
 /** Manifest text fields: lengths in UTF-16 units, and patterns they must match. */

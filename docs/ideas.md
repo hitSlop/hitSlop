@@ -175,15 +175,6 @@ a person and their agent edit the same live document. What's missing is the slop
 - **The room is not an authority.** It may run hitslop-core compiled to WASM to check
   decoding, sizes and history-trimmed bytes, and to compact the log. Replicas keep
   preserve-and-flag for merged anomalies.
-- **Containers created concurrently.** Two replicas that first create a container at the
-  same map key (a record entry, or an optional object or text that was absent) get two
-  containers, and the map shows one; the other's content is hidden. Create those children
-  with Loro's `ensure_mergeable_*`, whose identity comes from the parent and key, so
-  concurrent creations merge. Rows are list items with their own identity and are
-  unaffected. This is a new [storage layout](reference/document-types.md#storage-layout)
-  for new documents; layout 1 documents keep creating children in place. Loro 1.16.2
-  keeps a mergeable child's state after its key is deleted, so a clear followed by a set
-  would resurface old fields; the layout has to define that first.
 - **Prerequisites:**
   - the invitee has the same template package (hosted catalog or a package hand-off);
   - capability links until accounts exist;

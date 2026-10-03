@@ -43,7 +43,7 @@ bunx @hitslop/cli@4.0.0 theme get My.slop
 bunx @hitslop/cli@4.0.0 export My.slop --format pdf --output My.pdf
 ```
 
-Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/cli@4.0.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project), and the global CLI repairs broken global links as it runs; `skills uninstall` removes them. Bare `skills` means install. The portable guides copied by `init` are ordinary files and do not update with the global CLI. Add `--help` to inspect a command's arguments.
+Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/cli@4.0.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. The portable guides copied by `init` are ordinary files and do not update with the global CLI. Add `--help` to inspect a command's arguments.
 
 Alternatively, `bun install -g @hitslop/cli@4.0.0` provides `slop` on Bun's PATH. Direct native commands use `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native"`.
 

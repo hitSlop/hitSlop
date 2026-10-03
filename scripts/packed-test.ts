@@ -186,12 +186,12 @@ try {
     );
     const document = join(root, "Document.slop");
     await run([process.execPath, cli, "create", "--from", built, "--output", document], root, noNode);
-    // Any global command re-points a hitSlop skill link that names another copy.
+    // The global CLI repairs a hitSlop skill link that names another copy.
     const stray = join(root, "stray/skills/hitslop-cli");
     await cp(join(packagedSkills, "hitslop-cli"), stray, { recursive: true });
     await rm(agentSkill("hitslop-cli"));
     await symlink(stray, agentSkill("hitslop-cli"));
-    await run([slop, "get", document], root, globalEnv);
+    await run([slop, "skills", "repair", "--scope", "global"], root, globalEnv);
     assert.equal(await realpath(agentSkill("hitslop-cli")), join(packagedSkills, "hitslop-cli"));
     await run(
       [process.execPath, cli, "theme", "set", document, "--values", '{"accent":"#123456"}'],

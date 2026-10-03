@@ -283,7 +283,8 @@ impl Document {
         schema.validate(&initial, false)?;
         let doc = LoroDoc::new();
         doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
-        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc))?;
+        let lists = HashMap::new();
+        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc), false, &mut Rows::new(&lists))?;
         doc.commit();
         Self::from_doc(doc, schema, false)
     }
@@ -567,9 +568,9 @@ impl Document {
             return Ok(Applied { sequence: self.sequence, ids: vec![], publication: None });
         };
         let before = self.doc.state_frontiers();
-        if let Err(error) = self.doc.revert_to(&target) {
+        if let Err(error) = self.revert(&target) {
             self.abort(&before)?;
-            return Err(engine(error));
+            return Err(error);
         }
         self.doc.commit();
         let publication = self.publish_or_abort(&before)?;
@@ -581,6 +582,57 @@ impl Document {
         }
         self.run = None;
         Ok(Applied { sequence: self.sequence, ids: vec![], publication })
+    }
+    /// Makes the value what it was at `target`. Loro's revert only removes the key of a
+    /// mergeable value it hides, and when a later revert shows it again it rewrites the
+    /// content as if the container were new; a hidden container that still held content
+    /// would then show it twice. So, as a clear does, the mergeable values the revert hides
+    /// are emptied first, and the rows it deletes are released, while both are still
+    /// editable; the revert is then computed from that state.
+    fn revert(&mut self, target: &Frontiers) -> Result<()> {
+        use loro::event::{Diff, ListDiffItem};
+        let diff = self.doc.diff(&self.doc.state_frontiers(), target).map_err(engine)?;
+        let mut rows = Rows::new(&self.lists);
+        // Only containers that exist now can be hidden or deleted; the diff also names the
+        // containers the revert will create.
+        for (cid, change) in diff.iter() {
+            match (change, self.doc.get_container(cid.clone())) {
+                (Diff::Map(delta), Some(Container::Map(map))) => {
+                    for (key, value) in &delta.updated {
+                        if let (None, Some(ValueOrContainer::Container(child))) = (value, map.get(key)) {
+                            if child.id().is_mergeable() {
+                                execute::empty(&child, &mut rows)?;
+                            }
+                        }
+                    }
+                }
+                (Diff::List(items), Some(Container::MovableList(list))) => {
+                    let (mut index, mut deleted, mut moved) = (0, vec![], HashSet::new());
+                    for item in items {
+                        match item {
+                            ListDiffItem::Retain { retain } => index += retain,
+                            ListDiffItem::Delete { delete } => {
+                                deleted.extend((index..index + delete).filter_map(|i| list.get(i)));
+                                index += delete;
+                            }
+                            ListDiffItem::Insert { insert, .. } => moved.extend(insert.iter().filter_map(|v| match v {
+                                ValueOrContainer::Container(c) => Some(c.id()),
+                                ValueOrContainer::Value(_) => None,
+                            })),
+                        }
+                    }
+                    for row in deleted {
+                        if let ValueOrContainer::Container(row) = row {
+                            if !moved.contains(&row.id()) {
+                                execute::release(&row, &mut rows)?;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.doc.revert_to(target).map_err(engine)
     }
     /// Records only a successfully published edit. No-op edits and refusals preserve
     /// both the current run and redo. Extending a run keeps its original before-version.

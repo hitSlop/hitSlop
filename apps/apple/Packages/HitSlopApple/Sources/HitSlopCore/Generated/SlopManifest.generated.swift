@@ -149,11 +149,14 @@ public extension SlopAuthor {
 
 public enum SlopCategory: String, Codable, Sendable {
     case business = "business"
+    case creative = "creative"
     case developerTools = "developer-tools"
     case education = "education"
     case finance = "finance"
     case games = "games"
+    case health = "health"
     case media = "media"
+    case music = "music"
     case other = "other"
     case personal = "personal"
     case productivity = "productivity"

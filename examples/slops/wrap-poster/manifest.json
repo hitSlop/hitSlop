@@ -1,0 +1,17 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "wrap-poster",
+  "title": "Wrap Poster",
+  "description": "An editorial poster where your words flow around shapes you drag, line by line, so text and layout always fit together.",
+  "categories": [
+    "creative"
+  ],
+  "presentation": {
+    "width": 560,
+    "height": 780
+  }
+}

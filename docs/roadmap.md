@@ -45,6 +45,12 @@ In order, with the reasoning in [ideas](ideas.md):
   to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
   shows the saved text. The fix to plan is a recoverable draft with an explicit discard.
   Holding the close barrier instead made windows impossible to close.
+- Each removed optional value or record entry that held a container, and each removed
+  row holding one, leaves an empty mergeable container of about 19 bytes in trimmed
+  documents, because Loro retains them by identity
+  ([storage layout](reference/document-types.md#storage-layout)). Churning 1,000 such rows
+  or unique record keys leaves about 37 KB. If that becomes material, ask Loro to drop
+  inactive, empty mergeable containers from shallow snapshots; no layout change is needed.
 
 ## Next
 
@@ -71,8 +77,9 @@ with other replicas (it already imports and exports them), authenticate in Swift
 persist opaque updates remotely. Each replica keeps one writer and local SQLite storage.
 Frontier version tokens and stateless text edits already work across replicas: a page's
 text request names the history it saw, and the core merges it with whatever arrived
-since. Closing a large document trims all history, so sync will need a retention policy
-compatible with offline replicas.
+since. Values more than one replica can create (optional values, record entries) already
+merge when created concurrently. Closing a large document trims all history, so sync will
+need a retention policy compatible with offline replicas.
 Remote edits would arrive as imports. Selective undo that preserves remote changes is
 still needed: today a raw replica import clears the local undo/redo history.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than

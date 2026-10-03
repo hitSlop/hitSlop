@@ -40,7 +40,7 @@
     "title": "Ambient Sound Mixer",
     "description": "A smoked-glass hi-fi mixer for balancing rain, thunder, wind, birds, and night with physical faders, mute, and solo.",
     "categories": [
-      "media",
+      "music",
       "utilities"
     ],
     "shape": "rounded",
@@ -220,8 +220,8 @@
     "title": "Doodle Board",
     "description": "A little whiteboard for big ideas, tiny drawings, and happy accidents.",
     "categories": [
-      "personal",
-      "productivity"
+      "creative",
+      "personal"
     ],
     "shape": "rounded",
     "width": 744,
@@ -436,7 +436,8 @@
     "title": "Koi Pond",
     "description": "A little watercolor pond where your koi drift, nibble, and keep you company.",
     "categories": [
-      "personal"
+      "creative",
+      "games"
     ],
     "shape": "ellipse",
     "width": 420,
@@ -508,7 +509,7 @@
     "title": "Metronome & BPM",
     "description": "A precision studio metronome with an animated pendulum, synthesized woodblock clicks, tap tempo, and time signatures.",
     "categories": [
-      "media",
+      "music",
       "utilities"
     ],
     "shape": "rounded",
@@ -526,8 +527,8 @@
     "title": "Mood Log",
     "description": "A gentle color journal for recording daily mood, energy, and a short reflection without pressure.",
     "categories": [
-      "personal",
-      "utilities"
+      "health",
+      "personal"
     ],
     "shape": "rounded",
     "width": 480,
@@ -598,8 +599,8 @@
     "title": "Pixel Art Studio",
     "description": "A pocket-console sprite desk for 16×16 drawing, fill, palettes, undo, and PNG export.",
     "categories": [
-      "media",
-      "utilities"
+      "creative",
+      "media"
     ],
     "shape": "rounded",
     "width": 460,
@@ -760,8 +761,8 @@
     "title": "Side Quest",
     "description": "Your semester as a doodled notebook map: quests to clear, exam bosses to study down, and stickers to earn.",
     "categories": [
-      "education",
-      "productivity"
+      "games",
+      "education"
     ],
     "shape": "rectangle",
     "width": 940,
@@ -813,8 +814,8 @@
     "title": "SomaAmp",
     "description": "A classic skin-compatible desktop receiver for eight listener-supported SomaFM stations.",
     "categories": [
-      "media",
-      "personal"
+      "music",
+      "media"
     ],
     "shape": "rectangle",
     "width": 275,
@@ -867,7 +868,7 @@
     "title": "Water Tracker",
     "description": "A translucent aqua hydration instrument with a live liquid-level readout and quick-tap logging.",
     "categories": [
-      "personal",
+      "health",
       "utilities"
     ],
     "shape": "rounded",
@@ -921,8 +922,8 @@
     "title": "Workout Planner",
     "description": "A dark training console for logging individual sets, following your routine, and timing rest.",
     "categories": [
-      "personal",
-      "utilities"
+      "health",
+      "personal"
     ],
     "shape": "rounded",
     "width": 440,

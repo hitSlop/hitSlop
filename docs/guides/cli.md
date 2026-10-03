@@ -86,12 +86,11 @@ out:
   `$BUN_INSTALL/install/global/node_modules/@hitslop/cli` (or `BUN_INSTALL_GLOBAL_DIR`).
   `bun install -g` replaces that directory in place, so links survive upgrades and serve
   the new content.
-- Only the global install installs or repairs links. Before each of its commands it
-  repairs owned global links that are dangling or point elsewhere (Crust's `autoUpdate`);
-  project links are repaired only by `skills repair --scope project`, so the guide copies
-  `init` leaves in `.agents/skills` are never reported as conflicts. bunx and project
-  copies refuse `skills install` and `skills repair` and never rewrite links; any copy can
-  uninstall.
+- Only the global install installs or repairs links, and only when asked: `skills repair`
+  fixes a link that is dangling or points elsewhere. Crust's `autoUpdate` never runs here,
+  because Crust skips it for CLIs run from source rather than a `crust build` bundle.
+  bunx and project copies refuse `skills install` and `skills repair` and never rewrite
+  links; any copy can uninstall.
 - To dogfood unreleased skills, run `bun run packages:pack` and install
   `generated/npm/hitslop-cli-VERSION.tgz` with `bun install -g`. While the matching
   `@hitslop/document` and `@hitslop/schema` are unpublished, first list their tarballs as

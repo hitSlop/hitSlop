@@ -8,8 +8,8 @@
   "title": "Scratch-Off List",
   "description": "A lottery-ticket bucket list: scratch the silver foil to reveal your next adventure, then stamp it done and share the card.",
   "categories": [
-    "personal",
-    "other"
+    "games",
+    "personal"
   ],
   "presentation": {
     "width": 480,

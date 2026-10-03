@@ -1,0 +1,17 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "beat-pad",
+  "title": "Beat Pad",
+  "description": "A 16-step drum and bass sequencer: tap in a beat, pick a kit, set the tempo and swing, and your pattern is saved with the document.",
+  "categories": [
+    "music"
+  ],
+  "presentation": {
+    "width": 560,
+    "height": 700
+  }
+}
