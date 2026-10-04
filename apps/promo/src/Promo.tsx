@@ -108,7 +108,7 @@ function Outro() {
   );
 }
 
-export function Promo() {
+export function Promo({ audio = true }: { audio?: boolean }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const cursor = cursorAt(frame, cursorKeys);
@@ -122,13 +122,15 @@ export function Promo() {
     <AbsoluteFill style={{ overflow: "hidden", background: "#2f2a7d" }}>
       <style>{fontFaces}</style>
       {/* The song starts on SomaAmp's play press, hard on its kick; it fades out over the last second. */}
-      <Sequence from={T.somaPlay} layout="none">
-        <Audio
-          src={staticFile("music/new-york.mp3")}
-          startFrom={Math.round(MUSIC.songStart * 30)}
-          volume={(f) => interpolate(f + T.somaPlay, [DURATION - 30, DURATION - 1], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })}
-        />
-      </Sequence>
+      {audio && (
+        <Sequence from={T.somaPlay} layout="none">
+          <Audio
+            src={staticFile("music/new-york.mp3")}
+            startFrom={Math.round(MUSIC.songStart * 30)}
+            volume={(f) => interpolate(f + T.somaPlay, [DURATION - 30, DURATION - 1], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })}
+          />
+        </Sequence>
+      )}
       <Wallpaper />
       <AbsoluteFill style={{ transform: `scale(${zoom})` }}>
         <DraggedFile at={WSZ} grab={T.wszGrab} drop={WSZ_DROP} target={center(SOMA)} label="Tenchi Muyo - Aeka.wsz" kind="wsz" />

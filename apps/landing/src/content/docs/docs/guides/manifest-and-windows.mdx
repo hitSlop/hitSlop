@@ -3,41 +3,49 @@ title: Manifest and windows
 description: Define a slop's identity, discovery metadata, initial window, and native window behavior.
 ---
 
-Read `manifest.json` first. It is the package contract for a slop: its identity,
-author, catalog metadata, and initial native window. The manifest is immutable in
-a built template or document, so make changes in the source project and rebuild.
-Writable state is managed by the document runtime; media import is deferred.
+Read `slop.ts` first. It declares a slop's app: its identity, author, catalog
+metadata, initial native window, theme colors and a new document's values. The build
+stores these in the template as its manifest, theme and initial values, and they are
+immutable in a built template or document, so make changes in the source project and
+rebuild. Writable state is managed by the document runtime; media import is deferred.
 
-## Start with a complete manifest
+## Start with a complete `slop.ts`
 
-```json title="manifest.json"
-{
-  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
-  "author": {
-    "name": "Your Name",
-    "url": "https://example.com"
-  },
-  "slug": "tiny-counter",
-  "title": "Tiny Counter",
-  "description": "A small counter that stays on your desktop.",
-  "categories": ["utilities"],
-  "presentation": {
-    "width": 420,
-    "height": 520,
-    "resizable": true,
-    "shape": "22px"
-  }
-}
+`schema` is `schema.ts`'s default export, and `initial` must fit it:
+
+```ts title="schema.ts"
+import { defineDocument, s } from "@hitslop/document";
+
+export default defineDocument({ count: s.counter() });
 ```
+
+```ts title="slop.ts"
+import { defineSlop } from "@hitslop/document";
+import schema from "./schema";
+
+export default defineSlop({
+  title: "Tiny Counter",
+  description: "A small counter that stays on your desktop.",
+  author: { name: "Your Name", url: "https://example.com" },
+  categories: ["utilities"],
+  presentation: { width: 420, height: 520, resizable: true, shape: "22px" },
+  theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
+  schema,
+  initial: { count: 0 },
+});
+```
+
+The build runs `slop.ts` in Bun and checks every value by the rules the app opens files
+with; it never ships `slop.ts` in the app. The project folder's name is the slug, so
+this project lives in `tiny-counter/`.
 
 ## Identity and discovery fields
 
 | Field | Rule |
 | --- | --- |
-| `$schema` | Must be `https://api.hitslop.com/schemas/manifest.schema.json`. |
+| Slug | The project folder's name: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
 | `author.url` | Optional HTTP or HTTPS URL, up to 2,048 characters. |
-| `slug` | 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
 | `title` | Required, 1–80 characters. |
 | `description` | Required, 1–240 characters. Explain the slop's specific job. |
 | `categories` | One or two unique catalog categories. |
@@ -73,37 +81,37 @@ and an optional `/` followed by vertical radii. Corners run top-left, top-right,
 bottom-right, bottom-left, and overlapping radii shrink as in CSS. Use `"50%"` for an
 ellipse or `"9999px"` for a pill. Radius strings are limited to 256 ASCII characters.
 
-```json
-"shape": "48px 8px 72px 0 / 24px 32px 18px 0"
+```ts
+shape: "48px 8px 72px 0 / 24px 32px 18px 0",
 ```
 
-**Vector paths** use `{ "path", "viewBox", "fillRule" }`. Coordinates are top-left
-and y-down. `viewBox` defaults to the manifest dimensions, so the path scales when
+**Vector paths** use `{ path, viewBox, fillRule }`. Coordinates are top-left
+and y-down. `viewBox` defaults to the window's `width` and `height`, so the path scales when
 the window resizes, and `fillRule` defaults to `nonzero`. All SVG path commands are
 supported. Paths are limited to 4,096 ASCII characters, 512 commands (implicit
 repetitions count) and 2,048 expanded segments; each `viewBox` side is 1–16,384. A
 concave notch on the right edge:
 
-```json
-"shape": {
-  "path": "M24 0 H456 Q480 0 480 24 V132 L432 156 L480 180 V336 Q480 360 456 360 H0 V48 Z",
-  "viewBox": [480, 360]
-}
+```ts
+shape: {
+  path: "M24 0 H456 Q480 0 480 24 V132 L432 156 L480 180 V336 Q480 360 456 360 H0 V48 Z",
+  viewBox: [480, 360],
+},
 ```
 
-Set `"fillRule": "evenodd"` and add a second subpath to cut a hole. Clicks in the
+Set `fillRule: "evenodd"` and add a second subpath to cut a hole. Clicks in the
 hole reach whatever is underneath the window:
 
-```json
-"shape": {
-  "path": "M24 0 H456 Q480 0 480 24 V336 Q480 360 456 360 H0 V48 Z M350 56 a44 32 0 1 0 0 64 a44 32 0 1 0 0 -64 Z",
-  "viewBox": [480, 360],
-  "fillRule": "evenodd"
-}
+```ts
+shape: {
+  path: "M24 0 H456 Q480 0 480 24 V336 Q480 360 456 360 H0 V48 Z M350 56 a44 32 0 1 0 0 64 a44 32 0 1 0 0 -64 Z",
+  viewBox: [480, 360],
+  fillRule: "evenodd",
+},
 ```
 
-Add `"lockAspect": true` to keep the window at its initial ratio while resizing.
-Invalid geometry rejects the manifest. Dedicated exports and icons remain
+Add `lockAspect: true` to keep the window at its initial ratio while resizing.
+The build refuses invalid geometry. Dedicated exports and icons remain
 independent of the window silhouette. Radius shapes expose their radius to the
 page as `--slop-window-radius`; path shapes set it to `0`.
 
@@ -125,7 +133,7 @@ The native host exposes the presentation to your CSS:
 | `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements |
 | `data-slop-controls` | `visible` or `hidden`, following the native hover toolbar |
 
-`slop dev` previews the window at its manifest size with the same shape or skin, but
+`slop dev` previews the window at its `presentation` size with the same shape or skin, but
 without these host values; lay out from the actual viewport rather than assuming them.
 
 Keep controls inside the visible shape and test focus, resizing, and dragging
@@ -134,7 +142,7 @@ at the smallest size you support.
 ## Resize the app and move the window
 
 An unskinned app can request a new bounded native size at runtime. The host
-keeps the result on the visible screen and returns the applied size; the manifest
+keeps the result on the visible screen and returns the applied size; `presentation`
 remains the next launch's initial size. Browser preview has no native window: resize
 it with the preview's handle or arrow keys.
 

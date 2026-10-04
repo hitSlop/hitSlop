@@ -43,12 +43,12 @@ export const ThemeTokenRule = {
   reservedPrefix: "window-",
   tokens: 256,
 } as const;
-/** A package's immutable entries (everything but `state/`): one file's bytes, the entry
- * count and total bytes. Images a package carries or a capture emits are at most `imageSide`
- * pixels on a side and `imagePixels` in all. The authoring build and native open both check them. */
-export const PackageLimits = {
+/** An app's assets: one asset's bytes, the asset count and their total bytes. Images an
+ * app carries or a capture emits are at most `imageSide` pixels on a side and
+ * `imagePixels` in all. The core checks them when it packs and when it opens a file. */
+export const AssetLimits = {
   file: 25 * 1024 * 1024,
-  entries: 256,
+  count: 256,
   bytes: 50 * 1024 * 1024,
   imageSide: 16_384,
   imagePixels: 24_000_000,
@@ -85,7 +85,7 @@ export const CoreErrorCodes = [
   "type_mismatch", "out_of_range", "path_not_found", "invalid_key", "exists", "duplicate_id",
   "invalid_request", "invalid_id", "invalid_path", "invalid_schema", "too_large", "stale_base",
   "invalid_version", "invalid_bytes", "missing_dependencies", "engine_error", "invalid_shape",
-  "requires_update",
+  "requires_update", "is_template",
 ] as const;
 /** Persisted package syntax (manifest, resources and descriptor encoding). */
 export const PackageFormat = 1;

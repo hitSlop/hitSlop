@@ -7,7 +7,6 @@ import HitSlopTestSupport
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentFileSaverTests {
-  let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
   let offer = """
     { const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([new Uint8Array([104,105,33])], { type: 'application/octet-stream' }));
@@ -17,12 +16,10 @@ import HitSlopTestSupport
 
   @Test @MainActor func blobDownloadSavesOnlyAfterConfirmationAndHonorsGuards() async throws {
     _ = NSApplication.shared
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try SlopDuplicator.duplicate(from: URL(fileURLWithPath: repository + "/generated/native-fixtures/quick-checklist.slop"), to: root)
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let root = try Fixtures.native()
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: folder) }
-    let engine = try await DocumentSession.open(packageURL: root)
+    let engine = try await DocumentSession.open(url: root)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
     window.contentView = engine.webView
     window.orderFront(nil)
@@ -113,8 +110,7 @@ import HitSlopTestSupport
 
   @Test @MainActor func installationPreservesDestinationOnFailureAndSizeRejection() throws {
     let manager = FileManager.default
-    let folder = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+    let folder = try Fixtures.folder()
     defer { try? manager.removeItem(at: folder) }
     let staging = folder.appendingPathComponent("staging")
     let target = folder.appendingPathComponent("existing")

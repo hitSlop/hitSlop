@@ -1,41 +1,138 @@
 import Foundation
-import Darwin
+import HitSlopCoreBinding
+import ImageIO
 
-/// Reads an untrusted package entry without following links or reopening a checked path.
-public enum SlopFile {
-    public static let maximumBytes = Limits.packageFile
-
-    public static func read(_ url: URL, within root: URL, maximumBytes: Int = maximumBytes) throws -> Data {
-        let rootPath = root.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        guard path.hasPrefix(rootPath + "/") else { throw SlopPackageError.invalid("file escapes its package") }
-        let parts = String(path.dropFirst(rootPath.count + 1)).split(separator: "/").map(String.init)
-        guard !parts.isEmpty else { throw SlopPackageError.invalid("expected a file") }
-        var directory = Darwin.open(rootPath, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard directory >= 0 else { throw SlopPackageError.invalid("cannot open package directory") }
-        defer { Darwin.close(directory) }
-        for part in parts.dropLast() {
-            let next = openat(directory, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            guard next >= 0 else { throw SlopPackageError.invalid("unsafe resource directory") }
-            Darwin.close(directory); directory = next
-        }
-        // NONBLOCK prevents a FIFO from hanging before fstat can reject it.
-        let descriptor = openat(directory, parts.last!, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard descriptor >= 0 else { throw SlopPackageError.invalid("cannot open resource") }
-        defer { Darwin.close(descriptor) }
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_size >= 0, info.st_size <= maximumBytes else {
-            throw SlopPackageError.invalid("resource must be a regular file within its size limit")
-        }
-        var result = Data(), buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        while true {
-            let count = Darwin.read(descriptor, &buffer, min(buffer.count, maximumBytes - result.count + 1))
-            if count < 0, errno == EINTR { continue }
-            guard count >= 0 else { throw SlopPackageError.invalid("cannot read resource") }
-            if count == 0 { return result }
-            guard result.count + count <= maximumBytes else { throw SlopPackageError.invalid("resource exceeds its size limit") }
-            result.append(contentsOf: buffer.prefix(count))
-        }
+public enum SlopError: LocalizedError {
+  case invalid(String)
+  /// A template opened as a document: a document is created from it instead.
+  case template
+  public var errorDescription: String? {
+    switch self {
+    case .invalid(let value): "Invalid hitSlop file: \(value)"
+    case .template: "This is a template; create a document from it first"
     }
+  }
+}
+
+/// A slop, its storage or its document needs a newer hitSlop. Nothing was read past the
+/// marker that said so, and nothing was written.
+public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
+  public init() {}
+  public var diagnostic: SlopFailureContext { .init(.rejection, reason: .requiresUpdate) }
+  public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
+  /// Whether the core refused for this reason.
+  public static func matches(_ error: Error) -> Bool {
+    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requires_update.rawValue }
+    return false
+  }
+}
+
+/// A hitSlop file, checked by the core: a template (the app its author built) or a document
+/// (the app and its saved state). Swift decodes the manifest and the window skin; the core
+/// owns every other rule.
+public struct SlopFile: Sendable {
+  public enum Kind: Sendable { case template, document }
+  /// The `.slop` file.
+  public let url: URL
+  public let kind: Kind
+  /// What the app expects of `ctx`; the page shell adapts to it.
+  public let runtimeABI: Int
+  /// The app's document descriptor (JSON), for the page and `slop schema`.
+  public let descriptor: String
+  /// The declared colors in the order the author wrote them.
+  public let themeTokens: [ThemeToken]
+  public let manifest: SlopManifest
+  public let silhouette: SlopSilhouette
+  /// The file's size in bytes.
+  public let byteCount: Int64
+  private let skinImage: CGImage?
+
+  /// Opens and checks the file at `url` for display (the catalog, a template opened from
+  /// Finder), without SQLite's quick check. A document an owner edits comes from its store
+  /// instead (`init(url:opened:)`), so it is checked once.
+  public init(url: URL) throws {
+    let root = try Self.resolvedRoot(url)
+    try self.init(url: root, opened: Self.opening { try openFile(path: root.path) })
+  }
+
+  /// The file at `url` as the core opened and checked it.
+  public init(url root: URL, opened: OpenedFile) throws {
+    self.url = root
+    kind = opened.kind == .template ? .template : .document
+    runtimeABI = Int(opened.runtimeAbi)
+    descriptor = opened.descriptorJson
+    themeTokens = opened.themeTokens
+    byteCount = Int64(opened.byteCount)
+    silhouette = SlopSilhouette(parsed: opened.silhouette)
+    do {
+      manifest = try JSONDecoder().decode(SlopManifest.self, from: Data(opened.manifestJson.utf8))
+    } catch {
+      throw SlopError.invalid(error.localizedDescription)
+    }
+    skinImage = try opened.skinPng.map(Self.decodeSkin)
+  }
+
+  /// Runs a core call that opens a file, reporting a newer file as `SlopRequiresUpdate`, a
+  /// template opened as a document as `SlopError.template`, and any other refusal
+  /// as `SlopError.invalid`. Storage failures, such as a busy writer lock or a missing
+  /// file, pass through with their own message.
+  public static func opening<T>(_ open: () throws -> T) throws -> T {
+    do { return try open() }
+    catch let error where SlopRequiresUpdate.matches(error) { throw SlopRequiresUpdate() }
+    catch let CoreError.Rejected(code, message, _) {
+      throw code == CoreErrorCode.is_template.rawValue ? SlopError.template : SlopError.invalid(message)
+    }
+  }
+
+  /// A file's kind from its header checks alone, for deciding how to open it.
+  public static func kind(of url: URL) throws -> Kind {
+    try opening { try fileKind(path: url.path) } == .template ? .template : .document
+  }
+
+  public var isSkinned: Bool { manifest.presentation.skin != nil }
+  public var usesTransparentBackground: Bool {
+    isSkinned || manifest.presentation.background == .transparent
+  }
+  public var isResizable: Bool { isSkinned ? false : manifest.presentation.resizable ?? true }
+  /// The window skin, decoded when the file was opened.
+  public var skin: CGImage? { skinImage }
+
+  /// A `.slop` file's canonical URL: a regular file, never a link.
+  public static func resolvedRoot(_ url: URL) throws -> URL {
+    guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+      throw SlopError.invalid("a slop cannot be a symbolic link")
+    }
+    let root = SlopPath.canonical(url)
+    guard root.pathExtension.lowercased() == "slop" else {
+      throw SlopError.invalid("a slop must have a .slop extension")
+    }
+    guard (try? root.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {
+      throw SlopError.invalid("a slop must be a file")
+    }
+    return root
+  }
+
+  /// The skin's pixels. The core checked it is an RGBA PNG of the window's size.
+  private static func decodeSkin(_ png: Data) throws -> CGImage {
+    guard let source = CGImageSourceCreateWithData(png as CFData, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { throw SlopError.invalid("window skin must be a valid PNG") }
+    return image
+  }
+}
+
+/// A slop's preview or icon artwork, read through the core.
+public enum SlopArtwork {
+  public enum Name: String, Sendable { case preview, icon }
+  /// The first of `preferred` the file holds, in one read; nil when it holds none. Throws
+  /// when the file can't be read now (busy, or mid-recovery), so a caller can tell that
+  /// apart from a file without artwork.
+  public static func first(_ url: URL, _ preferred: [Name]) throws -> (name: Name, png: Data)? {
+    guard let image = try fileArtwork(path: url.path, preferred: preferred.map(\.rawValue)) else { return nil }
+    return (Name(rawValue: image.name) ?? preferred[0], image.png)
+  }
+  /// One artwork, or nil when the file has none or can't be read now.
+  public static func png(_ url: URL, _ name: Name) -> Data? {
+    (try? first(url, [name]))??.png
+  }
 }

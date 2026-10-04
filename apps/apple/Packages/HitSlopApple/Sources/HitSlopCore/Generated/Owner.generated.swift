@@ -19,6 +19,7 @@ public enum CoreErrorCode: String, Codable, Sendable {
   case engine_error
   case invalid_shape
   case requires_update
+  case is_template
 }
 public enum PageErrorCode: String, Sendable {
   case rejected

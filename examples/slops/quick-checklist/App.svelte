@@ -15,7 +15,7 @@ import { ui } from "./ui.svelte";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import doc from "./schema";
 
-const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, ui.activeView));
+const { visible, filed, finished, ratio } = $derived(checklistView(doc.current));
 
   let draft = $state("");
   let composer = $state<HTMLInputElement>();
@@ -195,7 +195,8 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current, 
                     onblur={() => { if (editing?.id === task.$id) editing = null; }}
                     placeholder="Untitled task"
                     onkeydown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      // An IME's Enter commits its composition, not the task.
+                      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
                         event.preventDefault();
                         composer?.focus();
                       }

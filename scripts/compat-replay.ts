@@ -6,9 +6,9 @@
 // Usage: bun scripts/compat-replay.ts [--release VERSION] [--installed]
 //   --release   also require a frozen entry for VERSION (the release gate)
 //   --installed install each frozen entry's npm CLI and run it against this helper
+import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
-import { createHash } from "node:crypto";
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { copyFile, cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,6 +26,8 @@ import {
   type Transcript,
 } from "./compat";
 import { verifyCandidate, verifyCorpus } from "./compat-integrity";
+import { fileDigest, sha256, useTestRegistry } from "./runtime-artifacts";
+useTestRegistry();
 
 const flag = (name: string) => process.argv.indexOf(name);
 const tag = process.env.HITSLOP_RELEASE_TAG || process.env.GITHUB_REF_NAME;
@@ -38,6 +40,15 @@ if (required) {
   assert.ok(entry?.release.frozen, `tests/compat/${required} must be captured and frozen before this release`);
   await verifyCandidate(entry.root, entry.release);
 }
+/** A template's initial values, read from the file outside the core. */
+const initialOf = (template: string) => {
+  const database = new Database(template, { readonly: true });
+  try {
+    return JSON.parse((database.query("SELECT initial FROM app").get() as { initial: string }).initial);
+  } finally {
+    database.close();
+  }
+};
 const stripIds = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(stripIds)
@@ -53,8 +64,8 @@ try {
     for (const document of await documents(root)) {
       const copy = join(scratch, `${name}-${document}.slop`);
       const fresh = async () => {
-        await rm(copy, { recursive: true, force: true });
-        await cp(join(root, "documents", document + ".slop"), copy, { recursive: true });
+        await rm(copy, { force: true });
+        await copyFile(join(root, "documents", document + ".slop"), copy);
       };
       await fresh();
       const expected = (await readJSON<Expected>(join(root, "expected", document + ".json")))!;
@@ -65,7 +76,7 @@ try {
         assert.equal(exported.code, 0, `${name}/${document}: attachment ${id}: ${exported.stderr.trim()}`);
         const bytes = await Bun.file(output).bytes();
         assert.equal(bytes.length, byteLength, `${name}/${document}: attachment ${id} size`);
-        assert.equal(createHash("sha256").update(bytes).digest("hex"), id, `${name}/${document}: attachment ${id} bytes`);
+        assert.equal(sha256(bytes), id, `${name}/${document}: attachment ${id} bytes`);
         await rm(output);
       }
       for (const [format, magic] of [["png", "89504e470d0a1a0a"], ["pdf", "25504446"]] as const) {
@@ -88,13 +99,13 @@ try {
       console.log(`PASS ${name}/${document}`);
     }
     // Every template master still creates a document that reads as its initial values.
-    for (const file of await readdir(join(root, "packages"))) {
+    for (const file of await readdir(join(root, "templates"))) {
       const output = join(scratch, `created-${file}`);
-      await rm(output, { recursive: true, force: true });
-      const { code, stderr } = await native(["create", "--from", join(root, "packages", file), "--output", output]);
+      await rm(output, { force: true });
+      const { code, stderr } = await native(["create", "--from", join(root, "templates", file), "--output", output]);
       assert.equal(code, 0, `${name}/${file}: create failed: ${stderr.trim()}`);
       const { state } = await nativeJSON(["get", output, "--snapshot"]);
-      const initial = JSON.parse(await readFile(join(root, "packages", file, "initial.json"), "utf8"));
+      const initial = initialOf(join(root, "templates", file));
       assert.deepEqual(state.issues, [], `${name}/${file}: a new document has issues`);
       assert.deepEqual(stripIds(state.value), stripIds(initial), `${name}/${file}: a new document differs from its initial values`);
       cases++;
@@ -103,8 +114,8 @@ try {
     const transcript = await readJSON<Transcript>(join(root, "cli/transcript.json"));
     if (transcript) {
       const copy = join(scratch, `${name}-transcript.slop`);
-      await rm(copy, { recursive: true, force: true });
-      await cp(join(root, "documents", transcript.document + ".slop"), copy, { recursive: true });
+      await rm(copy, { force: true });
+      await copyFile(join(root, "documents", transcript.document + ".slop"), copy);
       for (const { args, code, stdout, outputHash } of transcript.commands) {
         const exported = join(scratch, `${name}-attachment-export.txt`);
         const result = await native(args.map(arg => arg === "{document}" ? copy : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
@@ -114,7 +125,7 @@ try {
           output = stable(JSON.parse(result.stdout), args);
         } catch {}
         if (outputHash) {
-          assert.equal(createHash("sha256").update(await readFile(exported)).digest("hex"), outputHash);
+          assert.equal(await fileDigest(exported), outputHash);
           output = String(output).replaceAll(exported, "{output}");
           await rm(exported);
         }
@@ -136,7 +147,7 @@ try {
       const executable = join(installation, "node_modules/@hitslop/cli", bin);
       assert.ok(transcript?.commands.length, `${name}: no CLI scenarios`);
       const copy = join(scratch, `${name}-installed.slop`);
-      await cp(join(root, "documents", transcript.document + ".slop"), copy, { recursive: true });
+      await copyFile(join(root, "documents", transcript.document + ".slop"), copy);
       for (const { args, code: expectedCode, stdout: expectedOutput, outputHash } of transcript.commands) {
         const exported = join(scratch, `${name}-installed-export.txt`);
         const resolved = args.map(arg => arg === "{document}" ? copy : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg);
@@ -150,7 +161,7 @@ try {
           let output: unknown = stdout.trim();
           try { output = JSON.parse(stdout); } catch {}
           if (outputHash) {
-            assert.equal(createHash("sha256").update(await readFile(exported)).digest("hex"), outputHash);
+            assert.equal(await fileDigest(exported), outputHash);
             output = String(output).replaceAll(exported, "{output}");
             await rm(exported);
           }

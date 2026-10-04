@@ -1,5 +1,8 @@
-//! Durable storage: identity, limits, crash outcomes and the writer lock.
-use hitslop_core::store::{self, Error, Mode, Phases, Store};
+//! Durable storage: identity, limits, crash outcomes and the writer lock, over one
+//! document file.
+use hitslop_core::file;
+use hitslop_core::registry::Lease;
+use hitslop_core::store::{Error, Mode, Phases, Store};
 use hitslop_core::theme::Change;
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
 use hitslop_core::Document;
@@ -13,21 +16,39 @@ const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
 const THEME: &str = r##"{"accent":"#335577"}"##;
 
-fn key() -> String {
-    hitslop_core::validate(SCHEMA, INITIAL).unwrap()
+const MANIFEST: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+/// A new document file, created from a template of `schema` and `initial`, alone in its
+/// folder.
+/// This process's registry lives in a temporary folder, so test runs never fill the
+/// account's `~/.hitslop/live`.
+fn isolate_registry() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let folder = std::env::temp_dir().join("hitslop-test-registry");
+        hitslop_core::registry::use_folder(&folder).unwrap();
+    });
 }
-fn package() -> (tempfile::TempDir, PathBuf) {
+fn package_with(schema: &str, initial: &str) -> (tempfile::TempDir, PathBuf) {
+    isolate_registry();
     let dir = tempfile::tempdir().unwrap();
+    let template = dir.path().join("Doc.template.slop");
+    let app = file::App { package_format: 1, runtime_abi: 1, manifest: MANIFEST.into(), descriptor: schema.into(), initial: initial.into(), theme: THEME.into() };
+    file::write_template(&template, &app, &[("app.js".into(), b"export default {}".to_vec())], &[]).unwrap();
     let root = dir.path().join("Doc.slop");
-    std::fs::create_dir(&root).unwrap();
+    file::create_document(&template, &root).unwrap();
+    std::fs::remove_file(&template).unwrap();
     (dir, root)
 }
+fn package() -> (tempfile::TempDir, PathBuf) {
+    package_with(SCHEMA, INITIAL)
+}
+/// The document is the database.
 fn database(root: &Path) -> PathBuf {
-    root.join("state/document.sqlite")
+    root.to_owned()
 }
 fn open(root: &Path) -> (Store, Document) {
     let store = Store::open(root, Mode::Document).unwrap();
-    let doc = store.document(&key(), INITIAL, THEME).unwrap();
+    let doc = store.document().unwrap();
     (store, doc)
 }
 fn title(doc: &Document) -> String {
@@ -70,7 +91,7 @@ fn missing_checkpoint_is_preserved(access: impl FnOnce(&Path) -> Result<(), Erro
     let before = saved_updates(&root);
     assert_eq!(before.len(), 3);
     let result = access(&root);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("preserve the package for recovery")), "{result:?}");
+    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
     assert_eq!(saved_updates(&root), before);
     let checkpoints: i64 = Connection::open(database(&root)).unwrap()
         .query_row("SELECT count(*) FROM checkpoint", [], |row| row.get(0)).unwrap();
@@ -80,7 +101,7 @@ fn missing_checkpoint_is_preserved(access: impl FnOnce(&Path) -> Result<(), Erro
 #[test]
 fn writable_open_refuses_saved_updates_without_a_checkpoint() {
     missing_checkpoint_is_preserved(|root| {
-        Store::open(root, Mode::Document)?.document(&key(), INITIAL, THEME).map(|_| ())
+        Store::open(root, Mode::Document)?.document().map(|_| ())
     });
 }
 
@@ -93,9 +114,8 @@ fn snapshot_refuses_saved_updates_without_a_checkpoint() {
 fn duplicate_refuses_saved_updates_without_a_checkpoint() {
     missing_checkpoint_is_preserved(|root| {
         let copy = root.with_file_name("Copy.slop");
-        std::fs::create_dir(&copy).unwrap();
-        let result = store::duplicate(root, &copy);
-        assert!(!database(&copy).exists(), "a refused source must not create a database");
+        let result = file::duplicate(root, &copy);
+        assert!(!copy.exists(), "a refused source creates no file");
         result
     });
 }
@@ -112,7 +132,7 @@ fn append_refuses_saved_updates_without_a_checkpoint() {
     Connection::open(database(&root)).unwrap().execute("DELETE FROM checkpoint", []).unwrap();
     let before = saved_updates(&root);
     let result = store.write(&job);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("preserve the package for recovery")), "{result:?}");
+    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
     assert_eq!(saved_updates(&root), before);
     assert_eq!(title(&doc), "Pending edit");
 }
@@ -292,7 +312,7 @@ fn undo_survives_compaction() {
     assert_eq!(title(&doc), "Before");
     save(&store, &mut doc);
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    assert_eq!(title(&snapshot.document(&key(), INITIAL, THEME).unwrap()), "Before");
+    assert_eq!(title(&snapshot.document().unwrap()), "Before");
     assert!(doc.redo().unwrap().publication.is_some());
     assert_eq!(title(&doc), "After");
     close(store, &mut doc);
@@ -313,7 +333,7 @@ fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    assert_eq!(snapshot.document(&key(), INITIAL, THEME).unwrap().value().unwrap(), with_row);
+    assert_eq!(snapshot.document().unwrap().value().unwrap(), with_row);
     doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]}).to_string(), Origin::Page).unwrap();
     let expected = doc.value().unwrap();
     close(store, &mut doc);
@@ -359,13 +379,12 @@ fn undo_after_a_failed_compaction_saves_on_retry() {
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
 // and saved an update that depends on it; the package could never be opened again.
 #[test]
-fn a_stale_text_base_cannot_make_the_package_unopenable() {
+fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let schema = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
     let initial = r#"{"title":"abc"}"#;
-    let key = hitslop_core::validate(schema, initial).unwrap();
-    let (_dir, root) = package();
+    let (_dir, root) = package_with(schema, initial);
     let store = Store::open(&root, Mode::Document).unwrap();
-    let mut doc = store.document(&key, initial, THEME).unwrap();
+    let mut doc = store.document().unwrap();
     let base = doc.version();
     doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page).unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
@@ -374,7 +393,7 @@ fn a_stale_text_base_cannot_make_the_package_unopenable() {
     save(&store, &mut doc);
     store.close().unwrap();
     let store = Store::open(&root, Mode::Document).unwrap();
-    let reopened = store.document(&key, initial, THEME).expect("the package opens");
+    let reopened = store.document().expect("the document opens");
     assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
     let value: Value = serde_json::from_str(&reopened.value().unwrap()).unwrap();
     assert_eq!(value["title"], "Rabc");
@@ -417,50 +436,53 @@ fn the_writer_lock_admits_one_owner_and_snapshots_read_without_it() {
     let (_dir, root) = package();
     let (store, mut doc) = open(&root);
     assert!(matches!(Store::open(&root, Mode::Document), Err(Error::Locked)));
-    assert!(matches!(store::WriterLock::acquire(&root), Err(Error::Locked)));
+    assert!(matches!(Lease::acquire(&root), Err(Error::Locked)));
     set_title(&mut doc, "Durable");
     save(&store, &mut doc);
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    assert_eq!(title(&snapshot.document(&key(), INITIAL, THEME).unwrap()), "Durable");
+    assert_eq!(title(&snapshot.document().unwrap()), "Durable");
     // A failed close keeps ownership; a retry releases it.
     store.set_phases(Some(Arc::new(Fail("close"))));
     assert!(store.close().is_err());
     assert!(matches!(Store::open(&root, Mode::Document), Err(Error::Locked)));
     store.set_phases(None);
     store.close().unwrap();
-    drop(store::WriterLock::acquire(&root).unwrap());
+    drop(Lease::acquire(&root).unwrap());
 }
 
 #[test]
-fn snapshots_never_create_lock_or_modify_package_files() {
+fn snapshots_never_lock_or_modify_the_document() {
     let (_dir, root) = package();
+    // Never opened by a writer: no saved state yet, so a snapshot starts from the app's
+    // initial values in memory.
+    let before = std::fs::read(&root).unwrap();
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    let mut doc = snapshot.document(&key(), INITIAL, THEME).unwrap();
+    let mut doc = snapshot.document().unwrap();
     set_title(&mut doc, "In memory");
     save(&snapshot, &mut doc);
-    assert!(!root.join("state").exists(), "a render of an unsaved package writes nothing");
+    assert_eq!(std::fs::read(&root).unwrap(), before, "a render of an unsaved document writes nothing");
     assert!(matches!(snapshot.check(true), Err(Error::Closed)), "snapshots own nothing");
 
     let (store, _) = open(&root);
     store.close().unwrap();
-    let before = std::fs::read(database(&root)).unwrap();
+    let before = std::fs::read(&root).unwrap();
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    let mut doc = snapshot.document(&key(), INITIAL, THEME).unwrap();
+    let mut doc = snapshot.document().unwrap();
     set_title(&mut doc, "In memory");
     save(&snapshot, &mut doc);
-    assert_eq!(std::fs::read(database(&root)).unwrap(), before);
-    assert!(!root.join("state/writer.lock").exists() || store::WriterLock::acquire(&root).is_ok());
+    assert_eq!(std::fs::read(&root).unwrap(), before);
+    drop(Lease::acquire(&root).expect("a snapshot holds no lock"));
 }
 
 #[test]
 fn foreign_databases_are_refused_and_left_unchanged() {
     let (_dir, root) = package();
-    std::fs::create_dir(root.join("state")).unwrap();
+    std::fs::remove_file(&root).unwrap();
     Connection::open(database(&root)).unwrap().execute_batch("PRAGMA application_id=1; CREATE TABLE t(x);").unwrap();
     let before = std::fs::read(database(&root)).unwrap();
     for mode in [Mode::Document, Mode::Snapshot] {
         let error = Store::open(&root, mode).err().expect("refused");
-        assert!(error.to_string().contains("Unsupported document storage"), "{error}");
+        assert!(error.to_string().contains("not a hitSlop document"), "{error}");
     }
     assert_eq!(std::fs::read(database(&root)).unwrap(), before);
 }
@@ -477,16 +499,15 @@ fn a_newer_storage_version_asks_for_an_update_and_is_left_unchanged() {
     Connection::open(database(&root)).unwrap().execute_batch("PRAGMA user_version=2;").unwrap();
     let before = std::fs::read(database(&root)).unwrap();
     let copy = dir.path().join("Copy.slop");
-    std::fs::create_dir(&copy).unwrap();
     let refusals = [
         Store::open(&root, Mode::Document).err(),
         Store::open(&root, Mode::Snapshot).err(),
-        store::duplicate(&root, &copy).err(),
+        file::duplicate(&root, &copy).err(),
     ];
     for refusal in refusals {
         assert!(matches!(refusal, Some(Error::Rejected(ref e)) if e.code == hitslop_core::Code::RequiresUpdate), "{refusal:?}");
     }
-    assert!(!database(&copy).exists());
+    assert!(!copy.exists());
     assert_eq!(std::fs::read(database(&root)).unwrap(), before);
 }
 
@@ -498,10 +519,9 @@ fn a_newer_storage_version_asks_for_an_update_and_is_left_unchanged() {
 fn saved_state_opens_under_any_spelling_of_its_descriptor() {
     const BOUNDED: &str = r#"{"kind":"object","properties":{"title":{"kind":"string","maxLength":40},"score":{"kind":"number","min":0,"max":10}}}"#;
     const BOUNDED_INITIAL: &str = r#"{"title":"Saved","score":1}"#;
-    let (_dir, root) = package();
-    let canonical = hitslop_core::validate(BOUNDED, BOUNDED_INITIAL).unwrap();
+    let (_dir, root) = package_with(BOUNDED, BOUNDED_INITIAL);
     let store = Store::open(&root, Mode::Document).unwrap();
-    let mut doc = store.document(&canonical, BOUNDED_INITIAL, THEME).unwrap();
+    let mut doc = store.document().unwrap();
     doc.apply_batch(r#"{"intents":[{"type":"set","path":["score"],"value":7}]}"#, Origin::Page).unwrap();
     save(&store, &mut doc);
     store.close().unwrap();
@@ -510,36 +530,31 @@ fn saved_state_opens_under_any_spelling_of_its_descriptor() {
     Connection::open(database(&root)).unwrap().execute("UPDATE checkpoint SET schema_key=?", [respelled]).unwrap();
     for mode in [Mode::Document, Mode::Snapshot] {
         let store = Store::open(&root, mode).unwrap();
-        let doc = store.document(&canonical, BOUNDED_INITIAL, THEME).unwrap();
+        let doc = store.document().unwrap();
         assert_eq!(serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["score"], 7);
         store.close().unwrap();
     }
-    let different = hitslop_core::validate(&BOUNDED.replace(r#""max":10"#, r#""max":11"#), BOUNDED_INITIAL).unwrap();
+    // An app whose descriptor means something else does not open the saved state.
+    Connection::open(database(&root)).unwrap().execute("UPDATE app SET descriptor=?", [BOUNDED.replace(r#""max":10"#, r#""max":11"#)]).unwrap();
     for mode in [Mode::Document, Mode::Snapshot] {
-        let error = Store::open(&root, mode).unwrap().document(&different, BOUNDED_INITIAL, THEME).err().expect("refused");
+        let error = Store::open(&root, mode).unwrap().document().err().expect("refused");
         assert!(error.to_string().contains("Document schema differs"), "{error}");
     }
 }
 
 #[test]
-fn a_symlinked_state_or_database_is_refused() {
-    let (dir, root) = package();
-    let elsewhere = dir.path().join("elsewhere");
-    std::fs::create_dir(&elsewhere).unwrap();
-    std::os::unix::fs::symlink(&elsewhere, root.join("state")).unwrap();
-    assert!(Store::open(&root, Mode::Document).is_err());
-    assert!(Store::open(&root, Mode::Snapshot).is_err());
-
+fn a_symlinked_document_is_refused() {
     let (dir, root) = package();
     let (store, _) = open(&root);
     store.close().unwrap();
-    let real = dir.path().join("real.sqlite");
-    std::fs::rename(database(&root), &real).unwrap();
-    std::os::unix::fs::symlink(&real, database(&root)).unwrap();
+    let real = dir.path().join("Real.slop");
+    std::fs::rename(&root, &real).unwrap();
+    std::os::unix::fs::symlink(&real, &root).unwrap();
     assert!(Store::open(&root, Mode::Document).is_err());
+    assert!(Store::open(&root, Mode::Snapshot).is_err());
     let copy = dir.path().join("Copy.slop");
-    std::fs::create_dir(&copy).unwrap();
-    assert!(store::duplicate(&root, &copy).is_err(), "a duplicate never follows a replaced database");
+    assert!(file::duplicate(&root, &copy).is_err(), "a duplicate never follows a link");
+    assert!(!copy.exists());
 }
 
 #[test]
@@ -551,7 +566,7 @@ fn oversized_documents_are_refused_before_any_blob_is_read() {
     conn.execute_batch(&format!("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<{}) INSERT INTO updates(bytes) SELECT x'00' FROM n;", STORAGE_ROWS + 1)).unwrap();
     drop(conn);
     let store = Store::open(&root, Mode::Document).unwrap();
-    let error = store.document(&key(), INITIAL, THEME).err().expect("refused");
+    let error = store.document().err().expect("refused");
     assert!(error.to_string().contains("exceeds storage limits"), "{error}");
 }
 
@@ -594,13 +609,13 @@ fn a_lost_acknowledgement_never_advances_the_saved_version() {
 }
 
 #[test]
-fn a_moved_package_refuses_writes() {
+fn a_moved_document_refuses_writes() {
     let (dir, root) = package();
     let (store, mut doc) = open(&root);
     set_title(&mut doc, "Unsaved");
     let job = store.job(&mut doc, false).unwrap().unwrap();
     std::fs::rename(&root, dir.path().join("Moved.slop")).unwrap();
-    std::fs::create_dir(&root).unwrap();
+    std::fs::write(&root, b"").unwrap();
     assert!(matches!(store.write(&job), Err(Error::Moved)));
     assert!(matches!(store.check(false), Err(Error::Moved)));
 }
@@ -653,9 +668,8 @@ fn a_duplicate_has_the_same_history_and_a_new_identity() {
     set_title(&mut doc, "Copied");
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
-    std::fs::create_dir(&copy).unwrap();
     // The source stays open: the copy is an online backup.
-    store::duplicate(&root, &copy).unwrap();
+    file::duplicate(&root, &copy).unwrap();
     let (duplicate, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
     assert_ne!(duplicate.doc_id(), store.doc_id());
@@ -667,11 +681,10 @@ fn a_duplicate_has_the_same_history_and_a_new_identity() {
 #[test]
 fn a_duplicate_refuses_a_source_that_would_not_open() {
     let foreign = |root: &Path| {
-        std::fs::create_dir(root.join("state")).unwrap();
+        std::fs::remove_file(root).unwrap();
         Connection::open(database(root)).unwrap().execute_batch("PRAGMA application_id=1; CREATE TABLE t(x);").unwrap();
     };
     let empty = |root: &Path| {
-        std::fs::create_dir(root.join("state")).unwrap();
         Connection::open(database(root)).unwrap().execute_batch("PRAGMA user_version=0;").unwrap();
     };
     let oversized = |root: &Path| {
@@ -684,9 +697,8 @@ fn a_duplicate_refuses_a_source_that_would_not_open() {
         let (dir, root) = package();
         prepare(&root);
         let copy = dir.path().join("Copy.slop");
-        std::fs::create_dir(&copy).unwrap();
-        assert!(store::duplicate(&root, &copy).is_err());
-        assert!(!database(&copy).exists(), "no database is created for a refused source");
+        assert!(file::duplicate(&root, &copy).is_err());
+        assert!(!copy.exists(), "no file is created for a refused source");
     }
 }
 
@@ -696,7 +708,7 @@ fn accent(store: &Store) -> String {
 }
 fn saved_accent(root: &Path) -> String {
     let snapshot = Store::open(root, Mode::Snapshot).unwrap();
-    snapshot.document(&key(), INITIAL, THEME).unwrap();
+    snapshot.document().unwrap();
     accent(&snapshot)
 }
 fn set_accent(store: &Store, color: &str) -> bool {
@@ -729,27 +741,11 @@ fn a_theme_change_is_saved_by_the_next_job() {
     save(&store, &mut doc);
     assert_eq!(saved_accent(&root), "#222222");
     let snapshot = Store::open(&root, Mode::Snapshot).unwrap();
-    assert_eq!(title(&snapshot.document(&key(), INITIAL, THEME).unwrap()), "Both");
+    assert_eq!(title(&snapshot.document().unwrap()), "Both");
     assert!(matches!(snapshot.theme(Change::Reset(None)), Err(Error::Closed)));
     assert!(matches!(store.theme(Change::Set(r##"{"unknown":"#000000"}"##)), Err(Error::Rejected(_))));
     store.close().unwrap();
     assert_eq!(accent(&open(&root).0), "#222222");
-}
-
-// Failure: theme overrides kept in `state/theme.json` could be redirected through a
-// swapped `state/` link, block on a FIFO, or leave a staging file that failed package
-// validation. They now live in the document's database.
-#[test]
-fn theme_overrides_live_in_the_database() {
-    let (_dir, root) = package();
-    let (store, mut doc) = open(&root);
-    set_accent(&store, "#101010");
-    save(&store, &mut doc);
-    assert!(!root.join("state/theme.json").exists());
-    // Whatever sits at the old path is never opened.
-    let fifo = std::ffi::CString::new(root.join("state/theme.json").as_os_str().as_encoded_bytes()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
-    assert_eq!(saved_accent(&root), "#101010");
 }
 
 /// Holds a write at `at` until released.
@@ -840,7 +836,7 @@ fn reloading_after_a_discard_drops_unsaved_theme_changes() {
     set_accent(&store, "#404040");
     save(&store, &mut doc);
     set_accent(&store, "#505050");
-    store.document(&key(), INITIAL, THEME).unwrap();
+    store.document().unwrap();
     assert_eq!(accent(&store), "#404040");
     assert!(!store.theme_unsaved());
 }
@@ -868,8 +864,7 @@ fn a_duplicate_carries_theme_overrides() {
     set_accent(&store, "#123456");
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
-    std::fs::create_dir(&copy).unwrap();
-    store::duplicate(&root, &copy).unwrap();
+    file::duplicate(&root, &copy).unwrap();
     assert_eq!(accent(&open(&copy).0), "#123456");
 }
 
@@ -889,12 +884,11 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
             let mut round = 0;
             while !stop.load(Ordering::Relaxed) {
                 let copy = scratch.join(format!("Copy{round}.slop"));
-                std::fs::create_dir(&copy).unwrap();
-                if let Err(e) = store::duplicate(&root, &copy) {
+                if let Err(e) = file::duplicate(&root, &copy) {
                     failures.push(format!("duplicate: {e}"));
                 }
-                std::fs::remove_dir_all(&copy).unwrap();
-                if let Err(e) = Store::open(&root, Mode::Snapshot).and_then(|s| s.document(&key(), INITIAL, THEME).map(|_| ())) {
+                let _ = std::fs::remove_file(&copy);
+                if let Err(e) = Store::open(&root, Mode::Snapshot).and_then(|s| s.document().map(|_| ())) {
                     failures.push(format!("snapshot: {e}"));
                 }
                 round += 1;

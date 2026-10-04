@@ -7,22 +7,27 @@ publish.workspace = true
 [dependencies]
 loro.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 getrandom = "0.2"
 
 [features]
 schema-validation = ["dep:jsonschema"]
-# Durable storage for native hosts: SQLite, the writer lock and the save policy. Links
-# the platform's SQLite, the one library every other in-process user (Firebase) loads.
-storage = ["dep:rusqlite", "dep:libc"]
+# Durable storage for native hosts: the document file (SQLite), the writer lock and the
+# save policy. Links the platform's SQLite, the one library every other in-process user
+# (Firebase) loads. Opening checks the app, so it also needs the manifest validator.
+storage = ["dep:rusqlite", "dep:libc", "dep:sha2", "schema-validation"]
+# SQLite's own amalgamation instead of the platform's, for the engine on platforms without
+# one. Never for the app.
+bundled-sqlite = ["storage", "rusqlite/bundled"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 jsonschema = { version = "=0.58.3", default-features = false, features = ["macros"], optional = true }
-rusqlite = { version = "=0.40.2", features = ["backup", "limits"], optional = true }
+rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"], optional = true }
+sha2 = { version = "=0.11.0", optional = true }
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]

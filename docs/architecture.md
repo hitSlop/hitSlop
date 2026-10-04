@@ -1,8 +1,8 @@
 # Architecture
 
-hitSlop documents are local packages (`.slop`) that pair an immutable authored app with
-a structured document. One Rust core, `hitslop-core` on Loro, owns document semantics
-and durable storage: SQLite, the writer lock and the save policy. The Swift
+hitSlop documents are local files (`.slop`): one SQLite database that pairs an immutable
+authored app with a structured document. One Rust core, `hitslop-core` on Loro, owns
+document semantics and durable storage: the file, the writer lock and the save policy. The Swift
 `DocumentOwner` holds the live core, schedules saves and delivers to the page; Loro bytes
 never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
 
@@ -11,7 +11,7 @@ never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
  Svelte app ─ ctx ─ shell store/handles ── open/apply/text/flush ──▶ DocumentOwner ── UniFFI ──▶ hitslop-core
             ◀────────── ordered pushes (__slop.publish) ────────┘   │ owner queue                (Loro)
                                                                         ▼
- CLI (slop / hitslop-native) ── socket (live) or writer lock (closed) ─┘ persistence queue ──▶ state/document.sqlite
+ CLI (slop / hitslop-native) ── socket (live) or writer lock (closed) ─┘ persistence queue ──▶ the .slop file
 ```
 
 Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
@@ -23,27 +23,33 @@ kind's snapshot, merge, write rules, handles and CLI paths.
 The same core compiles to WASM for `slop dev`, for `slop build`'s validation of
 descriptors, initial values, theme defaults and window shapes, and for the Bun tests.
 It never edits documents outside the app. Authoring (`init`, `check`, `dev`, `build`)
-needs no helper and runs on macOS and Linux: the build also checks the package entries,
-limits and skin that native open checks (`packages/cli/src/package-check.ts`, with the
-limits shared through `PackageLimits`), and only `--artwork native` and `register`
-render artwork with the app. The CLI and the app update separately: the CLI
+needs no helper and runs on macOS and Linux: the build stages the compiled app and its
+evaluated descriptor, initial values and theme, and the CLI's file engine
+(`crates/slop-engine`, the same core built natively) packs the stage into a template,
+checking it as the app opens it. Only `--artwork native` and `register` render artwork
+with the app, from a draft of the template. The CLI and the app update separately: the CLI
 checks that the selected helper serves its command protocol (`hitslop-native
 --protocol`) before document commands and native artwork, and the helper checks that the live owner has its exact core build, since
 both ship in one app bundle. Saved documents carry what they need to be read: the
-package's `packageFormat` and `runtimeABI` requirements, the SQLite application ID and storage version, and the
-document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
+file's `packageFormat` and `runtimeABI` requirements (`app` columns), the SQLite
+application ID and storage version, and the document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
 [compatibility](engineering-contract.md#compatibility) has the rules, and the
 [compatibility corpus](testing.md#compatibility-corpus) replays every release's
 documents.
 
-Manifest acceptance is native-only Rust validation of the TypeBox-generated package
-manifest schema (newer `packageFormat` or `runtimeABI` requirements are refused first), followed by the shared shape
-parser. Swift decodes the validated manifest
-into its generated model and owns filesystem, PNG and native path checks. Authoring
-keeps TypeBox manifest validation; the manifest validator dependency is excluded from
-WASM. Package open also validates descriptors, initial values and the required theme
-defaults (`assets/theme.json`) through the core; the owner reuses the validated schema key
-and defaults. The core validates socket and page envelopes against the same generated
+Manifest acceptance is native-only Rust validation of the TypeBox-generated manifest
+schema (newer `packageFormat` or `runtimeABI` requirements are refused first), followed
+by the shared shape parser. Swift decodes the validated manifest into its generated model
+and decodes the window skin. Authoring keeps TypeBox manifest validation; the manifest
+validator dependency is excluded from WASM. Packing validates descriptors, initial values
+and theme defaults. Every open checks the file before reading a value: its application
+ID, storage version and exact tables, one `app` row, the markers, the sizes of
+every value and asset, and the asset paths. Then the app is checked once (manifest and
+window shape, descriptor and initial values, theme, `app.js` and skin), and the open keeps
+what it found. An owner's store open is its document's one check, adding SQLite's quick
+check; the session shows the document from it. Display-only opens (the catalog, Quick
+Look) skip the quick check, and a host deciding how to open a file reads only its kind
+from the header. A template opened as a document is refused with `is_template`. The core validates socket and page envelopes against the same generated
 schemas (`Envelope`); Swift only serializes them for that check and maps accepted values.
 Document payloads never need that: page batches and text edits, and CLI operations, cross
 as JSON text that only the core parses, and state returns as the core's JSON text, spliced
@@ -57,11 +63,14 @@ retired sessions without page-carried identity. Shared limits and codes live in 
 | Layer | Where | Owns |
 |---|---|---|
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
-| Storage | `crates/hitslop-core/src/store.rs` (feature `storage`, native only) | `state/document.sqlite` on the platform SQLite (document and theme overrides, saved by the same jobs), the writer lock, append-or-checkpoint choice, size limits, identity checks, duplicate backup |
+| File | `crates/hitslop-core/src/file.rs` (feature `storage`, native only) | The `.slop` file's layout and the checks every open runs; pack, create, copy; the app's assets and artwork |
+| Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved state, theme overrides and attachments on the platform SQLite (saved by the same jobs), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
+| Engine | `crates/slop-engine` | The CLI's file tool on any platform: `pack`, `inspect`, `schema` |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls, save jobs), persistence queue (store calls), save scheduling, epochs, view tokens |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, socket and discovery; the window is its `DocumentSessionDelegate` |
 | Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, page-failure overlay, the save-failure sheet (from the owner's save status); its commands go to the app |
+| Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
 | App | `HitSlopFeatures` (TCA), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one command at a time per document (a close or a save recovery requested meanwhile runs next), quit, and alerts for failures that are not save failures |
 | Author SDK | `packages/document` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
@@ -194,8 +203,25 @@ is `stale_base`, and a concurrent text edit never branches from before the lates
 so no saved update depends on trimmed history. New
 databases use incremental auto-vacuum, and every checkpoint frees the pages the log
 used. The store links the platform SQLite, the one library every other in-process user
-loads, and is the only code that opens `document.sqlite`; duplicate backup and identity
-renewal live there too.
+loads, and the core is the only code that opens a `.slop` file.
+
+## The file, its lock and copies
+
+A template holds an app; a document holds an app and its saved state. Creating a
+document copies a template and gives it an identity; nothing is ever unpacked. The writer
+lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
+the file's device and inode), never on the database: closing any second descriptor on a
+SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
+removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its journal
+after the path, and Apple's SQLite never writes again through a connection whose file
+was renamed. When the file is back where it was opened, the store reconnects and saves.
+
+Duplicate and Share a Copy flush what the page accepted, then copy from the owner's own
+connection with SQLite's online backup, so saves queue behind the copy. The copy gets a
+new identity and is published without replacing anything. Artwork rendered from a closed
+document's saved state is written into the file only while it still holds that state.
+Finder, Mail and the share sheet show it through the app's Quick Look extensions, which
+read the file's artwork read-only; a file without artwork shows the `.slop` document icon.
 
 ## Close, export and capture
 
@@ -220,9 +246,10 @@ complete payload with `get --snapshot`.
 
 ## Themes and attachments
 
-A theme is a palette: `assets/theme.json` declares the colors a person may change, as
-lowercase `#rrggbb` or `#rrggbbaa` (one spelling per color), and fonts and derived values
-stay in the app's CSS. The overrides live in the document's database, outside Loro.
+A theme is a palette: the app's theme defaults (`slop.ts`'s `theme`, stored in its `app` row)
+declare the colors a person may change, as lowercase `#rrggbb` or `#rrggbbaa` (one
+spelling per color), and fonts and derived values stay in the app's CSS. The overrides
+live in the file's `document` row, outside Loro.
 `theme.rs` holds every rule (declared tokens, the color spelling, 256 tokens, a 64 KiB
 effective theme) as hand-written checks, so authoring validation in WASM and native
 writes share them. The store keeps the palette in memory from `document` on: a change
@@ -241,8 +268,10 @@ changes are made, and follows CLI and agent changes through `themeChanged`. The 
 applies effective values: config includes the initial theme, later deliveries are
 serialized, and `flush` waits until the page shows the latest palette, so an export
 captures it. A capture in progress is never restyled.
-Attachments are content-addressed immutable blobs in `state/attachments`, written by
-Swift through the owner.
+
+Attachments are content-addressed immutable blobs in the file's `attachments` table,
+stored on the owner's persistence queue through its own connection, before the edit
+that references one is accepted.
 
 ## Tests
 

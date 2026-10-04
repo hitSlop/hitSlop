@@ -11,7 +11,7 @@ bun run dev
 
 In a terminal, `init` asks what your slop should do and who the author is, then
 offers to launch your preferred agent CLI to build it. The agent sets the title,
-description, and categories in `manifest.json` to match; edit them there anytime. Choose a detected agent, **Other CLI…** for an installed executable
+description, and categories in `slop.ts` to match; edit them there anytime. Choose a detected agent, **Other CLI…** for an installed executable
 such as Grok, or **Finish without launching**. The project includes `BRIEF.md`,
 `AGENTS.md`, and local authoring/design guides. Launch failure keeps the project.
 
@@ -20,7 +20,7 @@ For scripts or an agent already working on your behalf:
 ```sh
 bunx @hitslop/cli init budget-book --yes \
   --brief 'Track spending by category with a monthly summary.' \
-  --title 'Budget Book' --slug budget-book \
+  --title 'Budget Book' \
   --category finance --category personal --author Jordan \
   --description 'A simple monthly spending tracker.'
 ```
@@ -28,7 +28,7 @@ bunx @hitslop/cli init budget-book --yes \
 `--yes`, CI, and non-TTY runs never prompt or launch agents. Missing metadata
 defaults to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`.
 
-Build and register require the hitSlop Mac app (Apple silicon, macOS 15.2+). Installed native document editing requires neither Node nor Bun. Hosted template publication is not supported.
+`init`, `check`, `dev` and `build` run on macOS or Linux; `register` and `build --artwork native` need the hitSlop Mac app (Apple silicon, macOS 15.2+). Installed native document editing requires neither Node nor Bun. Hosted template publication is not supported.
 
 ## Common workflows
 

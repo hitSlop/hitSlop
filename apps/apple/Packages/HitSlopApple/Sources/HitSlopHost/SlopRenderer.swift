@@ -7,6 +7,8 @@ import WebKit
 struct SlopDocumentAssets: Sendable {
     let previewPNG: Data?
     let finderIconPNG: Data?
+    /// The saved state the render read; the artwork is written only while it still holds.
+    let marker: String
 }
 
 @MainActor public enum SlopRenderer {
@@ -27,16 +29,16 @@ struct SlopDocumentAssets: Sendable {
         else { waiters.removeValue(forKey: key); session.capturing = false }
     }
 
-    public static func previewPNGData(packageURL: URL) async throws -> Data { try await render(packageURL: packageURL, output: .previewPNG) }
+    public static func previewPNGData(url: URL) async throws -> Data { try await render(url: url, output: .previewPNG) }
     // Test entrypoints: the CLI exports live owners or uses `withRenderSession` directly.
-    static func exportPNGData(packageURL: URL) async throws -> Data { try await render(packageURL: packageURL, output: .exportPNG) }
-    static func exportPDFData(packageURL: URL) async throws -> Data { try await render(packageURL: packageURL, output: .pdf) }
+    static func exportPNGData(url: URL) async throws -> Data { try await render(url: url, output: .exportPNG) }
+    static func exportPDFData(url: URL) async throws -> Data { try await render(url: url, output: .pdf) }
     public static func previewPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .previewPNG) }
     public static func exportPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .exportPNG) }
     public static func exportPDFData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .pdf) }
 
-    static func documentAssetsPNGData(packageURL: URL, telemetry: SlopTelemetry = .disabled) async throws -> SlopDocumentAssets {
-        try await withRenderSession(packageURL: packageURL, renderTargetsEnabled: true) { session in
+    static func documentAssetsPNGData(url: URL, telemetry: SlopTelemetry = .disabled) async throws -> SlopDocumentAssets {
+        try await withRenderSession(url: url, renderTargetsEnabled: true) { session in
             var preview: Data?, icon: Data?
             do { preview = try await capture(session: session, output: .previewPNG) }
             catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
@@ -44,22 +46,22 @@ struct SlopDocumentAssets: Sendable {
             do { icon = try await iconPNGData(session: session) }
             catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
             try Task.checkCancellation()
-            return SlopDocumentAssets(previewPNG: preview, finderIconPNG: icon)
+            return SlopDocumentAssets(previewPNG: preview, finderIconPNG: icon, marker: try await session.savedMarker())
         }
     }
 
     /// Background renders read the saved document into memory storage. They take
-    /// no ownership and never write inside the package, so no copy is needed.
+    /// no ownership and never write to the file, so no copy is needed.
     /// `inputReady` runs once that snapshot exists (or opening failed), before rendering.
     static func withRenderSession<T>(
-        packageURL: URL, renderTargetsEnabled: Bool = false,
+        url: URL, renderTargetsEnabled: Bool = false,
         inputReady: @MainActor () -> Void = {},
         _ capture: @MainActor (DocumentSession) async throws -> T
     ) async throws -> T {
         let session: DocumentSession
         do {
             session = try await DocumentSession.open(
-                packageURL: packageURL, renderTargetsEnabled: renderTargetsEnabled, purpose: .backgroundRender)
+                url: url, renderTargetsEnabled: renderTargetsEnabled, purpose: .backgroundRender)
         } catch {
             inputReady()
             throw error
@@ -85,8 +87,8 @@ struct SlopDocumentAssets: Sendable {
         return window
     }
 
-    public static func iconPNGData(packageURL: URL) async throws -> Data? {
-        try await withRenderSession(packageURL: packageURL, renderTargetsEnabled: true) { session in
+    public static func iconPNGData(url: URL) async throws -> Data? {
+        try await withRenderSession(url: url, renderTargetsEnabled: true) { session in
             try await iconPNGData(session: session)
         }
     }
@@ -100,7 +102,7 @@ struct SlopDocumentAssets: Sendable {
             guard rect.width > 0, abs(rect.width - rect.height) < 0.5,
                   rect.minX >= -0.5, rect.minY >= -0.5,
                   rect.maxX <= view.bounds.width + 0.5, rect.maxY <= view.bounds.height + 0.5 else {
-                throw SlopPackageError.invalid("icon target must be a visible square inside the capture viewport")
+                throw SlopError.invalid("icon target must be a visible square inside the capture viewport")
             }
             WebViewBackground.set(false, on: view)
             let configuration = WKSnapshotConfiguration()
@@ -137,8 +139,8 @@ struct SlopDocumentAssets: Sendable {
         }
     }
 
-    private static func render(packageURL: URL, output: CaptureOutput) async throws -> Data {
-        try await withRenderSession(packageURL: packageURL) { session in
+    private static func render(url: URL, output: CaptureOutput) async throws -> Data {
+        try await withRenderSession(url: url) { session in
             try await capture(session: session, output: output)
         }
     }
@@ -185,7 +187,7 @@ struct SlopDocumentAssets: Sendable {
                     }
                     box = next
                 }
-                guard settled else { throw SlopPackageError.invalid("Preview export layout keeps changing with viewport size; use normal flow in Export.svelte") }
+                guard settled else { throw SlopError.invalid("Preview export layout keeps changing with viewport size; use normal flow in Export.svelte") }
                 width = max(box.width, 1)
                 height = max(min(box.height, previewHeight(box)), 1)
                 rect = CGRect(x: box.minX, y: box.minY, width: width, height: height)
@@ -198,7 +200,7 @@ struct SlopDocumentAssets: Sendable {
                     if abs(next - height) < 1 { settled = true; break }
                     height = next
                 }
-                guard settled else { throw SlopPackageError.invalid("Export layout keeps changing with viewport height; use normal flow in Export.svelte") }
+                guard settled else { throw SlopError.invalid("Export layout keeps changing with viewport height; use normal flow in Export.svelte") }
                 rect = CGRect(x: 0, y: 0, width: width, height: height)
             }
             let scale: CGFloat = output == .exportPNG || (isPreview && dedicated) ? 2 : 1
@@ -216,7 +218,7 @@ struct SlopDocumentAssets: Sendable {
                 let windowSized = abs(rect.width - originalFrame.width) < 0.5 && abs(rect.height - originalFrame.height) < 0.5
                 data = dedicated || !windowSized
                     ? try SlopPreviewImage.png(from: image)
-                    : try SlopPreviewImage.png(from: image, package: session.package, scale: scale)
+                    : try SlopPreviewImage.png(from: image, file: session.file, scale: scale)
             case .pdf:
                 let configuration = WKPDFConfiguration()
                 configuration.rect = rect
@@ -231,7 +233,7 @@ struct SlopDocumentAssets: Sendable {
     /// pages onto one continuous canvas without rasterizing text or artwork.
     private static func continuousPDF(_ data: Data, size: CGSize) throws -> Data {
         guard let provider = CGDataProvider(data: data as CFData), let source = CGPDFDocument(provider) else {
-            throw SlopPackageError.invalid("Could not read captured PDF")
+            throw SlopError.invalid("Could not read captured PDF")
         }
         guard source.numberOfPages > 1 else { return data }
         let output = NSMutableData()
@@ -239,15 +241,15 @@ struct SlopDocumentAssets: Sendable {
         // scaling preserves the complete document without an oversized MediaBox.
         let scale = min(1, 14_400 / max(size.width, size.height))
         var bounds = CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale)
-        guard bounds.width >= 3, bounds.height >= 3 else { throw SlopPackageError.invalid("Document aspect ratio exceeds single-page PDF limits") }
+        guard bounds.width >= 3, bounds.height >= 3 else { throw SlopError.invalid("Document aspect ratio exceeds single-page PDF limits") }
         guard let consumer = CGDataConsumer(data: output), let context = CGContext(consumer: consumer, mediaBox: &bounds, nil) else {
-            throw SlopPackageError.invalid("Could not create continuous PDF")
+            throw SlopError.invalid("Could not create continuous PDF")
         }
         context.beginPDFPage(nil)
         context.scaleBy(x: scale, y: scale)
         var top = size.height
         for number in 1...source.numberOfPages {
-            guard let page = source.page(at: number) else { throw SlopPackageError.invalid("Missing captured PDF page") }
+            guard let page = source.page(at: number) else { throw SlopError.invalid("Missing captured PDF page") }
             let box = page.getBoxRect(.mediaBox)
             top -= box.height
             context.saveGState()
@@ -262,25 +264,25 @@ struct SlopDocumentAssets: Sendable {
 
     private static func captureFailure(_ error: Error) -> Error {
         if let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String {
-            return SlopPackageError.invalid("Capture failed: \(message)")
+            return SlopError.invalid("Capture failed: \(message)")
         }
         return error
     }
 
     private static func validateSize(width: CGFloat, height: CGFloat, output: CaptureOutput, scale: CGFloat) throws {
-        guard width.isFinite, height.isFinite, width > 0, height > 0 else { throw SlopPackageError.invalid("Invalid capture dimensions") }
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { throw SlopError.invalid("Invalid capture dimensions") }
         // PDF is vector output: a raster pixel budget would reject valid long documents.
         guard output != .pdf else { return }
         guard width * scale <= CGFloat(Limits.imageSide), height * scale <= CGFloat(Limits.imageSide), width * height * scale * scale <= CGFloat(Limits.imagePixels) else {
-            throw SlopPackageError.invalid("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
+            throw SlopError.invalid("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
         }
     }
     private static func geometry(_ value: [String: Any]) throws -> CGRect {
-        guard let width = value["width"] as? NSNumber, let height = value["height"] as? NSNumber else { throw SlopPackageError.invalid("Could not measure capture content") }
+        guard let width = value["width"] as? NSNumber, let height = value["height"] as? NSNumber else { throw SlopError.invalid("Could not measure capture content") }
         return CGRect(x: (value["x"] as? NSNumber)?.doubleValue ?? 0, y: (value["y"] as? NSNumber)?.doubleValue ?? 0, width: width.doubleValue, height: height.doubleValue)
     }
     private static func begin(_ view: WKWebView, token: String, mode: String) async throws -> [String: Any] {
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not prepare capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopError.invalid("Could not prepare capture") }
         return value
     }
     /// `begin` has already settled at the current size; only a resize needs another settle,
@@ -288,7 +290,7 @@ struct SlopDocumentAssets: Sendable {
     private static func resizeAndSettle(_ view: WKWebView, to size: CGSize, token: String, measurement: inout [String: Any]) async throws {
         guard view.frame.size != size else { return }
         view.frame.size = size
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopPackageError.invalid("Could not measure capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopError.invalid("Could not measure capture") }
         measurement = value
     }
     /// A user can resize the native window while an asynchronous capture is running.

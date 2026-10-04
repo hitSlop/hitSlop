@@ -1,29 +1,27 @@
 import Darwin
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 
 /// Native CLI transport. The document interpreter is the shared native Rust owner.
 @MainActor public enum DocumentCommand {
   /// One command for the document at `url`: forwarded to its live owner, or run by an
-  /// owner opened here under the writer lock. `make` builds the request for the package's
+  /// owner opened here under the writer lock. `make` builds the request for the document's
   /// path; `hello` supplies the epoch a mutation needs. Reads return the projected value
   /// unless `snapshot` requests the complete schema and owner frame. Returns JSON.
   public static func run(url: URL, snapshot: Bool = false, _ make: @escaping @Sendable (_ documentPath: String) -> SocketRequest) async throws -> Data {
     let deadline = ContinuousClock.now + .seconds(2)
-    // The package is validated once per command, off MainActor; retries reuse it.
-    let package = try await SlopPreparation.run {
+    // The owner that runs the command checks the file once; a template is refused there.
+    let root = try await SlopPreparation.run {
       try SlopLocalDocument.requireLocal(url)
-      return try SlopPackage(rootURL: url)
+      return try SlopFile.resolvedRoot(url)
     }
-    guard !SlopTemplateLocation.isMaster(package.rootURL) else {
-      throw failure(SlopTemplateLocation.writableCopyRequired)
-    }
-    let request = make(package.rootURL.path)
+    let request = make(root.path)
     // Refuse a malformed command before acquiring ownership or creating document state.
     try validate(request)
     while true {
       do {
-        return try await attempt(request, package: package, admissionDeadline: deadline, snapshot: snapshot)
+        return try await attempt(request, root: root, admissionDeadline: deadline, snapshot: snapshot)
       } catch let retry as AdmissionRetry {
         guard ContinuousClock.now < deadline else {
           throw failure(retry.message)
@@ -54,11 +52,10 @@ import HitSlopCore
   }
 
   private static func attempt(
-    _ request: SocketRequest, package: SlopPackage, admissionDeadline: ContinuousClock.Instant, snapshot: Bool
+    _ request: SocketRequest, root: URL, admissionDeadline: ContinuousClock.Instant, snapshot: Bool
   ) async throws -> Data {
-    let root = package.rootURL
     let connection: Connection
-    switch try await connect(root: root, until: admissionDeadline, own: { try DocumentOwner(package: package) }) {
+    switch try await connect(root: root, until: admissionDeadline, own: { try DocumentOwner(url: root) }) {
     case .owned(let owner): connection = .owner(owner)
     case .live(let socket): connection = .socket(socket)
     }
@@ -129,9 +126,9 @@ import HitSlopCore
   }
 
   static func liveSocket(for root: URL) throws -> String {
-    let url = root.appendingPathComponent("state/host.lock")
     do {
-      let bytes = try SlopFile.read(url, within: root, maximumBytes: 16384)
+      guard let json = try storeCall({ try liveDiscovery(path: root.path) }) else { throw failure("No live session yet") }
+      let bytes = Data(json.utf8)
       guard bytes.count <= 16384,
         Envelope.valid(.socketDiscovery, bytes),
         let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]

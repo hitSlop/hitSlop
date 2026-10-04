@@ -12,10 +12,9 @@ import HitSlopDocument
     let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
     let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
     let path = try #require(paths[kind])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: root)
+    let root = try Fixtures.document(from: URL(fileURLWithPath: path))
     defer { try? FileManager.default.removeItem(at: root) }
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.load()
     do {
         try await session.waitUntilReady()
@@ -33,10 +32,9 @@ extension OwnerClientTests {
         let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
         let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
         for kind in ["hole", "locked"] {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-            try FileManager.default.copyItem(at: URL(fileURLWithPath: try #require(paths["shape-lab-" + kind])), to: root)
+            let root = try Fixtures.document(from: URL(fileURLWithPath: try #require(paths["shape-lab-" + kind])))
             defer { try? FileManager.default.removeItem(at: root) }
-            let controller = try await SlopDocumentWindowController.open(packageURL: root)
+            let controller = try await SlopDocumentWindowController.open(url: root)
             do {
                 try await controller.session.waitUntilReady()
                 let window = try #require(controller.window)
@@ -180,13 +178,13 @@ extension OwnerClientTests {
     for kind in ["standard", "ellipse", "washer"] {
         let path = try #require(paths[kind])
         let url = URL(fileURLWithPath: path)
-        let exported = try await SlopRenderer.exportPNGData(packageURL: url)
+        let exported = try await SlopRenderer.exportPNGData(url: url)
         let bitmap = try #require(NSBitmapImageRep(data: exported))
         #expect(bitmap.pixelsWide == 640)
         #expect(bitmap.pixelsHigh == 480)
         // Dedicated export corners remain opaque even for an ellipse or holed skin.
         #expect((bitmap.colorAt(x: 2, y: 2)?.alphaComponent ?? 0) > 0.99)
-        let icon = try #require(await SlopRenderer.iconPNGData(packageURL: url))
+        let icon = try #require(await SlopRenderer.iconPNGData(url: url))
         let image = try #require(NSBitmapImageRep(data: icon))
         #expect(image.pixelsWide == 512)
         #expect(image.pixelsHigh == 512)

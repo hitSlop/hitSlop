@@ -7,72 +7,15 @@ import Testing
 import HitSlopTestSupport
 @testable import HitSlopDocument
 
+// The core owns attachment storage (crates/hitslop-core/tests/file.rs); these prove the
+// page, the CLI and Duplicate reach it through the owner.
 @Suite(.serialized) struct AttachmentTests {
-  func fixture() throws -> URL {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/generated/native-fixtures/quick-checklist.slop", toPath: root.path)
-    try SlopPermissions.makeWritable(root)
-    return root
-  }
-  @Test func opaqueFilesAreBoundedDeduplicatedAndVerified() throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let lock = try WriterLock.acquire(root)
-    defer { lock.release() }
-    let data = Data("classic skin".utf8)
-    let ref = try SlopAttachments.put(data, in: root)
-    let id = ref.id
-    #expect(SlopAttachments.validID(id))
-    #expect(try SlopAttachments.read(id, in: root) == data)
-    _ = try SlopAttachments.put(data, in: root)
-    #expect(try SlopAttachments.list(in: root).count == 1)
-    _ = try SlopPackage(rootURL: root)
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.read("../document.sqlite", in: root) }
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.put(Data(count: AttachmentLimits.file + 1), in: root) }
-    try Data("corruption".utf8).write(to: root.appendingPathComponent("state/attachments/" + id))
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.read(id, in: root) }
-  }
-  @Test func unsafeEntriesAndSymlinkDirectoriesAreRejected() throws {
-    let root = try fixture()
-    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: outside) }
-    let lock = try WriterLock.acquire(root)
-    defer { lock.release() }
-    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-    let directory = root.appendingPathComponent("state/attachments")
-    try FileManager.default.createSymbolicLink(at: directory, withDestinationURL: outside)
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.put(Data([1]), in: root) }
-    #expect(throws: (any Error).self) { _ = try SlopPackage(rootURL: root) }
-    #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
-    try FileManager.default.removeItem(at: directory)
-    _ = try SlopAttachments.put(Data([1]), in: root)
-    try Data([2]).write(to: directory.appendingPathComponent("unexpected"))
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.list(in: root) }
-  }
-  @Test func interruptedStagingIsNotExposedAndQuotaIsEnforced() throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let lock = try WriterLock.acquire(root)
-    defer { lock.release() }
-    _ = try SlopAttachments.put(Data([1]), in: root)
-    try Data([9]).write(to: root.appendingPathComponent("state/attachments/.pending"))
-    #expect(try SlopAttachments.list(in: root).count == 1)
-    _ = try SlopAttachments.put(Data([2]), in: root)
-    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("state/attachments/.pending").path))
-    for index in 2..<AttachmentLimits.count {
-      _ = try SlopAttachments.put(Data("blob-\(index)".utf8), in: root)
-    }
-    #expect(throws: (any Error).self) { _ = try SlopAttachments.put(Data("one too many".utf8), in: root) }
-    // Deduplication still succeeds at quota.
-    _ = try SlopAttachments.put(Data([1]), in: root)
-  }
   @Test @MainActor func liveSocketClosedCLIAndDuplicationPreserveLargeAttachments() async throws {
     _ = NSApplication.shared
-    let root = try fixture()
+    let root = try Fixtures.native()
     let copy = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: copy) }
-    let engine = try await DocumentSession.open(packageURL: root)
+    let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
     let data = Data(repeating: 37, count: 2 * 1024 * 1024)
@@ -92,12 +35,10 @@ import HitSlopTestSupport
     let read = try await command("attachments.read", url: root, attachmentID: id)
     let payload = try #require(try JSONSerialization.jsonObject(with: read) as? [String: String])
     #expect(Data(base64Encoded: payload["bytes"]!) == data)
-    try await engine.flush()
-    try SlopDuplicator.duplicate(from: root, to: copy)
-    #expect(try SlopAttachments.read(id, in: copy) == data)
+    // A copy of the open document carries the attachment.
+    try await engine.copy(to: copy)
+    #expect(try await command("attachments.read", url: copy, attachmentID: id) == read)
     try await engine.close()
-    // Headless attachment commands must not execute this authored application.
-    try Data("throw new Error('authored code must not run');".utf8).write(to: root.appendingPathComponent("assets/app.js"))
     let reopened = try await command("attachments.read", url: root, attachmentID: id)
     #expect(reopened == read)
     try await expectListed()
@@ -106,9 +47,9 @@ import HitSlopTestSupport
   // Failure: after admission every owner error became "failed", so the CLI reported
   // refusals that were never applied as an unknown outcome.
   @Test @MainActor func missingAttachmentIsARefusalNotAnUnknownOutcome() async throws {
-    let root = try fixture()
+    let root = try Fixtures.native()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let request = try SocketRequest(json: [
       "method": "attachments.read", "documentPath": root.path,
       "attachmentID": String(repeating: "a", count: 64),

@@ -1,41 +1,52 @@
-//! Native acceptance of a built package's manifest over the TypeBox-generated contract.
-use crate::{err, shape, Code, Result, PACKAGE_FORMAT, RUNTIME_ABI};
+//! Native acceptance of a stored manifest: the authored contract, TypeBox-generated. The
+//! document's package format and runtime ABI are columns beside it, checked before this runs;
+//! the package format chooses the rules.
+use crate::{err, shape, Code, Result};
 
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/package-manifest.schema.json",
+    path = "../../packages/schema/generated/manifest.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = false, validate = true, iter_errors = false }
 )]
 struct Manifest;
 
-pub fn validate(input: &str) -> Result<shape::Silhouette> {
+/// A checked manifest's window: its shape, its size in points, and the asset path its skin
+/// names, if any.
+#[derive(Debug)]
+pub struct Window {
+    pub silhouette: shape::Silhouette,
+    pub width: u64,
+    pub height: u64,
+    pub skin: Option<String>,
+}
+
+pub fn validate(input: &str, package_format: u64) -> Result<Window> {
     if input.len() > 64 * 1024 {
-        return Err(err(Code::TooLarge, "manifest.json exceeds 64 KiB"));
+        return Err(err(Code::TooLarge, "The manifest exceeds 64 KiB"));
     }
-    let value: serde_json::Value = serde_json::from_str(input)
-        .map_err(|_| err(Code::InvalidRequest, "manifest.json must be valid JSON"))?;
-    // A newer package is refused before its other fields are judged: it may use fields
-    // this build does not know.
-    for (field, supported) in [("packageFormat", PACKAGE_FORMAT), ("runtimeABI", RUNTIME_ABI)] {
-        if let Some(level) = value.get(field).and_then(serde_json::Value::as_u64).filter(|level| *level > supported) {
-            return Err(err(Code::RequiresUpdate, format!("This slop needs {field} {level}; this hitSlop supports {supported}")));
-        }
-    }
-    match value.get("packageFormat").and_then(serde_json::Value::as_u64) {
-        Some(1) => validate_v1(&value),
+    let value: serde_json::Value =
+        serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "The manifest must be valid JSON"))?;
+    match package_format {
+        1 => validate_v1(&value),
         _ => Err(err(Code::InvalidRequest, "Invalid package format")),
     }
 }
 
-fn validate_v1(value: &serde_json::Value) -> Result<shape::Silhouette> {
+fn validate_v1(value: &serde_json::Value) -> Result<Window> {
     Manifest::validate(&value).map_err(|e| {
         let path = e.instance_path().as_str();
-        err(Code::InvalidRequest, format!("Invalid manifest.json at {}", if path.is_empty() { "/" } else { path }))
+        err(Code::InvalidRequest, format!("Invalid manifest at {}", if path.is_empty() { "/" } else { path }))
     })?;
     let presentation = &value["presentation"];
     // The validated schema guarantees both dimensions and restricts the presentation.
+    // Read as numbers: JSON Schema counts `320.0` as an integer.
     let width = presentation["width"].as_f64().expect("validated width");
     let height = presentation["height"].as_f64().expect("validated height");
-    shape::silhouette(presentation.get("shape"), width, height)
+    Ok(Window {
+        silhouette: shape::silhouette(presentation.get("shape"), width, height)?,
+        width: width as u64,
+        height: height as u64,
+        skin: presentation["skin"].as_str().map(str::to_owned),
+    })
 }

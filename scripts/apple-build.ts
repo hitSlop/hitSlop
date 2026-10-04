@@ -53,3 +53,7 @@ await run([
   "scripts/release-artifact.ts",
   resolve("generated/app/hitSlop.app"),
 ]);
+// A development build never claims .slop in Finder; open it explicitly (`open -a`).
+const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+for (const app of [resolve(derived, "Build/Products/Debug/hitSlop.app"), artifact])
+  await Bun.spawn([lsregister, "-u", app], { stdout: "ignore", stderr: "ignore" }).exited;

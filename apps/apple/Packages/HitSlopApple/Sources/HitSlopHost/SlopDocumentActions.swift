@@ -8,7 +8,7 @@ extension SlopDocumentWindowController {
   func request(_ command: SlopDocumentCommand) {
     if !isContentReady {
       switch command {
-      case .exportPNG, .exportPDF, .duplicate, .theme(true), .importTheme, .exportTheme: return
+      case .exportPNG, .exportPDF, .duplicate, .share, .theme(true), .importTheme, .exportTheme: return
       default: break
       }
     }
@@ -24,9 +24,10 @@ extension SlopDocumentWindowController {
       let panel = NSSavePanel()
       panel.allowedContentTypes = [.slop]
       panel.nameFieldStringValue =
-        packageURL.deletingPathExtension().lastPathComponent + " copy.slop"
+        url.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
       return try await duplicateDocument(to: await runSheet(panel))
+    case .share: try await shareCopy()
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
@@ -70,16 +71,37 @@ extension SlopDocumentWindowController {
   func duplicateDocument(to target: URL?) async throws -> URL? {
     guard let target else { telemetry.send(.breadcrumb(.duplicate, .cancelled)); return nil }
     telemetry.send(.breadcrumb(.duplicate, .started))
-    // A live page sends unsent text first; without one, the owner saves what it accepted.
+    try await saveAccepted(for: .duplicate)
     do {
-      if session.isReady && !session.rendererDead { try await session.flush() } else { try await session.retrySave() }
-    } catch { reportLifecycleFailure(.duplicate, error: error); throw error }
-    do {
-      let source = session.package.rootURL
-      let destination = try await SlopPreparation.run { try SlopDuplicator.duplicate(from: source, to: target).rootURL }
+      let destination = try SlopFile.newDocumentURL(target)
+      try await session.copy(to: destination)
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return destination
     } catch { telemetry.failure(.duplicate, error: error); throw error }
+  }
+
+  /// Shares a copy of the document as a new logical document: everything the page has
+  /// accepted, saved and copied through the owner, never the live file.
+  func shareCopy() async throws {
+    telemetry.send(.breadcrumb(.share, .started))
+    try await saveAccepted(for: .share)
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitSlop Share \(UUID().uuidString)")
+    let copy = folder.appendingPathComponent(url.lastPathComponent)
+    do {
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try await session.copy(to: copy)
+    } catch { telemetry.failure(.share, error: error); throw error }
+    guard let view = window?.contentView else { return }
+    NSSharingServicePicker(items: [copy]).show(relativeTo: .zero, of: view, preferredEdge: .minY)
+    telemetry.send(.breadcrumb(.share, .completed))
+  }
+
+  /// Saves what the document accepted before it is copied: a live page sends unsent text
+  /// first; without one, the owner saves what it accepted.
+  private func saveAccepted(for operation: SlopTelemetryEvent.Failure) async throws {
+    do {
+      if session.isReady && !session.rendererDead { try await session.flush() } else { try await session.retrySave() }
+    } catch { reportLifecycleFailure(operation, error: error); throw error }
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.
@@ -93,7 +115,7 @@ extension SlopDocumentWindowController {
   private func export(_ format: ExportFormat) async throws {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
-    panel.nameFieldStringValue = packageURL.deletingPathExtension().lastPathComponent + "." + format.rawValue
+    panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.rawValue
     let output = panel.runModal() == .OK ? panel.url : nil
     try await exportDocument(format: format, to: output)
   }
@@ -105,7 +127,7 @@ extension SlopDocumentWindowController {
     await waitForPresentation()
     do {
       guard isContentReady, session.isReady, presentedPageError == nil else {
-        throw SlopPackageError.invalid("The document is not ready to export")
+        throw SlopError.invalid("The document is not ready to export")
       }
       try await SlopRenderer.exportDocument(session: session, format: format, output: output)
       telemetry.send(.breadcrumb(.export, .completed))
@@ -115,14 +137,15 @@ extension SlopDocumentWindowController {
       throw error
     }
   }
-  private func reveal() { NSWorkspace.shared.activateFileViewerSelecting([packageURL]) }
+  private func reveal() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
   private func copyPath() {
-    NSPasteboard.general.copy(packageURL.path)
+    NSPasteboard.general.copy(url.path)
   }
+  /// Opens the folder that holds the document, where an agent or a terminal runs `slop`
+  /// commands on it. The document itself is a database, not something to edit as text.
   private func openInEditor(_ app: URL) async throws {
-    let directory = URL(fileURLWithPath: packageURL.path, isDirectory: true)
     _ = try await NSWorkspace.shared.open(
-      [directory], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+      [url.deletingLastPathComponent()], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
   }
 }
 

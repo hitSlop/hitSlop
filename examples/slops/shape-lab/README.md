@@ -2,7 +2,8 @@
 
 An unbundled developer instrument for actual host clipping, pointer delivery,
 resizing, text editing and capture independence. The page does not draw its own
-silhouette. `variant.ts` contains display metadata only; the manifest owns geometry.
+silhouette. `variant.ts` holds each variant's title and window (`presentation`), which
+`slop.ts` reads; fixture generation replaces it.
 
 ## Run
 

@@ -9,17 +9,17 @@ import HitSlopTestSupport
 // Native gap: the Rust store tests own SQLite semantics; these prove the owner drives
 // them through the binding without WebKit or authored code.
 @Suite(.serialized) struct DocumentOwnerTests {
-  func fixture() throws -> URL {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
-    for (file, key) in [("state.schema.json", "schema"), ("initial.json", "initial")] {
-      try JSONSerialization.data(withJSONObject: spec[key]!).write(to: root.appendingPathComponent(file))
+  /// The checklist document with `app` as its app. By default the app throws: native editing
+  /// must never evaluate authored JavaScript.
+  func fixture(app: String = "throw new Error('authored code must not execute');") throws -> URL {
+    let stage = try Fixtures.stage()
+    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: Fixtures.repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
+    try Fixtures.updateApp(stage) { app in
+      app["descriptor"] = spec["schema"]
+      app["initial"] = spec["initial"]
     }
-    // Native editing must never evaluate authored JavaScript.
-    try Data("throw new Error('authored code must not execute');".utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    return root
+    try Data(app.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    return try Fixtures.document(stage: stage)
   }
   func value(_ owner: DocumentOwner) async throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
@@ -30,8 +30,7 @@ import HitSlopTestSupport
   @MainActor func liveOwnerWithWrongCoreIdentityIsRefusedBeforeCommands(identity: String?) async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try SlopPackage(rootURL: root)
-    let owner = try DocumentOwner(package: package)
+    let owner = try DocumentOwner(url: root)
     let forwarded = Locked(0)
     let server = try SocketServer { request, _ in
       if request.method == .hello { return SocketReply(ok: true, epoch: owner.epoch, coreBuildId: identity).encoded() }
@@ -39,8 +38,7 @@ import HitSlopTestSupport
       return await owner.request(request)
     }
     defer { server.stop() }
-    try JSONSerialization.data(withJSONObject: ["socket": server.path, "documentPath": package.rootURL.path])
-      .write(to: package.rootURL.appendingPathComponent("state/host.lock"))
+    try owner.publishDiscovery(JSONSerialization.data(withJSONObject: ["socket": server.path, "documentPath": root.path]))
     for method in ["get", "apply"] {
       do {
         _ = try await command(method, url: root,
@@ -50,9 +48,9 @@ import HitSlopTestSupport
         #expect(error.localizedDescription.contains("Quit and reopen hitSlop"))
       }
     }
-    let output = root.appendingPathComponent("should-not-exist.png")
+    let output = root.deletingPathExtension().appendingPathExtension("png")
     do {
-      try await DocumentCommand.exportLive(root: package.rootURL, socket: server.path, format: .png, output: output)
+      try await DocumentCommand.exportLive(root: root, socket: server.path, format: .png, output: output)
       Issue.record("Accepted export from owner without matching core identity")
     } catch { #expect(error.localizedDescription.contains("Quit and reopen hitSlop")) }
     #expect(!FileManager.default.fileExists(atPath: output.path))
@@ -61,31 +59,13 @@ import HitSlopTestSupport
     try await owner.close()
   }
 
-  // Failure: nothing cleared the discovery file a crashed session left behind. A command
-  // that found the lock busy while the next owner was still opening read the dead socket
-  // from it, instead of waiting for the new owner to publish its own.
-  @Test @MainActor func takingOwnershipClearsDiscoveryLeftByACrashedSession() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let state = root.appendingPathComponent("state")
-    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-    let leftover = state.appendingPathComponent("host.lock")
-    try JSONSerialization.data(withJSONObject: ["socket": "/tmp/hitslop-gone/dead.sock", "documentPath": root.path])
-      .write(to: leftover)
-    #expect(try DocumentCommand.liveSocket(for: root) == "/tmp/hitslop-gone/dead.sock", "the leftover must look valid")
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    #expect(!FileManager.default.fileExists(atPath: leftover.path))
-    #expect(throws: (any Error).self) { try DocumentCommand.liveSocket(for: root) }
-    try await owner.close()
-  }
-
   @Test func nativeBindingExecutesLiteralFixturesAndReplaysUpdates() throws {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
     func json(_ value: Any) throws -> String {
       String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
     }
-    // Every literal scenario file (checklist.json, scalars.json, …) runs natively too.
-    let directory = URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures")
+    // Every literal scenario file (checklist.json, scalars.json, …) runs natively too, in a
+    // document whose app carries the scenario's descriptor and initial values.
+    let directory = Fixtures.repository.appendingPathComponent("crates/hitslop-core/fixtures")
     let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
       .filter { $0.pathExtension == "json" }
     var ran = 0
@@ -94,12 +74,15 @@ import HitSlopTestSupport
     guard let scenarios = f["scenarios"] as? [[String: Any]] else { continue }
     for scenario in scenarios {
       ran += 1
-      let schema = try json(f["schema"]!)
-      let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      let stage = try Fixtures.stage()
+      try Fixtures.updateApp(stage) { app in
+        app["descriptor"] = f["schema"]
+        app["initial"] = scenario["initial"] ?? f["initial"]
+      }
+      let root = try Fixtures.document(stage: stage)
       defer { try? FileManager.default.removeItem(at: root) }
-      let store = try NativeStore.open(root: root.path, mode: .document)
-      let core = try store.document(schemaKey: schema, initialJson: json(scenario["initial"] ?? f["initial"]!), themeDefaultsJson: "{}")
+      let store = try NativeStore.open(path: root.path, mode: .document)
+      let core = try store.document()
       let before = try core.state()
       let batch = try json(["intents": scenario["intents"]!])
       if let expected = scenario["error"] as? String {
@@ -114,7 +97,7 @@ import HitSlopTestSupport
         // The saved update replays to the same value; a batch that changed nothing saves nothing.
         if let job = try core.saveJob(store: store, forceCheckpoint: false) { try store.write(job: job) }
         try store.close()
-        let reopened = try NativeStore.open(root: root.path, mode: .snapshot).document(schemaKey: schema, initialJson: "{}", themeDefaultsJson: "{}")
+        let reopened = try NativeStore.open(path: root.path, mode: .snapshot).document()
         let replay = try JSONSerialization.jsonObject(with: Data(reopened.state().utf8)) as! [String: Any]
         #expect(try json(replay["value"]!) == json(scenario["after"]!))
       }
@@ -123,15 +106,55 @@ import HitSlopTestSupport
     #expect(ran > 20)
   }
 
+  /// An owner shows the document from its store's one check, in either mode: the app a
+  /// separate open reports. A file's header gives its kind, and a template is refused as a
+  /// document before anything is written.
+  @Test func ownersShowTheAppTheirOpenCheckedAndRefuseTemplates() async throws {
+    let stage = try Fixtures.minimalStage(theme: ##"{"paper":"#ffffff","accent":"#335577"}"##)
+    defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
+    let template = try Fixtures.template(stage: stage)
+    let root = try Fixtures.document(from: template)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let opened = try SlopFile(url: root)
+    for mode in [StorageMode.document, .snapshot] {
+      let owner = try DocumentOwner(url: root, mode: mode)
+      #expect(owner.file.kind == .document)
+      #expect(owner.file.descriptor == opened.descriptor)
+      #expect(owner.file.themeTokens.map(\.name) == ["paper", "accent"])
+      #expect(owner.file.manifest.slug == opened.manifest.slug)
+      try await owner.close()
+    }
+    #expect(try SlopFile.kind(of: template) == .template)
+    #expect(try SlopFile.kind(of: root) == .document)
+    let before = try Data(contentsOf: template)
+    do {
+      _ = try DocumentOwner(url: template)
+      Issue.record("A template opened as a document")
+    } catch SlopError.template {}
+    #expect(try Data(contentsOf: template) == before)
+  }
+
+  /// Only a file the core refuses reads as an invalid hitSlop file; a storage failure,
+  /// such as a document that is no longer there, keeps its own message.
+  @Test func storageFailuresAreNotReportedAsInvalidFiles() throws {
+    let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    do {
+      _ = try DocumentOwner(url: missing)
+      Issue.record("A missing document opened")
+    } catch let error as SlopError {
+      Issue.record("A storage failure was reported as an invalid file: \(error.localizedDescription)")
+    } catch {}
+  }
+
   @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
     _ = try await owner.apply(batch: increment)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await owner.close()
-    let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let reopened = try DocumentOwner(url: root)
     #expect(reopened.epoch != owner.epoch)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
@@ -141,23 +164,22 @@ import HitSlopTestSupport
   }
 
   // A document a newer hitSlop saved asks for an update from every owner mode, through
-  // the binding, and its database is left exactly as that build wrote it.
+  // the binding, and its file is left exactly as that build wrote it.
   @Test func newerStorageAsksForAnUpdateAndIsLeftUnchanged() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
     try await owner.close()
-    let database = root.appendingPathComponent("state/document.sqlite")
     var connection: OpaquePointer?
-    #expect(sqlite3_open(database.path, &connection) == SQLITE_OK)
+    #expect(sqlite3_open(root.path, &connection) == SQLITE_OK)
     #expect(sqlite3_exec(connection, "PRAGMA user_version=2", nil, nil, nil) == SQLITE_OK)
     sqlite3_close(connection)
-    let before = try Data(contentsOf: database)
+    let before = try Data(contentsOf: root)
     for mode in [StorageMode.document, .snapshot] {
-      #expect(throws: SlopRequiresUpdate.self) { _ = try DocumentOwner(package: SlopPackage(rootURL: root), mode: mode) }
+      #expect(throws: SlopRequiresUpdate.self) { _ = try DocumentOwner(url: root, mode: mode) }
     }
-    #expect(try Data(contentsOf: database) == before)
+    #expect(try Data(contentsOf: root) == before)
   }
 
   // Failure: a lost commit acknowledgement must retain both the original edit and edits
@@ -165,7 +187,7 @@ import HitSlopTestSupport
   @Test func lostReplyWithFailedRecoveryReadNeverDropsLaterEdits() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
     owner.testingPhase = { phase in
       if phase == "append:committed" || phase == "checkpoint:committed" {
@@ -178,7 +200,7 @@ import HitSlopTestSupport
     _ = try await owner.apply(batch: increment)
     try await owner.flush()
     try await owner.close()
-    let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let reopened = try DocumentOwner(url: root)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 6)
     try await reopened.close()
   }
@@ -187,16 +209,16 @@ import HitSlopTestSupport
     let root = try fixture()
     let moved = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
-    // Real I/O boundary: the package temporarily becomes unavailable.
+    // Real I/O boundary: the file temporarily moves away.
     try FileManager.default.moveItem(at: root, to: moved)
     await #expect(throws: (any Error).self) { try await owner.close() }
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 3)
     #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(moved) }
     try FileManager.default.moveItem(at: moved, to: root)
     try await owner.close()
-    let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let reopened = try DocumentOwner(url: root)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await reopened.close()
   }
@@ -206,10 +228,10 @@ import HitSlopTestSupport
   @Test func snapshotOwnerFreezesTheThemeAndOwnsNothing() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let first = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
     try await owner.flush()
-    let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+    let snapshot = try DocumentOwner(url: root, mode: .snapshot)
     _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#333333"}"##))
     try await owner.flush()
     #expect(try await snapshot.loadTheme().state.effective == first.effective)
@@ -222,17 +244,17 @@ import HitSlopTestSupport
   @Test func snapshotOwnerReadsSavedStateWithoutWriting() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
     try await owner.flush()
-    let capture = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+    let capture = try DocumentOwner(url: root, mode: .snapshot)
     #expect((try await value(capture)["value"] as? [String: Any])?["hits"] as? Int == 3)
     await #expect(throws: (any Error).self) {
       _ = try await capture.apply(batch: self.increment)
     }
     try await capture.close()
     try await owner.close()
-    let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let reopened = try DocumentOwner(url: root)
     #expect((try await value(reopened)["value"] as? [String: Any])?["hits"] as? Int == 3)
     try await reopened.close()
   }
@@ -241,9 +263,7 @@ import HitSlopTestSupport
   // Oracle: the public promise exposes its accepted value, CLI publication reaches the page,
   // and a fresh native owner reads both edits after close without evaluating authored code.
   @Test @MainActor func publicSDKAndLiveCLIShareTheNativeOwner() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    try Data("""
+    let root = try fixture(app: """
       export default { mount(ctx, target) {
         globalThis.consumer = ctx.document;
         const input = document.createElement('textarea');
@@ -251,8 +271,9 @@ import HitSlopTestSupport
         const binding = ctx.bind.text(input, ctx.document.fields.title);
         return { unmount() { binding.destroy(); input.remove(); } };
       } };
-      """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try await DocumentSession.open(packageURL: root)
+      """)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
     let accepted = try await session.webView.callAsyncJavaScript("""
@@ -279,7 +300,7 @@ import HitSlopTestSupport
       return true;
       """, arguments: [:], in: nil, contentWorld: .page)
     try await session.close()
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let current = try await value(owner)["value"] as! [String: Any]
     #expect(current["hits"] as? Int == 7)
     #expect(current["title"] as? String == "Saved 😀 draft")
@@ -298,12 +319,10 @@ import HitSlopTestSupport
   }
 
   @Test @MainActor func plainAndSvelteConsumersExerciseCtx() async throws {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    for source in ["tests/fixtures/checklist/document", "generated/abi/owner-svelte.slop"] {
-      let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    let svelte = Fixtures.repository.appendingPathComponent("generated/abi/owner-svelte.slop")
+    for root in [try Fixtures.document(), try Fixtures.document(from: svelte)] {
       defer { try? FileManager.default.removeItem(at: root) }
-      try FileManager.default.copyItem(atPath: repository + "/" + source, toPath: root.path)
-      let session = try await DocumentSession.open(packageURL: root)
+      let session = try await DocumentSession.open(url: root)
       session.load(); try await session.waitUntilReady()
       let passed = try await session.webView.callAsyncJavaScript("return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
       #expect(passed == true)
@@ -314,23 +333,22 @@ import HitSlopTestSupport
   // Gap: storage blob tests and SDK barriers separately cannot prove the native
   // ABI persists an attachment and its accepted reference before immediate close.
   @Test @MainActor func attachmentReferenceAndBlobSurviveImmediateClose() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    try Data("""
+    let root = try fixture(app: """
       export default { mount(ctx) { globalThis.attachmentProbe = () => {
         globalThis.importWork = ctx.attachments.import(new File(['native attachment'], 'note.txt', {type:'text/plain'}),
           (tx, ref) => tx.fields.title.set(ref.id));
       }; return {}; } };
-      """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try await DocumentSession.open(packageURL: root)
+      """)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
     session.load(); try await session.waitUntilReady()
     _ = try await session.webView.callAsyncJavaScript("attachmentProbe(); return true", arguments: [:], in: nil, contentWorld: .page)
     try await session.close()
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let current = try await value(owner)["value"] as! [String: Any]
     let id = try #require(current["title"] as? String)
     #expect(id.count == 64)
-    #expect(try Data(contentsOf: root.appendingPathComponent("state/attachments/" + id)) == Data("native attachment".utf8))
+    #expect(try await owner.readAttachment(id) == Data("native attachment".utf8).base64EncodedString())
     try await owner.close()
   }
 
@@ -340,7 +358,7 @@ import HitSlopTestSupport
   @Test func themeRulesHoldForEveryWriter() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let set = { (values: [String: String]) in
       ThemeChange.set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
     }
@@ -361,7 +379,7 @@ import HitSlopTestSupport
   }
   /// The saved accent, read without the owner (snapshot mode takes no lock).
   func savedAccent(_ root: URL) async throws -> String? {
-    let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+    let snapshot = try DocumentOwner(url: root, mode: .snapshot)
     defer { Task { try? await snapshot.close() } }
     return try await accent(snapshot)
   }
@@ -371,7 +389,7 @@ import HitSlopTestSupport
   @Test func themeChangesAreSavedLikeEdits() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.testingPhase = { phase in
       if phase.hasPrefix("theme:") {
         throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Disk unavailable"])
@@ -396,7 +414,7 @@ import HitSlopTestSupport
   @Test func themeExportWaitsForTheSave() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.testingPhase = { phase in
       if phase.hasPrefix("theme:") {
         throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Disk unavailable"])
@@ -413,7 +431,7 @@ import HitSlopTestSupport
   @Test func themeImportReplacesOverridesForItsTemplateOnly() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
     let file = try await owner.exportTheme()
     #expect(file.contains(#""template":"runtime-conformance""#))
@@ -433,7 +451,7 @@ import HitSlopTestSupport
   @Test func requestsFromAReplacedViewOrEpochAreRefused() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.attach(view: "first")
     _ = try await owner.open(view: "first")
     owner.attach(view: "second")
@@ -452,11 +470,9 @@ import HitSlopTestSupport
 
 extension DocumentOwnerTests {
   @Test @MainActor func failedDeliveryResyncsTheLivePageWithoutReplayingItsEdit() async throws {
-    let root = try fixture()
+    let root = try fixture(app: "export default {mount(ctx) {globalThis.doc = ctx.document; return {}}}")
     defer { try? FileManager.default.removeItem(at: root) }
-    try Data("export default {mount(ctx) {globalThis.doc = ctx.document; return {}}}".utf8)
-      .write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.load(); try await session.waitUntilReady()
     var injected = false
     session.testingDeliveryFailure = {
@@ -476,7 +492,7 @@ extension DocumentOwnerTests {
   @Test @MainActor func pageAdmissionOrdersMixedEditsAndFencesOldOpenAndFlush() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.attach(view: "first")
     let initial = try await value(owner)
     let title = (initial["value"] as! [String: Any])["title"] as! String
@@ -511,7 +527,7 @@ extension DocumentOwnerTests {
   @Test @MainActor func malformedPageRequestsAreRefusedNotUncertain() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.attach(view: "page")
     let increment = json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
     let requests: [([String: Any], String)] = [

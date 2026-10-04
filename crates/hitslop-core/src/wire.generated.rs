@@ -2,7 +2,7 @@
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape, RequiresUpdate }
+pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape, RequiresUpdate, IsTemplate }
 impl Code {
     pub fn as_str(self) -> &'static str { match self {
         Self::TypeMismatch => "type_mismatch",
@@ -23,6 +23,7 @@ impl Code {
         Self::EngineError => "engine_error",
         Self::InvalidShape => "invalid_shape",
         Self::RequiresUpdate => "requires_update",
+        Self::IsTemplate => "is_template",
     } }
 }
 impl std::fmt::Display for Code {
@@ -46,6 +47,17 @@ pub(crate) const ID_ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// A document's saved checkpoint plus updates, in bytes, and its update rows.
 pub const STORAGE_BYTES: usize = 33554432;
 pub const STORAGE_ROWS: usize = 4096;
+/// A package's app: one asset's bytes, the asset count and their total bytes; and the
+/// largest image it may carry, per side and in pixels.
+pub const ASSET_FILE_BYTES: usize = 26214400;
+pub const ASSET_COUNT: usize = 256;
+pub const ASSET_BYTES: usize = 52428800;
+pub const IMAGE_SIDE: usize = 16384;
+pub const IMAGE_PIXELS: usize = 24000000;
+/// A document's attachments: one file's bytes, their total bytes and their count.
+pub const ATTACHMENT_FILE_BYTES: usize = 10485760;
+pub const ATTACHMENT_BYTES: usize = 104857600;
+pub const ATTACHMENT_COUNT: usize = 256;
 pub(crate) fn valid_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= 64 && value.bytes().all(|b| b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-".contains(&b))
 }
@@ -127,6 +139,12 @@ pub struct Batch { pub intents: Vec<Intent> }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeFile { pub template: String, pub values: std::collections::BTreeMap<String, String> }
+/// A built app (a build's `app.json`), as the file engine packs it into the `app` row.
+/// Each part stays the JSON text the build wrote: its own validator reads it, in order.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub struct AppRow { pub packageFormat: u64, pub runtimeABI: u64, pub manifest: Box<serde_json::value::RawValue>, pub descriptor: Box<serde_json::value::RawValue>, pub initial: Box<serde_json::value::RawValue>, pub theme: Box<serde_json::value::RawValue> }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

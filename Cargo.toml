@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/hitslop-core", "crates/hitslop-core-ffi", "crates/hitslop-core-wasm"]
+members = ["crates/hitslop-core", "crates/hitslop-core-ffi", "crates/hitslop-core-wasm", "crates/slop-engine"]
 resolver = "2"
 
 [workspace.package]

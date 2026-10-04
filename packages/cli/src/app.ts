@@ -25,6 +25,12 @@ const document = {
   required: true,
   description: "Path to a .slop document",
 } as const;
+const slopFile = {
+  name: "file",
+  type: "string",
+  required: true,
+  description: "Path to a .slop template or document",
+} as const;
 const retrySection = {
   title: "Retries",
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
@@ -36,6 +42,11 @@ async function native(...argv: string[]) {
   if (process.platform !== "darwin")
     throw new Error("Document commands and export require macOS and hitSlop.app; init, check, dev and build run anywhere.");
   await (await import("./native")).runNative(argv);
+}
+/** Reads a template or a closed or open document with the file engine, on any platform:
+ * saved state, never an open window's unsaved edits. */
+async function readSlop(command: "schema" | "inspect", path: string) {
+  return (await import("./engine")).engine([command, path]);
 }
 /** CLI flags as helper arguments: `--name value`, or `--name` for a set boolean. */
 const flagArgs = (flags: Record<string, unknown>) =>
@@ -103,7 +114,7 @@ export const app = new Crust("slop", {
   sections: [
     {
       title: "Document workflow",
-      body: "Run bunx @hitslop/cli or install globally with bun install -g @hitslop/cli. Read manifest.json first. Inspect schema before editing. Built and registered template masters are immutable: create a writable copy before editing. Native macOS commands route to the live session or acquire exclusive ownership when closed.",
+      body: "Run bunx @hitslop/cli or install globally with bun install -g @hitslop/cli. Read slop.ts first. Inspect schema before editing. Built and registered template masters are immutable: create a writable copy before editing. Native macOS commands route to the live session or acquire exclusive ownership when closed.",
     },
   ],
 })
@@ -158,7 +169,7 @@ export const app = new Crust("slop", {
           },
           {
             title: "Project metadata",
-            body: "Interactive terminals also ask for the author. Title, categories, and description start as the directory name, productivity, and A hitSlop mini app.; the launched agent updates them in manifest.json to match what it builds, and you can edit them there anytime. Flags set any of these explicitly; --category accepts one or two distinct values. An omitted brief uses the description. The slug is derived from the directory name unless --slug is supplied. All metadata is validated before creating files; existing destinations are refused. Project agent guides are portable copies, not links managed by skills repair.",
+            body: "Interactive terminals also ask for the author. Title, categories, and description start as the directory name, productivity, and A hitSlop mini app.; the launched agent updates them in slop.ts to match what it builds, and you can edit them there anytime. Flags set any of these explicitly; --category accepts one or two distinct values. An omitted brief uses the description. The directory's name is the slug: 2–64 lowercase letters or digits, separated by single hyphens. All metadata is validated before creating files; existing destinations are refused. Project agent guides are portable copies, not links managed by skills repair.",
           },
         ],
       },
@@ -175,11 +186,6 @@ export const app = new Crust("slop", {
               name: "title",
               type: "string",
               description: "App title (defaults to directory name)",
-            },
-            {
-              name: "slug",
-              type: "string",
-              description: "App slug: 2–64 lowercase letters/digits with single hyphens",
             },
             {
               name: "category",
@@ -208,7 +214,7 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("check", { description: "Check Svelte and TypeScript authoring source" }, (c) =>
+    defineCommand("check", { description: "Check Svelte and TypeScript authoring source, and slop.ts as a build does" }, (c) =>
       c.args(source).action(async ({ args }) => {
         const { createRequire } = await import("node:module");
         const require = createRequire(import.meta.url);
@@ -221,7 +227,9 @@ export const app = new Crust("slop", {
           ],
           { stdout: "inherit", stderr: "inherit" },
         );
-        if (await child.exited) throw new Error("Authoring checks failed");
+        const failed = await child.exited;
+        await (await import("./build")).checkProject(args.source);
+        if (failed) throw new Error("Authoring checks failed");
       }),
     ),
   )
@@ -296,7 +304,14 @@ export const app = new Crust("slop", {
   )
   .add(
     defineCommand("schema", { description: "Print the document schema descriptor" }, (c) =>
-      c.args(document).action(({ args }) => forward("schema", args.document, {})),
+      c.args(document).action(async ({ args }) => process.stdout.write(await readSlop("schema", args.document))),
+    ),
+  )
+  .add(
+    defineCommand(
+      "inspect",
+      { description: "Print what a .slop file holds: its kind, app, artwork, attachments and saved state sizes" },
+      (c) => c.args(slopFile).action(async ({ args }) => process.stdout.write(await readSlop("inspect", args.file))),
     ),
   )
   .add(

@@ -30,7 +30,7 @@ extension SlopDocumentWindowController {
   func setThemeShown(_ shown: Bool) {
     guard shown, let window, isContentReady, session.canEditTheme else { return closeThemePanel() }
     let editor = themeEditor ?? SlopThemeEditorModel(
-      tokens: session.package.themeTokens.map { (name: $0.name, value: $0.value) },
+      tokens: session.file.themeTokens.map { (name: $0.name, value: $0.value) },
       send: { [weak self] change, reply in self?.session.changeTheme(change, reply: reply) })
     themeEditor = editor
     if themePanel == nil {
@@ -80,7 +80,7 @@ extension SlopDocumentWindowController {
     panel.becomesKeyOnlyIfNeeded = true
     panel.title = "Theme"
     let content = NSHostingView(rootView: SlopThemeEditor(
-      model: editor, title: session.package.manifest.title,
+      model: editor, title: session.file.manifest.title,
       close: { [weak self] in self?.request(.theme(false)) },
       importTheme: { [weak self] in self?.request(.importTheme) },
       exportTheme: { [weak self] in self?.request(.exportTheme) }))
@@ -95,7 +95,7 @@ extension SlopDocumentWindowController {
   func exportTheme() async throws {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.json]
-    panel.nameFieldStringValue = packageURL.deletingPathExtension().lastPathComponent + " Theme.json"
+    panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + " Theme.json"
     guard let output = await runSheet(panel) else {
       telemetry.send(.breadcrumb(.themeExport, .cancelled))
       return
@@ -138,7 +138,7 @@ extension SlopDocumentWindowController {
     defer { try? handle.close() }
     let bytes = try handle.read(upToCount: Limits.themeFile + 1) ?? Data()
     guard bytes.count <= Limits.themeFile, let text = String(data: bytes, encoding: .utf8) else {
-      throw SlopPackageError.invalid("Not a hitSlop theme file")
+      throw SlopError.invalid("Not a hitSlop theme file")
     }
     return text
   }

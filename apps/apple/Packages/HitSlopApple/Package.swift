@@ -25,7 +25,7 @@ let package = Package(
     .target(name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding",
       swiftSettings: [.swiftLanguageMode(.v5)], linkerSettings: [.linkedLibrary("sqlite3")]),
     .target(name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"], resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit")]),
-    .target(name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopDocument"], path: "Tests/HitSlopTestSupport"),
+    .target(name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"], path: "Tests/HitSlopTestSupport"),
     .testTarget(name: "HitSlopDocumentTests", dependencies: ["HitSlopDocument", "HitSlopCoreBinding", "HitSlopTestSupport"]),
     .target(
       name: "HitSlopCore",
@@ -73,11 +73,11 @@ let package = Package(
       ],
       linkerSettings: [.linkedFramework("AppKit")]
     ),
-    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore", "HitSlopDocument"]),
+    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(
       name: "HitSlopCatalogTests",
-      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures"]
+      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopTestSupport"]
     ),
   ],
   swiftLanguageModes: [.v6]

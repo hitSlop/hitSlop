@@ -7,7 +7,7 @@ description: Design or refine hitSlop mini apps and documents with a purpose-led
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Read `manifest.json` first and design at its exact initial dimensions. A slop
+Read `slop.ts` first and design at its `presentation`'s exact dimensions. A slop
 is one complete digital object, not a small website.
 
 Each slop should be unique, expressive, and instantly graspable for its single
@@ -90,11 +90,10 @@ and PDF behavior.
   authentic physical personality (Paper, Instrument, Skin) while remaining effortless
   to restyle or re-theme at runtime.
 - Keep structural styles in plain `styles.css`, imported by the generated entry. Declare the
-  colors a person may change in `theme.ts` using `defineTheme` from `@hitslop/document`:
-  lowercase `#rrggbb`, or `#rrggbbaa` when translucent. Only colors belong there; fonts,
-  sizes and colors derived with `color-mix(… var(--slop-ink) …)` go in `styles.css`.
-  The builder emits defaults in `assets/theme.json`; the runtime applies them before
-  mounting the app. Use `var(--slop-TOKEN)` in CSS. The window's theme panel lists every
+  colors a person may change in slop.ts's `theme`: lowercase `#rrggbb`, or `#rrggbbaa`
+  when translucent. Only colors belong there; fonts, sizes and colors derived with
+  `color-mix(… var(--slop-ink) …)` go in `styles.css`. The build stores them as the
+  template's theme defaults; the runtime applies them before mounting the app. Use `var(--slop-TOKEN)` in CSS. The window's theme panel lists every
   declared color in the order written, so declare the ones worth changing.
 - Group base rules, states, descendants, and responsive rules together. Use
   app-prefixed classes, including explicit classes on Bits UI portal content.
@@ -111,7 +110,7 @@ and PDF behavior.
 
 ## Review efficiently
 
-Use `bun run dev` for disposable browser preview. Review at the manifest size
+Use `bun run dev` for disposable browser preview. Review at the `presentation` size
 and a narrow width, with menus open and keyboard focus visible. Build with the
 matching Mac app to verify export and icon artwork. Read
 [references/review-workbench.md](references/review-workbench.md) for a short pass.

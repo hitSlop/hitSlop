@@ -4,6 +4,11 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { startDev } from "../src/dev";
 import { createFixture } from "./dev-fixture";
+import { overrideSlop } from "./source-fixture";
+
+/** A module slop.ts takes its initial values from: three tasks under `title`. */
+const seed = (title: string) =>
+  `export default ${JSON.stringify({ title, tasks: ["One", "Two", "Three"].map((text) => ({ text, done: false })) })};\n`;
 
 test("HMR keeps one owner, accepted edits and row identity; metadata resets and recovers", async () => {
   const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
@@ -12,9 +17,9 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
   try {
     const source = join(root, "source");
     await createFixture(process.cwd(), source);
-    const initial = await readFile(join(source, "initial.ts"), "utf8");
-    await writeFile(join(source, "seed.ts"), initial);
-    await writeFile(join(source, "initial.ts"), 'export {default} from "./seed";');
+    // Metadata reloads when a module slop.ts imports changes.
+    await writeFile(join(source, "seed.ts"), seed("A little room to think"));
+    await overrideSlop(source, { initial: "seed" }, 'import seed from "./seed";');
     dev = await startDev(source);
     const page = await browser.newPage();
     page.setDefaultTimeout(15000);
@@ -49,10 +54,7 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     expect(await frame.locator("[data-count]").textContent()).toBe("4");
     await writeFile(join(source, "seed.ts"), "export default {title: 42};");
     await frame.locator("vite-error-overlay").waitFor();
-    await writeFile(
-      join(source, "seed.ts"),
-      initial.replace("A little room to think", "Reset seed"),
-    );
+    await writeFile(join(source, "seed.ts"), seed("Reset seed"));
     await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
     expect(await frame.locator("[data-count]").textContent()).toBe("3");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
@@ -73,6 +75,10 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const response = await fetch(new URL("/@fs/etc/passwd", dev.url));
     expect(response.status).toBe(403);
+    // slop.ts is build-only: the preview never serves it as an app module.
+    const metadata = await fetch(new URL("/slop.ts", dev.url));
+    expect(metadata.ok).toBe(false);
+    expect(await metadata.text()).toContain("slop.ts is build-only");
   } finally {
     await browser.close();
     await dev?.close();
@@ -86,12 +92,8 @@ test("cancelling startup terminates an authored metadata worker", async () => {
   const controller = new AbortController();
   try {
     await createFixture(process.cwd(), source);
-    const initial = await readFile(join(source, "initial.ts"), "utf8");
     const pidFile = join(root, "metadata.pid");
-    await writeFile(
-      join(source, "initial.ts"),
-      `await Bun.write(${JSON.stringify(pidFile)}, String(process.pid)); await Bun.sleep(60000);\n${initial}`,
-    );
+    await overrideSlop(source, {}, `await Bun.write(${JSON.stringify(pidFile)}, String(process.pid)); await Bun.sleep(60000);`);
     const opening = startDev(source, 0, controller.signal);
     const result = opening.then(
       (server) => {

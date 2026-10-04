@@ -33,23 +33,18 @@ final class StorageGate: @unchecked Sendable {
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
   func fixture() throws -> URL {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: repository + "/crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
-    for (file, key) in [("state.schema.json", "schema"), ("initial.json", "initial")] {
-      try JSONSerialization.data(withJSONObject: spec[key]!).write(to: root.appendingPathComponent(file))
+    let stage = try Fixtures.stage()
+    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: Fixtures.repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
+    try Fixtures.updateApp(stage) { app in
+      app["descriptor"] = spec["schema"]
+      app["initial"] = spec["initial"]
     }
-    return root
+    return try Fixtures.document(stage: stage)
   }
 
   /// The saved value, read without the owner (snapshot mode takes no lock).
   func savedHits(_ root: URL) throws -> Int? {
-    let package = try SlopPackage(rootURL: root)
-    let core = try NativeStore.open(root: root.path, mode: .snapshot)
-      .document(
-        schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self),
-        themeDefaultsJson: package.themeDefaults)
+    let core = try NativeStore.open(path: root.path, mode: .snapshot).document()
     let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
@@ -63,8 +58,7 @@ final class StorageGate: @unchecked Sendable {
   @Test @MainActor func socketMutationAfterDiscardReportsUnknownWithoutReplay() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try SlopPackage(rootURL: root)
-    let owner = try DocumentOwner(package: package)
+    let owner = try DocumentOwner(url: root)
     let gate = StorageGate("append:committed")
     defer { gate.release() }
     owner.testingPhase = gate.hook
@@ -77,9 +71,9 @@ final class StorageGate: @unchecked Sendable {
       return reply
     }
     defer { server.stop() }
-    try JSONSerialization.data(withJSONObject: [
-      "socket": server.path, "documentPath": package.rootURL.path,
-    ]).write(to: package.rootURL.appendingPathComponent("state/host.lock"))
+    try owner.publishDiscovery(JSONSerialization.data(withJSONObject: [
+      "socket": server.path, "documentPath": root.path,
+    ]))
     let command = Task { @MainActor () -> String in
       do {
         _ = try await command("apply", url: root,
@@ -123,7 +117,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func continuousEditingStillAutosaves() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let start = ContinuousClock.now
     while (try savedHits(root) ?? 0) == 0, ContinuousClock.now - start < .seconds(3) {
       try await edit(owner)
@@ -140,7 +134,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func editsProceedWhileASaveIsInFlightAndFlushCoversThem() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     let gate = StorageGate("append:uncommitted")
     owner.testingPhase = gate.hook
@@ -162,7 +156,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func discardDuringAnInFlightWriteKeepsLaterSavesWorking() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     let gate = StorageGate("append:committed")
     owner.testingPhase = gate.hook
@@ -184,7 +178,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func closeRefusesEditsAndHoldsTheLockUntilItsFinalWrite() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     let gate = StorageGate("append:uncommitted")
     owner.testingPhase = gate.hook
@@ -203,7 +197,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func undoSavesLikeAnEdit() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let states = Locked<[UndoAvailability]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     _ = try await owner.apply(batch: increment)
@@ -226,10 +220,10 @@ final class StorageGate: @unchecked Sendable {
   @Test func aReopenedDocumentStartsWithNothingToUndo() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let agent = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let agent = try DocumentOwner(url: root)
     _ = try await agent.apply(batch: increment)
     try await agent.close()
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let states = Locked<[UndoAvailability]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     owner.publishUndoState()
@@ -246,7 +240,7 @@ final class StorageGate: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     func stored() throws -> UInt64 {
-      let meta = try NativeStore.open(root: root.path, mode: .snapshot).metadata()
+      let meta = try NativeStore.open(path: root.path, mode: .snapshot).metadata()
       return meta.checkpointBytes + meta.updateBytes
     }
     var seed: UInt64 = 7
@@ -258,7 +252,7 @@ final class StorageGate: @unchecked Sendable {
     }
     var beforeClose: UInt64 = 0
     for _ in 0..<2 {
-      let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+      let owner = try DocumentOwner(url: root)
       for row in 0..<160 {
         // A row inserted and removed: history the live value no longer holds.
         let id = String(format: "%032x", row + 16)
@@ -283,7 +277,7 @@ final class StorageGate: @unchecked Sendable {
   @Test func busyDatabaseIsARetryableFailure() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     owner.testingPhase = { phase in if phase == "append:uncommitted" { throw CoreError.Busy } }
     await #expect(throws: SaveFailure.busy) { try await owner.flush() }
@@ -301,7 +295,7 @@ extension PersistenceSchedulingTests {
   @Test func failedDiscardDuringWriteKeepsSavingUsable() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     let gate = StorageGate("append:uncommitted")
     owner.testingPhase = { phase in
@@ -325,7 +319,7 @@ extension PersistenceSchedulingTests {
     try await owner.close()
   }
 
-  // Failure: a discard whose reload failed (a moved package) threw without publishing, so
+  // Failure: a discard whose reload failed (a moved file) threw without publishing, so
   // the coordinator, which leaves save failures to the save-failure sheet, showed nothing.
   // Oracle: the failed reload is published as a save failure.
   @Test func aFailedDiscardPublishesItsFailure() async throws {
@@ -336,7 +330,7 @@ extension PersistenceSchedulingTests {
     }
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let statuses = Statuses()
     owner.onSaveStatus = { status in statuses.append(status) }
     try await edit(owner)
@@ -357,7 +351,7 @@ extension PersistenceSchedulingTests {
     }
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let statuses = Statuses()
     owner.onSaveStatus = { status in statuses.append(status) }
     try await edit(owner)
@@ -372,7 +366,7 @@ extension PersistenceSchedulingTests {
   @Test func failedCloseRetainsOwnershipAndAllowsRetry() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     try await edit(owner)
     owner.testingPhase = { phase in
       if phase == "close" { throw failure("injected close failure") }
@@ -408,7 +402,7 @@ extension PersistenceSchedulingTests {
     }
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     owner.attach(view: "page")
     try await edit(owner)
     try await edit(owner)

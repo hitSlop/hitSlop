@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -9,37 +9,7 @@ import {
   validateTemplate,
 } from "../../../scripts/template-cache";
 
-import { defineDocument, s } from "../../document/src/schema";
-
-// Cache behavior needs a valid package, not a native-generated template collection.
-async function writePackage(output: string, slug = "quick-checklist") {
-  await mkdir(join(output, "assets"), { recursive: true });
-  await mkdir(join(output, "QuickLook"));
-  const manifest = {
-    $schema: "https://api.hitslop.com/schemas/manifest.schema.json",
-    slug,
-    title: "Cache fixture",
-    description: "Cache contract",
-    author: { name: "hitSlop" },
-    categories: ["utilities"],
-    presentation: { width: 320, height: 240 },
-    packageFormat: 1, runtimeABI: 1,
-  };
-  const files = {
-    "manifest.json": manifest,
-    "state.schema.json": defineDocument({ title: s.text() }).descriptor,
-    "initial.json": { title: "Cache fixture" },
-    "assets/theme.json": {},
-  };
-  for (const [name, value] of Object.entries(files))
-    await writeFile(join(output, name), JSON.stringify(value));
-  await writeFile(join(output, "assets/app.js"), "export default { mount() { return {}; } };");
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=",
-    "base64",
-  );
-  await writeFile(join(output, "QuickLook/Preview.png"), png);
-}
+import { writeTemplate } from "./template-fixture";
 
 test("template cache reuses matching artifacts and rebuilds changed or damaged entries", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-template-cache-"));
@@ -52,11 +22,11 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     let builds = 0;
     const build = async () => {
       builds++;
-      await writePackage(output);
+      await writeTemplate(output);
     };
     const cache = new TemplateCache(directory, { "@swift": "a" });
     const run = async (current = cache) => {
-      await rm(output, { recursive: true, force: true });
+      await rm(output, { force: true });
       return current.build(source, "quick-checklist", output, build);
     };
     expect(await run()).toBe("built");
@@ -76,7 +46,10 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     expect(await run(toolchain)).toBe("built");
     expect(toolchain.misses.get("quick-checklist")).toEqual(["shared @swift"]);
     expect(await run()).toBe("built");
-    await writeFile(join(directory, "quick-checklist/package.slop/assets/app.js"), "damaged");
+    const cached = join(directory, "quick-checklist/package.slop");
+    const bytes = await readFile(cached);
+    bytes[bytes.length - 1] ^= 1;
+    await writeFile(cached, bytes);
     expect(await run()).toBe("built");
     await writeFile(join(directory, "quick-checklist/entry.json"), "interrupted");
     expect(await run()).toBe("built");
@@ -109,10 +82,10 @@ test("changing one template preserves another template's cache entry", async () 
     }
     const run = async (slug: string) => {
       const output = join(root, slug + ".slop");
-      await rm(output, { recursive: true, force: true });
+      await rm(output, { force: true });
       return cache.build(join(root, slug), slug, output, async () => {
         builds.push(slug);
-        await writePackage(output, slug);
+        await writeTemplate(output, slug);
       });
     };
     await run("quick-checklist");
@@ -126,7 +99,7 @@ test("changing one template preserves another template's cache entry", async () 
   }
 });
 
-test("failed builds never publish cache entries; cached packages reject state and links", async () => {
+test("failed builds never publish cache entries; cached templates are template files", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-template-cache-"));
   try {
     const source = join(root, "source"),
@@ -140,45 +113,43 @@ test("failed builds never publish cache entries; cached packages reject state an
       }),
     ).rejects.toThrow("render failed");
     expect(await Bun.file(join(directory, "quick-checklist/entry.json")).exists()).toBe(false);
-    await writePackage(output);
+    await writeTemplate(output);
     await validateTemplate(output, "quick-checklist");
-    await mkdir(join(output, "state"));
-    await expect(validateTemplate(output, "quick-checklist")).rejects.toThrow(
-      "Unexpected template content",
-    );
-    await rm(join(output, "state"), { recursive: true });
-    const app = await readFile(join(output, "assets/app.js"));
-    await writeFile(join(root, "external.js"), app);
-    await rm(join(output, "assets/app.js"));
-    await symlink(join(root, "external.js"), join(output, "assets/app.js"));
-    await expect(validateTemplate(output, "quick-checklist")).rejects.toThrow(
-      "Invalid package resource",
-    );
+    await expect(validateTemplate(output, "small-expenses")).rejects.toThrow("Template slug mismatch");
+    const link = join(root, "link.slop");
+    await symlink(output, link);
+    await expect(validateTemplate(link, "quick-checklist")).rejects.toThrow("Invalid template file");
+    const damaged = join(root, "damaged.slop");
+    await copyFile(output, damaged);
+    await writeFile(damaged, (await readFile(damaged)).subarray(0, 512));
+    await expect(validateTemplate(damaged, "quick-checklist")).rejects.toThrow();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.json"])(
+test.each(["crates/hitslop-core/src/file.rs", "bun.lock"])(
   "changing shared input %s rebuilds every cached template",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "hitslop-shared-input-"));
     try {
       // Minimal repository: input discovery still uses the production compiler closure.
-      for (const entry of ["template.ts", "build-worker.ts"]) {
+      for (const entry of ["template.ts", "stage-worker.ts"]) {
         const path = join(root, "packages/cli/src", entry);
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, "export {};");
       }
       await mkdir(join(root, "examples/slops"), { recursive: true });
-      const skill = "packages/cli/skills/hitslop-document/SKILL.md";
-      await mkdir(dirname(join(root, skill)), { recursive: true });
-      await writeFile(join(root, skill), "original guidance");
-      await writeFile(join(root, "tsconfig.json"), "{}");
+      await mkdir(join(root, "crates/hitslop-core/src"), { recursive: true });
+      await writeFile(join(root, "crates/hitslop-core/src/file.rs"), "// original format");
+      await writeFile(join(root, "bun.lock"), "{}");
       const paths = await sharedTemplatePaths(root, []);
       for (const path of paths) {
         if (await Bun.file(join(root, path)).exists()) continue;
-        if (path === "packages/cli/skills/hitslop-document") continue;
+        if (["crates/hitslop-core/src", "crates/slop-engine"].includes(path)) {
+          await mkdir(join(root, path), { recursive: true });
+          continue;
+        }
         await mkdir(dirname(join(root, path)), { recursive: true });
         await writeFile(join(root, path), "");
       }
@@ -188,19 +159,9 @@ test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.json"])(
         const cache = new TemplateCache(join(root, "cache"), await inputs(root, paths));
         for (const slug of slugs) {
           const output = join(root, `${slug}.slop`);
-          await rm(output, { recursive: true, force: true });
-          expect(
-            await cache.build(join(root, slug), slug, output, async () => {
-              await writePackage(output, slug);
-              const destination = join(output, ".agents/skills/hitslop-document");
-              await mkdir(destination, { recursive: true });
-              await cp(join(root, skill), join(destination, "SKILL.md"));
-            }),
-          ).toBe(expected);
+          await rm(output, { force: true });
+          expect(await cache.build(join(root, slug), slug, output, () => writeTemplate(output, slug))).toBe(expected);
           if (cause) expect(cache.misses.get(slug)).toEqual([`shared ${cause}`]);
-          expect(
-            await readFile(join(output, ".agents/skills/hitslop-document/SKILL.md"), "utf8"),
-          ).toBe(await readFile(join(root, skill), "utf8"));
         }
       };
       await run("built");
@@ -209,7 +170,7 @@ test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.json"])(
       await run("hit");
       await writeFile(
         join(root, changed),
-        changed === skill ? "updated guidance" : '{"compilerOptions":{"strict":true}}',
+        changed === "bun.lock" ? '{"lockfileVersion":2}' : "// a new format",
       );
       await run("built", changed);
       await run("hit");
@@ -219,7 +180,7 @@ test.each(["packages/cli/skills/hitslop-document/SKILL.md", "tsconfig.json"])(
   },
 );
 
-test("template artwork is keyed on compiler and copied guidance, not CLI routing or help", async () => {
+test("templates are keyed on the compiler and the file engine, not CLI routing or help", async () => {
   const repository = join(import.meta.dir, "../../..");
   const paths = await sharedTemplatePaths(repository, []);
   for (const input of [
@@ -230,14 +191,15 @@ test("template artwork is keyed on compiler and copied guidance, not CLI routing
     "packages/shell/src",
     "packages/shell/package.json",
     "packages/cli/shell",
-    "packages/cli/skills/hitslop-document",
-    "tsconfig.json",
+    "packages/cli/src/engine.ts",
+    "crates/hitslop-core/src",
+    "crates/slop-engine",
   ])
     expect(paths).toContain(input);
   for (const unrelated of [
     "packages/cli/src/cli.ts",
     "packages/cli/src/app.ts",
-    "packages/cli/skills/hitslop-authoring",
+    "packages/cli/skills",
     "scripts/hygiene.ts",
     "scripts/release-check.ts",
     "examples/slops/PRODUCT.md",

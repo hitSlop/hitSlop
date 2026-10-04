@@ -51,7 +51,7 @@ extension DocumentOwner {
   /// the core's JSON, spliced in unparsed.
   func request(_ request: SocketRequest) async -> Data {
     let epoch = self.epoch
-    guard request.documentPath == package.rootURL.path else {
+    guard request.documentPath == file.url.path else {
       return SocketReply(ok: false, error: "Document path mismatch", code: .rejected).encoded()
     }
     if request.requiresEpoch, request.epoch != epoch {
@@ -76,7 +76,7 @@ extension DocumentOwner {
         try await flush()
         if case .get = request {
           // The socket is newline-delimited; authored descriptors may be pretty-printed.
-          let descriptor = try JSONSerialization.jsonObject(with: SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576))
+          let descriptor = try JSONSerialization.jsonObject(with: Data(file.descriptor.utf8))
           let schema = String(decoding: try JSONSerialization.data(withJSONObject: descriptor, options: .withoutEscapingSlashes), as: UTF8.self)
           state = #"{"schema":"# + schema + #","state":"# + (try await self.state()) + "}"
         } else {

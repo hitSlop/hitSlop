@@ -6,17 +6,13 @@ import { join } from "node:path";
 export async function createFixture(repository: string, source: string) {
   await cp(join(repository, "packages/cli/templates/checklist"), source, { recursive: true });
   await writeFile(
-    join(source, "tsconfig.json"),
-    JSON.stringify({ extends: join(repository, "tsconfig.json") }),
-  );
-  await writeFile(
     join(source, "main.ts"),
     `
 import App from './App.svelte';
 import schema from './schema';
 import './styles.css';
-import {defineSlop} from '@hitslop/document/svelte';
-const app = defineSlop(App, { schema });
+import {svelteApp} from '@hitslop/document/svelte';
+const app = svelteApp(App, { schema });
 export default { mount(ctx, target) {
   target.dataset.fixtureMounted = "true";
   return app.mount(ctx, target);

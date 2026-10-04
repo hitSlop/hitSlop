@@ -9,7 +9,7 @@ import HitSlopCoreBinding
 /// reach Swift. Renderer lifetimes never determine the lifetime of this object or its
 /// writer lock.
 public final class DocumentOwner: @unchecked Sendable {
-  public let package: SlopPackage
+  public let file: SlopFile
   let mode: StorageMode
   let store: NativeStore
   let queue = DispatchQueue(label: "hitslop.owner")
@@ -79,15 +79,17 @@ public final class DocumentOwner: @unchecked Sendable {
   }()
   static let autosaveMaximumMS = max(autosaveDelayMS, 1000)
 
-  public init(package: SlopPackage, mode: StorageMode = .document) throws {
-    self.package = package
+  /// Opens the document at `url` (a canonical `.slop`, `SlopFile.resolvedRoot`): as its
+  /// writer, or as a snapshot of its saved state. The store's open checks the file and its
+  /// app once, and `file` comes from that check.
+  public init(url: URL, mode: StorageMode = .document) throws {
     self.mode = mode
-    store = try storeCall { try NativeStore.open(root: package.rootURL.path, mode: mode.store) }
-    // The writer lock is ours, so a discovery file is a crashed session's leftover. A
-    // command that finds the lock busy must wait for this owner's address, not read a dead one.
-    if mode == .document { try? FileManager.default.removeItem(at: package.discoveryURL) }
+    // Taking the writer lock also removes a crashed session's discovery: a command that
+    // finds the lock busy waits for this owner's address, never a dead one.
+    store = try storeCall { try SlopFile.opening { try NativeStore.open(path: url.path, mode: mode.store) } }
     do {
-      core = try Self.saved(package, store)
+      file = try SlopFile(url: url, opened: store.app())
+      core = try Self.saved(store)
       sequence = Int(try core.sequence())
       savedSequence = sequence
     } catch {
@@ -96,14 +98,11 @@ public final class DocumentOwner: @unchecked Sendable {
     }
   }
 
-  /// The saved document; a package without saved state starts from its initial value.
-  /// Also the reload after a discard, on the storage queue: the new core is not shared
-  /// until the owner queue installs it.
-  private static func saved(_ package: SlopPackage, _ store: NativeStore) throws -> NativeDocument {
-    let initial = String(decoding: try SlopFile.read(package.initialURL, within: package.rootURL), as: UTF8.self)
-    return try storeCall {
-      try store.document(schemaKey: package.schemaKey, initialJson: initial, themeDefaultsJson: package.themeDefaults)
-    }
+  /// The saved document; a document without saved state starts from its app's initial
+  /// values. Also the reload after a discard, on the storage queue: the new core is not
+  /// shared until the owner queue installs it.
+  private static func saved(_ store: NativeStore) throws -> NativeDocument {
+    try storeCall { try store.document() }
   }
 
   private func enqueue<T: Sendable>(allowInvalidated: Bool = false, _ action: @escaping @Sendable () throws -> T) async throws -> T {
@@ -394,8 +393,8 @@ public final class DocumentOwner: @unchecked Sendable {
       self.rejectWaiters(OwnerReplaced())
     }
     do {
-      let package = package, store = store
-      let restored = try await persist { try Self.saved(package, store) }
+      let store = store
+      let restored = try await persist { try Self.saved(store) }
       try await enqueue(allowInvalidated: true) {
         // Sequences restart with the restored core; nothing may wait on the old ones.
         // Read everything that can throw before replacing any state.
@@ -427,36 +426,63 @@ public final class DocumentOwner: @unchecked Sendable {
       throw error
     }
   }
+  /// The saved state this owner read (a snapshot's marker), for writing rendered artwork.
+  func savedMarker() async throws -> String {
+    let store = store
+    return try await persist { try storeCall { try store.savedMarker() } }
+  }
+
+  // MARK: Discovery and copies. The store holds the writer lock, so it alone names this
+  // owner's socket in the registry, and copies an open document from its own connection.
+
+  /// Names this owner's live socket for clients. Snapshot owners never publish.
+  func publishDiscovery(_ json: Data) throws {
+    guard mode == .document else { return }
+    try storeCall { try store.publishDiscovery(json: String(decoding: json, as: UTF8.self)) }
+  }
+  func withdrawDiscovery() {
+    guard mode == .document else { return }
+    store.withdrawDiscovery()
+  }
+  /// Copies the open document to `destination` as a new logical document, after saving
+  /// what it accepted. Saves wait behind the copy on the storage queue.
+  func copy(to destination: URL) async throws {
+    try await flush()
+    let store = store
+    try await persist { try storeCall { try store.copyTo(destination: destination.path) } }
+  }
+
   // MARK: Host-owned attachments and theme. Page and socket calls go through the owner,
   // so they honor its closed and closing guards.
 
   private func requireWritable() async throws {
     try await enqueue { guard self.lifecycle == .open else { throw OwnerError.closing } }
   }
+  /// One of the document's artwork images, through the owner's own connection.
+  func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
+    let store = store
+    return try await persist { try storeCall { try store.artwork(name: name.rawValue) } }
+  }
   func listAttachments() async throws -> [AttachmentRef] {
-    let store = store, root = package.rootURL
+    let store = store
     return try await persist {
-      try storeCall { try store.check(writable: false) }
-      return try SlopAttachments.list(in: root)
+      try storeCall { try store.attachments() }.map { AttachmentRef(id: $0.id, byteLength: Int($0.byteLength)) }
     }
   }
   /// Attachment bytes cross the page bridge and the socket as base64, encoded here, off
   /// the main thread.
   func readAttachment(_ id: String) async throws -> String {
-    let store = store, root = package.rootURL
-    return try await persist {
-      try storeCall { try store.check(writable: false) }
-      return try SlopAttachments.read(id, in: root).base64EncodedString()
-    }
+    let store = store
+    return try await persist { try storeCall { try store.attachment(id: id) }.base64EncodedString() }
   }
   /// Snapshot renders own nothing, so they can never add attachments.
   func putAttachment(base64 encoded: String) async throws -> AttachmentRef {
     try await requireWritable()
-    let store = store, root = package.rootURL
+    let store = store
     return try await persist {
       guard let bytes = Data(base64Encoded: encoded) else { throw OwnerError.rejected("Invalid attachment bytes") }
-      try storeCall { try store.check(writable: true) }
-      return try SlopAttachments.put(bytes, in: root)
+      let stored = try storeCall { try store.putAttachment(bytes: bytes) }
+      return AttachmentRef(id: stored.id, byteLength: Int(stored.byteLength))
     }
   }
   /// A palette and the owner's theme revision when it was read or changed.
@@ -496,12 +522,12 @@ public final class DocumentOwner: @unchecked Sendable {
   }
   /// Replaces the theme with a theme file made for this document's template.
   func importTheme(_ file: String) -> ThemeChange {
-    .import(template: package.manifest.slug, fileJson: file)
+    .import(template: self.file.manifest.slug, fileJson: file)
   }
   /// The full palette as a theme file for this document's template, once it is saved:
   /// export is behind the same barrier as close, so a failing save fails the export.
   func exportTheme() async throws -> String {
-    let file = try await enqueue { try storeCall { try self.store.exportTheme(template: self.package.manifest.slug) } }
+    let file = try await enqueue { try storeCall { try self.store.exportTheme(template: self.file.manifest.slug) } }
     try await flush()
     return file
   }

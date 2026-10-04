@@ -25,7 +25,6 @@ sparkle_eddsa*
 # Generated service, Apple, and editor state.
 .wrangler/
 .firebase/
-apps/firebase/lib/
 firebase-debug.log
 _docs/
 **/.build/
@@ -36,7 +35,6 @@ xcuserdata/
 *.xcuserstate
 coverage/
 *.log
-Icon?
 node_modules/
 dist/
 **/dist/
@@ -46,11 +44,9 @@ dist/
 **/.svelte-kit/
 .hitslop/
 *.slop
-*.slop.zip
-# The compatibility corpus commits released packages and documents byte for byte.
-!/tests/compat/*/packages/*.slop
+# The compatibility corpus commits released templates and documents byte for byte.
+!/tests/compat/*/templates/*.slop
 !/tests/compat/*/documents/*.slop
-_inspo/
 _vibe/
 
 # Historical source stays local.
@@ -60,10 +56,8 @@ _vibe/
 !/archive/spikes/boundary-simplification/
 /deferred/
 /examples/archive/
-/Prototypes/
 
 /generated/
-/apps/apple/Packages/HitSlopApple/Sources/HitSlopFoundation/Resources/
 .build-test-*/
 .dev-test-*/
 
@@ -74,11 +68,11 @@ _vibe/
 # Generated, shipped in the CLI tarball
 /packages/cli/shell/
 
-/packages/cli/shell.building/
-
 # Local merch design sources and generation artifacts.
 /merch/
 
 # Rust production build artifacts
 /target/
 /apps/apple/Packages/HitSlopApple/Generated/
+# File engines staged into the CLI package while packing (scripts/packages.ts).
+/packages/cli/engine/

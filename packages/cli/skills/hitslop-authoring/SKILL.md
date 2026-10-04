@@ -1,13 +1,13 @@
 ---
 name: hitslop-authoring
-description: Create, preview, validate, build, and register hitSlop authoring projects with the TypeScript CLI. Use for manifests, storage choices, package boundaries, capture, identity, and release workflow.
+description: Create, preview, validate, build, and register hitSlop authoring projects with the TypeScript CLI. Use for slop.ts metadata, storage choices, package boundaries, capture, identity, and release workflow.
 ---
 
 # Author local mini apps
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Read manifest.json first. Author schema.ts with defineDocument/s, initial.ts and theme.ts. Supported descriptors: s.text (merging typed text), s.boolean, s.string({maxLength}), s.number({min,max}), s.integer({min,max}), s.enum([...]) (last writer wins; maxLength counts UTF-16 units; bounds are inclusive), s.optional(scalar, text or object) (absent until set; `clear()` removes it; inserts and initial values may omit it; an optional object is created or replaced by `set` unless it holds lists, counters or text; an unset optional text binds as "" and typing creates it), s.object, s.list(s.object) rows with $id, s.list(scalar) by index (`insert(v, i?)`, `set(i, v)`, `preview(i, v)`, `remove(i, n?)`, `replace(values)`; no move), s.record(scalar or object) by string key (`put(key, v)`, `delete(key)`, `entry(key)`; keys are 1–256 UTF-16 units, not `$id`/`__proto__`/`constructor`/`prototype`; an object entry holding text or lists is edited, never replaced; `doc.at(entry)` resolves an object entry) and integer s.counter. Trees and rich text are not implemented. Keep transient view state in $state.
+Read slop.ts first. It declares the app in one place: `export default defineSlop({ title, description, author, categories, presentation, theme, schema, initial })` from `@hitslop/document`, where `schema` is schema.ts's default export and `initial` holds a new document's values. The project folder's name is the slug. The build evaluates slop.ts in Bun, checks it the way the app opens files, and never ships it in the app: the app must not import slop.ts (the build refuses it), so put values both need in their own module. Author schema.ts with defineDocument/s. Supported descriptors: s.text (merging typed text), s.boolean, s.string({maxLength}), s.number({min,max}), s.integer({min,max}), s.enum([...]) (last writer wins; maxLength counts UTF-16 units; bounds are inclusive), s.optional(scalar, text or object) (absent until set; `clear()` removes it; inserts and initial values may omit it; an optional object is created or replaced by `set` unless it holds lists, counters or text; an unset optional text binds as "" and typing creates it), s.object, s.list(s.object) rows with $id, s.list(scalar) by index (`insert(v, i?)`, `set(i, v)`, `preview(i, v)`, `remove(i, n?)`, `replace(values)`; no move), s.record(scalar or object) by string key (`put(key, v)`, `delete(key)`, `entry(key)`; keys are 1–256 UTF-16 units, not `$id`/`__proto__`/`constructor`/`prototype`; an object entry holding text or lists is edited, never replaced; `doc.at(entry)` resolves an object entry) and integer s.counter. Trees and rich text are not implemented. Keep transient view state in $state.
 
 schema.ts default-exports `defineDocument(...)`, and that export is also the live document: components `import doc from "./schema"`. Read immutable `doc.current`; ordinary handles return promises: `await doc.at(row).done.set(true)` and `const {id} = await doc.fields.items.insert(...)`. A scalar `set` shows in `doc.current` at once and reverts if refused. `list.item(id)` addresses a row directly. `await doc.change(tx => { ... })` collects synchronous tx writes once into one atomic batch; tx insert returns an ID immediately for later tx writes. Do not use async/nested collectors or ordinary document writes inside them. A write resolves after acceptance and local publication, before durability or necessarily a DOM update; use `await tick()` for the DOM and `await doc.flush()` for saving. Edit ▸ Undo (⌘Z) steps back through the person's changes and agent edits, one step per `doc.change`, write, typing run or run of agent edits; write a gesture once when it ends, and call `doc.undo()`/`doc.redo()` for authored buttons instead of keeping your own undo stack.
 
@@ -15,7 +15,7 @@ schema.ts default-exports `defineDocument(...)`, and that export is also the liv
 
 Writes are asynchronous, so avoid these patterns:
 - Read-modify-write from a snapshot (`set(qty + 1)`): await dependent writes before reading, or use `increment` on a counter. A synchronous `change(tx)` collector provides atomic writes, not fresh transactional reads.
-- Writes in `$effect` or on mount to "ensure" defaults: put defaults in initial.ts.
+- Writes in `$effect` or on mount to "ensure" defaults: put defaults in slop.ts's `initial`.
 - Using an insert's id, or reading `doc.current`, right after an unawaited write: `await` it (inside `change`, insert ids are synchronous).
 - `try/catch` around an unawaited write: `await` it so the catch sees the rejection.
 - Positions in a number field (`order: s.integer()`) that moves rewrite: two moves can produce the same number. Order rows by their place in the list and use `move`.
@@ -23,17 +23,18 @@ Writes are asynchronous, so avoid these patterns:
 
 Never replace an existing identity-bearing list through a containing object. Use insert/remove/move. Subtract from a counter with increment(-n); there is no concurrent reset API. Checkpoints retain history.
 
-The native app hosts the Rust Loro core, which also owns document storage; WebViews receive snapshots and patches. Browser development uses the same Rust core compiled to WASM. Do not embed the engine into app bundles or expose a second JSON writer. Build emits state.schema.json (a descriptor), initial.json, assets (including the app module assets/app.js, generated from App.svelte and styles.css) and document guidance. The host owns the page; apps reach it only through the document SDK. Never include state/, stores/, source, dependencies or caches in templates.
+The native app hosts the Rust Loro core, which also owns document storage; WebViews receive snapshots and patches. Browser development uses the same Rust core compiled to WASM. Do not embed the engine into app bundles or expose a second JSON writer. Build packs one template file: the manifest, the schema's descriptor, initial values, theme defaults and assets (including the app module assets/app.js, generated from App.svelte and styles.css), checked the way the app opens it. The host owns the page; apps reach it only through the document SDK. Templates never hold document state, source, dependencies or caches.
 
 Start anywhere with `bunx @hitslop/cli init NAME`, then `cd NAME` and `bun install`. Use the generated `bun run check/dev/build/register` scripts. Bun is the only JavaScript runtime required. check/dev/build run on macOS or Linux; register, `build --artwork native` and document commands need the compatible installed hitSlop Mac app, not Swift or Xcode. Preview state is disposable; rerun dev to rebuild source. Create a writable document from a built/registered template with `slop create --from TEMPLATE --output PATH` before editing. Agents use schema/get/apply/batch/compact. Supply an explicit `id` to address an inserted row from later CLI commands. After an unknown outcome, inspect current state before another edit; never blindly replay the insertion.
 
 For an agent already doing the work, use `init NAME --yes --brief 'What to build'`,
 optionally with `--author`, `--title`, `--description`, and one or two `--category`
-flags. `--slug` overrides the directory-derived slug. Metadata is validated before
+flags. The directory's name is the slug: 2–64 lowercase letters or digits, separated
+by single hyphens. Metadata is validated before
 any project files are created. `--yes`, CI, and non-TTY runs never prompt or launch
 another agent. For humans, setup asks for a build brief and author, then offers
 a detected agent CLI, Other CLI, or Finish without launching. Title, description,
-and categories start as placeholders: set them in manifest.json to match what you
+and categories start as placeholders: set them in slop.ts to match what you
 build; the user can edit them later. The chosen agent
 runs in the project with normal permissions and reads `BRIEF.md` and `AGENTS.md`.
 Launch failure keeps the project. Read the brief before adapting the starter.
@@ -44,9 +45,9 @@ Bare `skills` means install; use `skills repair` to repair installed links. The
 guides copied into a new project's `.agents/skills` are portable files, not
 managed links, and must be reviewed manually when upgrading the project.
 
-Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, defineTheme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
+Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, slop.ts theme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
 
-Use `App.svelte` for the editor, optional `Export.svelte` for preview/PNG/PDF, and optional `Icon.svelte` for Finder artwork. The CLI discovers them and `defineSlop` mounts the editor boundary automatically. An authored `main.ts` takes precedence and must register its own components with `defineSlop(App, { schema, export: Export, icon: Icon })`, where `schema` is schema.ts's default export. Capture components mount only during capture; Export receives `mode: "preview" | "export"`. Quick Look artwork comes from `artwork/preview.png` and `artwork/icon.png` when present; otherwise register (or `build --artwork native`) renders it through the native helper, without bundling Loro, and a plain build ships none. Register backs up and replaces an existing stateless master only after a successful complete build.
+Use `App.svelte` for the editor, optional `Export.svelte` for preview/PNG/PDF, and optional `Icon.svelte` for Finder artwork. The CLI discovers them and generates an entry that mounts them with `svelteApp`. An authored `main.ts` takes precedence and must register its own components with `svelteApp(App, { schema, export: Export, icon: Icon })` from `@hitslop/document/svelte`, where `schema` is schema.ts's default export. Capture components mount only during capture; Export receives `mode: "preview" | "export"`. Quick Look artwork comes from `artwork/preview.png` and `artwork/icon.png` when present; otherwise register (or `build --artwork native`) renders it through the native helper, without bundling Loro, and a plain build ships none. Register replaces an existing master only after a successful complete build.
 
 Child components `import doc from "./schema"` for the same document; in long lists, pass rows and handles as props instead.
 
@@ -62,7 +63,7 @@ never base64 document values. Validate app formats first. Limits: 10 MiB/file,
 Keep high-frequency or transient values (drag positions, playback, timers) in local state, not saved fields; use attachments for binary data. Documents are capped at 32 MiB.
 Counter values read `number | null`: `null` flags invalid stored contributions or merged overflow; render it as unavailable and disable increments.
 
-`slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. Schema, initial data, theme and manifest changes (including their imports) reset disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. Adding/removing conventional entry files reloads the preview.
+`slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. Changes to slop.ts or schema.ts (including their imports) reset disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. Adding/removing conventional entry files reloads the preview.
 
 The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
 Catch semantic refusals with `isRejected(error)` and other document outcomes with

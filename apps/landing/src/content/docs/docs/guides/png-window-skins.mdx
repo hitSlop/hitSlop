@@ -11,23 +11,11 @@ A washer with a transparent center is a useful first test.
 ## Create the mask asset
 
 Add an RGBA PNG under `assets/`. Its pixel dimensions must exactly match the
-manifest window. Alpha defines both the native backing and where the window
-accepts pointer input.
+window's `width` and `height`. Alpha defines both the native backing and where the
+window accepts pointer input. Name it in `slop.ts`'s `presentation`:
 
-```json title="manifest.json"
-{
-  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
-  "author": { "name": "Your Name" },
-  "slug": "pocket-dial",
-  "title": "Pocket Dial",
-  "description": "A compact desktop dial.",
-  "categories": ["utilities"],
-  "presentation": {
-    "width": 480,
-    "height": 480,
-    "skin": "assets/window-mask.png"
-  }
-}
+```ts
+presentation: { width: 480, height: 480, skin: "assets/window-mask.png" },
 ```
 
 A skinned presentation contains only `width`, `height`, and `skin`. It cannot
@@ -38,7 +26,7 @@ at the skin's fixed size.
 
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
-transparency with more-specific or `!important` page backgrounds. `defineSlop` provides the app root automatically;
+transparency with more-specific or `!important` page backgrounds. The generated Svelte entry provides the app root automatically;
 mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
 are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
@@ -53,7 +41,7 @@ click the content behind the window.
 
 ## Test the physical behavior
 
-- Confirm the PNG is RGBA and exactly matches the manifest dimensions.
+- Confirm the PNG is RGBA and exactly matches the `presentation` dimensions.
 - Test clicks around curved edges, transparent holes, and soft shadows.
 - Move the window with its native toolbar handle; guest controls do not drag it.
 - Check that focus rings and menus stay inside the usable silhouette.

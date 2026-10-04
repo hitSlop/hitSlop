@@ -1,24 +1,27 @@
 // Production helper measurement, without an app/release build or authored rendering.
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { strict as assert } from "node:assert";
+import { copyStage, documentFromStage } from "./fixture-documents";
 const binary = resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
 const folder = await mkdtemp(join(tmpdir(), "hitslop-native-owner-"));
 const root = join(folder, "Measure.slop");
 try {
-  await cp("tests/fixtures/checklist/document", root, { recursive: true });
-  const initial = JSON.parse(await readFile(join(root, "initial.json"), "utf8"));
+  const stage = await copyStage("tests/fixtures/checklist/document", folder);
+  const app = JSON.parse(await readFile(join(stage, "app.json"), "utf8"));
+  const initial = app.initial;
   initial.rows = Array.from({ length: 1000 }, (_, i) => ({
     $id: String(i).padStart(26, "0"),
     text: `Task ${i}`,
     done: false,
   }));
-  await writeFile(join(root, "initial.json"), JSON.stringify(initial));
+  await writeFile(join(stage, "app.json"), JSON.stringify(app));
   await writeFile(
-    join(root, "assets/app.js"),
+    join(stage, "assets/app.js"),
     "throw new Error('Authored code must not execute');",
   );
+  await documentFromStage(stage, root, binary);
   async function run(args: string[]) {
     const start = performance.now();
     const child = Bun.spawn([binary, ...args], {

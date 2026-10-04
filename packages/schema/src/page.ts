@@ -75,6 +75,8 @@ export const PageResults = {
     readOnly: T.Boolean(),
     presentation: SlopPresentationSchema,
     theme: ThemeValuesSchema,
+    /** The app's document descriptor, from the document file; the core validated it. */
+    descriptor: T.Object({}, { additionalProperties: true }),
   }),
   "attachments.put": AttachmentInfoSchema,
   "attachments.read": Strict({ bytes: AttachmentBytesSchema }),

@@ -1,11 +1,11 @@
 /** Shape Lab source variants, native fixtures and a developer-only launcher. */
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { buildProject } from "../packages/cli/src/build";
+import { dirname, join, resolve } from "node:path";
+import { buildTemplate } from "../packages/cli/src/template";
 import { repository } from "./templates";
 
-// These are manifest inputs to the production geometry parser, not a second renderer.
+// These are presentation inputs to the production geometry parser, not a second renderer.
 export const shapeLabVariants = {
   rounded: {
     name: "Rounded baseline",
@@ -68,34 +68,20 @@ export const shapeLabRoot = join(repository, "generated/shape-lab");
 export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = false) {
   const variant = shapeLabVariants[kind];
   const key = `${kind}${fallback ? "-fallback" : ""}`;
-  const source = join(shapeLabRoot, "sources", key);
+  // The folder's name is the slug.
+  const source = join(shapeLabRoot, "sources", `shape-lab-${key}`);
   await rm(source, { recursive: true, force: true });
   await cp(join(repository, "examples/slops/shape-lab"), source, { recursive: true });
-  const manifest = JSON.parse(await readFile(join(source, "manifest.json"), "utf8"));
-  await writeFile(
-    join(source, "manifest.json"),
-    JSON.stringify(
-      {
-        ...manifest,
-        slug: `shape-lab-${key}`,
-        title: `Shape Lab · ${variant.name}${fallback ? " · fallback" : ""}`,
-        presentation: variant.presentation,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
   await writeFile(
     join(source, "variant.ts"),
-    `export default ${JSON.stringify({ kind, name: variant.name, skin: kind === "washer", expectation: variant.expectation })};\n`,
-  );
-  // Generated source paths are deeper than the authored example.
-  await writeFile(
-    join(source, "tsconfig.json"),
-    JSON.stringify({
-      extends: join(repository, "tsconfig.json"),
-      include: ["./**/*.svelte", "./**/*.ts"],
-    }),
+    `export default ${JSON.stringify({
+      kind,
+      name: variant.name,
+      title: `Shape Lab · ${variant.name}${fallback ? " · fallback" : ""}`,
+      presentation: variant.presentation,
+      skin: kind === "washer",
+      expectation: variant.expectation,
+    })};\n`,
   );
   if (kind === "washer") {
     await mkdir(join(source, "assets"), { recursive: true });
@@ -105,7 +91,7 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
     );
   }
   if (fallback) await rm(join(source, "Export.svelte"));
-  return buildProject(source, join(shapeLabRoot, key + ".slop"));
+  return buildTemplate(source, undefined, join(shapeLabRoot, key + ".slop"));
 }
 
 export async function buildShapeLabFixtures() {
@@ -148,8 +134,13 @@ if (import.meta.main) {
         ".hitslop/shape-lab/documents",
         `${name}-${crypto.randomUUID()}.slop`,
       );
-      await mkdir(join(copy, ".."), { recursive: true });
-      await cp(master, copy, { recursive: true });
+      await mkdir(dirname(copy), { recursive: true });
+      // A copy of a template is a template; the app's helper creates a document from it.
+      const create = Bun.spawn([join(app, "Contents/Helpers/hitslop-native"), "create", "--from", master, "--output", copy], {
+        stdout: "ignore",
+        stderr: "inherit",
+      });
+      if (await create.exited) throw new Error("Could not create a Shape Lab document");
       const child = Bun.spawn(["/usr/bin/open", "-a", app, copy], {
         stdout: "inherit",
         stderr: "inherit",

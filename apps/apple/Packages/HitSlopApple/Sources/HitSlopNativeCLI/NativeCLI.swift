@@ -37,7 +37,7 @@ import HitSlopDocument
     commandName: "hitslop-native", abstract: "Read, edit, open, and export hitSlop documents.",
     subcommands: [
       Theme.self, Attachments.self, Screenshot.self, Export.self,
-      Get.self, Schema.self,
+      Get.self,
       Apply.self, Batch.self, Import.self, Compact.self, Create.self, Open.self,
     ] + debugCommands)
 
@@ -67,7 +67,7 @@ import HitSlopDocument
 
 struct Screenshot: AsyncParsableCommand {
   enum Target: String, ExpressibleByArgument { case preview, icon }
-  @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @Option var target: Target = .preview
   @Flag var ifPresent = false
@@ -75,8 +75,8 @@ struct Screenshot: AsyncParsableCommand {
     bootstrapApp()
     let data: Data?
     switch target {
-    case .preview: data = try await SlopRenderer.previewPNGData(packageURL: package)
-    case .icon: data = try await SlopRenderer.iconPNGData(packageURL: package)
+    case .preview: data = try await SlopRenderer.previewPNGData(url: file)
+    case .icon: data = try await SlopRenderer.iconPNGData(url: file)
     }
     guard let data else {
       if ifPresent { return }
@@ -88,18 +88,18 @@ struct Screenshot: AsyncParsableCommand {
 }
 extension ExportFormat: ExpressibleByArgument {}
 struct Export: AsyncParsableCommand {
-  @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @Option var format: ExportFormat
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
     bootstrapApp()
     try await SlopRenderer.exportDocument(
-      packageURL: package, format: format, output: output)
+      url: file, format: format, output: output)
     print(output.path)
   }
 }
 struct DocumentArguments: ParsableArguments {
-  @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
 }
 /// A windowless app for WebKit rendering. Document commands don't use AppKit, so they
 /// never start one.
@@ -117,16 +117,9 @@ struct Get: AsyncParsableCommand {
   @Flag var snapshot = false
   @MainActor func run() async throws {
     let snapshot = snapshot
-    try await printDocument(document.package, snapshot: snapshot) {
+    try await printDocument(document.file, snapshot: snapshot) {
       .get(.init(documentPath: $0))
     }
-  }
-}
-struct Schema: AsyncParsableCommand {
-  @OptionGroup var document: DocumentArguments
-  func run() throws {
-    let package = try SlopPackage(rootURL: document.package)
-    print(String(decoding: try SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576), as: UTF8.self))
   }
 }
 struct Apply: AsyncParsableCommand {
@@ -136,7 +129,7 @@ struct Apply: AsyncParsableCommand {
     let op = op
     guard (try? JSONSerialization.jsonObject(with: Data(op.utf8))) is [String: Any]
     else { throw ValidationError("--op must be one JSON object") }
-    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: "[" + op + "]")) }
+    try await printDocument(document.file) { .batch(.init(documentPath: $0, epoch: "", ops: "[" + op + "]")) }
   }
 }
 struct Batch: AsyncParsableCommand {
@@ -144,7 +137,7 @@ struct Batch: AsyncParsableCommand {
   @Option var ops: String
   @MainActor func run() async throws {
     let ops = ops
-    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
+    try await printDocument(document.file) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
   }
 }
 /// One `replace` operation from a file: the value at `--path` (the whole document by
@@ -154,7 +147,7 @@ struct Import: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @Option var path = "[]"
   @MainActor func run() async throws {
-    let bytes = try SlopFile.read(file, within: file.deletingLastPathComponent(), maximumBytes: Limits.socketRequest - 4096)
+    let bytes = try CommandInput.read(file, maximumBytes: Limits.socketRequest - 4096)
     // Each is one complete JSON value, so splicing them into the operation cannot change
     // its shape; the core parses and validates the result.
     guard let value = String(data: bytes, encoding: .utf8),
@@ -163,37 +156,31 @@ struct Import: AsyncParsableCommand {
     guard (try? JSONSerialization.jsonObject(with: Data(path.utf8))) is [Any]
     else { throw ValidationError("--path must be a JSON array, such as '[\"rows\"]'") }
     let ops = #"[{"type":"replace","path":"# + path + #","value":"# + value + "}]"
-    try await printDocument(document.package) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
+    try await printDocument(document.file) { .batch(.init(documentPath: $0, epoch: "", ops: ops)) }
   }
 }
 struct Compact: AsyncParsableCommand {
   @OptionGroup var document: DocumentArguments
   @MainActor func run() async throws {
-    try await printDocument(document.package) { .compact(.init(documentPath: $0, epoch: "")) }
+    try await printDocument(document.file) { .compact(.init(documentPath: $0, epoch: "")) }
   }
 }
 struct Create: AsyncParsableCommand {
   @Option(name: .customLong("from"), transform: URL.init(fileURLWithPath:)) var source: URL
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
-    let output = SlopDuplicator.packageURL(self.output)
-    guard !SlopTemplateLocation.isMaster(output) else {
-      throw ValidationError("A document cannot be created in the template cache")
-    }
     try FileManager.default.createDirectory(
       at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let package = try SlopDuplicator.duplicate(from: source, to: output, fromTemplate: true)
-    SlopPreviewWriter.installAuthoredIcon(for: package)
-    print(package.rootURL.path)
+    print(try SlopFile.create(from: source, to: output).path)
   }
 }
 
 struct Open: AsyncParsableCommand {
-  @Argument(transform: URL.init(fileURLWithPath:)) var package: URL
+  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @MainActor func run() async throws {
-    _ = try SlopPackage(rootURL: package)
-    guard !SlopTemplateLocation.isMaster(package) else {
-      throw ValidationError(SlopTemplateLocation.writableCopyRequired)
+    // The header decides; the app checks the whole file when it opens it.
+    guard try SlopFile.kind(of: file) == .document else {
+      throw ValidationError(SlopError.template.localizedDescription)
     }
     guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app")
     else {
@@ -202,8 +189,8 @@ struct Open: AsyncParsableCommand {
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     try await NSWorkspace.shared.open(
-      [package], withApplicationAt: app, configuration: configuration)
-    print(package.path)
+      [file], withApplicationAt: app, configuration: configuration)
+    print(file.path)
   }
 }
 

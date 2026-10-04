@@ -7,11 +7,11 @@ import HitSlopCore
 /// `HitSlopFeaturesTests`.
 extension SlopDocumentWindowController {
   static func open(
-    packageURL: URL, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
+    url: URL, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
   ) async throws -> SlopDocumentWindowController {
     let commands = DirectCommands()
     let controller = try await open(
-      packageURL: packageURL, routing: commands.routing, presentsWindow: presentsWindow, telemetry: telemetry)
+      url: url, routing: commands.routing, presentsWindow: presentsWindow, telemetry: telemetry)
     commands.controller = controller
     return controller
   }

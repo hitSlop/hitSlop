@@ -40,7 +40,7 @@ import WebKit
     defer { try? FileManager.default.removeItem(at: root) }
     let before = try await value(root)
 
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.webView.configuration.userContentController.addUserScript(WKUserScript(
       source: Self.pinned(clock: release["clock"] as? Double ?? 0), injectionTime: .atDocumentStart, forMainFrameOnly: true))
     session.load()
@@ -82,7 +82,7 @@ import WebKit
   }
 
   @MainActor private func value(_ root: URL) async throws -> Any {
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let owner = try DocumentOwner(url: root)
     let state = try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
     try await owner.close()
     return state["value"] as Any

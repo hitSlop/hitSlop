@@ -25,7 +25,7 @@ struct AttachmentImport: AsyncParsableCommand {
     guard source.lastPathComponent.utf8.count <= AttachmentLimits.name, mimeType.utf8.count <= AttachmentLimits.name else {
       throw ValidationError("File name or type exceeds \(AttachmentLimits.name) bytes")
     }
-    let bytes = try SlopFile.read(source, within: source.deletingLastPathComponent(), maximumBytes: AttachmentLimits.file).base64EncodedString()
+    let bytes = try CommandInput.read(source, maximumBytes: AttachmentLimits.file).base64EncodedString()
     let data = try await DocumentCommand.run(url: document) {
       .attachmentsPut(.init(documentPath: $0, epoch: "", bytes: bytes))
     }
@@ -41,9 +41,9 @@ struct AttachmentExport: AsyncParsableCommand {
   @Argument var id: String
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
   @MainActor func run() async throws {
-    let destination = output.standardizedFileURL.resolvingSymlinksInPath()
-    guard !SlopPath.contains(document, destination) else {
-      throw ValidationError("Export destination must be outside the document package")
+    let destination = SlopPath.canonical(output)
+    guard !SlopPath.same(document, destination) else {
+      throw ValidationError("Export destination must not be the document")
     }
     let id = id
     let response = try await DocumentCommand.run(url: document) {

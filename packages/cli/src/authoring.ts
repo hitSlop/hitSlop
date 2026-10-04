@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { shellDirectory } from "./paths";
-import { buildTemplate, prepareRenderer, installTemplate } from "./template";
+import { buildTemplate, prepareRenderer } from "./template";
+import { projectSlug } from "./build";
 
 /** Builds anywhere; only `native` artwork needs the Mac app. */
 export async function build(source: string, artwork?: string) {
@@ -10,14 +11,13 @@ export async function build(source: string, artwork?: string) {
   console.log(await buildTemplate(source, artwork ? await prepareRenderer() : undefined));
 }
 
+/** Builds into the template folder the app lists, replacing only an earlier build. */
 export async function register(source: string) {
-  const output = await buildTemplate(source, await prepareRenderer());
-  const manifest = JSON.parse(await readFile(join(output, "manifest.json"), "utf8"));
+  const slug = projectSlug(source);
+  const renderer = await prepareRenderer();
   const templates = join(homedir(), ".hitslop/templates");
   await mkdir(templates, { recursive: true });
-  const destination = join(templates, manifest.slug + ".slop");
-  await installTemplate(output, destination);
-  console.log(destination);
+  console.log(await buildTemplate(source, renderer, join(templates, slug + ".slop")));
 }
 
 export async function dev(source: string, port = 5173) {

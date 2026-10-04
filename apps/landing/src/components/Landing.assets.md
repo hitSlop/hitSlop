@@ -7,17 +7,16 @@ not apply to live slop demos or documentation.
 ## Template wall data
 
 `src/data/templates.json` and `public/assets/templates/` are generated from every
-manifest in `examples/slops` (all of them ship in the app):
+built template (`bun run build:templates`), except the Shape Lab instrument:
 
 ```sh
 bun apps/landing/scripts/templates.ts
 ```
 
-Titles, descriptions, categories and window shape come from `manifest.json`; tile
-colors from `theme.ts` tokens (read as text, never executed); real
-`QuickLook/Icon.png` and `Preview.png` are used wherever a template build exists,
-otherwise a curated emoji tile. Commit the outputs: the Cloudflare build installs
-only `apps/landing` and never builds templates. Rerun after templates change.
+Titles, descriptions, categories, window shape, tile colors and icon and preview
+artwork come from each template's file; a template without preview artwork gets a
+curated emoji tile. Commit the outputs: the Cloudflare build installs only
+`apps/landing` and never builds templates. Rerun after templates change.
 
 ## Share image
 

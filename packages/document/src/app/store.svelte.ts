@@ -11,11 +11,11 @@ export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachme
 export { capture, type CaptureMode, type CaptureTarget } from "./capture";
 
 /**
- * The package entry: `export default defineSlop(App, { schema })`; the host mounts it.
+ * A Svelte app's entry: `export default svelteApp(App, { schema })`; the host mounts it.
  * The generated entry passes the default exports of `schema.ts`, `Export.svelte` and
  * `Icon.svelte`. Once mounted, `schema` is the live document.
  */
-export function defineSlop(App: Component, options: {
+export function svelteApp(App: Component, options: {
   schema: Definition<ObjectNode>;
   export?: Component<{ mode: "preview" | "export" }>;
   icon?: Component;

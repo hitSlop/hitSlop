@@ -36,8 +36,8 @@ a person and their agent edit the same live document. What's missing is the slop
 ### Ask from the window
 
 - **What:** an "Ask…" field in the toolbar. hitSlop runs the person's agent CLI headless,
-  with the document's path and the `hitslop-document` skill packaged in every slop. The
-  agent edits through the owner socket, so the person watches its edits land.
+  with the document's path and the `hitslop-document` skill the CLI installs. The agent
+  edits through the owner socket, so the person watches its edits land.
 - **Why:** puts the agent next to the work for people who never open a terminal.
 - **Builds on:** `installedAgents()` in `packages/cli/src/agents.ts` (Codex, Claude Code,
   Gemini CLI, OpenCode) and the one edit path. The agent is just another CLI client.
@@ -73,14 +73,14 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Remix
 
-- **What:** a package may carry its source as an immutable resource the page never serves.
-  "Remix…" unpacks it into a project, writes a `BRIEF.md` saying where it came from, and
-  launches the agent.
+- **What:** a template may carry its source as an immutable part of the file the page
+  never serves. "Remix…" writes it out as a project, with a `BRIEF.md` saying where it
+  came from, and launches the agent.
 - **Why:** the essay's in-place toolchain: the tool you hold carries what you need to
   change it. Without it, the slope ends at a cliff.
 - **Builds on:** `slop init`'s agent handoff and the build staging in
   `packages/cli/src/build.ts`.
-- **Contract change:** packages contain no source today. Shipping source also raises
+- **Contract change:** templates contain no source today. Shipping source also raises
   questions about licenses and private notes in briefs.
 
 ### Additive app upgrades
@@ -102,13 +102,24 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Contract change:** schema evolution is deferred, and documents keep the app version
   they were created with. This is the one deferral worth pulling forward.
 
+### Permissions bound to the app's code
+
+- **What:** grant a permission (microphone, camera, MIDI) to one app's code: the hash of
+  its `app` row and assets, which in a single file are all the code there is. A remix
+  or an upgrade asks again.
+- **Why:** powerful slops need device access without trusting every later version.
+- **Builds on:** the single file, and the page policy that already refuses code from
+  outside it.
+- **Contract change:** a permission store outside the document, keyed by code hash.
+
 ### Agent notes and prompt buttons
 
 - **What:** authors ship notes for agents beside the generic skill ("to plan a week, add
   rows to `days`…"). The manifest can declare prompt buttons that run through Ask.
 - **Why:** teach the agent once, and every copy of the slop benefits.
-- **Builds on:** the skill that build embeds in every package (`packages/cli/src/build.ts`).
-- **Contract change:** the manifest gains a field.
+- **Builds on:** the file's `app` row, which `slop inspect` and `slop schema` already read
+  for agents.
+- **Contract change:** the `app` row gains a column, which raises `packageFormat`.
 
 ## Tools, not apps
 
@@ -139,8 +150,6 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ## On the desktop, and with other people
 
-- **One-click Share.** Save, package and hand the slop to the share sheet or AirDrop,
-  instead of "close it, then zip it".
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
 - **History scrubber.** A timeline of the history a document keeps: all of it below
@@ -150,13 +159,27 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
 
+### Sync between your own devices
+
+- **What:** a Mac and an iPhone editing one document are a person collaborating with
+  themselves, so one path serves devices and people: each device keeps its own `.slop`
+  file as a replica, and replicas exchange Loro updates computed from version vectors,
+  through the room described next.
+- **Why:** a slop made on the Mac should be in your pocket, without a second engine.
+- **Builds on:** the single file (the app travels with the data) and the owner's Loro
+  update import and export. Row-syncing SQLite services (Turso, SQLite Sync) were
+  considered and rejected: they replicate rows, while the document's merges live in Loro.
+- **Contract change:** theme overrides are a row outside Loro and need merge semantics
+  (last writer per color, or a move into Loro) before they sync. Attachments travel
+  separately, by hash, so "edits synced" and "file complete" are different states.
+
 ### Realtime collaboration on Durable Objects
 
 - **What:** a shared document is a room, one Cloudflare Durable Object per share, reached
   over a hibernating WebSocket. Each Mac keeps its own replica, writer lock and SQLite
   file. The room keeps an update log plus a compacted snapshot, within the same caps as
   `StorageLimits`, and relays updates between replicas. It is pinned to the document's
-  schema key and template package.
+  schema key and template.
 - **Protocol:**
   - On connect, the replica and the room exchange version vectors, and each sends what
     the other lacks (`export(updates(vv))`). Live local updates follow.
@@ -176,7 +199,7 @@ a person and their agent edit the same live document. What's missing is the slop
   decoding, sizes and history-trimmed bytes, and to compact the log. Replicas keep
   preserve-and-flag for merged anomalies.
 - **Prerequisites:**
-  - the invitee has the same template package (hosted catalog or a package hand-off);
+  - the invitee has the same app, which a shared document carries;
   - capability links until accounts exist;
   - rate and connection limits;
   - history retention that works with offline replicas: a replica merges only updates

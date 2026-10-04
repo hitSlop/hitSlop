@@ -1,11 +1,13 @@
-/** Black-box package coverage: no template selectors, actions, or business logic. */
+/** Black-box template coverage: no template selectors, actions, or business logic. */
 import { strict as assert } from "node:assert";
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { builtTemplates } from "./templates";
-import { digest } from "./runtime-artifacts";
+import { digest, fileDigest, useTestRegistry } from "./runtime-artifacts";
+import { documentFromStage } from "./fixture-documents";
 import { nativeFixtureSlugs, prepareNativeFixtures } from "./native-fixtures";
+useTestRegistry();
 
 const helper = resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
 const evidence = resolve(".hitslop/evidence/render");
@@ -26,6 +28,9 @@ const packages = fixtures
       }));
 for (const name of (await readdir("tests/fixtures")).sort())
   packages.push({ name: `fixture-${name}`, source: resolve("tests/fixtures", name, "document") });
+/** A built template file, or a fixture's build stage. */
+const checksum = async (source: string) =>
+  (await stat(source)).isDirectory() ? digest(source) : fileDigest(source);
 type Stage = "initialRead" | "png" | "pdf" | "finalRead";
 type RenderResult = {
   name: string;
@@ -63,11 +68,12 @@ try {
     const started = performance.now();
     console.log(`Checking ${name}`);
     const root = join(parent, `${name}.slop`);
-    const before = await digest(source);
+    const before = await checksum(source);
     const result: RenderResult = { name, sha256: before, passed: false, seconds: {} };
     results.push(result);
     try {
-      await cp(source, root, { recursive: true });
+      if ((await stat(source)).isDirectory()) await documentFromStage(source, root, helper);
+      else await run(["create", "--from", source, "--output", root], result, "initialRead");
       const state = JSON.parse(await run(["get", root], result, "initialRead"));
       for (const format of ["png", "pdf"] as const) {
         const output = join(evidence, `${name}.${format}`);
@@ -80,7 +86,7 @@ try {
         );
       }
       assert.deepEqual(JSON.parse(await run(["get", root], result, "finalRead")), state);
-      assert.equal(await digest(source), before, `Master changed: ${name}`);
+      assert.equal(await checksum(source), before, `Master changed: ${name}`);
       result.passed = true;
       console.log(
         `PASS ${name}: native open, authored render, PNG/PDF, reopen (${((performance.now() - started) / 1000).toFixed(1)}s)`,

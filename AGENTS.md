@@ -8,23 +8,24 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 ## Non-negotiable
 
 - **Every released slop stays openable.** See [Compatibility](#compatibility).
-- `hitslop-core` (Rust on Loro) owns document semantics and durable storage: SQLite,
-  the writer lock and the save policy. The Swift `DocumentOwner` schedules saves and owns
+- `hitslop-core` (Rust on Loro) owns document semantics and durable storage: the `.slop`
+  file (one SQLite database holding the app and its saved state), the writer lock and the
+  save policy. The Swift `DocumentOwner` schedules saves and owns
   the socket and delivery to the page; Loro bytes never reach Swift. The page shell
   (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
-  owner in-process. Never bypass a busy lock or unlink `writer.lock`. Closed edits never
-  start WebKit or run authored code.
+  owner in-process. Never bypass a busy lock or remove a lock file from the registry
+  (`~/.hitslop/live`). Closed edits never start WebKit or run authored code.
 - **TypeBox owns the wire.** Run `bun run schema:generate`; never edit generated files.
 - **Writes are async.** They resolve after the snapshot updates. `change` collectors
   are synchronous. Reads come from immutable snapshots. Preserve `$id` identity; merged
   anomalies are preserved and flagged, never repaired on read.
 - Flush before close or export. A failed save keeps ownership and shows a native retry.
-  Attachments are host-owned immutable blobs.
+  Attachments are host-owned immutable blobs in the file.
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
-- No `stores/data.json`, JSON mirrors or reconciliation, JavaScriptCore engine or second
+- No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
   document engine. The WASM core is for authoring validation, `slop dev` and tests only.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
@@ -40,14 +41,16 @@ every document a released build wrote. Downgrades are not supported.
   Never edit, regenerate or delete a frozen entry or its expectations; capture one per
   release ([releasing](docs/guides/releasing.md)).
 - Persisted formats change only additively, or behind a marker the reader dispatches
-  on: the package's `packageFormat` and `runtimeABI` requirements, the SQLite storage version (forward migration
-  under the writer lock) or the document layout (read it, or migrate losslessly). The
-  markers are requirements, not release numbers; refactors never raise them. A build
-  refuses a newer marker with `requires_update` and writes nothing.
-- Package syntax changes raise `packageFormat`; app-facing behavior raises `runtimeABI`.
-  These requirements evolve independently. Checks that run on open are versioned by `packageFormat`, so tightening an
-  authoring rule never rejects a saved document; a security fix that must reject old
-  documents needs an assessment and a recovery path for their data.
+  on: the file's `packageFormat` and `runtimeABI` requirements (its `app` columns), the
+  SQLite storage version (`user_version`; forward migration under the writer lock) or
+  the document layout (read it, or migrate losslessly). The markers are requirements,
+  not release numbers; refactors never raise them. A build refuses a newer marker with
+  `requires_update` and writes nothing.
+- App format changes (the `app` row, assets, artwork) raise `packageFormat`; app-facing
+  behavior raises `runtimeABI`. These requirements evolve independently. Checks that run
+  on open are versioned by `packageFormat`, so tightening an authoring rule never
+  rejects a saved document; a security fix that must reject old documents needs an
+  assessment and a recovery path for their data.
 - Public boundaries grow additively: `ctx` and handle methods (new object-handle members
   start with `$`; reserved field names never grow), error codes (apps treat unknown
   ones as outcomes), `--slop-*`, `data-hitslop-root`, the embed relay, and the helper's
@@ -58,8 +61,8 @@ every document a released build wrote. Downgrades are not supported.
 
 ## Authoring
 
-Manifest-bearing directories under `examples/slops` are active; `bundled.json` selects
-shipped templates. Use plain CSS and `defineTheme`; read
+Directories with a `slop.ts` under `examples/slops` are active; `bundled.json` selects
+shipped templates. Use plain CSS and `slop.ts` theme colors; read
 [product guidance](examples/slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
 for visual changes. `_vibe` is inspiration only.
 

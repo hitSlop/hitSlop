@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
 import {
   mkdtemp,
@@ -16,8 +17,10 @@ const root = await mkdtemp(join(tmpdir(), "hitslop packed "));
 const coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
 const repository = process.cwd();
 const native = process.argv.includes("--native");
+// The installed CLI must find the file engine it ships, never this checkout's.
+const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
 const env = {
-  ...process.env,
+  ...inherited,
   HITSLOP_NATIVE_CLI: native
     ? resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
     : join(root, "native-helper-must-not-be-used"),
@@ -72,9 +75,10 @@ try {
       "-e",
       `
     import {strict as assert} from "node:assert";
-    import {defineDocument, defineTheme, s} from "@hitslop/document";
-    assert.ok(defineDocument({title: s.text()}).descriptor);
-    assert.equal(defineTheme({accent: "#123456"}).defaults.accent, "#123456");
+    import {defineDocument, defineSlop, s} from "@hitslop/document";
+    const schema = defineDocument({title: s.text()});
+    assert.ok(schema.descriptor);
+    assert.equal(defineSlop({title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], presentation: {width: 320, height: 240}, theme: {accent: "#123456"}, schema, initial: {title: ""}}).schema, schema);
     assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
     assert.throws(() => Bun.resolveSync("@hitslop/shell", process.cwd()));
@@ -124,7 +128,8 @@ try {
   );
   await run([process.execPath, "install"], root, noNode);
   const cli = join(root, "node_modules/@hitslop/cli/src/cli.ts");
-  const project = join(root, "my slop");
+  // The folder's name is the slug; the path above it holds spaces.
+  const project = join(root, "my-slop");
   await run([process.execPath, "x", "--no-install", "@hitslop/cli", "init", project], root, noNode);
   const metadata = JSON.parse(await readFile(join(project, "package.json"), "utf8"));
   assert.equal(metadata.dependencies["@hitslop/document"], versions.document);
@@ -133,11 +138,26 @@ try {
   await writeFile(join(project, "package.json"), JSON.stringify(metadata));
   await run([process.execPath, "install"], project, noNode);
   await run([process.execPath, "run", "check"], project, noNode);
+  // Building, inspecting and reading a schema use the engine the package ships, on any
+  // platform, without the Mac app.
+  await run([process.execPath, "run", "build"], project, noNode);
+  const built = join(project, "dist/my-slop.slop");
+  const inspected = JSON.parse(await run([process.execPath, cli, "inspect", built], root, noNode));
+  assert.equal(inspected.kind, "template");
+  assert.equal(inspected.manifest.slug, "my-slop");
+  assert.equal(JSON.parse(await run([process.execPath, cli, "schema", built], root, noNode)).kind, "object");
+  const asset = (path: string) => {
+    const database = new Database(built, { readonly: true });
+    try {
+      return Buffer.from((database.query("SELECT bytes FROM assets WHERE path = ?").get(path) as { bytes: Uint8Array }).bytes).toString("utf8");
+    } finally {
+      database.close();
+    }
+  };
+  assert.ok(asset("app.css").includes(".slop-paper"));
+  assert.ok(!asset("app.js").includes(repository));
+  console.log("PASS the installed CLI builds and reads templates with its own engine");
   if (native) {
-    await run([process.execPath, "run", "build"], project, noNode);
-    const built = join(project, "dist/my-slop.slop");
-    assert.ok((await readFile(join(built, "assets/app.css"), "utf8")).includes(".slop-paper"));
-    assert.ok(!(await readFile(join(built, "assets/app.js"), "utf8")).includes(repository));
     const home = join(root, "home");
     await mkdir(home);
     await run([process.execPath, cli, "register", project], root, { ...noNode, HOME: home });

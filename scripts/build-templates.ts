@@ -1,12 +1,17 @@
 import { buildTemplate } from "../packages/cli/src/template";
+import { stageProject } from "../packages/cli/src/build";
 import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile, rm, rename } from "node:fs/promises";
 import { repository, discoverTemplates, templateInventory } from "./templates";
 import { sharedTemplateInputs, TemplateCache } from "./template-cache";
 
+/** Builds `slugs` (every discovered template by default) into `output`, through the
+ * template cache. `keepStages` keeps each template's stage at `output/<slug>`, staged once,
+ * for tests that change an app before packing it. */
 export async function buildTemplates(
   output = join(repository, "generated/templates"),
   slugs?: string[],
+  keepStages = false,
 ) {
   const renderer = join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
   const discovered = await discoverTemplates();
@@ -32,9 +37,12 @@ export async function buildTemplates(
     for (const [index, template] of templates.entries()) {
       const start = performance.now();
       const destination = join(stage, template.slug + ".slop");
-      const build = () => buildTemplate(template.source, [renderer], destination);
+      const kept = keepStages ? join(stage, template.slug) : undefined;
+      const build = () => buildTemplate(template.source, [renderer], destination, kept);
       console.log(`Preparing template ${index + 1}/${templates.length}: ${template.slug}`);
       const status = await cache.build(template.source, template.slug, destination, build);
+      // A cached template was never staged here.
+      if (kept && status === "hit") await stageProject(template.source, kept);
       if (status === "hit") hits++;
       const reason = cache.misses.get(template.slug);
       console.log(

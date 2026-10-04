@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import Testing
+import HitSlopTestSupport
 import HitSlopCore
 @testable import HitSlopDocument
 import WebKit
@@ -28,7 +29,45 @@ private final class PublicationTimes: @unchecked Sendable {
   }
 }
 
+/// Median milliseconds of `runs` timed runs; `work` returns what to release untimed.
+@MainActor private func medianMS(runs: Int = 20, _ work: () async throws -> (() async throws -> Void)) async throws -> Double {
+  var times: [Double] = []
+  for _ in 0..<runs {
+    let start = DispatchTime.now().uptimeNanoseconds
+    let release = try await work()
+    times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
+    try await release()
+  }
+  return times.sorted()[times.count / 2]
+}
+
 @Suite(.serialized) struct BenchmarkTests {
+  /// Preparing a document for its window: the file's checks, its app and the writer, before
+  /// any WebView. Documents of 10 and 5,000 saved rows; median of 20 opens.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_OPEN"] == "1")) @MainActor
+  func documentPrepareCost() async throws {
+    let folder = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    var record: [String: Any] = [:]
+    for rows in [10, 5000] {
+      let stage = try Fixtures.nativeStage()
+      try Fixtures.updateApp(stage) { $0["initial"] = [
+        "title": "Open cost",
+        "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
+      ] }
+      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
+      // The first open saves the initial values as the document's checkpoint.
+      try await DocumentSession.prepare(url: root).owner.close()
+      let bytes = try FileManager.default.attributesOfItem(atPath: root.path)[.size] as? Int ?? 0
+      record["prepare-\(rows)-rows-ms"] = try await medianMS {
+        let prepared = try await DocumentSession.prepare(url: root)
+        return { try await prepared.owner.close() }
+      }
+      record["prepare-\(rows)-rows-bytes"] = bytes
+    }
+    print("OPEN-BENCH " + String(decoding: try JSONSerialization.data(withJSONObject: record, options: .sortedKeys), as: UTF8.self))
+  }
+
   /// A color drag in the theme panel: 120 changes at 60 Hz through the owner, timed from
   /// each change to the page's style and to the next frame after it. Coalesced deliveries
   /// count from the earliest change they cover.
@@ -36,19 +75,18 @@ private final class PublicationTimes: @unchecked Sendable {
   func themeDragCost() async throws {
     _ = NSApplication.shared
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-theme-bench-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     var records: [[String: Any]] = []
     for rows in [10, 1000] {
-      let root = folder.appendingPathComponent("\(rows).slop")
-      try FileManager.default.copyItem(at: URL(fileURLWithPath: repository + "/generated/native-fixtures/quick-checklist.slop"), to: root)
-      try JSONSerialization.data(withJSONObject: [
+      let stage = try Fixtures.nativeStage()
+      try Fixtures.updateApp(stage) { $0["initial"] = [
         "title": "Theme drag",
         "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-      ]).write(to: root.appendingPathComponent("initial.json"))
+      ] }
+      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
       // A shown window, so WebKit paints frames as it would for the person dragging.
-      let controller = try await SlopDocumentWindowController.open(packageURL: root)
+      let controller = try await SlopDocumentWindowController.open(url: root)
       controller.showWindow(nil)
       await controller.waitForPresentation()
       let session = controller.session
@@ -106,18 +144,17 @@ private final class PublicationTimes: @unchecked Sendable {
   func previewCaptureCost() async throws {
     _ = NSApplication.shared
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-capture-bench-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     var records: [[String: Any]] = []
     for rows in [1000, 5000] {
-      let root = folder.appendingPathComponent("\(rows).slop")
-      try FileManager.default.copyItem(at: URL(fileURLWithPath: repository + "/generated/native-fixtures/quick-checklist.slop"), to: root)
-      try JSONSerialization.data(withJSONObject: [
+      let stage = try Fixtures.nativeStage()
+      try Fixtures.updateApp(stage) { $0["initial"] = [
         "title": "Capture measurement",
         "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-      ]).write(to: root.appendingPathComponent("initial.json"))
-      let session = try await DocumentSession.open(packageURL: root)
+      ] }
+      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
+      let session = try await DocumentSession.open(url: root)
       session.load()
       try await session.waitUntilReady()
       do {
@@ -181,9 +218,7 @@ private final class PublicationTimes: @unchecked Sendable {
         ], options: [.prettyPrinted, .sortedKeys]
       ).write(to: out.appendingPathComponent("native-owner-windows\(label.isEmpty ? "" : "-" + label).json"))
     }
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "hsl-bench-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let environment = ProcessInfo.processInfo.environment
     let rowCounts = environment["HITSLOP_BENCH_ROWS"]?.split(separator: ",").compactMap { Int($0) } ?? [1000, 5000]
@@ -193,16 +228,14 @@ private final class PublicationTimes: @unchecked Sendable {
         var windows: [SlopDocumentWindowController] = []
         let start = Date()
         for index in 0..<count {
-          let root = folder.appendingPathComponent("\(rows)-\(count)-\(index).slop")
-          try FileManager.default.copyItem(
-            at: URL(fileURLWithPath:String(#filePath.components(separatedBy:"/apps/apple/")[0])+"/generated/native-fixtures/quick-checklist.slop"), to: root)
-          try JSONSerialization.data(withJSONObject: [
+          let stage = try Fixtures.nativeStage()
+          try Fixtures.updateApp(stage) { $0["initial"] = [
             "title": "Measurement",
             "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-          ]).write(to: root.appendingPathComponent("initial.json"))
+          ] }
           // Capture public ctx for measurement while retaining the actual authored view.
-          let app = root.appendingPathComponent("assets/app.js")
-          try FileManager.default.moveItem(at: app, to: root.appendingPathComponent("assets/benchmark-authored.js"))
+          let app = stage.appendingPathComponent("assets/app.js")
+          try FileManager.default.moveItem(at: app, to: stage.appendingPathComponent("assets/benchmark-authored.js"))
           // Attribution only: CSS appended to the authored styles (HITSLOP_BENCH_CSS).
           let css = String(decoding: try JSONSerialization.data(withJSONObject: [environment["HITSLOP_BENCH_CSS"] ?? ""]), as: UTF8.self)
           try Data("""
@@ -219,7 +252,8 @@ private final class PublicationTimes: @unchecked Sendable {
               return view;
             } };
             """.utf8).write(to: app)
-          windows.append(try await SlopDocumentWindowController.open(packageURL: root))
+          let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows)-\(count)-\(index).slop"))
+          windows.append(try await SlopDocumentWindowController.open(url: root))
         }
         for window in windows {
           window.showWindow(nil)
@@ -227,7 +261,7 @@ private final class PublicationTimes: @unchecked Sendable {
           do { try await window.session.waitUntilReady(timeout: .milliseconds(Int(readySeconds * 1000))) } catch {
             let message = "Benchmark \(rows) rows × \(count) windows: \(error.localizedDescription)"
             try writeEvidence(failure: message)
-            throw SlopPackageError.invalid(message)
+            throw SlopError.invalid(message)
           }
           await window.waitForPresentation()
         }
@@ -380,7 +414,7 @@ private final class PublicationTimes: @unchecked Sendable {
         let total = samples.reduce(UInt64(0), +)
         let hostBytes = footprint(getpid()) ?? 0
         let contentBytes = Array(pids).compactMap { footprint($0) }.reduce(UInt64(0), +)
-        let database = first.packageURL.appendingPathComponent("state/document.sqlite")
+        let database = first.url
         let bytes =
           (try FileManager.default.attributesOfItem(atPath: database.path)[.size] as! NSNumber)
           .intValue

@@ -1,9 +1,10 @@
-// Browser smoke for the slops restored in the scalars milestone: each runs in `slop dev`
-// (the WASM core) under Playwright WebKit, and one scripted interaction per scalar
-// feature must leave the expected DOM with no page errors.
+// Browser smoke for the active templates: each runs in `slop dev` (the WASM core) under
+// Playwright WebKit and must render with no page errors; templates with a scripted check
+// below must also leave the expected DOM.
 // Usage: bun scripts/restored-smoke.ts [slug…]
 import { webkit, type Page } from "playwright";
 import assert from "node:assert/strict";
+import { discoverTemplates } from "./templates";
 
 const checks: Record<string, (page: Page) => Promise<void>> = {
   "small-expenses": async (page) => {
@@ -134,13 +135,8 @@ const settle = async (page: Page) => {
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForTimeout(1000);
 };
-const every = [
-  "small-expenses", "kanban-board", "recipe", "doodle-board",
-  "habit-heatmap", "harada-method", "morning-pages", "pocket-sheet", "wordle", "alien-radio",
-  "meeting-notes", "metronome-tapper", "pixel-art", "workout-planner", "reading-tracker", "slide-deck",
-];
-
-const slugs = process.argv.slice(2).length ? process.argv.slice(2) : every;
+// Every active template by default, so a restored example is covered without an edit here.
+const slugs = process.argv.slice(2).length ? process.argv.slice(2) : (await discoverTemplates()).map((template) => template.slug);
 const browser = await webkit.launch();
 let failed = 0;
 for (const [index, slug] of slugs.entries()) {

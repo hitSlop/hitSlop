@@ -47,7 +47,7 @@ extension DocumentSession {
           if !SlopFailureContext.isCancellation(error) {
             let diagnostic = SlopFailureContext.classify(error)
             if let self {
-              self.delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown || error is SlopPackageError
+              self.delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown || error is SlopError
                 ? .init(reason: .storage) : diagnostic)
             }
           }

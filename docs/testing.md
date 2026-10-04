@@ -8,14 +8,17 @@ openable, so its frozen entries never change.
 | Boundary | Where | Proves |
 |---|---|---|
 | Rust semantics | `crates/hitslop-core/tests`, `cargo test --locked --workspace` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
-| Rust storage | `crates/hitslop-core/tests/store.rs` (feature `storage`) | Writer lock, storage identity, limits before blob reads, busy and full saves, lost acknowledgements, moved packages, snapshots that never write, free-page reclamation, duplicate identity, theme overrides, saved updates without a checkpoint refused |
+| Rust storage | `crates/hitslop-core/tests/{store,package}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving once moved back), attachments, artwork written only while the rendered state holds, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, lost acknowledgements, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused |
+| File engine | `crates/slop-engine/tests` | `pack`, `inspect` and `schema` as the CLI runs them; a refused build publishes nothing |
 | Shell over WASM | `packages/shell/tests`, `bun run test` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run swift:test`, `bun run test:native` | Save scheduling, save/reopen, failed-save retention, lost-reply recovery, CLI live and closed paths, WebView bridge, export, window lifecycle |
-| Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released package and saved document still opens, renders, edits and reopens |
+| Examples | `tests/examples`, run with the package tests (`bun run test`, or `bun run test:native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
+| Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
 
-`tests/fixtures/*` are small host packages (`document/`, `expected.json`,
-`scenario.json`) replayed by both the Bun fast tier and the Swift host-path test.
+`tests/fixtures/*` are small host apps (`document/`, a build stage, with `expected.json` and
+`scenario.json`) replayed by both the Bun fast tier and the Swift host-path test, which
+packs each stage and creates a document from it.
 `tests/abi/{owner-svelte,probe}` are Svelte and probe consumers used by Swift tests.
 
 ## Everyday checks
@@ -55,7 +58,7 @@ bun run test:native
 bun run test:native-helper
 bun scripts/crash-matrix.ts           # add --host for host death (test:native-crash)
 bun run test:render --fixtures
-bun run test:restored                    # restored slops in `slop dev` under Playwright WebKit
+bun run test:restored                    # every active template in `slop dev` under Playwright WebKit
 ```
 
 `build` generates contracts, builds the Rust bindings and the page shell, and compiles
@@ -87,13 +90,13 @@ Performance diagnostics are opt-in and not CI gates:
 `row_text_split_ms` field separates style from layout. Record results under
 `docs/evidence/`.
 
-`bun run bench:growth` simulates up to 365 days of heavy Doodle Board, Pixel Art,
-and Morning Pages use through the native owner, with normal checkpoint thresholds
+`bun run bench:growth` (it needs Doodle Board, Pixel Art and Morning Pages back in
+`examples/slops`) simulates up to 365 days of heavy use of those three through the native owner, with normal checkpoint thresholds
 and daily save/close/reopen checks; each daily close trims history as the app does. Build the templates first. The report records
 logical checkpoint/update bytes separately from physical SQLite size, retained
 content, and measured versus projected lifetime. A storage-full or reopen failure
 stops that workload and blocks release in the report; it does not change storage
-limits. Other workloads still run. Failed packages are retained under
+limits. Other workloads still run. Failed documents are retained under
 `.hitslop/evidence/document-growth/` for inspection.
 
 For a harness smoke, use `HITSLOP_GROWTH_DAYS=1` and set `HITSLOP_GROWTH_OUTPUT`
@@ -104,14 +107,14 @@ completed; inspect `releaseBlocked` and each workload's stopping reason before r
 
 ## Compatibility corpus
 
-`tests/compat/<release>/` stores original built packages, saved databases and attachments,
+`tests/compat/<release>/` stores original built templates, saved documents (with their attachments),
 expected state, CLI transcripts and explicit page interactions. A small sample includes
 the conformance app, three type fixtures and selected real templates. It is regression
 evidence, not proof of all possible authored apps.
 
 `bun run compat:capture VERSION --frozen` builds the producing tools and templates,
 records their source fingerprint and identities, and captures into a temporary directory.
-It records package/archive content digests, per-file hashes, dependency installation lock,
+It records template/archive content digests, per-file hashes, dependency installation lock,
 and required case inventory. Only a completed capture is published and frozen. Recording
 an existing frozen entry is refused. Before launch `dev` may be recaptured.
 

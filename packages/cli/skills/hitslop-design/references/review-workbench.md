@@ -9,9 +9,9 @@ fake review content out of creation defaults. Verify reduced motion and that
 portal content remains styled when mounted outside the editor tree.
 
 Run `bun run check` and `bun run build`. Build uses the installed Mac renderer
-and produces QuickLook preview and icon artwork. Register, create a writable
-copy, and test close-after-type, reopen, theme overrides, and PNG/PDF export.
-The immutable template must contain no state, source, dependencies, or caches.
+and produces preview and icon artwork. Register, create a writable copy, and
+test close-after-type, reopen, theme overrides, and PNG/PDF export. The immutable
+template holds no document state, source, dependencies, or caches.
 
 Capture editor, export, and icon from the same revision. Confirm their visual
 identity matches and export omits editing controls. Do not infer native clipping,

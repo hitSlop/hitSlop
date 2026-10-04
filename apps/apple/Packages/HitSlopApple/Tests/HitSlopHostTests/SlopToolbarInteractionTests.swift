@@ -44,7 +44,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     do {
@@ -72,7 +72,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     var other: NSWindow?
@@ -108,24 +108,25 @@ extension OwnerClientTests {
   // Existing deadline tests do not exercise delivery into a real WKWebView.
   @Test @MainActor func guestControlsFollowNativeToolbar() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture()
+    let root = try captureFixture { stage in
+      // Wrap the probe app with an authored control that follows the native toolbar.
+      let assets = stage.appendingPathComponent("assets")
+      try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
+      try Data("""
+        import probe from "./probe.js";
+        export default { mount(ctx, target) {
+          const style = document.createElement("style");
+          style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
+          document.head.append(style);
+          const button = document.createElement("button");
+          button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
+          target.append(button);
+          return probe.mount(ctx, target);
+        } };
+        """.utf8).write(to: assets.appendingPathComponent("app.js"))
+    }
     defer { try? FileManager.default.removeItem(at: root) }
-    // Wrap the probe app with an authored control that follows the native toolbar.
-    let assets = root.appendingPathComponent("assets")
-    try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-    try Data("""
-      import probe from "./probe.js";
-      export default { mount(ctx, target) {
-        const style = document.createElement("style");
-        style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
-        document.head.append(style);
-        const button = document.createElement("button");
-        button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
-        target.append(button);
-        return probe.mount(ctx, target);
-      } };
-      """.utf8).write(to: assets.appendingPathComponent("app.js"))
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     let view = controller.session.webView

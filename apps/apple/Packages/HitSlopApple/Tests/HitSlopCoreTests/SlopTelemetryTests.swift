@@ -29,7 +29,7 @@ import Testing
 @Test @MainActor func secondaryReportsAreBoundedAcrossDocumentsAndStopAfterPlatformFailure() {
     let policy = SlopTelemetryPolicy()
     let authored = SlopFailureContext(.authored, reason: .authoredException)
-    let rejection = SlopFailureContext(.rejection, reason: .invalidPackage)
+    let rejection = SlopFailureContext(.rejection, reason: .invalidFile)
     #expect(policy.shouldRecord(.renderer, context: authored))
     #expect(!policy.shouldRecord(.renderer, context: authored))
     #expect(policy.shouldRecord(.open, context: rejection))

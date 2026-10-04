@@ -746,12 +746,14 @@ public struct PageConfigResult {
   public var `readOnly`: Bool
   public var `presentation`: [String: Any]
   public var `theme`: [String: String]
+  public var `descriptor`: [String: Any]
 
-  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String]) {
+  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String], `descriptor`: [String: Any]) {
     self.`runtimeABI` = `runtimeABI`
     self.`readOnly` = `readOnly`
     self.`presentation` = `presentation`
     self.`theme` = `theme`
+    self.`descriptor` = `descriptor`
   }
 
   public var json: [String: Any] {
@@ -760,6 +762,7 @@ public struct PageConfigResult {
     result["readOnly"] = `readOnly`
     result["presentation"] = `presentation`
     result["theme"] = `theme`
+    result["descriptor"] = `descriptor`
     return result
   }
 }

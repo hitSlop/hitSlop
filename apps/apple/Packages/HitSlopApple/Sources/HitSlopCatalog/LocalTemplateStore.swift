@@ -6,11 +6,11 @@ import HitSlopFeatures
 import HitSlopDocument
 
 public struct LocalTemplate: Identifiable, Sendable {
-    public let packageURL: URL
+    public let url: URL
     public let icon: CatalogArtwork
     public let preview: CatalogArtwork
     public let manifest: SlopManifest
-    public let packageBytes: Int64
+    public let fileBytes: Int64
     public let createdAt: Date?
     public let updatedAt: Date?
     public var id: String { "local:\(manifest.slug)" }
@@ -35,7 +35,7 @@ public struct LocalTemplateSnapshot: Sendable {
     private var generation = 0
     private var stopped = false
 
-    public convenience init(templatesURL: URL = SlopTemplateLocation.defaultTemplatesRoot) {
+    public convenience init(templatesURL: URL = SlopTemplateLocation.templatesRoot) {
         let scanner = CatalogScanner()
         self.init(templatesURL: templatesURL, scan: { try await scanner.local(at: $0) })
     }

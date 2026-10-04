@@ -1,13 +1,13 @@
 import { Strict } from "./strict";
 import * as Type from "typebox";
 import { validate } from "./validation";
-import { ManifestText, PackageFormat, RuntimeABI, SlopCategories, WindowBounds } from "./constants";
+import { ManifestText, SlopCategories, WindowBounds } from "./constants";
+import { ThemeValuesSchema } from "./values";
 
-export const manifestSchemaURL = "https://api.hitslop.com/schemas/manifest.schema.json" as const;
-export const SlopCategorySchema = Type.Enum(SlopCategories, { title: "SlopCategory" });
+const SlopCategorySchema = Type.Enum(SlopCategories, { title: "SlopCategory" });
 const categoryBounds = { minItems: 1, maxItems: 2, uniqueItems: true };
 const categories = Type.Array(SlopCategorySchema, categoryBounds);
-export const SlopAuthorSchema = Strict(
+const SlopAuthorSchema = Strict(
   {
     name: Type.String({ ...ManifestText.authorName }),
     url: Type.Optional(
@@ -25,7 +25,7 @@ const dimensions = {
   width: Type.Integer({ minimum: WindowBounds.minWidth, maximum: WindowBounds.max }),
   height: Type.Integer({ minimum: WindowBounds.minHeight, maximum: WindowBounds.max }),
 };
-export const SlopPathShapeSchema = Strict(
+const SlopPathShapeSchema = Strict(
   {
     path: Type.String({ minLength: 1, maxLength: 4096 }),
     viewBox: Type.Optional(
@@ -40,7 +40,7 @@ export const SlopPathShapeSchema = Strict(
 );
 const radiusValue = "(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))";
 const radiusList = `${radiusValue}(?:[ \t\r\n]+${radiusValue}){0,3}`;
-export const SlopShapeSchema = Type.Union(
+const SlopShapeSchema = Type.Union(
   [
     Type.String({
       minLength: 1,
@@ -51,7 +51,7 @@ export const SlopShapeSchema = Type.Union(
   ],
   { title: "SlopShape" },
 );
-export const SlopStandardPresentationSchema = Strict(
+const SlopStandardPresentationSchema = Strict(
   {
     ...dimensions,
     resizable: Type.Optional(Type.Boolean()),
@@ -61,7 +61,7 @@ export const SlopStandardPresentationSchema = Strict(
   },
   { title: "SlopStandardPresentation" },
 );
-export const SlopSkinPresentationSchema = Strict(
+const SlopSkinPresentationSchema = Strict(
   { ...dimensions, skin: skinPath },
   { title: "SlopSkinPresentation" },
 );
@@ -70,7 +70,6 @@ export const SlopPresentationSchema = Type.Union(
   { title: "SlopPresentation" },
 );
 const manifestFields = {
-  $schema: Type.Optional(Type.Literal(manifestSchemaURL)),
   author: SlopAuthorSchema,
   slug: Type.String({ ...ManifestText.slug }),
   title: Type.String({ ...ManifestText.title }),
@@ -78,27 +77,30 @@ const manifestFields = {
   categories,
   presentation: SlopPresentationSchema,
 };
-/** The manifest an author writes. */
+/** The manifest a `.slop` stores: `slop.ts`'s fields and its folder's name as the slug. */
 export const SlopManifestSchema = Strict(manifestFields, { title: "SlopManifest" });
-/** Independent package syntax and app runtime requirements, stamped by the builder. The
- * syntax reader is chosen by `packageFormat`; the supported `runtimeABI` is checked before
- * it, so a reader never caps the runtime a package of its syntax may require. */
-export const SlopPackageManifestSchema = Strict(
-  { ...manifestFields, packageFormat: Type.Integer({ minimum: 1, maximum: PackageFormat }), runtimeABI: Type.Integer({ minimum: 1 }) },
-  { title: "SlopPackageManifest" },
-);
 export type SlopCategory = Type.Static<typeof SlopCategorySchema>;
-export type SlopAuthor = Type.Static<typeof SlopAuthorSchema>;
 export type SlopManifest = Type.Static<typeof SlopManifestSchema>;
-export type SlopPackageManifest = Type.Static<typeof SlopPackageManifestSchema>;
 export type SlopPresentation = Type.Static<typeof SlopPresentationSchema>;
+/** A window the host draws and the shape clips. */
+export type SlopStandardPresentation = Type.Static<typeof SlopStandardPresentationSchema>;
+/** A fixed-size window drawn by a PNG skin. */
+export type SlopSkinPresentation = Type.Static<typeof SlopSkinPresentationSchema>;
+/** A built app: what the file engine packs (a build's `app.json`) and a `.slop` stores in
+ * its `app` row. The core checks each part by its own rules; only it interprets the
+ * descriptor and the initial values. */
+export const AppRowSchema = Strict(
+  {
+    packageFormat: Type.Integer({ minimum: 1 }),
+    runtimeABI: Type.Integer({ minimum: 1 }),
+    manifest: SlopManifestSchema,
+    descriptor: Type.Unknown(),
+    initial: Type.Unknown(),
+    theme: ThemeValuesSchema,
+  },
+  { title: "AppRow" },
+);
+export type AppRow = Type.Static<typeof AppRowSchema>;
 /** The authored manifest's structure. Window shape geometry is validated by the core (WASM). */
 export const parseManifest = (input: unknown): SlopManifest =>
   validate(SlopManifestSchema, input, "Invalid manifest");
-/** A built package's manifest, at a level this build supports. */
-export const parsePackageManifest = (input: unknown): SlopPackageManifest => {
-  const manifest = validate(SlopPackageManifestSchema, input, "Invalid package manifest");
-  if (manifest.runtimeABI > RuntimeABI)
-    throw new Error(`This slop needs runtimeABI ${manifest.runtimeABI}; this build supports ${RuntimeABI}`);
-  return manifest;
-};

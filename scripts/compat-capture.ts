@@ -8,7 +8,7 @@
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
 // release candidate with a clean tree, then commit it before tagging.
 import { Database } from "bun:sqlite";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HelperProtocol, PackageFormat, RuntimeABI } from "../packages/schema/src/constants";
@@ -29,8 +29,9 @@ import {
 import { prepareNativeFixtures } from "./native-fixtures";
 import { builtTemplates, repository } from "./templates";
 import { archiveDigest, corpusFiles, sourceFingerprint, verifyCorpus } from "./compat-integrity";
-import { digest, shellDestinations, shellFiles } from "./runtime-artifacts";
-import { createHash } from "node:crypto";
+import { digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry } from "./runtime-artifacts";
+import { engine, pack } from "../packages/cli/src/engine";
+useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun scripts/compat-capture.ts RELEASE [--frozen]");
@@ -67,21 +68,26 @@ const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 const root = join(stage, name);
 try {
-// Packages: the chosen shipped templates as built, the hand-written conformance fixtures
-// and the Svelte conformance app, which exercises every ctx member and descriptor kind.
+// Templates: the chosen shipped templates as built, the hand-written conformance fixtures
+// (packed from their stages) and the Svelte conformance app, which exercises every ctx
+// member and descriptor kind.
 await prepareNativeFixtures();
-const { templates } = await builtTemplates();
-for (const directory of ["packages", "documents", "expected", "scenarios", "pages", "cli"])
+const { templates: built } = await builtTemplates();
+for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "cli"])
   await mkdir(join(root, directory), { recursive: true });
-const packages: Record<string, string> = {};
+const templates: Record<string, string> = {};
 for (const slug of chosen) {
-  if (!templates.some((t) => t.slug === slug && t.bundled)) throw new Error(`Not a shipped template: ${slug}`);
-  packages[slug] = join(repository, "generated/templates", slug + ".slop");
+  if (!built.some((t) => t.slug === slug && t.bundled)) throw new Error(`Not a shipped template: ${slug}`);
+  templates[slug] = join(repository, "generated/templates", slug + ".slop");
 }
 for (const fixture of await readdir(join(repository, "tests/fixtures")))
-  packages[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
-packages.conformance = join(repository, "generated/abi/owner-svelte.slop");
-for (const [slug, source] of Object.entries(packages)) await cp(source, join(root, "packages", slug + ".slop"), { recursive: true });
+  templates[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
+templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
+for (const [slug, source] of Object.entries(templates)) {
+  const template = join(root, "templates", slug + ".slop");
+  if (source.endsWith(".slop")) await copyFile(source, template);
+  else await pack(source, template);
+}
 
 // Generic edits derived from a descriptor: one valid write of every kind it declares.
 type Node = { kind: string; [key: string]: any };
@@ -128,7 +134,16 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
   }
   return ops;
 }
-const schemaOf = async (document: string) => JSON.parse(await readFile(join(document, "state.schema.json"), "utf8")) as Node;
+const schemaOf = async (document: string) => JSON.parse(await engine(["schema", document])) as Node;
+/** The app's module, read from the file outside the core. */
+const appOf = (document: string) => {
+  const database = new Database(document, { readonly: true });
+  try {
+    return Buffer.from((database.query("SELECT bytes FROM assets WHERE path = 'app.js'").get() as { bytes: Uint8Array }).bytes).toString("utf8");
+  } finally {
+    database.close();
+  }
+};
 const valueOf = async (document: string) => (await nativeJSON(["get", document])) as unknown;
 const batch = (document: string, ops: unknown[]) => nativeJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
@@ -145,9 +160,9 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
   "pocket-sheet": [{ selector: '[aria-label="Sheet title"]', value: "Sheet edited ✓" }],
   "morning-pages": [{ selector: '[aria-label="Morning Pages writing area"]', value: "Morning pages edited ✓" }],
 };
-for (const slug of Object.keys(packages)) {
+for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
-  await run([helper, "create", "--from", join(root, "packages", slug + ".slop"), "--output", document]);
+  await run([helper, "create", "--from", join(root, "templates", slug + ".slop"), "--output", document]);
   const schema = await schemaOf(document);
   for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
   const theme = await nativeJSON(["theme", "get", document]);
@@ -160,18 +175,18 @@ for (const slug of Object.keys(packages)) {
     await rm(file);
     await batch(document, [{ type: "set", path: ["attachment"], value: ref.id }]);
   }
-  const app = await readFile(join(document, "assets/app.js"), "utf8");
+  const app = appOf(document);
   pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
 }
 // Storage shapes: a compacted (history-trimmed) checkpoint, and merged anomalies.
 for (const slug of ["conformance", "quick-checklist"]) {
   const compacted = join(documents, `${slug}-compacted.slop`);
-  await cp(join(documents, slug + ".slop"), compacted, { recursive: true });
+  await copyFile(join(documents, slug + ".slop"), compacted);
   await run([helper, "compact", compacted]);
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
 const anomalies = join(documents, "conformance-anomalies.slop");
-await run([helper, "create", "--from", join(root, "packages/conformance.slop"), "--output", anomalies]);
+await run([helper, "create", "--from", join(root, "templates/conformance.slop"), "--output", anomalies]);
 await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_anomalies", "--", anomalies]);
 
 // What each document reads as, and an edit to replay on it with its result.
@@ -188,7 +203,7 @@ for (const document of names) {
       ? [{ type: "set", path: ["title"], value: "Anomalies survive ✓" }]
       : edits(await schemaOf(path), expected.value, 3);
   await rm(scratch, { recursive: true, force: true });
-  await cp(path, scratch, { recursive: true });
+  await copyFile(path, scratch);
   const reply = await batch(scratch, ops);
   const { state } = await nativeJSON(["get", scratch, "--snapshot"]);
   if (JSON.stringify(state.value) !== JSON.stringify(reply.value)) throw new Error(`${document}: the replayed edit did not save`);
@@ -212,12 +227,11 @@ for (const document of names) {
 // The helper commands a CLI of this release sends, and what they print.
 const attachmentBytes = "Archived CLI attachment ✓\n";
 await writeFile(join(root, "cli/attachment.txt"), attachmentBytes);
-const attachmentID = createHash("sha256").update(attachmentBytes).digest("hex");
+const attachmentID = sha256(attachmentBytes);
 const transcript: Transcript = { document: "conformance", commands: [] };
 await rm(scratch, { recursive: true, force: true });
-await cp(join(documents, "conformance.slop"), scratch, { recursive: true });
+await copyFile(join(documents, "conformance.slop"), scratch);
 for (const args of [
-  ["schema", "{document}"],
   ["get", "{document}"],
   ["get", "{document}", "--snapshot"],
   ["apply", "{document}", "--op", JSON.stringify({ type: "set", path: ["label"], value: "From the CLI" })],
@@ -239,7 +253,7 @@ for (const args of [
   } catch {}
   if (args.includes("{output}")) {
     stdout = String(stdout).replaceAll(exported, "{output}");
-    transcript.commands.push({ args, code: result.code, stdout, outputHash: createHash("sha256").update(await readFile(exported)).digest("hex") });
+    transcript.commands.push({ args, code: result.code, stdout, outputHash: await fileDigest(exported) });
   } else transcript.commands.push({ args, code: result.code, stdout });
 }
 await writeFile(join(root, "cli/transcript.json"), JSON.stringify(transcript, null, 2) + "\n");
@@ -251,7 +265,7 @@ const npmPackages: Record<string, string> = {};
 for (const pkg of ["schema", "document", "cli"]) {
   const metadata = JSON.parse(await readFile(join(repository, "packages", pkg, "package.json"), "utf8"));
   const file = `hitslop-${pkg}-${metadata.version}.tgz`;
-  await cp(join(repository, "generated/npm", file), join(root, "cli", file));
+  await copyFile(join(repository, "generated/npm", file), join(root, "cli", file));
   archives[file] = await archiveDigest(join(root, "cli", file));
   npmPackages[metadata.name] = `../${file}`;
 }
@@ -264,7 +278,7 @@ await rm(join(install, "node_modules"), { recursive: true, force: true });
 // Storage shapes the documents cover.
 const storage: Release["storage"] = {};
 for (const document of names) {
-  const database = new Database(join(documents, document + ".slop/state/document.sqlite"), { readonly: true });
+  const database = new Database(join(documents, document + ".slop"), { readonly: true });
   const checkpoint = database.query("SELECT length(bytes) AS n FROM checkpoint").get() as { n: number };
   const updates = database.query("SELECT count(*) AS n FROM updates").get() as { n: number };
   database.close();
@@ -282,14 +296,14 @@ const release: Release = {
   markers: {
     packageFormat: PackageFormat,
     runtimeABI: RuntimeABI,
-    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/store.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
+    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/file.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
     layout: Number((await readFile(join(repository, "crates/hitslop-core/src/lib.rs"), "utf8")).match(/pub const LAYOUT: i64 = (\d+);/)![1]),
     protocol: HelperProtocol.version,
   },
   inputs: capturedInputs,
   producer: { coreBuildID: await run([helper, "--core-build"]), shell: await digest(shellDestinations.app, shellFiles) },
   files: {},
-  packages: Object.fromEntries(await Promise.all(Object.keys(packages).map(async slug => [slug, await digest(join(root, "packages", slug + ".slop"))]))),
+  templates: Object.fromEntries(await Promise.all(Object.keys(templates).map(async slug => [slug, await fileDigest(join(root, "templates", slug + ".slop"))]))),
   archives,
   toolchain: {
     rust: await version(["rustc", "--version"]),

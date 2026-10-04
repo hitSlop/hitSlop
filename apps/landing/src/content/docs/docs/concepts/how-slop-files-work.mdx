@@ -1,56 +1,45 @@
 ---
 title: How .slop files work
-description: Source, immutable runtime templates, writable state, and native ownership.
+description: Source, immutable templates, writable documents, and native ownership.
 ---
 
-A `.slop` is a directory package macOS presents as one document. It carries the interface needed to open it and, once created as a writable document, its local state.
+A `.slop` is one file: a small database that holds the app needed to open it and, once created as a writable document, everything that document saved. Send it by Mail or AirDrop, and it arrives whole.
 
-## Source is not the runtime package
+## Source is not the runtime file
 
-Authoring source contains `App.svelte`, `styles.css`, `theme.ts`, `schema.ts`, `initial.ts`, and a package manifest. The builder generates the Svelte entry through `defineSlop`; a custom `main.ts` is optional for other frameworks and exports `default { mount(ctx, target) }`. Authors define theme defaults once in `theme.ts`, using `defineTheme`. The builder writes those defaults to `assets/theme.json`. Before mounting the app, the runtime applies them and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
+Authoring source contains `slop.ts`, `schema.ts`, `App.svelte` and `styles.css`. `slop.ts` declares the app with `defineSlop`: its title, description, author, categories, window, theme colors and a new document's values; the folder's name is the slug. The builder generates the Svelte entry; a custom `main.ts` is optional for other frameworks and exports `default { mount(ctx, target) }`. Before mounting the app, the runtime applies the theme's defaults and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
 
-```text
-theme.ts   ── build ──→ assets/theme.json
-styles.css ── build ──→ assets/app.css
-```
-
-The `assets/` folder in the built package contains compiled output and any bundled static resources. Build produces:
+`slop build` compiles the app, evaluates `slop.ts` and `schema.ts` (they never ship in the app), and packs the result into a template file:
 
 ```text
-My.slop/
-  manifest.json
-  assets/
-    app.js
-    app.css
-    theme.json
-  state.schema.json
-  initial.json
-  QuickLook/
-    Preview.png
-    Icon.png              # optional declared icon
-  .agents/skills/hitslop-document/
+My.slop
+  app        the manifest, the schema's descriptor, initial values, theme defaults,
+             and the format and runtime the app needs
+  assets     app.js, app.css, and any bundled static resources
+  artwork    preview and, when declared, icon images
 ```
 
-`assets/theme.json` is immutable build output from `theme.ts`. The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is not copied into the slop on open.
+The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is never copied into the file.
 
-## A writable copy adds state
+## A document adds its saved state
+
+Creating a document copies a template into a new file and gives it its own identity. As it is edited, the same file gains:
 
 ```text
-state/
-  document.sqlite
-  writer.lock
-  host.lock               # present while a live session advertises itself
-  attachments/            # optional immutable, content-addressed blobs
+  document     the document's identity and the owner's theme overrides
+  checkpoint   the saved document
+  updates      edits saved since the checkpoint
+  attachments  imported files, by content
 ```
 
-The app's Rust core (on Loro) owns the live document and persists opaque checkpoints and updates in SQLite; the page renders snapshots of it. `initial.json` is creation-only data, and `state.schema.json` is a descriptor rather than JSON Schema. There is no editable document JSON projection or `stores/` directory.
+The app's Rust core (on Loro) owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
-The permanent `writer.lock` is the OS ownership lock: never unlink it. `host.lock` is discovery JSON, not ownership. CLI commands route to the live owner's socket or acquire the writer lock and edit the document directly. Headless editing never starts a WebView or loads `assets/app.js`.
+One writer at a time owns a document: an OS lock the app keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView or loads the app's code.
 
-Owner changes are a separate, bounded token object saved in `state/document.sqlite` beside the document. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). Duplicating a document preserves its saved content and overrides while minting a fresh document ID (`doc_id`) and creating fresh ownership files.
+Owner theme changes are a separate, bounded token object in the file's `document` row. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides while minting a fresh document ID (`doc_id`).
 
-## Masters and copies
+## Templates and copies
 
-Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the UI or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same SQLite file.
+Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same file.
 
-Close before moving or copying a document. Keep it on a local filesystem outside iCloud and other synced folders. Packages reject symlink entries, source/dependency caches, and oversized resources. Migrations, schema evolution, and multi-writer local packages are not supported.
+Close before moving or renaming a document. Keep it on a local filesystem outside iCloud and other synced folders. Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.

@@ -60,11 +60,10 @@ function assertTrackedHygiene(files: string[]): void {
       /\.(p8|p12|key|jks|keystore|mobileprovision)$/i.test(name)
     )
       failures.push(path);
-    if (name === "Icon\r") failures.push(path);
     // Retain reviewed source and evidence referenced by the architecture plans.
     // Unlisted private archives remain excluded by .gitignore and this gate.
     if (
-      /^(archive|examples\/archive|Prototypes)\//.test(path) &&
+      /^(archive|examples\/archive)\//.test(path) &&
       !["archive/docs/", "archive/spikes/"].some(prefix => path.startsWith(prefix))
     )
       failures.push(path);
@@ -124,9 +123,11 @@ async function assertTextHygiene(files: string[]): Promise<void> {
       continue;
     if (!(await stat(resolve(root, path))).isFile()) continue;
     const bytes = new Uint8Array(await Bun.file(resolve(root, path)).arrayBuffer());
-    // Extensionless bundled executables are not release text.
-    if (bytes.includes(0)) continue;
-    const text = new TextDecoder().decode(bytes);
+    // A .slop file is SQLite: its text is stored as UTF-8 among binary pages, so it is
+    // scanned byte for byte. Extensionless bundled executables are not release text.
+    const slop = extname(path) === ".slop";
+    if (bytes.includes(0) && !slop) continue;
+    const text = slop ? Buffer.from(bytes).toString("latin1") : new TextDecoder().decode(bytes);
     if (/\/Users\/|\/Volumes\//.test(text)) privatePaths.push(path);
     if (/BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/.test(text)) privateKeys.push(path);
   }
@@ -247,9 +248,9 @@ export async function checkHygiene(): Promise<void> {
 
     checkIgnored("_vibe/reference.png", true),
     checkIgnored("deferred/README.md", true),
-    checkIgnored("archive/templates/unlisted-private/manifest.json", true),
+    checkIgnored("archive/templates/unlisted-private/slop.ts", true),
     checkIgnored("archive/apple/example.swift", true),
-    checkIgnored("examples/archive/example/manifest.json", true),
+    checkIgnored("examples/archive/example/slop.ts", true),
     assertSkill(".agents/skills/hitslop-authoring/SKILL.md"),
     assertSkill(".agents/skills/hitslop-design/SKILL.md"),
     assertSkill(".agents/skills/hitslop/SKILL.md"),

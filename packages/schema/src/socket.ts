@@ -45,7 +45,8 @@ export const SocketReplySchema = Strict({
   /** Every code except "failed" means the request was not applied. Absent or "failed": outcome unknown. */
   code: T.Optional(T.Enum(["rejected", "session_changed", "closing", "unavailable", "failed"])),
 });
-/** `state/host.lock`: where a live owner listens. Clients learn the epoch from `hello`. */
+/** A live owner's discovery, in the registry (`~/.hitslop/live`): where it listens. Clients
+ * learn the epoch from `hello`. */
 export const SocketDiscoverySchema = Strict({
   socket: path,
   documentPath: path,

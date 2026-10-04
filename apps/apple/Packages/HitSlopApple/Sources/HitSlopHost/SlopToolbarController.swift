@@ -37,7 +37,7 @@ extension SlopDocumentWindowController {
   }
   func toolbarView() -> SlopToolbar {
     SlopToolbar(
-      identity: SlopDocumentIdentity(url: packageURL),
+      identity: SlopDocumentIdentity(url: url),
       menuTrackingChanged: { [weak self] tracking in
         guard let self else { return }
         guard !tracking || toolbar?.isVisible == true else { return }

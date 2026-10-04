@@ -1,8 +1,0 @@
-export default {
-  title: "Little things, today",
-  tasks: [
-    { text: "Send the first draft", done: true, archived: false },
-    { text: "Take a walk without my phone", done: false, archived: false },
-    { text: "Make a little room for the weekend", done: false, archived: false },
-  ],
-};

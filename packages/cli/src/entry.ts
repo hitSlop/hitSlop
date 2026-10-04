@@ -14,7 +14,7 @@ export async function discoverEntry(source: string): Promise<{ code: string; fil
   const imports = [
     'import App from "./App.svelte";',
     'import schema from "./schema.ts";',
-    'import { defineSlop } from "@hitslop/document/svelte";',
+    'import { svelteApp } from "@hitslop/document/svelte";',
   ];
   const options = ["schema"];
   if (await has("styles.css")) {
@@ -32,7 +32,7 @@ export async function discoverEntry(source: string): Promise<{ code: string; fil
     }
   }
   return {
-    code: [...imports, `export default defineSlop(App, { ${options.join(", ")} });`].join("\n"),
+    code: [...imports, `export default svelteApp(App, { ${options.join(", ")} });`].join("\n"),
     files,
   };
 }

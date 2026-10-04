@@ -2,13 +2,14 @@ import AppKit
 import Foundation
 import HitSlopCore
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopHost
 
 
 @Test @MainActor func documentWindowUsesTheSlopIconForMiniwindowAndDockMenu() async throws {
     let root = try documentWindowFixture(resizable: true)
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     defer { controller.close() }
     let window = try #require(controller.window)
 
@@ -19,6 +20,8 @@ import Testing
     #expect(window.representedURL?.standardizedFileURL == root.standardizedFileURL)
     #expect(window.title == "fixture.slop")
     #expect(window.miniwindowTitle == "fixture.slop")
+    // The owner reads the icon off the main thread.
+    for _ in 0..<100 where window.miniwindowImage == nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(window.miniwindowImage != nil)
     #expect(controller.documentTitle == "fixture.slop")
     #expect(controller.dockMenuImage.size == NSSize(width: 16, height: 16))
@@ -41,7 +44,7 @@ import Testing
 @Test @MainActor func nonResizableDocumentWindowStillMiniaturizes() async throws {
     let root = try documentWindowFixture(resizable: false)
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     defer { controller.close() }
     let window = try #require(controller.window)
 
@@ -52,27 +55,12 @@ import Testing
 
 
 private func documentWindowFixture(resizable: Bool) throws -> URL {
-    let parent = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-document-window-\(UUID().uuidString)", isDirectory: true)
-    let root = parent.appendingPathComponent("fixture.slop", isDirectory: true)
-    try FileManager.default.createDirectory(at: root.appendingPathComponent("QuickLook"), withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    try Data(#"{"kind":"object","properties":{}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
-    try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
-    try Data("{}".utf8).write(to: root.appendingPathComponent("assets/theme.json"))
-    try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    let resizableJSON = resizable ? "true" : "false"
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
-    try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
-    let skill = root.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
-    try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../../packages/cli/skills/hitslop-document/SKILL.md").standardizedFileURL).write(to: skill)
-    let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-    NSColor.systemOrange.setFill()
-    NSBezierPath(ovalIn: NSRect(x: 64, y: 64, width: 384, height: 384)).fill()
-    NSGraphicsContext.restoreGraphicsState()
-    try #require(bitmap.representation(using: .png, properties: [:])).write(to: root.appendingPathComponent("QuickLook/Icon.png"))
-    return root
+    let stage = try Fixtures.minimalStage(manifest: ["presentation": ["width": 320, "height": 240, "resizable": resizable]])
+    let icon = try Fixtures.png(width: 512, height: 512) { _ in
+      NSColor.systemOrange.setFill()
+      NSBezierPath(ovalIn: NSRect(x: 64, y: 64, width: 384, height: 384)).fill()
+    }
+    try FileManager.default.createDirectory(at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
+    try icon.write(to: stage.appendingPathComponent("artwork/icon.png"))
+    return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("fixture.slop"))
 }

@@ -622,7 +622,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     var initial = CatalogFeature.State()
     initial.isStarted = true; initial.filter = .recents; initial.recents = [first, second]; initial.selectedID = first.id
     var reread = first
-    reread.packageBytes = 42
+    reread.fileBytes = 42
     let changed = reread
     let recentsCalls = LockIsolated(0)
     let store = TestStore(initialState: initial) { CatalogFeature() } withDependencies: {

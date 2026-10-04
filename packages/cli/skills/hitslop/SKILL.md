@@ -12,11 +12,11 @@ Use `bunx @hitslop/cli`, or install with `bun install -g @hitslop/cli` and use `
 Build with slop build SOURCE. Make a writable document with `slop create --from TEMPLATE --output PATH` at a fresh user-selected path; never edit a master under ~/.hitslop/templates or copy one by hand. Open it with `slop open PATH`.
 
 When creating source on the user's behalf, use `slop init SOURCE --yes --brief
-'What the slop should do'`, then set manifest.json's title, description, and
-categories to match what you build (init flags can also set them). Read the generated BRIEF.md and AGENTS.md before building.
+'What the slop should do'`, then set the title, description, and
+categories in slop.ts to match what you build (init flags can also set them). Read the generated BRIEF.md and AGENTS.md before building.
 Human interactive setup can instead launch the user's chosen agent CLI after
 scaffolding. Do not start a nested agent when you are already implementing it.
 
-Read manifest.json, then slop schema DOCUMENT and slop get DOCUMENT. Apply typed operations through slop apply/batch; never edit SQLite or invent stores/data.json. Open-document CLI routes to its native owner; closed editing uses the same engine. After an uncertain mutation, run get before another edit. Never automatically replay mutations.
+Run slop inspect DOCUMENT, then slop schema DOCUMENT and slop get DOCUMENT. Apply typed operations through slop apply/batch; never open a .slop file with SQLite or keep a JSON copy of a document. Open-document CLI routes to its native owner; closed editing uses the same engine. After an uncertain mutation, run get before another edit. Never automatically replay mutations.
 
 Use File → Export PNG/PDF or slop export DOCUMENT --format png|pdf --output FILE to deliver output. Live CLI export uses the selected view; closed export uses the default view. HITSLOP_NATIVE_CLI selects an explicit helper and never silently falls back. The export flushes drafts and persistence, waits for content, and restores the editor. Historical s-expression slop guidance is unrelated.

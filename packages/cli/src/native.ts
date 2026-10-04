@@ -1,17 +1,8 @@
-import { access, constants } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
 import { parseHelperProtocol } from "@hitslop/schema/helper";
-
-async function executable(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { executable } from "./process";
 
 async function nativeOverride(): Promise<string | undefined> {
   const value = process.env.HITSLOP_NATIVE_CLI;
@@ -37,7 +28,7 @@ export async function findNative(): Promise<string> {
 
 /** Refuses a helper that no longer serves, or does not yet serve, this CLI's protocol.
  * Any compatible app build works: app updates keep serving older protocols. */
-export function checkProtocol(reported: string) {
+function checkProtocol(reported: string) {
   let served: { version?: unknown; minimum?: unknown } | undefined;
   try {
     served = JSON.parse(reported);

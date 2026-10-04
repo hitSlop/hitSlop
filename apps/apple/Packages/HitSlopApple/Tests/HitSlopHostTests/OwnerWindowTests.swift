@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import PDFKit
 import Testing
 import HitSlopTestSupport
@@ -14,7 +15,7 @@ extension OwnerClientTests {
     do {
       let root = try contractFixture()
       defer { try? FileManager.default.removeItem(at: root) }
-      let controller = try await SlopDocumentWindowController.open(packageURL: root)
+      let controller = try await SlopDocumentWindowController.open(url: root)
       try await controller.session.waitUntilReady()
       weak var webView = controller.session.webView
       #expect(controller.window?.styleMask.contains(.titled) == false)
@@ -42,10 +43,8 @@ extension OwnerClientTests {
       let duplicate = root.deletingLastPathComponent().appendingPathComponent(
         UUID().uuidString + ".slop")
       defer { try? FileManager.default.removeItem(at: duplicate) }
-      try SlopDuplicator.duplicate(from: root, to: duplicate)
-      #expect(
-        !FileManager.default.fileExists(
-          atPath: duplicate.appendingPathComponent("state/host.lock").path))
+      try await controller.session.copy(to: duplicate)
+      #expect(try liveDiscovery(path: duplicate.path) == nil)
       #expect(
         String(
           decoding: try await command("get", url: duplicate), as: UTF8.self
@@ -60,7 +59,7 @@ extension OwnerClientTests {
           .contains("Closed WASM edit"))
       // An interactive reopen reads back exactly the saved state (the probe app writes nothing).
       let saved = try await command("get", url: root)
-      let reopened = try await SlopDocumentWindowController.open(packageURL: root)
+      let reopened = try await SlopDocumentWindowController.open(url: root)
       try await reopened.session.waitUntilReady()
       #expect(try await command("get", url: root) == saved)
       try await reopened.finishClose()
@@ -75,7 +74,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
@@ -115,7 +114,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
@@ -169,7 +168,7 @@ extension OwnerClientTests {
     for dead in [false, true] {
       let root = try contractFixture()
       defer { try? FileManager.default.removeItem(at: root) }
-      let controller = try await SlopDocumentWindowController.open(packageURL: root)
+      let controller = try await SlopDocumentWindowController.open(url: root)
       try await controller.session.waitUntilReady()
       let old = controller.session.webView
       if dead { controller.session.webViewWebContentProcessDidTerminate(old) }

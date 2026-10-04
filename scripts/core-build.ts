@@ -43,6 +43,15 @@ export async function buildCoreWasm() {
   ]);
 }
 
+/** Every platform a published CLI carries a file engine for, built by the engines workflow
+ * (`.github/workflows/engines.yml`); a local build covers only this machine. */
+export const enginePlatforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] as const;
+
+/** The CLI's file engine (`target/release/slop-engine`), from the same locked core. */
+export async function buildEngine() {
+  await run(["cargo", "build", "--locked", "--release", "-p", "slop-engine"]);
+}
+
 /** Native bindings are generated from the same locked core as the WASM binding. */
 export async function buildCoreNative() {
   if (process.platform !== "darwin") throw new Error("Native core packaging requires macOS");
@@ -127,8 +136,10 @@ export async function buildCoreNative() {
 if (import.meta.main) {
   if (process.argv.includes("--wasm")) await buildCoreWasm();
   else if (process.argv.includes("--native")) await buildCoreNative();
+  else if (process.argv.includes("--engine")) await buildEngine();
   else {
     await buildCoreWasm();
+    await buildEngine();
     await buildCoreNative();
   }
 }

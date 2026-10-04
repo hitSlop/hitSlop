@@ -1,8 +1,10 @@
 /** Crash contract for native storage: a write killed at any phase reopens old-or-new, never torn. */
 import { strict as assert } from "node:assert";
-import { mkdtemp, mkdir, writeFile, rm, cp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { documentFromStage } from "./fixture-documents";
+import { engine } from "../packages/cli/src/engine";
 
 const phases = [
   "hold",
@@ -41,8 +43,7 @@ export async function runCrashMatrix(hostCheck = false) {
   const results: string[] = [];
   try {
     for (const phase of phases) {
-      const root = join(folder, `${phase.replace(":", "-")}.slop`);
-      await cp(fixture, root, { recursive: true });
+      const root = await documentFromStage(fixture, join(folder, `${phase.replace(":", "-")}.slop`), binary);
       const seeded = await native(binary, [
         "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Acknowledged" }),
       ]);
@@ -75,13 +76,13 @@ export async function runCrashMatrix(hostCheck = false) {
     }
     if (hostCheck) {
       // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
-      const root = join(folder, "Host.slop");
-      await cp(fixture, root, { recursive: true });
+      const root = await documentFromStage(fixture, join(folder, "Host.slop"), binary);
       const app = process.env.HITSLOP_APP_BINARY ?? resolve("generated/app/hitSlop.app/Contents/MacOS/hitSlop");
       const host = Bun.spawn([app, root], { stdout: "ignore", stderr: "ignore" });
       try {
         const deadline = Date.now() + 15000;
-        while (!(await Bun.file(join(root, "state/host.lock")).exists())) {
+        // The host is ready once it names its socket for commands.
+        while (!JSON.parse(await engine(["inspect", root])).live) {
           if (Date.now() > deadline || host.exitCode !== null) throw new Error("Native host startup failed");
           await Bun.sleep(30);
         }

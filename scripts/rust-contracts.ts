@@ -1,5 +1,6 @@
-import { DefaultWindowRadius, PackageFormat, RuntimeABI, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
+import { AttachmentLimits, DefaultWindowRadius, PackageFormat, AssetLimits, RuntimeABI, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
 import { ThemeFileSchema } from "../packages/schema/src/values";
+import { AppRowSchema } from "../packages/schema/src/manifest";
 import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, CoreErrorCodes, RowIdRule, IssueCodes, OwnerPatchOpSchema as PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
 
 // The deliberately small generator fails on unsupported types. It generates the
@@ -68,6 +69,17 @@ pub(crate) const ID_ALPHABET: &[u8] = b"${RowIdRule.mintAlphabet}";
 /// A document's saved checkpoint plus updates, in bytes, and its update rows.
 pub const STORAGE_BYTES: usize = ${StorageLimits.bytes};
 pub const STORAGE_ROWS: usize = ${StorageLimits.rows};
+/// A package's app: one asset's bytes, the asset count and their total bytes; and the
+/// largest image it may carry, per side and in pixels.
+pub const ASSET_FILE_BYTES: usize = ${AssetLimits.file};
+pub const ASSET_COUNT: usize = ${AssetLimits.count};
+pub const ASSET_BYTES: usize = ${AssetLimits.bytes};
+pub const IMAGE_SIDE: usize = ${AssetLimits.imageSide};
+pub const IMAGE_PIXELS: usize = ${AssetLimits.imagePixels};
+/// A document's attachments: one file's bytes, their total bytes and their count.
+pub const ATTACHMENT_FILE_BYTES: usize = ${AttachmentLimits.file};
+pub const ATTACHMENT_BYTES: usize = ${AttachmentLimits.total};
+pub const ATTACHMENT_COUNT: usize = ${AttachmentLimits.count};
 pub(crate) fn valid_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= ${RowIdRule.maximum} && value.bytes().all(|b| b"${RowIdRule.characters}".contains(&b))
 }
@@ -120,6 +132,14 @@ pub struct Batch { pub intents: Vec<Intent> }
 #[serde(deny_unknown_fields)]
 pub struct ThemeFile { ${Object.entries(ThemeFileSchema.properties)
   .map(([key, schema]) => `pub ${key}: ${key === "values" ? "std::collections::BTreeMap<String, String>" : rust(schema)}`)
+  .join(", ")} }
+/// A built app (a build's \`app.json\`), as the file engine packs it into the \`app\` row.
+/// Each part stays the JSON text the build wrote: its own validator reads it, in order.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub struct AppRow { ${Object.entries(AppRowSchema.properties)
+  .map(([key, schema]) => `pub ${key}: ${(schema as any).type === "integer" ? "u64" : "Box<serde_json::value::RawValue>"}`)
   .join(", ")} }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

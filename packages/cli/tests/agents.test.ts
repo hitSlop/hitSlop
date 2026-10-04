@@ -92,7 +92,7 @@ test("agent picker launches known and user-entered CLIs in the project with a br
         if (scenario === "gemini") expect(actual.args[0]).toBe("--prompt-interactive");
         if (scenario === "opencode") expect(actual.args[0]).toBe("--prompt");
         if (scenario === "custom") expect(actual.args[0]).toBe("-i");
-        expect(actual.args.at(-1)).toContain("Read manifest.json, AGENTS.md, BRIEF.md");
+        expect(actual.args.at(-1)).toContain("Read slop.ts, AGENTS.md, BRIEF.md");
         expect(actual.args.at(-1)).toContain("bun run check");
       }
       expect(await readFile(join(project, "BRIEF.md"), "utf8")).toBe(

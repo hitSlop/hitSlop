@@ -2,7 +2,8 @@
 //! log, appended saves, maintenance checkpoints and compactions (each replacing a full
 //! log; export and write timed separately), theme saves and duplication. Run with
 //! `cargo run --release -p hitslop-core --features storage --example store_cost`.
-use hitslop_core::store::{self, Mode, Store};
+use hitslop_core::file;
+use hitslop_core::store::{Mode, Store};
 use hitslop_core::{theme::Change, Document};
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -57,7 +58,6 @@ fn main() {
         let label = format!("{rows}x{text}");
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("Cost.slop");
-        std::fs::create_dir(&root).unwrap();
         let mut seed = 0x2545_f491_4f6c_dd1du64;
         let mut letter = || {
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -67,23 +67,33 @@ fn main() {
             .map(|i| json!({"$id":format!("r{i}"),"text":(0..text).map(|_| letter()).collect::<String>(),"done":false}))
             .collect();
         let initial = json!({"title":"t","rows":items,"hits":0}).to_string();
-        let key = hitslop_core::validate(&schema, &initial).unwrap();
+        let template = dir.path().join("Cost.template.slop");
+        let app = file::App {
+            package_format: 1,
+            runtime_abi: 1,
+            manifest: r#"{"author":{"name":"Bench"},"slug":"cost","title":"Cost","description":"Storage costs.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#.into(),
+            descriptor: schema.clone(),
+            initial: initial.clone(),
+            theme: defaults.into(),
+        };
+        file::write_template(&template, &app, &[("app.js".into(), b"export default {}".to_vec())], &[]).unwrap();
+        file::create_document(&template, &root).unwrap();
         let store = Store::open(&root, Mode::Document).unwrap();
-        let mut doc = store.document(&key, &initial, defaults).unwrap();
+        let mut doc = store.document().unwrap();
         let appends = fill_log(&store, &mut doc, rows, 0, 255);
         store.close().unwrap();
         let opens: Vec<f64> = (0..5)
             .map(|_| {
                 let started = Instant::now();
                 let store = Store::open(&root, Mode::Document).unwrap();
-                store.document(&key, &initial, defaults).unwrap();
+                store.document().unwrap();
                 let elapsed = ms(started);
                 store.close().unwrap();
                 elapsed
             })
             .collect();
         let store = Store::open(&root, Mode::Document).unwrap();
-        let mut doc = store.document(&key, &initial, defaults).unwrap();
+        let mut doc = store.document().unwrap();
         // Every sample replaces a full log, as a real checkpoint does; the first uses the
         // log saved before reopening.
         let (mut exports, mut writes, mut compactions) = (vec![], vec![], vec![]);
@@ -112,11 +122,11 @@ fn main() {
         let duplicates: Vec<f64> = (0..5)
             .map(|i| {
                 let copy = dir.path().join(format!("Copy {i}.slop"));
-                std::fs::create_dir(&copy).unwrap();
                 let started = Instant::now();
-                store::duplicate(&root, &copy).unwrap();
+                // The owner copies the open document; saves wait behind it.
+                store.copy_to(&copy).unwrap();
                 let elapsed = ms(started);
-                std::fs::remove_dir_all(&copy).unwrap();
+                std::fs::remove_file(&copy).unwrap();
                 elapsed
             })
             .collect();
@@ -130,7 +140,7 @@ fn main() {
             "themeSaveMS": summary(themes),
             "duplicateMS": summary(duplicates),
             "checkpointBytes": meta.checkpoint_bytes,
-            "fileBytes": std::fs::metadata(root.join("state/document.sqlite")).unwrap().len(),
+            "fileBytes": std::fs::metadata(&root).unwrap().len(),
         }));
         store.close().unwrap();
     }

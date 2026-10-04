@@ -36,19 +36,21 @@ Choose each field by how edits from several places should merge:
 
 `maxLength` counts UTF-16 units, bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state; anything an export or icon shows must be a field, because they render from the saved document.
 
-```ts title="initial.ts"
-export default {
-  title: "Weekend",
-  archived: false,
-  budget: 120,
-  mood: 4,
-  lane: "todo",
-  tasks: [{ text: "Buy groceries", done: false }],
-  visits: 0,
-};
+A new document starts from `slop.ts`'s `initial`, which must fit the schema:
+
+```ts
+  initial: {
+    title: "Weekend",
+    archived: false,
+    budget: 120,
+    mood: 4,
+    lane: "todo",
+    tasks: [{ text: "Buy groceries", done: false }],
+    visits: 0,
+  },
 ```
 
-The builder validates initial values and emits `state.schema.json` and `initial.json`. The former is a document descriptor, not JSON Schema. The latter seeds a new document only; editing it does not rewrite an existing document. Schema evolution is deferred.
+The builder validates initial values and stores the schema's descriptor and the initial values in the template. The descriptor is not JSON Schema, and `slop schema` prints it. Initial values seed a new document only; rebuilding a template does not rewrite an existing document. Schema evolution is deferred.
 
 ## Read snapshots; write through handles
 

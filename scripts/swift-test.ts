@@ -1,5 +1,7 @@
 import { prepareNativeFixtures } from "./native-fixtures";
 import { repository } from "./templates";
+import { useTestRegistry } from "./runtime-artifacts";
+useTestRegistry();
 if (process.platform !== "darwin") throw new Error("Native tests require macOS.");
 const fixtures = await prepareNativeFixtures();
 const child = Bun.spawn(

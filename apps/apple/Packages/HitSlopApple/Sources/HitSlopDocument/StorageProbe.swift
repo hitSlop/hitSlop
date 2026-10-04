@@ -11,8 +11,7 @@ import HitSlopCoreBinding
       let root = URL(fileURLWithPath: args[0])
       let phase = args[1]
       let marker = URL(fileURLWithPath: args[2])
-      let package = try SlopPackage(rootURL: root)
-      let store = try storeCall { try NativeStore.open(root: root.path, mode: .document) }
+      let store = try storeCall { try NativeStore.open(path: root.path, mode: .document) }
       defer { try? store.close() }
       let stop: (String) -> Void = { at in
         if at == phase {
@@ -24,8 +23,7 @@ import HitSlopCoreBinding
         stop("hold")
         return
       }
-      let initial = String(decoding: try SlopFile.read(package.initialURL, within: root), as: UTF8.self)
-      let core = try store.document(schemaKey: package.schemaKey, initialJson: initial, themeDefaultsJson: package.themeDefaults)
+      let core = try store.document()
       if phase.hasPrefix("theme:") {
         // A theme change is saved by a theme-only job.
         _ = try store.theme(change: .set(valuesJson: ##"{"accent":"#112233"}"##))

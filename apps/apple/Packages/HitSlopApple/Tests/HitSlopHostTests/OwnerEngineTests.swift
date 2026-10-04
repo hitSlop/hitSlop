@@ -14,7 +14,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let epoch = controller.session.epoch
     _ = try await command("apply", url: root, operation: setTitle("Preserved through interface reload"))
@@ -71,7 +71,7 @@ extension OwnerClientTests {
     let duplicate = root.deletingLastPathComponent().appendingPathComponent(
       UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: duplicate) }
-    try SlopDuplicator.duplicate(from: root, to: duplicate)
+    try await controller.session.copy(to: duplicate)
     #expect(try await command("theme.get", url: duplicate) == command("theme.get", url: root))
     // A duplicate is a new logical document carrying the same saved state.
     #expect(try savedDocumentID(root) != savedDocumentID(duplicate))
@@ -104,7 +104,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let view = controller.session.webView
     let focused = try await view.callAsyncJavaScript(
@@ -125,7 +125,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let engine = controller.session
     let epoch = engine.epoch
@@ -144,8 +144,7 @@ extension OwnerClientTests {
     engine.owner.testingPhase = nil
     for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
     #expect(engine.rendererDead)
-    #expect(
-      FileManager.default.fileExists(atPath: root.appendingPathComponent("state/host.lock").path))
+    #expect(try liveDiscovery(path: root.path) != nil)
     #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
     _ = try await controller.perform(.retry)
     #expect(engine.epoch == epoch)
@@ -154,8 +153,7 @@ extension OwnerClientTests {
     #expect(String(decoding: bytes, as: UTF8.self).contains("Committed before renderer death"))
     try await controller.session.close()
     try await controller.session.close()
-    #expect(
-      !FileManager.default.fileExists(atPath: root.appendingPathComponent("state/host.lock").path))
+    #expect(try liveDiscovery(path: root.path) == nil)
     let ownership = try WriterLock.acquire(root)
     ownership.release()
   }
@@ -166,7 +164,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let session = controller.session
     session.owner.testingPhase = { phase in
@@ -192,7 +190,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let engine = controller.session
     engine.owner.testingPhase = { phase in
@@ -217,7 +215,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let engine = controller.session
     // Keep the window's handling, without presenting save or failure sheets.
@@ -253,7 +251,7 @@ extension OwnerClientTests {
   @Test @MainActor func failedSaveRetainsOwnershipAndRendererDeathReleasesOnClose() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     var operations: [SlopTelemetryEvent.Failure] = []
     controller.telemetry = SlopTelemetry { if case .failed(let operation, _) = $0 { operations.append(operation) } }
@@ -303,7 +301,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
@@ -333,7 +331,7 @@ extension OwnerClientTests {
   @Test @MainActor func saveTelemetryReportsOneFailureUntilRecovery() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     var events: [SlopTelemetryEvent] = []
     controller.telemetry = SlopTelemetry { if case .failed = $0 { events.append($0) } }
@@ -358,7 +356,7 @@ extension OwnerClientTests {
   @Test @MainActor func onlySaveFailuresBlockTheWindow() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
     controller.pageSession(controller.session, didReport: SlopPageIssue(
       message: "DocumentError: out_of_range", isOperation: true))
@@ -375,7 +373,7 @@ extension OwnerClientTests {
   @Test @MainActor func authoredTelemetryUsesOnlyFixedCategories() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
     var failures: [SlopFailureContext] = []
     controller.telemetry = SlopTelemetry {
@@ -395,7 +393,7 @@ extension OwnerClientTests {
   @Test @MainActor func rendererTelemetryDeduplicatesUntilReady() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
     var failures = 0
     controller.telemetry = SlopTelemetry { if case .failed = $0 { failures += 1 } }
@@ -416,7 +414,7 @@ extension OwnerClientTests {
   @Test @MainActor func duplicateTelemetryReportsRejectedDestinationWithoutLosingSource() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
     var failures: [SlopFailureContext] = []
     controller.telemetry = SlopTelemetry {
@@ -434,7 +432,7 @@ extension OwnerClientTests {
   }
 }
 
-/// The saved document identity of a closed or live package (a snapshot takes no lock).
+/// The saved document identity of a closed or live document (a snapshot takes no lock).
 private func savedDocumentID(_ root: URL) throws -> String {
-  try NativeStore.open(root: root.path, mode: .snapshot).docId()
+  try NativeStore.open(path: root.path, mode: .snapshot).docId()
 }

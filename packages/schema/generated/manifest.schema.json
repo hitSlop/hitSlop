@@ -9,10 +9,6 @@
     "presentation"
   ],
   "properties": {
-    "$schema": {
-      "type": "string",
-      "const": "https://api.hitslop.com/schemas/manifest.schema.json"
-    },
     "author": {
       "type": "object",
       "required": [

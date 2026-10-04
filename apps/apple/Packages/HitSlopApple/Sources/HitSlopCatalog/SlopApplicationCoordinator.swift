@@ -20,19 +20,21 @@ import SwiftUI
 
     private var previousDocumentCount = 0
 
-    public convenience init(templatesURL: URL = SlopTemplateLocation.defaultTemplatesRoot) {
+    public convenience init(templatesURL: URL = SlopTemplateLocation.templatesRoot) {
         self.init(templatesURL: templatesURL, presentsWindows: true)
     }
 
-    /// Native integration tests use hidden windows and avoid modifying the user's recents.
-    init(templatesURL: URL, presentsWindows: Bool) {
+    /// Native integration tests use hidden windows and avoid modifying the user's recents;
+    /// they may supply the catalog's client.
+    init(templatesURL: URL, presentsWindows: Bool, catalogClient: CatalogClient? = nil) {
         self.presentsWindows = presentsWindows
-        let native = NativeDocumentServices(templatesURL: templatesURL, presentsWindows: presentsWindows, telemetry: presentsWindows ? HitSlopFirebase.telemetry : .disabled)
+        let native = NativeDocumentServices(presentsWindows: presentsWindows, telemetry: presentsWindows ? HitSlopFirebase.telemetry : .disabled)
         let catalogServices = CatalogServices(templatesURL: templatesURL, telemetry: presentsWindows ? HitSlopFirebase.telemetry : .disabled)
         self.native = native; self.catalogServices = catalogServices
         store = Store(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
-            $0.catalogClient = presentsWindows ? catalogServices.client : .empty
+            $0.catalogClient = catalogClient ?? (presentsWindows ? catalogServices.client : .empty)
             $0.documentClient = native.client
+            $0.uuid = .init { UUID() }
         }
         native.routing = { [weak self] id in
             SlopDocumentRouting(
@@ -85,24 +87,25 @@ import SwiftUI
     public func openDocument(_ url: URL) {
         guard store.quitPhase == .running else { return }
         guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
-            store.send(.externalFailure("Document packages cannot be symlinks."))
+            store.send(.externalFailure("Documents cannot be symlinks."))
             return
         }
-        let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
-        if SlopTemplateLocation.isManagedTemplatePackage(canonical, templatesRoot: catalogServices.templatesURL) {
+        let canonical = SlopPath.canonical(url)
+        // A template opens by creating a document from it, wherever it lives. Its header
+        // decides, so a document is checked once, by its owner's open. Anything else,
+        // including a file that fails its checks, goes to the document path, which reports.
+        Task {
+            let template = try? await SlopPreparation.run { () throws -> SlopFile? in
+                guard try SlopFile.kind(of: canonical) == .template else { return nil }
+                return try SlopFile(url: canonical)
+            }
+            guard store.quitPhase == .running else { return }
+            guard let template else { store.send(.openDocument(canonical)); return }
             showCatalog()
-            Task { do {
-                let package = try await SlopPreparation.run {
-                    let package = try SlopPackage(rootURL: canonical)
-                    try package.validateAsTemplate()
-                    return package
-                }
-                guard store.quitPhase == .running else { return }
-                var entry = CatalogEntry(id: "local:\(package.manifest.slug)", source: .local(canonical), title: package.manifest.title)
-                CatalogServices.apply(package.manifest, to: &entry)
-                store.send(.catalog(.primaryAction(entry)))
-            } catch { store.send(.externalFailure(error.localizedDescription)) } }
-        } else { store.send(.openDocument(canonical)) }
+            var entry = CatalogEntry(id: "local:\(template.manifest.slug)", source: .local(canonical), title: template.manifest.title)
+            CatalogServices.apply(template.manifest, to: &entry)
+            store.send(.catalog(.primaryAction(entry)))
+        }
     }
     public func revealDocuments() {
         for controller in native.controllers.values { controller.revealFromDock() }
@@ -149,10 +152,9 @@ import SwiftUI
 }
 
 @MainActor private final class NativeDocumentServices {
-    private let templatesURL: URL
     private let presentsWindows: Bool
     private let telemetry: SlopTelemetry
-    init(templatesURL: URL, presentsWindows: Bool, telemetry: SlopTelemetry) { self.templatesURL = templatesURL; self.presentsWindows = presentsWindows; self.telemetry = telemetry }
+    init(presentsWindows: Bool, telemetry: SlopTelemetry) { self.presentsWindows = presentsWindows; self.telemetry = telemetry }
     var controllers: [UUID: SlopDocumentWindowController] = [:]
     private var preparingURLs: [UUID: URL] = [:]
     /// Sends a document's window commands to the coordinator, which runs them in order.
@@ -181,19 +183,16 @@ import SwiftUI
         )
     }
     func controller(_ id: UUID) throws -> SlopDocumentWindowController {
-        guard let controller = controllers[id] else { throw SlopPackageError.invalid("The document is no longer open.") }
+        guard let controller = controllers[id] else { throw SlopError.invalid("The document is no longer open.") }
         return controller
     }
     private func open(_ id: UUID, url: URL) async throws -> String {
-        guard !SlopTemplateLocation.isManagedTemplatePackage(url, templatesRoot: templatesURL) else {
-            throw SlopPackageError.invalid("Create a document from this template before opening it.")
-        }
         try Task.checkCancellation()
         preparingURLs[id] = url
         defer { preparingURLs[id] = nil }
-        guard let routing = routing?(id) else { throw SlopPackageError.invalid("Document windows need a coordinator.") }
+        guard let routing = routing?(id) else { throw SlopError.invalid("Document windows need a coordinator.") }
         let controller = try await SlopDocumentWindowController.open(
-            packageURL: url, routing: routing, presentsWindow: presentsWindows, telemetry: telemetry)
+            url: url, routing: routing, presentsWindow: presentsWindows, telemetry: telemetry)
         controllers[id] = controller
         onOpened?(id, controller)
         if presentsWindows {

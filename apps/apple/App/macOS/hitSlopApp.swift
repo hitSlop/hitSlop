@@ -55,6 +55,11 @@ private struct UpdateSettingsView: View {
         NSApp.setActivationPolicy(.regular)
         installMenus()
         HitSlopFirebase.telemetry.send(.launched)
+        // A crashed session's discovery file would name a dead owner; clear it off the main
+        // thread.
+        Task.detached(priority: .utility) { SlopRegistry.sweep() }
+        // Artwork a quit left stale is refreshed now, one render at a time.
+        SlopDocumentWindowController.resumeAssetRefreshes(telemetry: HitSlopFirebase.telemetry)
         let urls = CommandLine.arguments.dropFirst().filter { $0.hasSuffix(".slop") }.map(URL.init(fileURLWithPath:))
         if urls.isEmpty {
             showCatalog()
@@ -83,7 +88,7 @@ private struct UpdateSettingsView: View {
         for controller in open {
             let item = NSMenuItem(title: controller.documentTitle, action: #selector(focusDocumentFromDock(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = controller.packageURL
+            item.representedObject = controller.url
             item.image = controller.dockMenuImage
             menu.addItem(item)
         }
@@ -108,6 +113,7 @@ private struct UpdateSettingsView: View {
         guard panel.runModal() == .OK else { return }; panel.urls.forEach(openDocument)
     }
     @objc private func duplicateActive() { coordinator.sendToActiveDocument(.duplicate) }
+    @objc private func shareActive() { coordinator.sendToActiveDocument(.share) }
     @objc private func exportPNG() { coordinator.sendToActiveDocument(.exportPNG) }
     @objc private func exportPDF() { coordinator.sendToActiveDocument(.exportPDF) }
     @objc private func togglePin() { coordinator.sendToActiveDocument(.pin(!coordinator.isActiveDocumentPinned)) }
@@ -165,6 +171,7 @@ private struct UpdateSettingsView: View {
         file.addItem(recentItem)
         file.addItem(.separator())
         item(file, "Duplicate…", #selector(duplicateActive), "d")
+        item(file, "Share a Copy…", #selector(shareActive), "")
         let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: ""), exportMenu = NSMenu(title: "Export"); export.submenu = exportMenu; file.addItem(export)
         item(exportMenu, "Export PNG…", #selector(exportPNG), ""); item(exportMenu, "Export PDF…", #selector(exportPDF), "")
         item(file, "Import Theme…", #selector(importTheme), ""); item(file, "Export Theme…", #selector(exportTheme), "")
@@ -200,7 +207,7 @@ private struct UpdateSettingsView: View {
         guard menu === recentMenu else { return }
         menu.removeAllItems()
         let urls = NSDocumentController.shared.recentDocumentURLs.filter {
-            $0.pathExtension.lowercased() == "slop" && !SlopTemplateLocation.isManagedTemplatePackage($0)
+            $0.pathExtension.lowercased() == "slop"
         }
         if urls.isEmpty {
             let empty = menu.addItem(withTitle: "No Recent Documents", action: nil, keyEquivalent: "")
@@ -218,7 +225,7 @@ private struct UpdateSettingsView: View {
     }
     @discardableResult private func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) -> NSMenuItem { let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self; return value }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if [#selector(duplicateActive), #selector(exportPNG), #selector(exportPDF), #selector(togglePin)].contains(menuItem.action) { if menuItem.action == #selector(togglePin) { menuItem.state = coordinator.isActiveDocumentPinned ? .on : .off }; return coordinator.canPerformDocumentCommands }
+        if [#selector(duplicateActive), #selector(shareActive), #selector(exportPNG), #selector(exportPDF), #selector(togglePin)].contains(menuItem.action) { if menuItem.action == #selector(togglePin) { menuItem.state = coordinator.isActiveDocumentPinned ? .on : .off }; return coordinator.canPerformDocumentCommands }
         if menuItem.action == #selector(toggleTheme) {
             menuItem.state = coordinator.isActiveDocumentThemeShown ? .on : .off
             return coordinator.canPerformDocumentCommands && (coordinator.isActiveDocumentThemeShown || coordinator.canEditActiveDocumentTheme)

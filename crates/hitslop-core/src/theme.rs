@@ -1,5 +1,5 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
-//! the colors a package declares, which the person may override. No document engine.
+//! the colors an app declares, which the person may override. No document engine.
 use crate::wire::{ThemeFile, THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIX, THEME_TOKENS};
 use crate::{encode, err, parse, Code, Result};
 use std::collections::BTreeMap;
@@ -64,7 +64,7 @@ impl<'de> serde::Deserialize<'de> for Ordered {
         d.deserialize_map(Entries)
     }
 }
-/// A package's declared colors (`assets/theme.json`), in the order the author wrote them.
+/// An app's declared colors (its `app` row's theme), in the order the author wrote them.
 pub fn validate_defaults(json: &str) -> Result<Vec<(String, String)>> {
     let Ordered(tokens) = parse(json)?;
     let defaults: Values = tokens.iter().cloned().collect();
@@ -91,7 +91,7 @@ pub struct ThemeState {
     pub effective: String,
 }
 
-/// A document's palette: its package's declared colors and the owner's overrides.
+/// A document's palette: its app's declared colors and the owner's overrides.
 #[derive(Clone, Debug)]
 pub struct Theme {
     defaults: Values,

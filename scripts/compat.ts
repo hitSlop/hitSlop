@@ -22,7 +22,7 @@ export type Release = {
   inputs: string;
   producer: { coreBuildID: string; shell: string };
   files: Record<string, string>;
-  packages: Record<string, string>;
+  templates: Record<string, string>;
   archives: Record<string, string>;
   toolchain: Record<string, string>;
   /** Page scenarios run with this clock, so date-dependent apps behave the same later. */

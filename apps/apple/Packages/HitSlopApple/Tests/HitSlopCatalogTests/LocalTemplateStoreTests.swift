@@ -6,27 +6,30 @@ import HitSlopFeatures
 import HitSlopHost
 import HitSlopDocument
 import Testing
+import HitSlopTestSupport
+import HitSlopCoreBinding
+import SQLite3
 import SwiftUI
 @testable import HitSlopCatalog
 
 // Same-path artwork replacement must update an already mounted catalog, without reselection.
 @Test(arguments: [false, true]) @MainActor func displayedCatalogArtworkRefreshesAfterSamePathReplacement(icon: Bool) async throws {
     _ = NSApplication.shared
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try writeTemplate(named: "preview-refresh", in: root)
-    let artwork = package.appendingPathComponent(icon ? "QuickLook/Icon.png" : "QuickLook/Preview.png")
-    try coloredArtwork(.red).write(to: artwork)
-    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: artwork.path)
+    let red = try coloredArtwork(.red)
+    let template = try writeTemplate(named: "preview-refresh", in: root, preview: red, icon: red)
+    let file = root.appendingPathComponent("document.slop")
+    _ = try SlopFile.create(from: template, to: file)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: file.path)
     let scanner = CatalogScanner()
-    let templates = root.appendingPathComponent("templates")
     var initial = CatalogFeature.State()
     initial.isStarted = true
     initial.filter = .recents
-    initial.recents = try await scanner.recents([package], templatesRoot: templates)
+    initial.recents = try await scanner.recents([file])
     initial.selectedID = try #require(initial.recents.first).id
     let store = Store(initialState: initial) { CatalogFeature() } withDependencies: {
-        $0.catalogClient.recents = { (try? await scanner.recents([package], templatesRoot: templates)) ?? [] }
+        $0.catalogClient.recents = { (try? await scanner.recents([file])) ?? [] }
         $0.catalogClient.recent = { try? await scanner.recent($0) }
         $0.catalogClient.refreshLocal = { _ in }
     }
@@ -38,25 +41,14 @@ import SwiftUI
     window.orderFront(nil)
     defer { window.close() }
     try await expectPreview(in: host, blue: false, minimumPixels: icon ? 30 : 100)
-    if icon {
-        SlopPreviewWriter.installFinderIcon(try coloredArtwork(.blue), for: package)
-    } else {
-        try SlopPreviewWriter.write(coloredArtwork(.blue), to: package)
-    }
+    let blue = try coloredArtwork(.blue)
+    SlopPreviewWriter.writeRendered(preview: icon ? nil : blue, icon: icon ? blue : nil, marker: try savedMarker(file), to: file)
     try await expectPreview(in: host, blue: true, minimumPixels: icon ? 30 : 100)
     #expect(store.selectedID == initial.selectedID)
 }
 
-@MainActor private func coloredArtwork(_ color: NSColor) throws -> Data {
-    let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-    color.setFill()
-    NSRect(x: 0, y: 0, width: 512, height: 512).fill()
-    NSGraphicsContext.restoreGraphicsState()
-    return try #require(bitmap.representation(using: .png, properties: [:]))
+private func coloredArtwork(_ color: NSColor) throws -> Data {
+    try Fixtures.png(width: 512, height: 512) { color.setFill(); $0.fill() }
 }
 
 @MainActor private func expectPreview(in view: NSView, blue: Bool, minimumPixels: Int) async throws {
@@ -84,63 +76,52 @@ import SwiftUI
     Issue.record("Catalog did not display the \(blue ? "replacement blue" : "initial red") artwork")
 }
 
-@Test @MainActor func discoversAndDuplicatesInstalledTemplate() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+@Test @MainActor func discoversAndCreatesFromInstalledTemplate() async throws {
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try writeTemplate(named: "tiny-counter", in: root)
-    let manifestURL = package.appendingPathComponent("manifest.json")
-    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
-    manifest["categories"] = ["utilities", "other"]
-    try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]).write(to: manifestURL)
+    let file = try writeTemplate(named: "tiny-counter", in: root, categories: ["utilities", "other"])
 
     let store = LocalTemplateStore(templatesURL: root)
     await store.refresh()
     #expect(store.templates.count == 1)
     #expect(store.templates.first?.manifest.title == "Tiny Counter")
-    #expect(store.templates.first?.icon.url.lastPathComponent == "Icon.png")
+    #expect(store.templates.first?.icon.name == .icon)
     #expect(store.issues.isEmpty)
 
-    let destination = root.appendingPathComponent("created.slop", isDirectory: true)
-    let created = try SlopDuplicator.duplicate(from: #require(store.templates.first).packageURL, to: destination, fromTemplate: true)
-    SlopPreviewWriter.installAuthoredIcon(for: created)
-    #expect(try Data(contentsOf: package.appendingPathComponent("manifest.json")) == Data(contentsOf: destination.appendingPathComponent("manifest.json")))
-    #expect(try SlopPackage(rootURL: destination).manifest.categories == [.utilities, .other])
-    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("assets/app.js").path))
-    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("QuickLook/Preview.png").path))
-    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("QuickLook/Icon.png").path))
-    let updatedPreview = Data("updated preview".utf8)
-    try SlopPreviewWriter.write(updatedPreview, to: destination)
-    #expect(try Data(contentsOf: destination.appendingPathComponent("QuickLook/Preview.png")) == updatedPreview)
-    #expect(try Data(contentsOf: destination.appendingPathComponent("QuickLook/Icon.png")) == iconPNG)
-    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Icon\r").path))
+    let destination = root.appendingPathComponent("created.slop")
+    _ = try SlopFile.create(from: #require(store.templates.first).url, to: destination)
+    #expect(try SlopFile(url: destination).manifest.categories == [.utilities, .other])
+    #expect(SlopArtwork.png(destination, .preview) == png)
+    #expect(SlopArtwork.png(destination, .icon) == iconPNG)
+    let updatedPreview = try coloredArtwork(.red)
+    SlopPreviewWriter.writeRendered(preview: updatedPreview, icon: nil, marker: try savedMarker(destination), to: destination)
+    #expect(SlopArtwork.png(destination, .preview) == updatedPreview)
+    #expect(SlopArtwork.png(destination, .icon) == iconPNG)
     let updatedIcon = try coloredArtwork(.blue)
-    SlopPreviewWriter.installFinderIcon(updatedIcon, for: destination)
-    #expect(try Data(contentsOf: destination.appendingPathComponent("QuickLook/Icon.png")) == updatedIcon)
-    #expect(try Data(contentsOf: package.appendingPathComponent("QuickLook/Icon.png")) == iconPNG)
-    #expect(!FileManager.default.fileExists(atPath: package.appendingPathComponent("Icon\r").path))
-    #expect(!FileManager.default.fileExists(atPath: destination.appendingPathComponent("stores").path))
+    SlopPreviewWriter.writeRendered(preview: nil, icon: updatedIcon, marker: try savedMarker(destination), to: destination)
+    #expect(SlopArtwork.png(destination, .icon) == updatedIcon)
+    // The template keeps its own artwork.
+    #expect(SlopArtwork.png(file, .icon) == iconPNG)
 }
 
-@Test @MainActor func failedIconWritePreservesPreviousArtwork() throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+@Test @MainActor func failedArtworkWritePreservesPreviousArtwork() throws {
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try writeTemplate(named: "icon-write-failure", in: root)
-    SlopPreviewWriter.installAuthoredIcon(for: try SlopPackage(rootURL: package))
-    let icon = package.appendingPathComponent("QuickLook/Icon.png")
-    let finderIcon = package.appendingPathComponent("Icon\r/..namedfork/rsrc")
-    let previousFinderIcon = try Data(contentsOf: finderIcon)
-    try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: icon.path)
-    defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: icon.path) }
+    let template = try writeTemplate(named: "icon-write-failure", in: root)
+    let file = root.appendingPathComponent("document.slop")
+    _ = try SlopFile.create(from: template, to: file)
+    let marker = try savedMarker(file)
+    try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: file.path)
+    defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: file.path) }
     var failures: [SlopTelemetryEvent] = []
-    SlopPreviewWriter.installFinderIcon(try coloredArtwork(.blue), for: package,
+    SlopPreviewWriter.writeRendered(preview: nil, icon: try coloredArtwork(.blue), marker: marker, to: file,
         telemetry: SlopTelemetry { if case .failed = $0 { failures.append($0) } })
-    #expect(try Data(contentsOf: icon) == iconPNG)
-    #expect(try Data(contentsOf: finderIcon) == previousFinderIcon)
+    #expect(SlopArtwork.png(file, .icon) == iconPNG)
     #expect(failures.count == 1)
 }
 
 @Test @MainActor func discoversOnlyTopLevelPackages() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
     _ = try writeTemplate(named: "tiny-counter", in: root)
     _ = try writeTemplate(named: "cached-slop", in: root.appendingPathComponent("nested/archived/cached-slop", isDirectory: true), fileName: "1.slop")
@@ -151,56 +132,56 @@ import SwiftUI
     #expect(store.issues.isEmpty)
 }
 
-private let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
-private let iconPNG = try! makeIconPNG()
+private let png = try! Fixtures.png(width: 2, height: 2)
+private let iconPNG = try! Fixtures.png(width: 512, height: 512)
 
-private func writeTemplate(named slug: String, in directory: URL, fileName: String? = nil) throws -> URL {
-    let package = directory.appendingPathComponent(fileName ?? "\(slug).slop", isDirectory: true)
-    try FileManager.default.createDirectory(at: package.appendingPathComponent("QuickLook"), withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: package.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data("export default { mount() { return {}; } };".utf8).write(to: package.appendingPathComponent("assets/app.js"))
-    try Data(#"{"kind":"object","properties":{}}"#.utf8).write(to: package.appendingPathComponent("state.schema.json"))
-    try Data("{}".utf8).write(to: package.appendingPathComponent("initial.json"))
-    try Data("{}".utf8).write(to: package.appendingPathComponent("assets/theme.json"))
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author","url":"https://example.com"},"slug":"\#(slug)","title":"Tiny Counter","description":"Counts a very small thing.","categories":["utilities","personal"],"presentation":{"width":320,"height":240}}"#
-    try Data(manifest.utf8).write(to: package.appendingPathComponent("manifest.json"))
-    let skill = package.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
-    try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../../packages/cli/skills/hitslop-document/SKILL.md").standardizedFileURL).write(to: skill)
-    try png.write(to: package.appendingPathComponent("QuickLook/Preview.png"))
-    try iconPNG.write(to: package.appendingPathComponent("QuickLook/Icon.png"))
-    return package
+/// An installed template built the way `slop build` builds one, with preview and icon artwork.
+private func writeTemplate(
+    named slug: String, in directory: URL, fileName: String? = nil, categories: [String] = ["utilities", "personal"],
+    preview: Data = png, icon: Data = iconPNG
+) throws -> URL {
+    let stage = try Fixtures.minimalStage(slug: slug, manifest: ["title": "Tiny Counter", "categories": categories])
+    defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
+    try FileManager.default.createDirectory(at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
+    try preview.write(to: stage.appendingPathComponent("artwork/preview.png"))
+    try icon.write(to: stage.appendingPathComponent("artwork/icon.png"))
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let template = directory.appendingPathComponent(fileName ?? "\(slug).slop")
+    try packTemplate(stage: stage.path, destination: template.path)
+    return template
 }
 
-private func makeIconPNG() throws -> Data {
-    let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 512, pixelsHigh: 512, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
-    return bitmap.representation(using: .png, properties: [:])!
+
+/// The saved state a render of the closed document would read.
+private func savedMarker(_ document: URL) throws -> String {
+    let store = try NativeStore.open(path: document.path, mode: .snapshot)
+    defer { try? store.close() }
+    return try store.savedMarker()
 }
 
-// Installed templates are validated once per version: an unchanged package is listed
-// without being read again, and a replaced one is validated anew.
-@Test func templatesAreValidatedOncePerVersion() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+// An installed template is validated again once its file changes.
+@Test func aChangedTemplateIsValidatedAgain() async throws {
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
-    let package = try writeTemplate(named: "cached", in: root)
+    let file = try writeTemplate(named: "cached", in: root)
     let scanner = CatalogScanner()
-    #expect(try await scanner.local(at: root, makeImmutable: false).templates.count == 1)
-    // Editing a file in place leaves the package's version unchanged.
-    try Data("not json".utf8).write(to: package.appendingPathComponent("initial.json"))
-    #expect(try await scanner.local(at: root, makeImmutable: false).templates.count == 1)
-    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
-        ofItemAtPath: package.appendingPathComponent("manifest.json").path)
-    let rescanned = try await scanner.local(at: root, makeImmutable: false)
+    #expect(try await scanner.local(at: root).templates.count == 1)
+    var db: OpaquePointer?
+    #expect(sqlite3_open(file.path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "UPDATE app SET manifest = substr(manifest, 2)", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
+    let rescanned = try await scanner.local(at: root)
     #expect(rescanned.templates.isEmpty)
     #expect(rescanned.issues.count == 1)
 }
 
 @Test @MainActor func templateIdentityIncludesItsSource() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
     for source in ["built-in", "registered"] { _ = try writeTemplate(named: "same-slug", in: root.appendingPathComponent(source)) }
     let scanner = CatalogScanner()
-    let builtIn = try await scanner.local(at: root.appendingPathComponent("built-in"), makeImmutable: false)
+    let builtIn = try await scanner.local(at: root.appendingPathComponent("built-in"))
     let local = try await scanner.local(at: root.appendingPathComponent("registered"))
     let first = CatalogServices.localEntry(try #require(builtIn.templates.first))
     let second = CatalogServices.localEntry(try #require(local.templates.first))
@@ -208,7 +189,7 @@ private func makeIconPNG() throws -> Data {
 }
 
 @Test @MainActor func localCatalogCombinesSourcesAndReportsInvalidPackages() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
     let bundledRoot = root.appendingPathComponent("bundled"), installedRoot = root.appendingPathComponent("installed")
     _ = try writeTemplate(named: "same-slug", in: bundledRoot)
@@ -228,11 +209,11 @@ private func makeIconPNG() throws -> Data {
 }
 
 @Test @MainActor func creationTelemetryExcludesCancellationAndKeepsTheMasterUnchanged() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let root = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: root) }
     let templates = root.appendingPathComponent("templates")
     let source = try writeTemplate(named: "tiny-counter", in: templates)
-    let before = try Data(contentsOf: source.appendingPathComponent("initial.json"))
+    let before = try Data(contentsOf: source)
     let scanner = CatalogScanner()
     let snapshot = try await scanner.local(at: templates)
     let entry = CatalogServices.localEntry(try #require(snapshot.templates.first))
@@ -249,8 +230,7 @@ private func makeIconPNG() throws -> Data {
     #expect(try await services.client.create(entry, chosen) == destination?.standardizedFileURL.resolvingSymlinksInPath())
     #expect(events == [.created(.installed)])
     #expect(recent == destination)
-    #expect(try Data(contentsOf: source.appendingPathComponent("initial.json")) == before)
-    #expect(!FileManager.default.fileExists(atPath: source.appendingPathComponent("state").path))
+    #expect(try Data(contentsOf: source) == before)
     // Existing destinations fail without emitting another creation.
     await #expect(throws: (any Error).self) { _ = try await services.client.create(entry, chosen) }
     #expect(events == [.created(.installed), .failed(.create, .init(.rejection, reason: .destinationExists))])
@@ -263,7 +243,7 @@ private func makeIconPNG() throws -> Data {
     let root = parent.appendingPathComponent("templates")
     _ = try writeTemplate(named: "before", in: root)
     let store = LocalTemplateStore(templatesURL: root)
-    defer { store.stop(); try? SlopPermissions.makeWritable(parent); try? FileManager.default.removeItem(at: parent) }
+    defer { store.stop(); try? FileManager.default.removeItem(at: parent) }
     await store.refresh()
     #expect(store.templates.map(\.manifest.slug) == ["before"])
     try FileManager.default.moveItem(at: root, to: parent.appendingPathComponent("moved"))
@@ -285,12 +265,30 @@ private func makeIconPNG() throws -> Data {
     defer { store.stop(); try? FileManager.default.removeItem(at: root) }
     await store.refresh()
     #expect(store.templates.isEmpty)
-    let package = try writeTemplate(named: "added", in: root)
+    let file = try writeTemplate(named: "added", in: root)
     await store.refresh()
     #expect(store.templates.map(\.manifest.slug) == ["added"])
-    try SlopPermissions.makeWritable(package)
-    try FileManager.default.removeItem(at: package)
+    try FileManager.default.removeItem(at: file)
     await store.refresh()
     #expect(store.templates.isEmpty)
     #expect(store.issues.isEmpty)
+}
+
+/// A cold catalog scan of 20 built Quick Checklist templates: every file checked, as at
+/// launch. Median of 10 scans, each by a new scanner (no version cache).
+@Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_OPEN"] == "1"))
+func catalogScanCost() async throws {
+  let built = Fixtures.repository.appendingPathComponent("generated/templates/quick-checklist.slop")
+  let root = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: root) }
+  for index in 0..<20 {
+    try FileManager.default.copyItem(at: built, to: root.appendingPathComponent("checklist-\(index).slop"))
+  }
+  var times: [Double] = []
+  for _ in 0..<10 {
+    let start = DispatchTime.now().uptimeNanoseconds
+    _ = try await CatalogScanner().local(at: root)
+    times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
+  }
+  print("SCAN-BENCH {\"templates\":20,\"median-ms\":\(times.sorted()[times.count / 2])}")
 }

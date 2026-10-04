@@ -50,12 +50,12 @@ import ImageIO
         return path
     }
 
-    init(package: SlopPackage) throws {
-        transparentBacking = package.usesTransparentBackground
-        if let skin = try package.skin() {
-            content = .image(skin.image)
+    init(file: SlopFile) throws {
+        transparentBacking = file.usesTransparentBackground
+        if let skin = file.skin {
+            content = .image(skin)
         } else {
-            content = .vector(package.silhouette)
+            content = .vector(file.silhouette)
         }
     }
 

@@ -36,7 +36,7 @@ hitSlop is built for tools with one clear job and a little character. It comes w
 ## Keep the app. Keep the work.
 
 - Your documents live on your Mac. You don't need an account or a server.
-- The interface, saved data and imported files travel together. Close a document before moving it in Finder, and zip it to send to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- The interface, saved data and imported files travel together. Close a document before moving it in Finder, and send the file itself to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
@@ -53,7 +53,7 @@ bun install
 
 Setup asks what your slop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter includes a working checklist, your brief, and hitSlop's guidance for agents. Or open the folder in your agent yourself and try:
 
-> Read AGENTS.md, manifest.json, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
+> Read AGENTS.md, slop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
 
 Ask for changes as you go ("Make the checkboxes bigger"). When it feels right:
 
@@ -116,23 +116,7 @@ bun install
 
 Replace the following starter files. Keep the generated `package.json` and `tsconfig.json`.
 
-### 1. Give it a name and a window
-
-`manifest.json` describes the app, including its starting window size.
-
-```json
-{
-  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
-  "slug": "tiny-wins",
-  "title": "Tiny Wins",
-  "description": "A little credit for the things you get done.",
-  "author": { "name": "You" },
-  "categories": ["personal"],
-  "presentation": { "width": 360, "height": 360 }
-}
-```
-
-### 2. Say what it remembers
+### 1. Say what it remembers
 
 `schema.ts` defines the saved fields. Text is editable; a counter supports increments.
 
@@ -145,27 +129,33 @@ export default defineDocument({
 });
 ```
 
-`initial.ts` supplies the starting values for **new** documents. Changing it later doesn't overwrite someone's saved wins.
+### 2. Give it a name, a window and colors
+
+`slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The folder's name, `tiny-wins`, is the app's slug.
 
 ```ts
-export default { title: "Tiny wins today", wins: 0 };
-```
+import { defineSlop } from "@hitslop/document";
+import schema from "./schema";
 
-### 3. Pick its colors
-
-`theme.ts` declares the colors people can change, available as CSS variables; fonts and other styling stay in your CSS. The window, icon, and export use these colors. Anyone can change them from the window's theme panel, and share them as a theme file, and your agent can change them through hitSlop's theme commands, all without rebuilding. Changes stay with that document; the template keeps its defaults.
-
-```ts
-import { defineTheme } from "@hitslop/document";
-
-export default defineTheme({
-  surface: "#fff7e6",
-  ink: "#382d24",
-  accent: "#28634b",
+export default defineSlop({
+  title: "Tiny Wins",
+  description: "A little credit for the things you get done.",
+  author: { name: "You" },
+  categories: ["personal"],
+  presentation: { width: 360, height: 360 },
+  theme: {
+    surface: "#fff7e6",
+    ink: "#382d24",
+    accent: "#28634b",
+  },
+  schema,
+  initial: { title: "Tiny wins today", wins: 0 },
 });
 ```
 
-### 4. Build the app, icon, and export together
+The theme's colors are available as CSS variables; fonts and other styling stay in your CSS. The window, icon, and export use these colors. Anyone can change them from the window's theme panel, and share them as a theme file, and your agent can change them through hitSlop's theme commands, all without rebuilding. Changes stay with that document; the template keeps its defaults. Changing `initial` later doesn't overwrite someone's saved wins.
+
+### 3. Build the app, icon, and export together
 
 `App.svelte` is the whole interface. Import the document from `schema.ts`, read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
 
@@ -248,7 +238,7 @@ through `defineSlop`; no `main.ts` is needed. For a non-Svelte app, an optional
 `main.ts` can export `default { mount(ctx, target) }` and import its styles. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 
-### 5. Take it for a spin
+### 4. Take it for a spin
 
 ```sh
 bun run check     # Check the types and Svelte component

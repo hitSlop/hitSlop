@@ -1,9 +1,10 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { prepareNativeFixtures } from "./native-fixtures";
-import { digest } from "./runtime-artifacts";
 import { strict as assert } from "node:assert";
+import { useTestRegistry } from "./runtime-artifacts";
+useTestRegistry();
 
 await prepareNativeFixtures();
 const folder = await mkdtemp(join(tmpdir(), "hitslop-relocated-helper-"));
@@ -13,12 +14,12 @@ try {
   const build = resolve("apps/apple/Packages/HitSlopApple/.build/debug");
   for (const name of ["hitslop-native", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
+  const template = resolve("generated/native-fixtures/quick-checklist.slop");
   const document = join(folder, "List.slop");
-  await cp("generated/native-fixtures/quick-checklist.slop", document, { recursive: true });
   const run = async (args: string[], expectedError?: string) => {
     const child = Bun.spawn([join(helpers, "hitslop-native"), ...args], {
       cwd: folder,
-      env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" },
+      env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -34,10 +35,12 @@ try {
     }
     return out;
   };
-  // A helper inside Contents/Helpers must protect the enclosing app's bundled masters.
+  await run(["create", "--from", template, "--output", document]);
+  // A template is never edited: the enclosing app's bundled masters stay as built.
   const master = join(folder, "hitSlop.app/Contents/Resources/StarterTemplates/Checklist.slop");
-  await cp(document, master, { recursive: true });
-  const masterBytes = await digest(master);
+  await mkdir(join(master, ".."), { recursive: true });
+  await copyFile(template, master);
+  const masterBytes = await readFile(master);
   await run(
     [
       "apply",
@@ -45,10 +48,9 @@ try {
       "--op",
       JSON.stringify({ type: "set", path: ["title"], value: "Must refuse" }),
     ],
-    "writable copy",
+    "create a document from it",
   );
-  assert.ok(!(await readdir(master)).includes("state"), "Bundled master acquired mutable state");
-  assert.equal(await digest(master), masterBytes, "Bundled master bytes changed");
+  assert.ok((await readFile(master)).equals(masterBytes), "Bundled master bytes changed");
   const initial = JSON.parse(await run(["get", document]));
   await run([
     "apply",

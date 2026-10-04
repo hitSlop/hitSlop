@@ -167,6 +167,7 @@ struct SlopToolbar: View {
       }.disabled(!themeShown && !themeEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { send(.duplicate) }
+        Button("Share a Copy…") { send(.share) }
         Divider()
         Button("Export PNG…") { send(.exportPNG) }
         Button("Export PDF…") { send(.exportPDF) }

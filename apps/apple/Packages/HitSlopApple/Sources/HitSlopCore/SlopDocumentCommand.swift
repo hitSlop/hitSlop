@@ -3,6 +3,8 @@ import Foundation
 /// Commands shared by native document windows and the application's reducers.
 public enum SlopDocumentCommand: Equatable, Sendable {
     case pin(Bool), exportPNG, exportPDF, duplicate, reveal, copyPath, openEditor(URL), retry, close
+    /// Shares a consistent copy of the document as a new logical document.
+    case share
     /// Shows or hides the theme panel; imports or exports a theme file.
     case theme(Bool), importTheme, exportTheme
     /// The save-failure sheet's choices: save again, or discard unsaved edits and reload

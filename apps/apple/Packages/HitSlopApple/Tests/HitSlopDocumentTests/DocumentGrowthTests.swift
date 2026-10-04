@@ -2,6 +2,7 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopDocument
 
 /// A measurement, not a CI performance assertion. Every edit and save uses the production owner.
@@ -29,8 +30,7 @@ import Testing
     let input = URL(fileURLWithPath: env["HITSLOP_GROWTH_INPUT"]!)
     let days = Int(env["HITSLOP_GROWTH_DAYS"] ?? "365")!
     let repo = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-growth-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     // `bun run bench:growth` names a dated evidence file.
     let output = URL(fileURLWithPath: env["HITSLOP_GROWTH_OUTPUT"] ?? repo + "/.hitslop/evidence/document-growth.json")
@@ -52,10 +52,9 @@ import Testing
       ], options: [.prettyPrinted, .sortedKeys]).write(to: output, options: .atomic)
     }
     for slug in ["doodle-board", "pixel-art", "morning-pages"] {
-      let root = folder.appendingPathComponent(slug + ".slop")
-      try FileManager.default.copyItem(atPath: repo + "/generated/templates/" + slug + ".slop", toPath: root.path)
-      try SlopPermissions.makeWritable(root)
-      var owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+      let root = try Fixtures.document(
+        from: URL(fileURLWithPath: repo + "/generated/templates/" + slug + ".slop"), at: folder.appendingPathComponent(slug + ".slop"))
+      var owner = try DocumentOwner(url: root)
       owner.attach(view: "growth")
       let initialMeta = try owner.storageQueue.sync { try owner.store.metadata() }
       let initialBytes = Int64(initialMeta.checkpointBytes + initialMeta.updateBytes)
@@ -123,12 +122,12 @@ import Testing
           lastSavedValue = try json(try await frame(owner)["value"]!)
           let meta = try owner.storageQueue.sync { try owner.store.metadata() }
           finalMeta = meta
-          let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("state/document.sqlite").path)[.size] as! NSNumber).int64Value
+          let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.path)[.size] as! NSNumber).int64Value
           samples.append(["day": day, "commits": commits, "intents": intents, "checkpointBytes": meta.checkpointBytes, "updateBytes": meta.updateBytes, "updateRows": meta.rows, "databaseBytes": diskBytes, "retainedValueJSONBytes": lastSavedValue.utf8.count, "reopenVerified": false])
           try await owner.close()
           isClosed = true
           let start = Date()
-          owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+          owner = try DocumentOwner(url: root)
           isClosed = false
           let reopenMS = Date().timeIntervalSince(start) * 1000
           owner.attach(view: "growth")
@@ -156,7 +155,7 @@ import Testing
       }
       if stoppedError == nil {
         try await owner.close()
-        let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
+        let reopened = try DocumentOwner(url: root)
         #expect(try await json(frame(reopened)["value"]!) == lastSavedValue)
         finalMeta = try reopened.storageQueue.sync { try reopened.store.metadata() }
         try await reopened.close()

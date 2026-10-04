@@ -1,29 +1,27 @@
 import Foundation
 
-/// Shared catalog-master classification. Opening a master must never create live document state.
+/// Where installed templates live. A template is a kind of file, not a location: these
+/// places only decide what the catalog lists and where documents may not be created.
 public enum SlopTemplateLocation {
-  public static var defaultTemplatesRoot: URL {
+  static var defaultTemplatesRoot: URL {
     FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hitslop/templates", isDirectory: true)
   }
   /// `HITSLOP_TEMPLATES_ROOT`: the catalog root a development app was given.
-  public static var developmentTemplatesRoot: URL? {
+  private static var developmentTemplatesRoot: URL? {
     ProcessInfo.processInfo.environment["HITSLOP_TEMPLATES_ROOT"].map { URL(fileURLWithPath: $0) }
   }
   /// The installed templates folder the catalog lists.
   public static var templatesRoot: URL { developmentTemplatesRoot ?? defaultTemplatesRoot }
-  /// Why a master cannot be edited, and what to do instead.
-  public static let writableCopyRequired = "Create a writable copy of this template first"
 
-  /// A master the CLI must never edit or create documents inside: a managed template, or
-  /// one under the development templates root.
+  /// Inside the installed or bundled templates, where a document is never created.
   public static func isMaster(_ url: URL) -> Bool {
-    if isManagedTemplatePackage(url) { return true }
+    if isInTemplates(url) { return true }
     guard let root = developmentTemplatesRoot else { return false }
-    return isManagedTemplatePackage(url, templatesRoot: root)
+    return isInTemplates(url, templatesRoot: root)
   }
 
-  public static func isManagedTemplatePackage(_ url: URL, templatesRoot: URL = defaultTemplatesRoot) -> Bool {
-    let candidate = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+  static func isInTemplates(_ url: URL, templatesRoot: URL = defaultTemplatesRoot) -> Bool {
+    let candidate = SlopPath.canonical(url).pathComponents
     var roots = [templatesRoot]
     if let resources = Bundle.main.resourceURL {
       roots.append(resources.appendingPathComponent("StarterTemplates"))
@@ -39,7 +37,7 @@ public enum SlopTemplateLocation {
       }
     }
     return roots.contains { url in
-      let root = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
+      let root = SlopPath.canonical(url).pathComponents
       return candidate.count > root.count && zip(root, candidate).allSatisfy {
         $0.caseInsensitiveCompare($1) == .orderedSame
       }

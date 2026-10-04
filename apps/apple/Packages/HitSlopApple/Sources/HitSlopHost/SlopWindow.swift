@@ -98,7 +98,7 @@ public struct SlopDocumentRouting {
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate
 {
-  public let packageURL: URL
+  public let url: URL
   public let session: DocumentSession
   let routing: SlopDocumentRouting
   public var telemetry: SlopTelemetry = .disabled
@@ -141,19 +141,19 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   public static func open(
-    packageURL: URL, routing: SlopDocumentRouting, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
+    url: URL, routing: SlopDocumentRouting, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
   ) async throws -> SlopDocumentWindowController {
     let started = ContinuousClock.now
     let progress = presentsWindow ? SlopOpeningProgress(started: started) : nil
-    let key = packageURL.standardizedFileURL
+    let key = url.standardizedFileURL
     if let progress { preparingProgress[key] = progress }
     defer { if preparingProgress[key] === progress { preparingProgress[key] = nil } }
     let preparation = Task { @MainActor in
-      let session = try await DocumentSession.open(packageURL: packageURL)
+      let session = try await DocumentSession.open(url: url)
       do {
         try Task.checkCancellation()
         return try SlopDocumentWindowController(
-          packageURL: packageURL, session: session, routing: routing, started: started, telemetry: telemetry)
+          url: url, session: session, routing: routing, started: started, telemetry: telemetry)
       } catch {
         try await session.close()
         throw error
@@ -180,34 +180,33 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   private init(
-    packageURL: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
+    url: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
     telemetry: SlopTelemetry = .disabled
   ) throws {
     self.routing = routing
     self.telemetry = telemetry
     startupStarted = started
-    self.packageURL = packageURL.standardizedFileURL
+    self.url = url.standardizedFileURL
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
     session.load()
-    let windowMask = try SlopWindowMask(package: session.package)
-    let spec = session.package.manifest.presentation
+    let windowMask = try SlopWindowMask(file: session.file)
+    let spec = session.file.manifest.presentation
     let size = NSSize(width: spec.width, height: spec.height)
     let window = FramelessDocumentWindow(
       contentRect: NSRect(origin: .zero, size: size),
-      styleMask: slopDocumentWindowStyleMask(resizable: session.package.isResizable),
+      styleMask: slopDocumentWindowStyleMask(resizable: session.file.isResizable),
       backing: .buffered, defer: false)
-    window.title = SlopDocumentIdentity(url: self.packageURL).filename
+    window.title = SlopDocumentIdentity(url: self.url).filename
     window.minSize = NSSize(width: WindowBounds.minWidth, height: WindowBounds.minHeight)
     window.isOpaque = false
     window.backgroundColor = .clear
-    window.hasShadow = !session.package.usesTransparentBackground || session.package.isSkinned
+    window.hasShadow = !session.file.usesTransparentBackground || session.file.isSkinned
     window.isReleasedWhenClosed = false
     window.tabbingMode = .disallowed
-    window.representedURL = self.packageURL
+    window.representedURL = self.url
     window.miniwindowTitle = window.title
-    window.miniwindowImage = NSImage(contentsOf: session.package.iconURL)
     if spec.lockAspect == true {
       window.contentAspectRatio = size
     }
@@ -230,14 +229,14 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
     // Editor discovery queries Launch Services; warm it before the first hover.
     Task.detached(priority: .utility) { _ = SlopEditors.installed }
-    SlopDocumentAssetRefreshQueue.invalidate(self.packageURL)
+    SlopDocumentAssetRefreshQueue.invalidate(self.url)
     startLoading()
     recordStartup("native-prepared")
-    // Finder icon metadata is cosmetic; keep its disk writes off the opening path.
-    Task { @MainActor [weak self, package = session.package] in
-      await self?.waitForPresentation()
-      guard self?.isContentReady == true else { return }
-      SlopPreviewWriter.installAuthoredIcon(for: package, telemetry: self?.telemetry ?? .disabled)
+    // The minimized window shows the document's icon, read by its owner rather than by a
+    // new open on the main thread.
+    Task { [weak self, session] in
+      guard let icon = await session.artwork(.icon) else { return }
+      self?.window?.miniwindowImage = NSImage(data: icon)
     }
   }
   /// A discard or recovery replaced the page: show the new one and wait for it, clearing
@@ -269,9 +268,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func pageSession(_ session: DocumentSession, resizeContentTo requested: CGSize)
     throws -> CGSize
   {
-    guard let window else { throw SlopPackageError.invalid("document window is unavailable") }
+    guard let window else { throw SlopError.invalid("document window is unavailable") }
     var requested = requested
-    let spec = session.package.manifest.presentation
+    let spec = session.file.manifest.presentation
     if spec.lockAspect == true {
       let ratio = CGFloat(spec.width) / CGFloat(spec.height)
       requested.width = max(CGFloat(WindowBounds.minWidth), CGFloat(WindowBounds.minHeight) * ratio, requested.width)
@@ -296,10 +295,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if toolbar?.isVisible == true { showToolbar() }
     layoutThemePanel()
   }
-  public var documentTitle: String { window?.title ?? SlopDocumentIdentity(url: packageURL).filename }
+  public var documentTitle: String { window?.title ?? SlopDocumentIdentity(url: url).filename }
   /// The window's icon, read once at open, at menu size.
   public var dockMenuImage: NSImage {
-    let source = window?.miniwindowImage ?? NSWorkspace.shared.icon(forFile: packageURL.path)
+    let source = window?.miniwindowImage ?? NSWorkspace.shared.icon(forFile: url.path)
     let image = (source.copy() as? NSImage) ?? source
     image.size = NSSize(width: 16, height: 16)
     return image
@@ -363,7 +362,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     // not need to launch another WebView to refresh artwork.
     guard isContentReady else { return }
     // The render reads the saved document into memory after this window closes.
-    SlopDocumentAssetRefreshQueue.schedule(presentedURL: packageURL, telemetry: telemetry)
+    SlopDocumentAssetRefreshQueue.schedule(presentedURL: url, telemetry: telemetry)
   }
   public func cancelPreparedClose() async {
     await session.cancelClose()
@@ -371,6 +370,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public static func finishAssetRefreshesForTermination() async {
     await SlopDocumentAssetRefreshQueue.finishForTermination()
+  }
+  /// Resumes the artwork refreshes the last quit left unfinished.
+  public static func resumeAssetRefreshes(telemetry: SlopTelemetry = .disabled) {
+    SlopDocumentAssetRefreshQueue.resume(telemetry: telemetry)
   }
   public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
   /// Closing is a command: the coordinator runs it after any command in progress, and
@@ -408,5 +411,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
 }
 
 extension UTType {
-  public static let slop = UTType(exportedAs: "com.hitslop.slop", conformingTo: .package)
+  /// A `.slop`: one file (the app's Info.plist declares it as `public.data`).
+  public static let slop = UTType(exportedAs: "com.hitslop.slop", conformingTo: .data)
 }

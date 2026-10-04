@@ -14,7 +14,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = live ? try await SlopDocumentWindowController.open(packageURL: root) : nil
+    let controller = live ? try await SlopDocumentWindowController.open(url: root) : nil
     try await controller?.session.waitUntilReady()
     do {
       func run(_ args: [String]) async throws -> [String: Any] {
@@ -35,7 +35,7 @@ extension OwnerClientTests {
       #expect(state["version"] is String)
       #expect(state["sequence"] is Int)
       #expect(state["issues"] is [Any])
-      let schema = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("state.schema.json"))) as! [String: Any]
+      let schema = try JSONSerialization.jsonObject(with: Data(SlopFile(url: root).descriptor.utf8)) as! [String: Any]
       #expect(NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema))
       let injected = try await cli(["apply", root.path, "--op", #"{"type":"set","path":["title"],"value":"Injected"},{"type":"set","path":["title"],"value":"Second"}"#])
       #expect(injected.0 != 0)
@@ -47,10 +47,10 @@ extension OwnerClientTests {
   @Test @MainActor func rejectedEditsPreserveSavedStateAndComposingDraft() async throws {
     let root = try captureFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let before = try await command("get", url: root)
-    let saved = try Data(contentsOf: root.appendingPathComponent("state/document.sqlite"))
+    let saved = try Data(contentsOf: root)
     let view = controller.session.webView
     _ = try await view.callAsyncJavaScript("""
       const input = document.querySelector('#draft');
@@ -61,7 +61,7 @@ extension OwnerClientTests {
       """, arguments: [:], in: nil, contentWorld: .page)
     let rejected = try await cli(["apply", root.path, "--op", #"{"type":"set","path":["missing"],"value":true}"#])
     #expect(rejected.0 != 0)
-    #expect(try Data(contentsOf: root.appendingPathComponent("state/document.sqlite")) == saved)
+    #expect(try Data(contentsOf: root) == saved)
     #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "User is still typing")
     // Close commits a composition in progress instead of refusing to close.
     try await controller.session.close()
@@ -79,7 +79,7 @@ extension OwnerClientTests {
       try? FileManager.default.removeItem(at: root)
       try? FileManager.default.removeItem(at: folder)
     }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     controller.window?.setContentSize(CGSize(width: 560, height: 620))
     let view = controller.session.webView
@@ -125,28 +125,26 @@ extension OwnerClientTests {
     #expect(try Data(contentsOf: pdf) == previous)
     #expect(controller.session.capturing == false)
     _ = try await view.evaluateJavaScript("globalThis.stopFailure()")
-    let rejected = try await cli([
-      "export", root.path, "--format", "pdf", "--output",
-      root.appendingPathComponent("bad.pdf").path,
-    ])
+    // An export never replaces the document it renders.
+    let rejected = try await cli(["export", root.path, "--format", "pdf", "--output", root.path])
     #expect(rejected.0 != 0)
     try await controller.session.close()
-    let saved = try Data(contentsOf: root.appendingPathComponent("state/document.sqlite"))
+    let saved = try Data(contentsOf: root)
     let closed = folder.appendingPathComponent("closed.pdf")
     let result = try await cli(["export", root.path, "--format", "pdf", "--output", closed.path])
     #expect(result.0 == 0, "\(result.2)")
     #expect(
       PDFDocument(data: try Data(contentsOf: closed))?.string?.contains("Selected view") == false)
-    #expect(try Data(contentsOf: root.appendingPathComponent("state/document.sqlite")) == saved)
+    #expect(try Data(contentsOf: root) == saved)
   }
 
   @Test @MainActor func staleEpochsAndUnavailableOwnersFailSafely() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
-    let documentRoot = controller.session.package.rootURL
+    let documentRoot = controller.session.file.url
     let before = try await command("get", url: root)
     let path = try DocumentCommand.liveSocket(for: documentRoot)
     let stale = try JSONSerialization.data(withJSONObject: [
@@ -173,9 +171,11 @@ extension OwnerClientTests {
     // A controlled peer at the real transport boundary supplies independently specified wire codes.
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let canonical = try SlopPackage(rootURL: root).rootURL
-    let lock = try WriterLock.acquire(canonical)
-    defer { lock.release() }
+    let canonical = try SlopFile(url: root).url
+    // An owner that is not this build's: it holds the document and names the peer below.
+    let store = try NativeStore.open(path: canonical.path, mode: .document)
+    defer { try? store.close() }
+    let marker = try store.savedMarker()
     let cases: [(String?, String)] = [
       ("rejected", "Not applied."), ("unavailable", "Not applied."),
       ("session_changed", "Not applied. Run slop get before issuing another edit."),
@@ -192,23 +192,22 @@ extension OwnerClientTests {
         return refusal
       }
       defer { server.stop() }
-      try JSONSerialization.data(withJSONObject: [
+      try store.publishDiscovery(json: String(decoding: JSONSerialization.data(withJSONObject: [
         "socket": server.path, "documentPath": canonical.path,
-      ]).write(to: canonical.appendingPathComponent("state/host.lock"))
+      ]), as: UTF8.self))
       let result = try await cli(["apply", root.path, "--op", String(decoding: setTitle("refused"), as: UTF8.self)])
       #expect(result.0 != 0)
       #expect(result.2.contains("Peer refusal\n" + expected), "\(result.2)")
     }
-    #expect(!FileManager.default.fileExists(atPath: canonical.appendingPathComponent("state/document.sqlite").path))
+    #expect(try store.savedMarker() == marker)
   }
 
   @Test @MainActor func closedOwnerDoesNotLoadAuthoredCode() async throws {
-    let root = try fixture()
+    let root = try contractFixture { stage in
+      try Data("webkit.messageHandlers.hitslop.postMessage({method:'failed',error:'AUTHORED CODE RAN'});".utf8)
+        .write(to: stage.appendingPathComponent("assets/app.js"))
+    }
     defer { try? FileManager.default.removeItem(at: root) }
-    try Data(
-      "webkit.messageHandlers.hitslop.postMessage({method:'failed',error:'AUTHORED CODE RAN'});"
-        .utf8
-    ).write(to: root.appendingPathComponent("assets/app.js"))
     let data = try await command("apply", url: root, operation: setTitle("Engine only"))
     #expect(String(decoding: data, as: UTF8.self).contains("Engine only"))
   }
@@ -216,10 +215,8 @@ extension OwnerClientTests {
   // Failure: scalar edits from agents were refused, clear left a value behind, or an
   // out-of-range value was stored. Oracle: the CLI's printed value and exit status.
   @Test func scalarEditsSetClearAndRefuseFromTheCLI() async throws {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    let root = try Fixtures.document("tests/fixtures/scalars/document")
     defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/scalars/document", toPath: root.path)
     let value = { (output: String) throws -> [String: Any] in
       let reply = try JSONSerialization.jsonObject(with: Data(output.utf8)) as! [String: Any]
       return reply["value"] as! [String: Any]
@@ -240,10 +237,8 @@ extension OwnerClientTests {
   // Failure: agents could not address record entries by key or scalar-list elements by
   // index. Oracle: the CLI's printed value.
   @Test func recordAndListEditsFromTheCLI() async throws {
-    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    let root = try Fixtures.document("tests/fixtures/collections/document")
     defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/collections/document", toPath: root.path)
     let edited = try await cli(["batch", root.path, "--ops",
       ##"[{"type":"set","path":["done","3:5"],"value":true},{"type":"set","path":["cells","A1"],"value":{"input":"hi"}},{"type":"insert","path":["presets"],"value":75,"index":1},{"type":"set","path":["pixels",{"index":0}],"value":"#000"}]"##])
     #expect(edited.0 == 0, "\(edited.2)")

@@ -2,17 +2,16 @@ import AppKit
 import Foundation
 import HitSlopCore
 import Testing
+import HitSlopTestSupport
 import WebKit
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentFilePickerTests {
   @Test @MainActor func reloadAndCloseCancelThePendingPicker() async throws {
     _ = NSApplication.shared
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    let root = try Fixtures.document()
     defer { try? FileManager.default.removeItem(at: root) }
-    let engine = try await DocumentSession.open(packageURL: root)
+    let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
@@ -35,13 +34,11 @@ import WebKit
   // The HTML upload boundary is platform behavior, independent of a slop's importer.
   @Test(.timeLimit(.minutes(1))) @MainActor func fileInputDeliversBytesAndRejectsSelectionDuringCapture() async throws {
     _ = NSApplication.shared
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    let root = try Fixtures.document()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
     try Data("Selected 🦊 bytes".utf8).write(to: file)
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: file) }
-    let engine = try await DocumentSession.open(packageURL: root)
+    let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)

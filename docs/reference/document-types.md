@@ -135,9 +135,9 @@ the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
-imported), `invalid_shape` (a manifest window shape), `requires_update` (a package,
-storage or document layout newer than this build) and `engine_error` (an unexpected Loro
-failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
+imported), `invalid_shape` (a manifest window shape), `requires_update` (an app format,
+storage or document layout newer than this build), `is_template` (a template opened as a
+document: create a document from it) and `engine_error` (an unexpected Loro failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
 
 **Paths** walk the schema from the root. Commands and issues use the same segments; an
 issue names a row by its effective `$id` (the one `doc.current` shows, derived for a row
@@ -300,7 +300,7 @@ widths by column. Values are scalars or objects.
 - **Don't read a value and write it back** (`set(qty + 1)`): the snapshot may be a moment
   old. Use `increment` on a counter, or await the earlier writes before reading. A
   `change` makes its writes atomic, but reads the same snapshot.
-- **Don't write in `$effect` or on mount.** Put defaults in `initial.ts`. If an effect must
+- **Don't write in `$effect` or on mount.** Put defaults in `slop.ts`'s `initial`. If an effect must
   create something, guard it so it runs once, because it can rerun before the write is
   accepted.
 - **Await an insert** before using its id outside `change`. Inside `change`, the id is
@@ -352,4 +352,4 @@ function (`identity.rs`).
 Trees, rich text, `optional(list)`, `optional(record)` and `optional(counter)`, and
 `move` on scalar lists are not implemented; no slop needs them. Schema evolution is
 deferred: changing a descriptor makes a new document type. Each new kind lands in the
-core, the SDK and a fixture together, and raises the package/runtime requirements.
+core, the SDK and a fixture together, and raises the app format and runtime requirements.

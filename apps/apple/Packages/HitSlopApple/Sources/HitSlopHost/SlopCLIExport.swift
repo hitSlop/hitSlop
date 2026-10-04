@@ -11,7 +11,7 @@ extension SlopRenderer {
         onFailure: @escaping (Error, ExportFormat?) -> Void
     ) {
         session.onExport = { [weak session] format, output, deadline in
-            guard let session else { throw SlopPackageError.invalid("Document closed") }
+            guard let session else { throw SlopError.invalid("Document closed") }
             telemetry.send(.breadcrumb(.export, .started))
             do {
                 try await exportDocument(session: session, format: format, output: output, deadline: deadline)
@@ -26,38 +26,33 @@ extension SlopRenderer {
 
     public static func exportDocument(session: DocumentSession, format: ExportFormat, output: URL,
                                       deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
-        try validateExportOutput(output, source: session.package.rootURL)
+        try validateExportOutput(output, source: session.file.url)
         try deadline.check()
         let data = try await exportData(session: session, format: format)
-        try publishExport(data, to: output, source: session.package.rootURL, deadline: deadline)
+        try publishExport(data, to: output, source: session.file.url, deadline: deadline)
     }
 
-    public static func exportDocument(packageURL: URL, format: ExportFormat, output: URL) async throws {
-        try SlopLocalDocument.requireLocal(packageURL)
-        let package = try SlopPackage(rootURL: packageURL)
+    public static func exportDocument(url: URL, format: ExportFormat, output: URL) async throws {
+        try SlopLocalDocument.requireLocal(url)
+        let root = try SlopFile.resolvedRoot(url)
         let output = output.standardizedFileURL
-        try validateExportOutput(output, source: package.rootURL)
-        var ownership: WriterLock?
-        // Managed/read-only masters cannot have a live writable session.
-        if SlopTemplateLocation.isMaster(package.rootURL) ||
-           !FileManager.default.isWritableFile(atPath: package.rootURL.path) {
-            try package.validateAsTemplate()
-        } else {
-            let root = package.rootURL
-            switch try await DocumentCommand.connect(root: root, until: .now + .seconds(2), own: { try WriterLock.acquire(root) }) {
-            case .owned(let lock): ownership = lock
-            case .live(let socket):
-                try await DocumentCommand.exportLive(root: root, socket: socket, format: format, output: output)
-                return
-            }
+        try validateExportOutput(output, source: root)
+        // A live owner exports its view. Otherwise the writer lock covers taking the
+        // in-memory snapshot (a template has no writer, and renders its initial values),
+        // so no writer can intervene; rendering from that snapshot needs none. The render
+        // session's open checks the file.
+        let ownership: WriterLock
+        switch try await DocumentCommand.connect(root: root, until: .now + .seconds(2), own: { try WriterLock.acquire(root) }) {
+        case .owned(let lock): ownership = lock
+        case .live(let socket):
+            try await DocumentCommand.exportLive(root: root, socket: socket, format: format, output: output)
+            return
         }
-        // Ownership covers taking the in-memory snapshot, so no writer can intervene;
-        // rendering from that snapshot needs none.
         let deadline = NativeCommandDeadline()
-        let data = try await withRenderSession(packageURL: package.rootURL, inputReady: { ownership?.release() }) { session in
+        let data = try await withRenderSession(url: root, inputReady: { ownership.release() }) { session in
             try await exportData(session: session, format: format)
         }
-        try publishExport(data, to: output, source: package.rootURL, deadline: deadline)
+        try publishExport(data, to: output, source: root, deadline: deadline)
     }
 
     private static func exportData(session: DocumentSession, format: ExportFormat) async throws -> Data {
@@ -68,13 +63,13 @@ extension SlopRenderer {
     }
 
     private static func validateExportOutput(_ output: URL, source: URL) throws {
-        guard !SlopPath.contains(source, output) else {
-            throw SlopDiagnosticError(SlopPackageError.invalid("Export destination must be outside the source package"), diagnostic: .init(.rejection, reason: .operationRejected))
+        guard !SlopPath.same(source, output) else {
+            throw SlopDiagnosticError(SlopError.invalid("Export destination must not be the document"), diagnostic: .init(.rejection, reason: .operationRejected))
         }
         if FileManager.default.fileExists(atPath: output.path) {
             let values = try output.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else {
-                throw SlopDiagnosticError(SlopPackageError.invalid("Export destination must be a regular file"), diagnostic: .init(.rejection, reason: .operationRejected))
+                throw SlopDiagnosticError(SlopError.invalid("Export destination must be a regular file"), diagnostic: .init(.rejection, reason: .operationRejected))
             }
         }
     }

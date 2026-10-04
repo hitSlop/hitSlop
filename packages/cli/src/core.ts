@@ -18,15 +18,15 @@ async function check(label: string, run: (core: any) => void): Promise<void> {
 }
 
 export function validateDocument(descriptor: unknown, initial: unknown): Promise<void> {
-  return check("schema.ts/initial.ts", (core) => core.validate(JSON.stringify(descriptor), JSON.stringify(initial)));
+  return check("slop.ts initial", (core) => core.validate(JSON.stringify(descriptor), JSON.stringify(initial)));
 }
 
 export function validateTheme(defaults: unknown): Promise<void> {
-  return check("theme.ts", (core) => core.validateThemeDefaults(JSON.stringify(defaults)));
+  return check("slop.ts theme", (core) => core.validateThemeDefaults(JSON.stringify(defaults)));
 }
 
 /** Window shapes use the same parser as native window geometry. */
 export function validateWindowShape(presentation: { width: number; height: number; shape?: unknown }): Promise<void> {
   const shape = presentation.shape === undefined ? undefined : JSON.stringify(presentation.shape);
-  return check("manifest.json presentation.shape", (core) => core.validateWindowShape(shape, presentation.width, presentation.height));
+  return check("slop.ts presentation.shape", (core) => core.validateWindowShape(shape, presentation.width, presentation.height));
 }

@@ -1,23 +1,21 @@
-import { cp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { buildProject } from "../packages/cli/src/build";
+import { buildTemplate } from "../packages/cli/src/template";
 import { repository } from "./templates";
 import { buildShapeLabFixtures } from "./shape-lab";
 export async function buildPresentationFixtures() {
   const parent = join(repository, "generated/presentation");
   const fixture = join(repository, "packages/cli/tests/fixtures/presentation");
-  const base = JSON.parse(await readFile(join(fixture, "manifest.json"), "utf8"));
   const packages: Record<string, string> = {};
   for (const kind of ["standard", "ellipse", "washer"]) {
-    const source = join(parent, "sources", kind);
+    // The folder's name is the slug.
+    const source = join(parent, "sources", `presentation-${kind}`);
     // Replace, never merge: files removed from the fixture must not survive in the copy.
     await rm(source, { recursive: true, force: true });
     await cp(fixture, source, { recursive: true });
     await writeFile(
-      join(source, "manifest.json"),
-      JSON.stringify({
-        ...base,
-        slug: `presentation-${kind}`,
+      join(source, "variant.ts"),
+      "export default " + JSON.stringify({
         title: `Presentation ${kind}`,
         presentation:
           kind === "washer"
@@ -27,9 +25,9 @@ export async function buildPresentationFixtures() {
                 height: 320,
                 ...(kind === "ellipse" ? { shape: "50%", lockAspect: true, background: "transparent" } : {}),
               },
-      }),
+      }) + ";\n",
     );
-    packages[kind] = await buildProject(source, join(parent, kind + ".slop"));
+    packages[kind] = await buildTemplate(source, undefined, join(parent, kind + ".slop"));
   }
   return { ...packages, ...await buildShapeLabFixtures() };
 }

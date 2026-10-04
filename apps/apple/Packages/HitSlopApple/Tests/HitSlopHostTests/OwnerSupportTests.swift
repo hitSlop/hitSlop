@@ -3,31 +3,25 @@ import Foundation
 import HitSlopCore
 import PDFKit
 import Testing
+import HitSlopTestSupport
 
 @testable import HitSlopHost
 @testable import HitSlopDocument
 
 // One parent suite keeps shared AppKit/WebView integration tests serialized.
 @Suite(.serialized) struct OwnerClientTests {
-  func fixture(_ name: String = "quick-checklist") throws -> URL {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(
-      at: URL(fileURLWithPath: repository + "/generated/native-fixtures/\(name).slop"), to: root)
-    return root
-  }
+  func fixture(_ name: String = "quick-checklist") throws -> URL { try Fixtures.native(name) }
 
-  /// The sealed conformance package with the platform probe app (tests/abi/probe) in place of
-  /// its frozen consumer; disposable copies are safe for host behavior probes.
-  func contractFixture() throws -> URL {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    let app = root.appendingPathComponent("assets/app.js")
+  /// The conformance app's document with the platform probe app (tests/abi/probe) in place of
+  /// its frozen consumer; disposable documents are safe for host behavior probes. `edit`
+  /// changes the build stage before it is packed.
+  func contractFixture(edit: (_ stage: URL) throws -> Void = { _ in }) throws -> URL {
+    let stage = try Fixtures.stage()
+    let app = stage.appendingPathComponent("assets/app.js")
     try FileManager.default.removeItem(at: app)
-    try FileManager.default.copyItem(atPath: repository + "/tests/abi/probe/app.js", toPath: app.path)
-    return root
+    try FileManager.default.copyItem(at: Fixtures.repository.appendingPathComponent("tests/abi/probe/app.js"), to: app)
+    try edit(stage)
+    return try Fixtures.document(stage: stage)
   }
 
   /// A CLI edit replacing the probe's title.
@@ -61,5 +55,5 @@ import Testing
 
 extension OwnerClientTests {
   /// Draft input and dedicated export surface, independent of example UI copy.
-  func captureFixture() throws -> URL { try contractFixture() }
+  func captureFixture(edit: (_ stage: URL) throws -> Void = { _ in }) throws -> URL { try contractFixture(edit: edit) }
 }

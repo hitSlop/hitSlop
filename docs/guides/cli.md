@@ -15,7 +15,8 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 `hitslop-native` ships in `hitSlop.app/Contents/Helpers` and links the same Rust core as
 the app. Document commands need neither Bun nor a running app. The TypeScript CLI forwards
-macOS document commands to it, including `create` and `open`. Add `--help`
+macOS document commands to it, including `create` and `open`. `slop build`, `slop schema`
+and `slop inspect` run the CLI's file engine instead, on any platform. Add `--help`
 to any command for its arguments. Package versions here reflect repository metadata, not
 npm availability; see [releasing](releasing.md).
 
@@ -42,7 +43,7 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 ## Ownership and retries
 
-The permanent `state/writer.lock` decides ownership. Closed editing runs the native owner in the helper process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. A small `hello` handshake returns the owner's epoch without a document snapshot; ordinary reads need no handshake.
+An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the native owner in the helper process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. A small `hello` handshake returns the owner's epoch without a document snapshot; ordinary reads need no handshake.
 
 Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
@@ -51,8 +52,8 @@ Successful mutations acknowledge persistence. No automatic replay or public retr
 `HITSLOP_NATIVE_CLI` selects an explicit executable for both document commands and
 template capture. Missing or non-executable overrides fail; an executed helper is never
 retried through another binary. Discovery otherwise checks `/Applications/hitSlop.app`,
-then `~/Applications/hitSlop.app`. Authoring never compiles Swift, and build and register
-require an installed app. Bun is the only JavaScript runtime authoring needs; native
+then `~/Applications/hitSlop.app`. Authoring never compiles Swift; `build --artwork native`
+and `register` require an installed app. Bun is the only JavaScript runtime authoring needs; native
 document editing is macOS-only, with no Bun fallback.
 
 The CLI and the Mac app update separately. Before each native document command, the
@@ -66,6 +67,16 @@ through its socket, because both ship in one app bundle; quit an older running a
 reopen with the installed one. `hitslop-native --core-build` prints that identity. A
 CLI-only release may reuse an installed Mac app while it serves the CLI's protocol and
 the installed-consumer checks in [releasing](releasing.md) pass.
+
+## File engine
+
+`slop-engine` (`crates/slop-engine`) is the native build of the same Rust core, for files:
+`pack` turns a build's stage into a template, `inspect` prints what a `.slop` file holds
+(its kind, requirements, manifest, assets, artwork, attachments, saved-state sizes, and
+whether a live owner published its socket), and `schema` prints its descriptor. Reads use
+the saved file, never an open window's unsaved edits. `HITSLOP_ENGINE` selects an explicit
+executable; otherwise the CLI uses its platform build, then a checkout's
+`target/release/slop-engine`, which `bun run build` and `bun run test` prepare.
 
 ## Agent skills
 

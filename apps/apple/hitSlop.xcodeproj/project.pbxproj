@@ -9,22 +9,72 @@
 /* Begin PBXBuildFile section */
 		0253D4ECB6F151B1F9332ADA /* HitSlopHost in Frameworks */ = {isa = PBXBuildFile; productRef = DB39551676CB8EC1F9FB75DC /* HitSlopHost */; };
 		05E731AEF1C06E492D5D7D18 /* HitSlopCatalog in Frameworks */ = {isa = PBXBuildFile; productRef = F47B3662C054655C373D2A3F /* HitSlopCatalog */; };
+		1ED3270EBCAC1E69E8234257 /* HitSlopCore in Frameworks */ = {isa = PBXBuildFile; productRef = D2F34DD01E248450DF27C232 /* HitSlopCore */; };
 		3F91EC9FC8A44F9B3E911B79 /* HitSlopDocument in Frameworks */ = {isa = PBXBuildFile; productRef = 7FFB110BADCF65F93C3B0EC8 /* HitSlopDocument */; };
+		3FE2D27343758F38A0888A0D /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02C82A62125861BA3B5291B /* PreviewProvider.swift */; };
+		4BD003D94B5AAE83AF8D752B /* hitSlop-QuickLookPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C3D5A36EA43D30AE55520F33 /* hitSlop-QuickLookPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		50DBB59DA083F780B4FAAE62 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = C419462A556663F0047EE34C /* GoogleService-Info.plist */; };
 		55C6D9FAB7F5735305B6FECC /* hitSlopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75719DC5D67261F7EA46EC82 /* hitSlopApp.swift */; };
+		57B1A9E5CFC6F86D95124EE6 /* HitSlopCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08D5C4A7C03656806EA86C7E /* HitSlopCore */; };
+		59ACAE3798EA8400169A1FC9 /* hitSlop-QuickLookThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7DA35089AF933A042A79FCD0 /* hitSlop-QuickLookThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		63ABB1F85A01046EF5286E5C /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E70D98FCCBC32C297F032C0C /* QuickLookThumbnailing.framework */; };
 		A7BA3F995003EF8564A72C2C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3D7F4FFEA3E5F1F8855A530E /* Assets.xcassets */; };
+		AEE14406885F97372721DF5B /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B3BB0AEC9FC4AF83347145 /* ThumbnailProvider.swift */; };
 		B890C72C6C42DAEF9CE89A89 /* HitSlopCore in Frameworks */ = {isa = PBXBuildFile; productRef = 39ACE8CB8475940A02C89F85 /* HitSlopCore */; };
+		C808213539CFCC0C3DCD4467 /* QuickLookUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E45C88AAAC1ED873AE823A2 /* QuickLookUI.framework */; };
 		D06DA365A1BAD746AA5643F6 /* HitSlopFirebase in Frameworks */ = {isa = PBXBuildFile; productRef = 800A8F087445A9E33DCEEDEC /* HitSlopFirebase */; };
 		DC322D92933E047AECD219B7 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 91BD7843075E7E977199C386 /* Sparkle */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		08A76EE33A992B6DDF74E097 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDECF904C55C706C56EAFBA5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 25C96999B3707228A4A88B4E;
+			remoteInfo = "hitSlop-QuickLookThumbnail";
+		};
+		3759B3756BA10B519A8F1915 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CDECF904C55C706C56EAFBA5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 10CE16EF36ED910D43DDADDA;
+			remoteInfo = "hitSlop-QuickLookPreview";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		946D1D776CEFEB02299786FB /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				59ACAE3798EA8400169A1FC9 /* hitSlop-QuickLookThumbnail.appex in Embed Foundation Extensions */,
+				4BD003D94B5AAE83AF8D752B /* hitSlop-QuickLookPreview.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		3238D2ADA20517B94878D029 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3D7F4FFEA3E5F1F8855A530E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3E45C88AAAC1ED873AE823A2 /* QuickLookUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookUI.framework; path = System/Library/Frameworks/QuickLookUI.framework; sourceTree = SDKROOT; };
 		449DA033579B03D2469FBFB8 /* HitSlopApple */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HitSlopApple; path = Packages/HitSlopApple; sourceTree = SOURCE_ROOT; };
 		4D282D37A6F02DD82CEAF1D5 /* hitSlop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = hitSlop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		63B3BB0AEC9FC4AF83347145 /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		6D940508E6036960C9E10431 /* hitSlop.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = hitSlop.entitlements; sourceTree = "<group>"; };
 		75719DC5D67261F7EA46EC82 /* hitSlopApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = hitSlopApp.swift; sourceTree = "<group>"; };
+		7BBB76C1D30BBE647D87EDBB /* QuickLookPreview.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookPreview.entitlements; sourceTree = "<group>"; };
+		7DA35089AF933A042A79FCD0 /* hitSlop-QuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "hitSlop-QuickLookThumbnail.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7DCE1D025CD0E0FE260917FA /* QuickLookThumbnail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookThumbnail.entitlements; sourceTree = "<group>"; };
+		A02C82A62125861BA3B5291B /* PreviewProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
+		C3D5A36EA43D30AE55520F33 /* hitSlop-QuickLookPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "hitSlop-QuickLookPreview.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C419462A556663F0047EE34C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		D34CE3ACF4C40010AECB287F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E70D98FCCBC32C297F032C0C /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -41,6 +91,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B478FB99173066997AC8CEA1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1ED3270EBCAC1E69E8234257 /* HitSlopCore in Frameworks */,
+				63ABB1F85A01046EF5286E5C /* QuickLookThumbnailing.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6AD195623ACA95D36414B3B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				57B1A9E5CFC6F86D95124EE6 /* HitSlopCore in Frameworks */,
+				C808213539CFCC0C3DCD4467 /* QuickLookUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -48,6 +116,8 @@
 			isa = PBXGroup;
 			children = (
 				9AAFE75F36C080EB5AF3DEF6 /* macOS */,
+				50732A81472F586BB233A391 /* QuickLookPreview */,
+				4B9BA2069CEF78A43DD239B4 /* QuickLookThumbnail */,
 				63226558593359D0D8853B44 /* Shared */,
 			);
 			path = App;
@@ -56,9 +126,31 @@
 		428362E0B1DAB62483A27C3C /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				C3D5A36EA43D30AE55520F33 /* hitSlop-QuickLookPreview.appex */,
+				7DA35089AF933A042A79FCD0 /* hitSlop-QuickLookThumbnail.appex */,
 				4D282D37A6F02DD82CEAF1D5 /* hitSlop.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		4B9BA2069CEF78A43DD239B4 /* QuickLookThumbnail */ = {
+			isa = PBXGroup;
+			children = (
+				D34CE3ACF4C40010AECB287F /* Info.plist */,
+				7DCE1D025CD0E0FE260917FA /* QuickLookThumbnail.entitlements */,
+				63B3BB0AEC9FC4AF83347145 /* ThumbnailProvider.swift */,
+			);
+			path = QuickLookThumbnail;
+			sourceTree = "<group>";
+		};
+		50732A81472F586BB233A391 /* QuickLookPreview */ = {
+			isa = PBXGroup;
+			children = (
+				3238D2ADA20517B94878D029 /* Info.plist */,
+				A02C82A62125861BA3B5291B /* PreviewProvider.swift */,
+				7BBB76C1D30BBE647D87EDBB /* QuickLookPreview.entitlements */,
+			);
+			path = QuickLookPreview;
 			sourceTree = "<group>";
 		};
 		63226558593359D0D8853B44 /* Shared */ = {
@@ -77,11 +169,21 @@
 			path = Packages;
 			sourceTree = "<group>";
 		};
+		7A226D7E15549B7C29C4E9A6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				E70D98FCCBC32C297F032C0C /* QuickLookThumbnailing.framework */,
+				3E45C88AAAC1ED873AE823A2 /* QuickLookUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		7C1AC2CC0C0F6FC94C88DC6B = {
 			isa = PBXGroup;
 			children = (
 				2F0408A89AF66205098F0A8F /* App */,
 				65C6E29BCD2C40928D9069FD /* Packages */,
+				7A226D7E15549B7C29C4E9A6 /* Frameworks */,
 				428362E0B1DAB62483A27C3C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -99,6 +201,44 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		10CE16EF36ED910D43DDADDA /* hitSlop-QuickLookPreview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 804486BE2EA609F224F2E24D /* Build configuration list for PBXNativeTarget "hitSlop-QuickLookPreview" */;
+			buildPhases = (
+				734A5CE9C5EBFE524AE91FDA /* Sources */,
+				C6AD195623ACA95D36414B3B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "hitSlop-QuickLookPreview";
+			packageProductDependencies = (
+				08D5C4A7C03656806EA86C7E /* HitSlopCore */,
+			);
+			productName = "hitSlop-QuickLookPreview";
+			productReference = C3D5A36EA43D30AE55520F33 /* hitSlop-QuickLookPreview.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		25C96999B3707228A4A88B4E /* hitSlop-QuickLookThumbnail */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 56764D5087984F06F065C7D1 /* Build configuration list for PBXNativeTarget "hitSlop-QuickLookThumbnail" */;
+			buildPhases = (
+				E36D98FFF91E209E9B8E69F4 /* Sources */,
+				B478FB99173066997AC8CEA1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "hitSlop-QuickLookThumbnail";
+			packageProductDependencies = (
+				D2F34DD01E248450DF27C232 /* HitSlopCore */,
+			);
+			productName = "hitSlop-QuickLookThumbnail";
+			productReference = 7DA35089AF933A042A79FCD0 /* hitSlop-QuickLookThumbnail.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		3DAFFFD4DF6024749065F8C4 /* hitSlop-macOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 061408E3075D9AC11E06812C /* Build configuration list for PBXNativeTarget "hitSlop-macOS" */;
@@ -108,11 +248,14 @@
 				2DB7E9D05D6BE55DAEF42F9D /* Embed hitslop-native */,
 				BD8949865138D172D8661AFF /* Resources */,
 				1DA3D296F3B487247A81E12C /* Frameworks */,
+				946D1D776CEFEB02299786FB /* Embed Foundation Extensions */,
 				0EF0622F0EDD719F2355D085 /* Upload Crashlytics symbols */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1F7C94A78242B5FF62D6D4A7 /* PBXTargetDependency */,
+				C8681FA6F720D7C47BA902F6 /* PBXTargetDependency */,
 			);
 			name = "hitSlop-macOS";
 			packageProductDependencies = (
@@ -136,6 +279,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					10CE16EF36ED910D43DDADDA = {
+						DevelopmentTeam = 78UAXU8QG8;
+						ProvisioningStyle = Automatic;
+					};
+					25C96999B3707228A4A88B4E = {
+						DevelopmentTeam = 78UAXU8QG8;
+						ProvisioningStyle = Automatic;
+					};
 					3DAFFFD4DF6024749065F8C4 = {
 						DevelopmentTeam = 78UAXU8QG8;
 						ProvisioningStyle = Automatic;
@@ -160,6 +311,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				10CE16EF36ED910D43DDADDA /* hitSlop-QuickLookPreview */,
+				25C96999B3707228A4A88B4E /* hitSlop-QuickLookThumbnail */,
 				3DAFFFD4DF6024749065F8C4 /* hitSlop-macOS */,
 			);
 		};
@@ -243,6 +396,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		734A5CE9C5EBFE524AE91FDA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3FE2D27343758F38A0888A0D /* PreviewProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B41ABABB846BE1E8CEEC8CC3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -251,7 +412,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E36D98FFF91E209E9B8E69F4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AEE14406885F97372721DF5B /* ThumbnailProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1F7C94A78242B5FF62D6D4A7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 25C96999B3707228A4A88B4E /* hitSlop-QuickLookThumbnail */;
+			targetProxy = 08A76EE33A992B6DDF74E097 /* PBXContainerItemProxy */;
+		};
+		C8681FA6F720D7C47BA902F6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 10CE16EF36ED910D43DDADDA /* hitSlop-QuickLookPreview */;
+			targetProxy = 3759B3756BA10B519A8F1915 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0172489AC57241C1FFE30A08 /* Release */ = {
@@ -289,6 +471,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 29;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 78UAXU8QG8;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -302,6 +485,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.2.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -313,13 +497,66 @@
 			};
 			name = Release;
 		};
+		18B52C142F02FEE3DD36F7D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/QuickLookThumbnail/QuickLookThumbnail.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/QuickLookThumbnail/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hitslop.app.quicklook-thumbnail";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		65C2C197DA6131630FBF69E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/QuickLookPreview/QuickLookPreview.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/QuickLookPreview/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hitslop.app.quicklook-preview";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		90AFD7E1DCE8D2C9A778BEC4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/QuickLookPreview/QuickLookPreview.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/QuickLookPreview/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hitslop.app.quicklook-preview";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		BDD0280047D9385AD7F95B39 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/hitSlop.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -329,7 +566,6 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hitslop.app;
 				PRODUCT_NAME = hitSlop;
@@ -373,6 +609,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 29;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 78UAXU8QG8;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -392,6 +629,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
+				MARKETING_VERSION = 1.2.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -404,13 +642,30 @@
 			};
 			name = Debug;
 		};
+		D76446E1A05D15C119900F6D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/QuickLookThumbnail/QuickLookThumbnail.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = App/QuickLookThumbnail/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.hitslop.app.quicklook-thumbnail";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 		F88BD24407884684C0C409C5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/macOS/hitSlop.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 29;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = App/macOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -418,7 +673,6 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
-				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.hitslop.app;
 				PRODUCT_NAME = hitSlop;
@@ -435,6 +689,24 @@
 			buildConfigurations = (
 				F88BD24407884684C0C409C5 /* Debug */,
 				BDD0280047D9385AD7F95B39 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		56764D5087984F06F065C7D1 /* Build configuration list for PBXNativeTarget "hitSlop-QuickLookThumbnail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				18B52C142F02FEE3DD36F7D7 /* Debug */,
+				D76446E1A05D15C119900F6D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		804486BE2EA609F224F2E24D /* Build configuration list for PBXNativeTarget "hitSlop-QuickLookPreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90AFD7E1DCE8D2C9A778BEC4 /* Debug */,
+				65C2C197DA6131630FBF69E6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -469,6 +741,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		08D5C4A7C03656806EA86C7E /* HitSlopCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HitSlopCore;
+		};
 		39ACE8CB8475940A02C89F85 /* HitSlopCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HitSlopCore;
@@ -485,6 +761,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CF81B28B9F27185DF17FFF08 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		D2F34DD01E248450DF27C232 /* HitSlopCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HitSlopCore;
 		};
 		DB39551676CB8EC1F9FB75DC /* HitSlopHost */ = {
 			isa = XCSwiftPackageProductDependency;

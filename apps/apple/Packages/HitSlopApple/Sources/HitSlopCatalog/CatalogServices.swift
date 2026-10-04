@@ -46,7 +46,7 @@ import HitSlopDocument
     private func local() async -> AsyncStream<CatalogSnapshot> {
         let bundled: LocalTemplateSnapshot
         if let bundledRoot, FileManager.default.fileExists(atPath: bundledRoot.path) {
-            do { bundled = try await scanner.local(at: bundledRoot, makeImmutable: false) }
+            do { bundled = try await scanner.local(at: bundledRoot) }
             catch { bundled = LocalTemplateSnapshot(issues: ["Could not load built-in templates: \(error.localizedDescription)"], diagnostics: [.classify(error)]) }
         } else { bundled = LocalTemplateSnapshot() }
         let store = LocalTemplateStore(templatesURL: templatesURL)
@@ -71,7 +71,7 @@ import HitSlopDocument
 
     func recents() async -> [CatalogEntry] {
         let urls = NSDocumentController.shared.recentDocumentURLs
-        do { return try await scanner.recents(urls, templatesRoot: templatesURL) }
+        do { return try await scanner.recents(urls) }
         catch { telemetry.failure(.catalog, error: error); return [] }
     }
 
@@ -84,12 +84,11 @@ import HitSlopDocument
 
     private func create(_ entry: CatalogEntry, at url: URL) async throws -> URL {
         guard case .local(let source) = entry.source else { throw CocoaError(.fileNoSuchFile) }
-        let package = try await SlopPreparation.run { try SlopDuplicator.duplicate(from: source, to: url, fromTemplate: true) }
-        SlopPreviewWriter.installAuthoredIcon(for: package)
+        let created = try await SlopPreparation.run { try SlopFile.create(from: source, to: url) }
         telemetry.send(.breadcrumb(.create, .completed))
         telemetry.send(.created(entry.isBundled ? .bundled : .installed))
-        recordRecent(url)
-        return package.rootURL
+        recordRecent(created)
+        return created
     }
 
     private static func chooseDestination(_ slug: String) async -> URL? {
@@ -103,11 +102,11 @@ import HitSlopDocument
     }
 
     static func localEntry(_ template: LocalTemplate) -> CatalogEntry {
-        var entry = CatalogEntry(id: "local:\(template.packageURL.path)", source: .local(template.packageURL), title: template.manifest.title)
+        var entry = CatalogEntry(id: "local:\(template.url.path)", source: .local(template.url), title: template.manifest.title)
         apply(template.manifest, to: &entry)
         entry.icons = [template.icon, template.preview]
         entry.previews = [template.preview, template.icon]
-        entry.packageBytes = template.packageBytes
+        entry.fileBytes = template.fileBytes
         entry.createdAt = template.createdAt
         entry.updatedAt = template.updatedAt
         return entry

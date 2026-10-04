@@ -32,6 +32,12 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
+- Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
+  a file another process is writing and a crashed write (the document icon until the app
+  recovers it) are checked.
+- Decide whether Time Machine copying a whole document at the current attachment limits
+  is acceptable, or lower the limits for launch.
+- Confirm the platforms the CLI's engine ships for (Windows isn't planned).
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
@@ -54,12 +60,20 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Next
 
-- **CLI document editing off macOS.** Authoring already runs on Linux; document
-  commands still run in the Swift helper. Move them into a Rust `slop-engine` binary
-  (closed documents under the writer lock, live ones through the owner's socket), ship it
-  inside the app and as npm platform packages, and have the CLI prefer the app's copy on
-  a Mac so it never writes a format the installed app can't read. The Swift helper keeps
-  screenshot, export and open.
+- **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
+  in the app, and select the ones that ship.
+- **One page policy.** Generate the page's content security policy from `packages/schema`
+  for the app and `slop dev` (stating `worker-src slop:`), so the preview refuses what
+  the app refuses. Then have `slop build` emit worker and worklet entry points as files in
+  `assets`, so `new Worker` and `addModule` load `slop://` URLs; `blob:` and `data:` code
+  stays refused, and a refused load says why in plain language. WebKit doesn't isolate
+  `slop:` pages, so there is no `SharedArrayBuffer`.
+- **CLI document editing off macOS.** Authoring and reading files (`build`, `schema`,
+  `inspect`) already run anywhere through the Rust `slop-engine`; document edits still
+  run in the Swift helper. Move them into the engine (closed documents under the writer
+  lock, live ones through the owner's socket), ship it inside the app too (the CLI already
+  carries an engine per platform), and have the CLI prefer the app's copy on a Mac so it never writes a format the installed app can't read. The Swift helper
+  keeps screenshot, export and open.
 
 ## Later
 

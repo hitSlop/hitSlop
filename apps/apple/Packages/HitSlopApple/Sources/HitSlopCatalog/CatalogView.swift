@@ -574,7 +574,7 @@ private struct CatalogDetail: View {
         var result = [CatalogFact(title: "Source", value: entry.isRecent ? "Local document" : entry.isBundled ? "Included with hitSlop" : "Installed locally")]
         if entry.isRecent, let date = entry.createdAt { result.append(CatalogFact(title: "Created", value: date.formatted(date: .abbreviated, time: .omitted))) }
         if let size = entry.initialSize { result.append(CatalogFact(title: "Initial size", value: size)) }
-        if entry.packageBytes > 0 { result.append(CatalogFact(title: "Package size", value: ByteCountFormatter.string(fromByteCount: entry.packageBytes, countStyle: .file))) }
+        if entry.fileBytes > 0 { result.append(CatalogFact(title: "File size", value: ByteCountFormatter.string(fromByteCount: entry.fileBytes, countStyle: .file))) }
         if let date = entry.updatedAt { result.append(CatalogFact(title: "Updated", value: date.formatted(date: .abbreviated, time: .shortened))) }
         return result
     }
@@ -698,8 +698,8 @@ private struct CatalogImageView: View {
     }
 }
 
-/// Catalog artwork keyed by URL, modification date, byte count and decoded size, so
-/// refreshed previews reload while reselecting reuses decoded images.
+/// Catalog artwork keyed by file, artwork, modification date, byte count and decoded size,
+/// so refreshed previews reload while reselecting reuses decoded images.
 @MainActor private let catalogImages: NSCache<NSString, NSImage> = {
     let cache = NSCache<NSString, NSImage>()
     cache.totalCostLimit = 128 * 1024 * 1024
@@ -707,8 +707,8 @@ private struct CatalogImageView: View {
 }()
 
 private func catalogImageKey(_ artwork: CatalogArtwork, maxPixelSize: Int) -> NSString? {
-    guard artwork.url.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
-    return "\(artwork.url.absoluteString)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)|\(maxPixelSize)" as NSString
+    guard artwork.file.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
+    return "\(artwork.file.absoluteString)|\(artwork.name.rawValue)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)|\(maxPixelSize)" as NSString
 }
 
 @MainActor private func cachedCatalogImage(_ artwork: [CatalogArtwork], maxPixelSize: Int) -> NSImage? {
@@ -722,9 +722,10 @@ private func catalogImageKey(_ artwork: CatalogArtwork, maxPixelSize: Int) -> NS
 @MainActor private func loadCatalogImage(_ artwork: CatalogArtwork, maxPixelSize: Int) async -> NSImage? {
     guard let key = catalogImageKey(artwork, maxPixelSize: maxPixelSize) else { return nil }
     if let cached = catalogImages.object(forKey: key) { return cached }
-    let url = artwork.url
+    let (file, name) = (artwork.file, artwork.name)
     let decoded = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let png = SlopArtwork.png(file, name == .icon ? .icon : .preview),
+              let source = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,

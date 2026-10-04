@@ -46,6 +46,7 @@
     "core:build": "bun scripts/core-build.ts",
     "core:build:wasm": "bun scripts/core-build.ts --wasm",
     "core:build:native": "bun scripts/core-build.ts --native",
+    "core:build:engine": "bun scripts/core-build.ts --engine",
     "core:test": "cargo test --locked --workspace",
     "core:test:extended": "HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500 cargo test --locked --release -p hitslop-core --test model",
     "shape:lab": "bun scripts/shape-lab.ts"

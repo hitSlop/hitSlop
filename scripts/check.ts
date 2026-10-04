@@ -11,15 +11,12 @@ await run([process.execPath, "scripts/generate.ts", "--check"]);
 await run([process.execPath, "scripts/skills.ts", "--check"]);
 await run([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]);
 const templates = await discoverTemplates();
-// Share the standard compiler program; preserve project-specific settings when
-// a template opts into them. Discovery keeps archived examples out.
+// Share one compiler program among projects with the starter's self-contained
+// tsconfig; preserve project-specific settings when a template opts into them. Discovery
+// keeps archived examples out.
 const shared: TemplateSource[] = [],
   custom: TemplateSource[] = [];
-const standard = {
-  extends: "../../../tsconfig.json",
-  include: ["./**/*.svelte", "./**/*.ts"],
-  exclude: ["dist", "node_modules"],
-};
+const standard = await Bun.file(join(repository, "packages/cli/templates/checklist/tsconfig.json")).json();
 for (const template of templates) {
   const config = await Bun.file(join(template.source, "tsconfig.json")).text();
   let settings: unknown;
@@ -36,7 +33,7 @@ try {
   await writeFile(
     config,
     JSON.stringify({
-      extends: join(repository, "tsconfig.json"),
+      compilerOptions: standard.compilerOptions,
       include: shared.flatMap(({ source }) => [
         join(source, "**/*.svelte"),
         join(source, "**/*.ts"),

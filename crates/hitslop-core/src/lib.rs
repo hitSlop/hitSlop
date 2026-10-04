@@ -28,7 +28,7 @@ use project::{counter_sum, project, project_at};
 use issues::{issues, container_issues, scalar_issue};
 use publication::{Dirty, Events, ListState};
 use std::sync::Arc;
-pub use wire::{Code, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
+pub use wire::{Code, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, IMAGE_PIXELS, IMAGE_SIDE, ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
 use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
 
 const MAX_BYTES: usize = wire::STORAGE_BYTES;
@@ -247,7 +247,7 @@ pub struct Document {
     events: Events,
     /// Where the saved history starts once the latest checkpoint is written. A
     /// concurrent edit must not branch from before it: its saved operations would depend
-    /// on history the checkpoint drops, and the package could not open again.
+    /// on history the checkpoint drops, and the document could not open again.
     floor: VersionVector,
     undo: VecDeque<Step>,
     redo: Vec<Step>,
@@ -742,5 +742,9 @@ fn checked(imported: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
 pub mod envelope;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod store;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod file;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod registry;
 #[cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
 pub mod manifest;
