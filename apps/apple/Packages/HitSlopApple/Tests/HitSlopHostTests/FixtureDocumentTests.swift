@@ -7,7 +7,7 @@ import HitSlopTestSupport
 @testable import HitSlopHost
 @testable import HitSlopDocument
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
     _ = NSApplication.shared
     let fixtures = Fixtures.repository.appendingPathComponent("tests/fixtures")
@@ -19,28 +19,27 @@ extension OwnerClientTests {
       defer { try? FileManager.default.removeItem(at: root) }
       let record = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("fixture.json"))) as? [String: Any])
       let expected = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("expected.json"))) as? NSDictionary)
-      let baseline = try await command("get", url: root)
-      #expect(try JSONSerialization.jsonObject(with: baseline) as? NSDictionary == expected)
+      #expect(try await savedValue(root) == expected)
       // Frozen apps check the ABI while mounting; a failed check never becomes ready.
       let controller = try await SlopDocumentWindowController.open(url: root)
       try await controller.session.waitUntilReady()
       // Only the conformance schema has a title; template specimens get generic checks.
       let conformance = record["kind"] as? String != "template"
       if conformance {
-        _ = try await command("apply", url: root, operation: setTitle("Live command"))
-        _ = try await command("theme.set", url: root, themeValues: Data(##"{"accent":"#654321"}"##.utf8))
-        _ = try await command("compact", url: root)
+        #expect(try await command("batch", url: root, setTitle("Live command")).ok)
+        #expect(try await command("theme.set", url: root, ["values": ["accent": "#654321"]]).ok)
+        #expect(try await command("compact", url: root).ok)
       }
       try await controller.session.close()
       if conformance {
-        _ = try await command("apply", url: root, operation: setTitle("Closed command"))
-        _ = try await command("compact", url: root)
-        _ = try await command("apply", url: root, operation: setTitle("Candidate update"))
+        #expect(try await command("batch", url: root, setTitle("Closed command")).ok)
+        #expect(try await command("compact", url: root).ok)
+        #expect(try await command("batch", url: root, setTitle("Candidate update")).ok)
       }
       // Renders run the authored app (including its self-checks) against a snapshot:
       // saved state is byte-for-byte what a later read returns.
-      let saved = try await command("get", url: root)
-      let session = try await DocumentSession.open(url: root, purpose: .backgroundRender)
+      let saved = try await savedValue(root)
+      let session = try await DocumentSession.open(url: root, storage: .snapshot)
       session.load()
       try await session.waitUntilReady()
       let png = try await SlopRenderer.exportPNGData(session: session)
@@ -48,7 +47,7 @@ extension OwnerClientTests {
       let pdf = try await SlopRenderer.exportPDFData(session: session)
       #expect((PDFDocument(data: pdf)?.pageCount ?? 0) > 0)
       try await session.close()
-      #expect(try await command("get", url: root) == saved)
+      #expect(try await savedValue(root) == saved)
       // SQLite replay, scenarios, issues and current-engine convergence run in Bun.
       // This test retains the frozen apps' WebKit, CLI, theme and export boundary.
     }

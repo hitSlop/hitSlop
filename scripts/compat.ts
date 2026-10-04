@@ -42,7 +42,7 @@ export type Scenario = { ops: unknown[]; value: unknown; issues: unknown[] };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
  * with page-minted row IDs replaced by `minted-N`. */
 export type Page = { script: "contractTest" | "actions"; actions?: { selector: string; value: string; enter?: boolean }[]; value: unknown };
-/** `cli/transcript.json`: helper commands as a CLI of the entry's release sends them. */
+/** `cli/transcript.json`: `slop` commands as the entry's release ran them, and what they printed. */
 export type Transcript = {
   document: string;
   commands: { args: string[]; code: number; stdout: unknown; outputHash?: string }[];
@@ -76,9 +76,11 @@ export async function readJSON<T>(path: string): Promise<T | undefined> {
   );
 }
 
-/** Runs the native helper, returning its exit code and output. */
-export async function native(args: string[]) {
-  const child = Bun.spawn([helper, ...args], { stdout: "pipe", stderr: "pipe" });
+/** Runs a `slop` command through this build's CLI and helper, returning its exit code and output. */
+export async function slop(args: string[]) {
+  const child = Bun.spawn([process.execPath, join(repository, "packages/cli/src/cli.ts"), ...args], {
+    env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
+  });
   const timeout = setTimeout(() => child.kill(), 120_000);
   try {
     const [stdout, stderr, code] = await Promise.all([
@@ -91,17 +93,17 @@ export async function native(args: string[]) {
     clearTimeout(timeout);
   }
 }
-export async function nativeJSON(args: string[]): Promise<any> {
-  const { stdout, stderr, code } = await native(args);
-  if (code) throw new Error(`hitslop-native ${args.join(" ")} failed (${code}): ${stderr.trim()}`);
+export async function slopJSON(args: string[]): Promise<any> {
+  const { stdout, stderr, code } = await slop(args);
+  if (code) throw new Error(`slop ${args.join(" ")} failed (${code}): ${stderr.trim()}`);
   return JSON.parse(stdout);
 }
 
 /** What a later build must reproduce: the value and issues, not the version or sequence. */
 export async function savedState(document: string): Promise<Expected> {
-  const { state } = await nativeJSON(["get", document, "--snapshot"]);
-  const theme = await nativeJSON(["theme", "get", document]);
-  const attachments = await nativeJSON(["attachments", "list", document]);
+  const { state } = await slopJSON(["get", document, "--snapshot"]);
+  const theme = await slopJSON(["theme", "get", document]);
+  const attachments = await slopJSON(["attachments", "list", document]);
   return {
     value: state.value,
     issues: state.issues,
@@ -111,7 +113,7 @@ export async function savedState(document: string): Promise<Expected> {
 }
 const parse = (value: unknown) => (typeof value === "string" ? JSON.parse(value) : value);
 
-/** Normalizes the parts of helper output that name a session rather than a document. */
+/** Normalizes the parts of CLI output that name a session rather than a document. */
 export function stable(output: unknown, args: readonly string[]): unknown {
   const omitSession = (value: any) => Object.fromEntries(Object.entries(value)
     .filter(([key]) => !["version", "epoch", "sequence"].includes(key)));

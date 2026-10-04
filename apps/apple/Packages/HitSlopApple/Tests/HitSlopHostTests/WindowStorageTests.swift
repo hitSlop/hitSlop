@@ -9,7 +9,7 @@ import HitSlopTestSupport
 @testable import HitSlopHost
 @testable import HitSlopDocument
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
@@ -17,7 +17,7 @@ extension OwnerClientTests {
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let epoch = controller.session.epoch
-    _ = try await command("apply", url: root, operation: setTitle("Preserved through interface reload"))
+    #expect(try await command("batch", url: root, setTitle("Preserved through interface reload")).ok)
     _ = try await controller.session.webView.callAsyncJavaScript(
       "dispatchEvent(new ErrorEvent('error', {error:new Error('Test application failure')})); return true",
       arguments: [:], in: nil, contentWorld: .page)
@@ -28,54 +28,44 @@ extension OwnerClientTests {
     }
     let badge = try #require(controller.issueBadge)
     #expect(controller.window?.attachedSheet == nil)
-    _ = try await command("apply", url: root, operation: setTitle("Preserved through interface reload"))
+    #expect(try await command("batch", url: root, setTitle("Preserved through interface reload")).ok)
     #expect(controller.issueBadge === badge)
     controller.dismissIssue()
     #expect(controller.issueBadge == nil)
-    let baseline = try await command("theme.get", url: root)
-    let values = try JSONSerialization.data(withJSONObject: ["accent": "#654321"])
-    let theme = try await command("theme.set", url: root, themeValues: values)
+    let baseline = try await commandState("theme.get", url: root)
+    let theme = try await commandState("theme.set", url: root, ["values": ["accent": "#654321"]])
     #expect(String(decoding: theme, as: UTF8.self).contains("#654321"))
-    let css = try await controller.session.webView.callAsyncJavaScript(
-      "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
-      arguments: [:], in: nil, contentWorld: .page)
-    #expect(css as? String == "#654321")
-    await #expect(throws: (any Error).self) {
-      _ = try await command("theme.set", url: root, themeValues: Data("{\"unknown\":\"red\"}".utf8))
+    func accent() async throws -> String? {
+      try await controller.session.webView.callAsyncJavaScript(
+        "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
+        arguments: [:], in: nil, contentWorld: .page) as? String
     }
+    #expect(try await accent() == "#654321")
+    #expect(try await command("theme.set", url: root, ["values": ["unknown": "red"]]).code == .rejected)
     // A shared theme file round-trips through the live owner and restyles the page.
-    let shared = try await command("theme.export", url: root)
-    _ = try await command("theme.reset", url: root)
-    _ = try await command("theme.import", url: root, themeFile: shared)
+    let exported = try JSONSerialization.jsonObject(with: await commandState("theme.export", url: root)) as? [String: String]
+    let shared = try #require(exported?["file"])
+    #expect(try await command("theme.reset", url: root).ok)
+    #expect(try await command("theme.import", url: root, ["file": shared]).ok)
     try await controller.session.flush()
-    let imported = try await controller.session.webView.callAsyncJavaScript(
-      "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
-      arguments: [:], in: nil, contentWorld: .page)
-    #expect(imported as? String == "#654321")
-    let foreign = String(decoding: shared, as: UTF8.self).replacingOccurrences(of: #""template" : ""#, with: #""template" : "other-"#)
-    await #expect(throws: (any Error).self) {
-      _ = try await command("theme.import", url: root, themeFile: Data(foreign.utf8))
-    }
-    do {
-      _ = try await command("apply", url: root,
-        operation: Data(#"{"type":"set","path":["missing"],"value":1}"#.utf8))
-      Issue.record("Invalid operation was accepted")
-    } catch {
-      // A coded rejection is known not to have applied; only unknown outcomes ask for slop get.
-      #expect(error.localizedDescription.hasSuffix("Not applied."))
-    }
+    #expect(try await accent() == "#654321")
+    var foreign = try #require(try JSONSerialization.jsonObject(with: Data(shared.utf8)) as? [String: Any])
+    foreign["template"] = "other-" + (foreign["template"] as? String ?? "")
+    let foreignFile = String(decoding: try JSONSerialization.data(withJSONObject: foreign), as: UTF8.self)
+    #expect(try await command("theme.import", url: root, ["file": foreignFile]).code == .rejected)
+    // A coded rejection is known not to have applied.
+    let refused = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["missing"],"value":1}]"#])
+    #expect(refused.code == .rejected)
     try await controller.session.reloadInterface()
     #expect(controller.session.epoch == epoch)
-    let state = try await command("get", url: root)
-    #expect(String(decoding: state, as: UTF8.self).contains("Preserved through interface reload"))
+    #expect(try await savedValue(root)?["title"] as? String == "Preserved through interface reload")
     let duplicate = root.deletingLastPathComponent().appendingPathComponent(
       UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: duplicate) }
     try await controller.session.copy(to: duplicate)
-    #expect(try await command("theme.get", url: duplicate) == command("theme.get", url: root))
-    // A duplicate is a new logical document carrying the same saved state.
-    #expect(try savedDocumentID(root) != savedDocumentID(duplicate))
-    #expect(try await command("get", url: duplicate) == command("get", url: root))
+    #expect(try await commandState("theme.get", url: duplicate) == commandState("theme.get", url: root))
+    // A duplicate carries the same saved state.
+    #expect(try await savedValue(duplicate) == savedValue(root))
     // Pointer sampling continues while asynchronous close releases storage. A ready
     // session must never expose an already-destroyed renderer to the native toolbar.
     var finished = false
@@ -88,14 +78,12 @@ extension OwnerClientTests {
       await Task.yield()
     }
     try await close.value
-    let reopened = try await command("theme.get", url: root)
-    #expect(reopened == theme)
-    _ = try await command("theme.reset", url: root, themeToken: "accent")
-    let reset = try await command("theme.get", url: root)
-    #expect(try JSONSerialization.jsonObject(with: reset) as? NSDictionary == JSONSerialization.jsonObject(with: baseline) as? NSDictionary)
+    #expect(try await commandState("theme.get", url: root) == theme)
+    #expect(try await command("theme.reset", url: root, ["token": "accent"]).ok)
+    #expect(try await commandState("theme.get", url: root) == baseline)
     // A closed document imports through the owner the command opens.
-    _ = try await command("theme.import", url: root, themeFile: shared)
-    #expect(try await command("theme.get", url: root) == theme)
+    #expect(try await command("theme.import", url: root, ["file": shared]).ok)
+    #expect(try await commandState("theme.get", url: root) == theme)
   }
 
   // Failure: every CLI command ran a page close barrier that made the page inert, blurring
@@ -111,7 +99,7 @@ extension OwnerClientTests {
       "const input = document.createElement('input'); document.body.append(input); input.focus(); globalThis.__probe = input; return document.activeElement === input",
       arguments: [:], in: nil, contentWorld: .page)
     #expect(focused as? Bool == true)
-    _ = try await command("apply", url: root, operation: setTitle("From the CLI"))
+    #expect(try await command("batch", url: root, setTitle("From the CLI")).ok)
     let still = try await view.callAsyncJavaScript(
       "return document.activeElement === globalThis.__probe && !document.body.inert",
       arguments: [:], in: nil, contentWorld: .page)
@@ -119,9 +107,9 @@ extension OwnerClientTests {
     try await controller.session.close()
   }
 
-  #if DEBUG
-  // These cases require fault-injection hooks that are absent from production builds.
-  @Test @MainActor func committedWriteSurvivesRendererDeathAndLostAcknowledgement() async throws {
+  // A renderer that dies after an edit is durable takes neither the edit nor ownership
+  // with it; Retry reattaches a new page to the same owner.
+  @Test @MainActor func rendererDeathKeepsCommittedEditsAndOwnership() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -130,32 +118,21 @@ extension OwnerClientTests {
     let engine = controller.session
     let epoch = engine.epoch
     weak var oldWebView = engine.webView
+    #expect(try await command("batch", url: root, setTitle("Committed before renderer death")).ok)
     let pid = try #require(engine.webView.value(forKey: "_webProcessIdentifier") as? Int32)
-    engine.owner.testingPhase = { phase in
-      guard phase.hasSuffix(":committed") else { return }
-      Darwin.kill(pid, SIGKILL)
-      throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
-    }
-    // The socket follows the owner. A lost acknowledgement reports failure until
-    // a later retry confirms the save; the accepted edit and ownership remain.
-    await #expect(throws: (any Error).self) {
-      _ = try await command("apply", url: root, operation: setTitle("Committed before renderer death"))
-    }
-    engine.owner.testingPhase = nil
+    #expect(Darwin.kill(pid, SIGKILL) == 0)
     for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
     #expect(engine.rendererDead)
     #expect(try liveDiscovery(path: root.path) != nil)
-    #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
+    #expect(Fixtures.isLocked(root))
     _ = try await controller.perform(.retry)
     #expect(engine.epoch == epoch)
     #expect(oldWebView == nil)
-    let bytes = try await command("get", url: root)
-    #expect(String(decoding: bytes, as: UTF8.self).contains("Committed before renderer death"))
+    #expect(try await savedValue(root)?["title"] as? String == "Committed before renderer death")
     try await controller.session.close()
     try await controller.session.close()
     #expect(try liveDiscovery(path: root.path) == nil)
-    let ownership = try WriterLock.acquire(root)
-    ownership.release()
+    #expect(!Fixtures.isLocked(root))
   }
 
   // Failure: close unmounted the app before the native close, so a failed close left an
@@ -167,12 +144,15 @@ extension OwnerClientTests {
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let session = controller.session
-    session.owner.testingPhase = { phase in
-      guard phase == "close" else { return }
-      throw NSError(domain: "StorageFault", code: 3, userInfo: [NSLocalizedDescriptionKey: "Injected close failure"])
-    }
+    let events = SessionEvents(next: controller)
+    events.status = { _ in }
+    events.failure = { _ in }
+    session.delegate = events
+    // Another process holds the database: the edit is applied, but no save completes.
+    let hold = try Fixtures.DatabaseHold(root)
+    #expect(try await command("batch", url: root, setTitle("Unsaved while held")).code == .saveFailed)
     await #expect(throws: (any Error).self) { try await session.close() }
-    session.owner.testingPhase = nil
+    hold.release()
     let edited = try await session.webView.callAsyncJavaScript("""
       const edit = document.getElementById('edit');
       if (!edit) return false;
@@ -181,32 +161,9 @@ extension OwnerClientTests {
       """, arguments: [:], in: nil, contentWorld: .page) as? Bool
     #expect(edited == true)
     try await session.flush()
-    #expect(String(decoding: try await command("get", url: root), as: UTF8.self).contains("Edited"))
+    #expect((try await savedValue(root)?["title"] as? String)?.hasPrefix("Edited") == true)
     try await session.close()
-    try WriterLock.acquire(root).release()
-  }
-
-  @Test @MainActor func lostAcknowledgementIsRetriedWithoutReplayingIncrement() async throws {
-    _ = NSApplication.shared
-    let root = try contractFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
-    let engine = controller.session
-    engine.owner.testingPhase = { phase in
-      guard phase.hasSuffix(":committed") else { return }
-      throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Lost storage acknowledgement"])
-    }
-    await #expect(throws: (any Error).self) {
-      _ = try await command("apply", url: root,
-        operation: Data(#"{"type":"increment","path":["hits"],"by":1}"#.utf8))
-    }
-    engine.owner.testingPhase = nil
-    let bytes = try await command("get", url: root)
-    #expect((try JSONSerialization.jsonObject(with: bytes) as? [String: Any])?["hits"] as? Int == 1)
-    try await controller.session.close()
-    let reopened = try await command("get", url: root)
-    #expect(reopened == bytes)
+    #expect(!Fixtures.isLocked(root))
   }
 
   // Gap: failed-save retry tests do not prove that explicit discard reloads bytes,
@@ -223,51 +180,36 @@ extension OwnerClientTests {
     events.status = { _ in }
     events.failure = { _ in }
     engine.delegate = events
-    _ = try await command("apply", url: root, operation: setTitle("Durable title"))
-    let baseline = try await command("get", url: root)
-    let identity = try savedDocumentID(root)
-    engine.owner.testingPhase = { phase in
-      guard phase == "append:uncommitted" || phase == "checkpoint:uncommitted" else { return }
-      throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
-    }
-    await #expect(throws: (any Error).self) {
-      _ = try await command("apply", url: root, operation: setTitle("Unsaved title"))
-    }
+    #expect(try await command("batch", url: root, setTitle("Durable title")).ok)
+    let baseline = try await savedValue(root)
+    // Writes fail while the document stays readable, so discard can reload it.
+    let hold = try Fixtures.DatabaseHold(root, readable: true)
+    #expect(try await command("batch", url: root, setTitle("Unsaved title")).code == .saveFailed)
     await #expect(throws: (any Error).self) { try await engine.prepareClose() }
-    #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
     try await engine.discardPending()
-    // Keep writes failing: this succeeds only if discard really removed pending writes.
-    let restored = try await command("get", url: root)
-    #expect(restored == baseline)
-    #expect(try savedDocumentID(root) == identity)
-    #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
-    engine.owner.testingPhase = nil
-    _ = try await command("apply", url: root, operation: setTitle("After discard"))
+    // Writes still fail: this succeeds only if discard really removed pending writes.
+    #expect(try await savedValue(root) == baseline)
+    hold.release()
+    #expect(Fixtures.isLocked(root))
+    #expect(try await command("batch", url: root, setTitle("After discard")).ok)
     try await controller.session.close()
-    let reopened = try await command("get", url: root)
-    #expect(String(decoding: reopened, as: UTF8.self).contains("After discard"))
+    #expect(try await savedValue(root)?["title"] as? String == "After discard")
   }
 
   @Test @MainActor func failedSaveRetainsOwnershipAndRendererDeathReleasesOnClose() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
     var operations: [SlopTelemetryEvent.Failure] = []
-    controller.telemetry = SlopTelemetry { if case .failed(let operation, _) = $0 { operations.append(operation) } }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(let operation, _) = $0 { operations.append(operation) } })
+    try await controller.session.waitUntilReady()
     // Preserve production status handling, without displaying a sheet in the test harness.
     let events = SessionEvents(next: controller)
     events.status = { [weak controller] status in controller?.recordSaveStatus(status) }
     events.failure = { _ in }
     controller.session.delegate = events
-    controller.session.owner.testingPhase = { phase in
-      guard phase == "append:uncommitted" || phase == "checkpoint:uncommitted" else { return }
-      throw NSError(domain: "StorageFault", code: 2, userInfo: [NSLocalizedDescriptionKey: "Injected save failure"])
-    }
-    do {
-      _ = try await command("apply", url: root, operation: setTitle("Recovered edit"))
-      Issue.record("Injected write succeeded")
-    } catch { #expect(error.localizedDescription.contains("Run slop get")) }
+    let hold = try Fixtures.DatabaseHold(root)
+    #expect(try await command("batch", url: root, setTitle("Recovered edit")).code == .saveFailed)
     do {
       try await controller.prepareToClose(operation: .quit)
       try await controller.finishClose(operation: .quit)
@@ -275,8 +217,8 @@ extension OwnerClientTests {
     } catch {}
     // Gap: propagated close/quit errors must not duplicate the storage incident.
     #expect(operations == [.save])
-    #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
-    controller.session.owner.testingPhase = nil
+    hold.release()
+    #expect(Fixtures.isLocked(root))
     try await controller.session.flush()
     let pid = try #require(
       controller.session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
@@ -289,15 +231,13 @@ extension OwnerClientTests {
     try await controller.prepareToClose()
     try await controller.session.close()
     controller.window?.orderOut(nil)
-    #expect(
-      String(decoding: try await command("get", url: root), as: UTF8.self)
-        .contains("Recovered edit"))
+    #expect(try await savedValue(root)?["title"] as? String == "Recovered edit")
   }
 
   // Failure: a close stopped by a failed save showed the save-failure sheet and a second,
   // generic alert. Oracle: the close fails as a save failure, which the coordinator leaves
-  // to the window, and the window shows one sheet, the one that offers Discard.
-  @Test @MainActor func aCloseStoppedByAFullDocumentShowsOneSheet() async throws {
+  // to the window, and the window shows one sheet.
+  @Test @MainActor func aCloseStoppedByAFailedSaveShowsOneSheet() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -306,35 +246,30 @@ extension OwnerClientTests {
     controller.showWindow(nil)
     await controller.waitForPresentation()
     let window = try #require(controller.window)
-    controller.session.owner.testingPhase = { phase in
-      if phase == "append:uncommitted" || phase == "checkpoint:uncommitted" { throw CoreError.Full }
-    }
-    await #expect(throws: (any Error).self) {
-      _ = try await command("apply", url: root, operation: setTitle("Unsaved"))
-    }
+    let hold = try Fixtures.DatabaseHold(root)
+    #expect(try await command("batch", url: root, setTitle("Unsaved")).code == .saveFailed)
     var failure: SlopDocumentFailure?
     do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
     #expect(failure == .save)
     #expect(window.sheets.count == 1)
-    #expect(controller.attentionFailure == .full)
+    #expect(controller.attentionFailure == .busy)
     let sheet = try #require(window.attachedSheet)
     window.endSheet(sheet, returnCode: .abort)
     sheet.orderOut(nil)
-    controller.session.owner.testingPhase = nil
+    hold.release()
     try await controller.session.flush()
     try await controller.finishClose()
   }
-  #endif
 }
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func saveTelemetryReportsOneFailureUntilRecovery() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
     var events: [SlopTelemetryEvent] = []
-    controller.telemetry = SlopTelemetry { if case .failed = $0 { events.append($0) } }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed = $0 { events.append($0) } })
+    try await controller.session.waitUntilReady()
     // Status reporting is separate from the existing real failed-save/ownership test.
     let failed = DocumentSaveStatus.failed(.busy)
     controller.recordSaveStatus(failed)
@@ -347,7 +282,7 @@ extension OwnerClientTests {
   }
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Gap: guest diagnostics are displayed but never reported. Expect a fixed category,
   // with neither the guest's message nor its arbitrary code in the uploaded fields.
   // Failure: every reported issue opened a blocking sheet, so a refused edit (a typed
@@ -373,12 +308,10 @@ extension OwnerClientTests {
   @Test @MainActor func authoredTelemetryUsesOnlyFixedCategories() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    await controller.waitForPresentation()
     var failures: [SlopFailureContext] = []
-    controller.telemetry = SlopTelemetry {
-      if case .failed(_, let context) = $0 { failures.append(context) }
-    }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { failures.append(context) } })
+    await controller.waitForPresentation()
     controller.pageSession(controller.session, didReport: SlopPageIssue(
       message: "secret document /private/example/document.slop", isOperation: false))
     #expect(failures.count == 1)
@@ -393,10 +326,10 @@ extension OwnerClientTests {
   @Test @MainActor func rendererTelemetryDeduplicatesUntilReady() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    await controller.waitForPresentation()
     var failures = 0
-    controller.telemetry = SlopTelemetry { if case .failed = $0 { failures += 1 } }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed = $0 { failures += 1 } })
+    await controller.waitForPresentation()
     let error = CocoaError(.fileReadUnknown)
     controller.pageSession(controller.session, didFail: error)
     controller.pageSession(controller.session, didFail: error)
@@ -408,31 +341,24 @@ extension OwnerClientTests {
   }
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Gap: duplication has success analytics but no error reporting. A rejected destination
   // must report once, cancellation must not fail, and the source must remain usable.
   @Test @MainActor func duplicateTelemetryReportsRejectedDestinationWithoutLosingSource() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    await controller.waitForPresentation()
     var failures: [SlopFailureContext] = []
-    controller.telemetry = SlopTelemetry {
-      if case .failed(.duplicate, let context) = $0 { failures.append(context) }
-    }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(.duplicate, let context) = $0 { failures.append(context) } })
+    await controller.waitForPresentation()
     #expect(try await controller.duplicateDocument(to: nil) == nil)
     #expect(failures.isEmpty)
     await #expect(throws: (any Error).self) { _ = try await controller.duplicateDocument(to: root) }
     #expect(failures.count == 1)
     #expect(failures.first?.reason == .destinationExists)
     #expect(failures.first?.classification == .rejection)
-    #expect(throws: (any Error).self) { _ = try WriterLock.acquire(root) }
+    #expect(Fixtures.isLocked(root))
     try await controller.session.flush()
     try await controller.session.close()
   }
-}
-
-/// The saved document identity of a closed or live document (a snapshot takes no lock).
-private func savedDocumentID(_ root: URL) throws -> String {
-  try NativeStore.open(path: root.path, mode: .snapshot).docId()
 }

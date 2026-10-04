@@ -5,6 +5,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { engine } from "../packages/cli/src/engine";
+import { createDocument, nativeRequest } from "./fixture-documents";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
 // Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
@@ -33,6 +34,14 @@ try {
     assert.equal(code, 0, error);
     return out;
   };
+  // Installed, without Bun or Node on the path.
+  const placement = { cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  const request = async (body: Record<string, unknown>) => {
+    const reply = await nativeRequest(helper, body, placement);
+    assert.ok(reply.ok, `${body.method}: ${reply.error}`);
+    return reply;
+  };
+  const value = async (document: string) => (await request({ method: "get", documentPath: document })).state.state.value;
   const appCore = (await run(["--core-build"], join(app, "Contents/MacOS/hitSlop"))).trim();
   const helperCore = (await run(["--core-build"])).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
@@ -82,34 +91,26 @@ try {
     if (!exhaustive && !fixtures.includes(slug)) continue;
     console.log(`Exercising installed create/reopen/export: ${slug}`);
     const document = join(folder, slug + ".slop");
-    await run(["create", "--from", source, "--output", document]);
-    const initial = JSON.parse(await run(["get", document]));
+    await createDocument(helper, source, document, placement);
+    const initial = await value(document);
     assert.ok(initial && typeof initial === "object");
     assert.ok(JSON.parse(await engine(["schema", document])));
-    assert.deepEqual(JSON.parse(await run(["get", document])), initial);
+    assert.deepEqual(await value(document), initial);
     for (const format of ["png", "pdf"]) {
       const output = join(folder, slug + "." + format);
-      await run(["export", document, "--format", format, "--output", output]);
+      await request({ method: "export", documentPath: document, format, output });
       assert.ok((await readFile(output)).length > 100);
     }
   }
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  await run([
-    "create",
-    "--from",
-    resolve("generated/templates/quick-checklist.slop"),
-    "--output",
-    mutation,
-  ]);
-  await run([
-    "apply",
-    mutation,
-    "--op",
-    JSON.stringify({ type: "set", path: ["title"], value: "Installed helper verified" }),
-  ]);
-  assert.ok(JSON.parse(await run(["get", mutation])).title.startsWith("Installed helper verified"));
+  await createDocument(helper, resolve("generated/templates/quick-checklist.slop"), mutation, placement);
+  await request({
+    method: "batch", documentPath: mutation,
+    ops: JSON.stringify([{ type: "set", path: ["title"], value: "Installed helper verified" }]),
+  });
+  assert.ok((await value(mutation)).title.startsWith("Installed helper verified"));
   console.log(
     "PASS packaged starters, matching page shells, installed editing and export without Bun/Node",
   );

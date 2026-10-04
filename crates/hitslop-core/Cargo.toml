@@ -34,6 +34,10 @@ libc = { version = "0.2", optional = true }
 tempfile = "3"
 
 [[test]]
+name = "file"
+required-features = ["storage"]
+
+[[test]]
 name = "store"
 required-features = ["storage"]
 

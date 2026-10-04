@@ -18,23 +18,3 @@ function freeze(value: any) {
     Object.freeze(value);
   }
 }
-function canonicalJSON(value: unknown): string {
-  const canonical = (v: any): any =>
-    Array.isArray(v)
-      ? v.map(canonical)
-      : v && typeof v === "object"
-        ? Object.fromEntries(
-            Object.keys(v)
-              .sort()
-              .map((k) => [k, canonical(v[k])]),
-          )
-        : v;
-  return JSON.stringify(canonical(value));
-}
-/** Descriptors are frozen, so each one's key is computed once. */
-const keys = new WeakMap<object, string>();
-export function schemaKey(descriptor: Descriptor): string {
-  let key = keys.get(descriptor);
-  if (key === undefined) keys.set(descriptor, (key = canonicalJSON(descriptor)));
-  return key;
-}

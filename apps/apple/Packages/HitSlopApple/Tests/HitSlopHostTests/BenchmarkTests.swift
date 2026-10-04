@@ -213,8 +213,7 @@ private final class PublicationTimes: @unchecked Sendable {
           "method":
             "Frameless window controllers with hover panels in the Host test harness, not the catalog application. One sequential run per cell, fully rendered rows, host plus identified WebContent physical footprints; excludes GPU/network processes. Creation plus opening, warm machine. Checkbox acceptance, rendering and durable drain. Owner publication callback to JS arrival matched by sequence using epoch clocks (approximately millisecond precision); includes test timestamp/JSON decoding overhead. Only the first 100 edits enter publication phase samples; save-status pushes are excluded. Debug helper/test bundle, not an optimized app. Absolute memory only; no leak or matched-control percentage claim.",
           "results": records, "failure": failure as Any? ?? NSNull(),
-          "variant": ["label": label, "noDOM": noDOM,
-            "autosaveMS": ProcessInfo.processInfo.environment["HITSLOP_AUTOSAVE_MS"] ?? "150"],
+          "variant": ["label": label, "noDOM": noDOM, "autosaveMS": DocumentOwner.autosaveDelayMS],
         ], options: [.prettyPrinted, .sortedKeys]
       ).write(to: out.appendingPathComponent("native-owner-windows\(label.isEmpty ? "" : "-" + label).json"))
     }

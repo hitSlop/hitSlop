@@ -226,6 +226,8 @@ fn bad_bases_are_refused_on_every_path_without_panicking() {
             assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
             assert_eq!(view(&d), before);
         }
+        let code = d.export_since(base).unwrap_err().code.as_str();
+        assert!(["stale_base", "invalid_version"].contains(&code), "export since {base}: {code}");
     }
     // A known base whose text was not `from` is stale, never silently rebased.
     let page = Binding { path: json!(["title"]), base: d.version(), text: "zzz".into() };

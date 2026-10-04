@@ -16,7 +16,7 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.26.2"),
     .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.18.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
   ],
   targets: [
     .binaryTarget(name: "HitSlopCoreFFI", path: "Generated/HitSlopCoreFFI.xcframework"),

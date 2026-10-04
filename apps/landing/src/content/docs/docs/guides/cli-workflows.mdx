@@ -93,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints the data; ordinary edits never need it. You can edit a document while it is open or closed, and Edit ▸ Undo in the window can revert what the agent changed, open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints nothing; ordinary edits never need it. You can edit a document while it is open or closed. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
 
@@ -14,7 +14,7 @@ test("native protocol selection defaults to 1 and refuses unknown versions befor
   const direct = await run(["--protocol"]);
   expect(direct.code).toBe(0);
   expect(await run(["--client-protocol", "1", "--protocol"])).toEqual(direct);
-  const rejected = await run(["--client-protocol", "2", "get", "/nonexistent-document.slop"]);
+  const rejected = await run(["--client-protocol", "2", "request"]);
   expect(rejected.code).not.toBe(0);
   expect(rejected.stderr).toContain("Unsupported command protocol 2");
   expect(rejected.stderr).not.toContain("Missing");
@@ -37,8 +37,14 @@ test.each(protocols)("helper protocol %s", async (reported, refusal) => {
   try {
     const helper = join(root, "helper");
     const touched = join(root, "command-ran");
-    await writeFile(helper, `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${JSON.stringify(reported)});\nelse await Bun.write(${JSON.stringify(touched)}, JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
-    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "get", "example.slop"], {
+    await writeFile(helper, `#!${process.execPath}
+if (process.argv[2] === "--protocol") console.log(${JSON.stringify(reported)});
+else {
+  await Bun.write(${JSON.stringify(touched)}, JSON.stringify({ args: process.argv.slice(2), request: await Bun.stdin.json() }));
+  console.log(JSON.stringify({ ok: true }));
+}
+`, { mode: 0o755 });
+    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "compact", "example.slop"], {
       env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
     });
     const code = await child.exited;
@@ -47,7 +53,11 @@ test.each(protocols)("helper protocol %s", async (reported, refusal) => {
       expect(await new Response(child.stderr).text()).toContain(refusal);
     } else expect(code).toBe(0);
     expect(await Bun.file(touched).exists()).toBe(!refusal);
-    if (!refusal) expect(await Bun.file(touched).json()).toEqual(["--client-protocol", "1", "get", "example.slop"]);
+    if (!refusal)
+      expect(await Bun.file(touched).json()).toEqual({
+        args: ["--client-protocol", String(HelperProtocol.version), "request"],
+        request: { method: "compact", documentPath: resolve("example.slop") },
+      });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

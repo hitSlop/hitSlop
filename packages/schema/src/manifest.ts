@@ -1,7 +1,7 @@
 import { Strict } from "./strict";
 import * as Type from "typebox";
 import { validate } from "./validation";
-import { ManifestText, SlopCategories, WindowBounds } from "./constants";
+import { AppLimits, ManifestText, ShapeLimits, SlopCategories, WindowBounds } from "./constants";
 import { ThemeValuesSchema } from "./values";
 
 const SlopCategorySchema = Type.Enum(SlopCategories, { title: "SlopCategory" });
@@ -18,7 +18,7 @@ const SlopAuthorSchema = Strict(
 );
 const skinPath = Type.String({
   minLength: 12,
-  maxLength: 240,
+  maxLength: AppLimits.assetPath,
   pattern: "^(?!.*(?:^|/)\\.{1,2}(?:/|$)|.*//)assets/[A-Za-z0-9._/-]+\\.[pP][nN][gG]$",
 });
 const dimensions = {
@@ -27,26 +27,21 @@ const dimensions = {
 };
 const SlopPathShapeSchema = Strict(
   {
-    path: Type.String({ minLength: 1, maxLength: 4096 }),
+    path: Type.String({ minLength: 1, maxLength: ShapeLimits.path }),
     viewBox: Type.Optional(
       Type.Tuple([
-        Type.Number({ minimum: 1, maximum: 16384 }),
-        Type.Number({ minimum: 1, maximum: 16384 }),
+        Type.Number({ minimum: 1, maximum: ShapeLimits.viewBox }),
+        Type.Number({ minimum: 1, maximum: ShapeLimits.viewBox }),
       ]),
     ),
     fillRule: Type.Optional(Type.Enum(["nonzero", "evenodd"])),
   },
   { title: "SlopPathShape" },
 );
-const radiusValue = "(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))";
-const radiusList = `${radiusValue}(?:[ \t\r\n]+${radiusValue}){0,3}`;
+// The core parses both forms (`crates/hitslop-core/src/shape.rs`); the schema bounds them.
 const SlopShapeSchema = Type.Union(
   [
-    Type.String({
-      minLength: 1,
-      maxLength: 256,
-      pattern: `^[ \t\r\n]*${radiusList}(?:[ \t\r\n]*/[ \t\r\n]*${radiusList})?[ \t\r\n]*$`,
-    }),
+    Type.String({ minLength: 1, maxLength: ShapeLimits.radius }),
     SlopPathShapeSchema,
   ],
   { title: "SlopShape" },

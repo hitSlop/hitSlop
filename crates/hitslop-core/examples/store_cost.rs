@@ -48,8 +48,9 @@ fn checkpoint(store: &Store, doc: &mut Document, rows: usize, round: usize, comp
 }
 
 fn main() {
+    // A tool run never fills the account's `~/.hitslop/live` with lock files.
+    hitslop_core::registry::use_folder(&std::env::temp_dir().join("hitslop-test-registry")).unwrap();
     let fixture: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
-    let schema = fixture["schema"].to_string();
     let defaults = r##"{"accent":"#335577"}"##;
     let mut out = serde_json::Map::new();
     // Short rows at three sizes, plus long incompressible text for a MiB-scale checkpoint
@@ -68,15 +69,20 @@ fn main() {
             .collect();
         let initial = json!({"title":"t","rows":items,"hits":0}).to_string();
         let template = dir.path().join("Cost.template.slop");
-        let app = file::App {
-            package_format: 1,
-            runtime_abi: 1,
-            manifest: r#"{"author":{"name":"Bench"},"slug":"cost","title":"Cost","description":"Storage costs.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#.into(),
-            descriptor: schema.clone(),
-            initial: initial.clone(),
-            theme: defaults.into(),
-        };
-        file::write_template(&template, &app, &[("app.js".into(), b"export default {}".to_vec())], &[]).unwrap();
+        let stage = dir.path().join("stage");
+        std::fs::create_dir_all(stage.join("assets")).unwrap();
+        std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+        let manifest = r#"{"author":{"name":"Bench"},"slug":"cost","title":"Cost","description":"Storage costs.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+        let app = json!({
+            "packageFormat": hitslop_core::PACKAGE_FORMAT,
+            "runtimeABI": hitslop_core::RUNTIME_ABI,
+            "manifest": serde_json::from_str::<Value>(manifest).unwrap(),
+            "descriptor": fixture["schema"],
+            "initial": serde_json::from_str::<Value>(&initial).unwrap(),
+            "theme": serde_json::from_str::<Value>(defaults).unwrap(),
+        });
+        std::fs::write(stage.join("app.json"), app.to_string()).unwrap();
+        file::pack(&stage, &template).unwrap();
         file::create_document(&template, &root).unwrap();
         let store = Store::open(&root, Mode::Document).unwrap();
         let mut doc = store.document().unwrap();
@@ -130,7 +136,10 @@ fn main() {
                 elapsed
             })
             .collect();
-        let meta = store.metadata().unwrap();
+        let checkpoint_bytes: i64 = rusqlite::Connection::open(&root)
+            .unwrap()
+            .query_row("SELECT coalesce(sum(length(bytes)),0) FROM checkpoint", [], |r| r.get(0))
+            .unwrap();
         out.insert(label, json!({
             "appendSaveMS": summary(appends),
             "openWith255UpdatesMS": summary(opens),
@@ -139,7 +148,7 @@ fn main() {
             "compactExportMS": summary(compactions),
             "themeSaveMS": summary(themes),
             "duplicateMS": summary(duplicates),
-            "checkpointBytes": meta.checkpoint_bytes,
+            "checkpointBytes": checkpoint_bytes,
             "fileBytes": std::fs::metadata(&root).unwrap().len(),
         }));
         store.close().unwrap();

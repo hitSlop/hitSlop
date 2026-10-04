@@ -4,7 +4,7 @@ import HitSlopCoreBinding
 
 /// Admission failures are distinct from storage failures and uncertain outcomes.
 enum OwnerError: LocalizedError, Sendable {
-  case closed, closing, invalidated, readOnly, tooLarge
+  case closed, closing, invalidated, readOnly
   case rejected(String)
 
   var errorDescription: String? {
@@ -13,14 +13,13 @@ enum OwnerError: LocalizedError, Sendable {
     case .closing: "Document is closing"
     case .invalidated: "Owner invalidated; explicit recovery is required"
     case .readOnly: "Read-only capture cannot edit"
-    case .tooLarge: "Request exceeds size limit"
     case .rejected(let message): message
     }
   }
 }
 
-/// What a failed page, socket or page-storage request means for its caller. Every
-/// error is classified here once; nothing else inspects error types or messages.
+/// What a failed page or socket request means for its caller. Every error is classified
+/// here once; nothing else inspects error types or messages.
 enum RequestOutcome: Equatable {
   /// Refused before applying: `reason` is a core error code, `opIndex` the refused intent.
   case rejected(reason: CoreErrorCode, opIndex: Int?)
@@ -39,39 +38,44 @@ enum RequestOutcome: Equatable {
     switch error {
     case is OwnerReplaced: self = .replaced
     case let CoreError.Rejected(code, _, opIndex):
-      self = .rejected(reason: CoreErrorCode(rawValue: code) ?? .engine_error, opIndex: opIndex.map(Int.init))
+      self = .rejected(reason: CoreErrorCode(rawValue: code) ?? .engineError, opIndex: opIndex.map(Int.init))
     case CoreError.Invalidated: self = .invalidated
     case let error as OwnerError:
       switch error {
       case .closed, .closing: self = .closing
       case .invalidated: self = .invalidated
-      case .tooLarge: self = .rejected(reason: .too_large, opIndex: nil)
-      case .readOnly, .rejected: self = .rejected(reason: .invalid_request, opIndex: nil)
+      case .readOnly, .rejected: self = .rejected(reason: .invalidRequest, opIndex: nil)
       }
-    case is any SlopRejection: self = .rejected(reason: .invalid_request, opIndex: nil)
     case is SaveFailure: self = .saveFailed
     default: self = .unknown
     }
   }
 
-  var pageCode: PageErrorCode {
+  var code: OutcomeCode {
     switch self {
     case .rejected: .rejected
-    case .replaced: .owner_replaced
+    case .replaced: .ownerReplaced
     case .closing: .closing
-    case .invalidated: .owner_invalidated
-    case .saveFailed: .save_failed
-    case .unknown: .unknown_outcome
+    case .invalidated: .ownerInvalidated
+    case .saveFailed: .saveFailed
+    case .unknown: .unknownOutcome
     }
   }
-  /// The CLI socket's reply code. Only `failed` leaves the outcome unknown.
-  var socketCode: SocketReplyCode {
-    switch self {
-    case .rejected: .rejected
-    case .replaced: .sessionChanged
-    case .closing: .closing
-    case .invalidated: .unavailable
-    case .saveFailed, .unknown: .failed
-    }
+  private var refusal: (reason: CoreErrorCode?, opIndex: Int?) {
+    if case let .rejected(reason, opIndex) = self { return (reason, opIndex) }
+    return (nil, nil)
+  }
+
+  /// The page's failure reply for `error`.
+  static func page(_ error: Error) -> [String: Any] {
+    let outcome = RequestOutcome(error)
+    return PageFailure(code: outcome.code, error: error.localizedDescription, reason: outcome.refusal.reason,
+      opIndex: outcome.refusal.opIndex).json
+  }
+  /// The socket's failure reply for `error`.
+  static func socket(_ error: Error, epoch: String? = nil) -> SocketReply {
+    let outcome = RequestOutcome(error)
+    return SocketReply(ok: false, epoch: epoch, error: error.localizedDescription, code: outcome.code,
+      reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex)
   }
 }

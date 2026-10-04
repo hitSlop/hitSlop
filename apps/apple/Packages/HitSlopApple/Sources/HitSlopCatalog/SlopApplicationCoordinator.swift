@@ -164,7 +164,7 @@ import SwiftUI
         DocumentClient(
             open: { [self] id, url in
                 await telemetry.send(.breadcrumb(.open, .started))
-                do { return try await open(id, url: url) }
+                do { try await open(id, url: url) }
                 catch { await telemetry.failure(.open, error: error); throw error }
             },
             focus: { [self] id in await focus(id) },
@@ -178,7 +178,6 @@ import SwiftUI
                 do { try await finishQuit(id) } catch { throw SlopDocumentFailure(command: error) }
             },
             cancelQuit: { [self] id in await cancelQuit(id) },
-            finishAssetRefreshes: { await SlopDocumentWindowController.finishAssetRefreshesForTermination() },
             replyToQuit: { allowed in await MainActor.run { NSApp.reply(toApplicationShouldTerminate: allowed) } }
         )
     }
@@ -186,7 +185,7 @@ import SwiftUI
         guard let controller = controllers[id] else { throw SlopError.invalid("The document is no longer open.") }
         return controller
     }
-    private func open(_ id: UUID, url: URL) async throws -> String {
+    private func open(_ id: UUID, url: URL) async throws {
         try Task.checkCancellation()
         preparingURLs[id] = url
         defer { preparingURLs[id] = nil }
@@ -200,7 +199,6 @@ import SwiftUI
         }
         telemetry.send(.breadcrumb(.open, .completed))
         telemetry.send(.opened)
-        return controller.documentTitle
     }
     private func finishQuit(_ id: UUID) async throws {
         try await controller(id).finishClose(operation: .quit)

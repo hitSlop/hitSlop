@@ -5,30 +5,18 @@ import Testing
 import HitSlopTestSupport
 @testable import HitSlopDocument
 
-/// Pauses the persistence queue at one storage phase until released.
-final class StorageGate: @unchecked Sendable {
-  private let reachedSignal = DispatchSemaphore(value: 0)
-  private let releaseSignal = DispatchSemaphore(value: 0)
-  private let lock = NSLock()
-  private var armed = true
-  let phase: String
-  init(_ phase: String) { self.phase = phase }
-  func hook(_ at: String) {
-    guard at == phase, lock.withLock({ let was = armed; armed = false; return was }) else { return }
-    reachedSignal.signal()
-    releaseSignal.wait()
-  }
-  func reached() async {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global().async { self.reachedSignal.wait(); continuation.resume() }
-    }
-  }
-  func release() { releaseSignal.signal() }
+/// Holds the owner's persistence queue until released, so the next write waits in flight:
+/// exported and handed to storage, not yet run.
+final class StorageHold: @unchecked Sendable {
+  private let released = DispatchSemaphore(value: 0)
+  init(_ owner: DocumentOwner) { owner.storageQueue.async { self.released.wait() } }
+  func release() { released.signal() }
 }
 
 /// Saves run on their own queue so a slow write never blocks edits. Each write must
 /// acknowledge exactly what it contained, and close/discard must fence writes in flight.
-/// Oracle: the bytes on disk, read back independently of the owner.
+/// Oracle: the bytes on disk, read back independently of the owner. Faults are real: a held
+/// queue, a moved file, another connection holding the database.
 @Suite(.serialized) struct PersistenceSchedulingTests {
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
@@ -48,68 +36,49 @@ final class StorageGate: @unchecked Sendable {
     let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
+  /// The owner's live value.
+  func liveHits(_ owner: DocumentOwner) async throws -> Int? {
+    let frame = try JSONSerialization.jsonObject(with: Data(try await owner.state().utf8)) as! [String: Any]
+    return (frame["value"] as? [String: Any])?["hits"] as? Int
+  }
 
   func edit(_ owner: DocumentOwner) async throws {
     _ = try await owner.apply(batch: increment)
   }
 
-  // An accepted increment survives an in-flight committed save even if discard
-  // replaces the owner before its socket reply. The CLI must not promise safe replay.
+  // An accepted increment survives a save in flight even if discard replaces the owner
+  // before its socket reply. The CLI must not promise safe replay.
   @Test @MainActor func socketMutationAfterDiscardReportsUnknownWithoutReplay() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    let gate = StorageGate("append:committed")
-    defer { gate.release() }
-    owner.testingPhase = gate.hook
+    let hold = StorageHold(owner)
+    defer { hold.release() }
     let mutations = Locked(0)
-    let mutationCode = Locked<SocketReplyCode?>(nil)
     let server = try SocketServer { request, _ in
       if request.method == .batch { mutations.modify { $0 += 1 } }
-      let reply = await owner.request(request)
-      if request.method == .batch { mutationCode.modify { $0 = try? decodeReply(reply).code } }
-      return reply
+      return await owner.request(request)
     }
     defer { server.stop() }
     try owner.publishDiscovery(JSONSerialization.data(withJSONObject: [
       "socket": server.path, "documentPath": root.path,
     ]))
-    let command = Task { @MainActor () -> String in
-      do {
-        _ = try await command("apply", url: root,
-          operation: Data(#"{"type":"increment","path":["hits"],"by":3}"#.utf8))
-        return "Unexpected successful reply"
-      } catch { return error.localizedDescription }
+    let reply = Task { @MainActor () -> (OutcomeCode?, String?) in
+      let reply = try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#])
+      return (reply.code, reply.error)
     }
-    await gate.reached()
+    // Accepted, and waiting for its save.
+    while try await liveHits(owner) != 3 { try await Task.sleep(for: .milliseconds(10)) }
     let discarding = Task { try await owner.discardPending() }
-    // Discard rejects the socket's flush before waiting for the gated storage queue.
-    let message = await command.value
-    gate.release()
+    // Discard rejects the socket's flush before its reload waits for the held queue.
+    let (code, error) = try await reply.value
+    hold.release()
     try await discarding.value
-    owner.testingPhase = nil
-    #expect(mutationCode.value == .failed)
-    #expect(message.contains("Outcome unknown. Run slop get before issuing another edit."))
-    #expect(!message.contains("Not applied."))
+    #expect(code == .unknownOutcome)
+    #expect(error?.contains("could not be confirmed") == true)
     #expect(mutations.value == 1)
     #expect(try savedHits(root) == 3)
     try await owner.close()
-  }
-
-  /// True when `work` finishes before the deadline. The deadline only bounds a failure;
-  /// a passing run completes as soon as `work` does.
-  func finishes(within seconds: Double, _ work: @escaping @Sendable () async throws -> Void) async -> Bool {
-    final class Once: @unchecked Sendable {
-      let lock = NSLock()
-      var continuation: CheckedContinuation<Bool, Never>?
-      func resume(_ value: Bool) { lock.withLock { continuation?.resume(returning: value); continuation = nil } }
-    }
-    let once = Once()
-    return await withCheckedContinuation { continuation in
-      once.continuation = continuation
-      Task { try? await work(); once.resume(true) }
-      Task { try? await Task.sleep(for: .seconds(seconds)); once.resume(false) }
-    }
   }
 
   // Failure: autosave waited for a pause in editing, so a document edited continuously
@@ -136,17 +105,13 @@ final class StorageGate: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let gate = StorageGate("append:uncommitted")
-    owner.testingPhase = gate.hook
+    let hold = StorageHold(owner)
     let first = Task { try await owner.flush() }
-    await gate.reached()
-    let proceeded = await finishes(within: 2) { try await edit(owner) }
+    try await edit(owner)
     let second = Task { try await owner.flush() }
-    gate.release()
+    hold.release()
     try await first.value
     try await second.value
-    owner.testingPhase = nil
-    #expect(proceeded)
     #expect(try savedHits(root) == 6)
     try await owner.close()
   }
@@ -158,17 +123,15 @@ final class StorageGate: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let gate = StorageGate("append:committed")
-    owner.testingPhase = gate.hook
+    let hold = StorageHold(owner)
     let saving = Task { try await owner.flush() }
-    await gate.reached()
+    _ = try await owner.state()
     let discarding = Task { try await owner.discardPending() }
-    gate.release()
+    hold.release()
     _ = try? await saving.value
     try await discarding.value
-    owner.testingPhase = nil
     try await edit(owner)
-    #expect(await finishes(within: 2) { try await owner.flush() })
+    try await owner.flush()
     #expect(try savedHits(root) == 6)
     try await owner.close()
   }
@@ -180,16 +143,14 @@ final class StorageGate: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let gate = StorageGate("append:uncommitted")
-    owner.testingPhase = gate.hook
+    let hold = StorageHold(owner)
     let closing = Task { try await owner.close() }
-    await gate.reached()
-    await #expect(throws: (any Error).self) { try await edit(owner) }
-    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
-    gate.release()
+    while (try? await edit(owner)) != nil { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(Fixtures.isLocked(root))
+    hold.release()
     try await closing.value
-    try WriterLock.acquire(root).release()
-    #expect(try savedHits(root) == 3)
+    #expect(!Fixtures.isLocked(root))
+    #expect(try savedHits(root) ?? 0 >= 3)
   }
 
   // Failure: an undo changed the document without saving it. Oracle: the saved bytes,
@@ -235,14 +196,10 @@ final class StorageGate: @unchecked Sendable {
   }
 
   // Failure: a document kept every edit it ever saw. Oracle: closing a session that
-  // edited a large document leaves its saved state smaller, holding no history.
+  // edited a large document leaves its file smaller, holding no history.
   @Test func closingALargeEditedDocumentTrimsItsHistory() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    func stored() throws -> UInt64 {
-      let meta = try NativeStore.open(path: root.path, mode: .snapshot).metadata()
-      return meta.checkpointBytes + meta.updateBytes
-    }
     var seed: UInt64 = 7
     func noise() -> String {
       String((0..<32 * 1024).map { _ in
@@ -263,58 +220,52 @@ final class StorageGate: @unchecked Sendable {
         _ = try await owner.apply(batch: String(decoding: try JSONSerialization.data(withJSONObject: batch), as: UTF8.self))
       }
       try await owner.flush()
-      beforeClose = try stored()
+      beforeClose = try Fixtures.size(root)
       try await owner.close()
     }
-    let afterClose: UInt64
-    do { afterClose = try stored() } catch { Issue.record("\(error)"); return }
+    let afterClose = try Fixtures.size(root)
     #expect(afterClose < beforeClose / 2, "\(afterClose) of \(beforeClose) bytes")
   }
 
   // Failure: another process holding the database (a backup during Duplicate) must be a
-  // definite, retryable failure, never mistaken for a lost reply or a conflict. The
-  // store's own tests hold a real competing connection.
+  // definite, retryable failure, never mistaken for a lost reply or a conflict.
   @Test func busyDatabaseIsARetryableFailure() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    owner.testingPhase = { phase in if phase == "append:uncommitted" { throw CoreError.Busy } }
+    let hold = try Fixtures.DatabaseHold(root)
     await #expect(throws: SaveFailure.busy) { try await owner.flush() }
-    owner.testingPhase = nil
+    hold.release()
     try await owner.flush()
     #expect(try savedHits(root) == 3)
     try await owner.close()
   }
 }
 
-
 extension PersistenceSchedulingTests {
   // Failure: discard fences an active save, then a failed restore leaves writing
   // latched forever. Oracle: another edit becomes durable and close releases ownership.
   @Test func failedDiscardDuringWriteKeepsSavingUsable() async throws {
     let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let moved = root.deletingLastPathComponent().appendingPathComponent("Moved.slop")
+    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let gate = StorageGate("append:uncommitted")
-    owner.testingPhase = { phase in
-      gate.hook(phase)
-      if phase == "load" { throw failure("injected restore failure") }
-    }
+    let hold = StorageHold(owner)
     let saving = Task { try await owner.flush() }
-    await gate.reached()
+    _ = try await owner.state()
     let discarding = Task { try await owner.discardPending() }
     // Discard rejects the old save waiter before waiting for the persistence queue.
     _ = await saving.result
-    gate.release()
+    // The held write and the reload behind it both find the document moved.
+    try FileManager.default.moveItem(at: root, to: moved)
+    hold.release()
     await #expect(throws: (any Error).self) { try await discarding.value }
-    owner.testingPhase = nil
+    try FileManager.default.moveItem(at: moved, to: root)
     try await edit(owner)
-    let completed = await finishes(within: 2) { try await owner.flush() }
-    #expect(completed)
-    if completed { #expect(try savedHits(root) == 6) }
-    // Also makes failure cleanup finite on the pre-fix implementation.
+    try await owner.flush()
+    #expect(try savedHits(root) == 6)
     try await owner.discardPending()
     try await owner.close()
   }
@@ -323,109 +274,63 @@ extension PersistenceSchedulingTests {
   // the coordinator, which leaves save failures to the save-failure sheet, showed nothing.
   // Oracle: the failed reload is published as a save failure.
   @Test func aFailedDiscardPublishesItsFailure() async throws {
-    final class Statuses: @unchecked Sendable {
-      let lock = NSLock()
-      var values: [DocumentSaveStatus] = []
-      func append(_ value: DocumentSaveStatus) { lock.withLock { values.append(value) } }
-    }
     let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let moved = root.deletingLastPathComponent().appendingPathComponent("Moved.slop")
+    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
     let owner = try DocumentOwner(url: root)
-    let statuses = Statuses()
-    owner.onSaveStatus = { status in statuses.append(status) }
+    let statuses = Locked<[DocumentSaveStatus]>([])
+    owner.onSaveStatus = { status in statuses.modify { $0.append(status) } }
     try await edit(owner)
-    owner.testingPhase = { phase in if phase == "load" { throw CoreError.Moved } }
+    try FileManager.default.moveItem(at: root, to: moved)
     await #expect(throws: SaveFailure.moved) { try await owner.discardPending() }
-    owner.testingPhase = nil
-    #expect(statuses.lock.withLock { statuses.values.contains(.failed(.moved)) })
+    #expect(statuses.value.contains(.failed(.moved)))
+    try FileManager.default.moveItem(at: moved, to: root)
     try await owner.discardPending()
     try await owner.close()
   }
 
   @Test func discardDoesNotPublishSaveFailure() async throws {
-    final class Statuses: @unchecked Sendable {
-      let lock = NSLock()
-      var values: [DocumentSaveStatus] = []
-      func append(_ value: DocumentSaveStatus) { lock.withLock { values.append(value) } }
-      var failed: Bool { lock.withLock { values.contains { if case .failed = $0 { true } else { false } } } }
-    }
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    let statuses = Statuses()
-    owner.onSaveStatus = { status in statuses.append(status) }
+    let statuses = Locked<[DocumentSaveStatus]>([])
+    owner.onSaveStatus = { status in statuses.modify { $0.append(status) } }
     try await edit(owner)
     try await owner.discardPending()
-    #expect(!statuses.failed)
+    #expect(!statuses.value.contains { if case .failed = $0 { true } else { false } })
     try await owner.close()
   }
-}
 
-
-extension PersistenceSchedulingTests {
-  @Test func failedCloseRetainsOwnershipAndAllowsRetry() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    try await edit(owner)
-    owner.testingPhase = { phase in
-      if phase == "close" { throw failure("injected close failure") }
-    }
-    await #expect(throws: (any Error).self) { try await owner.close() }
-    #expect(throws: DocumentLocked.self) { _ = try WriterLock.acquire(root) }
-    owner.testingPhase = nil
-    try await edit(owner)
-    try await owner.close()
-    try WriterLock.acquire(root).release()
-    #expect(try savedHits(root) == 6)
-  }
-}
-
-
-extension PersistenceSchedulingTests {
   // Failure: a flush admitted while discard restored saved bytes waited for the old
   // publication sequence, which the restored core (sequence 0) never reaches, so the
-  // page hung. Oracle: the flush settles promptly as replaced, and saving still works.
+  // page hung. Oracle: the flush settles at once as replaced, and saving still works.
   @Test func flushDuringDiscardRestoreSettlesAsReplaced() async throws {
-    final class Reply: @unchecked Sendable {
-      let lock = NSLock()
-      var result: Result<PageOutcome, Error>?
-      var continuation: CheckedContinuation<Void, Never>?
-      func set(_ value: Result<PageOutcome, Error>) {
-        lock.withLock { result = value; continuation?.resume(); continuation = nil }
-      }
-      func wait() async {
-        await withCheckedContinuation { next in
-          lock.withLock { if result == nil { continuation = next } else { next.resume() } }
-        }
-      }
-    }
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     owner.attach(view: "page")
     try await edit(owner)
     try await edit(owner)
-    let gate = StorageGate("load")
-    owner.testingPhase = { gate.hook($0) }
+    // The reload waits behind the held queue while discard is under way.
+    let hold = StorageHold(owner)
     let discarding = Task { try await owner.discardPending() }
-    await gate.reached()
-    let reply = Reply()
-    owner.enqueuePage(.flush, view: "page") { reply.set($0) }
-    _ = try await owner.state()
-    gate.release()
-    try await discarding.value
-    owner.testingPhase = nil
-    let settled = await finishes(within: 2) { await reply.wait() }
-    #expect(settled)
-    if settled, case .failure(let error)? = reply.lock.withLock({ reply.result }) {
-      #expect(error is OwnerReplaced)
-    } else {
-      Issue.record("flush during discard did not settle as replaced")
+    while true {
+      let refused: Bool = await withCheckedContinuation { continuation in
+        owner.enqueuePage(.flush, view: "page") { result in
+          if case .failure(let error) = result { continuation.resume(returning: error is OwnerReplaced) }
+          else { continuation.resume(returning: false) }
+        }
+      }
+      if refused { break }
+      try await Task.sleep(for: .milliseconds(10))
     }
+    hold.release()
+    try await discarding.value
     try await edit(owner)
     try await owner.flush()
-    #expect(try savedHits(root) == 3)
+    // Autosave may have saved the first edits before discard began; either way, flush
+    // saves exactly what the owner holds.
+    #expect(try await savedHits(root) == liveHits(owner))
     try await owner.close()
   }
 }

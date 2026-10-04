@@ -1,27 +1,16 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
 import { parseHelperProtocol } from "@hitslop/schema/helper";
-import { executable } from "./process";
+import { SocketReplySchema, type SocketReply } from "@hitslop/schema/socket";
+import { validate } from "@hitslop/schema/validation";
+import { findExecutable } from "./process";
 
-async function nativeOverride(): Promise<string | undefined> {
-  const value = process.env.HITSLOP_NATIVE_CLI;
-  if (value === undefined) return;
-  const path = resolve(value);
-  if (!value || !(await executable(path)))
-    throw new Error(`HITSLOP_NATIVE_CLI is not executable: ${value}`);
-  return path;
-}
-
-export async function findNative(): Promise<string> {
-  const override = await nativeOverride();
-  if (override) return override;
-  const candidates = [
-    "/Applications/hitSlop.app/Contents/Helpers/hitslop-native",
-    join(homedir(), "Applications/hitSlop.app/Contents/Helpers/hitslop-native"),
-  ];
-  for (const path of candidates) if (await executable(path)) return path;
-  throw new Error(
+/** The app's helper: `HITSLOP_NATIVE_CLI` names one; otherwise the installed app's. */
+export function findNative(): Promise<string> {
+  return findExecutable(
+    "HITSLOP_NATIVE_CLI",
+    ["/Applications/hitSlop.app/Contents/Helpers/hitslop-native", join(homedir(), "Applications/hitSlop.app/Contents/Helpers/hitslop-native")],
     "Install hitSlop.app in /Applications or ~/Applications to use native document commands",
   );
 }
@@ -61,4 +50,23 @@ export async function runNative(args: string[]) {
   });
   const code = await child.exited;
   if (code) process.exit(code);
+}
+
+/** One document request through the helper: the `SocketRequest` (the helper supplies the
+ * owner's epoch) on its standard input, and the `SocketReply` it prints. */
+export async function request(body: Record<string, unknown>): Promise<SocketReply> {
+  const child = Bun.spawn([...(await negotiate(await findNative())), "request"], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+  child.stdin.write(JSON.stringify(body));
+  await child.stdin.end();
+  const [text, status] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  if (status) process.exit(status);
+  let reply: unknown;
+  try {
+    reply = JSON.parse(text);
+  } catch {}
+  return validate(SocketReplySchema, reply, "hitSlop.app sent an invalid reply; outcome unknown, run slop get before another edit");
 }

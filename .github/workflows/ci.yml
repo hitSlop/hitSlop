@@ -23,6 +23,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
+      # The workspace tests unify features, so the core's own builds are checked here:
+      # without file storage (as WASM builds it) and with it.
+      - run: cargo check --locked -p hitslop-core --tests
+      - run: cargo check --locked -p hitslop-core --features storage --tests
       - run: bun run hygiene
         env:
           # Frozen tests/compat entries are compared with what this change builds on.

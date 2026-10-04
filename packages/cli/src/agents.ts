@@ -11,7 +11,7 @@ const knownAgents = [
 ];
 
 /** PATH lookup only: discovery never executes an agent or installs software. */
-export function installedAgents() {
+function installedAgents() {
   return knownAgents.flatMap((agent) => {
     const path = Bun.which(agent.executable);
     return path ? [{ ...agent, path }] : [];

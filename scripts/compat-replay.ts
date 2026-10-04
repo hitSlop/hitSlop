@@ -1,21 +1,21 @@
-// Replays the compatibility corpus (tests/compat) through the native helper: every saved
-// document of every release reads as that release recorded, renders with its own old app,
-// keeps its attachments, takes a CLI edit and reopens to the recorded result; every
-// template master still creates documents; and the helper commands each release's CLI
-// sends still mean the same thing. The Rust and Swift corpus tests cover the rest.
+// Replays the compatibility corpus (tests/compat) through this build's CLI and helper: every
+// saved document of every release reads as that release recorded, renders with its own old
+// app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
+// template master still creates documents; and the commands each release's CLI ran still
+// mean the same thing. The Rust and Swift corpus tests cover the rest.
 // Usage: bun scripts/compat-replay.ts [--release VERSION] [--installed]
 //   --release   also require a frozen entry for VERSION (the release gate)
 //   --installed install each frozen entry's npm CLI and run it against this helper
 import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
-import { copyFile, cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { copyFile, cp, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   documents,
   helper,
-  native,
-  nativeJSON,
+  slop,
+  slopJSON,
   readJSON,
   releases,
   savedState,
@@ -55,7 +55,8 @@ const stripIds = (value: unknown): unknown =>
     : value && typeof value === "object"
       ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$id").map(([key, v]) => [key, stripIds(v)]))
       : value;
-const scratch = await mkdtemp(join(tmpdir(), "hitslop-compat-"));
+// Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
+const scratch = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-")));
 let cases = 0;
 try {
   for (const { name, root, release } of entries) {
@@ -72,7 +73,7 @@ try {
       assert.deepEqual(await savedState(copy), expected, `${name}/${document}: the saved document reads differently`);
       for (const { id, byteLength } of expected.attachments) {
         const output = join(scratch, id);
-        const exported = await native(["attachments", "export", copy, id, "--output", output]);
+        const exported = await slop(["attachments", "export", copy, id, "--output", output]);
         assert.equal(exported.code, 0, `${name}/${document}: attachment ${id}: ${exported.stderr.trim()}`);
         const bytes = await Bun.file(output).bytes();
         assert.equal(bytes.length, byteLength, `${name}/${document}: attachment ${id} size`);
@@ -81,7 +82,7 @@ try {
       }
       for (const [format, magic] of [["png", "89504e470d0a1a0a"], ["pdf", "25504446"]] as const) {
         const output = join(scratch, `${document}.${format}`);
-        const { code, stderr } = await native(["export", copy, "--format", format, "--output", output]);
+        const { code, stderr } = await slop(["export", copy, "--format", format, "--output", output]);
         assert.equal(code, 0, `${name}/${document}: the old app did not render: ${stderr.trim()}`);
         const bytes = await Bun.file(output).bytes();
         assert.equal(Buffer.from(bytes.subarray(0, magic.length / 2)).toString("hex"), magic, `${name}/${document}: ${format}`);
@@ -90,9 +91,8 @@ try {
       const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
       if (scenario) {
         await fresh();
-        const reply = await nativeJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
-        assert.deepEqual(reply.value, scenario.value, `${name}/${document}: the replayed edit differs`);
-        const { state } = await nativeJSON(["get", copy, "--snapshot"]);
+        await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
+        const { state } = await slopJSON(["get", copy, "--snapshot"]);
         assert.deepEqual({ value: state.value, issues: state.issues }, { value: scenario.value, issues: scenario.issues }, `${name}/${document}: the edit did not reopen`);
       }
       cases++;
@@ -102,15 +102,15 @@ try {
     for (const file of await readdir(join(root, "templates"))) {
       const output = join(scratch, `created-${file}`);
       await rm(output, { force: true });
-      const { code, stderr } = await native(["create", "--from", join(root, "templates", file), "--output", output]);
-      assert.equal(code, 0, `${name}/${file}: create failed: ${stderr.trim()}`);
-      const { state } = await nativeJSON(["get", output, "--snapshot"]);
+      const created = Bun.spawnSync([helper, "create", "--from", join(root, "templates", file), "--output", output], { stderr: "pipe" });
+      assert.equal(created.exitCode, 0, `${name}/${file}: create failed: ${created.stderr.toString().trim()}`);
+      const { state } = await slopJSON(["get", output, "--snapshot"]);
       const initial = initialOf(join(root, "templates", file));
       assert.deepEqual(state.issues, [], `${name}/${file}: a new document has issues`);
       assert.deepEqual(stripIds(state.value), stripIds(initial), `${name}/${file}: a new document differs from its initial values`);
       cases++;
     }
-    // The helper commands this release's CLI sends, in order, on its own document.
+    // The commands this release's CLI ran, in order, on its own document.
     const transcript = await readJSON<Transcript>(join(root, "cli/transcript.json"));
     if (transcript) {
       const copy = join(scratch, `${name}-transcript.slop`);
@@ -118,7 +118,7 @@ try {
       await copyFile(join(root, "documents", transcript.document + ".slop"), copy);
       for (const { args, code, stdout, outputHash } of transcript.commands) {
         const exported = join(scratch, `${name}-attachment-export.txt`);
-        const result = await native(args.map(arg => arg === "{document}" ? copy : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
+        const result = await slop(args.map(arg => arg === "{document}" ? copy : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
         assert.equal(result.code, code, `${name}: ${args.slice(0, 2).join(" ")} exit status: ${result.stderr.trim()}`);
         let output: unknown = result.stdout.trim();
         try {

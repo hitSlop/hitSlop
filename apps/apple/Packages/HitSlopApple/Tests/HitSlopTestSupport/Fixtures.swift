@@ -1,5 +1,7 @@
 import AppKit
+import HitSlopCore
 import HitSlopCoreBinding
+import SQLite3
 
 /// Test files built the way `slop build` builds them: a stage directory (manifest with its
 /// markers, descriptor, initial values, assets, optional artwork) packed by the core into a
@@ -52,7 +54,7 @@ public enum Fixtures {
     ]
     manifest.merge(overrides) { $1 }
     let manifestJSON = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
-    let app = #"{"packageFormat":1,"runtimeABI":1,"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
+    let app = #"{"packageFormat":\#(PackageFormat.level),"runtimeABI":\#(RuntimeABI.level),"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
     try Data(app.utf8).write(to: stage.appendingPathComponent("app.json"))
     return stage
   }
@@ -75,10 +77,21 @@ public enum Fixtures {
     }
   }
 
-  /// `stage` packed into a template file beside it.
+  /// `stage` packed into a template file beside it by the file engine, as `slop build`
+  /// packs one.
   public static func template(stage: URL, named name: String = "fixture") throws -> URL {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
-    try packTemplate(stage: stage.path, destination: template.path)
+    let engine = Process()
+    engine.executableURL = repository.appendingPathComponent("target/release/slop-engine")
+    engine.arguments = ["pack", stage.path, template.path]
+    let errors = Pipe()
+    engine.standardError = errors
+    try engine.run()
+    engine.waitUntilExit()
+    guard engine.terminationStatus == 0 else {
+      let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+      throw SlopError.invalid(message.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
     return template
   }
 
@@ -105,6 +118,53 @@ public enum Fixtures {
   /// build of an example app before packing.
   public static func nativeStage(_ slug: String = "quick-checklist") throws -> URL {
     try stage("generated/native-fixtures/\(slug)")
+  }
+
+  /// Another connection holding the document's database, as a backup or another SQLite
+  /// program would, until `release`. A save meanwhile waits, then fails as busy; with
+  /// `readable`, the document can still be read.
+  public final class DatabaseHold {
+    private var connection: OpaquePointer?
+    public init(_ document: URL, readable: Bool = false) throws {
+      guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+        sqlite3_exec(connection, readable ? "BEGIN IMMEDIATE" : "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK
+      else { throw SlopError.invalid("Cannot hold \(document.lastPathComponent)") }
+    }
+    public func release() {
+      sqlite3_exec(connection, "COMMIT", nil, nil, nil)
+      sqlite3_close(connection)
+      connection = nil
+    }
+    deinit { if connection != nil { release() } }
+  }
+
+  /// Whether another writer could take the document now.
+  public static func isLocked(_ document: URL) -> Bool {
+    do {
+      try NativeStore.open(path: document.path, mode: .document).close()
+      return false
+    } catch CoreError.Locked { return true } catch { return false }
+  }
+
+  /// What a document's saved state holds: checkpoint bytes, update bytes and update rows,
+  /// read from the file.
+  public struct Stored: Sendable {
+    public let checkpointBytes: UInt64, updateBytes: UInt64, rows: UInt64
+  }
+  public static func stored(_ document: URL) throws -> Stored {
+    var connection: OpaquePointer?, statement: OpaquePointer?
+    defer { sqlite3_finalize(statement); sqlite3_close(connection) }
+    let sql = "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
+    guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+      sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW
+    else { throw SlopError.invalid("Cannot read \(document.lastPathComponent)") }
+    return Stored(checkpointBytes: UInt64(sqlite3_column_int64(statement, 0)), updateBytes: UInt64(sqlite3_column_int64(statement, 1)),
+      rows: UInt64(sqlite3_column_int64(statement, 2)))
+  }
+
+  /// The document file's size in bytes.
+  public static func size(_ document: URL) throws -> UInt64 {
+    (try FileManager.default.attributesOfItem(atPath: document.path)[.size] as? NSNumber)?.uint64Value ?? 0
   }
 
   /// A new document from a template the native build prepared (`generated/native-fixtures`).

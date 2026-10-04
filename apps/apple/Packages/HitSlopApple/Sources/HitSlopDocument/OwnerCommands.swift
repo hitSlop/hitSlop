@@ -3,127 +3,91 @@ import HitSlopCore
 import HitSlopCoreBinding
 
 extension DocumentOwner {
-  /// Checks the envelope only. Batches and text edits arrive as JSON text that only the
-  /// core parses, and the opened state returns as the core's JSON text.
+  /// A document request from the page `view`. Batches and text edits arrive as JSON text
+  /// that only the core parses, and the opened state returns as the core's JSON text.
   @MainActor func admitPage(_ request: PageRequest, view: String, reply: @escaping @MainActor @Sendable ([String: Any]) -> Void) {
-    do {
-      let command: PageCommand
-      switch request.method {
-      case .apply: command = .apply(request.value["batch"] as! String)
-      case .text: command = .text(request.value["request"] as! String)
-      case .open: command = .open
-      case .flush: command = .flush
-      case .undo: command = .undo
-      case .redo: command = .redo
-      default: throw OwnerError.rejected("Not a document request")
-      }
-      let method = request.method
-      enqueuePage(command, view: view) { outcome in
-        DispatchQueue.main.async {
-          let result: PageResult
-          switch outcome {
-          case .failure(let error): return reply(Self.pageFailure(error))
-          case .success(.opened(let opened)): result = .open(.init(state: opened.state))
-          case .success(.applied(let applied)): result = .apply(.init(sequence: applied.sequence, ids: applied.ids))
-          case .success(.text(let edit)):
-            result = .text(.init(sequence: edit.sequence, authored: edit.authored,
-              selectionStart: edit.selectionStart, selectionEnd: edit.selectionEnd))
-          case .success(.flushed): result = .flush
-          case .success(.history(let sequence)):
-            result = method == .undo ? .undo(.init(sequence: sequence)) : .redo(.init(sequence: sequence))
-          }
-          reply(result.json)
+    let command: PageCommand
+    switch request {
+    case .apply(let r): command = .apply(r.batch)
+    case .text(let r): command = .text(r.request)
+    case .open: command = .open
+    case .flush: command = .flush
+    case .undo: command = .undo
+    case .redo: command = .redo
+    default: return reply(RequestOutcome.page(OwnerError.rejected("Not a document request")))
+    }
+    enqueuePage(command, view: view) { outcome in
+      DispatchQueue.main.async {
+        switch outcome {
+        case .failure(let error): reply(RequestOutcome.page(error))
+        case .success(let result): reply(result.json)
         }
       }
-    } catch { reply(Self.pageFailure(error)) }
-  }
-  static func pageFailure(_ error: Error) -> [String: Any] {
-    let outcome = RequestOutcome(error)
-    var fields: [String: Any] = ["ok": false, "code": outcome.pageCode.rawValue, "error": error.localizedDescription]
-    if case let .rejected(reason, opIndex) = outcome {
-      fields["reason"] = reason.rawValue
-      if let opIndex { fields["opIndex"] = opIndex }
     }
-    return fields
   }
 
   /// A socket command, off the main actor. The reply is one JSON line; document state is
-  /// the core's JSON, spliced in unparsed.
+  /// the core's JSON, spliced in unparsed. Mutations carry the epoch the client read, and
+  /// the owner admits them against it.
   func request(_ request: SocketRequest) async -> Data {
-    let epoch = self.epoch
     guard request.documentPath == file.url.path else {
-      return SocketReply(ok: false, error: "Document path mismatch", code: .rejected).encoded()
+      return RequestOutcome.socket(OwnerError.rejected("Document path mismatch")).encoded()
     }
-    if request.requiresEpoch, request.epoch != epoch {
-      return SocketReply(ok: false, epoch: epoch, error: "Owner session changed", code: .sessionChanged).encoded()
-    }
-    // A lifecycle refusal only proves safe replay before the mutation is accepted.
-    var mutationAccepted = false
+    // A command accepted before its flush failed was applied: its outcome is not a refusal.
+    var accepted = false
     do {
-      var reply = SocketReply(ok: true, epoch: epoch)
-      let state: String
       switch request {
       case .hello:
-        reply.coreBuildId = Self.coreBuildID
-        return reply.encoded()
-      case .get, .batch, .compact:
-        switch request {
-        case .batch(let r): try await accept(#"{"intents":"# + r.ops + "}", epoch: r.epoch, into: &reply)
-        case .compact: try await compact()
-        default: break
-        }
-        mutationAccepted = reply.sequence != nil || request.method == .compact
+        return SocketReply(ok: true, epoch: epoch, coreBuildId: Self.coreBuildID).encoded()
+      case .get:
         try await flush()
-        if case .get = request {
-          // The socket is newline-delimited; authored descriptors may be pretty-printed.
-          let descriptor = try JSONSerialization.jsonObject(with: Data(file.descriptor.utf8))
-          let schema = String(decoding: try JSONSerialization.data(withJSONObject: descriptor, options: .withoutEscapingSlashes), as: UTF8.self)
-          state = #"{"schema":"# + schema + #","state":"# + (try await self.state()) + "}"
-        } else {
-          state = try await value()
-        }
-      case .themeGet, .themeSet, .themeReset, .themeImport:
-        let change: ThemeChange
-        switch request {
-        case .themeSet(let r):
-          change = .set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: r.values), as: UTF8.self))
-        case .themeReset(let r): change = .reset(token: r.token)
-        case .themeImport(let r): change = importTheme(r.file)
-        default: change = .get
-        }
-        let theme = try await applyTheme(change)
-        // Like a batch, a theme change replies once it is durable.
-        mutationAccepted = theme.changed
+        return SocketReply(ok: true, epoch: epoch).encoded(state: #"{"schema":"# + file.descriptor + #","state":"# + (try await state()) + "}")
+      case .batch(let r):
+        let applied = try await apply(batch: #"{"intents":"# + r.ops + "}", epoch: r.epoch)
+        accepted = true
         try await flush()
-        state = #"{"defaults":"# + theme.defaults + #","overrides":"# + theme.overrides + #","effective":"# + theme.effective + "}"
+        return SocketReply(ok: true, epoch: epoch, ids: applied.ids, sequence: applied.sequence).encoded()
+      case .compact(let r):
+        try await compact(epoch: r.epoch)
+        return SocketReply(ok: true, epoch: epoch).encoded()
+      case .themeGet:
+        return try await theme(.get, epoch: nil, accepted: &accepted)
+      case .themeSet(let r):
+        let values = String(decoding: try JSONSerialization.data(withJSONObject: r.values), as: UTF8.self)
+        return try await theme(.set(valuesJson: values), epoch: r.epoch, accepted: &accepted)
+      case .themeReset(let r):
+        return try await theme(.reset(token: r.token), epoch: r.epoch, accepted: &accepted)
+      case .themeImport(let r):
+        return try await theme(.import(fileJson: r.file), epoch: r.epoch, accepted: &accepted)
       case .themeExport:
-        state = try await exportTheme()
+        let file = String(decoding: try JSONEncoder().encode(["file": try await exportTheme()]), as: UTF8.self)
+        return SocketReply(ok: true, epoch: epoch).encoded(state: file)
       case .attachmentsList:
-        state = String(decoding: try JSONEncoder().encode(try await listAttachments()), as: UTF8.self)
+        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await listAttachments()))
       case .attachmentsRead(let r):
-        state = String(decoding: try JSONEncoder().encode(["bytes": try await readAttachment(r.attachmentID)]), as: UTF8.self)
+        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(["bytes": try await readAttachment(r.attachmentID)]))
       case .attachmentsPut(let r):
-        state = String(decoding: try JSONEncoder().encode(try await putAttachment(base64: r.bytes)), as: UTF8.self)
+        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await putAttachment(base64: r.bytes, epoch: r.epoch)))
       case .export:
-        return SocketReply(ok: false, epoch: epoch, error: "Unsupported owner command", code: .rejected).encoded()
+        return RequestOutcome.socket(OwnerError.rejected("Unsupported owner command"), epoch: epoch).encoded()
       }
-      return reply.encoded(state: state)
     } catch {
-      if mutationAccepted {
-        // OwnerReplaced's message says "not applied", which only describes admission.
-        // A command already accepted may even be durable when discard rejects its flush.
-        let message = (error as? SaveFailure)?.localizedDescription
-          ?? "Command was accepted, but its final state could not be confirmed."
-        return SocketReply(ok: false, epoch: epoch, error: message, code: .failed).encoded()
-      }
-      return SocketReply(ok: false, epoch: epoch, error: error.localizedDescription, code: RequestOutcome(error).socketCode).encoded()
+      // OwnerReplaced says "not applied", which only describes admission: a command already
+      // accepted may even be durable when discard rejects its flush.
+      let failure = accepted && !(error is SaveFailure) ? failure("Command was accepted, but its final state could not be confirmed.") : error
+      return RequestOutcome.socket(failure, epoch: epoch).encoded()
     }
   }
-  /// Applies a socket batch; the reply reports the inserted row IDs and the sequence.
-  private func accept(_ batch: String, epoch: String, into reply: inout SocketReply) async throws {
-    let applied = try await apply(batch: batch, epoch: epoch)
-    reply.ids = applied.ids
-    reply.sequence = applied.sequence
+  /// A theme command; like a batch, a change replies once it is durable.
+  private func theme(_ change: ThemeChange, epoch: String?, accepted: inout Bool) async throws -> Data {
+    let theme = try await applyTheme(change, epoch: epoch)
+    accepted = theme.changed
+    try await flush()
+    return SocketReply(ok: true, epoch: self.epoch).encoded(
+      state: #"{"defaults":"# + theme.defaults + #","overrides":"# + theme.overrides + #","effective":"# + theme.effective + "}")
+  }
+  private func json<T: Encodable>(_ value: T) throws -> String {
+    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
   }
 }
 
@@ -143,11 +107,6 @@ extension SocketReply {
 }
 
 enum PageCommand: Sendable { case open, apply(String), text(String), flush, undo, redo }
-enum PageOutcome: Sendable {
-  case opened(DocumentOwner.Opened), applied(DocumentOwner.Applied), text(DocumentOwner.TextEdit), flushed
-  /// Undo or redo: the publication sequence to wait for.
-  case history(Int)
-}
 /// Whether Edit ▸ Undo and Redo have anything to do.
 public struct UndoAvailability: Sendable, Equatable {
   public var canUndo = false

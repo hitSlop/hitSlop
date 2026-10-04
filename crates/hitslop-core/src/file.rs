@@ -14,28 +14,24 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
-/// These tables. A compatibility requirement, not a release number: a later version
-/// migrates this one forward under the writer lock; a build refuses a newer one.
+/// These tables. A compatibility requirement, not a release number: a build refuses a
+/// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;
 /// `app` is what the author built, written once by `pack` and identical in a template and
 /// its documents. `document`, `checkpoint`, `updates` and `attachments` are the document;
-/// a template has no rows in them. `doc_id` names the logical document: minted when a
-/// document is created and renewed by a copy, so it never authorizes synchronization.
-/// `checkpoint.schema_key` records the descriptor the saved state was written under.
+/// a template has no rows in them.
+/// `checkpoint.descriptor` records, canonically encoded, the descriptor the saved state was
+/// written under.
 pub(crate) const SCHEMA: &str = "\
 CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, initial TEXT NOT NULL, theme TEXT NOT NULL);
 CREATE TABLE assets(path TEXT PRIMARY KEY, bytes BLOB NOT NULL);
 CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL);
-CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1), doc_id TEXT NOT NULL, theme TEXT NOT NULL DEFAULT '{}');
-CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), schema_key TEXT NOT NULL, bytes BLOB NOT NULL);
+CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1), theme TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), descriptor TEXT NOT NULL, bytes BLOB NOT NULL);
 CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
 CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL);";
 
-/// The longest manifest, descriptor or initial value, and the largest theme defaults.
-const APP_TEXT_BYTES: i64 = 4 * 1024 * 1024;
-const MANIFEST_BYTES: i64 = 64 * 1024;
-const ASSET_PATH_BYTES: usize = 240;
-
+use crate::wire::{APP_TEXT_BYTES, ASSET_PATH_BYTES, MANIFEST_BYTES};
 
 /// The file's path with its folder resolved: NOFOLLOW refuses a symbolic link anywhere in
 /// a path, while the file itself must not be one.
@@ -113,8 +109,14 @@ fn expected_tables() -> &'static [SchemaRow] {
 /// The checks every open runs, in order, reading sizes with `length()` and never a value:
 /// the application ID, the markers (a newer one is refused before anything else is read),
 /// the exact tables, the rows a template or a document may hold, and every size budget.
-/// `integrity` adds `PRAGMA quick_check` (42 ms for the largest allowed document).
+/// `integrity` adds `PRAGMA quick_check` (42 ms for the largest allowed document). The
+/// checks run in one read transaction, the caller's if it holds one, so they see one state
+/// while another process saves.
 pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
+    let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
+    checks(conn, integrity)
+}
+fn checks(conn: &Connection, integrity: bool) -> Result<Kind> {
     let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(sqlite("read"));
     if one("PRAGMA application_id")? != APPLICATION_ID {
         return Err(invalid("This is not a hitSlop document"));
@@ -129,8 +131,15 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     if tables(conn)? != expected_tables() {
         return Err(invalid("Unexpected document tables"));
     }
-    if one("SELECT count(*) FROM app")? != 1 {
-        return Err(invalid("A document needs its app"));
+    // A one-row table's row is row 1: a file written without its CHECK constraints may
+    // hold others, which no read would see.
+    for table in ["app", "document", "checkpoint"] {
+        let (rows, first): (i64, i64) = conn
+            .query_row(&format!("SELECT count(*), coalesce(sum(id=1),0) FROM {table}"), [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sqlite("read"))?;
+        if rows > 1 || rows != first || (table == "app" && rows != 1) {
+            return Err(invalid(format!("Unexpected rows in {table}")));
+        }
     }
     let (package_format, runtime_abi): (i64, i64) =
         conn.query_row("SELECT package_format, runtime_abi FROM app", [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sqlite("read"))?;
@@ -142,11 +151,12 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
             return Err(invalid(format!("Invalid {name}")));
         }
     }
-    let (manifest, longest) = (
+    let (manifest, longest, theme) = (
         one("SELECT length(CAST(manifest AS BLOB)) FROM app")?,
-        one("SELECT max(length(CAST(descriptor AS BLOB)), length(CAST(initial AS BLOB)), length(CAST(theme AS BLOB))) FROM app")?,
+        one("SELECT max(length(CAST(descriptor AS BLOB)), length(CAST(initial AS BLOB))) FROM app")?,
+        one("SELECT max(length(CAST(theme AS BLOB))) FROM (SELECT theme FROM app UNION ALL SELECT theme FROM document)")?,
     );
-    if manifest > MANIFEST_BYTES || longest > APP_TEXT_BYTES {
+    if manifest > MANIFEST_BYTES as i64 || longest > APP_TEXT_BYTES as i64 || theme > crate::wire::THEME_LIMIT as i64 {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
     let (assets, largest, total, longest_path): (i64, i64, i64, i64) = conn
@@ -156,9 +166,7 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(sqlite("read"))?;
-    if assets > crate::ASSET_COUNT as i64 || largest > crate::ASSET_FILE_BYTES as i64 || total > crate::ASSET_BYTES as i64 {
-        return Err(invalid("The app exceeds 256 assets, 25 MiB per asset or 50 MiB"));
-    }
+    assets_within(assets as usize, largest as usize, total as usize)?;
     if longest_path > ASSET_PATH_BYTES as i64 {
         return Err(invalid("An asset path is too long"));
     }
@@ -170,6 +178,16 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     }
     if one("SELECT coalesce(max(length(png)),0) FROM artwork")? > crate::ASSET_FILE_BYTES as i64 {
         return Err(invalid("Artwork is too large"));
+    }
+    if one("SELECT count(*) FROM artwork WHERE name NOT IN ('preview','icon')")? > 0 {
+        return Err(invalid("Unexpected artwork"));
+    }
+    // Artwork reaches Finder and Quick Look's image decoders: its PNG header is checked as
+    // pack and every artwork write check it, reading only the header.
+    let mut artwork = conn.prepare("SELECT name, substr(png,1,33) FROM artwork").map_err(sqlite("read"))?;
+    for row in artwork.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(sqlite("read"))? {
+        let (name, header) = row.map_err(sqlite("read"))?;
+        png(&header, &format!("The {name} artwork"))?;
     }
     let documents = one("SELECT count(*) FROM document")?;
     let checkpoints = one("SELECT count(*) FROM checkpoint")?;
@@ -188,10 +206,7 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     } else {
         Kind::Document
     };
-    if attachments > crate::ATTACHMENT_COUNT as i64
-        || attachment_largest > crate::ATTACHMENT_FILE_BYTES as i64
-        || attachment_bytes > crate::ATTACHMENT_BYTES as i64
-    {
+    if !attachments_fit(attachments, attachment_largest, attachment_bytes) {
         return Err(invalid("Attachments exceed their limits"));
     }
     // Sizes first, as everywhere: then at most `ATTACHMENT_COUNT` IDs of 64 bytes are read.
@@ -201,7 +216,7 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     let mut ids = conn.prepare("SELECT CAST(id AS BLOB) FROM attachments").map_err(sqlite("read"))?;
     for id in ids.query_map([], |r| r.get::<_, Vec<u8>>(0)).map_err(sqlite("read"))? {
         let id = id.map_err(sqlite("read"))?;
-        if !std::str::from_utf8(&id).is_ok_and(crate::store::valid_attachment_id) {
+        if !std::str::from_utf8(&id).is_ok_and(crate::wire::valid_attachment_id) {
             return Err(invalid("Invalid attachment identity"));
         }
     }
@@ -214,6 +229,22 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     Ok(kind)
 }
 
+/// The asset budget, as packing reads a stage and as every open finds it stored.
+fn assets_within(count: usize, largest: usize, total: usize) -> Result<()> {
+    if count > crate::ASSET_COUNT || largest > crate::ASSET_FILE_BYTES || total > crate::ASSET_BYTES {
+        return Err(invalid(format!(
+            "The app exceeds {} assets, {} MiB per asset or {} MiB",
+            crate::ASSET_COUNT,
+            crate::ASSET_FILE_BYTES >> 20,
+            crate::ASSET_BYTES >> 20
+        )));
+    }
+    Ok(())
+}
+/// Whether a document's attachments fit their limits, as stored or with one more.
+pub(crate) fn attachments_fit(count: i64, largest: i64, total: i64) -> bool {
+    count <= crate::ATTACHMENT_COUNT as i64 && largest <= crate::ATTACHMENT_FILE_BYTES as i64 && total <= crate::ATTACHMENT_BYTES as i64
+}
 /// A relative asset path: no empty or dot segments, no backslash or NUL.
 pub fn valid_asset_path(path: &str) -> bool {
     !path.is_empty()
@@ -282,17 +313,21 @@ pub struct App {
     /// The declared colors and their defaults.
     pub theme: String,
 }
-/// What checking an app found: its window shape, its declared colors in the order the
-/// author wrote them, and the window skin's PNG when the manifest names one.
-pub struct CheckedApp {
-    pub silhouette: shape::Silhouette,
-    pub theme_tokens: Vec<(String, String)>,
-    pub skin: Option<Vec<u8>>,
+/// What checking an app found: its template's slug, its parsed descriptor and storage key,
+/// its window shape, its declared colors in the order the author wrote them, and the window
+/// skin's PNG when the manifest names one.
+struct CheckedApp {
+    slug: String,
+    schema: crate::Node,
+    canonical_descriptor: String,
+    silhouette: shape::Silhouette,
+    theme_tokens: Vec<(String, String)>,
+    skin: Option<Vec<u8>>,
 }
 /// The content rules `pack` applies and every open relies on, each run once.
 fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Result<CheckedApp> {
     let window = crate::manifest::validate(&app.manifest, app.package_format).map_err(Error::Rejected)?;
-    crate::validate(&app.descriptor, &app.initial).map_err(Error::Rejected)?;
+    let (schema, canonical_descriptor) = crate::descriptor::checked(&app.descriptor, &app.initial).map_err(Error::Rejected)?;
     let theme_tokens = crate::theme::validate_defaults(&app.theme).map_err(Error::Rejected)?;
     let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
     std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
@@ -311,7 +346,7 @@ fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Resu
             Some(bytes)
         }
     };
-    Ok(CheckedApp { silhouette: window.silhouette, theme_tokens, skin })
+    Ok(CheckedApp { slug: window.slug, schema, canonical_descriptor, silhouette: window.silhouette, theme_tokens, skin })
 }
 
 /// A template or document a host opened: its kind and markers, its app as stored, and what
@@ -319,7 +354,10 @@ fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Resu
 pub struct OpenedApp {
     pub kind: Kind,
     pub app: App,
-    pub schema_key: String,
+    /// The template's slug, which names it in theme files.
+    pub slug: String,
+    pub(crate) schema: crate::Node,
+    pub canonical_descriptor: String,
     pub silhouette: shape::Silhouette,
     pub theme_tokens: Vec<(String, String)>,
     /// The window skin's PNG, when the manifest names one.
@@ -333,7 +371,9 @@ pub(crate) fn open_app(conn: &Connection, kind: Kind, path: &Path) -> Result<Ope
     let found = check_app(&app, &|key| read_asset(conn, key))?;
     Ok(OpenedApp {
         kind,
-        schema_key: crate::schema_key(&app.descriptor).map_err(Error::Rejected)?,
+        slug: found.slug,
+        schema: found.schema,
+        canonical_descriptor: found.canonical_descriptor,
         silhouette: found.silhouette,
         theme_tokens: found.theme_tokens,
         skin: found.skin,
@@ -352,7 +392,7 @@ pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
 pub fn kind(path: &Path) -> Result<Kind> {
     check(&reader(path)?, false)
 }
-pub(crate) fn read_app(conn: &Connection) -> Result<App> {
+fn read_app(conn: &Connection) -> Result<App> {
     conn.query_row("SELECT package_format,runtime_abi,manifest,descriptor,initial,theme FROM app WHERE id=1", [], |r| {
         Ok(App {
             package_format: r.get::<_, i64>(0)? as u64,
@@ -403,29 +443,23 @@ impl AssetReader {
     }
 }
 
-fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    getrandom::getrandom(&mut buffer).expect("random bytes");
-    crate::hex(&buffer)
-}
-/// A new logical document's identity: 16 random bytes in lowercase hex.
-pub(crate) fn new_doc_id() -> String {
-    random_hex(16)
-}
 /// A private temporary file beside `dest`, removed if it is never published.
-pub(crate) struct Staged(PathBuf);
+pub(crate) struct Staged {
+    path: PathBuf,
+    published: bool,
+}
 impl Staged {
     pub(crate) fn beside(dest: &Path) -> Result<Self> {
         let dest = resolve(dest)?;
         let name = dest.file_name().unwrap().to_string_lossy();
-        Ok(Self(dest.with_file_name(format!(".{name}.{}.tmp", random_hex(8)))))
+        Ok(Self { path: dest.with_file_name(format!(".{name}.{}.tmp", crate::random_hex(8))), published: false })
     }
     pub(crate) fn path(&self) -> &Path {
-        &self.0
+        &self.path
     }
     /// Publishes the finished file without replacing anything at `dest`.
-    pub(crate) fn publish_new(self, dest: &Path) -> Result<()> {
-        let (from, to) = (cstring(&self.0)?, cstring(&resolve(dest)?)?);
+    pub(crate) fn publish_new(mut self, dest: &Path) -> Result<()> {
+        let (from, to) = (cstring(&self.path)?, cstring(&resolve(dest)?)?);
         #[cfg(target_os = "macos")]
         // SAFETY: valid C strings.
         let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
@@ -440,12 +474,12 @@ impl Staged {
                 failed(format!("Cannot save the document: {error}"))
             });
         }
+        self.published = true;
         sync_folder(dest);
-        std::mem::forget(self);
         Ok(())
     }
     /// Publishes over a template, never over a document.
-    fn publish_template(self, dest: &Path) -> Result<()> {
+    fn publish_template(mut self, dest: &Path) -> Result<()> {
         if let Ok(meta) = fs::symlink_metadata(dest) {
             if !meta.is_file() {
                 return Err(rejected(Code::Exists, format!("Refusing to replace {}: it is not a template", dest.display())));
@@ -453,9 +487,9 @@ impl Staged {
             if check(&reader(dest)?, false)? != Kind::Template {
                 return Err(rejected(Code::Exists, "Refusing to replace a document with a template"));
             }
-            fs::rename(&self.0, resolve(dest)?).map_err(|e| failed(format!("Cannot save the template: {e}")))?;
+            fs::rename(&self.path, resolve(dest)?).map_err(|e| failed(format!("Cannot save the template: {e}")))?;
+            self.published = true;
             sync_folder(dest);
-            std::mem::forget(self);
             return Ok(());
         }
         self.publish_new(dest)
@@ -463,8 +497,10 @@ impl Staged {
 }
 impl Drop for Staged {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-        let _ = fs::remove_file(self.0.with_extension("tmp-journal"));
+        if !self.published {
+            let _ = fs::remove_file(&self.path);
+            let _ = fs::remove_file(self.path.with_extension("tmp-journal"));
+        }
     }
 }
 fn cstring(path: &Path) -> Result<CString> {
@@ -479,7 +515,7 @@ fn sync_folder(path: &Path) {
 }
 
 /// Writes a template: the app's row, its assets and its artwork, in one transaction.
-pub fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
+fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
     let conn = writer(path, true)?;
     conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;").map_err(sqlite("create"))?;
     configure_writer(&conn)?;
@@ -509,7 +545,7 @@ pub fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artw
 pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     let file = stage.join("app.json");
     let size = fs::metadata(&file).map_err(|e| invalid(format!("app.json: {e}")))?.len();
-    if size > (MANIFEST_BYTES + 3 * APP_TEXT_BYTES) as u64 {
+    if size > (MANIFEST_BYTES + 2 * APP_TEXT_BYTES + crate::wire::THEME_LIMIT) as u64 {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
     let text = fs::read_to_string(&file).map_err(|e| invalid(format!("app.json: {e}")))?;
@@ -523,10 +559,10 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     let app = App {
         package_format: row.packageFormat,
         runtime_abi: row.runtimeABI,
-        manifest: row.manifest.get().to_owned(),
-        descriptor: row.descriptor.get().to_owned(),
-        initial: row.initial.get().to_owned(),
-        theme: row.theme.get().to_owned(),
+        manifest: compact(row.manifest.get()),
+        descriptor: compact(row.descriptor.get()),
+        initial: compact(row.initial.get()),
+        theme: compact(row.theme.get()),
     };
     let assets = stage_assets(&stage.join("assets"))?;
     let mut artwork = vec![];
@@ -551,10 +587,26 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     }
     staged.publish_template(dest)
 }
+/// Parsed JSON text without the whitespace between its tokens, in the order written: the
+/// `app` row's text is one line, so hosts pass it on without re-encoding it.
+fn compact(json: &str) -> String {
+    let (mut out, mut quoted, mut escaped) = (String::with_capacity(json.len()), false, false);
+    for c in json.chars() {
+        if quoted {
+            (escaped, quoted) = (!escaped && c == '\\', escaped || c != '"');
+        } else if c.is_ascii_whitespace() {
+            continue;
+        } else {
+            quoted = c == '"';
+        }
+        out.push(c);
+    }
+    out
+}
 /// The stage's assets: regular files only, within the budgets.
 fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     let mut assets = vec![];
-    let (mut count, mut total) = (0usize, 0usize);
+    let (mut count, mut largest, mut total) = (0usize, 0usize, 0usize);
     let mut pending = vec![root.to_owned()];
     while let Some(folder) = pending.pop() {
         for entry in fs::read_dir(&folder).map_err(|e| invalid(format!("assets: {e}")))? {
@@ -568,14 +620,12 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
                 return Err(invalid("Assets must be regular files, without symbolic links"));
             }
             let key = path.strip_prefix(root).map_err(|_| invalid("An asset escapes its folder"))?.to_string_lossy().into_owned();
-            count += 1;
-            total += meta.len() as usize;
             if !valid_asset_path(&key) {
                 return Err(invalid(format!("Unsafe asset path {key}")));
             }
-            if meta.len() as usize > crate::ASSET_FILE_BYTES || count > crate::ASSET_COUNT || total > crate::ASSET_BYTES {
-                return Err(invalid("The app exceeds 256 assets, 25 MiB per asset or 50 MiB"));
-            }
+            // Checked before reading, so a stage of huge files is refused, never loaded.
+            (count, largest, total) = (count + 1, largest.max(meta.len() as usize), total + meta.len() as usize);
+            assets_within(count, largest, total)?;
             assets.push((key, fs::read(&path).map_err(failed)?));
         }
     }
@@ -583,10 +633,9 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(assets)
 }
 
-/// Copies `source` through SQLite's online backup into a temporary file beside `dest`,
-/// runs `finish` there, checks the result and publishes it without replacing anything.
-/// Copies `source` to `dest` as a new logical document: `create` adds the document row a
-/// template lacks; otherwise the copy's row gets a new identity.
+/// Copies `source` to `dest` through SQLite's online backup into a temporary file beside
+/// `dest`, then checks it and publishes it without replacing anything; `create` adds the
+/// document row a template lacks.
 pub(crate) fn copy(source: &Connection, dest: &Path, create: bool) -> Result<()> {
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
@@ -599,13 +648,14 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool) -> Result<()>
         }
     }
     configure_writer(&output)?;
-    let identity = if create { "INSERT INTO document(id,doc_id) VALUES(1,?1)" } else { "UPDATE document SET doc_id=?1 WHERE id=1" };
-    output.execute(identity, [new_doc_id()]).map_err(sqlite("Cannot give the copy its identity"))?;
+    if create {
+        output.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
+    }
     check(&output, false)?;
     output.close().map_err(|(_, e)| sqlite("close")(e))?;
     staged.publish_new(dest)
 }
-/// A new document from a template: the same app, a fresh identity, no saved state yet.
+/// A new document from a template: the same app, no saved state yet.
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     let source = reader(template)?;
     let read = source.unchecked_transaction().map_err(sqlite("read"))?;
@@ -618,25 +668,11 @@ pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     open_app(&read, kind, template)?;
     copy(&read, dest, true)
 }
-/// A closed document's copy as a new logical document: the same app, history,
-/// attachments and theme, a new identity. An open document is copied by its owner
-/// (`Store::copy_to`), so saves wait behind the copy instead of timing out.
-pub fn duplicate(source: &Path, dest: &Path) -> Result<()> {
-    let source = reader(source)?;
-    // One read transaction: the backup copies exactly what was checked.
-    let read = source.unchecked_transaction().map_err(sqlite("read"))?;
-    if check(&read, true)? != Kind::Document {
-        return Err(invalid("Only a document can be duplicated; create one from a template"));
-    }
-    crate::store::checked_bounds(&read, 0, 0)?;
-    copy(&read, dest, false)
-}
-
-/// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes.
+/// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
+/// of a file every open would accept.
 pub fn inspect(path: &Path) -> Result<serde_json::Value> {
+    let opened = open(path, true)?;
     let conn = reader(path)?;
-    let kind = check(&conn, true)?;
-    let app = read_app(&conn)?;
     let list = |sql: &str| -> Result<Vec<serde_json::Value>> {
         let mut statement = conn.prepare(sql).map_err(sqlite("inspect"))?;
         let rows = statement
@@ -646,10 +682,10 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
     };
     let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(sqlite("inspect"));
     Ok(serde_json::json!({
-        "kind": match kind { Kind::Template => "template", Kind::Document => "document" },
-        "packageFormat": app.package_format,
-        "runtimeABI": app.runtime_abi,
-        "manifest": serde_json::from_str::<serde_json::Value>(&app.manifest).map_err(failed)?,
+        "kind": match opened.kind { Kind::Template => "template", Kind::Document => "document" },
+        "packageFormat": opened.app.package_format,
+        "runtimeABI": opened.app.runtime_abi,
+        "manifest": serde_json::from_str::<serde_json::Value>(&opened.app.manifest).map_err(failed)?,
         "assets": list("SELECT path, length(bytes) FROM assets ORDER BY path")?,
         "artwork": list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         "attachments": { "count": one("SELECT count(*) FROM attachments")?, "bytes": one("SELECT coalesce(sum(length(bytes)),0) FROM attachments")? },
@@ -658,13 +694,11 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
             "updates": one("SELECT count(*) FROM updates")?,
             "updateBytes": one("SELECT coalesce(sum(length(bytes)),0) FROM updates")?,
         },
-        "bytes": fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0),
+        "bytes": opened.bytes,
     }))
 }
 
-/// The app's descriptor, for `slop schema`.
+/// The app's descriptor, for `slop schema`, from a file every open would accept.
 pub fn descriptor(path: &Path) -> Result<String> {
-    let conn = reader(path)?;
-    check(&conn, false)?;
-    Ok(read_app(&conn)?.descriptor)
+    Ok(open(path, false)?.app.descriptor)
 }

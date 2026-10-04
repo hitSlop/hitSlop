@@ -9,6 +9,8 @@ use loro::{ExportMode, LoroDoc, LoroMap, LoroMovableList};
 use std::path::Path;
 
 fn main() {
+    // A tool run never fills the account's `~/.hitslop/live` with lock files.
+    hitslop_core::registry::use_folder(&std::env::temp_dir().join("hitslop-test-registry")).unwrap();
     let root = std::env::args().nth(1).expect("document path");
     let root = Path::new(&root);
     let store = Store::open(root, Mode::Document).unwrap();

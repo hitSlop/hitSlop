@@ -741,6 +741,20 @@
       "error": "out_of_range"
     },
     {
+      "name": "removing no scalar-list elements is refused",
+      "intents": [
+        {
+          "type": "remove",
+          "path": [
+            "presets"
+          ],
+          "index": 0,
+          "count": 0
+        }
+      ],
+      "error": "out_of_range"
+    },
+    {
       "name": "rows insert by anchor, not index",
       "intents": [
         {

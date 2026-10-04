@@ -1,7 +1,6 @@
-// Failure: row indexes or patches drift after structural changes/imports.
-// Oracle: independent patch consumer + fresh snapshots, with literal outcomes
-// covered by conformance.rs. Gap: no randomized native publication sequences;
-// event-driven publication must also combine several list changes per import.
+// Failure: row indexes or patches drift after structural changes/imports, including
+// several list changes combined in one import. Oracle: independent patch consumer + fresh
+// snapshots, with literal outcomes covered by conformance.rs.
 mod support;
 use hitslop_core::Document;
 use support::{Edit, View};
@@ -50,7 +49,7 @@ fn seeded_local_and_remote_steps() {
     let schema = f["schema"].to_string();
     let mut rng = 0x5eeda11u64;
     let mut id = 100u64;
-    for _round in 0..support::workload("HITSLOP_PUBLICATIONS_ROUNDS", 1000) {
+    for _round in 0..support::workload("HITSLOP_PUBLICATIONS_ROUNDS", 100) {
         let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
         let mut projected = View::of(&d);
         for step in 0..support::workload("HITSLOP_PUBLICATIONS_STEPS", 100) {

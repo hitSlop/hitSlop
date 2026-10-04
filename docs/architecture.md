@@ -178,7 +178,8 @@ JSON snapshots or persistent undo records.
   (`full`, `busy`, `moved`, `invalidated`, `io`) and reach the window, which offers retry,
   or discard for a full document.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
-  `close` refuses new edits, flushes, trims history (below), then releases the lock.
+  `close` refuses new edits, flushes, trims history (below), writes the artwork its
+  window captured ([close](#close-export-and-capture)), then releases the lock.
   `discard` rotates the epoch,
   waits for the write in flight, and reloads saved bytes; requests captured before it are
   refused with `owner_replaced`.
@@ -186,7 +187,7 @@ JSON snapshots or persistent undo records.
   page learns durability only through `flush`, which resolves once saved and rejects
   when the save fails.
 
-Storage is `document(doc_id, theme)`, `checkpoint(schema_key, bytes)` (absent until
+Storage is `document(theme)`, `checkpoint(descriptor, bytes)` (absent until
 the first save), and `updates(seq, bytes)`. Saved updates without a checkpoint are
 refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
 4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`).
@@ -208,7 +209,7 @@ loads, and the core is the only code that opens a `.slop` file.
 ## The file, its lock and copies
 
 A template holds an app; a document holds an app and its saved state. Creating a
-document copies a template and gives it an identity; nothing is ever unpacked. The writer
+document copies a template and adds the document row; nothing is ever unpacked. The writer
 lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
 SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
@@ -217,32 +218,40 @@ after the path, and Apple's SQLite never writes again through a connection whose
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
 Duplicate and Share a Copy flush what the page accepted, then copy from the owner's own
-connection with SQLite's online backup, so saves queue behind the copy. The copy gets a
-new identity and is published without replacing anything. Artwork rendered from a closed
-document's saved state is written into the file only while it still holds that state.
-Finder, Mail and the share sheet show it through the app's Quick Look extensions, which
-read the file's artwork read-only; a file without artwork shows the `.slop` document icon.
+connection with SQLite's online backup, so saves queue behind the copy. The copy is
+published without replacing anything. A window writes the file's
+artwork as it closes ([close](#close-export-and-capture)). Finder, Mail and the share sheet
+show it through the app's Quick Look extensions, which read the file's artwork read-only;
+a file without artwork shows the `.slop` document icon.
 
 ## Close, export and capture
 
 The page barrier sends unsent text, waits for queued writes and attachment imports, then
 flushes; it never joins a flush that already passed its drain point. Inputs stay
-enabled, so focus survives a cancelled barrier. Swift then saves and closes the owner.
-An attachment import stores the blob and submits its reference through a collector
-admitted past an active barrier, so a blob is never saved without its reference.
+enabled, so focus survives a cancelled barrier. If the session changed the document, or
+the file has no preview, the window then leaves the screen and captures its preview and
+icon from the page. Swift saves, the owner writes that artwork through its writer
+connection, and the owner closes. A failed capture keeps the old artwork and never stops
+the close; a failed close shows the window again. An attachment import stores the blob,
+then submits its reference through a collector admitted past an active barrier. A
+collector that throws, or an edit the core refuses, leaves the blob unreferenced, which is
+harmless: blobs are addressed by their hash.
 
 ## CLI
 
-`slop` forwards to `hitslop-native`. If the document is open, the command goes to the
-owner's socket, which lives as long as the owner, not the page. Commands run on the owner
-directly: they never blur the field being typed in, and a live `get` returns
-owner-accepted state. If the document is closed, the helper takes the writer lock and
-runs the owner in process, without WebKit or authored code. Socket commands run off the
-main actor, and operations travel as JSON text. Edits print `{ids, sequence, value}`;
-mutations are never replayed automatically. The socket has one edit method, `batch`;
-CLI `apply` validates and wraps one operation. Socket `get` returns `{schema, state}`
-from one owner frame after flushing. The CLI prints `state.value` by default and the
-complete payload with `get --snapshot`.
+`slop` sends each document command to `hitslop-native request` as one generated
+`SocketRequest`, JSON on standard input, and the helper prints the `SocketReply`; the CLI
+reads files the command names and says what a refusal means for the next edit. If the
+document is open, the request goes to the owner's socket, which lives as long as the
+owner, not the page. Commands run on the owner directly: they never blur the field being
+typed in, and a live `get` returns owner-accepted state. If the document is closed, the
+helper takes the writer lock and runs the owner in process, without WebKit or authored
+code; a closed `export` instead renders a saved-state snapshot and takes no lock. Socket
+commands run off the main actor, and operations travel as JSON text. Edits print
+`{ids, sequence}`; mutations are never replayed automatically. The socket has one edit
+method, `batch`; CLI `apply` validates and wraps one operation. Socket `get` returns
+`{schema, state}` from one owner frame after flushing. The CLI prints `state.value` by
+default and the complete payload with `get --snapshot`.
 
 ## Themes and attachments
 
@@ -273,15 +282,9 @@ Attachments are content-addressed immutable blobs in the file's `attachments` ta
 stored on the owner's persistence queue through its own connection, before the edit
 that references one is accepted.
 
-## Tests
+## Tests and performance
 
 Tests live at the boundary that owns the behavior; see [testing](testing.md).
-
-| Boundary | Proves |
-|---|---|
-| Rust (`crates/hitslop-core/tests`) | Semantics, publications equal fresh snapshots, text merges (`text.rs`), token validation (`tokens.rs`), storage (`store.rs`) |
-| SDK over WASM (`packages/shell/tests`) | Write timing, snapshot identity, collectors, text binding, stream recovery, barriers, attachments |
-| Swift (`apps/apple/Packages/HitSlopApple/Tests`) | Persistence scheduling, lost replies, view and epoch fences, CLI, WebView bridge, export |
 
 Performance evidence is in [`evidence/`](evidence/). At 1,000 rows a window opens in under
 a second and a checkbox is accepted in about 12 to 14 ms (p95); see

@@ -28,9 +28,13 @@ export function swiftContracts(
   request: TSchema,
   reply: TSchema,
   discovery: TSchema,
+  pageRequest: TSchema,
+  pageFailure: TSchema,
   pageResults: Record<string, TSchema>,
 ) {
   const declarations: string[] = [];
+  /** Each emitted enumeration's cases, by type name. */
+  const declared = new Map<string, string>();
   function checkKeys(schema: Schema, path: string) {
     const allowed = new Set([
       "type",
@@ -55,6 +59,7 @@ export function swiftContracts(
     ]);
     if (Object.keys(schema).some((key) => !allowed.has(key))) unsupported(path);
   }
+  /** A titled enumeration is one type wherever it appears. */
   function enumeration(name: string, values: unknown[], path: string) {
     if (
       !values.length ||
@@ -63,6 +68,13 @@ export function swiftContracts(
       unsupported(path);
     if (new Set(values.map((v) => identifier(v as string))).size !== values.length)
       unsupported(path);
+    const cases = values.join("|");
+    const existing = declared.get(name);
+    if (existing !== undefined) {
+      if (existing !== cases) throw new Error(`Swift enumeration ${name} has two definitions (${path})`);
+      return name;
+    }
+    declared.set(name, cases);
     declarations.push(
       `public enum ${name}: String, CaseIterable, Sendable {\n${values.map((v) => `  case ${identifier(v as string)} = ${quote(v)}`).join("\n")}\n}`,
     );
@@ -77,7 +89,7 @@ export function swiftContracts(
     }
     // Unknown annotations must not hide an unsupported structural construct.
     checkKeys(schema, path);
-    if (schema.enum) return { type: enumeration(name, schema.enum, path), enum: true };
+    if (schema.enum) return { type: enumeration((schema.title as string | undefined) ?? name, schema.enum, path), enum: true };
     if (schema.const !== undefined)
       return { type: enumeration(name, [schema.const], path), enum: true };
     if (Object.keys(schema).length === 0) return { type: "Any", enum: false };
@@ -115,8 +127,12 @@ export function swiftContracts(
     for (const key of Object.keys(schema.properties)) {
       if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(key)) unsupported(name + "." + key);
     }
+    // A boolean constant (`ok: false`) is written by `json`, never stored.
+    const constants = Object.entries(schema.properties).filter(([, value]) => typeof value.const === "boolean");
+    if (decode && constants.length) unsupported(name);
     const fields = Object.entries(schema.properties)
       .filter(([key]) => key !== "method" || method === undefined)
+      .filter(([, value]) => typeof value.const !== "boolean")
       .map(([key, value]) => ({
         key,
         name: identifier(key),
@@ -171,6 +187,7 @@ export function swiftContracts(
     }
     lines.push("\n  public var json: [String: Any] {", "    var result: [String: Any] = [:]");
     if (method !== undefined) lines.push(`    result["method"] = ${quote(method)}`);
+    for (const [key, value] of constants) lines.push(`    result[${quote(key)}] = ${value.const}`);
     for (const f of fields) {
       if (f.optional)
         lines.push(
@@ -182,81 +199,74 @@ export function swiftContracts(
     declarations.push(lines.join("\n"));
     return sendable;
   }
-  const union = request as Schema;
-  if (!union.anyOf || Object.keys(union).some((k) => k !== "anyOf")) unsupported("SocketRequest");
-  const variants = union.anyOf.flatMap((schema, index) => {
-    const discriminator = schema.properties?.method;
-    const methodPath = `SocketRequest.anyOf.${index}.method`;
-    if (!discriminator) unsupported(methodPath);
-    checkKeys(discriminator, methodPath);
-    const methods =
-      discriminator?.enum ??
-      (typeof discriminator?.const === "string"
-        ? [discriminator.const]
-        : unsupported(`SocketRequest.anyOf.${index}.method`));
-    return methods.map((value) => {
-      if (typeof value !== "string" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(value))
-        unsupported(methodPath);
-      const method = value as string;
-      const name = "Socket" + title(method) + "Request";
-      const sendable = structure(name, schema, method);
-      return { method, name, sendable, epoch: schema.required?.includes("epoch") ?? false };
+  /** A union of requests discriminated by `method`. Socket requests are routed: each names
+   * its document, and mutations carry the owner's epoch. */
+  function requests(name: string, schema: TSchema) {
+    const union = schema as Schema;
+    if (!union.anyOf || Object.keys(union).some((k) => k !== "anyOf")) unsupported(name);
+    const prefix = name.replace(/Request$/, "");
+    const variants = union.anyOf.flatMap((schema, index) => {
+      const discriminator = schema.properties?.method;
+      const methodPath = `${name}.anyOf.${index}.method`;
+      if (!discriminator) unsupported(methodPath);
+      checkKeys(discriminator, methodPath);
+      const methods =
+        discriminator?.enum ??
+        (typeof discriminator?.const === "string" ? [discriminator.const] : unsupported(methodPath));
+      return methods.map((value) => {
+        if (typeof value !== "string" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(value)) unsupported(methodPath);
+        const method = value as string;
+        const type = prefix + title(method) + "Request";
+        const sendable = structure(type, schema, method);
+        return { method, name: type, sendable, epoch: schema.required?.includes("epoch") ?? false };
+      });
     });
-  });
-  if (new Set(variants.map((v) => identifier(v.method))).size !== variants.length)
-    unsupported("SocketRequest.method");
-  const lines = [`public enum SocketRequest${variants.every((v) => v.sendable) ? ": Sendable" : ""} {`];
-  for (const v of variants) lines.push(`  case ${identifier(v.method)}(${v.name})`);
-  lines.push("\n  public enum Method: String, CaseIterable, Sendable {");
-  for (const v of variants) lines.push(`    case ${identifier(v.method)} = ${quote(v.method)}`);
-  lines.push("    public var requiresEpoch: Bool {", "      switch self {");
-  for (const v of variants) lines.push(`      case .${identifier(v.method)}: return ${v.epoch}`);
-  lines.push("      }", "    }", "  }", "\n  public var method: Method {", "    switch self {");
-  for (const v of variants)
-    lines.push(`    case .${identifier(v.method)}: return .${identifier(v.method)}`);
-  lines.push(
-    "    }",
-    "  }",
-    "  public var requiresEpoch: Bool { method.requiresEpoch }",
-    "  public var documentPath: String {",
-    "    switch self {",
-  );
-  for (const v of variants)
-    lines.push(`    case .${identifier(v.method)}(let value): return value.documentPath`);
-  lines.push("    }", "  }", "  public var epoch: String? {", "    switch self {");
-  for (const v of variants)
+    if (new Set(variants.map((v) => identifier(v.method))).size !== variants.length) unsupported(`${name}.method`);
+    const routed = union.anyOf.every((schema) => schema.required?.includes("documentPath"));
+    const lines = [`public enum ${name}${variants.every((v) => v.sendable) ? ": Sendable" : ""} {`];
+    for (const v of variants) lines.push(`  case ${identifier(v.method)}(${v.name})`);
+    lines.push("\n  public enum Method: String, CaseIterable, Sendable {");
+    for (const v of variants) lines.push(`    case ${identifier(v.method)} = ${quote(v.method)}`);
+    if (routed) {
+      lines.push("    public var requiresEpoch: Bool {", "      switch self {");
+      for (const v of variants) lines.push(`      case .${identifier(v.method)}: return ${v.epoch}`);
+      lines.push("      }", "    }");
+    }
+    lines.push("  }", "\n  public var method: Method {", "    switch self {");
+    for (const v of variants) lines.push(`    case .${identifier(v.method)}: return .${identifier(v.method)}`);
+    lines.push("    }", "  }");
+    if (routed) {
+      lines.push("  public var requiresEpoch: Bool { method.requiresEpoch }", "  public var documentPath: String {", "    switch self {");
+      for (const v of variants) lines.push(`    case .${identifier(v.method)}(let value): return value.documentPath`);
+      lines.push("    }", "  }", "  public var epoch: String? {", "    switch self {");
+      for (const v of variants)
+        lines.push(v.epoch ? `    case .${identifier(v.method)}(let value): return value.epoch` : `    case .${identifier(v.method)}: return nil`);
+      lines.push("    }", "  }", "\n  public func with(epoch: String) -> Self {", "    switch self {");
+      for (const v of variants)
+        lines.push(
+          v.epoch
+            ? `    case .${identifier(v.method)}(var value): value.epoch = epoch; return .${identifier(v.method)}(value)`
+            : `    case .${identifier(v.method)}: return self`,
+        );
+      lines.push("    }", "  }");
+    }
     lines.push(
-      v.epoch
-        ? `    case .${identifier(v.method)}(let value): return value.epoch`
-        : `    case .${identifier(v.method)}: return nil`,
+      "\n  /// Validate the envelope with Envelope.valid before mapping it.",
+      "  public init(json: [String: Any]) throws {",
+      `    guard let raw = json["method"] as? String, let method = Method(rawValue: raw) else { throw ContractMappingError.field("${name}.method") }`,
+      "    switch method {",
     );
-  lines.push("    }", "  }", "\n  public func with(epoch: String) -> Self {", "    switch self {");
-  for (const v of variants)
-    lines.push(
-      v.epoch
-        ? `    case .${identifier(v.method)}(var value): value.epoch = epoch; return .${identifier(v.method)}(value)`
-        : `    case .${identifier(v.method)}: return self`,
-    );
-  lines.push(
-    "    }",
-    "  }",
-    "\n  /// Validate the envelope with Envelope.valid before mapping it.",
-    "  public init(json: [String: Any]) throws {",
-    '    guard let raw = json["method"] as? String, let method = Method(rawValue: raw) else { throw ContractMappingError.field("SocketRequest.method") }',
-    "    switch method {",
-  );
-  for (const v of variants)
-    lines.push(
-      `    case .${identifier(v.method)}: self = .${identifier(v.method)}(try ${v.name}(json: json))`,
-    );
-  lines.push("    }", "  }", "\n  public var json: [String: Any] {", "    switch self {");
-  for (const v of variants)
-    lines.push(`    case .${identifier(v.method)}(let value): return value.json`);
-  lines.push("    }", "  }", "}");
-  declarations.push(lines.join("\n"));
+    for (const v of variants) lines.push(`    case .${identifier(v.method)}: self = .${identifier(v.method)}(try ${v.name}(json: json))`);
+    lines.push("    }", "  }", "\n  public var json: [String: Any] {", "    switch self {");
+    for (const v of variants) lines.push(`    case .${identifier(v.method)}(let value): return value.json`);
+    lines.push("    }", "  }", "}");
+    declarations.push(lines.join("\n"));
+  }
+  requests("SocketRequest", request);
+  requests("PageRequest", pageRequest);
+  structure("PageFailure", pageFailure as Schema, undefined, false);
   structure("SocketReply", reply as Schema);
   structure("SocketDiscovery", discovery as Schema);
-  enumeration("PageMethod", Object.keys(pageResults), "PageMethods");
   // One case per page method; a result with fields carries its generated structure.
   const results = Object.entries(pageResults).map(([method, schema]) => {
     const name = "Page" + title(method) + "Result";
@@ -269,7 +279,7 @@ export function swiftContracts(
     };
   });
   const page = [
-    "/// A successful page reply. `json` adds `ok`; failures use `DocumentOwner.pageFailure`.",
+    "/// A successful page reply. `json` adds `ok`; failures are `PageFailure`.",
     `public enum PageResult${results.every((r) => r.sendable) ? ": Sendable" : ""} {`,
     ...results.map((r) => `  case ${identifier(r.method)}${r.empty ? "" : `(${r.name})`}`),
     "\n  public var json: [String: Any] {",

@@ -16,7 +16,7 @@ import HitSlopCore
         case documents(IdentifiedActionOf<DocumentFeature>)
         /// Caller resolves symlinks before dispatching; the reducer performs no filesystem access.
         case openDocument(URL)
-        case openFinished(UUID, String), openFailed(UUID, String, requiresUpdate: Bool = false), openCancelled(UUID)
+        case openFinished(UUID), openFailed(UUID, String, requiresUpdate: Bool = false), openCancelled(UUID)
         case quitDocumentClosed(UUID)
         case quitRequested, quitFinished, quitFailed(SlopDocumentFailure), externalFailure(String)
         case alert(PresentationAction<ErrorAlertAction>)
@@ -35,10 +35,9 @@ import HitSlopCore
             case .catalog(.creationFinished(let url)):
                 // Insert the document before advancing quit so a completed creation cannot be missed.
                 if let url { effect = open(url, state: &state) }
-            case .openFinished(let id, let title):
+            case .openFinished(let id):
                 guard state.documents[id: id] != nil else { return .none }
                 state.documents[id: id]?.isOpening = false
-                state.documents[id: id]?.title = title
                 effect = .send(.catalog(.refreshRecents))
             case .openCancelled(let id):
                 state.documents.remove(id: id)
@@ -84,7 +83,10 @@ import HitSlopCore
         document.isQuitting = state.quitPhase != .running
         state.documents.append(document)
         return .run { send in
-            do { await send(.openFinished(id, try await client.open(id, url))) }
+            do {
+                try await client.open(id, url)
+                await send(.openFinished(id))
+            }
             catch is CancellationError { await send(.openCancelled(id)) }
             catch {
                 let requiresUpdate = SlopFailureContext.classify(error).reason == .requiresUpdate
@@ -101,7 +103,6 @@ import HitSlopCore
             var remaining = ids[...]
             do {
                 for id in ids { try await client.prepareToQuit(id) }
-                await client.finishAssetRefreshes()
                 for id in ids {
                     try await client.finishQuit(id)
                     remaining = remaining.dropFirst()

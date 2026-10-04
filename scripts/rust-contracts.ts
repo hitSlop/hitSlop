@@ -1,4 +1,4 @@
-import { AttachmentLimits, DefaultWindowRadius, PackageFormat, AssetLimits, RuntimeABI, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
+import { AppLimits, AttachmentIdRule, AttachmentLimits, BatchLimits, DefaultWindowRadius, PackageFormat, PagePayloadLimit, AssetLimits, RuntimeABI, ShapeLimits, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
 import { ThemeFileSchema } from "../packages/schema/src/values";
 import { AppRowSchema } from "../packages/schema/src/manifest";
 import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, CoreErrorCodes, RowIdRule, IssueCodes, OwnerPatchOpSchema as PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
@@ -51,7 +51,7 @@ ${CoreErrorCodes.map(code => `        Self::${pascal(code)} => "${code}",`).join
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }
 }
-/// The platform level this build runs; a package above it needs a newer app.
+/// The platform level this build runs; a template or document above it needs a newer app.
 pub const PACKAGE_FORMAT: u64 = ${PackageFormat};
 pub const RUNTIME_ABI: u64 = ${RuntimeABI};
 /// The CSS \`border-radius\` of a window whose manifest names no shape.
@@ -69,8 +69,14 @@ pub(crate) const ID_ALPHABET: &[u8] = b"${RowIdRule.mintAlphabet}";
 /// A document's saved checkpoint plus updates, in bytes, and its update rows.
 pub const STORAGE_BYTES: usize = ${StorageLimits.bytes};
 pub const STORAGE_ROWS: usize = ${StorageLimits.rows};
-/// A package's app: one asset's bytes, the asset count and their total bytes; and the
-/// largest image it may carry, per side and in pixels.
+/// An app: its manifest and its descriptor or initial values, in bytes, and its longest
+/// asset path; one asset's bytes, the asset count and their total bytes; and the largest
+/// image it may carry, per side and in pixels.
+#[cfg(feature = "schema-validation")]
+pub(crate) const MANIFEST_BYTES: usize = ${AppLimits.manifest};
+pub(crate) const APP_TEXT_BYTES: usize = ${AppLimits.text};
+#[cfg(feature = "storage")]
+pub(crate) const ASSET_PATH_BYTES: usize = ${AppLimits.assetPath};
 pub const ASSET_FILE_BYTES: usize = ${AssetLimits.file};
 pub const ASSET_COUNT: usize = ${AssetLimits.count};
 pub const ASSET_BYTES: usize = ${AssetLimits.bytes};
@@ -80,6 +86,19 @@ pub const IMAGE_PIXELS: usize = ${AssetLimits.imagePixels};
 pub const ATTACHMENT_FILE_BYTES: usize = ${AttachmentLimits.file};
 pub const ATTACHMENT_BYTES: usize = ${AttachmentLimits.total};
 pub const ATTACHMENT_COUNT: usize = ${AttachmentLimits.count};
+/// A window shape's longest path data and radius list, and its largest view box side.
+pub(crate) const SHAPE_PATH: usize = ${ShapeLimits.path};
+pub(crate) const SHAPE_RADIUS: usize = ${ShapeLimits.radius};
+pub(crate) const SHAPE_VIEW_BOX: f64 = ${ShapeLimits.viewBox}.0;
+/// A batch's most intents and an intent's longest path; a page request's largest payload.
+pub(crate) const BATCH_INTENTS: usize = ${BatchLimits.intents};
+pub(crate) const PATH_SEGMENTS: usize = ${BatchLimits.pathSegments};
+pub(crate) const PAGE_PAYLOAD: usize = ${PagePayloadLimit};
+/// An attachment's identity: the SHA-256 of its bytes, in lowercase hex.
+#[cfg(feature = "storage")]
+pub(crate) fn valid_attachment_id(id: &str) -> bool {
+    id.len() == ${AttachmentIdRule.length} && id.bytes().all(|b| b"${AttachmentIdRule.characters}".contains(&b))
+}
 pub(crate) fn valid_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= ${RowIdRule.maximum} && value.bytes().all(|b| b"${RowIdRule.characters}".contains(&b))
 }
@@ -135,6 +154,7 @@ pub struct ThemeFile { ${Object.entries(ThemeFileSchema.properties)
   .join(", ")} }
 /// A built app (a build's \`app.json\`), as the file engine packs it into the \`app\` row.
 /// Each part stays the JSON text the build wrote: its own validator reads it, in order.
+#[cfg(feature = "storage")]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

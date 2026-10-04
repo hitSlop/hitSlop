@@ -38,7 +38,7 @@ public struct CatalogView: View {
         .onAppear { store.send(.start) }
         .onChange(of: scenePhase) { _, phase in if phase == .active { store.send(.activated) } }
         .onReceive(NotificationCenter.default.publisher(for: .hitSlopPreviewDidChange)) { notification in
-            if let url = notification.object as? URL { store.send(.packageChanged(url)) }
+            if let url = notification.object as? URL { store.send(.artworkChanged(url)) }
         }
         .alert($store.scope(state: \.$alert, action: \.alert))
         .preferredColorScheme(.light)

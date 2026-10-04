@@ -8,7 +8,7 @@ openable, so its frozen entries never change.
 | Boundary | Where | Proves |
 |---|---|---|
 | Rust semantics | `crates/hitslop-core/tests`, `cargo test --locked --workspace` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
-| Rust storage | `crates/hitslop-core/tests/{store,package}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving once moved back), attachments, artwork written only while the rendered state holds, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, lost acknowledgements, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused |
+| Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
 | File engine | `crates/slop-engine/tests` | `pack`, `inspect` and `schema` as the CLI runs them; a refused build publishes nothing |
 | Shell over WASM | `packages/shell/tests`, `bun run test` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
@@ -62,8 +62,11 @@ bun run test:restored                    # every active template in `slop dev` u
 ```
 
 `build` generates contracts, builds the Rust bindings and the page shell, and compiles
-the helper. The crash matrix pauses a real native write at each storage phase, kills it
-and checks writer exclusion and old-or-new recovery through `hitslop-native get`.
+the helper. The crash matrix is stress coverage beside the deterministic Rust storage
+cases: it kills a real helper at points spread across an edit's open, apply, save and
+close, and checks that the document reopens as it was or as edited, never torn, and that
+an acknowledged edit is never lost; `--host` also kills a running app after an
+acknowledged CLI edit.
 
 Capture timing (one warmup and five samples at 1k/5k rows):
 `HITSLOP_BENCH_CAPTURE=1 bun run swift:test --filter previewCaptureCost`.
@@ -120,7 +123,8 @@ an existing frozen entry is refused. Before launch `dev` may be recaptured.
 
 - Rust replays saved values, issues, themes, edits, save/close and reopen.
 - Native replay checks inventory/hashes, original app rendering, PNG/PDF, attachments,
-  template creation and direct-helper command behavior.
+  template creation, and the commands each release's CLI ran, through this build's CLI
+  and helper.
 - Swift runs frozen explicit UI actions or the old conformance app's own scenario,
   requires an actual saved edit and checks reopen. Missing controls fail.
 - `bun run test:compat --installed` installs each archived CLI with its frozen lockfile
@@ -157,6 +161,6 @@ workflow. Reports live in `.hitslop/evidence/` and are uploaded even on failure.
   asserted behavior are not contracts. Bridge envelopes, storage durability and
   save-before-close ordering are.
 - A bug regression test must fail on the old code for the intended reason, then pass.
-- Keep fault injection narrow and at real I/O boundaries (for example
-  the store's `StorePhases` hook, set from Swift as `DocumentOwner.testingPhase`). Prefer
+- Faults are real, at real I/O boundaries: another connection holding the database, a
+  moved or read-only file, a killed process. Production code has no fault hooks. Prefer
   observable completion over sleeps.

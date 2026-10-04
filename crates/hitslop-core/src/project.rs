@@ -78,7 +78,7 @@ pub(super) fn project_container(node: Option<&Node>, value: ValueOrContainer) ->
             }
             Ok(Value::Array(result))
         }
-        _ => Ok(project(node, json(value.get_deep_value())?)),
+        _ => Ok(project(node, json(value.get_deep_value()))),
     }
 }
 pub(super) fn project_at(doc: &LoroDoc, node: Option<&Node>, cid: &ContainerID) -> Result<Value> {

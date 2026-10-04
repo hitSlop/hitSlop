@@ -19,28 +19,30 @@ import HitSlopTestSupport
     engine.load()
     try await engine.waitUntilReady()
     let data = Data(repeating: 37, count: 2 * 1024 * 1024)
-    let response = try await command("attachments.put", url: root, attachmentBytes: data)
+    let response = try await commandState("attachments.put", url: root, ["bytes": data.base64EncodedString()])
     let ref = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
     let id = try #require(ref["id"] as? String)
     let expectedID = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     #expect(id == expectedID)
     func expectListed() async throws {
-      let response = try await command("attachments.list", url: root)
+      let response = try await commandState("attachments.list", url: root)
       let files = try #require(try JSONSerialization.jsonObject(with: response) as? [[String: Any]])
       #expect(files.count == 1)
       #expect(files.first?["id"] as? String == expectedID)
       #expect(files.first?["byteLength"] as? Int == data.count)
     }
+    func bytes(_ document: URL) async throws -> Data? {
+      let read = try await commandState("attachments.read", url: document, ["attachmentID": id])
+      let payload = try JSONSerialization.jsonObject(with: read) as? [String: String]
+      return payload?["bytes"].flatMap { Data(base64Encoded: $0) }
+    }
     try await expectListed()
-    let read = try await command("attachments.read", url: root, attachmentID: id)
-    let payload = try #require(try JSONSerialization.jsonObject(with: read) as? [String: String])
-    #expect(Data(base64Encoded: payload["bytes"]!) == data)
+    #expect(try await bytes(root) == data)
     // A copy of the open document carries the attachment.
     try await engine.copy(to: copy)
-    #expect(try await command("attachments.read", url: copy, attachmentID: id) == read)
+    #expect(try await bytes(copy) == data)
     try await engine.close()
-    let reopened = try await command("attachments.read", url: root, attachmentID: id)
-    #expect(reopened == read)
+    #expect(try await bytes(root) == data)
     try await expectListed()
   }
 

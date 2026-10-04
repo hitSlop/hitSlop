@@ -162,10 +162,10 @@ export class TemplateCache {
           ...changedInputs(metadata.template, template).map((path) => `template ${path}`),
         ];
       // The entry was validated when it was written: the same bytes are the same template.
-      else if (metadata.checksum !== (await fileDigest(join(entry, "package.slop"))))
-        reason = ["cached package changed"];
+      else if (metadata.checksum !== (await fileDigest(join(entry, "template.slop"))))
+        reason = ["cached template changed"];
       else {
-        await copyFile(join(entry, "package.slop"), destination, constants.COPYFILE_EXCL);
+        await copyFile(join(entry, "template.slop"), destination, constants.COPYFILE_EXCL);
         return "hit" as const;
       }
     } catch (error) {
@@ -183,7 +183,7 @@ export class TemplateCache {
     const stage = join(this.directory, `${slug}.building-${crypto.randomUUID()}`);
     try {
       await mkdir(stage);
-      await copyFile(destination, join(stage, "package.slop"));
+      await copyFile(destination, join(stage, "template.slop"));
       await writeFile(
         join(stage, "entry.json"),
         JSON.stringify({ key, checksum, shared: this.shared, template }),

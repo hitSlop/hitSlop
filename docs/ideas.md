@@ -125,11 +125,11 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Open with another view
 
-- **What:** slops with the same schema key open each other's documents: a checklist as a
+- **What:** slops with the same descriptor open each other's documents: a checklist as a
   kanban board, or as a printable sheet. Translating between different schemas (lenses, as
   in Ink & Switch's Cambria) can come later, if ever.
 - **Why:** data should outlive any one interface.
-- **Builds on:** the exact canonical schema key
+- **Builds on:** the saved descriptor, compared by meaning
   ([runtime reference](reference/runtime.md#schema-identity)).
 - **Contract change:** a document bundles its app today; the app would be chosen when the
   document opens.
@@ -179,7 +179,7 @@ a person and their agent edit the same live document. What's missing is the slop
   over a hibernating WebSocket. Each Mac keeps its own replica, writer lock and SQLite
   file. The room keeps an update log plus a compacted snapshot, within the same caps as
   `StorageLimits`, and relays updates between replicas. It is pinned to the document's
-  schema key and template.
+  descriptor and template.
 - **Protocol:**
   - On connect, the replica and the room exchange version vectors, and each sends what
     the other lacks (`export(updates(vv))`). Live local updates follow.

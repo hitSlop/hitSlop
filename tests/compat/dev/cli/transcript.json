@@ -73,60 +73,60 @@
         "schema": {
           "kind": "object",
           "properties": {
-            "attachment": {
-              "inner": {
-                "kind": "string"
-              },
-              "kind": "optional"
+            "title": {
+              "kind": "text"
             },
-            "cells": {
-              "kind": "record",
-              "value": {
-                "kind": "object",
-                "properties": {
-                  "input": {
-                    "kind": "text"
-                  },
-                  "width": {
-                    "inner": {
-                      "kind": "integer",
-                      "min": 0
-                    },
-                    "kind": "optional"
-                  }
-                }
-              }
-            },
-            "checkins": {
-              "kind": "record",
-              "value": {
-                "kind": "integer",
-                "min": 0
-              }
-            },
-            "colors": {
-              "item": {
-                "kind": "string"
-              },
-              "kind": "list"
-            },
-            "count": {
-              "kind": "integer",
-              "max": 100,
-              "min": 0
-            },
-            "done": {
-              "kind": "boolean"
+            "version": {
+              "kind": "string"
             },
             "epoch": {
               "kind": "integer"
             },
+            "done": {
+              "kind": "boolean"
+            },
             "hits": {
               "kind": "counter"
+            },
+            "rows": {
+              "kind": "list",
+              "item": {
+                "kind": "object",
+                "properties": {
+                  "text": {
+                    "kind": "text"
+                  },
+                  "done": {
+                    "kind": "boolean"
+                  },
+                  "tags": {
+                    "kind": "list",
+                    "item": {
+                      "kind": "string"
+                    }
+                  },
+                  "notes": {
+                    "kind": "record",
+                    "value": {
+                      "kind": "string"
+                    }
+                  }
+                }
+              }
             },
             "label": {
               "kind": "string",
               "maxLength": 40
+            },
+            "ratio": {
+              "kind": "number",
+              "min": 0,
+              "max": 1
+            },
+            "count": {
+              "kind": "integer",
+              "min": 0,
+              "max": 100
             },
             "lane": {
               "kind": "enum",
@@ -136,19 +136,20 @@
                 "done"
               ]
             },
-            "memo": {
-              "inner": {
-                "kind": "text"
-              },
-              "kind": "optional"
-            },
             "note": {
+              "kind": "optional",
               "inner": {
                 "kind": "string"
-              },
-              "kind": "optional"
+              }
+            },
+            "memo": {
+              "kind": "optional",
+              "inner": {
+                "kind": "text"
+              }
             },
             "place": {
+              "kind": "optional",
               "inner": {
                 "kind": "object",
                 "properties": {
@@ -160,63 +161,61 @@
                     "min": 0
                   }
                 }
-              },
-              "kind": "optional"
-            },
-            "ratio": {
-              "kind": "number",
-              "max": 1,
-              "min": 0
-            },
-            "rows": {
-              "item": {
-                "kind": "object",
-                "properties": {
-                  "done": {
-                    "kind": "boolean"
-                  },
-                  "notes": {
-                    "kind": "record",
-                    "value": {
-                      "kind": "string"
-                    }
-                  },
-                  "tags": {
-                    "item": {
-                      "kind": "string"
-                    },
-                    "kind": "list"
-                  },
-                  "text": {
-                    "kind": "text"
-                  }
-                }
-              },
-              "kind": "list"
+              }
             },
             "settings": {
               "kind": "object",
               "properties": {
-                "muted": {
-                  "kind": "boolean"
-                },
                 "volume": {
                   "kind": "integer",
-                  "max": 10,
-                  "min": 0
+                  "min": 0,
+                  "max": 10
+                },
+                "muted": {
+                  "kind": "boolean"
                 }
               }
             },
-            "title": {
-              "kind": "text"
+            "colors": {
+              "kind": "list",
+              "item": {
+                "kind": "string"
+              }
             },
-            "version": {
-              "kind": "string"
+            "checkins": {
+              "kind": "record",
+              "value": {
+                "kind": "integer",
+                "min": 0
+              }
+            },
+            "cells": {
+              "kind": "record",
+              "value": {
+                "kind": "object",
+                "properties": {
+                  "input": {
+                    "kind": "text"
+                  },
+                  "width": {
+                    "kind": "optional",
+                    "inner": {
+                      "kind": "integer",
+                      "min": 0
+                    }
+                  }
+                }
+              }
+            },
+            "attachment": {
+              "kind": "optional",
+              "inner": {
+                "kind": "string"
+              }
             }
           }
         },
         "state": {
-          "issues": [],
           "value": {
             "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
             "cells": {
@@ -270,7 +269,8 @@
             },
             "title": "Replay 2 é 中文",
             "version": "compat 2"
-          }
+          },
+          "issues": []
         }
       }
     },
@@ -283,61 +283,7 @@
       ],
       "code": 0,
       "stdout": {
-        "ids": [],
-        "value": {
-          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-          "cells": {
-            "compat-1": {
-              "input": "Compat 1 ✓ café 🦊"
-            },
-            "compat-2": {
-              "input": "Replay 2 é 中文"
-            }
-          },
-          "checkins": {
-            "compat-1": 1,
-            "compat-2": 2
-          },
-          "colors": [
-            "compat 2",
-            "compat 1"
-          ],
-          "count": 2,
-          "done": false,
-          "epoch": 2,
-          "hits": 5,
-          "label": "From the CLI",
-          "lane": "done",
-          "memo": "Replay 2 é 中文",
-          "note": "compat 2",
-          "place": {
-            "name": "compat 1",
-            "visits": 1
-          },
-          "ratio": 0.5,
-          "rows": [
-            {
-              "$id": "compat-1",
-              "done": true,
-              "notes": {},
-              "tags": [],
-              "text": "Compat 1 ✓ café 🦊"
-            },
-            {
-              "$id": "compat-2",
-              "done": false,
-              "notes": {},
-              "tags": [],
-              "text": "Replay 2 é 中文"
-            }
-          ],
-          "settings": {
-            "muted": false,
-            "volume": 2
-          },
-          "title": "Replay 2 é 中文",
-          "version": "compat 2"
-        }
+        "ids": []
       }
     },
     {
@@ -349,62 +295,7 @@
       ],
       "code": 0,
       "stdout": {
-        "ids": [],
-        "value": {
-          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-          "cells": {
-            "compat-1": {
-              "input": "Compat 1 ✓ café 🦊"
-            },
-            "compat-2": {
-              "input": "Replay 2 é 中文"
-            }
-          },
-          "checkins": {
-            "compat-1": 1,
-            "compat-2": 2
-          },
-          "colors": [
-            "compat 2",
-            "compat 1",
-            "#abcdef"
-          ],
-          "count": 2,
-          "done": false,
-          "epoch": 2,
-          "hits": 9,
-          "label": "From the CLI",
-          "lane": "done",
-          "memo": "Replay 2 é 中文",
-          "note": "compat 2",
-          "place": {
-            "name": "compat 1",
-            "visits": 1
-          },
-          "ratio": 0.5,
-          "rows": [
-            {
-              "$id": "compat-1",
-              "done": true,
-              "notes": {},
-              "tags": [],
-              "text": "Compat 1 ✓ café 🦊"
-            },
-            {
-              "$id": "compat-2",
-              "done": false,
-              "notes": {},
-              "tags": [],
-              "text": "Replay 2 é 中文"
-            }
-          ],
-          "settings": {
-            "muted": false,
-            "volume": 2
-          },
-          "title": "Replay 2 é 中文",
-          "version": "compat 2"
-        }
+        "ids": []
       }
     },
     {
@@ -428,10 +319,10 @@
         "defaults": {
           "accent": "#335577"
         },
-        "effective": {
+        "overrides": {
           "accent": "#123456"
         },
-        "overrides": {
+        "effective": {
           "accent": "#123456"
         }
       }
@@ -449,10 +340,10 @@
         "defaults": {
           "accent": "#335577"
         },
-        "effective": {
+        "overrides": {
           "accent": "#204060"
         },
-        "overrides": {
+        "effective": {
           "accent": "#204060"
         }
       }
@@ -468,8 +359,8 @@
       "stdout": {
         "byteLength": 28,
         "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
-        "mimeType": "text/plain",
-        "name": "attachment.txt"
+        "name": "attachment.txt",
+        "mimeType": "text/plain"
       }
     },
     {
@@ -509,61 +400,7 @@
         "{document}"
       ],
       "code": 0,
-      "stdout": {
-        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-        "cells": {
-          "compat-1": {
-            "input": "Compat 1 ✓ café 🦊"
-          },
-          "compat-2": {
-            "input": "Replay 2 é 中文"
-          }
-        },
-        "checkins": {
-          "compat-1": 1,
-          "compat-2": 2
-        },
-        "colors": [
-          "compat 2",
-          "compat 1",
-          "#abcdef"
-        ],
-        "count": 2,
-        "done": false,
-        "epoch": 2,
-        "hits": 9,
-        "label": "From the CLI",
-        "lane": "done",
-        "memo": "Replay 2 é 中文",
-        "note": "compat 2",
-        "place": {
-          "name": "compat 1",
-          "visits": 1
-        },
-        "ratio": 0.5,
-        "rows": [
-          {
-            "$id": "compat-1",
-            "done": true,
-            "notes": {},
-            "tags": [],
-            "text": "Compat 1 ✓ café 🦊"
-          },
-          {
-            "$id": "compat-2",
-            "done": false,
-            "notes": {},
-            "tags": [],
-            "text": "Replay 2 é 中文"
-          }
-        ],
-        "settings": {
-          "muted": false,
-          "volume": 2
-        },
-        "title": "Replay 2 é 中文",
-        "version": "compat 2"
-      }
+      "stdout": ""
     },
     {
       "args": [

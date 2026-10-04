@@ -13,7 +13,7 @@ import HitSlopTestSupport
   private func frame(_ owner: DocumentOwner) async throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
   }
-  private func text(_ owner: DocumentOwner, request: String) async throws -> DocumentOwner.TextEdit {
+  private func text(_ owner: DocumentOwner, request: String) async throws -> PageTextResult {
     try await withCheckedThrowingContinuation { continuation in
       owner.enqueuePage(.text(request), view: "growth") { result in
         do {
@@ -56,7 +56,7 @@ import HitSlopTestSupport
         from: URL(fileURLWithPath: repo + "/generated/templates/" + slug + ".slop"), at: folder.appendingPathComponent(slug + ".slop"))
       var owner = try DocumentOwner(url: root)
       owner.attach(view: "growth")
-      let initialMeta = try owner.storageQueue.sync { try owner.store.metadata() }
+      let initialMeta = try Fixtures.stored(root)
       let initialBytes = Int64(initialMeta.checkpointBytes + initialMeta.updateBytes)
       var samples: [[String: Any]] = []
       var commits = 0, intents = 0, saves = 0, saveMS = 0.0, completedDays = 0
@@ -120,7 +120,7 @@ import HitSlopTestSupport
           }
           try await flush()
           lastSavedValue = try json(try await frame(owner)["value"]!)
-          let meta = try owner.storageQueue.sync { try owner.store.metadata() }
+          let meta = try Fixtures.stored(root)
           finalMeta = meta
           let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.path)[.size] as! NSNumber).int64Value
           samples.append(["day": day, "commits": commits, "intents": intents, "checkpointBytes": meta.checkpointBytes, "updateBytes": meta.updateBytes, "updateRows": meta.rows, "databaseBytes": diskBytes, "retainedValueJSONBytes": lastSavedValue.utf8.count, "reopenVerified": false])
@@ -131,7 +131,7 @@ import HitSlopTestSupport
           isClosed = false
           let reopenMS = Date().timeIntervalSince(start) * 1000
           owner.attach(view: "growth")
-          let closed = try owner.storageQueue.sync { try owner.store.metadata() }
+          let closed = try Fixtures.stored(root)
           samples[samples.count - 1]["closedBytes"] = closed.checkpointBytes + closed.updateBytes
           #expect(try await json(frame(owner)["value"]!) == lastSavedValue)
           samples[samples.count - 1]["reopenMS"] = reopenMS
@@ -143,7 +143,7 @@ import HitSlopTestSupport
           // Retain the saved document; discard only the unsaved tail of this disposable workload.
           try await owner.discardPending()
           lastSavedValue = try json(try await frame(owner)["value"]!)
-          finalMeta = try owner.storageQueue.sync { try owner.store.metadata() }
+          finalMeta = try Fixtures.stored(root)
           print("Growth \(slug): FULL at day \(progress)")
           break
         } catch {
@@ -157,7 +157,7 @@ import HitSlopTestSupport
         try await owner.close()
         let reopened = try DocumentOwner(url: root)
         #expect(try await json(frame(reopened)["value"]!) == lastSavedValue)
-        finalMeta = try reopened.storageQueue.sync { try reopened.store.metadata() }
+        finalMeta = try Fixtures.stored(root)
         try await reopened.close()
       }
       if fullAt != nil || stoppedError != nil {

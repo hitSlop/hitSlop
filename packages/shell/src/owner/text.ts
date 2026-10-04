@@ -20,7 +20,7 @@ interface TextHost {
 }
 
 /** One prefix/suffix replacement from `before` to `after`, on UTF-16 boundaries. */
-export function splice(before: string, after: string) {
+function splice(before: string, after: string) {
   let index = 0;
   while (index < before.length && index < after.length && before[index] === after[index]) index++;
   if (index && /[\uD800-\uDBFF]/.test(before[index - 1]!)) index--;

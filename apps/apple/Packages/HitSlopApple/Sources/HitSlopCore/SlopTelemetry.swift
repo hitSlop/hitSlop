@@ -63,7 +63,6 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
     public static func classify(_ error: Error) -> Self {
         if let diagnostic = error as? any SlopDiagnosticProviding { return diagnostic.diagnostic }
-        if error is any SlopRejection { return .init(.rejection, reason: .operationRejected) }
         // The core never replaces a file: creating, duplicating or sharing onto one is refused.
         if case let CoreError.Rejected(code, _, _) = error, code == CoreErrorCode.exists.rawValue {
             return .init(.rejection, reason: .destinationExists)

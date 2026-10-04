@@ -14,12 +14,6 @@ public final class DocumentOwner: @unchecked Sendable {
   let store: NativeStore
   let queue = DispatchQueue(label: "hitslop.owner")
   let storageQueue = DispatchQueue(label: "hitslop.persistence")
-  #if DEBUG
-  /// Fault injection at the storage I/O boundary. Fires on `storageQueue`.
-  var testingPhase: ((String) throws -> Void)? {
-    didSet { store.setPhases(phases: testingPhase.map(PhaseHook.init)) }
-  }
-  #endif
   private var core: NativeDocument
   /// The attached page, set by `open`. Page requests name it; a request from a replaced
   /// page is refused with `owner_replaced` and never applied.
@@ -38,9 +32,11 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Whether Edit ▸ Undo and Redo have anything to do, sent when that changes.
   var onUndoState: (@Sendable (UndoAvailability) -> Void)?
   private var undoAvailability = UndoAvailability()
-  /// The core's publication sequence, and the last one the durable state covers.
+  /// The core's publication sequence, the last one the durable state covers, and the one
+  /// this owner opened at.
   private var sequence = 0
   private var savedSequence = 0
+  private var openedSequence = 0
   /// Accepted theme changes, and the last one the durable state covers. A theme change is
   /// held in memory like an edit and saved by the same jobs. The revision only grows, so
   /// the window can tell which palette came after its own change.
@@ -70,14 +66,8 @@ public final class DocumentOwner: @unchecked Sendable {
     let resume: @Sendable (Result<Void, Error>) -> Void
   }
 
-  /// Benchmarks can push autosave out of the edit loop to attribute its cost.
-  static let autosaveDelayMS: Int = {
-    #if DEBUG
-    if let value = ProcessInfo.processInfo.environment["HITSLOP_AUTOSAVE_MS"], let ms = Int(value) { return ms }
-    #endif
-    return 150
-  }()
-  static let autosaveMaximumMS = max(autosaveDelayMS, 1000)
+  static let autosaveDelayMS = 150
+  static let autosaveMaximumMS = 1000
 
   /// Opens the document at `url` (a canonical `.slop`, `SlopFile.resolvedRoot`): as its
   /// writer, or as a snapshot of its saved state. The store's open checks the file and its
@@ -92,6 +82,7 @@ public final class DocumentOwner: @unchecked Sendable {
       core = try Self.saved(store)
       sequence = Int(try core.sequence())
       savedSequence = sequence
+      openedSequence = sequence
     } catch {
       try? store.close()
       throw error
@@ -134,50 +125,35 @@ public final class DocumentOwner: @unchecked Sendable {
       publishStatus(.failed(.invalidated))
     }
   }
-  private func requireEditable() throws {
-    guard mode == .document else { throw OwnerError.readOnly }
-    guard lifecycle == .open else { throw OwnerError.closing }
-    guard !discarding else { throw OwnerReplaced() }
-  }
   /// A request captured before a discard (new epoch) or from a replaced page (new view)
   /// must not apply to state it never saw.
   private func requireCurrent(epoch: String?, view: String?) throws {
     if let epoch, epoch != self.epoch { throw OwnerReplaced() }
     if let view, view != self.view { throw OwnerReplaced() }
   }
+  /// The one admission every change passes on the owner queue, whatever sent it: an
+  /// editable owner that is open, not discarding, and still the state and page the
+  /// request was made for.
+  private func admitMutation(epoch: String?, view: String?) throws {
+    guard mode == .document else { throw OwnerError.readOnly }
+    guard lifecycle == .open else { throw OwnerError.closing }
+    guard !discarding else { throw OwnerReplaced() }
+    try requireCurrent(epoch: epoch, view: view)
+  }
 
   /// `{sequence, version, value, issues}` as the core's JSON.
   public func state() async throws -> String { try await enqueue { try self.core.state() } }
-  /// The application value as the core's JSON.
-  func value() async throws -> String { try await enqueue { try self.core.value() } }
 
   public struct Applied: Sendable {
     public let sequence: Int
     public let ids: [String]
   }
-  public struct TextEdit: Sendable {
-    public let sequence: Int
-    public let authored: String
-    public let selectionStart: Int
-    public let selectionEnd: Int
-  }
-  public struct Opened: Sendable {
-    public let state: String
-  }
 
   /// Only the native session selects a page; an `open` request cannot replace it.
   func attach(view: String) { queue.async { self.view = view } }
 
-  private func openOnQueue(view: String) throws -> Opened {
-    try requireCurrent(epoch: nil, view: view)
-    return Opened(state: try core.state())
-  }
-  func open(view: String) async throws -> Opened {
-    try await enqueue { try self.openOnQueue(view: view) }
-  }
   private func applyOnQueue(batch: String, epoch: String?, view: String?, origin: EditOrigin) throws -> Applied {
-    try requireEditable()
-    try requireCurrent(epoch: epoch, view: view)
+    try admitMutation(epoch: epoch, view: view)
     defer { refreshUndo() }
     let result = try core.applyBatch(batchJson: batch, origin: origin)
     // A batch that changed nothing publishes nothing and leaves the document clean.
@@ -189,8 +165,7 @@ public final class DocumentOwner: @unchecked Sendable {
     try await enqueue { try self.applyOnQueue(batch: batch, epoch: epoch, view: view, origin: origin) }
   }
   private func historyOnQueue(redo: Bool, view: String?) throws -> Int {
-    try requireEditable()
-    try requireCurrent(epoch: nil, view: view)
+    try admitMutation(epoch: nil, view: view)
     defer { refreshUndo() }
     let result = try redo ? core.redo() : core.undo()
     if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
@@ -210,32 +185,33 @@ public final class DocumentOwner: @unchecked Sendable {
     undoAvailability = next
     onUndoState?(next)
   }
-  private func textOnQueue(_ request: String, view: String?) throws -> TextEdit {
-    try requireEditable()
-    try requireCurrent(epoch: nil, view: view)
+  private func textOnQueue(_ request: String, view: String?) throws -> PageTextResult {
+    try admitMutation(epoch: nil, view: view)
     defer { refreshUndo() }
     let result = try core.editText(requestJson: request)
     if let publication = result.publication { didEdit(publication, sequence: Int(result.sequence)) }
-    return TextEdit(sequence: Int(result.sequence), authored: result.authored,
+    return PageTextResult(sequence: Int(result.sequence), authored: result.authored,
       selectionStart: Int(result.selectionStart), selectionEnd: Int(result.selectionEnd))
   }
 
   /// Enqueues admission synchronously in bridge arrival order. Flush retains its
   /// completion without blocking subsequent edits behind the persistence queue.
   func enqueuePage(_ command: PageCommand, view: String,
-    reply: @escaping @Sendable (Result<PageOutcome, Error>) -> Void
+    reply: @escaping @Sendable (sending Result<PageResult, Error>) -> Void
   ) {
     queue.async {
       do {
         try self.admit()
         try self.requireCurrent(epoch: nil, view: view)
         switch command {
-        case .open: reply(.success(.opened(try self.openOnQueue(view: view))))
-        case .apply(let batch): reply(.success(.applied(try self.applyOnQueue(batch: batch, epoch: nil, view: view, origin: .page))))
+        case .open: reply(.success(.open(.init(state: try self.core.state()))))
+        case .apply(let batch):
+          let applied = try self.applyOnQueue(batch: batch, epoch: nil, view: view, origin: .page)
+          reply(.success(.apply(.init(sequence: applied.sequence, ids: applied.ids))))
         case .text(let request): reply(.success(.text(try self.textOnQueue(request, view: view))))
-        case .undo, .redo:
-          reply(.success(.history(try self.historyOnQueue(redo: { if case .redo = command { true } else { false } }(), view: view))))
-        case .flush: self.addWaiter(checkpoint: false) { reply($0.map { .flushed }) }
+        case .undo: reply(.success(.undo(.init(sequence: try self.historyOnQueue(redo: false, view: view)))))
+        case .redo: reply(.success(.redo(.init(sequence: try self.historyOnQueue(redo: true, view: view)))))
+        case .flush: self.addWaiter(checkpoint: false) { reply($0.map { .flush }) }
         }
       } catch {
         self.checkPoisoned(error)
@@ -368,8 +344,9 @@ public final class DocumentOwner: @unchecked Sendable {
     }
   }
   public func flush() async throws { try await write(checkpoint: false) }
-  public func compact() async throws {
-    guard mode == .document else { throw OwnerError.readOnly }
+  /// Saves everything as one checkpoint with no history, once admitted for `epoch`.
+  public func compact(epoch: String? = nil) async throws {
+    try await enqueue { try self.admitMutation(epoch: epoch, view: nil) }
     try await write(checkpoint: true)
   }
 
@@ -426,10 +403,9 @@ public final class DocumentOwner: @unchecked Sendable {
       throw error
     }
   }
-  /// The saved state this owner read (a snapshot's marker), for writing rendered artwork.
-  func savedMarker() async throws -> String {
-    let store = store
-    return try await persist { try storeCall { try store.savedMarker() } }
+  /// Whether this session saved any edit or theme change: its artwork may be out of date.
+  func edited() async -> Bool {
+    (try? await enqueue(allowInvalidated: true) { self.savedSequence > self.openedSequence || self.savedThemeRevision > 0 }) ?? false
   }
 
   // MARK: Discovery and copies. The store holds the writer lock, so it alone names this
@@ -453,11 +429,8 @@ public final class DocumentOwner: @unchecked Sendable {
   }
 
   // MARK: Host-owned attachments and theme. Page and socket calls go through the owner,
-  // so they honor its closed and closing guards.
+  // so they pass its admission.
 
-  private func requireWritable() async throws {
-    try await enqueue { guard self.lifecycle == .open else { throw OwnerError.closing } }
-  }
   /// One of the document's artwork images, through the owner's own connection.
   func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
     let store = store
@@ -475,9 +448,10 @@ public final class DocumentOwner: @unchecked Sendable {
     let store = store
     return try await persist { try storeCall { try store.attachment(id: id) }.base64EncodedString() }
   }
-  /// Snapshot renders own nothing, so they can never add attachments.
-  func putAttachment(base64 encoded: String) async throws -> AttachmentRef {
-    try await requireWritable()
+  /// Stores an attachment once admitted like an edit; snapshot renders own nothing, so
+  /// they can never add one.
+  func putAttachment(base64 encoded: String, epoch: String? = nil, view: String? = nil) async throws -> AttachmentRef {
+    try await enqueue { try self.admitMutation(epoch: epoch, view: view) }
     let store = store
     return try await persist {
       guard let bytes = Data(base64Encoded: encoded) else { throw OwnerError.rejected("Invalid attachment bytes") }
@@ -492,14 +466,14 @@ public final class DocumentOwner: @unchecked Sendable {
   }
   /// The palette, validated and merged by the core.
   func loadTheme() async throws -> ThemeRead {
-    try await enqueue { try self.themeOnQueue(.get) }
+    try await enqueue { try self.themeOnQueue(.get, epoch: nil) }
   }
   /// A theme command, under the core's one rule set. A change is accepted in memory on the
   /// edit queue like an edit, restyles the page through `onTheme`, and is saved by the
   /// same jobs, so flush, close and retry cover it. Page panel and CLI changes both land
   /// here; a snapshot answers from the theme it read and refuses changes.
-  func applyTheme(_ change: ThemeChange) async throws -> ThemeState {
-    try await enqueue { try self.themeOnQueue(change).state }
+  func applyTheme(_ change: ThemeChange, epoch: String? = nil) async throws -> ThemeState {
+    try await enqueue { try self.themeOnQueue(change, epoch: epoch).state }
   }
   /// Enqueues a panel change synchronously, so changes apply in the order they are made.
   func enqueueTheme(_ change: SlopThemeChange, reply: @escaping @Sendable (Result<ThemeRead, Error>) -> Void) {
@@ -511,35 +485,33 @@ public final class DocumentOwner: @unchecked Sendable {
         case .set(let values):
           core = .set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
         case .resetAll: core = .reset(token: nil)
-        case .importFile(let file): core = self.importTheme(file)
+        case .importFile(let file): core = .import(fileJson: file)
         }
-        reply(.success(try self.themeOnQueue(core)))
+        reply(.success(try self.themeOnQueue(core, epoch: nil)))
       } catch {
         self.checkPoisoned(error)
         reply(.failure(error))
       }
     }
   }
-  /// Replaces the theme with a theme file made for this document's template.
-  func importTheme(_ file: String) -> ThemeChange {
-    .import(template: self.file.manifest.slug, fileJson: file)
-  }
-  /// The full palette as a theme file for this document's template, once it is saved:
-  /// export is behind the same barrier as close, so a failing save fails the export.
+  /// The full palette as a theme file for this document's template, as the core writes
+  /// it, once it is saved: export is behind the same barrier as close, so a failing save
+  /// fails the export.
   func exportTheme() async throws -> String {
-    let file = try await enqueue { try storeCall { try self.store.exportTheme(template: self.file.manifest.slug) } }
+    let file = try await enqueue { try storeCall { try self.store.exportTheme() } }
     try await flush()
     return file
   }
-  private func themeOnQueue(_ change: ThemeChange) throws -> ThemeRead {
-    if case .get = change {} else { try requireEditable() }
+  private func themeOnQueue(_ change: ThemeChange, epoch: String?) throws -> ThemeRead {
+    if case .get = change {} else { try admitMutation(epoch: epoch, view: nil) }
     let state = try storeCall { try store.theme(change: change) }
     if state.changed { didChangeTheme() }
     return ThemeRead(state: state, revision: themeRevision)
   }
-  /// Refuses new edits, writes everything accepted, then releases the lock. A failed
-  /// final write keeps ownership and the live state so the window can retry.
-  public func close() async throws {
+  /// Refuses new edits, writes everything accepted and the window's `artwork`, then
+  /// releases the lock. A failed final write keeps ownership and the live state so the
+  /// window can retry; artwork never fails a close.
+  public func close(artwork: SlopRenderedArtwork? = nil) async throws {
     try await enqueue {
       self.lifecycle = .closing
       self.autosave?.cancel()
@@ -548,6 +520,10 @@ public final class DocumentOwner: @unchecked Sendable {
       try await flush()
       if mode == .document { await trimHistory() }
       let store = store
+      if let artwork, mode == .document {
+        do { try await persist { try storeCall { try store.setArtwork(preview: artwork.preview, icon: artwork.icon) } } }
+        catch { NSLog("hitSlop: artwork was not saved: %@", error.localizedDescription) }
+      }
       try await persist { try storeCall { try store.close() } }
       try await enqueue(allowInvalidated: true) { self.lifecycle = .closed }
     } catch {
@@ -560,6 +536,16 @@ public final class DocumentOwner: @unchecked Sendable {
 extension DocumentOwner {
   /// The embedded core's build ID; a release checks the app and helper report the same one.
   public static var coreBuildID: String { coreBuildId() }
+}
+
+/// Finder and Quick Look artwork a window rendered from its document as it closed.
+public struct SlopRenderedArtwork: Sendable {
+  public let preview: Data?
+  public let icon: Data?
+  public init(preview: Data?, icon: Data?) {
+    self.preview = preview
+    self.icon = icon
+  }
 }
 
 /// The page or epoch a request was captured for has been replaced (discard, reload or a

@@ -22,7 +22,7 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
   public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
   /// Whether the core refused for this reason.
   public static func matches(_ error: Error) -> Bool {
-    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requires_update.rawValue }
+    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requiresUpdate.rawValue }
     return false
   }
 }
@@ -80,7 +80,7 @@ public struct SlopFile: Sendable {
     do { return try open() }
     catch let error where SlopRequiresUpdate.matches(error) { throw SlopRequiresUpdate() }
     catch let CoreError.Rejected(code, message, _) {
-      throw code == CoreErrorCode.is_template.rawValue ? SlopError.template : SlopError.invalid(message)
+      throw code == CoreErrorCode.isTemplate.rawValue ? SlopError.template : SlopError.invalid(message)
     }
   }
 
@@ -103,7 +103,7 @@ public struct SlopFile: Sendable {
       throw SlopError.invalid("a slop cannot be a symbolic link")
     }
     let root = SlopPath.canonical(url)
-    guard root.pathExtension.lowercased() == "slop" else {
+    guard root.pathExtension == "slop" else {
       throw SlopError.invalid("a slop must have a .slop extension")
     }
     guard (try? root.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else {

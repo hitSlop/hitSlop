@@ -1,11 +1,11 @@
 import { Strict } from "./strict";
 import { Type, type Static } from "typebox";
-import { CoreErrorCodes, IssueCodes, RowIdRule } from "./constants";
+import { BatchLimits, CoreErrorCodes, IssueCodes, RowIdRule } from "./constants";
 export { CoreErrorCodes, IssueCodes, RowIdRule };
 
 // Document core payloads. TypeBox is authoritative; Rust wire types are generated.
 // Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
-export const RowIdSchema = Type.String({
+const RowIdSchema = Type.String({
   pattern: `^[${RowIdRule.characters}]{1,${RowIdRule.maximum}}$`,
 });
 export const SegmentSchema = Type.Union([
@@ -13,7 +13,7 @@ export const SegmentSchema = Type.Union([
   Strict({ id: RowIdSchema }),
   Strict({ index: Type.Integer({ minimum: 0 }) }),
 ]);
-const path = Type.Array(SegmentSchema, { minItems: 1, maxItems: 64 });
+const path = Type.Array(SegmentSchema, { minItems: 1, maxItems: BatchLimits.pathSegments });
 export const AnchorSchema = Type.Union([
   Strict({ before: Type.String() }),
   Strict({ after: Type.String() }),
@@ -47,9 +47,9 @@ export const variants = {
   // The value at `path` (the whole document when empty) becomes `value`. Only the
   // differences are written: rows are matched by `$id`, and rows and text keep their
   // identity, so concurrent edits elsewhere survive.
-  replace: { path: Type.Array(SegmentSchema, { maxItems: 64 }), value: Type.Unknown() },
+  replace: { path: Type.Array(SegmentSchema, { maxItems: BatchLimits.pathSegments }), value: Type.Unknown() },
 } as const;
-export const OwnerIntentSchema = Type.Union([
+const OwnerIntentSchema = Type.Union([
   Strict({ type: Type.Literal("set"), ...variants.set }),
   Strict({ type: Type.Literal("insert"), ...variants.insert }),
   Strict({ type: Type.Literal("remove"), ...variants.remove }),
@@ -58,7 +58,7 @@ export const OwnerIntentSchema = Type.Union([
   Strict({ type: Type.Literal("increment"), ...variants.increment }),
   Strict({ type: Type.Literal("replace"), ...variants.replace }),
 ]);
-export const BatchSchema = Strict({ intents: Type.Array(OwnerIntentSchema, { maxItems: 1000 }) });
+const BatchSchema = Strict({ intents: Type.Array(OwnerIntentSchema, { maxItems: BatchLimits.intents }) });
 export type Batch = Static<typeof BatchSchema>;
 
 // Stateless text: the page's field was `from` at `base` (its last authored version) and
@@ -71,7 +71,7 @@ export const editTextFields = {
   selectionStart: Type.Integer({ minimum: 0 }),
   selectionEnd: Type.Integer({ minimum: 0 }),
 };
-export const EditTextSchema = Strict(editTextFields);
+const EditTextSchema = Strict(editTextFields);
 
 /** One hunk of a text change, in Unicode code points of the field's previous text. */
 export const TextHunkSchema = Type.Union([
@@ -124,7 +124,7 @@ export const OwnerPublicationSchema = Strict({
   issues: Type.Optional(Type.Array(OwnerIssueSchema)),
 });
 
-export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes);
+export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes, { title: "CoreErrorCode" });
 export type CoreErrorCode = Static<typeof CoreErrorCodeSchema>;
 export type Segment = Static<typeof SegmentSchema>;
 export type OwnerState = Static<typeof OwnerStateSchema>;

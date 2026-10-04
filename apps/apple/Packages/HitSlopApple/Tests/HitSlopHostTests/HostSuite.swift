@@ -9,7 +9,7 @@ import HitSlopTestSupport
 @testable import HitSlopDocument
 
 // One parent suite keeps shared AppKit/WebView integration tests serialized.
-@Suite(.serialized) struct OwnerClientTests {
+@Suite(.serialized) struct HostTests {
   func fixture(_ name: String = "quick-checklist") throws -> URL { try Fixtures.native(name) }
 
   /// The conformance app's document with the platform probe app (tests/abi/probe) in place of
@@ -24,12 +24,19 @@ import HitSlopTestSupport
     return try Fixtures.document(stage: stage)
   }
 
-  /// A CLI edit replacing the probe's title.
-  func setTitle(_ text: String) throws -> Data {
-    try JSONSerialization.data(withJSONObject: ["type": "set", "path": ["title"], "value": text])
+  /// A CLI batch replacing the probe's title.
+  func setTitle(_ text: String) throws -> [String: Any] {
+    let op = try JSONSerialization.data(withJSONObject: [["type": "set", "path": ["title"], "value": text]])
+    return ["ops": String(decoding: op, as: UTF8.self)]
+  }
+  /// The document's value, as `slop get` prints it.
+  @MainActor func savedValue(_ root: URL) async throws -> NSDictionary? {
+    let state = try JSONSerialization.jsonObject(with: await commandState("get", url: root)) as? [String: Any]
+    return (state?["state"] as? [String: Any])?["value"] as? NSDictionary
   }
 
-  func cli(_ args: [String]) async throws -> (Int32, String, String) {
+  /// Runs the helper with `args`, writing `input` to its standard input.
+  func cli(_ args: [String], input: Data? = nil) async throws -> (Int32, String, String) {
     let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
     return try await Task.detached {
       let process = Process()
@@ -39,9 +46,13 @@ import HitSlopTestSupport
       process.arguments = args
       let stdout = Pipe()
       let stderr = Pipe()
+      let stdin = Pipe()
       process.standardOutput = stdout
       process.standardError = stderr
+      process.standardInput = stdin
       try process.run()
+      if let input { stdin.fileHandleForWriting.write(input) }
+      try stdin.fileHandleForWriting.close()
       let output = stdout.fileHandleForReading.readDataToEndOfFile()
       let error = stderr.fileHandleForReading.readDataToEndOfFile()
       process.waitUntilExit()
@@ -53,7 +64,3 @@ import HitSlopTestSupport
   }
 }
 
-extension OwnerClientTests {
-  /// Draft input and dedicated export surface, independent of example UI copy.
-  func captureFixture(edit: (_ stage: URL) throws -> Void = { _ in }) throws -> URL { try contractFixture(edit: edit) }
-}

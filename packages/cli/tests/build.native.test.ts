@@ -114,10 +114,12 @@ test("discovered capture components share the document and receive preview/expor
       if (mode !== "export") throw new Error("Expected export mode, got " + mode);
     </script><Child />`);
     const exported = await buildTemplate(source, undefined, join(root, "export.slop"));
-    const child = Bun.spawn([renderer, "export", exported, "--format", "png", "--output", join(root, "export.png")], {stdout: "ignore", stderr: "pipe"});
-    const [error, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+    const child = Bun.spawn([renderer, "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+    child.stdin.write(JSON.stringify({ method: "export", documentPath: exported, format: "png", output: join(root, "export.png") }));
+    await child.stdin.end();
+    const [reply, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     if (code) throw new Error(error);
-    expect(code).toBe(0);
+    expect(JSON.parse(reply)).toMatchObject({ ok: true });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

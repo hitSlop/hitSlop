@@ -244,13 +244,13 @@ pub(super) fn json_path(
     }
     Ok(out)
 }
-fn deep(doc: &LoroDoc, cid: &ContainerID) -> Result<Value> {
+fn deep(doc: &LoroDoc, cid: &ContainerID) -> Value {
     json(doc
         .get_container(cid.clone())
         .map(|c| ValueOrContainer::Container(c).get_deep_value())
         .unwrap_or(LoroValue::Null))
 }
-fn materialize(doc: &LoroDoc, slot: &Slot) -> Result<Value> {
+fn materialize(doc: &LoroDoc, slot: &Slot) -> Value {
     match slot {
         Slot::Value(v) => json(v.clone()),
         Slot::Container(c) => deep(doc, c),
@@ -396,7 +396,7 @@ fn map_ops(
         out.dirty.push(Dirty::Container(e.target.clone()));
         match json_path(lists, &e.path) {
             Ok(path) => {
-                let raw = deep(doc, &e.target)?;
+                let raw = deep(doc, &e.target);
                 if counter_sum(&raw).is_none() {
                     out.rescan = true;
                 }
@@ -461,7 +461,7 @@ fn map_ops(
                 out.ops.push(PatchOp::Remove { path });
             }
             Some(s) => {
-                let raw = materialize(doc, s)?;
+                let raw = materialize(doc, s);
                 let clean = declared.is_none_or(|child| clean_value(child, &raw));
                 if !clean {
                     out.rescan = true;
@@ -502,7 +502,7 @@ fn list_ops(
             out.rescan = true;
             return Ok(());
         };
-        let value = json(doc.get_movable_list(e.target.clone()).get_deep_value())?;
+        let value = json(doc.get_movable_list(e.target.clone()).get_deep_value());
         if !clean_value(node.expect("list node"), &value) {
             out.rescan = true;
         }
@@ -634,7 +634,7 @@ fn list_ops(
                 };
                 ops.push(PatchOp::MoveRow { path: path.clone(), id: id.to_owned(), index: at });
             } else {
-                let raw = deep(doc, c)?;
+                let raw = deep(doc, c);
                 let clean = item_node.is_none_or(|item| clean_value(item, &raw));
                 invalid_row |= !clean;
                 let value = view(doc, item_node, c, raw, clean)?;

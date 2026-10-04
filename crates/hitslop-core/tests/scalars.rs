@@ -1,6 +1,7 @@
-// Scalars merge last-writer-wins per field. Failure: replicas that disagree after
-// exchanging updates, an optional object mixed from two writers, or a merged anomaly
-// repaired on read. Oracle: equal snapshots on both replicas and literal issues.
+// Scalars merge last-writer-wins per field (concurrently created objects merge field by
+// field: tests/concurrent_creation.rs). Failure: replicas that disagree after exchanging
+// updates, or a merged anomaly repaired on read. Oracle: equal snapshots on both replicas
+// and literal issues.
 mod support;
 use support::Edit;
 use hitslop_core::Document;
@@ -39,17 +40,6 @@ fn concurrent_scalar_sets_converge_on_one_value() {
     assert_eq!(view(&a)["value"], view(&b)["value"]);
     assert!(["USD", "EUR"].contains(&view(&a)["value"]["currency"].as_str().unwrap()));
     assert_eq!(view(&a)["issues"], json!([]));
-}
-
-#[test]
-fn concurrent_optional_object_creation_keeps_one_whole_object() {
-    let (mut a, mut b, base) = pair();
-    apply(&mut a, json!([{"type":"set","path":["photo"],"value":{"id":"a","name":"from a"}}]));
-    apply(&mut b, json!([{"type":"set","path":["photo"],"value":{"id":"b","name":"from b"}}]));
-    exchange(&mut a, &mut b, &base);
-    let photo = view(&a)["value"]["photo"].clone();
-    assert_eq!(photo, view(&b)["value"]["photo"]);
-    assert!(photo == json!({"id":"a","name":"from a"}) || photo == json!({"id":"b","name":"from b"}));
 }
 
 #[test]

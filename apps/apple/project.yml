@@ -9,7 +9,6 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
-    SWIFT_STRICT_CONCURRENCY: minimal
     # The app and its extensions ship as one version.
     MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "29"

@@ -7,7 +7,7 @@ func failure(_ message: String) -> NSError {
 }
 
 /// `document` owns the file and persists writes. `snapshot` reads the saved document and
-/// theme into memory without ownership; renderer writes stay in memory.
+/// theme without ownership, and writes nothing.
 public enum StorageMode: Sendable {
   case document, snapshot
   var store: StoreMode { self == .document ? .document : .snapshot }
@@ -55,26 +55,6 @@ func storeCall<T>(_ body: () throws -> T) throws -> T {
     }
   }
 }
-
-extension WriterLock {
-  /// The document's writer lock alone; `DocumentLocked` while another process owns it.
-  public static func acquire(_ document: URL) throws -> WriterLock {
-    try storeCall { try acquire(path: document.path) }
-  }
-}
-
-#if DEBUG
-  /// Fault injection at the storage I/O boundary; see `StorePhases`.
-  final class PhaseHook: StorePhases, @unchecked Sendable {
-    private let body: (String) throws -> Void
-    init(_ body: @escaping (String) throws -> Void) { self.body = body }
-    func reached(phase: String) throws {
-      do { try body(phase) } catch let error as CoreError { throw error } catch {
-        throw CoreError.Failed(message: error.localizedDescription)
-      }
-    }
-  }
-#endif
 
 /// Why a save did not commit. Every case keeps ownership, the live state and all edits.
 public enum SaveFailure: Error, LocalizedError, Equatable {

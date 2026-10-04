@@ -42,7 +42,7 @@ import SwiftUI
     defer { window.close() }
     try await expectPreview(in: host, blue: false, minimumPixels: icon ? 30 : 100)
     let blue = try coloredArtwork(.blue)
-    SlopPreviewWriter.writeRendered(preview: icon ? nil : blue, icon: icon ? blue : nil, marker: try savedMarker(file), to: file)
+    try await writeArtwork(file, preview: icon ? nil : blue, icon: icon ? blue : nil)
     try await expectPreview(in: host, blue: true, minimumPixels: icon ? 30 : 100)
     #expect(store.selectedID == initial.selectedID)
 }
@@ -94,30 +94,14 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
     #expect(SlopArtwork.png(destination, .preview) == png)
     #expect(SlopArtwork.png(destination, .icon) == iconPNG)
     let updatedPreview = try coloredArtwork(.red)
-    SlopPreviewWriter.writeRendered(preview: updatedPreview, icon: nil, marker: try savedMarker(destination), to: destination)
+    try await writeArtwork(destination, preview: updatedPreview)
     #expect(SlopArtwork.png(destination, .preview) == updatedPreview)
     #expect(SlopArtwork.png(destination, .icon) == iconPNG)
     let updatedIcon = try coloredArtwork(.blue)
-    SlopPreviewWriter.writeRendered(preview: nil, icon: updatedIcon, marker: try savedMarker(destination), to: destination)
+    try await writeArtwork(destination, icon: updatedIcon)
     #expect(SlopArtwork.png(destination, .icon) == updatedIcon)
     // The template keeps its own artwork.
     #expect(SlopArtwork.png(file, .icon) == iconPNG)
-}
-
-@Test @MainActor func failedArtworkWritePreservesPreviousArtwork() throws {
-    let root = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let template = try writeTemplate(named: "icon-write-failure", in: root)
-    let file = root.appendingPathComponent("document.slop")
-    _ = try SlopFile.create(from: template, to: file)
-    let marker = try savedMarker(file)
-    try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: file.path)
-    defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: file.path) }
-    var failures: [SlopTelemetryEvent] = []
-    SlopPreviewWriter.writeRendered(preview: nil, icon: try coloredArtwork(.blue), marker: marker, to: file,
-        telemetry: SlopTelemetry { if case .failed = $0 { failures.append($0) } })
-    #expect(SlopArtwork.png(file, .icon) == iconPNG)
-    #expect(failures.count == 1)
 }
 
 @Test @MainActor func discoversOnlyTopLevelPackages() async throws {
@@ -147,16 +131,14 @@ private func writeTemplate(
     try icon.write(to: stage.appendingPathComponent("artwork/icon.png"))
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let template = directory.appendingPathComponent(fileName ?? "\(slug).slop")
-    try packTemplate(stage: stage.path, destination: template.path)
+    try FileManager.default.moveItem(at: Fixtures.template(stage: stage), to: template)
     return template
 }
 
-
-/// The saved state a render of the closed document would read.
-private func savedMarker(_ document: URL) throws -> String {
-    let store = try NativeStore.open(path: document.path, mode: .snapshot)
-    defer { try? store.close() }
-    return try store.savedMarker()
+/// Writes artwork into a document as a closing window does, and announces it.
+@MainActor private func writeArtwork(_ document: URL, preview: Data? = nil, icon: Data? = nil) async throws {
+    try await DocumentOwner(url: document).close(artwork: SlopRenderedArtwork(preview: preview, icon: icon))
+    SlopPreviewWriter.announce(document)
 }
 
 // An installed template is validated again once its file changes.

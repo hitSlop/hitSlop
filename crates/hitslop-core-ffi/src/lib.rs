@@ -62,21 +62,9 @@ impl From<store::Error> for CoreError {
         }
     }
 }
-impl From<CoreError> for store::Error {
-    fn from(e: CoreError) -> Self {
-        match e {
-            CoreError::Locked => Self::Locked,
-            CoreError::Busy => Self::Busy,
-            CoreError::Full => Self::Full,
-            CoreError::Moved => Self::Moved,
-            CoreError::Closed => Self::Closed,
-            other => Self::Failed(other.to_string()),
-        }
-    }
-}
-impl From<uniffi::UnexpectedUniFFICallbackError> for CoreError {
-    fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::Failed { message: e.reason }
+impl From<hitslop_core::Error> for CoreError {
+    fn from(e: hitslop_core::Error) -> Self {
+        rejected(e)
     }
 }
 
@@ -92,8 +80,8 @@ pub enum ThemeChange {
     Get,
     Set { values_json: String },
     Reset { token: Option<String> },
-    /// Replaces the overrides with a theme file made for `template`.
-    Import { template: String, file_json: String },
+    /// Replaces the overrides with a theme file made for this document's template.
+    Import { file_json: String },
 }
 #[derive(uniffi::Record)]
 pub struct ThemeState {
@@ -213,16 +201,14 @@ pub struct NativeDocument {
     inner: Mutex<Option<Core>>,
 }
 impl NativeDocument {
-    fn call<T>(
-        &self,
-        f: impl FnOnce(&mut Core) -> Result<T, hitslop_core::Error>,
-    ) -> Result<T, CoreError> {
+    /// Runs `f` on the core; a panic invalidates this owner.
+    fn call<T>(&self, f: impl FnOnce(&mut Core) -> Result<T, CoreError>) -> Result<T, CoreError> {
         let mut guard = self.inner.lock().map_err(|_| invalidated("owner_poisoned"))?;
         let core = guard
             .as_mut()
             .ok_or_else(|| invalidated("owner_poisoned: reload durable state"))?;
         match catch_unwind(AssertUnwindSafe(|| f(core))) {
-            Ok(result) => result.map_err(rejected),
+            Ok(result) => result,
             Err(_) => {
                 *guard = None;
                 Err(invalidated(
@@ -242,14 +228,14 @@ impl NativeDocument {
             EditOrigin::Page => hitslop_core::Origin::Page,
             EditOrigin::Agent => hitslop_core::Origin::Agent,
         };
-        self.call(|d| d.apply_batch(&batch_json, origin).map(Into::into))
+        self.call(|d| Ok(d.apply_batch(&batch_json, origin)?.into()))
     }
     /// Reverts the person's last undo step; nothing to undo publishes nothing.
     pub fn undo(&self) -> Result<ApplyResult, CoreError> {
-        self.call(|d| d.undo().map(Into::into))
+        self.call(|d| Ok(d.undo()?.into()))
     }
     pub fn redo(&self) -> Result<ApplyResult, CoreError> {
-        self.call(|d| d.redo().map(Into::into))
+        self.call(|d| Ok(d.redo()?.into()))
     }
     pub fn undo_state(&self) -> Result<UndoState, CoreError> {
         self.call(|d| Ok(UndoState { can_undo: d.can_undo(), can_redo: d.can_redo() }))
@@ -268,31 +254,17 @@ impl NativeDocument {
     }
     /// `{sequence, version, value, issues}` as JSON.
     pub fn state(&self) -> Result<String, CoreError> {
-        self.call(|d| d.state())
-    }
-    /// The application value as JSON.
-    pub fn value(&self) -> Result<String, CoreError> {
-        self.call(|d| d.value())
+        self.call(|d| Ok(d.state()?))
     }
     /// The next write for `store`, or none when its durable state covers every edit and
     /// no checkpoint is requested. Runs on the edit queue; the bytes stay in Rust.
     pub fn save_job(&self, store: Arc<NativeStore>, force_checkpoint: bool) -> Result<Option<Arc<SaveJob>>, CoreError> {
-        let mut result = Ok(None);
-        self.call(|d| {
-            result = store.0.job(d, force_checkpoint);
-            Ok(())
-        })?;
-        Ok(result?.map(|job| Arc::new(SaveJob(job))))
+        self.call(|d| Ok(store.0.job(d, force_checkpoint)?.map(|job| Arc::new(SaveJob(job)))))
     }
     /// The checkpoint to write as the owner closes, after its last save, or none. Runs on
     /// the edit queue once edits have stopped.
     pub fn close_job(&self, store: Arc<NativeStore>) -> Result<Option<Arc<SaveJob>>, CoreError> {
-        let mut result = Ok(None);
-        self.call(|d| {
-            result = store.0.close_job(d);
-            Ok(())
-        })?;
-        Ok(result?.map(|job| Arc::new(SaveJob(job))))
+        self.call(|d| Ok(store.0.close_job(d)?.map(|job| Arc::new(SaveJob(job)))))
     }
 }
 
@@ -306,30 +278,12 @@ impl SaveJob {
     }
 }
 
-/// Fault injection for tests; see `hitslop_core::store::Phases`.
-#[uniffi::export(with_foreign)]
-pub trait StorePhases: Send + Sync {
-    fn reached(&self, phase: String) -> Result<(), CoreError>;
-}
-struct ForeignPhases(Arc<dyn StorePhases>);
-impl store::Phases for ForeignPhases {
-    fn reached(&self, phase: &str) -> store::Result<()> {
-        self.0.reached(phase.into()).map_err(Into::into)
-    }
-}
-
 #[derive(uniffi::Enum)]
 pub enum StoreMode {
     /// Owns the document: holds the writer lock and persists writes.
     Document,
-    /// Reads the saved state once, without the lock; writes stay in memory.
+    /// Reads the saved state without the lock and writes nothing.
     Snapshot,
-}
-#[derive(uniffi::Record)]
-pub struct StoreMetadata {
-    pub rows: u64,
-    pub update_bytes: u64,
-    pub checkpoint_bytes: u64,
 }
 /// A document file's storage. Every call but `NativeDocument::save_job` runs on the host's
 /// storage queue.
@@ -344,10 +298,6 @@ impl NativeStore {
             StoreMode::Snapshot => store::Mode::Snapshot,
         };
         Ok(Arc::new(Self(store::Store::open(Path::new(&path), mode)?)))
-    }
-    /// The logical document's identity; a duplicate gets a new one.
-    pub fn doc_id(&self) -> String {
-        self.0.doc_id().into()
     }
     /// The file's app as this open checked it: the host shows the document from it.
     pub fn app(&self) -> OpenedFile {
@@ -375,9 +325,11 @@ impl NativeStore {
     pub fn attachments(&self) -> Result<Vec<AttachmentRecord>, CoreError> {
         Ok(self.0.attachments()?.into_iter().map(Into::into).collect())
     }
-    /// The saved state a snapshot read; `write_artwork` writes only while it still holds.
-    pub fn saved_marker(&self) -> Result<String, CoreError> {
-        Ok(self.0.saved_marker()?)
+    /// Writes the document's artwork as its window closes, through the writer's connection.
+    pub fn set_artwork(&self, preview: Option<Vec<u8>>, icon: Option<Vec<u8>>) -> Result<(), CoreError> {
+        let artwork: Vec<(&str, &[u8])> =
+            [("preview", &preview), ("icon", &icon)].into_iter().filter_map(|(name, png)| png.as_deref().map(|png| (name, png))).collect();
+        Ok(self.0.set_artwork(&artwork)?)
     }
     /// Names this writer's live socket for clients (`live_discovery`).
     pub fn publish_discovery(&self, json: String) -> Result<(), CoreError> {
@@ -402,41 +354,18 @@ impl NativeStore {
             ThemeChange::Get => Change::Get,
             ThemeChange::Set { values_json } => Change::Set(values_json),
             ThemeChange::Reset { token } => Change::Reset(token.as_deref()),
-            ThemeChange::Import { template, file_json } => Change::Import { template, file: file_json },
+            ThemeChange::Import { file_json } => Change::Import(file_json),
         };
         let (state, changed) = self.0.theme(change)?;
         Ok(ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective, changed })
     }
-    /// The full palette as a theme file for `template`.
-    pub fn export_theme(&self, template: String) -> Result<String, CoreError> {
-        Ok(self.0.export_theme(&template)?)
+    /// The full palette as a theme file for this document's template.
+    pub fn export_theme(&self) -> Result<String, CoreError> {
+        Ok(self.0.export_theme()?)
     }
     /// Releases the database, then the writer lock. A failed close keeps ownership.
     pub fn close(&self) -> Result<(), CoreError> {
         Ok(self.0.close()?)
-    }
-    /// The stored sizes; benchmarks and tests compare them with the file.
-    pub fn metadata(&self) -> Result<StoreMetadata, CoreError> {
-        let meta = self.0.metadata()?;
-        Ok(StoreMetadata { rows: meta.rows as u64, update_bytes: meta.update_bytes as u64, checkpoint_bytes: meta.checkpoint_bytes as u64 })
-    }
-    pub fn set_phases(&self, phases: Option<Arc<dyn StorePhases>>) {
-        self.0.set_phases(phases.map(|p| Arc::new(ForeignPhases(p)) as Arc<dyn store::Phases>));
-    }
-}
-
-/// A document's writer lock alone, for a closed-document command that reads without
-/// editing.
-#[derive(uniffi::Object)]
-pub struct WriterLock(Mutex<Option<hitslop_core::registry::Lease>>);
-#[uniffi::export]
-impl WriterLock {
-    #[uniffi::constructor]
-    pub fn acquire(path: String) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(Mutex::new(Some(hitslop_core::registry::Lease::acquire(Path::new(&path))?)))))
-    }
-    pub fn release(&self) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).take();
     }
 }
 
@@ -506,11 +435,6 @@ pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
 pub fn file_kind(path: String) -> Result<FileKind, CoreError> {
     Ok(file::kind(Path::new(&path))?.into())
 }
-/// Packs a build's stage folder into a template file.
-#[uniffi::export]
-pub fn pack_template(stage: String, destination: String) -> Result<(), CoreError> {
-    Ok(file::pack(Path::new(&stage), Path::new(&destination))?)
-}
 /// A new document from a template; never replaces an existing file.
 #[uniffi::export]
 pub fn create_document(template: String, destination: String) -> Result<(), CoreError> {
@@ -529,19 +453,6 @@ pub fn file_artwork(path: String, preferred: Vec<String>) -> Result<Option<Artwo
     let preferred: Vec<&str> = preferred.iter().map(String::as_str).collect();
     Ok(store::artwork(Path::new(&path), &preferred)?.map(|(name, png)| ArtworkImage { name, png }))
 }
-/// Writes refreshed artwork into a closed document while it still holds the state the
-/// artwork was rendered from. False when it is open elsewhere or changed.
-#[uniffi::export]
-pub fn write_artwork(path: String, marker: String, preview: Option<Vec<u8>>, icon: Option<Vec<u8>>) -> Result<bool, CoreError> {
-    let mut artwork: Vec<(&str, &[u8])> = vec![];
-    if let Some(preview) = &preview {
-        artwork.push(("preview", preview));
-    }
-    if let Some(icon) = &icon {
-        artwork.push(("icon", icon));
-    }
-    Ok(store::write_artwork(Path::new(&path), &marker, &artwork)?)
-}
 /// Uses `path` as this process's writer-lock registry: debug hosts only, for test runs
 /// (`HITSLOP_TEST_REGISTRY`). Every process sharing documents must use the same folder.
 #[uniffi::export]
@@ -557,6 +468,12 @@ pub fn sweep_registry() -> Result<u32, CoreError> {
 #[uniffi::export]
 pub fn live_discovery(path: String) -> Result<Option<String>, CoreError> {
     Ok(hitslop_core::registry::discovery(Path::new(&path))?)
+}
+/// Whether `path` is an app asset's key a page may name: relative, at most 240 bytes, with
+/// no empty, dot or parent segments.
+#[uniffi::export]
+pub fn valid_asset_path(path: String) -> bool {
+    file::valid_asset_path(&path)
 }
 /// The content type a served file carries, by its extension.
 #[uniffi::export]
@@ -587,23 +504,25 @@ mod tests {
     // every call must refuse until a new owner is explicitly reloaded from storage.
     #[test]
     fn panic_invalidates_owner_and_durable_reload_uses_a_new_owner() {
+        use_registry_folder(std::env::temp_dir().join("hitslop-test-registry").to_string_lossy().into()).unwrap();
         let dir = std::env::temp_dir().join(format!("hitslop-ffi-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let (template, doc) = (dir.join("Panic.template.slop"), dir.join("Panic.slop"));
-        let app = file::App {
-            package_format: 1,
-            runtime_abi: 1,
-            manifest: r#"{"author":{"name":"Fixture"},"slug":"panic","title":"Panic","description":"FFI unwind test.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#.into(),
-            descriptor: r#"{"kind":"object","properties":{"done":{"kind":"boolean"}}}"#.into(),
-            initial: r#"{"done":false}"#.into(),
-            theme: "{}".into(),
-        };
-        file::write_template(&template, &app, &[("app.js".into(), b"export default {}".to_vec())], &[]).unwrap();
+        let (stage, template, doc) = (dir.join("stage"), dir.join("Panic.template.slop"), dir.join("Panic.slop"));
+        std::fs::create_dir_all(stage.join("assets")).unwrap();
+        std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+        let manifest = r#"{"author":{"name":"Fixture"},"slug":"panic","title":"Panic","description":"FFI unwind test.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+        let app = format!(
+            r#"{{"packageFormat":{},"runtimeABI":{},"manifest":{manifest},"descriptor":{{"kind":"object","properties":{{"done":{{"kind":"boolean"}}}}}},"initial":{{"done":false}},"theme":{{}}}}"#,
+            hitslop_core::PACKAGE_FORMAT,
+            hitslop_core::RUNTIME_ABI
+        );
+        std::fs::write(stage.join("app.json"), app).unwrap();
+        file::pack(&stage, &template).unwrap();
         file::create_document(&template, &doc).unwrap();
         let store = NativeStore::open(doc.to_string_lossy().into(), StoreMode::Document).unwrap();
         let owner = store.document().unwrap();
-        owner.call(|core| core.apply_batch(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, hitslop_core::Origin::Page)).unwrap();
-        let result: Result<(), _> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
+        owner.apply_batch(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#.into(), EditOrigin::Page).unwrap();
+        let result: Result<(), CoreError> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
         assert!(matches!(result, Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.state(), Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.save_job(store.clone(), true), Err(CoreError::Invalidated { .. })));

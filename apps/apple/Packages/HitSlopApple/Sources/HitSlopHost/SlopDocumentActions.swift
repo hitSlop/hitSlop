@@ -99,9 +99,7 @@ extension SlopDocumentWindowController {
   /// Saves what the document accepted before it is copied: a live page sends unsent text
   /// first; without one, the owner saves what it accepted.
   private func saveAccepted(for operation: SlopTelemetryEvent.Failure) async throws {
-    do {
-      if session.isReady && !session.rendererDead { try await session.flush() } else { try await session.retrySave() }
-    } catch { reportLifecycleFailure(operation, error: error); throw error }
+    do { try await session.saveAccepted() } catch { reportLifecycleFailure(operation, error: error); throw error }
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.
@@ -120,8 +118,9 @@ extension SlopDocumentWindowController {
     try await exportDocument(format: format, to: output)
   }
 
-  /// A cancelled picker has no output and emits no success event.
-  func exportDocument(format: ExportFormat, to output: URL?) async throws {
+  /// The one export path, for the menu and for `slop export` of this open document. A
+  /// cancelled picker has no output and emits no success event.
+  func exportDocument(format: ExportFormat, to output: URL?, deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
     guard let output else { telemetry.send(.breadcrumb(.export, .cancelled)); return }
     telemetry.send(.breadcrumb(.export, .started))
     await waitForPresentation()
@@ -129,7 +128,7 @@ extension SlopDocumentWindowController {
       guard isContentReady, session.isReady, presentedPageError == nil else {
         throw SlopError.invalid("The document is not ready to export")
       }
-      try await SlopRenderer.exportDocument(session: session, format: format, output: output)
+      try await SlopRenderer.exportDocument(session: session, format: format, output: output, deadline: deadline)
       telemetry.send(.breadcrumb(.export, .completed))
       telemetry.send(.exported(format))
     } catch {

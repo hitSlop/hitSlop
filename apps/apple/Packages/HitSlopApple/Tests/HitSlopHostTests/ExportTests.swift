@@ -10,7 +10,7 @@ import HitSlopTestSupport
 @testable import HitSlopHost
 @testable import HitSlopDocument
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func captureRestoresCurrentWindowSizeAfterConcurrentResize() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -46,10 +46,9 @@ extension OwnerClientTests {
     session.load()
     try await session.waitUntilReady()
     do {
-      _ = try await command("apply", url: root, operation: setTitle("PDF color"))
+      #expect(try await command("batch", url: root, setTitle("PDF color")).ok)
       for hex in ["e98996", "80aabb"] {
-        _ = try await command("theme.set", url: root,
-          themeValues: JSONSerialization.data(withJSONObject: ["surface": "#" + hex]))
+        #expect(try await command("theme.set", url: root, ["values": ["surface": "#" + hex]]).ok)
         let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
         #expect(pdf.pageCount == 1)
         #expect(pdf.string?.contains("PDF color") == true)
@@ -116,30 +115,27 @@ extension OwnerClientTests {
     let idle =
       "[...document.querySelectorAll('[data-slop-capture-target]')].every(e=>e.hidden && e.childElementCount===0)"
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
-    let initial = try await command("get", url: root)
+    let initial = try await savedValue(root)
     let firstIcon = try #require(
       try await SlopRenderer.iconPNGData(session: session))
     let image = try #require(NSBitmapImageRep(data: firstIcon))
     #expect(image.pixelsWide == 512 && image.pixelsHigh == 512)
     #expect(image.hasAlpha)
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
-    #expect(try await command("get", url: root) == initial)
-    let state = try #require(try JSONSerialization.jsonObject(with: initial) as? [String: Any])
-    let rows = try #require(state["tasks"] as? [[String: Any]])
-    let operations = rows.map {
-      ["type": "set", "path": ["tasks", ["id": $0["$id"]!], "done"], "value": true] as [String: Any]
+    #expect(try await savedValue(root) == initial)
+    let rows = try #require(initial?["tasks"] as? [[String: Any]])
+    func batch(_ field: String) async throws {
+      let ops = rows.map { ["type": "set", "path": ["tasks", ["id": $0["$id"]!], field], "value": true] as [String: Any] }
+      let text = String(decoding: try JSONSerialization.data(withJSONObject: ops), as: UTF8.self)
+      #expect(try await command("batch", url: root, ["ops": text]).ok)
     }
-    _ = try await command("batch", url: root, operations: JSONSerialization.data(withJSONObject: operations))
+    try await batch("done")
     let completedIcon = try #require(
       try await SlopRenderer.iconPNGData(session: session))
     #expect(completedIcon != firstIcon)
-    let archiveOperations = rows.map {
-      ["type": "set", "path": ["tasks", ["id": $0["$id"]!], "archived"], "value": true] as [String: Any]
-    }
-    _ = try await command("batch", url: root, operations: JSONSerialization.data(withJSONObject: archiveOperations))
-    let filed = try await command("get", url: root)
-    let filedState = try #require(try JSONSerialization.jsonObject(with: filed) as? [String: Any])
-    let filedRows = try #require(filedState["tasks"] as? [[String: Any]])
+    try await batch("archived")
+    let filed = try await savedValue(root)
+    let filedRows = try #require(filed?["tasks"] as? [[String: Any]])
     #expect(filedRows.count == rows.count)
     #expect(filedRows.allSatisfy { $0["archived"] as? Bool == true })
     let pdf = try await SlopRenderer.exportPDFData(session: session)
@@ -152,25 +148,38 @@ extension OwnerClientTests {
       #expect(filedPDF.string?.contains(row["text"] as? String ?? "") == true)
     }
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
-    #expect(try await command("get", url: root) == filed)
+    #expect(try await savedValue(root) == filed)
     try await session.close()
+    // Background renders read the saved document in place, without owning or writing it.
     let saved = try Data(contentsOf: root)
-    let assets = try await SlopRenderer.documentAssetsPNGData(url: root)
-    // Background renders read the saved document in place, without copying, owning or
-    // writing it.
+    #expect(try await SlopRenderer.iconPNGData(url: root) != nil)
     #expect(try Data(contentsOf: root) == saved)
     #expect(try liveDiscovery(path: root.path) == nil)
-    let preview = try #require(assets.previewPNG)
-    let icon = try #require(assets.finderIconPNG)
-    // Artwork rendered from the saved state is written into the file while that state holds.
-    SlopPreviewWriter.writeRendered(preview: preview, icon: icon, marker: assets.marker, to: root)
-    #expect(SlopArtwork.png(root, .preview) == preview)
-    #expect(SlopArtwork.png(root, .icon) == icon)
-    // A render of state that has since changed writes nothing.
-    _ = try await command("apply", url: root, operation: setTitle("Changed after the render"))
-    let stale = try Fixtures.png()
-    SlopPreviewWriter.writeRendered(preview: stale, icon: nil, marker: assets.marker, to: root)
-    #expect(SlopArtwork.png(root, .preview) == preview)
+  }
+
+  // A window writes artwork from its page as it closes, when it changed the document or
+  // the file has none; Finder, Quick Look and the catalog then show it as it closed.
+  @Test @MainActor func closingWritesArtworkOfTheChangedDocument() async throws {
+    _ = NSApplication.shared
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    func closeWindow(editing title: String?) async throws {
+      let controller = try await SlopDocumentWindowController.open(url: root)
+      try await controller.session.waitUntilReady()
+      if let title {
+        let op = [["type": "insert", "path": ["tasks"], "value": ["text": title, "done": false, "archived": false]]]
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: op), as: UTF8.self)
+        #expect(try await command("batch", url: root, ["ops": text]).ok)
+      }
+      try await controller.finishClose()
+    }
+    try await closeWindow(editing: nil)
+    let first = try #require(SlopArtwork.png(root, .preview), "a file without a preview gets one")
+    #expect(SlopArtwork.png(root, .icon) != nil)
+    try await closeWindow(editing: nil)
+    #expect(SlopArtwork.png(root, .preview) == first, "an unchanged document keeps its artwork")
+    try await closeWindow(editing: "Written as the window closed")
+    #expect(SlopArtwork.png(root, .preview) != first)
   }
 
   @Test @MainActor func longDocumentPreviewIsCappedWhileExportKeepsFullLength() async throws {
@@ -180,40 +189,21 @@ extension OwnerClientTests {
     let tasks = (0..<300).map { index -> [String: Any] in
       ["type": "insert", "path": ["tasks"], "id": String(format: "%026d", index + 1), "value": ["text": "Long task \(index)", "done": false, "archived": false]]
     }
-    _ = try await command("batch", url: root, operations: JSONSerialization.data(withJSONObject: tasks))
+    let ops = String(decoding: try JSONSerialization.data(withJSONObject: tasks), as: UTF8.self)
+    #expect(try await command("batch", url: root, ["ops": ops]).ok)
     // Full length at 2x exceeds the PNG raster limit; the preview must not.
     let preview = try #require(NSBitmapImageRep(data: try await SlopRenderer.previewPNGData(url: root)))
     #expect(preview.pixelsWide == 960 && preview.pixelsHigh == 960 * 3)  // 480pt wide at 2x, capped at 3:1
-    let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(url: root)))
+    let pdf = try #require(PDFDocument(data: try await SlopRenderer.withRenderSession(url: root) {
+      try await SlopRenderer.exportPDFData(session: $0)
+    }))
     let page = try #require(pdf.page(at: 0))
     #expect(page.bounds(for: .mediaBox).height > 5000)
   }
 
-  @Test @MainActor func renderSnapshotIsTakenUnderOwnershipAndRendersWithoutIt() async throws {
-    _ = NSApplication.shared
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    // As in closed-document export: ownership is held until the snapshot exists.
-    var ownership: WriterLock? = try WriterLock.acquire(root)
-    let pdf = try await SlopRenderer.withRenderSession(
-      url: root,
-      inputReady: {
-        #expect(throws: (any Error).self) { try WriterLock.acquire(root) }
-        ownership?.release()
-        ownership = nil
-      }
-    ) { session in
-      // Another writer may open the document while it renders from memory.
-      try WriterLock.acquire(root).release()
-      return try await SlopRenderer.exportPDFData(session: session)
-    }
-    #expect(ownership == nil)
-    #expect(PDFDocument(data: pdf)?.pageCount ?? 0 > 0)
-  }
-
   @Test @MainActor func captureFailureRestoresEditorAndMissingIconIsOptional() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture()
+    let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
     session.load()
@@ -238,7 +228,7 @@ extension OwnerClientTests {
   // request runs between two captures.
   @Test @MainActor func queuedCapturesKeepTheSessionCapturingAcrossTheHandOff() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture()
+    let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
     session.load()
@@ -263,15 +253,15 @@ extension OwnerClientTests {
   }
 }
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws {
-    let root = try captureFixture()
+    let root = try contractFixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: output) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
     var events: [SlopTelemetryEvent] = []
-    controller.telemetry = SlopTelemetry { if case .breadcrumb = $0 { return }; events.append($0) }
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .breadcrumb = $0 { return }; events.append($0) })
+    try await controller.session.waitUntilReady()
     try await controller.exportDocument(format: .pdf, to: nil)
     #expect(events.isEmpty)
     try await controller.exportDocument(format: .pdf, to: output)
@@ -282,37 +272,13 @@ extension OwnerClientTests {
       try await controller.exportDocument(format: .png, to: root)
     }
     #expect(events == [.exported(.pdf), .failed(.export, .init(.rejection, reason: .operationRejected, format: .png))])
-    // The app-hosted CLI export callback must use the same reporting boundary.
+    // A CLI export of the open document is the window's export.
     let liveExport = try #require(controller.session.onExport)
     await #expect(throws: (any Error).self) {
       try await liveExport(.png, root, .init())
     }
     #expect(events.count == 3)
-    #expect(events.last == .failed(.export, .init(.rejection, reason: .operationRejected,
-      format: .png)))
+    #expect(events.last == .failed(.export, .init(.rejection, reason: .operationRejected, format: .png)))
     try await controller.session.close()
-  }
-}
-
-extension OwnerClientTests {
-  /// A quit never starts another render: the artwork refreshes it leaves resume at the next
-  /// launch, so Finder and Quick Look don't keep a closed document's stale artwork.
-  @Test @MainActor func artworkRefreshesAQuitLeavesResumeAtLaunch() async throws {
-    let root = try captureFixture()
-    let key = SlopDocumentAssetRefreshQueue.unfinishedKey
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      UserDefaults.standard.removeObject(forKey: key)
-    }
-    _ = try await command("apply", url: root, operation: setTitle("Changed before the quit"))
-    let before = SlopArtwork.png(root, .preview)
-    SlopDocumentAssetRefreshQueue.schedule(presentedURL: root)
-    await SlopDocumentAssetRefreshQueue.finishForTermination(grace: .zero)
-    #expect(SlopArtwork.png(root, .preview) == before, "quitting starts no render")
-    #expect(UserDefaults.standard.stringArray(forKey: key) == [root.standardizedFileURL.path])
-    SlopDocumentAssetRefreshQueue.resume()
-    for _ in 0..<300 where SlopArtwork.png(root, .preview) == before { try await Task.sleep(for: .milliseconds(100)) }
-    #expect(SlopArtwork.png(root, .preview) != before, "the next launch refreshes it")
-    #expect(UserDefaults.standard.stringArray(forKey: key) == nil)
   }
 }

@@ -29,10 +29,6 @@ export async function discoverTemplates(
     )
       continue;
     const source = join(root, entry.name);
-    // A folder still authored the old way would otherwise drop out of the build silently.
-    for (const old of ["manifest.json", "initial.ts", "theme.ts"])
-      if (await exists(join(source, old), true))
-        throw new Error(`${entry.name} still has ${old}: move its app into slop.ts (defineSlop), or into examples/archive`);
     if (!(await exists(join(source, "slop.ts"), true))) continue;
     const slug = projectSlug(source);
     slugs.add(slug);

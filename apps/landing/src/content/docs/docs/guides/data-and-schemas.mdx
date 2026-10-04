@@ -133,7 +133,7 @@ bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["title"],"value":"Re
 bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
-Edits print `{ids, sequence, value}` and are saved when the command succeeds. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
+Edits print `{ids, sequence}` and are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
 
 Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).
 

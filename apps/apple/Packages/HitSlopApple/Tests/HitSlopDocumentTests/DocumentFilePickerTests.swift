@@ -52,10 +52,8 @@ import WebKit
       reply([file])
       return {}
     }
-    for mode in ["normal", "capture", "disabled"] {
-      engine.capturing = mode == "capture"
-      engine.allowsFileSelection = mode != "disabled"
-      let result = try await engine.webView.callAsyncJavaScript("""
+    let select = {
+      try await engine.webView.callAsyncJavaScript("""
         const input = document.createElement('input'); input.type = 'file'; document.body.append(input);
         try {
           return await new Promise(resolve => {
@@ -64,11 +62,13 @@ import WebKit
             input.click();
           });
         } finally { input.remove(); }
-        """, arguments: [:], in: nil, contentWorld: .page)
-      #expect(result as? String == (mode == "normal" ? "Selected 🦊 bytes" : nil))
+        """, arguments: [:], in: nil, contentWorld: .page) as? String
     }
+    #expect(try await select() == "Selected 🦊 bytes")
+    #expect(try await engine.withCapture { try await select() } == nil, "no selection while a capture reads the page")
+    engine.allowsFileSelection = false
+    #expect(try await select() == nil)
     #expect(presentations == 1)
-    engine.capturing = false
     engine.allowsFileSelection = true
     try await engine.close()
   }

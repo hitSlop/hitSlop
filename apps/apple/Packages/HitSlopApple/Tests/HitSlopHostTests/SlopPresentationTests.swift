@@ -26,7 +26,7 @@ import HitSlopDocument
     try await session.close()
 }
 
-extension OwnerClientTests {
+extension HostTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
     @MainActor func shapeLabNativeResizeHonorsAspectAndKeepsEditorOperable() async throws {
         let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
@@ -178,7 +178,7 @@ extension OwnerClientTests {
     for kind in ["standard", "ellipse", "washer"] {
         let path = try #require(paths[kind])
         let url = URL(fileURLWithPath: path)
-        let exported = try await SlopRenderer.exportPNGData(url: url)
+        let exported = try await SlopRenderer.withRenderSession(url: url) { try await SlopRenderer.exportPNGData(session: $0) }
         let bitmap = try #require(NSBitmapImageRep(data: exported))
         #expect(bitmap.pixelsWide == 640)
         #expect(bitmap.pixelsHigh == 480)
@@ -209,7 +209,7 @@ private func shapeLabKinds(fallback: Bool) throws -> [String] {
     return kinds
 }
 
-extension OwnerClientTests {
+extension HostTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
     @MainActor func shapeLabCapturesPreserveCornersAndAcceptedInput() async throws {
         for kind in try shapeLabKinds(fallback: false) {
@@ -283,7 +283,7 @@ extension OwnerClientTests {
     }
 }
 
-extension OwnerClientTests {
+extension HostTests {
     // Failure: a full-length fallback PNG export was clipped by the window silhouette
     // stretched to the export's height. The silhouette describes the window: only a
     // window-sized capture is masked, and longer exports are unmasked, like PDF.

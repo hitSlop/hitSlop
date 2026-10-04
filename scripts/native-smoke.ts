@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { builtTemplates } from "./templates";
 import { digest, fileDigest, useTestRegistry } from "./runtime-artifacts";
-import { documentFromStage } from "./fixture-documents";
+import { createDocument, documentFromStage, nativeRequest } from "./fixture-documents";
 import { nativeFixtureSlugs, prepareNativeFixtures } from "./native-fixtures";
 useTestRegistry();
 
@@ -38,24 +38,14 @@ type RenderResult = {
   passed: boolean;
   seconds: Partial<Record<Stage | "total", number>>;
 };
-async function run(args: string[], result: RenderResult, stage: Stage) {
+/** One helper request, timed as `stage`. */
+async function run(body: Record<string, unknown>, result: RenderResult, stage: Stage) {
   const started = performance.now();
-  const child = Bun.spawn([helper, ...args], { stdout: "pipe", stderr: "pipe" });
-  const timeout = setTimeout(() => child.kill(), 60_000);
   try {
-    const [out, error, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    assert.equal(
-      code,
-      0,
-      `${args.join(" ")} (${((performance.now() - started) / 1000).toFixed(1)}s): ${error}`,
-    );
-    return out;
+    const reply = await nativeRequest(helper, body);
+    assert.ok(reply.ok, `${body.method} (${((performance.now() - started) / 1000).toFixed(1)}s): ${reply.error}`);
+    return reply;
   } finally {
-    clearTimeout(timeout);
     result.seconds[stage] = (performance.now() - started) / 1000;
   }
 }
@@ -73,11 +63,11 @@ try {
     results.push(result);
     try {
       if ((await stat(source)).isDirectory()) await documentFromStage(source, root, helper);
-      else await run(["create", "--from", source, "--output", root], result, "initialRead");
-      const state = JSON.parse(await run(["get", root], result, "initialRead"));
+      else await createDocument(helper, source, root);
+      const state = (await run({ method: "get", documentPath: root }, result, "initialRead")).state;
       for (const format of ["png", "pdf"] as const) {
         const output = join(evidence, `${name}.${format}`);
-        await run(["export", root, "--format", format, "--output", output], result, format);
+        await run({ method: "export", documentPath: root, format, output }, result, format);
         const bytes = await Bun.file(output).bytes();
         assert(bytes.length > 100, `Empty ${format}: ${name}`);
         assert.equal(
@@ -85,7 +75,7 @@ try {
           format === "png" ? "89504e470d0a1a0a" : "25504446",
         );
       }
-      assert.deepEqual(JSON.parse(await run(["get", root], result, "finalRead")), state);
+      assert.deepEqual((await run({ method: "get", documentPath: root }, result, "finalRead")).state, state);
       assert.equal(await checksum(source), before, `Master changed: ${name}`);
       result.passed = true;
       console.log(

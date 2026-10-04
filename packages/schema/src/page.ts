@@ -6,16 +6,17 @@ import {
   AttachmentIDSchema,
   AttachmentBytesSchema,
   AttachmentInfoSchema,
+  OutcomeCodeSchema,
   ThemeValuesSchema,
 } from "./values";
-import { ErrorTextLimit, PageErrorCodes, PagePayloadLimit, WindowBounds } from "./constants";
+import { ErrorTextLimit, PagePayloadLimit, WindowBounds } from "./constants";
 
 const payload = T.String({ minLength: 2, maxLength: PagePayloadLimit });
 const sequence = T.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const text = T.String({ maxLength: ErrorTextLimit });
 // The native session supplies lifecycle identity after checking the sending WebView.
 // Document payloads stay JSON strings that only the core parses.
-export const PageRequests = {
+const PageRequests = {
   open: Strict({ method: T.Literal("open") }),
   apply: Strict({ method: T.Literal("apply"), batch: payload }),
   text: Strict({ method: T.Literal("text"), request: payload }),
@@ -48,11 +49,9 @@ export type PageRequest<M extends PageMethod = PageMethod> = {
   [K in PageMethod]: Static<(typeof PageRequests)[K]>;
 }[M] & { method: M };
 
-export const PageErrorCodeSchema = T.Enum(PageErrorCodes);
-export type PageErrorCode = Static<typeof PageErrorCodeSchema>;
 export const PageFailureSchema = Strict({
   ok: T.Literal(false),
-  code: PageErrorCodeSchema,
+  code: OutcomeCodeSchema,
   error: T.String(),
   reason: T.Optional(CoreErrorCodeSchema),
   opIndex: T.Optional(sequence),
@@ -87,7 +86,7 @@ export const PageResults = {
   pageError: Strict({}),
 } satisfies Record<PageMethod, T.TObject>;
 export type PageResult<M extends PageMethod> = Static<(typeof PageResults)[M]>;
-export const PagePushSchema = T.Union([
+const PagePushSchema = T.Union([
   Strict({ type: T.Literal("publication"), publication: OwnerPublicationSchema }),
   Strict({ type: T.Literal("resync") }),
 ]);

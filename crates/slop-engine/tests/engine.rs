@@ -50,5 +50,5 @@ fn a_refused_build_says_why_and_publishes_nothing() {
     assert_eq!(refused.status.code(), Some(1));
     assert!(!String::from_utf8_lossy(&refused.stderr).trim().is_empty());
     assert!(!out.exists());
-    assert_eq!(engine(&[Path::new("unpack")]).status.code(), Some(2));
+    assert_eq!(engine(&[Path::new("unknown")]).status.code(), Some(2), "a usage error");
 }

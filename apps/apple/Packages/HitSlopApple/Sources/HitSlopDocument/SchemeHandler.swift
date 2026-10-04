@@ -25,16 +25,16 @@ import WebKit
     "default-src 'none'; script-src slop: 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
   private static let reads = DispatchQueue(label: "hitslop.scheme", qos: .userInitiated, attributes: .concurrent)
   let shell: URL
-  /// The document's assets, through one long-lived connection; nil when the file can no
-  /// longer be read, and every asset request then fails.
+  /// The document's assets, through the session's long-lived connection; nil when the file
+  /// could not be read, and every asset request then fails.
   private let assets: AssetReader?
   /// Tasks WebKit started and has not stopped. A token tells a stopped task's late read
   /// from a newer task at the same address.
   private var tasks: [ObjectIdentifier: (token: Int, task: any WKURLSchemeTask)] = [:]
   private var nextToken = 0
-  init(document: URL, shell: URL) {
+  init(assets: AssetReader?, shell: URL) {
     self.shell = shell
-    assets = try? AssetReader.open(path: document.path)
+    self.assets = assets
   }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     nextToken += 1
@@ -75,19 +75,19 @@ import WebKit
     guard let url, url.host == "app" else { throw failure("Unknown resource origin") }
     let isShell = url.path.hasPrefix("/__shell__/")
     if !isShell && url.path == "/" { return whole(visiblePage, type: "text/html; charset=utf-8") }
-    let relative = isShell ? String(url.path.dropFirst("/__shell__/".count)) : String(url.path.dropFirst())
-    // URL.path decodes escaped separators and dots: reject them before anything else.
-    guard Self.isSafeRelativePath(relative), !relative.hasSuffix("/")
-    else { throw failure("Unsafe resource path") }
-    let type = contentType(path: relative)
+    let prefix = isShell ? "/__shell__/" : "/assets/"
+    guard url.path.hasPrefix(prefix) else { throw failure("Resource not exposed") }
+    // URL.path decodes escaped separators and dots; the core's asset-path rule refuses
+    // them before anything else.
+    let key = String(url.path.dropFirst(prefix.count))
+    guard validAssetPath(path: key) else { throw failure("Unsafe resource path") }
+    let type = contentType(path: key)
     if isShell {
       let base = shell.standardizedFileURL
-      let file = base.appendingPathComponent(relative).standardizedFileURL
+      let file = base.appendingPathComponent(key).standardizedFileURL
       guard file.path.hasPrefix(base.path + "/") else { throw failure("Resource outside the shell") }
       return try ranged(range, type: type, length: shellFile(file).count) { try shellFile(file).subdata(in: $0) }
     }
-    guard relative.hasPrefix("assets/") else { throw failure("Resource not exposed") }
-    let key = String(relative.dropFirst("assets/".count))
     guard let assets else { throw failure("Cannot read the document's app") }
     guard let size = try assets.size(key: key) else { throw failure("Resource not found") }
     return try ranged(range, type: type, length: Int(size)) { bounds in
@@ -116,17 +116,6 @@ import WebKit
       var response = Response(status: 416, body: Data(), headers: headers(type, length: 0))
       response.headers["Content-Range"] = "bytes */\(length)"
       return response
-    }
-  }
-
-  /// A path the page may name: relative, with no empty, dot or parent segments.
-  nonisolated private static func isSafeRelativePath(_ path: String) -> Bool {
-    guard !path.isEmpty, path.count <= 240, !path.hasPrefix("/"), !path.contains("\\"),
-      !path.contains("\0")
-    else { return false }
-    let normalized = path.hasSuffix("/") ? String(path.dropLast()) : path
-    return normalized.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {
-      !$0.isEmpty && $0 != "." && $0 != ".."
     }
   }
 }

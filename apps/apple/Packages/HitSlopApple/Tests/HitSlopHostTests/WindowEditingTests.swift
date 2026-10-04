@@ -9,7 +9,7 @@ import HitSlopTestSupport
 @testable import HitSlopHost
 @testable import HitSlopDocument
 
-extension OwnerClientTests {
+extension HostTests {
   @Test @MainActor func nativeWindowExportsLiveEditsAndReleasesOwnership() async throws {
     _ = NSApplication.shared
     do {
@@ -31,10 +31,9 @@ extension OwnerClientTests {
       #expect(panel.isVisible)
       panel.orderOut(nil)
       #expect(try await controller.session.webView.evaluateJavaScript("document.body.innerText.trim().length > 0") as? Bool == true)
-      _ = try await command("apply", url: root, operation: setTitle("abcXYZ"))
-      let live = try await command("get", url: root)
-      #expect(String(decoding: live, as: UTF8.self).contains("abcXYZ"))
-      _ = try await command("apply", url: root, operation: setTitle("Native socket edit"))
+      #expect(try await command("batch", url: root, setTitle("abcXYZ")).ok)
+      #expect(try await savedValue(root)?["title"] as? String == "abcXYZ")
+      #expect(try await command("batch", url: root, setTitle("Native socket edit")).ok)
       let png = try await SlopRenderer.exportPNGData(session: controller.session)
       let pdf = try await SlopRenderer.exportPDFData(session: controller.session)
       #expect(NSImage(data: png) != nil)
@@ -45,29 +44,24 @@ extension OwnerClientTests {
       defer { try? FileManager.default.removeItem(at: duplicate) }
       try await controller.session.copy(to: duplicate)
       #expect(try liveDiscovery(path: duplicate.path) == nil)
-      #expect(
-        String(
-          decoding: try await command("get", url: duplicate), as: UTF8.self
-        ).contains("Native socket edit"))
+      #expect(try await savedValue(duplicate)?["title"] as? String == "Native socket edit")
       // Finishing at the controller boundary must also close native chrome and release WebKit.
       try await controller.finishClose()
       #expect(controller.window?.isVisible == false)
       #expect(webView == nil)
-      _ = try await command("apply", url: root, operation: setTitle("Closed WASM edit"))
-      #expect(
-        String(decoding: try await command("get", url: root), as: UTF8.self)
-          .contains("Closed WASM edit"))
+      #expect(try await command("batch", url: root, setTitle("Closed edit")).ok)
+      #expect(try await savedValue(root)?["title"] as? String == "Closed edit")
       // An interactive reopen reads back exactly the saved state (the probe app writes nothing).
-      let saved = try await command("get", url: root)
+      let saved = try await savedValue(root)
       let reopened = try await SlopDocumentWindowController.open(url: root)
       try await reopened.session.waitUntilReady()
-      #expect(try await command("get", url: root) == saved)
+      #expect(try await savedValue(root) == saved)
       try await reopened.finishClose()
     }
   }
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Failure: redoing the page's text after undoing an agent's edit produced PRSOAGENT.
   // Exercise the focused window's Edit actions, page publication, and saved reopen.
   @Test @MainActor func agentAndPageEditsRedoThroughTheWindow() async throws {
@@ -78,7 +72,7 @@ extension OwnerClientTests {
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
-    _ = try await command("apply", url: root, operation: setTitle("AGENT"))
+    #expect(try await command("batch", url: root, setTitle("AGENT")).ok)
     let window = try #require(controller.window)
     let webView = controller.session.webView
     window.makeFirstResponder(webView)
@@ -86,10 +80,7 @@ extension OwnerClientTests {
     _ = try await webView.callAsyncJavaScript(
       "const input = document.getElementById('draft'); for (let i = 0; i < 200 && input.value !== 'AGENT'; i++) await new Promise(r => setTimeout(r, 5)); input.focus(); input.select(); document.execCommand('insertText', false, 'PERSON'); await globalThis.__slop.flush(); return true",
       arguments: [:], in: nil, contentWorld: .page)
-    func title() async throws -> String? {
-      let reply = try JSONSerialization.jsonObject(with: try await command("get", url: root)) as! [String: Any]
-      return (reply["state"] as? [String: Any] ?? reply)["title"] as? String
-    }
+    func title() async throws -> String? { try await savedValue(root)?["title"] as? String }
     #expect(try await title() == "PERSON")
     for _ in 0..<3 {
       for (action, expected) in [("undo:", "AGENT"), ("undo:", "abc"), ("redo:", "AGENT"), ("redo:", "PERSON")] {
@@ -127,11 +118,8 @@ extension OwnerClientTests {
     _ = try await webView.callAsyncJavaScript(
       "const input = \(field); input.focus(); input.setSelectionRange(input.value.length, input.value.length); document.execCommand('insertText', false, 'XYZ'); await globalThis.__slop.flush(); return true",
       arguments: [:], in: nil, contentWorld: .page)
-    _ = try await command("apply", url: root, operation: try JSONSerialization.data(withJSONObject: ["type": "increment", "path": ["hits"], "by": 3]))
-    func saved() async throws -> [String: Any] {
-      let reply = try JSONSerialization.jsonObject(with: try await command("get", url: root)) as! [String: Any]
-      return reply["state"] as? [String: Any] ?? reply
-    }
+    #expect(try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#]).ok)
+    func saved() async throws -> [String: Any] { try await savedValue(root) as? [String: Any] ?? [:] }
     #expect(try await saved()["title"] as? String == "abcXYZ")
     for _ in 0..<200 where window.undoManager?.canUndo != true { try await Task.sleep(for: .milliseconds(5)) }
     #expect(window.undoManager?.canUndo == true)

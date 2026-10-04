@@ -9,8 +9,8 @@ fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(deserializer: 
 
 // The descriptor is authored data, never executable application code.
 // Serialize gives the canonical form saved state records: fields in declaration order,
-// properties sorted by the BTreeMap, numbers in their parsed type. Identity compares
-// parsed descriptors (`same_schema`), so this spelling may change between builds.
+// properties sorted by the BTreeMap, numbers in their parsed type. Opening compares the
+// saved descriptor parsed, never as text, so this spelling may change between builds.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub(super) enum Node {
@@ -252,23 +252,23 @@ pub(super) fn descriptor(s: &str) -> Result<Node> {
 }
 
 /// Validates authoring input without creating a CRDT or executing authored code, and
-/// returns the descriptor's schema key.
+/// returns the canonical descriptor.
 pub fn validate(schema: &str, initial: &str) -> Result<String> {
+    checked(schema, initial).map(|(_, canonical)| canonical)
+}
+/// The parsed descriptor and its canonical form, once the initial values are checked against it.
+pub(crate) fn checked(schema: &str, initial: &str) -> Result<(Node, String)> {
     let schema = descriptor(schema)?;
     let initial: Value = parse(initial)?;
     schema.validate(&initial, false)?;
-    encode(&schema)
+    let canonical = encode(&schema);
+    Ok((schema, canonical))
 }
 
-/// The descriptor's storage key: the parsed descriptor serialized canonically, so key
-/// order and number spelling in the authored JSON never change it. Saved state records
-/// it; `same_schema` compares keys by meaning, so this spelling may change between builds.
-pub fn schema_key(schema: &str) -> Result<String> {
-    encode(&descriptor(schema)?)
+/// The descriptor as saved state records it: parsed, then serialized canonically, so key
+/// order and number spelling in the authored JSON never change it. Opening compares the
+/// saved one parsed, so this spelling may change between builds.
+pub fn canonical_descriptor(schema: &str) -> Result<String> {
+    Ok(encode(&descriptor(schema)?))
 }
 
-/// Whether two descriptors mean the same thing: equal once parsed, whatever their
-/// spelling. A descriptor that does not parse matches nothing.
-pub fn same_schema(a: &str, b: &str) -> bool {
-    matches!((descriptor(a), descriptor(b)), (Ok(a), Ok(b)) if a == b)
-}

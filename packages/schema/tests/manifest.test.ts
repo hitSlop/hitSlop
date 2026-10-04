@@ -22,9 +22,8 @@ test("manifest requires attribution and valid presentation", async () => {
     { ...manifest, lineage: { template: "future" } },
     { ...manifest, categories: ["future-category"] },
     { ...manifest, presentation: { ...manifest.presentation, future: true } },
-    { ...manifest, presentation: { ...manifest.presentation, shape: "rounded" } },
-    { ...manifest, presentation: { ...manifest.presentation, shape: "5.px" } },
-    { ...manifest, presentation: { ...manifest.presentation, shape: "5.%" } },
+    // The schema bounds a shape; the core's shape parser owns its grammar.
+    { ...manifest, presentation: { ...manifest.presentation, shape: "x".repeat(257) } },
   ])
     expect(() => parseManifest(value)).toThrow();
 });

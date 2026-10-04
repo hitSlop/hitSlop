@@ -7,7 +7,8 @@ use hitslop_core::{Code, Origin};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+mod support;
+use support::{isolate_registry, registry_folder};
 
 const MANIFEST: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
@@ -24,21 +25,11 @@ struct App<'a> {
     initial: &'a str,
     theme: &'a str,
 }
-const APP: App = App { format: 1, abi: 1, manifest: MANIFEST, descriptor: SCHEMA, initial: INITIAL, theme: THEME };
+const APP: App = App { format: hitslop_core::PACKAGE_FORMAT, abi: hitslop_core::RUNTIME_ABI, manifest: MANIFEST, descriptor: SCHEMA, initial: INITIAL, theme: THEME };
 fn write_app(stage: &Path, app: App) {
     let App { format, abi, manifest, descriptor, initial, theme } = app;
     let json = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#);
     fs::write(stage.join("app.json"), json).unwrap();
-}
-/// A build's stage: its `app.json` and assets.
-/// This process's registry lives in a temporary folder, so test runs never fill the
-/// account's `~/.hitslop/live`.
-fn registry_folder() -> PathBuf {
-    std::env::temp_dir().join("hitslop-test-registry")
-}
-fn isolate_registry() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| registry::use_folder(&registry_folder()).unwrap());
 }
 /// What a crashed owner leaves behind: its discovery file, with its lock released.
 fn crashed_owner(doc: &Path, json: &str) {
@@ -53,6 +44,7 @@ fn crashed_owner(doc: &Path, json: &str) {
     drop(lease);
     fs::write(file, json).unwrap();
 }
+/// A build's stage: its `app.json` and assets.
 fn stage(dir: &Path) -> PathBuf {
     isolate_registry();
     let stage = dir.join("stage");
@@ -85,6 +77,15 @@ fn code(error: Error) -> Code {
 fn temporaries(dir: &Path) -> Vec<String> {
     fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".tmp")).collect()
 }
+/// Each marker raised one past what this build writes.
+fn raised(doc: &Path) -> [String; 3] {
+    let storage: i64 = raw(doc).query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    [
+        format!("PRAGMA user_version={}", storage + 1),
+        format!("UPDATE app SET package_format={}", hitslop_core::PACKAGE_FORMAT + 1),
+        format!("UPDATE app SET runtime_abi={}", hitslop_core::RUNTIME_ABI + 1),
+    ]
+}
 fn png(width: u32, height: u32, color_type: u8) -> Vec<u8> {
     let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
     bytes.extend_from_slice(b"IHDR");
@@ -106,7 +107,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(fs::read(&a).unwrap(), fs::read(&b).unwrap(), "packing is reproducible");
     let opened = file::open(&a, true).unwrap();
     assert_eq!(opened.kind, Kind::Template);
-    assert_eq!((opened.app.package_format, opened.app.runtime_abi), (1, 1));
+    assert_eq!((opened.app.package_format, opened.app.runtime_abi), (APP.format, APP.abi));
     assert_eq!(opened.app.descriptor, SCHEMA);
     assert_eq!(opened.theme_tokens, vec![("accent".to_string(), "#335577".to_string())]);
     let manifest: serde_json::Value = serde_json::from_str(&opened.app.manifest).unwrap();
@@ -127,6 +128,22 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(code(file::pack(&stage, &doc).unwrap_err()), Code::Exists);
     assert_eq!(fs::read(&doc).unwrap(), before);
     assert!(temporaries(dir.path()).is_empty());
+}
+
+/// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
+/// as stored; text inside strings is kept exactly.
+#[test]
+fn pack_stores_the_app_as_compact_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let descriptor = "{ \"kind\" : \"object\",\n  \"properties\": { \"title\": { \"kind\": \"string\" } } }";
+    let initial = r#"{ "title" : "Spaced \"and\" \\ quoted" }"#;
+    write_app(&stage, App { descriptor, initial, ..APP });
+    let out = dir.path().join("Compact.slop");
+    file::pack(&stage, &out).unwrap();
+    let opened = file::open(&out, true).unwrap();
+    assert_eq!(opened.app.descriptor, SCHEMA);
+    assert_eq!(opened.app.initial, r#"{"title":"Spaced \"and\" \\ quoted"}"#);
 }
 
 #[test]
@@ -217,19 +234,51 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     file::open(&fresh, true).unwrap();
 }
 
+/// What pack and a save never write is refused on open, sizes before values: artwork that
+/// is not an image within the limits, a theme over its budget, and a second or misnumbered
+/// row in a one-row table.
 #[test]
-fn newer_markers_ask_for_an_update_and_foreign_files_are_refused() {
-    for change in ["PRAGMA user_version=2", "UPDATE app SET package_format=2", "UPDATE app SET runtime_abi=2"] {
+fn stored_values_are_bounded_as_writes_bound_them() {
+    let many_tokens = format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
+    let long_override = format!(r#"{{"accent":"{}"}}"#, "a".repeat(1 << 20));
+    let cases: [(&str, &str, Option<Vec<u8>>); 7] = [
+        ("oversized artwork", "INSERT INTO artwork VALUES('preview', ?)", Some(png(100_000, 100_000, 6))),
+        ("artwork that is not a PNG", "INSERT INTO artwork VALUES('icon', ?)", Some(b"not a png".to_vec())),
+        ("theme defaults over budget", "UPDATE app SET theme=CAST(? AS TEXT)", Some(many_tokens.into_bytes())),
+        ("theme overrides over budget", "UPDATE document SET theme=CAST(? AS TEXT)", Some(long_override.into_bytes())),
+        ("a misnumbered checkpoint", "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,'key',x'00')", None),
+        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2,'{}')", None),
+        ("a misnumbered app row", "PRAGMA ignore_check_constraints=ON; UPDATE app SET id=2", None),
+    ];
+    let mut accepted = vec![];
+    for (name, sql, value) in cases {
         let dir = tempfile::tempdir().unwrap();
         let doc = document(dir.path());
+        let conn = raw(&doc);
+        match value {
+            Some(value) => conn.execute(sql, [value]).map(|_| ()).unwrap(),
+            None => conn.execute_batch(sql).unwrap(),
+        }
+        drop(conn);
+        let started = std::time::Instant::now();
+        let refused = file::open(&doc, false).is_err();
+        // Refused from sizes, never by reading the value.
+        if !refused || started.elapsed() > std::time::Duration::from_millis(500) || Store::open(&doc, Mode::Snapshot).is_ok() {
+            accepted.push(name);
+        }
+    }
+    assert!(accepted.is_empty(), "accepted, or refused only after reading the value: {accepted:?}");
+}
+
+#[test]
+fn newer_markers_ask_for_an_update_and_foreign_files_are_refused() {
+    for index in 0..3 {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = document(dir.path());
+        let change = &raised(&doc)[index];
         raw(&doc).execute_batch(change).unwrap();
         let before = fs::read(&doc).unwrap();
-        for refusal in [
-            file::open(&doc, true).err(),
-            Store::open(&doc, Mode::Document).err(),
-            Store::open(&doc, Mode::Snapshot).err(),
-            file::duplicate(&doc, &dir.path().join("Copy.slop")).err(),
-        ] {
+        for refusal in [file::open(&doc, true).err(), Store::open(&doc, Mode::Document).err(), Store::open(&doc, Mode::Snapshot).err()] {
             assert_eq!(code(refusal.expect("refused")), Code::RequiresUpdate, "{change}");
         }
         assert_eq!(fs::read(&doc).unwrap(), before, "{change}: nothing written");
@@ -250,9 +299,8 @@ fn templates_create_documents_and_never_open_as_one() {
     let (a, b) = (dir.path().join("A.slop"), dir.path().join("B.slop"));
     file::create_document(&template, &a).unwrap();
     file::create_document(&template, &b).unwrap();
-    let id = |p: &Path| raw(p).query_row("SELECT doc_id FROM document", [], |r| r.get::<_, String>(0)).unwrap();
-    assert_ne!(id(&a), id(&b), "each document has its own identity");
     assert_eq!(file::open(&a, true).unwrap().kind, Kind::Document);
+    assert_eq!(file::open(&b, true).unwrap().kind, Kind::Document);
 }
 
 /// A store keeps the app its open checked, in either mode, so a host shows the document
@@ -266,7 +314,7 @@ fn a_store_keeps_the_app_its_open_checked() {
         let store = Store::open(&doc, mode).unwrap();
         let app = store.app();
         assert_eq!(app.kind, Kind::Document);
-        assert_eq!(app.schema_key, read.schema_key);
+        assert_eq!(app.canonical_descriptor, read.canonical_descriptor);
         assert_eq!(app.silhouette, read.silhouette);
         assert_eq!((&app.theme_tokens, &app.skin), (&read.theme_tokens, &read.skin));
         assert_eq!((&app.app.manifest, &app.app.descriptor, &app.app.theme), (&read.app.manifest, &read.app.descriptor, &read.app.theme));
@@ -290,13 +338,15 @@ fn a_template_with_a_broken_app_creates_nothing() {
 }
 
 #[test]
-fn create_and_duplicate_never_overwrite() {
+fn create_and_copy_never_overwrite() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let taken = dir.path().join("Taken.slop");
     fs::write(&taken, "keep me").unwrap();
     assert_eq!(code(file::create_document(&dir.path().join("Template.slop"), &taken).unwrap_err()), Code::Exists);
-    assert_eq!(code(file::duplicate(&doc, &taken).unwrap_err()), Code::Exists);
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    assert_eq!(code(store.copy_to(&taken).unwrap_err()), Code::Exists);
+    store.close().unwrap();
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep me");
     assert!(temporaries(dir.path()).is_empty());
 }
@@ -434,26 +484,19 @@ fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
     holder.execute_batch("ROLLBACK").unwrap();
 }
 
+/// A window writes its artwork through its own writer as it closes; a snapshot owns
+/// nothing to write with.
 #[test]
-fn artwork_is_written_only_while_the_rendered_state_holds() {
+fn artwork_is_written_by_the_writer() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
+    let (preview, icon) = (png(640, 480, 6), png(512, 512, 6));
+    let snapshot = Store::open(&doc, Mode::Snapshot).unwrap();
+    assert!(matches!(snapshot.set_artwork(&[("preview", &preview)]), Err(Error::Closed)));
     let store = Store::open(&doc, Mode::Document).unwrap();
-    store.document().unwrap();
+    store.set_artwork(&[("preview", &preview), ("icon", &icon)]).unwrap();
+    assert_eq!(store.artwork("icon").unwrap(), Some(icon));
     store.close().unwrap();
-    let marker = Store::open(&doc, Mode::Snapshot).unwrap().saved_marker().unwrap();
-    let preview = png(640, 480, 6);
-    assert!(store::write_artwork(&doc, &marker, &[("preview", &preview)]).unwrap());
-    assert_eq!(store::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview.clone()));
-    // An edit saved after the render makes it stale: nothing is written.
-    let store = Store::open(&doc, Mode::Document).unwrap();
-    let mut state = store.document().unwrap();
-    state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Later"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
-    let later = png(320, 240, 6);
-    assert!(!store::write_artwork(&doc, &marker, &[("preview", &later)]).unwrap(), "busy: an open writer holds the lock");
-    store.close().unwrap();
-    assert!(!store::write_artwork(&doc, &marker, &[("preview", &later)]).unwrap(), "stale: the document changed");
     assert_eq!(store::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
 }
 
@@ -473,7 +516,6 @@ fn an_open_document_copies_through_its_owner() {
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
-    assert_ne!(copied.doc_id(), store.doc_id());
     assert!(copied.document().unwrap().value().unwrap().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
 }
@@ -500,33 +542,42 @@ fn assets_are_served_whole_or_in_ranges() {
 fn artwork_is_checked_as_every_open_checks_it() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
-    let marker = Store::open(&doc, Mode::Snapshot).unwrap().saved_marker().unwrap();
+    let store = Store::open(&doc, Mode::Document).unwrap();
     let preview = png(640, 480, 6);
-    assert!(store::write_artwork(&doc, &marker, &[("preview", &preview)]).unwrap());
+    store.set_artwork(&[("preview", &preview)]).unwrap();
     let mut oversized = png(640, 480, 6);
     oversized.resize(hitslop_core::ASSET_FILE_BYTES + 1, 0);
-    for (name, bytes) in [("preview", oversized.as_slice()), ("icon", b"not a png".as_slice()), ("icon", png(0, 0, 6).as_slice())] {
-        assert!(store::write_artwork(&doc, &marker, &[(name, bytes)]).is_err(), "{name}: refused");
+    let huge = png(100_000, 100_000, 6);
+    for (name, bytes) in [
+        ("preview", oversized.as_slice()),
+        ("icon", b"not a png".as_slice()),
+        ("icon", png(0, 0, 6).as_slice()),
+        ("icon", huge.as_slice()),
+        ("splash", preview.as_slice()),
+    ] {
+        assert!(store.set_artwork(&[(name, bytes)]).is_err(), "{name}: refused");
     }
+    store.close().unwrap();
     // The document still opens, with the artwork it had.
     file::open(&doc, true).unwrap();
-    Store::open(&doc, Mode::Document).unwrap().close().unwrap();
     assert_eq!(store::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
     assert_eq!(store::artwork(&doc, &["icon"]).unwrap().map(|(_, png)| png), None);
 }
 
-/// A file a newer build wrote, as that build might have left it: its markers raised, in
-/// rollback (`DELETE`) or `WAL` journaling. In WAL, the change stays in the `-wal` file.
-fn newer(dir: &Path, change: &str, wal: bool) -> PathBuf {
+/// A file a newer build wrote, as that build might have left it: one of its markers raised
+/// (`raised`), in rollback (`DELETE`) or `WAL` journaling. In WAL, the change stays in the
+/// `-wal` file.
+fn newer(dir: &Path, marker: usize, wal: bool) -> (PathBuf, String) {
     let doc = document(dir);
+    let change = raised(&doc)[marker].clone();
     let conn = raw(&doc);
     conn.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).unwrap();
     if wal {
         conn.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(())).unwrap();
     }
-    conn.execute_batch(change).unwrap();
+    conn.execute_batch(&change).unwrap();
     drop(conn);
-    doc
+    (doc, change)
 }
 fn sidecars(doc: &Path) -> Vec<(String, Vec<u8>)> {
     ["-wal", "-journal"]
@@ -540,16 +591,14 @@ fn sidecars(doc: &Path) -> Vec<(String, Vec<u8>)> {
 
 #[test]
 fn refusing_a_newer_file_writes_nothing_in_any_journal_mode() {
-    for change in ["PRAGMA user_version=2", "UPDATE app SET package_format=2", "UPDATE app SET runtime_abi=2"] {
+    for index in 0..3 {
         for wal in [false, true] {
             let dir = tempfile::tempdir().unwrap();
-            let doc = newer(dir.path(), change, wal);
+            let (doc, change) = newer(dir.path(), index, wal);
             let (before, sidecars_before) = (fs::read(&doc).unwrap(), sidecars(&doc));
             assert_eq!(sidecars_before.iter().any(|(s, _)| s == "-wal"), wal, "{change}: the newer build's WAL is in place");
-            let marker = "any";
             let refusals = [
                 Store::open(&doc, Mode::Document).err().map(code),
-                store::write_artwork(&doc, marker, &[("preview", &png(8, 8, 6))]).err().map(code),
                 Store::open(&doc, Mode::Snapshot).err().map(code),
                 file::open(&doc, true).err().map(code),
             ];
@@ -572,15 +621,9 @@ fn a_newer_file_with_a_crashed_write_is_restored_then_refused() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    raw(&doc).execute_batch("PRAGMA user_version=2").unwrap();
+    raw(&doc).execute_batch(&raised(&doc)[0]).unwrap();
     let committed = fs::read(&doc).unwrap();
-    let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "crash_mid_commit", "--ignored", "--nocapture"])
-        .env("HITSLOP_CRASH_DOCUMENT", &doc)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
+    let status = support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the file");
@@ -617,13 +660,7 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "exclusive_sqlite_writer", "--ignored", "--nocapture"])
-        .env("HITSLOP_EXCLUSIVE_DOCUMENT", &doc)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
+    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);
@@ -648,13 +685,7 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let attachment = store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    let status = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "crash_mid_commit", "--ignored", "--nocapture"])
-        .env("HITSLOP_CRASH_DOCUMENT", &doc)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap();
+    let status = support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the document");

@@ -6,6 +6,7 @@ use hitslop_core::theme::Change;
 use hitslop_core::Origin;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+mod support;
 
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat")
@@ -33,6 +34,7 @@ fn read(root: &Path) -> (Value, Value) {
 
 #[test]
 fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
+    support::isolate_registry();
     let mut cases = 0;
     for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
         for saved in entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "slop")) {

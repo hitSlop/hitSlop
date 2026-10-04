@@ -15,7 +15,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | Boundary | Marker | A later build |
 |---|---|---|
 | The app in a `.slop` file: the `app` row (manifest, descriptor encoding, initial values, theme), assets and artwork | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
-| App behavior: `ctx`, handles, errors, schema key and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
+| App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, issues, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
 | CLI ↔ app | `hitslop-native --protocol` (`{version, minimum}`) | Selects the adapter named by `--client-protocol`; omission means 1. Keeps serving every protocol from `minimum`; protocol 1 is today's commands, arguments, outputs and exit statuses |

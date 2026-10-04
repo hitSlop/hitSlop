@@ -1,7 +1,7 @@
 import { Crust, defineCommand } from "@crustjs/core";
 import { didYouMean, help, version } from "@crustjs/extensions";
 import { skill } from "@crustjs/skills";
-import { SlopCategories } from "@hitslop/schema/constants";
+import { ExportFormats, SlopCategories } from "@hitslop/schema/constants";
 import metadata from "../package.json";
 
 export const skillExtras = [
@@ -48,65 +48,36 @@ async function native(...argv: string[]) {
 async function readSlop(command: "schema" | "inspect", path: string) {
   return (await import("./engine")).engine([command, path]);
 }
-/** CLI flags as helper arguments: `--name value`, or `--name` for a set boolean. */
-const flagArgs = (flags: Record<string, unknown>) =>
-  Object.entries(flags).flatMap(([name, value]) =>
-    typeof value === "string" || typeof value === "number"
-      ? [`--${name}`, String(value)]
-      : value === true
-        ? [`--${name}`]
-        : [],
-  );
-const forward = (command: string, target: string, flags: Record<string, unknown>) =>
-  native(command, target, ...flagArgs(flags));
+const documents = () => import("./documents");
 
-const themeDescriptions = {
-  get: "Print the palette: template colors, overrides and effective colors",
-  set: "Override declared theme colors",
-  reset: "Return one color, or every color, to the template's",
-  export: "Print or write the full palette as a theme file",
-  import: "Replace the palette with a theme file made for this template",
+const theme = {
+  get: defineCommand("get", { description: "Print the palette: template colors, overrides and effective colors" }, (c) =>
+    c.args(document).action(async ({ args }) => (await documents()).themeGet(args.document)),
+  ),
+  set: defineCommand("set", { description: "Override declared theme colors" }, (c) =>
+    c
+      .args(document)
+      .flags({ name: "values", type: "string", required: true, description: 'Colors as JSON, such as {"accent":"#335577"}' })
+      .action(async ({ args, flags }) => (await documents()).themeSet(args.document, flags.values)),
+  ),
+  reset: defineCommand("reset", { description: "Return one color, or every color, to the template's" }, (c) =>
+    c
+      .args(document)
+      .flags({ name: "token", type: "string", description: "Color to reset; omit to reset all" })
+      .action(async ({ args, flags }) => (await documents()).themeReset(args.document, flags.token)),
+  ),
+  export: defineCommand("export", { description: "Print or write the full palette as a theme file" }, (c) =>
+    c
+      .args(document)
+      .flags({ name: "output", type: "string", description: "File to write; omit to print" })
+      .action(async ({ args, flags }) => (await documents()).themeExport(args.document, flags.output)),
+  ),
+  import: defineCommand("import", { description: "Replace the palette with a theme file made for this template" }, (c) =>
+    c
+      .args(document, { name: "file", type: "string", required: true, description: "Theme file to import" })
+      .action(async ({ args }) => (await documents()).themeImport(args.document, args.file)),
+  ),
 };
-
-function themeCommand(command: keyof typeof themeDescriptions) {
-  return defineCommand(command, { description: themeDescriptions[command] }, (sub) => {
-    if (command === "import")
-      return sub
-        .args(document, { name: "file", type: "string", required: true, description: "Theme file to import" })
-        .action(({ args }) => native("theme", command, args.document, args.file));
-    const configured = sub.args(document).flags(
-      ...(command === "set"
-        ? [
-            {
-              name: "values",
-              type: "string" as const,
-              required: true as const,
-              description: "Colors as JSON, such as {\"accent\":\"#335577\"}",
-            },
-          ]
-        : []),
-      ...(command === "reset"
-        ? [
-            {
-              name: "token",
-              type: "string" as const,
-              description: "Color to reset; omit to reset all",
-            },
-          ]
-        : []),
-      ...(command === "export"
-        ? [
-            {
-              name: "output",
-              type: "string" as const,
-              description: "File to write; omit to print",
-            },
-          ]
-        : []),
-    );
-    return configured.action(({ args, flags }) => native("theme", command, args.document, ...flagArgs(flags)));
-  });
-}
 
 export const app = new Crust("slop", {
   description: "Author hitSlop mini apps and work with local documents",
@@ -129,7 +100,7 @@ export const app = new Crust("slop", {
         c
           .add(
             defineCommand("list", { description: "List attachment IDs and sizes" }, (c) =>
-              c.args(document).action(({ args }) => native("attachments", "list", args.document)),
+              c.args(document).action(async ({ args }) => (await documents()).attachmentsList(args.document)),
             ),
           )
           .add(
@@ -139,7 +110,7 @@ export const app = new Crust("slop", {
               (c) =>
                 c
                   .args(document, { name: "file", type: "string", required: true })
-                  .action(({ args }) => native("attachments", "import", args.document, args.file)),
+                  .action(async ({ args }) => (await documents()).attachmentsImport(args.document, args.file)),
             ),
           )
           .add(
@@ -150,8 +121,8 @@ export const app = new Crust("slop", {
                 c
                   .args(document, { name: "id", type: "string", required: true })
                   .flags({ name: "output", type: "string", required: true })
-                  .action(({ args, flags }) =>
-                    native("attachments", "export", args.document, args.id, ...flagArgs(flags)),
+                  .action(async ({ args, flags }) =>
+                    (await documents()).attachmentsExport(args.document, args.id, flags.output),
                   ),
             ),
           ),
@@ -294,7 +265,7 @@ export const app = new Crust("slop", {
               description: "Path for the new writable document",
             },
           )
-          .action(({ flags }) => native("create", ...flagArgs(flags))),
+          .action(({ flags }) => native("create", "--from", flags.from, "--output", flags.output)),
     ),
   )
   .add(
@@ -323,7 +294,7 @@ export const app = new Crust("slop", {
           type: "boolean",
           description: "Print the schema with the current state ({schema, state})",
         })
-        .action(({ args, flags }) => forward("get", args.document, flags)),
+        .action(async ({ args, flags }) => (await documents()).get(args.document, flags.snapshot === true)),
     ),
   )
   .add(
@@ -339,7 +310,7 @@ export const app = new Crust("slop", {
             required: true,
             description: "Operation object as JSON",
           })
-          .action(({ args, flags }) => forward("apply", args.document, flags)),
+          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op)),
     ),
   )
   .add(
@@ -355,7 +326,7 @@ export const app = new Crust("slop", {
             required: true,
             description: "Array of operations as JSON",
           })
-          .action(({ args, flags }) => forward("batch", args.document, flags)),
+          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops)),
     ),
   )
   .add(
@@ -373,14 +344,14 @@ export const app = new Crust("slop", {
             type: "string",
             description: 'Where to replace, as a JSON path (default: the whole document), e.g. \'["rows"]\'',
           })
-          .action(({ args, flags }) => native("import", args.document, args.file, ...flagArgs(flags))),
+          .action(async ({ args, flags }) => (await documents()).importValue(args.document, args.file, flags.path)),
     ),
   )
   .add(
     defineCommand(
       "compact",
       { description: "Checkpoint document storage", sections: [retrySection] },
-      (c) => c.args(document).action(({ args, flags }) => forward("compact", args.document, flags)),
+      (c) => c.args(document).action(async ({ args }) => (await documents()).compact(args.document)),
     ),
   )
   .add(
@@ -391,7 +362,7 @@ export const app = new Crust("slop", {
         sections: [
           {
             title: "Capture behavior",
-            body: "Open documents export their live selected view; closed documents export the saved state with the initial view. Output must be outside the source package. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
+            body: "Open documents export their live selected view; closed documents export the saved state with the initial view. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
           },
         ],
       },
@@ -402,7 +373,7 @@ export const app = new Crust("slop", {
             {
               name: "format",
               type: "string",
-              choices: ["png", "pdf"],
+              choices: [...ExportFormats],
               required: true,
               description: "Export format: png or pdf",
             },
@@ -410,20 +381,15 @@ export const app = new Crust("slop", {
               name: "output",
               type: "string",
               required: true,
-              description: "Destination outside the document package",
+              description: "Destination file",
             },
           )
-          .action(({ args, flags }) => forward("export", args.document, flags)),
+          .action(async ({ args, flags }) => (await documents()).exportDocument(args.document, flags.format, flags.output)),
     ),
   )
   .add(
     defineCommand("theme", { description: "Inspect, override and share a document's palette" }, (c) =>
-      c
-        .add(themeCommand("get"))
-        .add(themeCommand("set"))
-        .add(themeCommand("reset"))
-        .add(themeCommand("export"))
-        .add(themeCommand("import")),
+      c.add(theme.get).add(theme.set).add(theme.reset).add(theme.export).add(theme.import),
     ),
   )
   .extend(skill({ name: skillName, extras: skillExtras, defaultScope: "global" }));

@@ -7,7 +7,7 @@ import Testing
 import HitSlopTestSupport
 @testable import HitSlopHost
 
-extension OwnerClientTests {
+extension HostTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_STARTUP_BENCH"] == "1"))
   @MainActor func documentStartupTimings() async throws {
     _ = NSApplication.shared
@@ -153,7 +153,7 @@ extension OwnerClientTests {
     #expect(controller.openingProgress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(controller.presentedPageError?.contains("startup fixture failure") == true)
-    _ = try await command("apply", url: root, operation: setTitle("Recovered"))
+    #expect(try await command("batch", url: root, setTitle("Recovered")).ok)
     _ = try await controller.perform(.retry)
     await controller.waitForPresentation()
     #expect(controller.isContentReady)
@@ -261,7 +261,7 @@ private actor OpeningDelay {
   func release() { continuation?.resume(); continuation = nil }
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Failure: close awaited the app's unmount without a deadline, so a teardown that never
   // settled blocked closing and render-session exports after the document was released.
   @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
@@ -288,8 +288,10 @@ extension OwnerClientTests {
     controller.close()
     // An abandoned page is released with its view, ending its scripts.
     #expect(try await finishes(within: .seconds(3)) { while page != nil { try await Task.sleep(for: .milliseconds(50)) } })
-    _ = try await command("get", url: root)
-    #expect(try await finishes(within: .seconds(10)) { _ = try await SlopRenderer.exportPNGData(url: root) })
+    #expect(try await command("get", url: root).ok)
+    #expect(try await finishes(within: .seconds(10)) {
+      _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }
+    })
   }
 
   // A subscriber failure must reach native reporting without interrupting the accepted edit.
@@ -322,8 +324,7 @@ extension OwnerClientTests {
     // WebKit's stack lists frames only; the person must still see what went wrong.
     #expect(controller.guestIssue?.message.hasPrefix("Error: observer failure\n") == true)
     try await controller.session.close()
-    let saved = try await command("get", url: root)
-    #expect(String(decoding: saved, as: UTF8.self).contains("Saved despite observer failure"))
+    #expect(try await savedValue(root)?["title"] as? String == "Saved despite observer failure")
   }
 
   // Gap: installing telemetry only after open returns loses early guest startup failures.

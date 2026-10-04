@@ -23,10 +23,10 @@ The authored bundle does not contain its own document engine. The installed app 
 
 ## A document adds its saved state
 
-Creating a document copies a template into a new file and gives it its own identity. As it is edited, the same file gains:
+Creating a document copies a template into a new file. As it is edited, the same file gains:
 
 ```text
-  document     the document's identity and the owner's theme overrides
+  document     the owner's theme overrides
   checkpoint   the saved document
   updates      edits saved since the checkpoint
   attachments  imported files, by content
@@ -36,7 +36,7 @@ The app's Rust core (on Loro) owns the live document and persists opaque checkpo
 
 One writer at a time owns a document: an OS lock the app keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView or loads the app's code.
 
-Owner theme changes are a separate, bounded token object in the file's `document` row. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides while minting a fresh document ID (`doc_id`).
+Owner theme changes are a separate, bounded token object in the file's `document` row. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
 
 ## Templates and copies
 

@@ -794,7 +794,6 @@ version = "0.0.0"
 dependencies = [
  "hitslop-core",
  "js-sys",
- "serde_json",
  "wasm-bindgen",
 ]
 

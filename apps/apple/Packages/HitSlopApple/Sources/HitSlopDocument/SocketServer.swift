@@ -99,28 +99,27 @@ final class SocketServer: @unchecked Sendable {
     guard !stopped, clients[fd]?.token == token else { return }
     let deadline = NativeCommandDeadline()
     guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-      bytes.count <= Limits.socketRequest || object["method"] as? String == "attachments.put",
+      bytes.count <= Limits.socketRequest || object["method"] as? String == SocketRequest.Method.attachmentsPut.rawValue,
       Envelope.valid(.socketRequest, bytes),
       let request = try? SocketRequest(json: object)
     else {
-      return respond(SocketReply(ok: false, error: "Invalid socket request", code: .rejected).encoded(), fd: fd, token: token)
+      return respond(RequestOutcome.socket(OwnerError.rejected("Invalid socket request")).encoded(), fd: fd, token: token)
     }
     let handle = handle
     Task { [weak self] in
       // A queued request may expire while the owner is busy; never start it late.
       let reply = (try? deadline.check()) == nil
-        ? SocketReply(ok: false, error: "Command timed out before dispatch", code: .unavailable).encoded()
+        ? RequestOutcome.socket(OwnerError.closing).encoded()
         : await handle(request, deadline)
       guard let server = self else { return }
       server.queue.async { server.respond(reply, fd: fd, token: token) }
     }
   }
 
-  /// The client validates the reply; one larger than a socket message cannot be sent.
+  /// The client validates the reply, which is as large as the document it carries.
   private func respond(_ reply: Data, fd: Int32, token: UUID) {
     guard !stopped, let client = clients[fd], client.token == token else { return }
-    client.send(reply.count <= Limits.socketAttachment ? reply
-      : Data(#"{"ok":false,"error":"Oversized response. Outcome unknown; run slop get before another edit."}"#.utf8))
+    client.send(reply)
   }
 }
 

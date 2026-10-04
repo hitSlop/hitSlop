@@ -20,7 +20,7 @@ mod execute;
 mod replace;
 mod project;
 mod issues;
-pub use descriptor::{same_schema, schema_key, validate};
+pub use descriptor::{canonical_descriptor, validate};
 use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
 use execute::{fill, put, resolve, execute, Rows};
 use identity::stored_id;
@@ -32,7 +32,8 @@ pub use wire::{Code, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, 
 use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
 
 const MAX_BYTES: usize = wire::STORAGE_BYTES;
-const MAX_JSON: usize = 4 * 1024 * 1024;
+/// The largest JSON text the core parses: a page request, or an app's initial values.
+const MAX_JSON: usize = if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
 
 #[derive(Debug, thiserror::Error)]
 #[error("{code}: {message}")]
@@ -58,12 +59,24 @@ fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
     }
     serde_json::from_str(s).map_err(|e| err(Code::InvalidRequest, e))
 }
-fn encode(v: &impl Serialize) -> Result<String> {
-    serde_json::to_string(v).map_err(engine)
+/// JSON text of a value the core built: string keys and finite or null numbers only.
+fn encode(v: &impl Serialize) -> String {
+    serde_json::to_string(v).expect("core values encode as JSON")
 }
 /// A materialized Loro value as JSON.
-fn json(value: loro::LoroValue) -> Result<Value> {
-    serde_json::to_value(value).map_err(engine)
+fn json(value: loro::LoroValue) -> Value {
+    serde_json::to_value(value).expect("Loro values encode as JSON")
+}
+/// Fills `buffer` from the platform's randomness, without which no identity can be minted.
+fn random(buffer: &mut [u8]) {
+    getrandom::getrandom(buffer).expect("random bytes");
+}
+/// `bytes` random bytes in lowercase hex.
+#[cfg(feature = "storage")]
+pub(crate) fn random_hex(bytes: usize) -> String {
+    let mut buffer = vec![0u8; bytes];
+    random(&mut buffer);
+    hex(&buffer)
 }
 fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -132,10 +145,10 @@ const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn safe(n: i64) -> bool {
     (-MAX_SAFE..=MAX_SAFE).contains(&n)
 }
-fn application_id() -> Result<String> {
+fn application_id() -> String {
     use identity::ALPHABET;
     let mut bytes = [0u8; 16];
-    getrandom::getrandom(&mut bytes).map_err(engine)?;
+    random(&mut bytes);
     let mut buffer = 0u32;
     let mut bits = 0;
     let mut out = String::new();
@@ -148,7 +161,7 @@ fn application_id() -> Result<String> {
         }
     }
     out.push(ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
-    Ok(out)
+    out
 }
 
 /// Issues in one canonical order, by path then code, so every walk agrees.
@@ -159,7 +172,7 @@ fn sort_issues(issues: &mut [Issue]) {
 fn writer(doc: &LoroDoc) -> String {
     doc.peer_id().to_string()
 }
-fn raw(doc: &LoroDoc) -> Result<Value> {
+fn raw(doc: &LoroDoc) -> Value {
     json(doc.get_map("data").get_deep_value())
 }
 fn subscribe(doc: &LoroDoc, events: &Events) {
@@ -273,12 +286,15 @@ impl Document {
             floor: VersionVector::default(),
         };
         if scan {
-            this.issues = this.scan_issues()?;
+            this.issues = this.scan_issues();
         }
         Ok(this)
     }
     pub fn create(schema: &str, initial: &str) -> Result<Self> {
-        let schema = descriptor(schema)?;
+        Self::create_with(descriptor(schema)?, initial)
+    }
+    /// A new document of an already parsed descriptor.
+    pub(crate) fn create_with(schema: Node, initial: &str) -> Result<Self> {
         let initial: Value = parse(initial)?;
         schema.validate(&initial, false)?;
         let doc = LoroDoc::new();
@@ -296,46 +312,46 @@ impl Document {
         if total > MAX_BYTES {
             return Err(err(Code::TooLarge, "Input bytes"));
         }
-        Self::open_with(schema, checkpoint, |import| updates.iter().try_for_each(|bytes| import(bytes)))
+        Self::open_with(descriptor(schema)?, checkpoint, |e| e, |import| updates.iter().try_for_each(|bytes| import(bytes)))
     }
     /// Imports `checkpoint`, then each update `updates` passes to its import function, in
-    /// order. Storage streams rows through it without copying them; callers bound the
-    /// total size first.
-    pub(crate) fn open_with(
-        schema: &str,
+    /// order. Storage streams rows through it without copying them, failing in its own
+    /// error type (`core` wraps the document's); callers bound the total size first.
+    pub(crate) fn open_with<E>(
+        schema: Node,
         checkpoint: &[u8],
-        updates: impl FnOnce(&mut dyn FnMut(&[u8]) -> Result<()>) -> Result<()>,
-    ) -> Result<Self> {
-        let schema = descriptor(schema)?;
+        core: impl Fn(Error) -> E,
+        updates: impl FnOnce(&mut dyn FnMut(&[u8]) -> std::result::Result<(), E>) -> std::result::Result<(), E>,
+    ) -> std::result::Result<Self, E> {
         let doc = LoroDoc::new();
         // A checkpoint may start its history late; the updates after it never move that start.
-        checked(doc.import(checkpoint))?;
+        imported(doc.import(checkpoint)).map_err(&core)?;
         let trimmed = doc.shallow_since_vv();
         // One import per update measured faster than Loro's `import_batch` here.
         updates(&mut |bytes: &[u8]| {
-            checked(doc.import(bytes))?;
+            imported(doc.import(bytes)).map_err(&core)?;
             if doc.shallow_since_vv() != trimmed {
-                return Err(err(Code::InvalidBytes, "Only a checkpoint may trim history"));
+                return Err(core(err(Code::InvalidBytes, "Only a checkpoint may trim history")));
             }
             Ok(())
         })?;
-        check_layout(&doc)?;
-        Self::from_doc(doc, schema, true)
+        check_layout(&doc).map_err(&core)?;
+        Self::from_doc(doc, schema, true).map_err(core)
     }
     /// Same result as `issues` over the full JSON value, without materializing it:
     /// containers are walked directly and only plain or unexpected values become JSON.
-    fn scan_issues(&self) -> Result<Vec<Issue>> {
+    fn scan_issues(&self) -> Vec<Issue> {
         let mut found = vec![];
         let root = ValueOrContainer::Container(Container::Map(self.doc.get_map("data")));
-        container_issues(&self.schema, Some(root), &mut vec![], &mut found)?;
+        container_issues(&self.schema, Some(root), &mut vec![], &mut found);
         sort_issues(&mut found);
-        Ok(found)
+        found
     }
     /// Recomputes the issues under each changed place; every other issue is kept. A place
     /// whose rows have no unique ID widens to its list, as publications do. Returns
     /// whether the issues changed.
-    fn refresh_issues(&mut self, dirty: &[Dirty]) -> Result<bool> {
-        enum Place { Container(Container, Option<Node>), Entry(LoroMap, String) }
+    fn refresh_issues(&mut self, dirty: &[Dirty]) -> bool {
+        enum Place<'a> { Container(Container, &'a Node), Entry(LoroMap, String, &'a Node) }
         let mut places: Vec<(Vec<Segment>, Place)> = vec![];
         let mut work: Vec<(ContainerID, Option<String>)> = dirty.iter().map(|d| match d {
             Dirty::Container(cid) => (cid.clone(), None),
@@ -351,14 +367,14 @@ impl Document {
             };
             let node = publication::node_at(&self.schema, &loro_path);
             match (key, node, container) {
-                (Some(key), Some(Node::Object { .. } | Node::Record { .. }), Container::Map(map)) => {
+                (Some(key), Some(node @ (Node::Object { .. } | Node::Record { .. })), Container::Map(map)) => {
                     path.push(Segment::Key(key.clone()));
-                    places.push((path, Place::Entry(map, key)));
+                    places.push((path, Place::Entry(map, key, node)));
                 }
-                (_, Some(node), container) => places.push((path, Place::Container(container, Some(node.clone())))),
+                (_, Some(node), container) => places.push((path, Place::Container(container, node))),
                 // Undeclared: its parent reports it.
                 (_, None, _) => match loro_path.len() {
-                    0 | 1 => places.push((path, Place::Container(Container::Map(self.doc.get_map("data")), Some(self.schema.clone())))),
+                    0 | 1 => places.push((path, Place::Container(Container::Map(self.doc.get_map("data")), &self.schema))),
                     n => work.push((loro_path[n - 2].0.clone(), None)),
                 },
             }
@@ -377,22 +393,20 @@ impl Document {
             let mut path = path;
             match place {
                 Place::Container(container, node) => {
-                    let node = node.expect("declared");
-                    container_issues(&node, Some(ValueOrContainer::Container(container)), &mut path, &mut issues)?;
+                    container_issues(node, Some(ValueOrContainer::Container(container)), &mut path, &mut issues);
                 }
-                Place::Entry(map, key) => {
-                    let loro_path = self.doc.get_path_to_container(&map.id()).unwrap_or_default();
+                Place::Entry(map, key, node) => {
                     let value = map.get(&key);
-                    match publication::node_at(&self.schema, &loro_path) {
-                        Some(Node::Object { properties }) => match (properties.get(&key), &value) {
+                    match node {
+                        Node::Object { properties } => match (properties.get(&key), &value) {
                             (Some(Node::Optional { .. }), None) => {}
-                            (Some(child), _) => container_issues(child, value, &mut path, &mut issues)?,
+                            (Some(child), _) => container_issues(child, value, &mut path, &mut issues),
                             (None, Some(_)) if key != "$id" => issues.push(Issue { code: IssueCode::UnknownField, path }),
                             (None, _) => {}
                         },
-                        Some(Node::Record { value: entry }) if value.is_some() => {
+                        Node::Record { value: entry } if value.is_some() => {
                             if valid_key(&key) {
-                                container_issues(entry, value, &mut path, &mut issues)?;
+                                container_issues(entry, value, &mut path, &mut issues);
                             } else {
                                 issues.push(Issue { code: IssueCode::InvalidKey, path });
                             }
@@ -406,7 +420,7 @@ impl Document {
         sort_issues(&mut issues);
         let changed = issues != before;
         self.issues = issues;
-        Ok(changed)
+        changed
     }
     pub fn version(&self) -> String {
         version_token(&self.doc.oplog_frontiers())
@@ -416,24 +430,24 @@ impl Document {
     /// identities for their effective IDs.
     fn projected(&self) -> Result<Value> {
         if self.issues.is_empty() {
-            Ok(project(Some(&self.schema), raw(&self.doc)?))
+            Ok(project(Some(&self.schema), raw(&self.doc)))
         } else {
             project_at(&self.doc, Some(&self.schema), &self.doc.get_map("data").id())
         }
     }
     /// The application value as JSON.
     pub fn value(&self) -> Result<String> {
-        encode(&self.projected()?)
+        Ok(encode(&self.projected()?))
     }
     /// `{sequence, version, value, issues}` for a page or a reader, with the issues the
     /// owner maintains. `snapshot` recomputes the same state from the full value.
     pub fn state(&self) -> Result<String> {
-        encode(&State { version: self.version(), value: self.projected()?, issues: self.issues.clone(), sequence: self.sequence })
+        Ok(encode(&State { version: self.version(), value: self.projected()?, issues: self.issues.clone(), sequence: self.sequence }))
     }
     pub fn snapshot(&self) -> Result<String> {
         // Deliberately recomputed from the full value: this is the oracle that
         // incremental publications and issues are tested against.
-        let raw = raw(&self.doc)?;
+        let raw = raw(&self.doc);
         let mut found = vec![];
         issues(&self.schema, &raw, None, &mut vec![], &mut found);
         // Without issues every row stores its own unique `$id`, so the stored value
@@ -448,9 +462,7 @@ impl Document {
             sort_issues(&mut found);
             value
         };
-        encode(
-            &State { version: self.version(), value, issues: found, sequence: self.sequence },
-        )
+        Ok(encode(&State { version: self.version(), value, issues: found, sequence: self.sequence }))
     }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
@@ -465,7 +477,7 @@ impl Document {
         self.doc = fresh;
         // Publication may have failed after updating indexes; rebuild those too.
         self.lists = publication::index_all(&self.doc);
-        self.issues = self.scan_issues()?;
+        self.issues = self.scan_issues();
         Ok(())
     }
     /// Merges another replica's updates; `None` when they changed nothing here.
@@ -517,8 +529,8 @@ impl Document {
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
     pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
         let batch: Batch = parse(batch)?;
-        if batch.intents.len() > 1000 {
-            return Err(err(Code::TooLarge, "Batch exceeds 1000 intents"));
+        if batch.intents.len() > wire::BATCH_INTENTS {
+            return Err(err(Code::TooLarge, format!("Batch exceeds {} intents", wire::BATCH_INTENTS)));
         }
         let before = self.doc.state_frontiers();
         let mut ids = vec![];
@@ -685,13 +697,13 @@ impl Document {
         let Some(published) = publication::publish(&self.doc, &self.schema, &mut self.lists, events)? else {
             return Ok(None);
         };
-        let changed = (published.rescan || !self.issues.is_empty()) && self.refresh_issues(&published.dirty)?;
+        let changed = (published.rescan || !self.issues.is_empty()) && self.refresh_issues(&published.dirty);
         let next = self
             .sequence
             .checked_add(1)
             .ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
         let issues = changed.then(|| self.issues.clone());
-        let response = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops: published.ops, issues })?;
+        let response = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops: published.ops, issues });
         self.sequence = next;
         Ok(Some(response))
     }
@@ -727,8 +739,8 @@ pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc
     Ok(replica)
 }
 /// Callers bound the total input; a pending status means missing dependencies.
-fn checked(imported: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
-    let status = imported.map_err(|e| err(Code::InvalidBytes, e))?;
+fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
+    let status = result.map_err(|e| err(Code::InvalidBytes, e))?;
     if status.pending.as_ref().is_some_and(|v| !v.is_empty()) {
         return Err(err(
             Code::MissingDependencies,

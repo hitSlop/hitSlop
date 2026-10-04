@@ -4,7 +4,7 @@ import HitSlopCore
 
 @DependencyClient
 public struct DocumentClient: Sendable {
-    public var open: @Sendable (UUID, URL) async throws -> String
+    public var open: @Sendable (UUID, URL) async throws -> Void
     public var focus: @Sendable (UUID) async -> Void
     /// Returns the new URL for duplication. Close returns only after native teardown.
     /// Failures arrive classified as `SlopDocumentFailure`.
@@ -12,7 +12,6 @@ public struct DocumentClient: Sendable {
     public var prepareToQuit: @Sendable (UUID) async throws -> Void
     public var finishQuit: @Sendable (UUID) async throws -> Void
     public var cancelQuit: @Sendable (UUID) async -> Void
-    public var finishAssetRefreshes: @Sendable () async -> Void
     public var replyToQuit: @Sendable (Bool) async -> Void
 
 }
@@ -24,7 +23,6 @@ extension DocumentClient: DependencyKey {
         prepareToQuit: { _ in preconditionFailure("Install DocumentClient at the application root") },
         finishQuit: { _ in preconditionFailure("Install DocumentClient at the application root") },
         cancelQuit: { _ in preconditionFailure("Install DocumentClient at the application root") },
-        finishAssetRefreshes: { preconditionFailure("Install DocumentClient at the application root") },
         replyToQuit: { _ in preconditionFailure("Install DocumentClient at the application root") }
     )
     public static let testValue = Self()
@@ -40,7 +38,6 @@ public extension DependencyValues {
     @ObservableState public struct State: Equatable, Identifiable {
         public let id: UUID
         public let url: URL
-        public var title: String
         public var isOpening = true
         public var operation: SlopDocumentCommand?
         public var closeRequested = false
@@ -48,7 +45,7 @@ public extension DependencyValues {
         public var pendingRecovery: SlopDocumentCommand?
         public var isQuitting = false
         @Presents public var alert: AlertState<ErrorAlertAction>?
-        public init(id: UUID, url: URL) { self.id = id; self.url = url; self.title = url.deletingPathExtension().lastPathComponent }
+        public init(id: UUID, url: URL) { self.id = id; self.url = url }
         public var acceptsCommands: Bool { !isOpening && !isQuitting && operation == nil && !closeRequested }
     }
     public enum Action {

@@ -73,7 +73,7 @@ import HitSlopTestSupport
     #expect(SlopFailureContext.classify(SlopRequiresUpdate()).reason == .requiresUpdate)
 }
 
-@Test func newDocumentsHaveTheirOwnIdentity() throws {
+@Test func creationReturnsTheCanonicalURLAndNeverReplaces() throws {
     let template = try Fixtures.template(stage: stage())
     let folder = template.deletingLastPathComponent(); defer { try? FileManager.default.removeItem(at: folder) }
     let created = folder.appendingPathComponent("created.slop")
@@ -82,7 +82,6 @@ import HitSlopTestSupport
     #expect(try SlopFile.create(from: template, to: created) == created.standardizedFileURL.resolvingSymlinksInPath())
     let second = folder.appendingPathComponent("second.slop")
     try SlopFile.create(from: template, to: second)
-    #expect(try documentID(created) != documentID(second))
     #expect(try SlopFile(url: second).manifest.slug == SlopFile(url: created).manifest.slug)
     // Creation never replaces an existing file.
     #expect(throws: (any Error).self) { try SlopFile.create(from: template, to: second) }
@@ -111,13 +110,4 @@ private func sql(_ url: URL, _ statement: String) throws {
     defer { sqlite3_close(db) }
     guard sqlite3_open(url.path, &db) == SQLITE_OK, sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK
     else { throw SlopError.invalid(String(cString: sqlite3_errmsg(db))) }
-}
-
-private func documentID(_ url: URL) throws -> String {
-    var db: OpaquePointer?, statement: OpaquePointer?
-    defer { sqlite3_finalize(statement); sqlite3_close(db) }
-    guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
-          sqlite3_prepare_v2(db, "SELECT doc_id FROM document", -1, &statement, nil) == SQLITE_OK,
-          sqlite3_step(statement) == SQLITE_ROW else { throw SlopError.invalid("no document identity") }
-    return String(cString: sqlite3_column_text(statement, 0))
 }

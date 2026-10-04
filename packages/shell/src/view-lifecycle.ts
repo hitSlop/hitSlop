@@ -11,13 +11,13 @@ type DocumentView = Required<SlopView>;
  * cheaper than forcing layout of a large hidden page to find the faces it uses. A page
  * that declares none uses system fonts and has nothing to wait for.
  */
-export async function fontsSettled(page: Document, limit = 12_000) {
+export async function fontsSettled(page: Document) {
   if (!page.fonts?.size) return;
   // A face that fails to load still settles `ready`; the browser falls back.
   page.fonts.forEach((face) => void face.load().catch(() => {}));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Document fonts did not become ready")), limit);
+    timer = setTimeout(() => reject(new Error("Document fonts did not become ready")), 12_000);
   });
   try {
     await Promise.race([page.fonts.ready, deadline]);

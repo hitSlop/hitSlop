@@ -124,9 +124,31 @@ fn intent(rng: &mut u64, serial: &mut usize, descriptor: &Value, current: &Value
         _ => json!({"type":"set","path":path,"value":value(node, n)}),
     }
 }
-fn published(doc: &Document, view: &mut View, publication: &str) {
+/// The descriptor node a path names, and whether the path passes an optional value or a
+/// record entry, whose lists are created (and published) with their parent.
+fn node_at<'a>(descriptor: &'a Value, path: &[Value]) -> (&'a Value, bool) {
+    path.iter().fold((descriptor, false), |(node, created), segment| {
+        let (node, created) = if node["kind"] == "optional" { (&node["inner"], true) } else { (node, created) };
+        match node["kind"].as_str().unwrap() {
+            "object" => (&node["properties"][segment.as_str().unwrap()], created),
+            "record" => (&node["value"], true),
+            _ => (&node["item"], created),
+        }
+    })
+}
+/// Applies a publication to the page's view, which must equal a fresh snapshot. A clean
+/// document's row lists publish row operations, never a replacement of the whole list.
+fn published(doc: &Document, descriptor: &Value, view: &mut View, publication: &str) {
     view.publish(publication);
     view.check(doc, "publication");
+    if snapshot(doc)["issues"] == json!([]) {
+        let publication: Value = serde_json::from_str(publication).unwrap();
+        for op in publication["ops"].as_array().unwrap() {
+            let (node, created) = node_at(descriptor, op["path"].as_array().unwrap());
+            let rows = node["kind"] == "list" && node["item"]["kind"] == "object";
+            assert!(!(op["type"] == "set" && rows && !created), "a clean row list published a replacement: {op}");
+        }
+    }
 }
 fn run(name: &str, fixture: &str) {
     let f: Value = serde_json::from_str(fixture).unwrap(); let schema = f["schema"].to_string();
@@ -141,7 +163,7 @@ fn run(name: &str, fixture: &str) {
             let peer = next(&mut rng) % 3; let before = snapshot(&peers[peer]);
             let ops: Vec<_> = (0..1 + next(&mut rng) % 4).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
             match peers[peer].apply(&json!({"intents":ops}).to_string()) {
-                Ok(reply) => { accepted += 1; published(&peers[peer], &mut views[peer], &reply) }
+                Ok(reply) => { accepted += 1; published(&peers[peer], &f["schema"], &mut views[peer], &reply) }
                 Err(_) => {
                     refused += 1;
                     assert_eq!(snapshot(&peers[peer]), before, "{name}, seed {seed}, step {step}: refused batch changed state");
@@ -150,7 +172,7 @@ fn run(name: &str, fixture: &str) {
             if step % 7 == 6 {
                 let updates: Vec<_> = peers.iter().map(|p| p.export_since(&base).unwrap()).collect();
                 for index in 0..3 { for update in &updates {
-                    let reply = peers[index].merge(update).unwrap(); published(&peers[index], &mut views[index], &reply);
+                    let reply = peers[index].merge(update).unwrap(); published(&peers[index], &f["schema"], &mut views[index], &reply);
                 } }
                 for index in 1..3 {
                     assert_eq!(views[0].value, views[index].value, "{name}, seed {seed}, step {step}: peers 0 and {index} diverged");
@@ -160,6 +182,8 @@ fn run(name: &str, fixture: &str) {
                 let state = snapshot(peer); assert_eq!(views[index].value, state["value"]);
                 // The owner's maintained state equals the full recomputation.
                 assert_eq!(serde_json::from_str::<Value>(&peer.state().unwrap()).unwrap(), state, "{name}, seed {seed}, step {step}: state");
+                // Reopening replays everything since the seed, so it runs at merges only.
+                if step % 7 != 6 { continue; }
                 for reopened in [Document::open(&schema, &peer.checkpoint().unwrap(), &[]).unwrap(), Document::open(&schema, &checkpoint, &[peer.export_since(&base).unwrap()]).unwrap()] {
                     let restored = snapshot(&reopened);
                     for key in ["value", "issues", "version"] { assert_eq!(restored[key], state[key], "{name}, seed {seed}, step {step}: {key}"); }

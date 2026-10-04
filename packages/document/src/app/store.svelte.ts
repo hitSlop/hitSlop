@@ -3,7 +3,6 @@ import { mount, tick, unmount, type Component } from "svelte";
 import type { Binding, SlopApp, SlopContext } from "../abi";
 import type { TextHandle } from "../handle-types";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
-import { schemaKey } from "../descriptor";
 import { activate, deactivate, current } from "./context";
 import Root from "./Root.svelte";
 export type { SlopApp, SlopContext } from "../abi";
@@ -20,10 +19,9 @@ export function svelteApp(App: Component, options: {
   export?: Component<{ mode: "preview" | "export" }>;
   icon?: Component;
 }): SlopApp {
-  const key = schemaKey(options.schema.descriptor);
   return {
+    descriptor: options.schema.descriptor,
     mount(ctx, target) {
-      if (ctx.document.key !== key) throw new Error("Host document/schema mismatch");
       const adapter = createAdapter(ctx.document);
       activate(ctx, options.schema, adapter.document);
       const release = () => {

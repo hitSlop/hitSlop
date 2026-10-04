@@ -1,5 +1,5 @@
 import { access, constants } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 
 export type RunOptions = {
   cwd?: string;
@@ -35,6 +35,20 @@ export function start(command: string[], options: RunOptions = {}) {
 /** Runs `command` to completion: its stdout, or its stderr (or `failure`) as the error. */
 export function run(command: string[], options: RunOptions = {}): Promise<string> {
   return start(command, options).done;
+}
+
+/** The executable the environment variable `variable` names, or else the first of
+ * `candidates` that exists; `missing` is the refusal when there is none. An override that
+ * is not executable fails rather than falling back. */
+export async function findExecutable(variable: string, candidates: string[], missing: string): Promise<string> {
+  const override = process.env[variable];
+  if (override !== undefined) {
+    const path = resolve(override);
+    if (!override || !(await executable(path))) throw new Error(`${variable} is not executable: ${override}`);
+    return path;
+  }
+  for (const path of candidates) if (await executable(path)) return path;
+  throw new Error(missing);
 }
 
 /** Whether `path` is an executable file. */

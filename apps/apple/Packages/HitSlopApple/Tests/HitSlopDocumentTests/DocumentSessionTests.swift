@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import Testing
 import HitSlopTestSupport
 import WebKit
@@ -29,13 +30,13 @@ import WebKit
   // The native dispatch boundary must reject an oversized or unknown-field request
   // before base64 decoding or touching SQLite.
   @Test func bridgeRejectsOversizedPayloadsAndUnknownFields() {
-    #expect((try? PageRequest(["method": "config"])) != nil)
-    #expect((try? PageRequest(["method": "config", "extra": "unexpected"])) == nil)
-    #expect((try? PageRequest(["method": "attachments.list"])) == nil)
-    #expect((try? PageRequest(["method": "open"])) != nil)
-    #expect((try? PageRequest(["method": "window.resize", "width": ["nested": 1], "height": 300])) == nil)
+    #expect(PageRequest.checked(["method": "config"]) != nil)
+    #expect(PageRequest.checked(["method": "config", "extra": "unexpected"]) == nil)
+    #expect(PageRequest.checked(["method": "attachments.list"]) == nil)
+    #expect(PageRequest.checked(["method": "open"]) != nil)
+    #expect(PageRequest.checked(["method": "window.resize", "width": ["nested": 1], "height": 300]) == nil)
     let oversized = String(repeating: "A", count: 15 * 1024 * 1024)
-    #expect((try? PageRequest(["method": "attachments.put", "bytes": oversized])) == nil)
+    #expect(PageRequest.checked(["method": "attachments.put", "bytes": oversized]) == nil)
   }
 
   // A theme can change after config is read but before the app finishes mounting.
@@ -121,11 +122,11 @@ import WebKit
       #expect(refused != nil)
       #expect(try await accent() == "#335577")
 
-      session.capturing = true
-      session.changeTheme(.set(["accent": "#abcabc"]))
-      try await Task.sleep(for: .milliseconds(150))
-      #expect(try await accent() == "#335577", "a capture in progress is not restyled")
-      session.capturing = false
+      try await session.withCapture {
+        session.changeTheme(.set(["accent": "#abcabc"]))
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(try await accent() == "#335577", "a capture in progress is not restyled")
+      }
       for _ in 0..<100 where try await accent() != "#abcabc" { try await Task.sleep(for: .milliseconds(10)) }
       #expect(try await accent() == "#abcabc")
 
@@ -198,12 +199,12 @@ import WebKit
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: shell) }
     try FileManager.default.createDirectory(at: shell.appendingPathComponent("loro"), withIntermediateDirectories: true)
     for path in ["loro/test.js", "secret.js"] { try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path)) }
-    let handler = SchemeHandler(document: root, shell: shell)
+    let handler = SchemeHandler(assets: try AssetReader.open(path: root.path), shell: shell)
     let view = WKWebView()
     for path in [
-      "app.json", "manifest.json", "state.schema.json", "initial.json", "assets%2F..%2Fmanifest.json",
-      "assets/..%2Finitial.json", "assets/%2e%2e/state.schema.json", "assets//test.js", "assets/%2e/test.js",
-      "assets/missing.js", "__shell__/loro%2F..%2Fsecret.js", "__shell__/loro//test.js", "__shell__/../secret.js",
+      "app", "document.slop", "assets%2F..%2Fapp", "assets/..%2Fapp.js", "assets/%2e%2e/app.js", "assets//test.js",
+      "assets/%2e/test.js", "assets/missing.js", "__shell__/loro%2F..%2Fsecret.js", "__shell__/loro//test.js",
+      "__shell__/../secret.js",
     ] {
       let task = SchemeTask(URL(string: "slop://app/" + path)!)
       handler.webView(view, start: task)
@@ -255,9 +256,9 @@ import WebKit
       #expect(resized == resizable)
       // A capture owns the view's size; the page cannot resize the window meanwhile.
       resized = false
-      session.capturing = true
-      let duringCapture = try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
-      session.capturing = false
+      let duringCapture = try await session.withCapture {
+        try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
+      }
       #expect(duringCapture as? Bool == false)
       #expect(!resized)
       try await session.close()

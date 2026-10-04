@@ -46,7 +46,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     expect(await run(toolchain)).toBe("built");
     expect(toolchain.misses.get("quick-checklist")).toEqual(["shared @swift"]);
     expect(await run()).toBe("built");
-    const cached = join(directory, "quick-checklist/package.slop");
+    const cached = join(directory, "quick-checklist/template.slop");
     const bytes = await readFile(cached);
     bytes[bytes.length - 1] ^= 1;
     await writeFile(cached, bytes);

@@ -11,10 +11,11 @@ use crate::{err, shape, Code, Result};
 )]
 struct Manifest;
 
-/// A checked manifest's window: its shape, its size in points, and the asset path its skin
-/// names, if any.
+/// A checked manifest's template slug, and its window: its shape, its size in points, and
+/// the asset path its skin names, if any.
 #[derive(Debug)]
 pub struct Window {
+    pub slug: String,
     pub silhouette: shape::Silhouette,
     pub width: u64,
     pub height: u64,
@@ -22,8 +23,8 @@ pub struct Window {
 }
 
 pub fn validate(input: &str, package_format: u64) -> Result<Window> {
-    if input.len() > 64 * 1024 {
-        return Err(err(Code::TooLarge, "The manifest exceeds 64 KiB"));
+    if input.len() > crate::wire::MANIFEST_BYTES {
+        return Err(err(Code::TooLarge, format!("The manifest exceeds {} KiB", crate::wire::MANIFEST_BYTES >> 10)));
     }
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "The manifest must be valid JSON"))?;
@@ -44,6 +45,7 @@ fn validate_v1(value: &serde_json::Value) -> Result<Window> {
     let width = presentation["width"].as_f64().expect("validated width");
     let height = presentation["height"].as_f64().expect("validated height");
     Ok(Window {
+        slug: value["slug"].as_str().expect("validated slug").to_owned(),
         silhouette: shape::silhouette(presentation.get("shape"), width, height)?,
         width: width as u64,
         height: height as u64,

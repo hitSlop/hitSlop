@@ -2,7 +2,7 @@ import * as Type from "typebox";
 import { validate } from "./validation";
 
 /** Public discovery response. New metadata is allowed independently of protocol 1. */
-export const HelperProtocolSchema = Type.Object({
+const HelperProtocolSchema = Type.Object({
   version: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
   minimum: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
 });

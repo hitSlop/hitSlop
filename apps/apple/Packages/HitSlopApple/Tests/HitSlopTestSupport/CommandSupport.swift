@@ -2,32 +2,19 @@ import Foundation
 import HitSlopCore
 import HitSlopDocument
 
-/// Runs one CLI document command by its CLI operation name, as `hitslop-native` does.
-@MainActor public func command(
-  _ method: String, url: URL, operation: Data? = nil, operations: Data? = nil,
-  themeValues: Data? = nil, themeToken: String? = nil, themeFile: Data? = nil, attachmentBytes: Data? = nil,
-  attachmentID: String? = nil
-) async throws -> Data {
-  let op = operation.map { String(decoding: $0, as: UTF8.self) }
-  let ops = operations.map { String(decoding: $0, as: UTF8.self) }
-  let values = try themeValues.map { try JSONSerialization.jsonObject(with: $0) as! [String: String] }
-  let file = themeFile.map { String(decoding: $0, as: UTF8.self) }
-  return try await DocumentCommand.run(url: url, snapshot: method == "snapshot") { path in
-    switch method {
-    case "apply": return .batch(.init(documentPath: path, epoch: "", ops: "[" + (op ?? "") + "]"))
-    case "batch": return .batch(.init(documentPath: path, epoch: "", ops: ops ?? ""))
-    case "compact": return .compact(.init(documentPath: path, epoch: ""))
-    case "theme.get": return .themeGet(.init(documentPath: path))
-    case "theme.set": return .themeSet(.init(documentPath: path, epoch: "", values: values ?? [:]))
-    case "theme.reset": return .themeReset(.init(documentPath: path, epoch: "", token: themeToken))
-    case "theme.export": return .themeExport(.init(documentPath: path))
-    case "theme.import": return .themeImport(.init(documentPath: path, epoch: "", file: file ?? ""))
-    case "attachments.list": return .attachmentsList(.init(documentPath: path))
-    case "attachments.read": return .attachmentsRead(.init(documentPath: path, attachmentID: attachmentID ?? ""))
-    case "attachments.put": return .attachmentsPut(.init(documentPath: path, epoch: "", bytes: attachmentBytes?.base64EncodedString() ?? ""))
-    default: return .get(.init(documentPath: path))
-    }
-  }
+/// Runs one document request as `hitslop-native request` does (the CLI sends no epoch),
+/// and maps its reply.
+@MainActor public func command(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> SocketReply {
+  var request = fields
+  request["method"] = method
+  request["documentPath"] = url.path
+  return try decodeReply(await DocumentCommand.run(json: JSONSerialization.data(withJSONObject: request)))
+}
+/// A successful request's state, as JSON data.
+@MainActor public func commandState(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> Data {
+  let reply = try await command(method, url: url, fields)
+  guard reply.ok else { throw NSError(domain: "hitSlop", code: 1, userInfo: [NSLocalizedDescriptionKey: reply.error ?? "Request failed"]) }
+  return try JSONSerialization.data(withJSONObject: reply.state ?? [:], options: [.fragmentsAllowed, .sortedKeys])
 }
 
 /// A value shared with concurrently running handlers in tests.

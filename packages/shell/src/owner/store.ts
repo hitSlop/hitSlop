@@ -106,9 +106,8 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
 
 export type Changes = { paths: Set<string>; removed?: Segment[][] } | "all";
 
-/** Timing and buffer bounds are injectable for deterministic boundary tests. Buffer bytes
- * are UTF-8, as the host counts them. */
-export const recoveryPolicy = { stallMS: 2000, deadlineMS: 15000, retryMS: 250, maxRetryMS: 4000,
+/** Recovery timing and the push buffer's bounds; buffer bytes are UTF-8, as the host counts them. */
+const policy = { stallMS: 2000, deadlineMS: 15000, retryMS: 250, maxRetryMS: 4000,
   maxItems: PushLimits.items as number, maxBytes: PushLimits.bytes as number };
 const utf8 = new TextEncoder();
 
@@ -127,7 +126,6 @@ export class Store {
   constructor(
     private readonly reopen: () => Promise<OwnerState>,
     private readonly changed: (changes: Changes) => void,
-    private readonly policy = recoveryPolicy,
   ) {}
 
   private install(state: OwnerState) {
@@ -147,8 +145,8 @@ export class Store {
   private buffer(pushes: readonly PagePush[]) {
     for (const push of pushes) {
       const bytes = utf8.encode(JSON.stringify(push)).length;
-      if (push.type === "resync" || this.buffered.length >= this.policy.maxItems ||
-          this.bufferedBytes + bytes > this.policy.maxBytes) {
+      if (push.type === "resync" || this.buffered.length >= policy.maxItems ||
+          this.bufferedBytes + bytes > policy.maxBytes) {
         this.buffered = [];
         this.bufferedBytes = 0;
         this.bufferGeneration++;
@@ -211,9 +209,9 @@ export class Store {
   resync(): Promise<void> {
     if (this.resyncing) return this.resyncing;
     clearTimeout(this.watchdog);
-    const deadline = Math.min(Date.now() + this.policy.deadlineMS, ...this.waiters.map(w => w.deadline));
+    const deadline = Math.min(Date.now() + policy.deadlineMS, ...this.waiters.map(w => w.deadline));
     const work = (async () => {
-      let delay = this.policy.retryMS;
+      let delay = policy.retryMS;
       try {
         while (true) {
           if (Date.now() >= deadline) throw this.timeout();
@@ -240,7 +238,7 @@ export class Store {
             if (Date.now() >= deadline) throw this.timeout();
           } finally { clearTimeout(timer); }
           await new Promise(resolve => setTimeout(resolve, Math.min(delay, Math.max(0, deadline - Date.now()))));
-          delay = Math.min(delay * 2, this.policy.maxRetryMS);
+          delay = Math.min(delay * 2, policy.maxRetryMS);
         }
       } catch (error) {
         this.failure = error instanceof Error ? error : new Error(String(error));
@@ -257,7 +255,7 @@ export class Store {
     if (this.failure) return Promise.reject(this.failure);
     if (this.state.sequence >= sequence && !this.resyncing) return Promise.resolve();
     return new Promise((resolve, reject) => {
-      this.waiters.push({ sequence, deadline: Date.now() + this.policy.deadlineMS, resolve, reject });
+      this.waiters.push({ sequence, deadline: Date.now() + policy.deadlineMS, resolve, reject });
       this.armWatchdog();
     });
   }
@@ -270,7 +268,7 @@ export class Store {
   private armWatchdog() {
     clearTimeout(this.watchdog);
     if (this.resyncing || this.failure || !this.waiters.length) return;
-    this.watchdog = setTimeout(() => this.recover(), Math.max(0, Math.min(this.policy.stallMS,
+    this.watchdog = setTimeout(() => this.recover(), Math.max(0, Math.min(policy.stallMS,
       ...this.waiters.map(w => w.deadline - Date.now()))));
   }
   private settle() {

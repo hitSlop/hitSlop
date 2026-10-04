@@ -39,11 +39,41 @@
     "code": {
       "enum": [
         "rejected",
-        "session_changed",
+        "owner_replaced",
         "closing",
-        "unavailable",
-        "failed"
-      ]
+        "save_failed",
+        "owner_invalidated",
+        "unknown_outcome"
+      ],
+      "title": "OutcomeCode"
+    },
+    "reason": {
+      "enum": [
+        "type_mismatch",
+        "out_of_range",
+        "path_not_found",
+        "invalid_key",
+        "exists",
+        "duplicate_id",
+        "invalid_request",
+        "invalid_id",
+        "invalid_path",
+        "invalid_schema",
+        "too_large",
+        "stale_base",
+        "invalid_version",
+        "invalid_bytes",
+        "missing_dependencies",
+        "engine_error",
+        "invalid_shape",
+        "requires_update",
+        "is_template"
+      ],
+      "title": "CoreErrorCode"
+    },
+    "opIndex": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "additionalProperties": false

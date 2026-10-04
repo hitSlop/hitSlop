@@ -1,29 +1,9 @@
 import Darwin
 import Foundation
 import HitSlopCore
-import HitSlopCoreBinding
 import HitSlopDocument
 
 extension SlopRenderer {
-    /// Attach at the host boundary; the engine never imports the renderer.
-    public static func installCLIExport(
-        on session: DocumentSession, telemetry: SlopTelemetry,
-        onFailure: @escaping (Error, ExportFormat?) -> Void
-    ) {
-        session.onExport = { [weak session] format, output, deadline in
-            guard let session else { throw SlopError.invalid("Document closed") }
-            telemetry.send(.breadcrumb(.export, .started))
-            do {
-                try await exportDocument(session: session, format: format, output: output, deadline: deadline)
-                telemetry.send(.breadcrumb(.export, .completed))
-                telemetry.send(.exported(format))
-            } catch {
-                onFailure(error, format)
-                throw error
-            }
-        }
-    }
-
     public static func exportDocument(session: DocumentSession, format: ExportFormat, output: URL,
                                       deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
         try validateExportOutput(output, source: session.file.url)
@@ -32,27 +12,16 @@ extension SlopRenderer {
         try publishExport(data, to: output, source: session.file.url, deadline: deadline)
     }
 
-    public static func exportDocument(url: URL, format: ExportFormat, output: URL) async throws {
-        try SlopLocalDocument.requireLocal(url)
-        let root = try SlopFile.resolvedRoot(url)
+    /// `slop export` of a closed document (`DocumentCommand.run`'s `closed`): its saved
+    /// state, rendered from a snapshot that takes no lock. An open document exports its
+    /// live view through its owner instead.
+    public static func exportClosed(_ root: URL, format: ExportFormat, output: URL) async throws -> SocketReply {
         let output = output.standardizedFileURL
         try validateExportOutput(output, source: root)
-        // A live owner exports its view. Otherwise the writer lock covers taking the
-        // in-memory snapshot (a template has no writer, and renders its initial values),
-        // so no writer can intervene; rendering from that snapshot needs none. The render
-        // session's open checks the file.
-        let ownership: WriterLock
-        switch try await DocumentCommand.connect(root: root, until: .now + .seconds(2), own: { try WriterLock.acquire(root) }) {
-        case .owned(let lock): ownership = lock
-        case .live(let socket):
-            try await DocumentCommand.exportLive(root: root, socket: socket, format: format, output: output)
-            return
-        }
         let deadline = NativeCommandDeadline()
-        let data = try await withRenderSession(url: root, inputReady: { ownership.release() }) { session in
-            try await exportData(session: session, format: format)
-        }
+        let data = try await withRenderSession(url: root) { try await exportData(session: $0, format: format) }
         try publishExport(data, to: output, source: root, deadline: deadline)
+        return SocketReply(ok: true, output: output.path)
     }
 
     private static func exportData(session: DocumentSession, format: ExportFormat) async throws -> Data {

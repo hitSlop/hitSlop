@@ -23,7 +23,7 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | --- | --- |
 | `apps/apple` | macOS entry point, Quick Look extensions, project configuration, signing, and Sparkle |
 | `crates` | `hitslop-core` (Rust on Loro) document semantics and the `.slop` file, its UniFFI and WASM adapters, and the CLI's `slop-engine` |
-| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Runtime, Host, TCA Features, Catalog, telemetry, and NativeCLI |
+| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, TCA Features, Catalog, telemetry, and NativeCLI |
 | `packages/document` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
 | `packages/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
 | `packages/schema` | TypeBox manifest, bridge, owner and socket contracts |
@@ -31,11 +31,10 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `examples/slops` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |
-| `deferred` | Historical code and future-feature scaffolding, excluded from active builds |
 
 The three npm packages are publishable. The repository root, examples workspace, and landing application are private. TypeScript belongs in packages; Apple implementation belongs in the app-local Swift package.
 
-`slop dev SOURCE` serves the browser preview on `127.0.0.1` only. The native helper has no `open-dev` command. Its `storage-probe` command and storage phase hooks exist only in debug builds for the crash matrix.
+`slop dev SOURCE` serves the browser preview on `127.0.0.1` only. The native helper has no `open-dev` command.
 
 ## Add a template
 
@@ -61,7 +60,7 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 - `bun run packages:pack` and `bun run test:packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. Add `--native` to the packed check for the complete build/register/theme/export workflow.
 - `bun run landing:check` and `bun run landing:build`: public documentation and site validation.
 
-`bun run test:local` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
+`bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 
 `bun run presentation:fixtures` prints the standard, ellipse and washer controls plus all six Shape Lab variants with dedicated and fallback exports. `bun run shape:lab open hole` opens a fresh writable vector-hole lab; `locked`, `radii`, `concave`, `rounded` and `washer` select the other variants. Open writable copies in the development app to inspect layout, toolbar dragging, focus, native clipping, and desktop click-through. These are test fixtures, not catalog entries. Automated tests verify dedicated exports ignore native masks and icons preserve transparency.
 

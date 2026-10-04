@@ -4,69 +4,34 @@ import HitSlopCore
 import HitSlopDocument
 import WebKit
 
-struct SlopDocumentAssets: Sendable {
-    let previewPNG: Data?
-    let finderIconPNG: Data?
-    /// The saved state the render read; the artwork is written only while it still holds.
-    let marker: String
-}
-
 @MainActor public enum SlopRenderer {
     private enum CaptureOutput { case previewPNG, exportPNG, pdf }
-    private static var waiters: [ObjectIdentifier: [CheckedContinuation<Void, Never>]] = [:]
 
-    /// One capture at a time per session. `capturing` stays set across a hand-off to a
-    /// queued capture, so no page or socket request slips in between.
-    private static func acquire(_ session: DocumentSession) async {
-        let key = ObjectIdentifier(session)
-        if waiters[key] == nil { waiters[key] = [] }
-        else { await withCheckedContinuation { waiters[key, default: []].append($0) } }
-        session.capturing = true
+    public static func previewPNGData(url: URL) async throws -> Data {
+        try await withRenderSession(url: url) { try await capture(session: $0, output: .previewPNG) }
     }
-    private static func release(_ session: DocumentSession) {
-        let key = ObjectIdentifier(session)
-        if waiters[key]?.isEmpty == false { waiters[key]?.removeFirst().resume() }
-        else { waiters.removeValue(forKey: key); session.capturing = false }
-    }
-
-    public static func previewPNGData(url: URL) async throws -> Data { try await render(url: url, output: .previewPNG) }
-    // Test entrypoints: the CLI exports live owners or uses `withRenderSession` directly.
-    static func exportPNGData(url: URL) async throws -> Data { try await render(url: url, output: .exportPNG) }
-    static func exportPDFData(url: URL) async throws -> Data { try await render(url: url, output: .pdf) }
     public static func previewPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .previewPNG) }
     public static func exportPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .exportPNG) }
     public static func exportPDFData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .pdf) }
 
-    static func documentAssetsPNGData(url: URL, telemetry: SlopTelemetry = .disabled) async throws -> SlopDocumentAssets {
-        try await withRenderSession(url: url, renderTargetsEnabled: true) { session in
-            var preview: Data?, icon: Data?
-            do { preview = try await capture(session: session, output: .previewPNG) }
-            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
-            try Task.checkCancellation()
-            do { icon = try await iconPNGData(session: session) }
-            catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
-            try Task.checkCancellation()
-            return SlopDocumentAssets(previewPNG: preview, finderIconPNG: icon, marker: try await session.savedMarker())
-        }
+    /// The artwork a closing window writes into its document: its preview and, when the
+    /// app draws one, its icon. A capture that fails is reported and left out.
+    public static func artwork(session: DocumentSession, telemetry: SlopTelemetry) async -> SlopRenderedArtwork {
+        var preview: Data?, icon: Data?
+        do { preview = try await capture(session: session, output: .previewPNG) }
+        catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
+        do { icon = try await iconPNGData(session: session) }
+        catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
+        return SlopRenderedArtwork(preview: preview, icon: icon)
     }
 
-    /// Background renders read the saved document into memory storage. They take
-    /// no ownership and never write to the file, so no copy is needed.
-    /// `inputReady` runs once that snapshot exists (or opening failed), before rendering.
+    /// Background renders read the saved document as a snapshot: they take no ownership
+    /// and never write to the file.
     static func withRenderSession<T>(
         url: URL, renderTargetsEnabled: Bool = false,
-        inputReady: @MainActor () -> Void = {},
         _ capture: @MainActor (DocumentSession) async throws -> T
     ) async throws -> T {
-        let session: DocumentSession
-        do {
-            session = try await DocumentSession.open(
-                url: url, renderTargetsEnabled: renderTargetsEnabled, purpose: .backgroundRender)
-        } catch {
-            inputReady()
-            throw error
-        }
-        inputReady()
+        let session = try await DocumentSession.open(url: url, renderTargetsEnabled: renderTargetsEnabled, storage: .snapshot)
         let window = hiddenWindow(session)
         let result: Result<T, Error>
         do {
@@ -119,8 +84,12 @@ struct SlopDocumentAssets: Sendable {
         _ session: DocumentSession,
         _ body: (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
     ) async throws -> T {
-        await acquire(session)
-        defer { release(session) }
+        try await session.withCapture { try await captured(session, body) }
+    }
+    private static func captured<T>(
+        _ session: DocumentSession,
+        _ body: (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
+    ) async throws -> T {
         try await session.flush()
         try Task.checkCancellation()
         let view = session.webView, token = UUID().uuidString, originalFrame = view.frame
@@ -136,12 +105,6 @@ struct SlopDocumentAssets: Sendable {
             restoreFrame(view, original: originalFrame)
             try? await restore(view, token: token)
             throw captureFailure(error)
-        }
-    }
-
-    private static func render(url: URL, output: CaptureOutput) async throws -> Data {
-        try await withRenderSession(url: url) { session in
-            try await capture(session: session, output: output)
         }
     }
 

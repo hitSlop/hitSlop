@@ -86,11 +86,11 @@ import HitSlopTestSupport
     #expect(try Data(contentsOf: target) == Data("hi!".utf8))
 
     // Capture and disabled selection never present a panel.
-    engine.capturing = true
-    _ = try await engine.webView.evaluateJavaScript(offer)
-    try await Task.sleep(for: .milliseconds(300))
-    #expect(!engine.fileSaver.hasPendingSave)
-    engine.capturing = false
+    try await engine.withCapture {
+      _ = try await engine.webView.evaluateJavaScript(offer)
+      try await Task.sleep(for: .milliseconds(300))
+      #expect(!engine.fileSaver.hasPendingSave)
+    }
     engine.allowsFileSelection = false
     _ = try await engine.webView.evaluateJavaScript(offer)
     try await Task.sleep(for: .milliseconds(300))

@@ -113,8 +113,10 @@ fields and concurrent edits elsewhere survive. The
 the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key.
 - It is preserved as stored, never repaired on read, and reported in `doc.issues` with
   its path.
-- A value of the right type may be overwritten; a wrong-typed one is refused
-  (`type_mismatch`).
+- A write that would overwrite one, at its path or above it (a `set` of the object or
+  list holding it, or a `replace` covering it), is refused (`type_mismatch`). The
+  exception is an out-of-range value of the right type, which a valid value may
+  overwrite. `set` and `replace` share this rule.
 
 **Error codes.**
 

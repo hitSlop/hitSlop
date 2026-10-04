@@ -41,7 +41,7 @@ actor CatalogScanner {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             return try FileManager.default.contentsOfDirectory(
                 at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-            ).filter { $0.pathExtension.lowercased() == "slop" }
+            ).filter { $0.pathExtension == "slop" }
                 .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         }
         var result = LocalTemplateSnapshot()
@@ -101,7 +101,7 @@ actor CatalogScanner {
             try Task.checkCancellation()
             guard (try? original.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
             let url = SlopPath.canonical(original)
-            guard url.pathExtension.lowercased() == "slop", seen.insert(url).inserted,
+            guard url.pathExtension == "slop", seen.insert(url).inserted,
                   let entry = try await recent(url) else { continue }
             entries.append(entry)
         }

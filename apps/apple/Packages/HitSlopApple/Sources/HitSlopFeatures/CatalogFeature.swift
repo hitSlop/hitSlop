@@ -159,7 +159,7 @@ public extension DependencyValues {
         /// `refreshSources` rescans everything; `activated` skips templates a watcher covers.
         case start, refreshRecents, refreshSources, activated
         /// A file's artwork changed; only its entry is read again.
-        case packageChanged(URL), recentReceived(URL, CatalogEntry?)
+        case artworkChanged(URL), recentReceived(URL, CatalogEntry?)
         case queryChanged(String), filterChanged(CatalogFilter), selected(String?)
         case localReceived(CatalogSnapshot), recentsReceived(Int, [CatalogEntry])
         case primaryAction(CatalogEntry), destinationChosen(URL?), creationFinished(URL?), creationFailed(String)
@@ -184,7 +184,7 @@ public extension DependencyValues {
                 return .merge(recents(&state), .run { _ in
                     await client.refreshLocal(force)
                 }.cancellable(id: CancelID.refreshLocal, cancelInFlight: true))
-            case .packageChanged(let url):
+            case .artworkChanged(let url):
                 guard state.isStarted else { return .none }
                 guard state.recents.contains(where: { $0.source == .recent(url) }) else { return recents(&state) }
                 return .run { send in await send(.recentReceived(url, await client.recent(url))) }

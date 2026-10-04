@@ -1,6 +1,6 @@
 // Host-owned page lifecycle. The page shell, SDK, app and host are built from one tree;
 // the ctx handed to SlopApp.mount is the only interface apps use.
-import type { SlopApp, SlopContext } from "@hitslop/document/abi";
+import type { SlopContext } from "@hitslop/document/abi";
 import { ownerAttachments } from "./attachments";
 import { call } from "./bridge";
 import { createCaptureController } from "./capture";
@@ -11,6 +11,7 @@ import type { ObjectNode } from "@hitslop/document";
 import { fromDescriptor } from "@hitslop/document/internal";
 import { applyTheme } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
+import { checkedApp } from "./app-module";
 import { isDocumentError } from "@hitslop/document";
 import type { PageResult } from "@hitslop/schema/page";
 import type { AppRow } from "@hitslop/schema";
@@ -82,9 +83,6 @@ function createContext(
 function createContextV1(doc: Document<ObjectNode>, options: Parameters<typeof createContext>[2]): SlopContext {
   const { attachments, capture } = options;
   const document = Object.freeze({
-    get key() {
-      return doc.key;
-    },
     get current() {
       return doc.current;
     },
@@ -142,16 +140,14 @@ export async function boot() {
     throw error;
   };
   const app = import(new URL("/assets/app.js", location.href).href).then(
-    (module) => module.default as SlopApp,
+    (module) => module.default as unknown,
     authored,
   );
   app.catch(() => {});
   const opened = openDocument(native);
   const { config, doc, attachments } = await opened;
   installPresentationStage(presentationStage(config.presentation));
-  const view = await app;
-  if (!view || typeof view.mount !== "function")
-    throw new Error("assets/app.js must export default { mount(ctx, target) }");
+  const view = checkedApp(await app, config.descriptor);
   const capture = createCaptureController();
   const reportError = (error: unknown) => {
     globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));

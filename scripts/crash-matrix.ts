@@ -1,79 +1,63 @@
-/** Crash contract for native storage: a write killed at any phase reopens old-or-new, never torn. */
+/** Crash contract for native storage: a helper killed at any point of an edit leaves the
+ * document as it was or as edited, never torn, and its lock dies with it. An acknowledged
+ * edit survives the death of the host that acknowledged it. */
 import { strict as assert } from "node:assert";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { documentFromStage } from "./fixture-documents";
 import { engine } from "../packages/cli/src/engine";
+import { useTestRegistry } from "./runtime-artifacts";
 
-const phases = [
-  "hold",
-  "append:uncommitted",
-  "append:committed",
-  "checkpoint:uncommitted",
-  "checkpoint:committed",
-  "theme:uncommitted",
-  "theme:committed",
-];
 const fixture = "tests/fixtures/checklist/document";
+const rounds = 24;
 
-async function native(binary: string, args: string[]) {
-  const child = Bun.spawn([binary, ...args], { stdout: "pipe", stderr: "pipe" });
+/** One helper request, killed after `killAfter` milliseconds unless it has answered. */
+async function request(binary: string, body: Record<string, unknown>, killAfter?: number) {
+  const child = Bun.spawn([binary, "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  child.stdin.write(JSON.stringify(body));
+  await child.stdin.end();
+  if (killAfter !== undefined) setTimeout(() => child.kill("SIGKILL"), killAfter);
   const [out, error, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
     child.exited,
   ]);
-  return { out, error, code };
+  let reply: any;
+  try { reply = JSON.parse(out); } catch {}
+  return { reply, error, code };
 }
 async function title(binary: string, root: string) {
-  const result = await native(binary, ["get", root]);
-  assert.equal(result.code, 0, result.error);
-  return String(JSON.parse(result.out).title);
-}
-async function accent(binary: string, root: string) {
-  const result = await native(binary, ["theme", "get", root]);
-  assert.equal(result.code, 0, result.error);
-  return String(JSON.parse(result.out).effective.accent);
+  const { reply, error } = await request(binary, { method: "get", documentPath: root });
+  assert.ok(reply?.ok, error || reply?.error);
+  return String(reply.state.state.value.title);
 }
 
 export async function runCrashMatrix(hostCheck = false) {
+  useTestRegistry();
   const binary = resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
   const folder = await mkdtemp(join(tmpdir(), "hitslop-crash-"));
   const results: string[] = [];
   try {
-    for (const phase of phases) {
-      const root = await documentFromStage(fixture, join(folder, `${phase.replace(":", "-")}.slop`), binary);
-      const seeded = await native(binary, [
-        "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Acknowledged" }),
-      ]);
-      assert.equal(seeded.code, 0, seeded.error);
-      const marker = join(folder, `${phase.replace(":", "-")}.paused`);
-      const child = Bun.spawn([binary, "storage-probe", root, phase, marker], { stdout: "ignore", stderr: "inherit" });
-      try {
-        const deadline = Date.now() + 10000;
-        while (!(await Bun.file(marker).exists())) {
-          if (Date.now() > deadline || child.exitCode !== null) throw new Error(`probe failed to reach ${phase}`);
-          await Bun.sleep(20);
-        }
-        // Writer exclusion: no second owner while the probe holds the lock.
-        assert.notEqual((await native(binary, ["get", root])).code, 0);
-      } finally {
-        child.kill("SIGKILL");
-        await child.exited;
-      }
-      const committed = phase.endsWith(":committed");
-      if (phase.startsWith("theme:")) {
-        // The probe sets the accent; the fixture's default is #335577.
-        const after = await accent(binary, root);
-        assert.equal(after, committed ? "#112233" : "#335577", phase);
-      } else {
-        const after = await title(binary, root);
-        assert.ok(after.startsWith(committed ? "Crash edit Acknowledged" : "Acknowledged"), `${phase}: ${after}`);
-      }
-      results.push(phase);
-      console.log(`PASS ${phase}: recovery and writer exclusion`);
+    const root = await documentFromStage(fixture, join(folder, "Killed.slop"), binary);
+    let saved = await title(binary, root);
+    let interrupted = 0;
+    for (let round = 0; round < rounds; round++) {
+      // Large enough that its save takes measurable time; the kill moves later each round.
+      const value = `Round ${round} ${"x".repeat(16 * 1024)}`;
+      const ops = JSON.stringify([{ type: "set", path: ["title"], value }]);
+      const { reply, code } = await request(binary, { method: "batch", documentPath: root, ops }, round * 10);
+      const acknowledged = code === 0 && reply?.ok === true;
+      if (!acknowledged) interrupted++;
+      // Reading the document also takes its lock: the killed helper's died with it.
+      const after = await title(binary, root);
+      if (acknowledged) assert.equal(after, value, `round ${round}: an acknowledged edit was lost`);
+      else assert.ok(after === saved || after === value, `round ${round}: the document is neither as it was nor as edited`);
+      saved = after;
     }
+    assert.ok(interrupted > 0 && interrupted < rounds, `kills must land both before and after the reply (${interrupted}/${rounds})`);
+    results.push(`helper:killed-mid-edit(${interrupted}/${rounds} interrupted)`);
+    console.log(`PASS helper killed mid-edit: ${interrupted} of ${rounds} edits interrupted, none torn`);
     if (hostCheck) {
       // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
       const root = await documentFromStage(fixture, join(folder, "Host.slop"), binary);
@@ -91,14 +75,13 @@ export async function runCrashMatrix(hostCheck = false) {
             JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
           { stdout: "pipe", stderr: "pipe", env: { ...process.env, HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? binary } },
         );
-        const [out, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+        const [error, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
         assert.equal(code, 0, error);
-        assert.ok(JSON.parse(out).value.title.startsWith("Native acknowledged"));
       } finally {
         host.kill("SIGKILL");
         await host.exited;
       }
-      assert.ok((await title(binary, root)).startsWith("Native acknowledged"));
+      assert.equal(await title(binary, root), "Native acknowledged");
       results.push("host:acknowledged-write-survives-death");
     }
     await mkdir(".hitslop/evidence", { recursive: true });

@@ -58,15 +58,13 @@ private struct UpdateSettingsView: View {
         // A crashed session's discovery file would name a dead owner; clear it off the main
         // thread.
         Task.detached(priority: .utility) { SlopRegistry.sweep() }
-        // Artwork a quit left stale is refreshed now, one render at a time.
-        SlopDocumentWindowController.resumeAssetRefreshes(telemetry: HitSlopFirebase.telemetry)
         let urls = CommandLine.arguments.dropFirst().filter { $0.hasSuffix(".slop") }.map(URL.init(fileURLWithPath:))
         if urls.isEmpty {
             showCatalog()
             // A launch that opens documents warms WebKit itself.
         } else { urls.forEach(openDocument) }
     }
-    func application(_ application: NSApplication, open urls: [URL]) { urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "slop" }.forEach(openDocument) }
+    func application(_ application: NSApplication, open urls: [URL]) { urls.filter { $0.isFileURL && $0.pathExtension == "slop" }.forEach(openDocument) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         coordinator.requestQuit()
@@ -207,7 +205,7 @@ private struct UpdateSettingsView: View {
         guard menu === recentMenu else { return }
         menu.removeAllItems()
         let urls = NSDocumentController.shared.recentDocumentURLs.filter {
-            $0.pathExtension.lowercased() == "slop"
+            $0.pathExtension == "slop"
         }
         if urls.isEmpty {
             let empty = menu.addItem(withTitle: "No Recent Documents", action: nil, keyEquivalent: "")

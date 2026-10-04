@@ -36,7 +36,7 @@ import Testing
   #expect(result27)
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Clicks pass through a transparent document's empty pixels, so the window server reports
   // the window behind it there. The document's shape still decides hover unless another
   // window covers the point.
@@ -108,7 +108,7 @@ extension OwnerClientTests {
   // Existing deadline tests do not exercise delivery into a real WKWebView.
   @Test @MainActor func guestControlsFollowNativeToolbar() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture { stage in
+    let root = try contractFixture { stage in
       // Wrap the probe app with an authored control that follows the native toolbar.
       let assets = stage.appendingPathComponent("assets")
       try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))

@@ -1,22 +1,22 @@
 // Captures a compatibility corpus entry from this build: the conformance app (every ctx
 // member and descriptor kind), the conformance fixtures and a few shipped templates, as
-// built; documents saved through the real helper; what they read as; edits to replay on
-// them; and the helper commands a CLI of this release sends.
+// built; documents saved through this build's CLI and helper; what they read as; edits to
+// replay on them; and the commands a CLI of this release runs, with what they print.
 // Usage: bun scripts/compat-capture.ts RELEASE [--frozen] [--templates slug,slug]
 // Pick templates that cover what the release changed; the defaults store rows and text,
 // records of objects with text, and records an effect creates from today's date.
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
 // release candidate with a clean tree, then commit it before tagging.
 import { Database } from "bun:sqlite";
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HelperProtocol, PackageFormat, RuntimeABI } from "../packages/schema/src/constants";
 import {
   corpus,
   helper,
-  native,
-  nativeJSON,
+  slop,
+  slopJSON,
   readJSON,
   savedState,
   stable,
@@ -144,14 +144,15 @@ const appOf = (document: string) => {
     database.close();
   }
 };
-const valueOf = async (document: string) => (await nativeJSON(["get", document])) as unknown;
-const batch = (document: string, ops: unknown[]) => nativeJSON(["batch", document, "--ops", JSON.stringify(ops)]);
+const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
+const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
 // Documents: each package's document after two closed editing sessions (agent edits,
 // counter contributions from two writers, checkpoint plus saved updates) and a theme
 // change; the conformance document also holds an attachment.
 const documents = join(root, "documents");
-const work = await mkdtemp(join(tmpdir(), "hitslop-compat-capture-"));
+// Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
+const work = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-capture-")));
 const pageScripts: Record<string, Page["script"]> = {};
 const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
@@ -165,13 +166,13 @@ for (const slug of Object.keys(templates)) {
   await run([helper, "create", "--from", join(root, "templates", slug + ".slop"), "--output", document]);
   const schema = await schemaOf(document);
   for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
-  const theme = await nativeJSON(["theme", "get", document]);
+  const theme = await slopJSON(["theme", "get", document]);
   const [token, color] = Object.entries(theme.defaults as Record<string, string>)[0] ?? [];
-  if (token) await nativeJSON(["theme", "set", document, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
+  if (token) await slopJSON(["theme", "set", document, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
   if (slug === "conformance") {
     const file = join(work, "attachment.txt");
     await writeFile(file, "Compatibility corpus attachment ✓\n");
-    const ref = await nativeJSON(["attachments", "import", document, file]);
+    const ref = await slopJSON(["attachments", "import", document, file]);
     await rm(file);
     await batch(document, [{ type: "set", path: ["attachment"], value: ref.id }]);
   }
@@ -182,7 +183,7 @@ for (const slug of Object.keys(templates)) {
 for (const slug of ["conformance", "quick-checklist"]) {
   const compacted = join(documents, `${slug}-compacted.slop`);
   await copyFile(join(documents, slug + ".slop"), compacted);
-  await run([helper, "compact", compacted]);
+  await slop(["compact", compacted]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
 const anomalies = join(documents, "conformance-anomalies.slop");
@@ -204,15 +205,14 @@ for (const document of names) {
       : edits(await schemaOf(path), expected.value, 3);
   await rm(scratch, { recursive: true, force: true });
   await copyFile(path, scratch);
-  const reply = await batch(scratch, ops);
-  const { state } = await nativeJSON(["get", scratch, "--snapshot"]);
-  if (JSON.stringify(state.value) !== JSON.stringify(reply.value)) throw new Error(`${document}: the replayed edit did not save`);
+  await batch(scratch, ops);
+  const { state } = await slopJSON(["get", scratch, "--snapshot"]);
   const scenario: Scenario = { ops, value: state.value, issues: state.issues };
   await writeFile(join(root, "scenarios", document + ".json"), JSON.stringify(scenario, null, 2) + "\n");
   // The old app must render its saved document.
   for (const format of ["png", "pdf"]) {
     const output = join(work, `render.${format}`);
-    await run([helper, "export", path, "--format", format, "--output", output]);
+    await slop(["export", path, "--format", format, "--output", output]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
     await rm(output);
   }
   if (document !== "conformance-anomalies") {
@@ -224,7 +224,7 @@ for (const document of names) {
   }
 }
 
-// The helper commands a CLI of this release sends, and what they print.
+// The commands a CLI of this release runs, and what they print.
 const attachmentBytes = "Archived CLI attachment ✓\n";
 await writeFile(join(root, "cli/attachment.txt"), attachmentBytes);
 const attachmentID = sha256(attachmentBytes);
@@ -246,7 +246,7 @@ for (const args of [
   ["get", "{document}"],
 ]) {
   const exported = join(work, "attachment-export.txt");
-  const result = await native(args.map((arg) => arg === "{document}" ? scratch : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
+  const result = await slop(args.map((arg) => arg === "{document}" ? scratch : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
   let stdout: unknown = result.stdout.trim();
   try {
     stdout = stable(JSON.parse(result.stdout), args);

@@ -33,7 +33,7 @@ The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Rec
 
 ## File layout
 
-A `.slop` file is one SQLite database (application ID `0x534C4F50`, storage version in
+A `.slop` file is one SQLite database (application ID `0x48534C50`, "HSLP"; storage version in
 `user_version`). TypeBox defines the manifest and platform envelopes. `slop.ts`
 declares author, title, description, categories and presentation, the project folder's
 name is the slug, and the stored manifest refuses any other field. `slop build` stages the app with `packageFormat`
@@ -47,17 +47,17 @@ runtime ABI.
 app          one row: package_format, runtime_abi, manifest, descriptor (not JSON Schema),
              initial (creation-only values), theme (the palette's defaults)
 assets       path → bytes: app.js (export default { mount(ctx, target) }), app.css, fonts…
-artwork      preview and icon PNGs: built, then refreshed from documents' saved state
-document     a document's identity (doc_id) and theme overrides; none in a template
-checkpoint   the saved Loro snapshot and the schema key it was saved under
+artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
+document     a document's theme overrides; none in a template
+checkpoint   the saved Loro snapshot and the descriptor it was saved under
 updates      saved Loro updates after the checkpoint
 attachments  sha256 → bytes: imported files
 ```
 
 A template has no `document`, `checkpoint`, `updates` or `attachments` rows; it never
 opens as a document, and a command refuses it. Create copies a template into a new file
-and gives it an identity. A template is immutable: it never opens as a document
-(`is_template`), and bundled starters are also read-only on disk. Initial values seed only
+and adds its `document` row. A template is immutable (`is_template` refuses it as a
+document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
 The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges read from the file; nothing else in it is a resource, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell plus the WASM core from the CLI, with disposable memory storage. No executable code is downloaded.
@@ -70,13 +70,13 @@ The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a documen
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.hitslop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
-Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history to that session at most; [architecture](../architecture.md#saving) has the rule. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
+Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history: it leaves none; [architecture](../architecture.md#saving) has the rule. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
 
-Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. `hello` supplies the owner's core build identity and epoch, which rotates when unsaved edits are discarded.
+Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every request starts with `hello`, which supplies the owner's core build identity, checked before anything is sent, and its epoch, which rotates when unsaved edits are discarded. A reply carries its state whole, as large as the document: the helper checks a live owner's `hello` against the contract before trusting its core build, then reads live and closed replies alike, and the CLI validates each against its method's result (`SocketResults`). A live and a closed `get` of one saved state print the same value.
 
 Failed saves retain ownership and native retry UI; cancel-close restores editing. Successful close removes discovery, destroys the WebView/bridge, drains storage, closes SQLite, and releases ownership; discovery is withdrawn before the writer lock is released, and restored if the close fails. Quit prepares every document before releasing any. Close before moving or renaming documents. iCloud and other synced folders are unsupported.
 
-Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` commits the bytes, then submits the collector's reference edits; the close and capture barriers wait for it, so a blob is never saved without its reference. The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. Duplicate and Share a Copy carry attachments; templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
+Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` stores the bytes, then submits the collector's reference edits; the close and capture barriers wait for both. A collector that throws, or an edit the core refuses, leaves the stored blob unreferenced; it is harmless, being addressed by its hash. The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. Duplicate and Share a Copy carry attachments; templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
 
 Theme overrides are bounded host presentation state, not a document projection: at most 256 declared colors in the file's `document` row, outside Loro, validated when changed and saved with the document's edits as [architecture](../architecture.md#themes-and-attachments) describes. The page shell applies the effective palette as CSS variables before mounting the app, and again whenever it changes. Loading never validates. Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
@@ -90,7 +90,7 @@ Application-render errors and save failures have separate recovery paths. Render
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes only the app's assets and the bundled page shell; saved state, attachments, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own read-only connection, whole or as a range, never loading the rest; each is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
+The page shell synthesizes the page. The resource scheme exposes only the app's assets and the bundled page shell; saved state, attachments, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range, never loading the rest; each is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`; Soma Amp's MilkDrop compiles its presets this way), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
 
@@ -98,7 +98,7 @@ Embedded frames are third-party web content inside the document's window. They c
 
 A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK's `@hitslop/document/embed` embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. It takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
 
-Bridge calls must originate in the main frame at `slop://app` and match generated TypeBox envelopes. Serialized requests are bounded to 48 MiB, with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket request/reply bounds are 1 MiB/16 MiB, one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
+Bridge calls must originate in the main frame at `slop://app` and match generated TypeBox envelopes. Serialized requests are bounded to 48 MiB, with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for an attachment upload), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
 
 An export never replaces the document it renders. Capture stages output and publishes by atomic rename before its deadline. Failures do not replace existing output. A lost acknowledgement leaves an uncertain outcome; inspect the destination before retrying.
 
@@ -118,11 +118,11 @@ Capture commits drafts, flushes persistence, waits for fonts, visible images, an
 
 PDF recomposes WebKit's internal pages into one continuous page when needed. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
-Native PNG compression runs system zlib off the main actor. It preserves pixels, dimensions, transparency, and metadata, removes alpha only for fully opaque images, and retains the smallest successful candidate or the original. It covers template artwork, refreshed previews, Finder icon sources, and PNG exports; it does not rewrite existing artwork or PDFs.
+Native PNG compression runs system zlib off the main actor. It preserves pixels, dimensions, transparency, and metadata, removes alpha only for fully opaque images, and retains the smallest successful candidate or the original. It covers template artwork, previews written at close, Finder icon sources, and PNG exports; it does not rewrite existing artwork or PDFs.
 
-Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. Close renders the preview and, when an icon target exists, the icon from a saved-state snapshot, then writes them into the file only while it still holds that state (a document opened or edited again meanwhile keeps its artwork). Nothing is written outside the file: no custom icon or extended attribute. The catalog reads the refreshed artwork and updates without reopening. Failed captures or writes retain the previous artwork. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Neither catalog, Finder nor Quick Look display loads the document engine.
+Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from its page, out of sight once the close barrier is up; the owner writes them through its writer connection before the file closes. Nothing is written outside the file: no custom icon or extended attribute. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Neither catalog, Finder nor Quick Look display loads the document engine.
 
-Live exports use the current editor width and selected view. Closed exports render a saved-state snapshot with the app's initial view.
+Live exports use the current editor width and selected view. Closed exports render a saved-state snapshot with the app's initial view, taking no lock: they render even while another process holds the document.
 
 ## Telemetry
 
@@ -138,13 +138,11 @@ Release validation requires actual Firebase delivery and symbolication; unit tes
 
 Saved state belongs to the descriptor it was saved under. The store records the
 descriptor (the core's canonical serialization) with the checkpoint and compares it with
-the app's by meaning when it opens (`same_schema`): key order and number spelling
-never matter, any other difference refuses the saved state. Apps check a second key: the
-SDK compiled into each `app.js` computes the descriptor's canonical JSON (keys sorted
-recursively, array order kept, no whitespace, JavaScript number formatting) and refuses
-to mount under a shell that computes a different one. Every released app.js carries that
-algorithm, so it is frozen by golden vectors in `packages/document/tests/schema.test.ts`.
-Schema evolution is deferred.
+the app's by meaning when it opens, parsing both: key order and number spelling never
+matter, any other difference refuses the saved state. The app declares the descriptor
+it was built for (`SlopApp.descriptor`; `svelteApp` sets it from its schema), and the
+shell refuses to mount an app on a document of another, as a custom `main.ts` could
+register: key order never matters. Schema evolution is deferred.
 
 The native page protocol has one request/reply envelope for document edits and host
 services. TypeBox owns it in `@hitslop/schema/page`; core payloads are in

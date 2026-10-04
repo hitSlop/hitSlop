@@ -8,7 +8,7 @@ extension SlopFile {
   /// Where a new document goes: `url` with the `.slop` extension, on a local volume, and
   /// outside the installed and bundled templates.
   public static func newDocumentURL(_ url: URL) throws -> URL {
-    let url = url.pathExtension.lowercased() == "slop" ? url : url.appendingPathExtension("slop")
+    let url = url.pathExtension == "slop" ? url : url.appendingPathExtension("slop")
     try SlopLocalDocument.requireLocal(url)
     guard !SlopTemplateLocation.isMaster(url) else {
       throw failure("A document cannot be created among installed templates")

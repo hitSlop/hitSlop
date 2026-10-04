@@ -101,7 +101,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public let url: URL
   public let session: DocumentSession
   let routing: SlopDocumentRouting
-  public var telemetry: SlopTelemetry = .disabled
+  public let telemetry: SlopTelemetry
   var reportedSaveFailure = false
   var reportedRendererFailure = false
   /// Issue kinds already reported (operations, authored); each is reported once.
@@ -115,7 +115,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var failedOverlay: NSHostingView<FailureOverlay>?
   var presentedPageError: String?
   var documentAttention: NSPanel?
-  var attentionMessage: String?
   var attentionFailure: SaveFailure?
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
@@ -219,9 +218,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     super.init(window: window)
     window.delegate = self
     session.delegate = self
-    SlopRenderer.installCLIExport(on: session,
-      telemetry: SlopTelemetry { [weak self] in self?.telemetry.send($0) },
-      onFailure: { [weak self] error, format in self?.reportLifecycleFailure(.export, error: error, format: format) })
+    // `slop export` of this open document exports its live view, as the window does.
+    session.onExport = { [weak self] format, output, deadline in
+      guard let self else { throw SlopError.invalid("Document closed") }
+      try await self.exportDocument(format: format, to: output, deadline: deadline)
+    }
     container.changed = { [weak self] _ in self?.refreshToolbarHover() }
     SlopToolbarPointerSampler.shared.add(self) { [weak self] point, front in
       self?.refreshToolbarHover(point: point, front: front)
@@ -229,7 +230,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
     // Editor discovery queries Launch Services; warm it before the first hover.
     Task.detached(priority: .utility) { _ = SlopEditors.installed }
-    SlopDocumentAssetRefreshQueue.invalidate(self.url)
     startLoading()
     recordStartup("native-prepared")
     // The minimized window shows the document's icon, read by its owner rather than by a
@@ -327,14 +327,34 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
 
+  /// Saves and releases the document, writing artwork rendered from its page first, so
+  /// Finder, Quick Look and the catalog show it as it closed. A failed close shows the
+  /// window again, open and editable.
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
     guard !closePrepared else { return }
+    let artwork = await closingArtwork()
     do {
-      try await session.close()
+      try await session.close(artwork: artwork)
+      if artwork != nil { SlopPreviewWriter.announce(url) }
       closePrepared = true
       window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
-    } catch { reportLifecycleFailure(operation, error: error); throw error }
+    } catch {
+      if artwork != nil { window?.orderFront(nil) }
+      reportLifecycleFailure(operation, error: error)
+      throw error
+    }
+  }
+  /// The page's preview and icon, when this session changed the document or it has no
+  /// preview yet. The window leaves the screen first: capture resizes the page.
+  private func closingArtwork() async -> SlopRenderedArtwork? {
+    guard isContentReady, session.isReady, !session.rendererDead else { return nil }
+    let edited = await session.edited()
+    let preview = edited ? nil : await session.artwork(.preview)
+    guard edited || preview == nil else { return nil }
+    hideToolbar()
+    window?.orderOut(nil)
+    return await SlopRenderer.artwork(session: session, telemetry: telemetry)
   }
 
   public func windowDidMove(_ notification: Notification) {
@@ -358,22 +378,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       await cancelPreparedClose()
       throw error
     }
-    // Nothing was editable during startup; closing an unfinished open does
-    // not need to launch another WebView to refresh artwork.
-    guard isContentReady else { return }
-    // The render reads the saved document into memory after this window closes.
-    SlopDocumentAssetRefreshQueue.schedule(presentedURL: url, telemetry: telemetry)
   }
   public func cancelPreparedClose() async {
     await session.cancelClose()
     if isLoading { startLoading() }
-  }
-  public static func finishAssetRefreshesForTermination() async {
-    await SlopDocumentAssetRefreshQueue.finishForTermination()
-  }
-  /// Resumes the artwork refreshes the last quit left unfinished.
-  public static func resumeAssetRefreshes(telemetry: SlopTelemetry = .disabled) {
-    SlopDocumentAssetRefreshQueue.resume(telemetry: telemetry)
   }
   public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
   /// Closing is a command: the coordinator runs it after any command in progress, and

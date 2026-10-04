@@ -93,7 +93,7 @@ fn convergence(start: impl Fn(Vec<u8>) -> Vec<u8>) {
         "k": {"kind":"optional","inner":{"kind":"integer"}},
         "n": {"kind":"integer","max":5},
     }}).to_string();
-    for seed in 1..300u64 {
+    for seed in 1..=support::workload("HITSLOP_REPLICA_SEEDS", 299) as u64 {
         let mut rng = seed * 0x9e3779b1;
         let mut origin = Document::create(&schema, r#"{"k":0,"n":0}"#).unwrap();
         origin.apply(&json!({"intents":[{"type":"set","path":["n"],"value":1}]}).to_string()).unwrap();

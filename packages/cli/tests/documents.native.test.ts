@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PackageFormat, RuntimeABI } from "@hitslop/schema/constants";
 import { defineDocument, s } from "@hitslop/document";
-import { pack } from "../../cli/src/engine";
+import { pack } from "../src/engine";
 const schema = defineDocument({ title: s.text() });
 
 const helper = new URL("../../../apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native", import.meta.url).pathname;
@@ -53,7 +53,7 @@ test("native CLI refuses a template before mutation", async () => {
   try {
     const master = await template(parent, "Master");
     const before = await readFile(master);
-    const refused = await cli("apply", master, "--op", JSON.stringify({ type: "text.replace", path: ["title"], value: "Changed" }));
+    const refused = await cli("apply", master, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Changed" }));
     expect(refused.code).not.toBe(0);
     expect(refused.error).toContain("create a document from it");
     expect(await readFile(master)).toEqual(before);
@@ -74,8 +74,6 @@ test("native CLI rejects invalid files and malformed commands before mutation", 
     await rm(root);
     const created = Bun.spawn([helper, "create", "--from", await template(parent, "Initial"), "--output", root], { stdout: "ignore", stderr: "pipe" });
     expect(await created.exited).toBe(0);
-    expect((await cli("apply", root, "--op", '{"type":"text.replace","path":["title"],"value":"bad"}', "--id", "alone")).error).toContain("Unknown");
-    expect((await cli("get", root, "--request-id", "old-name")).error).toContain("Unknown");
     expect((await cli("get", root)).code).toBe(0);
     const before = await readFile(root);
     expect((await cli("apply", root, "--op", "null")).code).not.toBe(0);

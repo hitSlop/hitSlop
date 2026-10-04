@@ -2,6 +2,28 @@
 use hitslop_core::{Document, Error};
 use serde_json::{json, Value};
 use hitslop_core::Origin;
+/// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
+pub fn registry_folder() -> std::path::PathBuf {
+    std::env::temp_dir().join("hitslop-test-registry")
+}
+/// Points this process's registry at `registry_folder`; every test that takes a writer
+/// lock calls it first.
+#[cfg(feature = "storage")]
+pub fn isolate_registry() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| hitslop_core::registry::use_folder(&registry_folder()).unwrap());
+}
+/// This test binary running only its ignored test `name`, as a separate process, with
+/// `env`: a child test returns at once unless its variables are set. Output is discarded.
+pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", name, "--ignored", "--nocapture"]);
+    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+}
 /// Keep the everyday tier bounded; use the same knobs for extended stress runs.
 pub fn workload(name: &str, default: usize) -> usize {
     std::env::var(name).map(|v| v.parse::<usize>().expect("positive test workload")).unwrap_or(default).max(1)

@@ -1,6 +1,6 @@
 #![cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
 //! The stored manifest: the authored contract at the document's package format. The
-//! package format and runtime ABI are the document's own columns (`tests/package.rs`).
+//! package format and runtime ABI are the document's own columns (`tests/file.rs`).
 use hitslop_core::{shape::Silhouette, Code, PACKAGE_FORMAT};
 
 fn fixture() -> serde_json::Value {
