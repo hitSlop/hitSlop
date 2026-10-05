@@ -26,7 +26,8 @@ It never edits documents outside the app. Authoring (`init`, `check`, `dev`, `bu
 needs no helper and runs on macOS and Linux: the build stages the compiled app and its
 evaluated descriptor, initial values and theme, and the CLI's file engine
 (`crates/slop-engine`, the same core built natively) packs the stage into a template,
-checking it as the app opens it. Only `--artwork native` and `register` render artwork
+checking it as the app opens it; text assets are stored compressed, since every document
+carries its own copy of the app. Only `--artwork native` and `register` render artwork
 with the app, from a draft of the template. The CLI and the app update separately: the CLI
 checks that the selected helper serves its command protocol (`hitslop-native
 --protocol`) before document commands and native artwork, and the helper checks that the live owner has its exact core build, since
@@ -201,9 +202,9 @@ history when that fits and none otherwise, so a concurrent text edit can still b
 from where the session opened; `compact` trims to the latest version. Only the checkpoint may
 start history late. Rollback rebuilds from where history starts; a version before it
 is `stale_base`, and a concurrent text edit never branches from before the latest cut,
-so no saved update depends on trimmed history. New
-databases use incremental auto-vacuum, and every checkpoint frees the pages the log
-used. The store links the platform SQLite, the one library every other in-process user
+so no saved update depends on trimmed history. Files
+use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
+replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
 loads, and the core is the only code that opens a `.slop` file.
 
 ## The file, its lock and copies
@@ -231,11 +232,13 @@ flushes; it never joins a flush that already passed its drain point. Inputs stay
 enabled, so focus survives a cancelled barrier. If the session changed the document, or
 the file has no preview, the window then leaves the screen and captures its preview and
 icon from the page. Swift saves, the owner writes that artwork through its writer
-connection, and the owner closes. A failed capture keeps the old artwork and never stops
-the close; a failed close shows the window again. An attachment import stores the blob,
-then submits its reference through a collector admitted past an active barrier. A
-collector that throws, or an edit the core refuses, leaves the blob unreferenced, which is
-harmless: blobs are addressed by their hash.
+connection, and the owner closes; the window then copies the artwork into the file's
+Finder custom icon (`SlopFinderIcon`), as creating or copying a document does. A failed
+capture keeps the old artwork and never stops the close; a failed close shows the window
+again. An attachment import stores the blob, then submits its reference through a
+collector admitted past an active barrier. A collector that throws, or an edit the core
+refuses, leaves the blob unreferenced, which is harmless: blobs are addressed by their
+hash.
 
 ## CLI
 

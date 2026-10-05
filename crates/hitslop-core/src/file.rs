@@ -6,8 +6,10 @@
 use crate::store::{failed, invalid, rejected, requires_update, sqlite, Error, Result};
 use crate::{shape, Code};
 use rusqlite::{config::DbConfig, limits::Limit, params, Connection, OpenFlags, OptionalExtension, MAIN_DB};
+use std::borrow::Cow;
 use std::ffi::CString;
 use std::fs;
+use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -21,10 +23,11 @@ pub(crate) const STORAGE_VERSION: i64 = 1;
 /// its documents. `document`, `checkpoint`, `updates` and `attachments` are the document;
 /// a template has no rows in them.
 /// `checkpoint.descriptor` records, canonically encoded, the descriptor the saved state was
-/// written under.
+/// written under. An asset's `size` is its length; `encoding` is how `bytes` holds it
+/// (`encode`).
 pub(crate) const SCHEMA: &str = "\
 CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, initial TEXT NOT NULL, theme TEXT NOT NULL);
-CREATE TABLE assets(path TEXT PRIMARY KEY, bytes BLOB NOT NULL);
+CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL);
 CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL);
 CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1), theme TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), descriptor TEXT NOT NULL, bytes BLOB NOT NULL);
@@ -106,9 +109,10 @@ fn expected_tables() -> &'static [SchemaRow] {
     })
 }
 
-/// The checks every open runs, in order, reading sizes with `length()` and never a value:
-/// the application ID, the markers (a newer one is refused before anything else is read),
-/// the exact tables, the rows a template or a document may hold, and every size budget.
+/// The checks every open runs, in order, reading sizes (`length()`, an asset's recorded
+/// size) and never a value: the application ID, the markers (a newer one is refused before
+/// anything else is read), the exact tables, the rows a template or a document may hold,
+/// and every size budget.
 /// `integrity` adds `PRAGMA quick_check` (42 ms for the largest allowed document). The
 /// checks run in one read transaction, the caller's if it holds one, so they see one state
 /// while another process saves.
@@ -159,9 +163,14 @@ fn checks(conn: &Connection, integrity: bool) -> Result<Kind> {
     if manifest > MANIFEST_BYTES as i64 || longest > APP_TEXT_BYTES as i64 || theme > crate::wire::THEME_LIMIT as i64 {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
+    // Stored as it is, an asset is its size; compressed, it stores less, and decoding stops
+    // at its size. The budgets then bound what decoding produces.
+    if one("SELECT count(*) FROM assets WHERE typeof(size)!='integer' OR CASE encoding WHEN 'identity' THEN length(bytes)!=size WHEN 'br' THEN length(bytes)>=size ELSE 1 END")? > 0 {
+        return Err(invalid("Invalid asset encoding"));
+    }
     let (assets, largest, total, longest_path): (i64, i64, i64, i64) = conn
         .query_row(
-            "SELECT count(*), coalesce(max(length(bytes)),0), coalesce(sum(length(bytes)),0), coalesce(max(length(CAST(path AS BLOB))),0) FROM assets",
+            "SELECT count(*), coalesce(max(size),0), coalesce(sum(size),0), coalesce(max(length(CAST(path AS BLOB))),0) FROM assets",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
@@ -405,14 +414,54 @@ fn read_app(conn: &Connection) -> Result<App> {
     })
     .map_err(sqlite("read app"))
 }
+/// An asset's bytes, decoded.
 fn read_asset(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>> {
-    conn.prepare_cached("SELECT bytes FROM assets WHERE path=?")
-        .and_then(|mut s| s.query_row([key], |r| r.get(0)).optional())
-        .map_err(sqlite("read asset"))
+    let row: Option<(String, i64, Vec<u8>)> = conn
+        .prepare_cached("SELECT encoding,size,bytes FROM assets WHERE path=?")
+        .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional())
+        .map_err(sqlite("read asset"))?;
+    row.map(|(encoding, size, bytes)| decode(&encoding, size as usize, bytes)).transpose()
+}
+/// How `pack` stores an asset: text and WebAssembly Brotli-compressed when that is smaller,
+/// anything else as it is, so media ranges read straight from the file. Quality 10 stores
+/// within a page or so of 11 in half the time; past 4 MiB it takes seconds, so larger
+/// assets use 9.
+fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(&'static str, Cow<'a, [u8]>)> {
+    let kind = content_type(key);
+    if kind.starts_with("text/") || matches!(kind, "application/json" | "image/svg+xml" | "application/wasm") {
+        let params = brotli::enc::BrotliEncoderParams {
+            quality: if bytes.len() <= 4 << 20 { 10 } else { 9 },
+            lgwin: 22,
+            size_hint: bytes.len(),
+            ..Default::default()
+        };
+        let mut compressed = Vec::new();
+        brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(failed)?;
+        if compressed.len() < bytes.len() {
+            return Ok(("br", Cow::Owned(compressed)));
+        }
+    }
+    Ok(("identity", Cow::Borrowed(bytes)))
+}
+/// An asset's stored bytes, decoded to the `size` `check` bounded.
+fn decode(encoding: &str, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
+    match encoding {
+        "identity" => Ok(stored),
+        "br" => {
+            let mut bytes = Vec::with_capacity(size);
+            let read = brotli::Decompressor::new(stored.as_slice(), 4096).take(size as u64 + 1).read_to_end(&mut bytes);
+            if read.is_ok() && bytes.len() == size {
+                Ok(bytes)
+            } else {
+                Err(failed("An app asset is damaged; keep the file for recovery"))
+            }
+        }
+        _ => Err(invalid("Invalid asset encoding")),
+    }
 }
 
-/// Serves the app's assets from one long-lived connection: whole, or a byte range read
-/// without loading the rest.
+/// Serves the app's assets from one long-lived connection: whole, or a byte range. An asset
+/// stored as it is is read without loading the rest; compressed text is decoded whole.
 pub struct AssetReader {
     conn: Connection,
 }
@@ -422,20 +471,27 @@ impl AssetReader {
         check(&conn, false)?;
         Ok(Self { conn })
     }
-    fn row(&self, key: &str) -> Result<Option<(i64, u64)>> {
+    fn row(&self, key: &str) -> Result<Option<(i64, bool, u64)>> {
         self.conn
-            .prepare_cached("SELECT rowid, length(bytes) FROM assets WHERE path=?")
-            .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64))).optional())
+            .prepare_cached("SELECT rowid, encoding='identity', size FROM assets WHERE path=?")
+            .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64))).optional())
             .map_err(sqlite("read asset"))
     }
     /// The asset's size in bytes, when it exists.
     pub fn size(&self, key: &str) -> Result<Option<u64>> {
-        Ok(self.row(key)?.map(|(_, size)| size))
+        Ok(self.row(key)?.map(|(_, _, size)| size))
     }
     /// `length` bytes from `offset`, clamped to the asset.
     pub fn read_range(&self, key: &str, offset: u64, length: u64) -> Result<Option<Vec<u8>>> {
-        let Some((row, size)) = self.row(key)? else { return Ok(None) };
+        let Some((row, identity, size)) = self.row(key)? else { return Ok(None) };
         let length = length.min(size.saturating_sub(offset)) as usize;
+        if !identity {
+            let Some(mut bytes) = read_asset(&self.conn, key)? else { return Ok(None) };
+            let start = offset.min(size) as usize;
+            bytes.truncate(start + length);
+            bytes.drain(..start);
+            return Ok(Some(bytes));
+        }
         let blob = self.conn.blob_open(MAIN_DB, "assets", "bytes", row, true).map_err(sqlite("read asset"))?;
         let mut buffer = vec![0u8; length];
         blob.read_at_exact(&mut buffer, offset as usize).map_err(sqlite("read asset"))?;
@@ -517,7 +573,7 @@ fn sync_folder(path: &Path) {
 /// Writes a template: the app's row, its assets and its artwork, in one transaction.
 fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
     let conn = writer(path, true)?;
-    conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;").map_err(sqlite("create"))?;
+    conn.execute_batch("PRAGMA auto_vacuum=FULL;").map_err(sqlite("create"))?;
     configure_writer(&conn)?;
     let tx = conn.unchecked_transaction().map_err(sqlite("create"))?;
     tx.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"))
@@ -528,7 +584,8 @@ fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork:
     )
     .map_err(sqlite("create"))?;
     for (key, bytes) in assets {
-        tx.execute("INSERT INTO assets VALUES(?,?)", params![key, bytes]).map_err(sqlite("create"))?;
+        let (encoding, stored) = encode(key, bytes)?;
+        tx.execute("INSERT INTO assets VALUES(?,?,?,?)", params![key, encoding, bytes.len() as i64, stored.as_ref()]).map_err(sqlite("create"))?;
     }
     for (name, png) in artwork {
         tx.execute("INSERT INTO artwork VALUES(?,?)", params![name, png]).map_err(sqlite("create"))?;
@@ -686,7 +743,7 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
         "packageFormat": opened.app.package_format,
         "runtimeABI": opened.app.runtime_abi,
         "manifest": serde_json::from_str::<serde_json::Value>(&opened.app.manifest).map_err(failed)?,
-        "assets": list("SELECT path, length(bytes) FROM assets ORDER BY path")?,
+        "assets": list("SELECT path, size FROM assets ORDER BY path")?,
         "artwork": list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         "attachments": { "count": one("SELECT count(*) FROM attachments")?, "bytes": one("SELECT coalesce(sum(length(bytes)),0) FROM attachments")? },
         "state": {
@@ -695,6 +752,7 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
             "updateBytes": one("SELECT coalesce(sum(length(bytes)),0) FROM updates")?,
         },
         "bytes": opened.bytes,
+        "storedAssetBytes": one("SELECT coalesce(sum(length(bytes)),0) FROM assets")?,
     }))
 }
 

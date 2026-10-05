@@ -515,11 +515,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func artwork(_ name: SlopArtwork.Name) async -> Data? {
     try? await owner.artwork(name)
   }
-  /// Copies the document to `destination` as a new logical document, with everything the
-  /// owner accepted saved first. Never replaces an existing file.
+  /// Copies the document to `destination`, with everything the owner accepted saved first.
+  /// Never replaces an existing file. The copy gets its own Finder icon: file metadata is
+  /// not part of the copy.
   public func copy(to destination: URL) async throws {
     guard !closed, !closing else { throw failure("Document is closing") }
     try await owner.copy(to: destination)
+    SlopFinderIcon.refresh(destination)
   }
 
   /// Whether this session saved any change, so its document's artwork may be out of date.

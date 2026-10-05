@@ -50,7 +50,7 @@ fn stage(dir: &Path) -> PathBuf {
     let stage = dir.join("stage");
     fs::create_dir_all(stage.join("assets/fonts")).unwrap();
     write_app(&stage, APP);
-    fs::write(stage.join("assets/app.js"), "export default { mount() { return {}; } };").unwrap();
+    fs::write(stage.join("assets/app.js"), "export default { mount() { return {}; } };\n".repeat(64)).unwrap();
     fs::write(stage.join("assets/app.css"), "body { color: var(--slop-accent); }").unwrap();
     fs::write(stage.join("assets/fonts/face.woff2"), (0..=255u8).cycle().take(4096).collect::<Vec<u8>>()).unwrap();
     stage
@@ -207,7 +207,10 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         "CREATE INDEX extra_index ON assets(bytes)",
         "CREATE VIEW extra_view AS SELECT 1",
         "CREATE TRIGGER extra_trigger AFTER INSERT ON updates BEGIN DELETE FROM attachments; END",
-        "INSERT INTO assets VALUES('../escape.js', x'00')",
+        "INSERT INTO assets VALUES('../escape.js', 'identity', 1, x'00')",
+        "INSERT INTO assets VALUES('short.js', 'identity', 2, x'00')",
+        "INSERT INTO assets VALUES('unnumbered.js', 'identity', 'one', x'00')",
+        "INSERT INTO assets VALUES('expanded.js', 'br', 2, x'789c')",
         "INSERT INTO updates(bytes) VALUES(x'00')",
         "DELETE FROM app",
         "INSERT INTO attachments VALUES('not-an-id', x'00')",
@@ -221,10 +224,14 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     }
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
-    raw(&doc).execute("INSERT INTO assets VALUES('big.bin', zeroblob(?))", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
+    raw(&doc).execute("INSERT INTO assets VALUES('big.bin', 'identity', ?1, zeroblob(?1))", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
     let started = std::time::Instant::now();
     assert_eq!(code(file::open(&doc, true).err().unwrap()), Code::InvalidRequest);
     assert!(started.elapsed() < std::time::Duration::from_millis(500), "sizes come from length(), not the bytes");
+    // A compressed asset is bounded by what it decodes to, before anything is decoded.
+    let doc = document(tempfile::tempdir().unwrap().keep().as_path());
+    raw(&doc).execute("INSERT INTO assets VALUES('bomb.js', 'br', ?, x'789c')", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
+    assert_eq!(code(file::open(&doc, true).err().unwrap()), Code::InvalidRequest);
     // SQLite's own primary-key indexes are part of the expected layout, not refused.
     let fresh = document(tempfile::tempdir().unwrap().keep().as_path());
     let indexes: i64 = raw(&fresh)
@@ -500,6 +507,24 @@ fn artwork_is_written_by_the_writer() {
     assert_eq!(store::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
 }
 
+/// Each close replaces the artwork; the pages the old images held leave the file.
+#[test]
+fn replaced_artwork_leaves_no_free_pages() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let sized = |bytes: usize| {
+        let mut png = png(640, 480, 6);
+        png.resize(bytes, 0x5a);
+        png
+    };
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    store.set_artwork(&[("preview", &sized(96 * 1024)), ("icon", &sized(24 * 1024))]).unwrap();
+    store.set_artwork(&[("preview", &sized(16 * 1024)), ("icon", &sized(4 * 1024))]).unwrap();
+    store.close().unwrap();
+    let free: i64 = raw(&doc).query_row("PRAGMA freelist_count", [], |r| r.get(0)).unwrap();
+    assert_eq!(free, 0);
+}
+
 #[test]
 fn an_open_document_copies_through_its_owner() {
     let dir = tempfile::tempdir().unwrap();
@@ -525,6 +550,19 @@ fn assets_are_served_whole_or_in_ranges() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let reader = file::AssetReader::open(&doc).unwrap();
+    // Text is stored compressed and served as written; media is stored as it is.
+    let stored = |path: &str| -> (i64, i64) {
+        raw(&doc).query_row("SELECT length(bytes), size FROM assets WHERE path=?", [path], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    };
+    let (compressed, size) = stored("app.js");
+    assert!(compressed < size, "app.js is stored compressed");
+    assert_eq!(stored("fonts/face.woff2"), (4096, 4096));
+    let script = fs::read(dir.path().join("stage/assets/app.js")).unwrap();
+    assert_eq!(reader.size("app.js").unwrap(), Some(script.len() as u64));
+    assert_eq!(reader.read_range("app.js", 0, u64::MAX).unwrap(), Some(script.clone()));
+    assert_eq!(reader.read_range("app.js", 100, 50).unwrap(), Some(script[100..150].to_vec()));
+    assert_eq!(reader.read_range("app.js", script.len() as u64 - 10, 500).unwrap(), Some(script[script.len() - 10..].to_vec()));
+    assert_eq!(reader.read_range("app.js", u64::MAX, 10).unwrap(), Some(vec![]));
     let font: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
     assert_eq!(reader.size("fonts/face.woff2").unwrap(), Some(4096));
     assert_eq!(reader.read_range("fonts/face.woff2", 0, u64::MAX).unwrap(), Some(font.clone()));
@@ -536,6 +574,10 @@ fn assets_are_served_whole_or_in_ranges() {
     assert_eq!(file::content_type("module.wasm"), "application/wasm");
     assert_eq!(file::content_type("data.unknown"), "application/octet-stream");
     assert_eq!(file::descriptor(&doc).unwrap(), SCHEMA);
+    // Damaged compressed text is an error, never served.
+    raw(&doc).execute("UPDATE assets SET bytes=x'00' || substr(bytes, 2) WHERE path='app.js'", []).unwrap();
+    assert!(reader.read_range("app.js", 0, u64::MAX).is_err());
+    assert!(file::open(&doc, false).is_err(), "the app's checks read app.js");
 }
 
 #[test]

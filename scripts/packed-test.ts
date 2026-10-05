@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
 import {
   mkdtemp,
@@ -13,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { appAsset } from "./runtime-artifacts";
 const root = await mkdtemp(join(tmpdir(), "hitslop packed "));
 const coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
 const repository = process.cwd();
@@ -146,14 +146,7 @@ try {
   assert.equal(inspected.kind, "template");
   assert.equal(inspected.manifest.slug, "my-slop");
   assert.equal(JSON.parse(await run([process.execPath, cli, "schema", built], root, noNode)).kind, "object");
-  const asset = (path: string) => {
-    const database = new Database(built, { readonly: true });
-    try {
-      return Buffer.from((database.query("SELECT bytes FROM assets WHERE path = ?").get(path) as { bytes: Uint8Array }).bytes).toString("utf8");
-    } finally {
-      database.close();
-    }
-  };
+  const asset = (path: string) => appAsset(built, path);
   assert.ok(asset("app.css").includes(".slop-paper"));
   assert.ok(!asset("app.js").includes(repository));
   console.log("PASS the installed CLI builds and reads templates with its own engine");

@@ -29,7 +29,7 @@ import {
 import { prepareNativeFixtures } from "./native-fixtures";
 import { builtTemplates, repository } from "./templates";
 import { archiveDigest, corpusFiles, sourceFingerprint, verifyCorpus } from "./compat-integrity";
-import { digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry } from "./runtime-artifacts";
+import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry } from "./runtime-artifacts";
 import { engine, pack } from "../packages/cli/src/engine";
 useTestRegistry();
 
@@ -136,14 +136,7 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
 }
 const schemaOf = async (document: string) => JSON.parse(await engine(["schema", document])) as Node;
 /** The app's module, read from the file outside the core. */
-const appOf = (document: string) => {
-  const database = new Database(document, { readonly: true });
-  try {
-    return Buffer.from((database.query("SELECT bytes FROM assets WHERE path = 'app.js'").get() as { bytes: Uint8Array }).bytes).toString("utf8");
-  } finally {
-    database.close();
-  }
-};
+const appOf = (document: string) => appAsset(document, "app.js");
 const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
 const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 

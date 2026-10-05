@@ -163,6 +163,12 @@ public enum Fixtures {
   }
 
   /// The document file's size in bytes.
+  /// Whether Finder shows a custom icon for `file`: the flag in its Finder info.
+  public static func hasCustomIcon(_ file: URL) -> Bool {
+    var info = [UInt8](repeating: 0, count: 32)
+    guard getxattr(file.path, "com.apple.FinderInfo", &info, info.count, 0, 0) == info.count else { return false }
+    return (UInt16(info[8]) << 8 | UInt16(info[9])) & 0x0400 != 0
+  }
   public static func size(_ document: URL) throws -> UInt64 {
     (try FileManager.default.attributesOfItem(atPath: document.path)[.size] as? NSNumber)?.uint64Value ?? 0
   }

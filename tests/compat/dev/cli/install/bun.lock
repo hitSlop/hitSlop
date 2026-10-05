@@ -30,7 +30,7 @@
 
     "@crustjs/utils": ["@crustjs/utils@0.2.2", "", {}, "sha512-hPDqqHpdekLi8nU/eqQf0fsAbkjsBzGntTcQdypElinREA+tC2iC8JnXPsf8iKYWNogmJJ2tyqGzTXZrk431Kg=="],
 
-    "@hitslop/cli": ["@hitslop/cli@../hitslop-cli-4.0.0.tgz", { "dependencies": { "@crustjs/core": "0.5.4", "@crustjs/extensions": "0.5.4", "@crustjs/prompts": "0.2.6", "@crustjs/skills": "0.5.4", "@hitslop/document": "4.0.0", "@hitslop/schema": "4.0.0", "@sveltejs/vite-plugin-svelte": "7.3.1", "svelte": "5.57.1", "svelte-check": "4.7.6", "typescript": "5.9.2", "vite": "8.3.1" }, "bin": { "slop": "src/cli.ts" } }, "sha512-OhCkvL73A0zYyGyp5qnG5aONWkNh4k1ONXVLOvJvHNbM8mLSYELD6I4f9/0fJCWYDmOP/0IAGUR0wBZghL0QQA=="],
+    "@hitslop/cli": ["@hitslop/cli@../hitslop-cli-4.0.0.tgz", { "dependencies": { "@crustjs/core": "0.5.4", "@crustjs/extensions": "0.5.4", "@crustjs/prompts": "0.2.6", "@crustjs/skills": "0.5.4", "@hitslop/document": "4.0.0", "@hitslop/schema": "4.0.0", "@sveltejs/vite-plugin-svelte": "7.3.1", "svelte": "5.57.1", "svelte-check": "4.7.6", "typescript": "5.9.2", "vite": "8.3.1" }, "bin": { "slop": "src/cli.ts" } }, "sha512-Z/JTXJZdzcLGClhFvvVjACrf5yWevIR3LeOrm0o40DtXcpHW7SIj1GusQ+3vKhiAhcp30ob0yy3HyoDF4hMUZw=="],
 
     "@hitslop/document": ["@hitslop/document@../hitslop-document-4.0.0.tgz", { "dependencies": { "@hitslop/schema": "4.0.0" }, "peerDependencies": { "svelte": "5.57.1" }, "optionalPeers": ["svelte"] }, "sha512-GEwV6ypMeKRgnWwMFeIcTWO4jfgOA9PxxDQ6SyYgDOqpPYqrOJeXJyqCoaub5pGyTnXm/53sTD0QoQFn/UcbqA=="],
 

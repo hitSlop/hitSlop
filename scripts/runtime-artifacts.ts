@@ -1,7 +1,9 @@
+import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { brotliDecompressSync } from "node:zlib";
 
 export const repository = resolve(import.meta.dir, "..");
 /** Test runs keep their own writer-lock registry, so they never fill a person's
@@ -15,6 +17,17 @@ export const shellDestinations = {
   cli: join(repository, "packages/cli/shell"),
 };
 export const shellFiles = ["boot.js", "index.js"] as const;
+/** An app asset's text as the build wrote it, read from the file outside the core, which
+ * stores text Brotli-compressed. */
+export function appAsset(file: string, path: string): string {
+  const database = new Database(file, { readonly: true });
+  try {
+    const row = database.query("SELECT encoding, bytes FROM assets WHERE path = ?").get(path) as { encoding: string; bytes: Uint8Array };
+    return (row.encoding === "br" ? brotliDecompressSync(row.bytes) : Buffer.from(row.bytes)).toString("utf8");
+  } finally {
+    database.close();
+  }
+}
 /** SHA-256 in hex. */
 export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 /** A regular file's SHA-256 in hex. */

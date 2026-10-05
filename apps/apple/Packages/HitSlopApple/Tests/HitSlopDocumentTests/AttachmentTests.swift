@@ -41,6 +41,7 @@ import HitSlopTestSupport
     // A copy of the open document carries the attachment.
     try await engine.copy(to: copy)
     #expect(try await bytes(copy) == data)
+    #expect(Fixtures.hasCustomIcon(copy), "a copy gets its own Finder icon")
     try await engine.close()
     #expect(try await bytes(root) == data)
     try await expectListed()

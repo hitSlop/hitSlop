@@ -476,10 +476,6 @@ impl Store {
                     .and_then(|mut s| s.execute(params![descriptor, bytes]))
                     .map_err(sqlite("checkpoint"))?;
                 tx.execute_batch("DELETE FROM updates").map_err(sqlite("checkpoint"))?;
-                // Each step frees one page.
-                tx.prepare_cached("PRAGMA incremental_vacuum")
-                    .and_then(|mut s| s.query([])?.mapped(|_| Ok(())).collect::<rusqlite::Result<()>>())
-                    .map_err(sqlite("checkpoint"))?;
                 Metadata { rows: 0, update_bytes: 0, checkpoint_bytes: bytes.len() as i64 }
             }
             Rows::Append(bytes) => {

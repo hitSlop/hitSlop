@@ -93,6 +93,7 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
     #expect(try SlopFile(url: destination).manifest.categories == [.utilities, .other])
     #expect(SlopArtwork.png(destination, .preview) == png)
     #expect(SlopArtwork.png(destination, .icon) == iconPNG)
+    #expect(Fixtures.hasCustomIcon(destination), "Finder shows the template's artwork as the new document's icon")
     let updatedPreview = try coloredArtwork(.red)
     try await writeArtwork(destination, preview: updatedPreview)
     #expect(SlopArtwork.png(destination, .preview) == updatedPreview)

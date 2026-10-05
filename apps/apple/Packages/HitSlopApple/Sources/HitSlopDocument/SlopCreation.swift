@@ -19,10 +19,12 @@ extension SlopFile {
   /// A new writable document from `template`: the same app, a new identity, no saved state.
   /// The core checks the template and its app before publishing anything, and never
   /// replaces an existing file. Returns the new file's canonical URL (the identity Recents
-  /// and live owners use).
+  /// and live owners use). Finder shows the template's artwork as its icon.
   public static func create(from template: URL, to destination: URL) throws -> URL {
     let destination = try newDocumentURL(destination)
     try storeCall { try createDocument(template: template.path, destination: destination.path) }
-    return try resolvedRoot(destination)
+    let created = try resolvedRoot(destination)
+    SlopFinderIcon.refresh(created)
+    return created
   }
 }

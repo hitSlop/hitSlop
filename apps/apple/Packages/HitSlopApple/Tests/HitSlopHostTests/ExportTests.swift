@@ -158,28 +158,36 @@ extension HostTests {
   }
 
   // A window writes artwork from its page as it closes, when it changed the document or
-  // the file has none; Finder, Quick Look and the catalog then show it as it closed.
+  // the file has none; Finder, Quick Look and the catalog then show it as it closed, and
+  // Finder's custom icon is a copy of it.
   @Test @MainActor func closingWritesArtworkOfTheChangedDocument() async throws {
     _ = NSApplication.shared
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    func closeWindow(editing title: String?) async throws {
+    func closeWindow(_ root: URL, edits ops: String? = nil) async throws {
+      // A window captures artwork only once it presented its content.
       let controller = try await SlopDocumentWindowController.open(url: root)
-      try await controller.session.waitUntilReady()
-      if let title {
-        let op = [["type": "insert", "path": ["tasks"], "value": ["text": title, "done": false, "archived": false]]]
-        let text = String(decoding: try JSONSerialization.data(withJSONObject: op), as: UTF8.self)
-        #expect(try await command("batch", url: root, ["ops": text]).ok)
-      }
+      controller.showWindow(nil)
+      await controller.waitForPresentation()
+      #expect(controller.isContentReady)
+      if let ops { #expect(try await command("batch", url: root, ["ops": ops]).ok) }
       try await controller.finishClose()
     }
-    try await closeWindow(editing: nil)
-    let first = try #require(SlopArtwork.png(root, .preview), "a file without a preview gets one")
-    #expect(SlopArtwork.png(root, .icon) != nil)
-    try await closeWindow(editing: nil)
+    // A document without artwork gets a preview at its first close.
+    let bare = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: bare) }
+    #expect(SlopArtwork.png(bare, .preview) == nil)
+    try await closeWindow(bare)
+    #expect(SlopArtwork.png(bare, .preview) != nil)
+    // A document with its template's artwork keeps it while unchanged, and gets new artwork,
+    // and the matching Finder icon, once a closing window changed it.
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let first = try #require(SlopArtwork.png(root, .preview))
+    try await closeWindow(root)
     #expect(SlopArtwork.png(root, .preview) == first, "an unchanged document keeps its artwork")
-    try await closeWindow(editing: "Written as the window closed")
+    #expect(!Fixtures.hasCustomIcon(root))
+    try await closeWindow(root, edits: #"[{"type":"insert","path":["tasks"],"value":{"text":"Written as the window closed","done":false,"archived":false}}]"#)
     #expect(SlopArtwork.png(root, .preview) != first)
+    #expect(Fixtures.hasCustomIcon(root), "Finder shows the new artwork as the file's icon")
   }
 
   @Test @MainActor func longDocumentPreviewIsCappedWhileExportKeepsFullLength() async throws {

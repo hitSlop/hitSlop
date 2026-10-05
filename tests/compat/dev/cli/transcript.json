@@ -357,8 +357,8 @@
       ],
       "code": 0,
       "stdout": {
-        "byteLength": 28,
         "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
+        "byteLength": 28,
         "name": "attachment.txt",
         "mimeType": "text/plain"
       }

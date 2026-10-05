@@ -24,10 +24,14 @@ final class ThumbnailProvider: QLThumbnailProvider {
     }
     let scale = min(request.maximumSize.width / CGFloat(image.width), request.maximumSize.height / CGFloat(image.height), 1)
     let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-    handler(QLThumbnailReply(contextSize: size) { context in
-      context.interpolationQuality = .high
-      context.draw(image, in: CGRect(origin: .zero, size: size))
+    // AppKit's current context is in points, scaled to the display. The `CGContext` that
+    // `QLThumbnailReply(contextSize:drawing:)` hands over is in unscaled pixels, so a
+    // drawing in points filled only its bottom-left quarter.
+    let thumbnail = NSImage(cgImage: image, size: size)
+    handler(QLThumbnailReply(contextSize: size, currentContextDrawing: {
+      NSGraphicsContext.current?.imageInterpolation = .high
+      thumbnail.draw(in: CGRect(origin: .zero, size: size))
       return true
-    }, nil)
+    }), nil)
   }
 }
