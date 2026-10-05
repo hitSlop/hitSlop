@@ -206,10 +206,7 @@ public enum Fixtures {
 
   /// Whether another writer could take the document now.
   public static func isLocked(_ document: URL) -> Bool {
-    do {
-      try NativeStore.open(path: document.path, mode: .document).close()
-      return false
-    } catch CoreError.Locked { return true } catch { return false }
+    (try? writerLockHeld(path: document.path)) ?? false
   }
 
   /// What a document's saved state holds: checkpoint bytes, update bytes and update rows,

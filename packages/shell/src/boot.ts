@@ -98,9 +98,6 @@ function createContextV1(doc: Document<ObjectNode>, options: Parameters<typeof c
     get current() {
       return doc.current;
     },
-    get issues() {
-      return doc.issues;
-    },
     fields: doc.fields,
     at: ((value: any) => doc.at(value)) as SlopContext["document"]["at"],
     change: <R>(callback: (tx: any) => R) => doc.change(callback),

@@ -18,7 +18,7 @@ fn entries(path: &Path) -> Vec<PathBuf> {
 fn json_file(path: &Path) -> Option<Value> {
     std::fs::read_to_string(path).ok().map(|text| serde_json::from_str(&text).unwrap())
 }
-/// The saved document as a reader that owns nothing sees it: value, issues and theme.
+/// The saved document as a reader that owns nothing sees it: value and theme.
 fn read(root: &Path) -> (Value, Value) {
     let store = Store::open(root, Mode::Snapshot).unwrap();
     let doc = store.document().unwrap();
@@ -28,7 +28,7 @@ fn read(root: &Path) -> (Value, Value) {
         "overrides": serde_json::from_str::<Value>(&theme.overrides).unwrap(),
         "effective": serde_json::from_str::<Value>(&theme.effective).unwrap(),
     });
-    (json!({"value": state["value"], "issues": state["issues"]}), theme)
+    (state["value"].clone(), theme)
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             std::fs::copy(&saved, &root).unwrap();
             hitslop_core::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
             let (state, theme) = read(&root);
-            assert_eq!(state, json!({"value": expected["value"], "issues": expected["issues"]}), "{label}: the saved document reads differently");
+            assert_eq!(state, expected["value"], "{label}: the saved document reads differently");
             assert_eq!(theme["overrides"], expected["theme"]["overrides"], "{label}: theme overrides");
             assert_eq!(theme["effective"], expected["theme"]["effective"], "{label}: effective theme");
 
@@ -62,7 +62,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                 }
                 store.close().unwrap();
                 let (state, _) = read(&root);
-                assert_eq!(state, json!({"value": scenario["value"], "issues": scenario["issues"]}), "{label}: the edit did not reopen");
+                assert_eq!(state, scenario["value"], "{label}: the edit did not reopen");
             }
             cases += 1;
         }

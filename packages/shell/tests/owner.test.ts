@@ -280,7 +280,7 @@ test("a publication older than the current state is ignored", async () => {
     push([
       {
         type: "publication",
-        publication: { previous: 0, sequence: 1, version: "old", ops: [{ type: "set", path: ["hits"], value: 99 }], issues: [] },
+        publication: { previous: 0, sequence: 1, version: "old", ops: [{ type: "set", path: ["hits"], value: 99 }] },
       },
     ]);
     expect(doc.current).toBe(current);

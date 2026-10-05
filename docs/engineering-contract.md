@@ -17,8 +17,8 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | The app in a `.slop` file: the `app` row (manifest, descriptor encoding, initial values, theme), assets and artwork | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
 | App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
-| How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, issues, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ native tools | `slop-engine --protocol` and `hitslop-native --protocol` (`{version, minimum}`) | Selects the adapter named by `--client-protocol`; omission means 1. Keeps serving every protocol from `minimum`; protocol 1 is today's commands, arguments, outputs and exit statuses |
+| How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the range served (`{version, minimum}`) | Selects the adapter for the named protocol; omission means 1. Keeps serving every protocol from `minimum`, and refuses any other before touching the document (exit status 2, or `requires_update`) naming the side to update. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
 
 Markers are requirements, not release numbers: refactors never raise them, and app,
 CLI and SDK versions never stand for them. An additive `ctx` API still raises
@@ -82,7 +82,8 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   [document types](reference/document-types.md)).
 - Writes are asynchronous and resolve after the snapshot updates; `change(tx => …)`
   collects synchronously. Reads come from immutable snapshots. Preserve `$id`
-  identity; merged anomalies are preserved and flagged, never repaired on read.
+  identity. Every accepted operation keeps the document valid; invalid stored state is
+  refused without modifying the file.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
   JavaScriptCore engine or a second document engine. The WASM core ships only in the
   CLI, for `slop dev` and tests. The native engine validates authoring input.

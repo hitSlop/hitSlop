@@ -19,17 +19,16 @@ mod descriptor;
 mod execute;
 mod replace;
 mod project;
-mod issues;
+mod check;
 pub use descriptor::validate;
 use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
 use execute::{fill, put, resolve, execute, Rows};
 use identity::stored_id;
-use project::{counter_sum, project, project_at};
-use issues::{issues, container_issues, scalar_issue};
-use publication::{Dirty, Events, ListState};
+use project::project;
+use publication::{Events, ListState};
 use std::sync::Arc;
 pub use wire::{Code, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, IMAGE_PIXELS, IMAGE_SIDE, ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
-use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
+use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, State, Publication, PatchOp};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize = if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
@@ -162,20 +161,52 @@ fn application_id() -> String {
     out
 }
 
-/// Issues in one canonical order, by path then code, so every walk agrees.
-fn sort_issues(issues: &mut [Issue]) {
-    issues.sort_by(|a, b| (&a.path, a.code).cmp(&(&b.path, b.code)));
-}
-/// This replica's counter key: its peer ID.
-fn writer(doc: &LoroDoc) -> String {
-    doc.peer_id().to_string()
-}
 fn raw(doc: &LoroDoc) -> Value {
     json(doc.get_map("data").get_deep_value())
 }
 fn subscribe(doc: &LoroDoc, events: &Events) {
     // The subscription lives exactly as long as this LoroDoc; a replaced doc drops it.
     publication::subscribe(doc, events).detach();
+}
+
+/// The peer a template's initial operations belong to (`Document::initial_checkpoint`).
+#[cfg(feature = "storage")]
+const TEMPLATE_PEER: u64 = 1;
+/// `doc` with the layout marker and `value`, a validated value of `schema`, committed.
+fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
+    doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
+    fill(&doc.get_map("data"), schema, value, &mut Rows::new(&HashMap::new()))?;
+    doc.commit();
+    Ok(doc)
+}
+/// Gives every row in `value` that has no `$id` one derived from its place (`at`).
+#[cfg(feature = "storage")]
+fn name_rows(node: &Node, value: &mut Value, at: &str) {
+    match (node, value) {
+        (Node::Optional { inner }, value) => name_rows(inner, value, at),
+        (Node::Object { properties }, Value::Object(fields)) => {
+            for (key, child) in properties {
+                if let Some(field) = fields.get_mut(key) {
+                    name_rows(child, field, &format!("{at}/{key}"));
+                }
+            }
+        }
+        (Node::Record { value: entry }, Value::Object(entries)) => {
+            for (key, field) in entries.iter_mut() {
+                name_rows(entry, field, &format!("{at}/{key}"));
+            }
+        }
+        (Node::List { item }, Value::Array(rows)) if matches!(**item, Node::Object { .. }) => {
+            for (index, row) in rows.iter_mut().enumerate() {
+                let place = format!("{at}/{index}");
+                if let Value::Object(fields) = row {
+                    fields.entry("$id").or_insert_with(|| Value::String(identity::derived(&format!("initial:{place}"))));
+                }
+                name_rows(item, row, &place);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Identifies the core build (a hash of its sources and the lockfile), so a release can
@@ -201,21 +232,25 @@ fn check_layout(doc: &LoroDoc) -> Result<()> {
     }
 }
 
-/// Who made a change: the person in a window, or an agent (the CLI and socket). Both are
-/// undoable; an agent's consecutive batches are one undo step.
+/// Who made a change: the person, in the page or in the window's own controls (the theme
+/// panel), or an agent (the CLI and socket). All are undoable; an agent's consecutive
+/// batches are one undo step. Only the window and agents change the palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
     Page,
+    Window,
     Agent,
 }
 /// The commit message of agent edits, saved with the history for attribution.
 const AGENT: &str = "agent";
 /// The undo step being extended: a typing run in one text field (its text and caret, in
-/// UTF-16, after the last edit), or a run of agent batches.
+/// UTF-16, after the last edit), a run of agent batches, or a run of the window's changes
+/// to one palette color (a color panel drag).
+#[derive(PartialEq)]
 enum Run {
     Typing { path: Vec<Segment>, text: String, caret: usize },
     Agent,
-    Theme,
+    Color(String),
 }
 /// One document edit, restored by Loro as a new change. Only version references are
 /// kept here; document values and their history remain in Loro.
@@ -226,19 +261,47 @@ struct Step {
 /// Undo covers the open session only: a document opens with nothing to undo.
 const UNDO_STEPS: usize = 100;
 
-/// A committed batch: its publication sequence, the IDs of inserted rows, and the
-/// publication to deliver, absent when the batch changed nothing.
+/// A committed batch: its publication sequence, the IDs of inserted rows, the publication
+/// to deliver (absent when the batch changed nothing) and whether it changed the palette.
 #[derive(Debug)]
 pub struct Applied {
     pub sequence: u64,
     pub ids: Vec<String>,
     pub publication: Option<String>,
+    pub theme_changed: bool,
 }
-/// A palette command and the document change it accepted.
-#[derive(Debug)]
-pub struct ThemeApplied {
-    pub state: theme::ThemeState,
-    pub result: Applied,
+/// A published change: its JSON, and whether it changed the palette.
+struct Published {
+    json: String,
+    theme: bool,
+}
+/// What a document is an instance of, from its app's immutable row: the descriptor, and
+/// the palette its template declares.
+#[derive(Clone, Debug)]
+pub struct AppSpec {
+    schema: Node,
+    theme: theme::Theme,
+}
+impl AppSpec {
+    /// `slug` names the template in theme files; `theme` is its declared colors (JSON).
+    pub fn new(descriptor: &str, slug: &str, theme: &str) -> Result<Self> {
+        Ok(Self::of(self::descriptor(descriptor)?, slug, theme::validate_defaults(theme)?))
+    }
+    /// An app that declares no colors.
+    pub fn data(descriptor: &str) -> Result<Self> {
+        Self::new(descriptor, "", "{}")
+    }
+    pub(crate) fn of(schema: Node, slug: &str, tokens: Vec<(String, String)>) -> Self {
+        Self { schema, theme: theme::Theme::new(slug, tokens) }
+    }
+    /// The template's slug, which names it in theme files.
+    pub fn slug(&self) -> &str {
+        self.theme.template()
+    }
+    /// The declared colors, in the order the author wrote them.
+    pub fn theme_tokens(&self) -> &[(String, String)] {
+        self.theme.tokens()
+    }
 }
 /// A stateless text edit. `authored` is the version right after this edit on its own
 /// branch; the page sends it as the next `base`. Selections are UTF-16 offsets in the
@@ -255,15 +318,10 @@ pub struct TextEdit {
 /// Exactly one host executor owns this value. Neither binding contains semantics.
 pub struct Document {
     doc: LoroDoc,
-    schema: Node,
-    theme: theme::Theme,
-    theme_gesture: bool,
+    app: AppSpec,
     sequence: u64,
     /// Every movable list's order and row identities as of the last publication.
     lists: HashMap<ContainerID, ListState>,
-    /// Issues as of the last publication. Empty is the common case and enables
-    /// change-proportional validation; a document with anomalies rescans on publish.
-    issues: Vec<Issue>,
     events: Events,
     /// Where the saved history starts once the latest checkpoint is written. A
     /// concurrent edit must not branch from before it: its saved operations would depend
@@ -271,59 +329,55 @@ pub struct Document {
     floor: VersionVector,
     undo: VecDeque<Step>,
     redo: Vec<Step>,
-    /// Consecutive edits at the caret of one text field, or consecutive agent batches,
-    /// are one undo step.
+    /// Consecutive edits at the caret of one text field, consecutive agent batches, or
+    /// consecutive window changes to one color are one undo step.
     run: Option<Run>,
 }
 impl Document {
-    /// `scan` is false only for a document just built from validated input.
-    fn from_doc(doc: LoroDoc, schema: Node, scan: bool) -> Result<Self> {
+    /// `check` is false only for a document just built from validated input; stored state
+    /// is checked against its app before anything reads it.
+    fn from_doc(doc: LoroDoc, app: AppSpec, check: bool) -> Result<Self> {
+        if check {
+            check::stored(&app.schema, Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))))?;
+            app.theme.check_stored(&doc.get_map(theme::ROOT))?;
+        }
         let events = Events::default();
         subscribe(&doc, &events);
-        let mut this = Self {
+        let this = Self {
             lists: publication::index_all(&doc),
             undo: VecDeque::new(),
             redo: vec![],
             run: None,
             doc,
-            schema,
-            theme: theme::Theme::default(),
-            theme_gesture: false,
+            app,
             sequence: 0,
-            issues: vec![],
             events,
             floor: VersionVector::default(),
         };
-        if scan {
-            this.issues = this.scan_issues();
-        }
         Ok(this)
     }
-    pub fn create(schema: &str, initial: &str) -> Result<Self> {
-        Self::create_with(descriptor(schema)?, initial)
-    }
-    /// Creates a document with the app's immutable palette defaults.
-    pub fn create_with_theme(schema: &str, initial: &str, template: &str, defaults: &str) -> Result<Self> {
-        let tokens = theme::validate_defaults(defaults)?;
-        let mut doc = Self::create(schema, initial)?;
-        doc.configure_theme(template, &tokens);
-        Ok(doc)
-    }
-    pub(crate) fn configure_theme(&mut self, template: &str, defaults: &[(String, String)]) {
-        self.theme = theme::Theme::new(template, defaults);
-    }
-    /// A new document of an already parsed descriptor.
-    pub(crate) fn create_with(schema: Node, initial: &str) -> Result<Self> {
+    /// A new document of `app` holding `initial`, its values as JSON.
+    pub fn create(app: &AppSpec, initial: &str) -> Result<Self> {
         let initial: Value = parse(initial)?;
-        schema.validate(&initial, false)?;
-        let doc = LoroDoc::new();
-        doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
-        let lists = HashMap::new();
-        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc), false, &mut Rows::new(&lists))?;
-        doc.commit();
-        Self::from_doc(doc, schema, false)
+        app.schema.validate(&initial, false)?;
+        let doc = filled(LoroDoc::new(), &app.schema, &initial)?;
+        Self::from_doc(doc, app.clone(), false)
     }
-    pub fn open(schema: &str, checkpoint: &[u8], updates: &[Vec<u8>]) -> Result<Self> {
+    /// A template's initial state, as the checkpoint every document of it starts from. The
+    /// same app always packs the same bytes, so a rebuild reproduces its template: rows
+    /// without an `$id` get one derived from their place, and the operations belong to a
+    /// fixed peer. A document that opens it edits as a peer of its own.
+    #[cfg(feature = "storage")]
+    pub(crate) fn initial_checkpoint(app: &AppSpec, initial: &str) -> Result<Vec<u8>> {
+        let mut initial: Value = parse(initial)?;
+        app.schema.validate(&initial, false)?;
+        name_rows(&app.schema, &mut initial, "");
+        let doc = LoroDoc::new();
+        doc.set_peer_id(TEMPLATE_PEER).map_err(engine)?;
+        filled(doc, &app.schema, &initial)?.export(ExportMode::Snapshot).map_err(engine)
+    }
+    /// A saved document of `app`: its checkpoint and the updates saved after it.
+    pub fn open(app: &AppSpec, checkpoint: &[u8], updates: &[Vec<u8>]) -> Result<Self> {
         let total = updates
             .iter()
             .try_fold(checkpoint.len(), |n, b| n.checked_add(b.len()))
@@ -331,20 +385,13 @@ impl Document {
         if total > STORAGE_BYTES {
             return Err(err(Code::TooLarge, "Input bytes"));
         }
-        Self::open_with(descriptor(schema)?, checkpoint, |e| e, |import| updates.iter().try_for_each(|bytes| import(bytes)))
-    }
-    /// Opens saved data and overrides under the app's immutable palette defaults.
-    pub fn open_with_theme(schema: &str, checkpoint: &[u8], updates: &[Vec<u8>], template: &str, defaults: &str) -> Result<Self> {
-        let tokens = theme::validate_defaults(defaults)?;
-        let mut doc = Self::open(schema, checkpoint, updates)?;
-        doc.configure_theme(template, &tokens);
-        Ok(doc)
+        Self::open_with(app, checkpoint, |e| e, |import| updates.iter().try_for_each(|bytes| import(bytes)))
     }
     /// Imports `checkpoint`, then each update `updates` passes to its import function, in
     /// order. Storage streams rows through it without copying them, failing in its own
     /// error type (`core` wraps the document's); callers bound the total size first.
     pub(crate) fn open_with<E>(
-        schema: Node,
+        app: &AppSpec,
         checkpoint: &[u8],
         core: impl Fn(Error) -> E,
         updates: impl FnOnce(&mut dyn FnMut(&[u8]) -> std::result::Result<(), E>) -> std::result::Result<(), E>,
@@ -362,133 +409,28 @@ impl Document {
             Ok(())
         })?;
         check_layout(&doc).map_err(&core)?;
-        Self::from_doc(doc, schema, true).map_err(core)
-    }
-    /// Same result as `issues` over the full JSON value, without materializing it:
-    /// containers are walked directly and only plain or unexpected values become JSON.
-    fn scan_issues(&self) -> Vec<Issue> {
-        let mut found = vec![];
-        let root = ValueOrContainer::Container(Container::Map(self.doc.get_map("data")));
-        container_issues(&self.schema, Some(root), &mut vec![], &mut found);
-        sort_issues(&mut found);
-        found
-    }
-    /// Recomputes the issues under each changed place; every other issue is kept. A place
-    /// whose rows have no unique ID widens to its list, as publications do. Returns
-    /// whether the issues changed.
-    fn refresh_issues(&mut self, dirty: &[Dirty]) -> bool {
-        enum Place<'a> { Container(Container, &'a Node), Entry(LoroMap, String, &'a Node) }
-        let mut places: Vec<(Vec<Segment>, Place)> = vec![];
-        let mut work: Vec<(ContainerID, Option<String>)> = dirty.iter().map(|d| match d {
-            Dirty::Container(cid) => (cid.clone(), None),
-            Dirty::Entry(cid, key) => (cid.clone(), Some(key.clone())),
-        }).collect();
-        while let Some((cid, key)) = work.pop() {
-            // A detached container's issues leave with the place that removed it.
-            let Some(loro_path) = self.doc.get_path_to_container(&cid) else { continue };
-            let Some(container) = self.doc.get_container(cid.clone()) else { continue };
-            let mut path = match publication::json_path(&self.lists, &loro_path) {
-                Ok(path) => path,
-                Err(list) => { work.push((list, None)); continue; }
-            };
-            let node = publication::node_at(&self.schema, &loro_path);
-            match (key, node, container) {
-                (Some(key), Some(node @ (Node::Object { .. } | Node::Record { .. })), Container::Map(map)) => {
-                    path.push(Segment::Key(key.clone()));
-                    places.push((path, Place::Entry(map, key, node)));
-                }
-                (_, Some(node), container) => places.push((path, Place::Container(container, node))),
-                // Undeclared: its parent reports it.
-                (_, None, _) => match loro_path.len() {
-                    0 | 1 => places.push((path, Place::Container(Container::Map(self.doc.get_map("data")), &self.schema))),
-                    n => work.push((loro_path[n - 2].0.clone(), None)),
-                },
-            }
-        }
-        // Outermost places only, so no subtree is recomputed twice.
-        places.sort_by_key(|(path, _)| path.len());
-        let mut outer: Vec<(Vec<Segment>, Place)> = vec![];
-        for (path, place) in places {
-            if !outer.iter().any(|(p, _)| path.starts_with(p)) {
-                outer.push((path, place));
-            }
-        }
-        let before = std::mem::take(&mut self.issues);
-        let mut issues: Vec<Issue> = before.iter().filter(|issue| !outer.iter().any(|(p, _)| issue.path.starts_with(p))).cloned().collect();
-        for (path, place) in outer {
-            let mut path = path;
-            match place {
-                Place::Container(container, node) => {
-                    container_issues(node, Some(ValueOrContainer::Container(container)), &mut path, &mut issues);
-                }
-                Place::Entry(map, key, node) => {
-                    let value = map.get(&key);
-                    match node {
-                        Node::Object { properties } => match (properties.get(&key), &value) {
-                            (Some(Node::Optional { .. }), None) => {}
-                            (Some(child), _) => container_issues(child, value, &mut path, &mut issues),
-                            (None, Some(_)) if key != "$id" => issues.push(Issue { code: IssueCode::UnknownField, path }),
-                            (None, _) => {}
-                        },
-                        Node::Record { value: entry } if value.is_some() => {
-                            if valid_key(&key) {
-                                container_issues(entry, value, &mut path, &mut issues);
-                            } else {
-                                issues.push(Issue { code: IssueCode::InvalidKey, path });
-                            }
-                        }
-                        // An absent record entry has no issues.
-                        _ => {}
-                    }
-                }
-            }
-        }
-        sort_issues(&mut issues);
-        let changed = issues != before;
-        self.issues = issues;
-        changed
+        Self::from_doc(doc, app.clone(), true).map_err(core)
     }
     pub fn version(&self) -> String {
         version_token(&self.doc.oplog_frontiers())
     }
-    /// The projected value. A document without issues stores every row's own unique
-    /// `$id`, so its stored value projects exactly; anomalous rows need container
-    /// identities for their effective IDs.
+    /// The application value: the stored value, each counter and number as it reads.
     fn projected(&self) -> Result<Value> {
-        if self.issues.is_empty() {
-            Ok(project(Some(&self.schema), raw(&self.doc)))
-        } else {
-            project_at(&self.doc, Some(&self.schema), &self.doc.get_map("data").id())
-        }
+        Ok(project(Some(&self.app.schema), raw(&self.doc)))
     }
     /// The application value as JSON.
     pub fn value(&self) -> Result<String> {
         Ok(encode(&self.projected()?))
     }
-    /// `{sequence, version, value, issues}` for a page or a reader, with the issues the
-    /// owner maintains. `snapshot` recomputes the same state from the full value.
+    /// `{sequence, version, value, theme}` for a page or a reader.
     pub fn state(&self) -> Result<String> {
-        Ok(encode(&State { version: self.version(), value: self.projected()?, issues: self.issues.clone(), sequence: self.sequence, theme: self.theme.effective(&self.doc.get_map(theme::ROOT))? }))
+        Ok(encode(&State { version: self.version(), value: self.projected()?, sequence: self.sequence, theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))? }))
     }
+    /// The same state recomputed from the full stored value: the oracle that publications
+    /// replayed on a page are tested against.
     pub fn snapshot(&self) -> Result<String> {
-        // Deliberately recomputed from the full value: this is the oracle that
-        // incremental publications and issues are tested against.
-        let raw = raw(&self.doc);
-        let mut found = vec![];
-        issues(&self.schema, &raw, None, &mut vec![], &mut found);
-        // Without issues every row stores its own unique `$id`, so the stored value
-        // projects exactly; anomalous rows need container identities for their IDs,
-        // which also name them in issue paths.
-        let value = if found.is_empty() {
-            project(Some(&self.schema), raw)
-        } else {
-            let value = project_at(&self.doc, Some(&self.schema), &self.doc.get_map("data").id())?;
-            found.clear();
-            issues(&self.schema, &raw, Some(&value), &mut vec![], &mut found);
-            sort_issues(&mut found);
-            value
-        };
-        Ok(encode(&State { version: self.version(), value, issues: found, sequence: self.sequence, theme: self.theme.effective(&self.doc.get_map(theme::ROOT))? }))
+        let value = project(Some(&self.app.schema), raw(&self.doc));
+        Ok(encode(&State { version: self.version(), value, sequence: self.sequence, theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))? }))
     }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
@@ -503,89 +445,19 @@ impl Document {
         self.doc = fresh;
         // Publication may have failed after updating indexes; rebuild those too.
         self.lists = publication::index_all(&self.doc);
-        self.issues = self.scan_issues();
         Ok(())
-    }
-    /// Merges another replica's updates; `None` when they changed nothing here.
-    pub fn import(&mut self, bytes: &[u8]) -> Result<Option<String>> {
-        if bytes.len() > STORAGE_BYTES {
-            return Err(err(Code::TooLarge, "Import bytes"));
-        }
-        // Refuse a batch with missing dependencies before Loro buffers any of it.
-        let meta = LoroDoc::decode_import_blob_meta(bytes, true)
-            .map_err(|e| err(Code::InvalidBytes, e))?;
-        // Refuse before mutation: a live owner must retain the full-history invariant.
-        if meta.mode == loro::EncodedBlobMode::ShallowSnapshot {
-            return Err(err(Code::InvalidBytes, "History-trimmed documents are not supported"));
-        }
-        let known = self.doc.oplog_vv();
-        if meta
-            .partial_start_vv
-            .iter()
-            .any(|(peer, start)| known.get(peer).copied().unwrap_or(0) < *start)
-        {
-            return Err(err(
-                Code::MissingDependencies,
-                "Durable pending-import buffering is not implemented",
-            ));
-        }
-        let imported = self.doc.import(bytes);
-        // Whole-document undo must never erase an external replica's edits. Raw imports
-        // form a boundary; JSON replacement and the page's text branch are local edits.
-        if self.doc.oplog_vv() != known {
-            self.undo.clear();
-            self.redo.clear();
-            self.run = None;
-        }
-        match imported {
-            Ok(_) => self.publish(),
-            // Loro applies the changes it can and refuses those that depend on history
-            // this document trimmed; what landed is published before the refusal.
-            Err(loro::LoroError::ImportUpdatesThatDependsOnOutdatedVersion) => {
-                self.publish()?;
-                Err(err(Code::StaleBase, "Updates depend on history this document trimmed"))
-            }
-            Err(e) => Err(err(Code::InvalidBytes, e)),
-        }
     }
     /// The publication sequence: the number of published changes since open.
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
-    /// Reads or changes the palette through the same commit, publication and undo path
-    /// as authored data. A command outside a panel gesture is one undo step.
-    pub fn theme(&mut self, change: theme::Change) -> Result<ThemeApplied> {
-        let before = self.doc.state_frontiers();
-        if let Err(error) = self.theme.change(&self.doc.get_map(theme::ROOT), change) {
-            self.abort(&before)?;
-            return Err(error);
-        }
-        self.doc.commit();
-        let publication = self.publish_or_abort(&before)?;
-        if publication.is_some() {
-            let continues = self.theme_gesture && matches!(self.run, Some(Run::Theme));
-            self.record(before, self.theme_gesture.then_some(Run::Theme), continues);
-        }
-        Ok(ThemeApplied {
-            state: self.theme_state()?,
-            result: Applied { sequence: self.sequence, ids: vec![], publication },
-        })
-    }
+    /// The palette: the template's colors, the overrides and the result.
     pub fn theme_state(&self) -> Result<theme::ThemeState> {
-        self.theme.state(&self.doc.get_map(theme::ROOT))
+        self.app.theme.state(&self.doc.get_map(theme::ROOT))
     }
+    /// The full palette as a theme file, the bytes every export writes.
     pub fn export_theme(&self) -> Result<String> {
-        self.theme.export(&self.doc.get_map(theme::ROOT))
-    }
-    /// Starts a panel gesture. Hosts end it before any independent theme command;
-    /// intervening data edits also stop extension of the previous theme undo step.
-    pub fn begin_theme_gesture(&mut self) {
-        self.run = None;
-        self.theme_gesture = true;
-    }
-    pub fn end_theme_gesture(&mut self) {
-        self.theme_gesture = false;
-        if matches!(self.run, Some(Run::Theme)) { self.run = None; }
+        self.app.theme.export(&self.doc.get_map(theme::ROOT))
     }
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
     pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
@@ -599,8 +471,12 @@ impl Document {
         {
             let mut rows = Rows::new(&self.lists);
             for (index, op) in batch.intents.iter().enumerate() {
-                if let Err(mut e) = execute(&self.doc, &self.schema, op, &self.issues, &mut ids, &mut rows)
-                {
+                let result = if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
+                    Err(err(Code::InvalidRequest, "The page cannot change the palette"))
+                } else {
+                    execute(&self.doc, &self.app, op, &mut ids, &mut rows)
+                };
+                if let Err(mut e) = result {
                     e.op_index = Some(index);
                     failure = Some(e);
                     break;
@@ -615,12 +491,25 @@ impl Document {
             self.doc.set_next_commit_message(AGENT);
         }
         self.doc.commit();
-        let publication = self.publish_or_abort(&before)?;
-        if publication.is_some() {
-            let continues = origin == Origin::Agent && matches!(self.run, Some(Run::Agent));
-            self.record(before, (origin == Origin::Agent).then_some(Run::Agent), continues);
+        let published = self.publish_or_abort(&before)?;
+        if published.is_some() {
+            let run = match (origin, batch.intents.as_slice()) {
+                (Origin::Agent, _) => Some(Run::Agent),
+                // One color set, not reset: a color panel sends one per step of a drag.
+                (Origin::Window, [Intent::SetTheme { values, replace: None | Some(false) }]) => match values.first_key_value() {
+                    Some((token, Some(_))) if values.len() == 1 => Some(Run::Color(token.clone())),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let continues = run.is_some() && run == self.run;
+            self.record(before, run, continues);
         }
-        Ok(Applied { sequence: self.sequence, ids, publication })
+        Ok(Self::applied(self.sequence, ids, published))
+    }
+    fn applied(sequence: u64, ids: Vec<String>, published: Option<Published>) -> Applied {
+        let theme_changed = published.as_ref().is_some_and(|p| p.theme);
+        Applied { sequence, ids, publication: published.map(|p| p.json), theme_changed }
     }
     /// Reverts the person's last undo step, or reapplies the last undone one. Nothing to
     /// undo publishes nothing.
@@ -638,15 +527,15 @@ impl Document {
         };
         let Some(target) = target else {
             self.run = None;
-            return Ok(Applied { sequence: self.sequence, ids: vec![], publication: None });
+            return Ok(Self::applied(self.sequence, vec![], None));
         };
         let before = self.doc.state_frontiers();
-        if let Err(error) = self.revert(&target) {
+        if let Err(error) = self.restore(&target) {
             self.abort(&before)?;
             return Err(error);
         }
         self.doc.commit();
-        let publication = self.publish_or_abort(&before)?;
+        let published = self.publish_or_abort(&before)?;
         // A failed restore leaves the stacks and grouping untouched.
         if undo {
             self.redo.push(self.undo.pop_back().expect("checked"));
@@ -654,58 +543,20 @@ impl Document {
             self.undo.push_back(self.redo.pop().expect("checked"));
         }
         self.run = None;
-        Ok(Applied { sequence: self.sequence, ids: vec![], publication })
+        Ok(Self::applied(self.sequence, vec![], published))
     }
-    /// Makes the value what it was at `target`. Loro's revert only removes the key of a
-    /// mergeable value it hides, and when a later revert shows it again it rewrites the
-    /// content as if the container were new; a hidden container that still held content
-    /// would then show it twice. So, as a clear does, the mergeable values the revert hides
-    /// are emptied first, and the rows it deletes are released, while both are still
-    /// editable; the revert is then computed from that state.
-    fn revert(&mut self, target: &Frontiers) -> Result<()> {
-        use loro::event::{Diff, ListDiffItem};
-        let diff = self.doc.diff(&self.doc.state_frontiers(), target).map_err(engine)?;
+    /// Makes the value and palette what they were at `target` by reconciling toward that
+    /// value as `replace` does: rows by `$id`, text by edit script, order by moves. Never
+    /// Loro's `revert_to`, which panics on some movable-list histories (Loro 1.16.2; see
+    /// `tests/undo.rs`).
+    fn restore(&mut self, target: &Frontiers) -> Result<()> {
+        let past = LoroDoc::new();
+        let state = self.doc.export(ExportMode::state_only(Some(target))).map_err(|_| err(Code::StaleBase, "That version precedes this document's retained history"))?;
+        past.import(&state).map_err(engine)?;
+        let value = project(Some(&self.app.schema), raw(&past));
         let mut rows = Rows::new(&self.lists);
-        // Only containers that exist now can be hidden or deleted; the diff also names the
-        // containers the revert will create.
-        for (cid, change) in diff.iter() {
-            match (change, self.doc.get_container(cid.clone())) {
-                (Diff::Map(delta), Some(Container::Map(map))) => {
-                    for (key, value) in &delta.updated {
-                        if let (None, Some(ValueOrContainer::Container(child))) = (value, map.get(key)) {
-                            if child.id().is_mergeable() {
-                                execute::empty(&child, &mut rows)?;
-                            }
-                        }
-                    }
-                }
-                (Diff::List(items), Some(Container::MovableList(list))) => {
-                    let (mut index, mut deleted, mut moved) = (0, vec![], HashSet::new());
-                    for item in items {
-                        match item {
-                            ListDiffItem::Retain { retain } => index += retain,
-                            ListDiffItem::Delete { delete } => {
-                                deleted.extend((index..index + delete).filter_map(|i| list.get(i)));
-                                index += delete;
-                            }
-                            ListDiffItem::Insert { insert, .. } => moved.extend(insert.iter().filter_map(|v| match v {
-                                ValueOrContainer::Container(c) => Some(c.id()),
-                                ValueOrContainer::Value(_) => None,
-                            })),
-                        }
-                    }
-                    for row in deleted {
-                        if let ValueOrContainer::Container(row) = row {
-                            if !moved.contains(&row.id()) {
-                                execute::release(&row, &mut rows)?;
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.doc.revert_to(target).map_err(engine)
+        replace::replace(&self.doc, &self.app.schema, &[], &value, &mut vec![], &mut rows)?;
+        theme::restore(&self.doc.get_map(theme::ROOT), &past.get_map(theme::ROOT))
     }
     /// Records only a successfully published edit. No-op edits and refusals preserve
     /// both the current run and redo. Extending a run keeps its original before-version.
@@ -741,7 +592,7 @@ impl Document {
     }
     /// No publication has escaped when this fails, so restore the document and indexes
     /// before reporting a refusal. History is updated only after this succeeds.
-    fn publish_or_abort(&mut self, before: &Frontiers) -> Result<Option<String>> {
+    fn publish_or_abort(&mut self, before: &Frontiers) -> Result<Option<Published>> {
         match self.publish() {
             Ok(publication) => Ok(publication),
             Err(error) => {
@@ -751,31 +602,24 @@ impl Document {
         }
     }
     /// Publishes the committed events as one change: `{previous, sequence, version, ops,
-    /// issues?}`. Applying it to the previous snapshot yields a fresh snapshot. `None`
+    /// theme?}`. Applying it to the previous snapshot yields a fresh snapshot. `None`
     /// when the document did not change: no publication, and the sequence stays.
-    fn publish(&mut self) -> Result<Option<String>> {
+    fn publish(&mut self) -> Result<Option<Published>> {
         let events = std::mem::take(&mut *self.events.lock().unwrap());
         let theme = publication::theme_changed(&self.doc, &events)
-            .then(|| self.theme.effective(&self.doc.get_map(theme::ROOT))).transpose()?;
-        let published = publication::publish(&self.doc, &self.schema, &mut self.lists, events)?;
-        if published.is_none() && theme.is_none() {
+            .then(|| self.app.theme.effective(&self.doc.get_map(theme::ROOT))).transpose()?;
+        let ops = publication::publish(&self.doc, &self.app.schema, &mut self.lists, events)?;
+        if ops.is_none() && theme.is_none() {
             return Ok(None);
         }
-        let (ops, changed) = match published {
-            Some(published) => {
-                let changed = (published.rescan || !self.issues.is_empty()) && self.refresh_issues(&published.dirty);
-                (published.ops, changed)
-            }
-            None => (vec![], false),
-        };
         let next = self
             .sequence
             .checked_add(1)
             .ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
-        let issues = changed.then(|| self.issues.clone());
-        let response = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops, issues, theme });
+        let themed = theme.is_some();
+        let json = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops: ops.unwrap_or_default(), theme });
         self.sequence = next;
-        Ok(Some(response))
+        Ok(Some(Published { json, theme: themed }))
     }
     /// Storage calls this when a checkpoint keeps only the history since `start`.
     #[cfg(feature = "storage")]
@@ -785,16 +629,12 @@ impl Document {
     pub fn checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
     }
-    pub fn export_since(&self, version: &str) -> Result<Vec<u8>> {
-        let (_, vv) = decode_version(&self.doc, version)?;
-        self.doc.export(ExportMode::updates(&vv)).map_err(engine)
-    }
 }
 /// A new long-lived replica holding exactly the history up to `frontiers`, with its own
 /// peer. Built by replaying the operations from where `doc`'s history starts (a trimmed
 /// document's starting state, else nothing), never with `LoroDoc::fork_at`: a `fork_at`
 /// replica of an older version can later resolve concurrent map writes differently from
-/// every other replica (reproduced with plain Loro 1.16.2; see tests/replica.rs).
+/// a fresh one holding the same operations (reproduced with plain Loro 1.16.2).
 pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
     // Measured before any export commits pending operations; those lie outside `vv`.
     let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;

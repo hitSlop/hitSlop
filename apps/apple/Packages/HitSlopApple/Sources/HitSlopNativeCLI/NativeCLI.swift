@@ -19,6 +19,7 @@ import HitSlopDocument
         version = selected
         arguments.removeFirst(2)
       }
+      clientProtocol = version
       switch version {
       case 1:
         var command = try parseAsRoot(arguments)
@@ -53,8 +54,12 @@ import HitSlopDocument
   }
 }
 
-/// One document request: a `SocketRequest` (JSON) on standard input, without an epoch, and
-/// its `SocketReply` on standard output. It reaches the document's live owner, or an owner
+/// The command protocol the caller named, set once before any command runs; unversioned
+/// callers speak protocol 1.
+nonisolated(unsafe) var clientProtocol = 1
+
+/// One document request: a `SocketRequest` (JSON) on standard input, without its
+/// protocol, and its `SocketReply` on standard output. It reaches the document's live owner, or an owner
 /// opened here; `export` of a closed document renders its saved state here.
 struct Request: AsyncParsableCommand {
   @MainActor func run() async throws {
@@ -68,7 +73,7 @@ struct Request: AsyncParsableCommand {
     let method = (try? JSONSerialization.jsonObject(with: input) as? [String: Any])?["method"] as? String
     let export = method == SocketRequest.Method.export.rawValue
     if export { bootstrapApp() }
-    let reply = await DocumentCommand.run(json: input, export: export ? Self.exportClosed : nil)
+    let reply = await DocumentCommand.run(json: input, protocol: clientProtocol, export: export ? Self.exportClosed : nil)
     FileHandle.standardOutput.write(reply + [10])
   }
   @MainActor private static func exportClosed(_ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline) async throws {

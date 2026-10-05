@@ -129,17 +129,12 @@ impl PatchOp {
         Self::MoveRow { path, .. } => path,
     } }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueCode { TypeMismatch, OutOfRange, UnknownField, InvalidKey, InvalidId, DuplicateId }
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Issue { pub code: IssueCode, pub path: Vec<Segment> }
 #[derive(Debug, Serialize)]
-pub struct State { pub sequence: u64, pub version: String, pub value: Value, pub issues: Vec<Issue>, pub theme: std::collections::BTreeMap<String, String> }
+pub struct State { pub sequence: u64, pub version: String, pub value: Value, pub theme: std::collections::BTreeMap<String, String> }
 #[derive(Debug, Serialize)]
-pub struct Publication { pub previous: u64, pub sequence: u64, pub version: String, pub ops: Vec<PatchOp>, #[serde(skip_serializing_if = "Option::is_none")] pub issues: Option<Vec<Issue>>, #[serde(skip_serializing_if = "Option::is_none")] pub theme: Option<std::collections::BTreeMap<String, String>> }
+pub struct Publication { pub previous: u64, pub sequence: u64, pub version: String, pub ops: Vec<PatchOp>, #[serde(skip_serializing_if = "Option::is_none")] pub theme: Option<std::collections::BTreeMap<String, String>> }
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Intent {
     Set { path: Vec<Segment>, value: Value },
     Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor>, index: Option<usize> },
@@ -148,8 +143,11 @@ pub enum Intent {
     Clear { path: Vec<Segment> },
     Increment { path: Vec<Segment>, by: i64 },
     Replace { path: Vec<Segment>, value: Value },
+    SetTheme { values: std::collections::BTreeMap<String, Option<String>>, replace: Option<bool> },
+    ImportTheme { file: String },
 }
 impl Intent {
+    /// The data path; palette intents have none.
     pub fn path(&self) -> &[Segment] { match self {
         Self::Set { path, .. } => path,
         Self::Insert { path, .. } => path,
@@ -158,6 +156,8 @@ impl Intent {
         Self::Clear { path, .. } => path,
         Self::Increment { path, .. } => path,
         Self::Replace { path, .. } => path,
+        Self::SetTheme { .. } => &[],
+        Self::ImportTheme { .. } => &[],
     } }
 }
 #[derive(Debug, Deserialize)]
@@ -181,49 +181,33 @@ pub struct EditText { pub base: String, pub path: Vec<Segment>, pub from: String
 
 
 #[cfg(feature = "storage")]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub(crate) enum SocketRequest {
     #[serde(rename = "attachments.list")]
-    AttachmentsList { documentPath: String },
+    AttachmentsList { protocol: u64, documentPath: String },
     #[serde(rename = "attachments.read")]
-    AttachmentsRead { documentPath: String, attachmentID: String },
+    AttachmentsRead { protocol: u64, documentPath: String, attachmentID: String },
     #[serde(rename = "attachments.put")]
-    AttachmentsPut { documentPath: String, epoch: String, bytes: String },
-    #[serde(rename = "theme.get")]
-    ThemeGet { documentPath: String },
-    #[serde(rename = "theme.set")]
-    ThemeSet { documentPath: String, epoch: String, values: std::collections::BTreeMap<String, String> },
-    #[serde(rename = "theme.reset")]
-    ThemeReset { documentPath: String, epoch: String, #[serde(skip_serializing_if = "Option::is_none")] token: Option<String> },
+    AttachmentsPut { protocol: u64, documentPath: String, bytes: String },
     #[serde(rename = "theme.export")]
-    ThemeExport { documentPath: String },
-    #[serde(rename = "theme.import")]
-    ThemeImport { documentPath: String, epoch: String, file: String },
-    #[serde(rename = "hello")]
-    Hello { documentPath: String },
+    ThemeExport { protocol: u64, documentPath: String },
     #[serde(rename = "get")]
-    Get { documentPath: String },
+    Get { protocol: u64, documentPath: String },
     #[serde(rename = "batch")]
-    Batch { documentPath: String, epoch: String, ops: String },
+    Batch { protocol: u64, documentPath: String, ops: String },
     #[serde(rename = "export")]
-    Export { documentPath: String, epoch: String, format: String, output: String },
+    Export { protocol: u64, documentPath: String, format: String, output: String },
 }
 
 #[cfg(feature = "storage")]
 impl SocketRequest {
-    pub fn needs_epoch(method: &str) -> bool { matches!(method, "attachments.put" | "theme.set" | "theme.reset" | "theme.import" | "batch" | "export") }
     pub fn method(&self) -> &'static str { match self {
         Self::AttachmentsList { .. } => "attachments.list",
         Self::AttachmentsRead { .. } => "attachments.read",
         Self::AttachmentsPut { .. } => "attachments.put",
-        Self::ThemeGet { .. } => "theme.get",
-        Self::ThemeSet { .. } => "theme.set",
-        Self::ThemeReset { .. } => "theme.reset",
         Self::ThemeExport { .. } => "theme.export",
-        Self::ThemeImport { .. } => "theme.import",
-        Self::Hello { .. } => "hello",
         Self::Get { .. } => "get",
         Self::Batch { .. } => "batch",
         Self::Export { .. } => "export",
@@ -232,70 +216,70 @@ impl SocketRequest {
         Self::AttachmentsList { documentPath, .. } => documentPath,
         Self::AttachmentsRead { documentPath, .. } => documentPath,
         Self::AttachmentsPut { documentPath, .. } => documentPath,
-        Self::ThemeGet { documentPath, .. } => documentPath,
-        Self::ThemeSet { documentPath, .. } => documentPath,
-        Self::ThemeReset { documentPath, .. } => documentPath,
         Self::ThemeExport { documentPath, .. } => documentPath,
-        Self::ThemeImport { documentPath, .. } => documentPath,
-        Self::Hello { documentPath, .. } => documentPath,
         Self::Get { documentPath, .. } => documentPath,
         Self::Batch { documentPath, .. } => documentPath,
         Self::Export { documentPath, .. } => documentPath,
     } }
-    pub fn epoch(&self) -> Option<&str> { match self {
-        Self::AttachmentsList { .. } => None,
-        Self::AttachmentsRead { .. } => None,
-        Self::AttachmentsPut { epoch, .. } => Some(epoch),
-        Self::ThemeGet { .. } => None,
-        Self::ThemeSet { epoch, .. } => Some(epoch),
-        Self::ThemeReset { epoch, .. } => Some(epoch),
-        Self::ThemeExport { .. } => None,
-        Self::ThemeImport { epoch, .. } => Some(epoch),
-        Self::Hello { .. } => None,
-        Self::Get { .. } => None,
-        Self::Batch { epoch, .. } => Some(epoch),
-        Self::Export { epoch, .. } => Some(epoch),
-    } }
-    pub fn set_epoch(&mut self, next: &str) { match self {
-        Self::AttachmentsPut { epoch, .. } => *epoch = next.to_owned(),
-        Self::ThemeSet { epoch, .. } => *epoch = next.to_owned(),
-        Self::ThemeReset { epoch, .. } => *epoch = next.to_owned(),
-        Self::ThemeImport { epoch, .. } => *epoch = next.to_owned(),
-        Self::Batch { epoch, .. } => *epoch = next.to_owned(),
-        Self::Export { epoch, .. } => *epoch = next.to_owned(),
-        _ => {},
-    } }
 }
+/// A page request. The core answers the document requests; the window's own (config,
+/// readiness, resizing, errors) are the host's, so their fields go unread here.
+
+#[cfg(feature = "storage")]
+#[derive(Debug, Deserialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case, dead_code)]
+pub(crate) enum PageRequest {
+    #[serde(rename = "open")]
+    Open {  },
+    #[serde(rename = "apply")]
+    Apply { batch: String },
+    #[serde(rename = "text")]
+    Text { request: String },
+    #[serde(rename = "flush")]
+    Flush {  },
+    #[serde(rename = "undo")]
+    Undo {  },
+    #[serde(rename = "redo")]
+    Redo {  },
+    #[serde(rename = "config")]
+    Config {  },
+    #[serde(rename = "attachments.put")]
+    AttachmentsPut { bytes: String },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { attachmentID: String },
+    #[serde(rename = "window.resize")]
+    WindowResize { width: u64, height: u64 },
+    #[serde(rename = "ready")]
+    Ready {  },
+    #[serde(rename = "pageRecovered")]
+    PageRecovered {  },
+    #[serde(rename = "failed")]
+    Failed { error: String },
+    #[serde(rename = "pageError")]
+    PageError { kind: String, error: String },
+}
+
 
 #[cfg(feature = "storage")]
 #[derive(Debug, Serialize)]
 #[serde(tag = "method", deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub(crate) enum SocketSuccess {
-    #[serde(rename = "hello")]
-    Hello { epoch: String, coreBuildId: String },
     #[serde(rename = "get")]
-    Get { epoch: String, state: Box<serde_json::value::RawValue> },
+    Get { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "batch")]
-    Batch { epoch: String, ids: Vec<String>, sequence: u64 },
+    Batch { ids: Vec<String>, sequence: u64 },
     #[serde(rename = "export")]
-    Export { #[serde(skip_serializing_if = "Option::is_none")] epoch: Option<String>, output: String },
-    #[serde(rename = "theme.get")]
-    ThemeGet { epoch: String, state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "theme.set")]
-    ThemeSet { epoch: String, state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "theme.reset")]
-    ThemeReset { epoch: String, state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "theme.import")]
-    ThemeImport { epoch: String, state: Box<serde_json::value::RawValue> },
+    Export { output: String },
     #[serde(rename = "theme.export")]
-    ThemeExport { epoch: String, state: Box<serde_json::value::RawValue> },
+    ThemeExport { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "attachments.list")]
-    AttachmentsList { epoch: String, state: Box<serde_json::value::RawValue> },
+    AttachmentsList { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "attachments.read")]
-    AttachmentsRead { epoch: String, state: Box<serde_json::value::RawValue> },
+    AttachmentsRead { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "attachments.put")]
-    AttachmentsPut { epoch: String, state: Box<serde_json::value::RawValue> },
+    AttachmentsPut { state: Box<serde_json::value::RawValue> },
 }
 
 #[cfg(feature = "storage")]
@@ -307,7 +291,6 @@ pub(crate) enum OutcomeCode { Rejected, OwnerReplaced, Closing, SaveFailed, Owne
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub(crate) struct SocketFailure {
-    #[serde(skip_serializing_if = "Option::is_none")] pub epoch: Option<String>,
     pub error: String,
     pub code: OutcomeCode,
     #[serde(skip_serializing_if = "Option::is_none")] pub reason: Option<String>,

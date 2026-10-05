@@ -53,9 +53,5 @@ name = "command"
 required-features = ["storage"]
 
 [[example]]
-name = "compat_anomalies"
-required-features = ["storage"]
-
-[[example]]
 name = "compat_checkpoint"
 required-features = ["storage"]

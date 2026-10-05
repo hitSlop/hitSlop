@@ -89,10 +89,9 @@ pub enum OwnerRequest {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
-    Edited,
-    SaveFailure,
     Copy {
         destination: String,
+        durable: bool,
     },
     Artwork {
         name: String,
@@ -104,14 +103,9 @@ pub enum OwnerRequest {
     PutAttachment {
         bytes: Vec<u8>,
     },
-    Theme {
-        change: ThemeChange,
-        gesture: bool,
-    },
+    /// The palette; changes are batch intents from the window.
+    Theme,
     ExportTheme,
-    BeginThemeGesture,
-    EndThemeGesture,
-    PublishUndoState,
 }
 impl From<OwnerRequest> for core::Request {
     fn from(value: OwnerRequest) -> Self {
@@ -119,38 +113,23 @@ impl From<OwnerRequest> for core::Request {
             OwnerRequest::State => Self::State,
             OwnerRequest::Apply { batch_json, origin } => Self::Apply {
                 batch_json,
-                origin: match origin {
-                    EditOrigin::Page => hitslop_core::Origin::Page,
-                    EditOrigin::Agent => hitslop_core::Origin::Agent,
-                },
+                origin: origin.into(),
             },
             OwnerRequest::Text { request_json } => Self::Text { request_json },
             OwnerRequest::Undo { redo } => Self::Undo { redo },
             OwnerRequest::Flush => Self::Flush,
             OwnerRequest::Discard => Self::Discard,
             OwnerRequest::Close { preview, icon } => Self::Close { preview, icon },
-            OwnerRequest::Edited => Self::Edited,
-            OwnerRequest::SaveFailure => Self::SaveFailure,
-            OwnerRequest::Copy { destination } => Self::Copy {
+            OwnerRequest::Copy { destination, durable } => Self::Copy {
                 destination: destination.into(),
+                durable,
             },
             OwnerRequest::Artwork { name } => Self::Artwork { name },
             OwnerRequest::Attachments => Self::Attachments,
             OwnerRequest::ReadAttachment { id } => Self::ReadAttachment { id },
             OwnerRequest::PutAttachment { bytes } => Self::PutAttachment { bytes },
-            OwnerRequest::Theme { change, gesture } => Self::Theme {
-                gesture,
-                change: match change {
-                    ThemeChange::Get => core::ThemeChange::Get,
-                    ThemeChange::Set { values_json } => core::ThemeChange::Set(values_json),
-                    ThemeChange::Reset { token } => core::ThemeChange::Reset(token),
-                    ThemeChange::Import { file_json } => core::ThemeChange::Import(file_json),
-                },
-            },
+            OwnerRequest::Theme => Self::Theme,
             OwnerRequest::ExportTheme => Self::ExportTheme,
-            OwnerRequest::BeginThemeGesture => Self::BeginThemeGesture,
-            OwnerRequest::EndThemeGesture => Self::EndThemeGesture,
-            OwnerRequest::PublishUndoState => Self::PublishUndoState,
         }
     }
 }
@@ -174,9 +153,6 @@ pub enum OwnerReply {
         state: ThemeState,
         sequence: u64,
     },
-    Bool {
-        value: bool,
-    },
     Bytes {
         bytes: Option<Vec<u8>>,
     },
@@ -185,9 +161,6 @@ pub enum OwnerReply {
     },
     Attachment {
         item: AttachmentRecord,
-    },
-    FailureState {
-        failure: Option<OwnerFailure>,
     },
     Failed {
         failure: OwnerFailure,
@@ -218,15 +191,11 @@ impl From<core::Reply> for OwnerReply {
                 },
                 sequence,
             },
-            core::Reply::Bool { value } => Self::Bool { value },
             core::Reply::Bytes { bytes } => Self::Bytes { bytes },
             core::Reply::Attachments { items } => Self::Attachments {
                 items: items.into_iter().map(Into::into).collect(),
             },
             core::Reply::Attachment { item } => Self::Attachment { item: item.into() },
-            core::Reply::FailureState { failure } => Self::FailureState {
-                failure: failure.map(Into::into),
-            },
         }
     }
 }
@@ -303,9 +272,6 @@ impl NativeOwner {
     pub fn asset_reader(&self) -> Result<Arc<AssetReader>, CoreError> {
         Ok(Arc::new(AssetReader(Mutex::new(self.0.asset_reader()?))))
     }
-    pub fn epoch(&self) -> String {
-        self.0.epoch()
-    }
     pub fn attach(&self, view: String) {
         self.0.attach(view);
     }
@@ -318,13 +284,11 @@ impl NativeOwner {
     pub fn submit(
         &self,
         request: OwnerRequest,
-        epoch: Option<String>,
         view: Option<String>,
         completion: Box<dyn OwnerCompletion>,
     ) {
         self.0.submit(
             request.into(),
-            epoch,
             view,
             Box::new(move |result| {
                 completion.complete(match result {

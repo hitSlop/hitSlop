@@ -276,12 +276,11 @@ fn accept(shared: &Arc<Shared>, mut stream: UnixStream) {
                 let response = if worker.stopped.load(Ordering::Acquire) {
                     command::failure(
                         command::failed(FailureKind::Closing, "Socket server is closing"),
-                        None,
                         false,
                         false,
                     )
                 } else {
-                    command::dispatch(&worker.owner, &input, Some(&worker.exporter), deadline)
+                    command::serve(&worker.owner, &input, Some(&worker.exporter), deadline)
                 };
                 let _ = write_line(&mut stream, &response, deadline);
             }

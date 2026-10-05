@@ -73,9 +73,9 @@ enum RequestOutcome: Equatable {
       opIndex: outcome.refusal.opIndex).json
   }
   /// The socket's failure reply for `error`.
-  static func socket(_ error: Error, epoch: String? = nil) -> SocketReply {
+  static func socket(_ error: Error) -> SocketReply {
     let outcome = RequestOutcome(error)
-    return .failure(SocketFailure(epoch: epoch, error: error.localizedDescription, code: outcome.code,
+    return .failure(SocketFailure(error: error.localizedDescription, code: outcome.code,
       reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex))
   }
 

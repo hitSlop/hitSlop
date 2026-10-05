@@ -57,7 +57,7 @@ import WebKit
       #expect(await eventually(timeout: .seconds(5)) {
         (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
       })
-      _ = try await session.owner.applyTheme(.set(valuesJson: ##"{"accent":"#123456"}"##))
+      _ = try await session.owner.apply(batch: ##"{"intents":[{"type":"setTheme","values":{"accent":"#123456"}}]}"##)
       _ = try await session.webView.callAsyncJavaScript("finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
       try await session.waitUntilReady()
       func accent() async throws -> String? {
@@ -68,8 +68,8 @@ import WebKit
         try await Task.sleep(for: .milliseconds(10))
       }
       #expect(try await accent() == "#123456")
-      let reset = try await session.owner.applyTheme(.reset(token: "accent"))
-      let expected = try JSONDecoder().decode([String: String].self, from: Data(reset.state.effective.utf8))["accent"]
+      _ = try await session.owner.apply(batch: #"{"intents":[{"type":"setTheme","values":{"accent":null}}]}"#)
+      let expected = try JSONDecoder().decode([String: String].self, from: Data(try await session.owner.loadTheme().state.effective.utf8))["accent"]
       for _ in 0..<100 {
         if try await accent() == expected { break }
         try await Task.sleep(for: .milliseconds(10))
@@ -146,7 +146,8 @@ import WebKit
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: shell) }
     try FileManager.default.createDirectory(at: shell.appendingPathComponent("loro"), withIntermediateDirectories: true)
     for path in ["loro/test.js", "secret.js"] { try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path)) }
-    let handler = SchemeHandler(assets: try NativeStore.open(path: root.path, mode: .snapshot).assetReader(), shell: shell)
+    let snapshot = try DocumentOwner(url: root, mode: .snapshot)
+    let handler = SchemeHandler(assets: snapshot.assets, shell: shell)
     let view = WKWebView()
     for path in [
       "app", "document.slop", "assets%2F..%2Fapp", "assets/..%2Fapp.js", "assets/%2e%2e/app.js", "assets//test.js",
@@ -175,6 +176,7 @@ import WebKit
     await next.completion()
     for _ in 0..<10 { await Task.yield() }
     #expect(stopped.calls == 0)
+    try await snapshot.close()
   }
 
   // Manifest sizing must govern actual bridge requests, not just native window chrome.

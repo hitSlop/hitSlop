@@ -49,7 +49,6 @@ import Testing
       var sent: [(color: String, epochMS: Double, uptime: TimeInterval)] = []
       var accepted: [[String: Any]] = [], failures: [String] = []
       let clock = ContinuousClock(), start = clock.now
-      session.beginThemeGesture()
       for index in 0..<updates {
         try await clock.sleep(until: start.advanced(by: .milliseconds(index * 16)))
         let color = String(format: "#%02x%02x%02x", index * 4, 255 - index * 4, 128)
@@ -64,7 +63,6 @@ import Testing
           }
         }
       }
-      session.endThemeGesture()
       try await session.flush()
       let deadline = clock.now.advanced(by: .seconds(5))
       while accepted.count + failures.count < updates && clock.now < deadline {
@@ -100,7 +98,7 @@ import Testing
       let evidence: [String: Any] = [
         "date": "2026-10-04", "build": "Debug native test bundle", "coreBuild": DocumentOwner.coreBuildID,
         "platform": ProcessInfo.processInfo.operatingSystemVersionString,
-        "method": "Synthetic palette gesture through DocumentSession.beginThemeGesture/changeTheme/endThemeGesture, shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
+        "method": "Synthetic palette drag through DocumentSession.changeTheme (one owner undo step per run of changes to one color), shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
         "rows": rows, "requestedUpdates": updates, "cadenceMS": 16,
         "acceptedUpdates": accepted.count, "observedColors": samples.count, "failures": failures,
         "submissionOffsetsMS": sent.map { ($0.uptime - sent[0].uptime) * 1000 },

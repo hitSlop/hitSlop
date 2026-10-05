@@ -1,7 +1,8 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { stageProject } from "../src/build";
-import { engine } from "../src/engine";
+import { engine, findEngine } from "../src/engine";
+import { exec } from "../src/process";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { readdir, mkdir, symlink } from "node:fs/promises";
@@ -16,6 +17,17 @@ async function stage(source: string, output: string) {
 }
 /** What the engine reads in a built file. */
 const inspect = async (file: string) => JSON.parse(await engine(["inspect", file]));
+/** What a new document of a built template holds: created and read by the engine. */
+async function initialValue(template: string) {
+  const document = join(template + ".created", "Document.slop");
+  await engine(["create", "--from", template, "--output", document]);
+  try {
+    const { stdout } = await exec([await findEngine(), "request"], { stdin: JSON.stringify({ method: "get", documentPath: document }) });
+    return JSON.parse(stdout).state.state.value;
+  } finally {
+    await rm(template + ".created", { recursive: true, force: true });
+  }
+}
 /** One value from a built file, read outside the engine. */
 function read<T>(file: string, sql: string): T {
   const database = new Database(file, { readonly: true });
@@ -184,14 +196,13 @@ test("build paths and fresh source evaluation do not depend on authored stdout",
     const source = join(root, "path with spaces", "starter");
     await cp("packages/cli/templates/checklist", source, { recursive: true });
     await overrideSlop(source, {}, 'console.log("authored output is not a path");');
-    const initial = (file: string) => JSON.parse(read<{ initial: string }>(file, "SELECT initial FROM app").initial);
     const defaultOutput = await buildTemplate(source, undefined);
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
-    const first = initial(defaultOutput);
+    const first = await initialValue(defaultOutput);
     await overrideSlop(source, { initial: JSON.stringify({ ...first, title: "Fresh evaluation" }) }, 'console.log("another log");');
     const explicitOutput = join(root, "output with spaces.slop");
     expect(await buildTemplate(source, undefined, explicitOutput)).toBe(explicitOutput);
-    expect(initial(explicitOutput).title).toBe("Fresh evaluation");
+    expect((await initialValue(explicitOutput)).title).toBe("Fresh evaluation");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

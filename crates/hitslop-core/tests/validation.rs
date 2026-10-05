@@ -1,4 +1,4 @@
-use hitslop_core::Document;
+use hitslop_core::{AppSpec, Document};
 use serde_json::{json, Value};
 
 /// Whether authoring accepts the descriptor, with initial values that fit it, so only the
@@ -27,13 +27,13 @@ fn explicit_null_bounds_are_not_silently_treated_as_absent() {
 fn descriptor_rules_protect_public_sdk_handles() {
     for key in ["path", "node", "with-hyphen", "0first"] {
         let schema = json!({"kind":"object","properties":{key:{"kind":"string"}}});
-        assert_eq!(Document::create(&schema.to_string(), &json!({key:""}).to_string()).err().unwrap().code.as_str(), "invalid_schema", "{key}");
+        assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "invalid_schema", "{key}");
     }
     for key in ["set", "clear"] {
         let schema = json!({"kind":"object","properties":{
             "value":{"kind":"optional","inner":{"kind":"object","properties":{key:{"kind":"string"}}}}
         }});
-        assert_eq!(Document::create(&schema.to_string(), "{}").err().unwrap().code.as_str(), "invalid_schema", "{key}");
+        assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "invalid_schema", "{key}");
     }
 }
 
@@ -42,7 +42,7 @@ fn descriptor_depth_is_bounded_before_initial_values_are_checked() {
     let mut node = json!({"kind":"string"});
     for _ in 0..18 { node = json!({"kind":"object","properties":{"child":node}}); }
     let schema = json!(node);
-    assert_eq!(Document::create(&schema.to_string(), "{}").err().unwrap().code.as_str(), "too_large");
+    assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "too_large");
 }
 
 // Failure: serde ignores unknown fields on unit variants of an internally tagged enum,
@@ -83,23 +83,23 @@ fn documents_record_their_layout_and_a_newer_one_asks_for_an_update() {
     use hitslop_core::{Code, LAYOUT};
     use loro::{ExportMode, LoroDoc};
     let schema = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
-    let checkpoint = Document::create(schema, r#"{"title":"A"}"#).unwrap().checkpoint().unwrap();
+    let checkpoint = Document::create(&AppSpec::data(&schema).unwrap(), r#"{"title":"A"}"#).unwrap().checkpoint().unwrap();
     let inspected = LoroDoc::new();
     inspected.import(&checkpoint).unwrap();
     assert_eq!(serde_json::to_value(inspected.get_map("meta").get_deep_value()).unwrap(), json!({"layout": LAYOUT}));
-    assert!(Document::open(schema, &checkpoint, &[]).is_ok());
+    assert!(Document::open(&AppSpec::data(&schema).unwrap(), &checkpoint, &[]).is_ok());
 
     let since = inspected.oplog_vv();
     inspected.get_map("meta").insert("layout", LAYOUT + 1).unwrap();
     inspected.commit();
     let newer = inspected.export(ExportMode::Snapshot).unwrap();
     let newer_update = inspected.export(ExportMode::updates(&since)).unwrap();
-    assert_eq!(Document::open(schema, &newer, &[]).err().map(|e| e.code), Some(Code::RequiresUpdate));
-    assert_eq!(Document::open(schema, &checkpoint, &[newer_update]).err().map(|e| e.code), Some(Code::RequiresUpdate));
+    assert_eq!(Document::open(&AppSpec::data(&schema).unwrap(), &newer, &[]).err().map(|e| e.code), Some(Code::RequiresUpdate));
+    assert_eq!(Document::open(&AppSpec::data(&schema).unwrap(), &checkpoint, &[newer_update]).err().map(|e| e.code), Some(Code::RequiresUpdate));
 
     let bare = LoroDoc::new();
     bare.get_map("data").insert("title", "A").unwrap();
     bare.commit();
     let bare = bare.export(ExportMode::Snapshot).unwrap();
-    assert_eq!(Document::open(schema, &bare, &[]).err().map(|e| e.code), Some(Code::InvalidBytes));
+    assert_eq!(Document::open(&AppSpec::data(&schema).unwrap(), &bare, &[]).err().map(|e| e.code), Some(Code::InvalidBytes));
 }

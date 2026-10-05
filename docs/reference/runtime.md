@@ -10,8 +10,8 @@ The page shell owns the page and the whole lifecycle: it opens the document, the
 imports the app's `assets/app.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/document/src/abi.ts)). The private `@hitslop/shell` package supplies the runtime; `@hitslop/document`
 contains only the author SDK. `ctx` is the only thing an app may rely
-on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`,
-`issues`), `bind.text`, capture hooks, attachments, `window.resize` and
+on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
+`bind.text`, capture hooks, attachments, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.
@@ -42,18 +42,18 @@ runtime ABI.
 
 ```text
 app          one row: package_format, runtime_abi, manifest, descriptor (not JSON Schema),
-             initial (creation-only values), theme (the palette's defaults)
+             theme (the palette's defaults)
 assets       path → bytes: app.js (export default { descriptor, mount(ctx, target) }), app.css, fonts…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
-checkpoint   the saved Loro snapshot, including data and theme overrides
+checkpoint   the saved Loro snapshot, including data and theme overrides (a template's holds the initial values)
 updates      saved Loro updates after the checkpoint
 attachments  sha256 → bytes: imported files
 ```
 
-A template has no `document`, `checkpoint`, `updates` or `attachments` rows; it never
+A template has no `document`, `updates` or `attachments` rows; it never
 opens as a document, and a command refuses it. Create copies a template into a new file
-and atomically adds its identity and initial Loro checkpoint. A template is immutable (`is_template` refuses it as a
+and atomically adds its identity. A template is immutable (`is_template` refuses it as a
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
@@ -69,7 +69,7 @@ One OS flock, taken by the store, owns each document: on a lock file in the acco
 
 Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history: it leaves none; [architecture](../architecture.md#saving) has the rule. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
 
-Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every live connection starts with `hello`, which supplies the owner's core build identity, checked before anything is sent, and its epoch, which rotates when unsaved edits are discarded. A reply carries its state whole, as large as the document: the Rust client checks a live owner's `hello` against the contract before trusting its core build, then reads the reply; the CLI validates each reply's method and required result fields (`SocketReply`). A live and a closed `get` of one saved state print the same value.
+Nothing resends a request: the CLI never replays a mutation, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every request names its command protocol, which the owner checks before reading anything else, so an engine of another build is refused with which side to update. A reply carries its state whole, as large as the document; the CLI validates each reply's method and required result fields (`SocketReply`). A live and a closed `get` of one saved state print the same value.
 
 Failed saves retain ownership and native retry UI; cancel-close restores editing. Successful close removes discovery, destroys the WebView/bridge, drains storage, closes SQLite, and releases ownership; discovery is withdrawn before the writer lock is released, and restored if the close fails. Quit prepares every document before releasing any. Close before moving or renaming documents. iCloud and other synced folders are unsupported.
 

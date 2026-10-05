@@ -30,7 +30,7 @@ function fixture() {
 
 test("theme-only publications share ordering and recover from a missing theme change", async () => {
   const definition = defineDocument({ title: s.text() });
-  const core = wasm.WasmDocument.createWithTheme(JSON.stringify(definition.descriptor),
+  const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor),
     JSON.stringify({ title: "Title" }), "theme-test", JSON.stringify({ accent: "#112233" }));
   const open = async () => JSON.parse(core.snapshot());
   const seen: string[] = [];
@@ -118,25 +118,22 @@ test("overflow during snapshot loading requires another snapshot", async () => {
   } finally { release(); core.free(); }
 });
 
-// Failure: a text change misplaced across surrogate pairs, or issues dropped when a
-// publication omits them. Oracle: literal strings and the owner's fresh snapshot.
-test("text publications apply in code points and issues persist until they change", async () => {
+// Failure: a text change misplaced across surrogate pairs. Oracle: literal strings and
+// the owner's fresh snapshot.
+test("text publications apply in code points", async () => {
   const definition = defineDocument({ title: s.text() });
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify({ title: "a😀b" }));
   const open = async () => JSON.parse(core.snapshot());
   const store = new Store(open, () => {});
   try {
     store.load(await open());
-    const issues = [{ code: "unknown_field" as const, path: ["extra"] }];
-    store.publish([{ type: "publication", publication: { previous: 0, sequence: 1, version: "", ops: [], issues } }]);
     const edit = core.editText(JSON.stringify({ base: JSON.parse(core.state()).version, path: ["title"], from: "a😀b", to: "a😀xb", selectionStart: 4, selectionEnd: 4 }));
     const publication = JSON.parse(edit.publication!);
     expect(publication.ops).toEqual([{ type: "text", path: ["title"], delta: [{ retain: 2 }, { insert: "x" }] }]);
-    store.publish([{ type: "publication", publication: { ...publication, previous: 1, sequence: 2 } }]);
+    store.publish([{ type: "publication", publication }]);
     expect(store.state.value).toEqual({ title: "a😀xb" });
-    expect(store.state.issues).toEqual(issues);
     // A change that does not fit the field forces a fresh snapshot instead.
-    store.publish([{ type: "publication", publication: { previous: 2, sequence: 3, version: "", ops: [{ type: "text", path: ["title"], delta: [{ retain: 9 }] }] } }]);
+    store.publish([{ type: "publication", publication: { previous: 1, sequence: 2, version: "", ops: [{ type: "text", path: ["title"], delta: [{ retain: 9 }] }] } }]);
     await elapsing(store.reached(1));
     expect(store.state.value).toEqual(JSON.parse(core.snapshot()).value);
   } finally { core.free(); }

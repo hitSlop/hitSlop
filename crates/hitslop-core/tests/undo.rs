@@ -6,14 +6,14 @@
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{json, Value};
-use support::{View, fixture, value};
+use support::{app, View, fixture, value};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {
     fixture("checklist")["schema"].to_string()
 }
 fn setup() -> (Document, View) {
-    let d = Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap();
+    let d = Document::create(&app(schema()), &fixture("checklist")["initial"].to_string()).unwrap();
     let view = View::of(&d);
     (d, view)
 }
@@ -159,8 +159,6 @@ fn undoing_a_removal_restores_the_row_and_its_id() {
     let v = value(&d);
     assert_eq!(v["rows"][0]["$id"], ROW);
     assert_eq!(v["rows"][0]["text"], "A");
-    let state: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
-    assert_eq!(state["issues"], json!([]));
     view.check(&d, "after restoring the row");
     // The restored row is editable by its ID.
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
@@ -212,13 +210,13 @@ fn an_agent_batch_that_changes_nothing_leaves_the_next_change_the_persons() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &batch(json!([])), Origin::Agent);
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
     assert!(!reopened.can_undo());
 }
 
 /// A session like the CLI's on a closed document: open the saved bytes, edit, save.
 fn session(checkpoint: &[u8], batches: &[(String, Origin)]) -> Vec<u8> {
-    let mut d = Document::open(&schema(), checkpoint, &[]).unwrap();
+    let mut d = Document::open(&app(schema()), checkpoint, &[]).unwrap();
     for (batch, origin) in batches {
         d.apply_batch(batch, *origin).unwrap();
     }
@@ -234,7 +232,7 @@ fn a_reopened_document_starts_with_nothing_to_undo() {
         (set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page),
         (set(json!(["title"]), json!("Agent")), Origin::Agent),
     ]);
-    let mut d = Document::open(&schema(), &saved, &[]).unwrap();
+    let mut d = Document::open(&app(schema()), &saved, &[]).unwrap();
     let mut view = View::of(&d);
     assert!(!d.can_undo() && !d.can_redo());
     assert!(!undo(&mut d, &mut view));
@@ -303,7 +301,7 @@ fn counter_batches_use_the_live_writer_for_both_origins() {
     let schema = json!({"kind":"object","properties":{"a":{"kind":"boolean"},"z":{"kind":"counter"}}}).to_string();
     let initial = json!({"a":false,"z":9007199254740991i64}).to_string();
     for origin in [Origin::Page, Origin::Agent] {
-        let mut d = Document::create(&schema, &initial).unwrap();
+        let mut d = Document::create(&app(&schema), &initial).unwrap();
         let mut view = View::of(&d);
         apply(&mut d, &mut view, &set(json!(["a"]), json!(true)), Origin::Page);
         apply(&mut d, &mut view, &batch(json!([
@@ -321,11 +319,11 @@ fn counter_batches_use_the_live_writer_for_both_origins() {
 
 #[test]
 fn undo_works_on_a_trimmed_document() {
-    let full = Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap().checkpoint().unwrap();
+    let full = Document::create(&app(schema()), &fixture("checklist")["initial"].to_string()).unwrap().checkpoint().unwrap();
     let loro = loro::LoroDoc::new();
     loro.import(&full).unwrap();
     let shallow = loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap();
-    let mut d = Document::open(&schema(), &shallow, &[]).unwrap();
+    let mut d = Document::open(&app(schema()), &shallow, &[]).unwrap();
     let mut view = View::of(&d);
     apply(&mut d, &mut view, &batch(json!([{"type":"remove","path":["rows"],"id":ROW}])), Origin::Page);
     assert!(undo(&mut d, &mut view));
@@ -377,24 +375,34 @@ fn noops_and_refusals_preserve_runs_and_redo_but_new_edits_clear_redo() {
     view.check(&d, "new edit after undo");
 }
 
+
+// Failure: Loro 1.16.2's `revert_to` panicked (an out-of-bounds movable-list delta)
+// redoing an agent's step that inserted rows before others and moved one, after the
+// earlier rows were removed; the owner then refused every call until reloaded. Found by
+// the single-owner model. Undo and redo now reconcile toward the earlier value.
 #[test]
-fn raw_replica_imports_end_history_but_duplicate_and_refused_imports_do_not() {
+fn redoing_inserted_and_moved_rows_after_a_removal_restores_them() {
     let (mut d, mut view) = setup();
-    let base = d.version();
-    let mut peer = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
-    peer.apply_batch(&set(json!(["title"]), json!("Remote")), Origin::Page).unwrap();
-    let bytes = peer.export_since(&base).unwrap();
-    apply(&mut d, &mut view, &set(json!(["rows", {"id":ROW}, "done"]), json!(true)), Origin::Page);
+    let row = |id: &str, text: &str| json!({"done": false, "text": text, "$id": id});
+    let insert = |id: &str, before: Option<&str>| {
+        let mut op = json!({"type":"insert","path":["rows"],"id":id,"value":{"done":false,"text":id}});
+        if let Some(before) = before { op["at"] = json!({"before": before}); }
+        op
+    };
+    apply(&mut d, &mut view, &batch(json!([{"type":"replace","path":["rows"],"value":[]}])), Origin::Agent);
+    apply(&mut d, &mut view, &batch(json!([insert("a", None), insert("b", None)])), Origin::Agent);
+    apply(&mut d, &mut view, &batch(json!([{"type":"increment","path":["hits"],"by":1}])), Origin::Page);
+    apply(&mut d, &mut view, &batch(json!([insert("c", Some("b"))])), Origin::Agent);
+    apply(&mut d, &mut view, &batch(json!([insert("d", Some("a"))])), Origin::Agent);
+    apply(&mut d, &mut view, &batch(json!([{"type":"move","path":["rows"],"id":"a","at":{"before":"d"}},
+        {"type":"set","path":["title"],"value":"moved"}])), Origin::Agent);
+    let moved = value(&d);
+    assert_eq!(moved["rows"], json!([row("a", "a"), row("d", "d"), row("c", "c"), row("b", "b")]));
+    // The agent's three batches are one step, back to after the page's increment.
     assert!(undo(&mut d, &mut view));
-    assert!(d.can_redo());
-    view.publish(&d.import(&bytes).unwrap().unwrap());
-    assert!(!d.can_undo() && !d.can_redo());
-    assert_eq!(value(&d)["title"], "Remote");
-    apply(&mut d, &mut view, &set(json!(["title"]), json!("Local")), Origin::Page);
-    assert!(d.import(&bytes).unwrap().is_none());
-    assert!(d.import(b"invalid").is_err());
-    assert!(undo(&mut d, &mut view));
-    assert_eq!(value(&d)["title"], "Remote", "undo cannot reach before the import");
-    view.check(&d, "undo after duplicate and refused imports");
-    assert!(!d.can_undo());
+    assert_eq!(value(&d)["rows"], json!([row("a", "a"), row("b", "b")]));
+    assert_eq!(value(&d)["title"], "abc");
+    assert!(redo(&mut d, &mut view));
+    assert_eq!(value(&d), moved);
+    assert_eq!(view.value, moved, "the page's view follows");
 }

@@ -73,9 +73,6 @@ fn bounds(conn: &Connection) -> Result<Metadata> {
 /// The stored sizes, checked against the limits. Read before any blob is.
 fn checked_bounds(conn: &Connection) -> Result<Metadata> {
     let meta = bounds(conn)?;
-    if meta.rows > 0 && meta.checkpoint_bytes == 0 {
-        return Err(failed("Saved updates have no checkpoint; keep the file for recovery"));
-    }
     if !within(meta.rows, meta.stored()) {
         return Err(failed(format!(
             "Document exceeds storage limits ({} MiB or {} updates); keep the file for recovery",
@@ -175,26 +172,25 @@ fn trimmed(doc: &mut Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool
     Ok(Some(bytes))
 }
 
-/// Opens the saved document under the descriptor of the app it is stored with, or none
-/// before the first save. The checkpoint and every update are imported straight from
-/// SQLite's buffers, without copying them.
-fn load(conn: &Connection, schema: &crate::Node) -> Result<Option<(Document, Metadata)>> {
+/// Opens the saved document under the descriptor of the app it is stored with. The
+/// checkpoint and every update are imported straight from SQLite's buffers, without
+/// copying them.
+fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)> {
     let meta = checked_bounds(conn)?;
     let mut saved = conn.prepare_cached(CHECKPOINT).map_err(sqlite("read"))?;
     let mut saved = saved.query([]).map_err(sqlite("read"))?;
-    let Some(row) = saved.next().map_err(sqlite("read"))? else {
-        return Ok(None);
-    };
+    // Every open checked the file holds exactly one checkpoint (`file::state`).
+    let row = saved.next().map_err(sqlite("read"))?.ok_or_else(|| failed("The file has no saved state; keep it for recovery"))?;
     let checkpoint = row.get_ref(0).ok().and_then(|bytes| bytes.as_blob().ok()).ok_or_else(|| failed("Invalid checkpoint bytes"))?;
     let mut rows = conn.prepare_cached(UPDATES).map_err(sqlite("read updates"))?;
     let mut rows = rows.query([]).map_err(sqlite("read updates"))?;
-    let doc = Document::open_with(schema.clone(), checkpoint, load_failure, |import| loop {
+    let doc = Document::open_with(app, checkpoint, load_failure, |import| loop {
         match rows.next().map_err(sqlite("read updates"))? {
             None => return Ok(()),
             Some(row) => import(row.get_ref(0).ok().and_then(|v| v.as_blob().ok()).ok_or_else(|| failed("Invalid update bytes"))?)?,
         }
     })?;
-    Ok(Some((doc, meta)))
+    Ok((doc, meta))
 }
 
 impl Store {
@@ -263,24 +259,15 @@ impl Store {
         Ok(())
     }
 
-    /// The saved data and theme, imported from one read transaction. Only templates
-    /// initialize transient state from the app; every document already has a checkpoint.
-    /// Reloading after discard drops unsaved data and theme together.
+    /// The saved data and theme, imported from one read transaction: a template's initial
+    /// state, or a document's checkpoint and updates. Reloading after discard drops unsaved
+    /// data and theme together.
     pub fn document(&self) -> Result<Document> {
         self.check(false)?;
-        let loaded = self.connected(&mut lock(&self.backing).conn, |conn| {
+        let (doc, meta) = self.connected(&mut lock(&self.backing).conn, |conn| {
             let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
-            load(&read, &self.app.schema)
+            load(&read, &self.app.spec)
         })?;
-        let (mut doc, meta) = match loaded {
-            Some(loaded) => loaded,
-            None if self.app.kind == Kind::Template => (
-                Document::create_with(self.app.schema.clone(), &self.app.app.initial).map_err(load_failure)?,
-                Metadata::default(),
-            ),
-            None => return Err(failed("Document has no checkpoint; keep the file for recovery")),
-        };
-        doc.configure_theme(&self.app.slug, &self.app.theme_tokens);
         *lock(&self.account) = Account { meta, saved: doc.doc.oplog_vv(), opened: doc.doc.oplog_frontiers() };
         Ok(doc)
     }
@@ -392,9 +379,6 @@ impl Store {
             Rows::Append(bytes) => {
                 // A write that would cross the limits leaves saved state intact.
                 let meta = checked_bounds(&tx)?;
-                if meta.checkpoint_bytes == 0 {
-                    return Err(failed("Document has no checkpoint; keep the file for recovery"));
-                }
                 let size = bytes.len() as i64;
                 if !within(meta.rows + 1, meta.stored() + size) {
                     return Err(Error::Full);
@@ -519,10 +503,10 @@ impl Store {
 
     /// Copies the open document to `dest` from the writer's own connection, so saves queue
     /// behind the copy instead of timing out. Duplicate and Share a Copy use it after
-    /// flushing.
-    pub fn copy_to(&self, dest: &Path) -> Result<()> {
+    /// flushing, `durable`; a capture's disposable source skips the syncs.
+    pub fn copy_to(&self, dest: &Path, durable: bool) -> Result<()> {
         self.check(true)?;
-        self.read(|conn| file::copy(conn, dest, None))
+        self.read(|conn| file::copy(conn, dest, false, durable))
     }
 }
 

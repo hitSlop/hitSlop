@@ -9,7 +9,7 @@ final class NativeExports: NativeExportHandler, @unchecked Sendable {
   private let render: Render
   init(_ render: @escaping Render) { self.render = render }
   func export(request: NativeExportRequest, completion: NativeExportCompletion) {
-    let deadline = NativeCommandDeadline(active: { completion.isActive() }, expectedEpoch: request.epoch)
+    let deadline = NativeCommandDeadline(active: { completion.isActive() })
     Task { @MainActor in
       do {
         try deadline.check()

@@ -30,25 +30,25 @@ bun run test    # Bun SDK/CLI/schema tests over the WASM core
 cargo test --locked --workspace
 ```
 
-`crates/hitslop-core/tests/model.rs` is the descriptor-driven model: one test per fixture (checklist,
-scalars, collections, nested), three peers, 8 seeds × 150 steps by default. Each step
-applies a generated batch, including boundary and out-of-range values, anchors, whole
-scalar-list `set` and multi-element removes. It checks that accepted and refused batches
-match an independent model, that most batches are accepted, and that patch replay,
-convergence, checkpoint reopen and seed-plus-update-log reopen all agree. The targeted
-workloads keep their own budgets: `publications.rs` 1,000 rounds × 100 steps,
-`nested.rs` 300 × 60 and `chaos.rs` 300 × 40, each overridable with
-`HITSLOP_{PUBLICATIONS,NESTED,CHAOS}_{ROUNDS,STEPS}`.
+`crates/hitslop-core/tests/model.rs` is the descriptor-driven model of the single writer:
+one test per fixture (checklist, scalars, collections, nested), 8 seeds × 150 steps by
+default, over the edits one owner actually receives. Those are the agent's and the page's
+batches (including boundary and out-of-range values, anchors, whole scalar-list `set`,
+multi-element removes and `replace`), page text clients whose edits arrive late against
+older versions, undo and redo. After every step a refusal has changed nothing,
+publications replay to a fresh snapshot, the maintained state equals a recomputed one, and
+the document reopens the same: reopening checks the saved state against its descriptor,
+so a write that stored invalid state fails the run. `publications.rs` keeps its own budget
+(100 rounds × 100 steps, `HITSLOP_PUBLICATIONS_{ROUNDS,STEPS}`).
 
-The default model took 44s in the debug build (M1, 2026-09-30). Cost grows about
-quadratically with steps: 2,000 steps would take about six hours per fixture. The
+The default model takes under two seconds in the debug build (M1, 2026-10-05). The
 extended run is sized for CI; the `Core model` workflow runs it weekly and on demand:
 
 ```sh
 bun run core:test:extended   # HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500, release build
 ```
 
-It passed in 29 minutes on the same M1 while other builds ran (2026-09-30).
+It passed in under three minutes on the same M1 (2026-10-05).
 
 ## Native (macOS)
 
@@ -123,7 +123,7 @@ It records template/archive content digests, per-file hashes, dependency install
 and required case inventory. Only a completed capture is published and frozen. Recording
 an existing frozen entry is refused. Before launch `dev` may be recaptured.
 
-- Rust replays saved values, issues, themes, edits, save/close and reopen.
+- Rust replays saved values, themes, edits, save/close and reopen.
 - Native replay checks inventory/hashes, original app rendering, PNG/PDF, attachments,
   template creation, and the commands each release's CLI ran, through this build's CLI
   and helper.

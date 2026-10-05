@@ -11,8 +11,8 @@ import WebKit
         try await withRenderSession(url: url) { try await capture(session: $0, output: .previewPNG) }
     }
     static func previewPNGData(session: DocumentSession) async throws -> Data { try await withSavedRenderer(session) { try await capture(session: $0, output: .previewPNG) } }
-    public static func exportPNGData(session: DocumentSession, expectedEpoch: String? = nil) async throws -> Data { try await withSavedRenderer(session, expectedEpoch: expectedEpoch) { try await capture(session: $0, output: .exportPNG) } }
-    public static func exportPDFData(session: DocumentSession, expectedEpoch: String? = nil) async throws -> Data { try await withSavedRenderer(session, expectedEpoch: expectedEpoch) { try await capture(session: $0, output: .pdf) } }
+    public static func exportPNGData(session: DocumentSession) async throws -> Data { try await withSavedRenderer(session) { try await capture(session: $0, output: .exportPNG) } }
+    public static func exportPDFData(session: DocumentSession) async throws -> Data { try await withSavedRenderer(session) { try await capture(session: $0, output: .pdf) } }
 
     /// The artwork a closing window writes into its document: its preview and, when the
     /// app draws one, its icon. A capture that fails is reported and left out.
@@ -32,11 +32,11 @@ import WebKit
         }
     }
 
-    private static func withSavedRenderer<T>(_ session: DocumentSession, expectedEpoch: String? = nil,
+    private static func withSavedRenderer<T>(_ session: DocumentSession,
         _ capture: @MainActor (DocumentSession) async throws -> T
     ) async throws -> T {
         if session.isSnapshot { return try await capture(session) }
-        return try await session.withCaptureSnapshot(expectedEpoch: expectedEpoch) { source in
+        return try await session.withCaptureSnapshot { source in
             try await withRenderSession(url: source, capture)
         }
     }

@@ -1,9 +1,9 @@
 export type { DocumentError } from "./errors";
 export { isDocumentError, isRejected } from "./errors";
 export { defineSlop, type Slop } from "./slop";
-export type { Issue, Scope } from "./abi";
+export type { Scope } from "./abi";
 export type { InsertResult } from "./handle-types";
-import type { Issue, Scope } from "./abi";
+import type { Scope } from "./abi";
 import type { At, Handle as ModeHandle } from "./handle-types";
 import { fromDescriptor } from "./descriptor";
 import { documentFor } from "./app/context";
@@ -61,25 +61,23 @@ type ObjectInput<P extends Record<string, Node>> = {
 export type Value<N extends Node> = ProjectedValue<N>;
 type ProjectedValue<N extends Node, Origin extends Node = N> = N extends Text | StringNode
   ? string
-  : N extends CounterNode
-    ? number | null
-    : N extends NumberNode | IntegerNode
-      ? number
-      : N extends BooleanNode
-        ? boolean
-        : N extends EnumNode<infer V>
-          ? V[number]
-          : N extends OptionalNode<infer S>
-            ? ProjectedValue<S, Origin> | undefined
-            : N extends ListNode<infer I>
-              ? I extends ObjectNode
-                ? ReadonlyArray<Value<I> & { readonly $id: string }>
-                : ReadonlyArray<Value<I>>
-              : N extends RecordNode<infer V>
-                ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
-                : N extends ObjectNode<infer P>
-                ? ObjectValue<P> & Snapshot<Origin>
-                : never;
+  : N extends CounterNode | NumberNode | IntegerNode
+    ? number
+    : N extends BooleanNode
+      ? boolean
+      : N extends EnumNode<infer V>
+        ? V[number]
+        : N extends OptionalNode<infer S>
+          ? ProjectedValue<S, Origin> | undefined
+          : N extends ListNode<infer I>
+            ? I extends ObjectNode
+              ? ReadonlyArray<Value<I> & { readonly $id: string }>
+              : ReadonlyArray<Value<I>>
+            : N extends RecordNode<infer V>
+              ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
+              : N extends ObjectNode<infer P>
+              ? ObjectValue<P> & Snapshot<Origin>
+              : never;
 export type Input<N extends Node> =
   N extends ListNode<infer I>
     ? Input<I>[]
@@ -132,8 +130,6 @@ export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocum
 export interface LiveDocument<N extends ObjectNode> {
   /** Immutable snapshot. Unchanged rows keep their identity. */
   readonly current: Value<N>;
-  /** Merged-state anomalies; stored values are preserved, never repaired. */
-  readonly issues: readonly Issue[];
   readonly fields: Handle<N>;
   /** The handle for an object taken from `current`: the root, a row, a nested object or
    * a record entry. */
@@ -157,7 +153,6 @@ export function defineDocument<P extends Record<string, Node>>(
   return Object.freeze(
     Object.defineProperties(definition, {
       current: { get: () => live().current },
-      issues: { get: () => live().issues },
       fields: { get: () => live().fields },
       at: { get: () => live().at },
       change: { value: ((callback) => live().change(callback)) satisfies Live["change"] },

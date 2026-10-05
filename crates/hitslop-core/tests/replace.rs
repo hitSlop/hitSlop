@@ -1,19 +1,18 @@
 // `replace`: a value from JSON (`slop import`), written as its differences. Failure: rows
-// or text were recreated, so an open text field or a concurrent edit was clobbered; a
-// refused replace left part of its change; a stored anomaly was overwritten. Oracle:
-// literal values, identity proven by later edits and merges, and the page's view equal
-// to a fresh snapshot after every publication.
+// or text were recreated, so an open text field was clobbered, or a refused replace left
+// part of its change. Oracle: literal values, identity proven by later edits, and the
+// page's view equal to a fresh snapshot after every publication.
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{json, Value};
-use support::{Edit, View, fixture, value};
+use support::{app, View, fixture, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";
 
 fn open(name: &str) -> (Document, View) {
     let f = fixture(name);
-    let d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
+    let d = Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap();
     let view = View::of(&d);
     (d, view)
 }
@@ -50,8 +49,6 @@ fn replacing_a_value_with_itself_writes_nothing() {
 fn rows_and_text_keep_their_identity() {
     let (mut d, mut view) = open("checklist");
     let base = d.version();
-    let mut peer = Document::open(&fixture("checklist")["schema"].to_string(), &d.checkpoint().unwrap(), &[]).unwrap();
-    peer.apply(&json!({"intents":[{"type":"set","path":["rows",{"id":B},"text"],"value":"B!"}]}).to_string()).unwrap();
     let applied = apply(&mut d, &mut view, &replace(json!([]), json!({
         "title": "New title",
         "hits": 0,
@@ -70,10 +67,7 @@ fn rows_and_text_keep_their_identity() {
     let request = json!({"base":base,"path":["rows",{"id":A},"text"],"from":"A","to":"AX","selectionStart":2,"selectionEnd":2});
     view.publish(&d.edit_text(&request.to_string()).unwrap().publication.unwrap());
     assert_eq!(value(&d)["rows"][1]["text"], "AX");
-    // A concurrent edit to a kept row survives the merge.
-    view.publish(&d.merge(&peer.export_since(&base).unwrap()).unwrap());
-    assert_eq!(value(&d)["rows"][0]["text"], "B!");
-    view.check(&d, "after the merge");
+    view.check(&d, "after typing in a kept row");
 }
 
 #[test]
@@ -96,16 +90,13 @@ fn rows_are_removed_inserted_and_reordered_with_the_fewest_moves() {
 }
 
 #[test]
-fn a_counter_takes_the_difference_so_concurrent_increments_add() {
+fn a_counter_takes_the_value() {
     let (mut d, mut view) = open("checklist");
-    let base = d.version();
-    let mut peer = Document::open(&fixture("checklist")["schema"].to_string(), &d.checkpoint().unwrap(), &[]).unwrap();
-    peer.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":2}]}).to_string()).unwrap();
     apply(&mut d, &mut view, &replace(json!(["hits"]), json!(5)));
     assert_eq!(value(&d)["hits"], 5);
-    view.publish(&d.merge(&peer.export_since(&base).unwrap()).unwrap());
+    apply(&mut d, &mut view, &json!({"intents":[{"type":"increment","path":["hits"],"by":2}]}).to_string());
     assert_eq!(value(&d)["hits"], 7);
-    view.check(&d, "after the merge");
+    view.check(&d, "after counting on");
 }
 
 #[test]
@@ -182,76 +173,7 @@ fn invalid_values_are_refused_whole() {
     assert_eq!(refused(&mut d, &batch.to_string()), Code::TypeMismatch);
 }
 
-// Failure: replacing a value whose stored state holds a merged anomaly would overwrite
-// it. Oracle: anomalies are preserved and flagged, never repaired, so a replace that
-// covers one is refused, and one elsewhere is not.
-#[test]
-fn a_replace_never_overwrites_a_stored_anomaly() {
-    let (mut a, _) = open("checklist");
-    let schema = fixture("checklist")["schema"].to_string();
-    let mut b = Document::open(&schema, &a.checkpoint().unwrap(), &[]).unwrap();
-    let base = a.version();
-    let insert = json!({"intents":[{"type":"insert","path":["rows"],"id":"same","value":{"text":"x","done":false}}]}).to_string();
-    a.apply(&insert).unwrap();
-    b.apply(&insert).unwrap();
-    a.merge(&b.export_since(&base).unwrap()).unwrap();
-    let current = value(&a);
-    assert_eq!(refused(&mut a, &replace(json!([]), json!({"title": "abc", "hits": 0, "rows": []}))), Code::TypeMismatch);
-    assert_eq!(refused(&mut a, &replace(json!(["rows"]), json!([]))), Code::TypeMismatch);
-    let mut view = View::of(&a);
-    apply(&mut a, &mut view, &replace(json!(["title"]), json!("Elsewhere")));
-    assert_eq!(value(&a)["rows"], current["rows"]);
-    view.check(&a, "after a replace away from the anomaly");
-}
 
-// Failure: `set` repaired a merged anomaly that `replace` refuses, or a write refused to
-// overwrite a value of the right type. Oracle: one rule for every write: a wrong-typed
-// value is preserved and flagged, never overwritten; an out-of-range one may be.
-#[test]
-fn set_and_replace_share_one_anomaly_rule() {
-    use loro::{Container, ExportMode, LoroDoc, ValueOrContainer};
-    let merged = |name: &str, setup: &str, damage: &dyn Fn(&loro::LoroMap)| {
-        let f = fixture(name);
-        let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
-        d.apply(setup).unwrap();
-        let peer = LoroDoc::new();
-        peer.import(&d.checkpoint().unwrap()).unwrap();
-        let from = peer.oplog_vv();
-        damage(&peer.get_map("data"));
-        peer.commit();
-        d.merge(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
-        d
-    };
-    let set = |path: Value, value: Value| json!({"intents":[{"type":"set","path":path,"value":value}]}).to_string();
-
-    let mut d = merged("scalars", &set(json!(["photo"]), json!({"id":"p","name":"n"})), &|data| {
-        let Some(ValueOrContainer::Container(Container::Map(photo))) = data.get("photo") else { panic!("photo") };
-        photo.insert("name", 5).unwrap();
-        data.insert("rating", 9).unwrap();
-        data.insert("ratio", 7.0).unwrap();
-    });
-    let issues = serde_json::from_str::<Value>(&d.snapshot().unwrap()).unwrap()["issues"].clone();
-    assert_eq!(issues, json!([
-        {"code":"type_mismatch","path":["photo","name"]},
-        {"code":"out_of_range","path":["rating"]},
-        {"code":"out_of_range","path":["ratio"]},
-    ]));
-    let fixed = json!({"id":"p","name":"fixed"});
-    assert_eq!(refused(&mut d, &set(json!(["photo"]), fixed.clone())), Code::TypeMismatch, "set over a nested anomaly");
-    assert_eq!(refused(&mut d, &replace(json!(["photo"]), fixed)), Code::TypeMismatch, "replace over a nested anomaly");
-    let mut view = View::of(&d);
-    apply(&mut d, &mut view, &set(json!(["rating"]), json!(4)));
-    apply(&mut d, &mut view, &replace(json!(["ratio"]), json!(0.25)));
-    assert_eq!((value(&d)["rating"].clone(), value(&d)["ratio"].clone()), (json!(4), json!(0.25)));
-    view.check(&d, "after overwriting out-of-range values");
-
-    let mut d = merged("collections", &set(json!(["title"]), json!("Board")), &|data| {
-        let Some(ValueOrContainer::Container(Container::MovableList(presets))) = data.get("presets") else { panic!("presets") };
-        presets.set(0, "x").unwrap();
-    });
-    assert_eq!(refused(&mut d, &set(json!(["presets"]), json!([60, 90]))), Code::TypeMismatch, "set over an anomalous element");
-    assert_eq!(refused(&mut d, &replace(json!(["presets"]), json!([60, 90]))), Code::TypeMismatch);
-}
 
 #[test]
 fn an_import_is_one_undo_step() {
@@ -271,17 +193,18 @@ fn an_import_is_one_undo_step() {
     view.check(&d, "after redoing the import");
 }
 
-// One replace can mutate an earlier field before a counter's writer contribution
-// refuses the target. The rollback must preserve both existing undo and redo.
+// A batch can mutate an earlier field before a later replace is refused. The rollback
+// must preserve both existing undo and redo.
 #[test]
 fn a_late_refused_import_preserves_history() {
     let schema = json!({"kind":"object","properties":{"a":{"kind":"boolean"},"z":{"kind":"counter"}}}).to_string();
-    let seed = Document::create(&schema, &json!({"a":false,"z":9007199254740991i64}).to_string()).unwrap();
-    let mut d = Document::open(&schema, &seed.checkpoint().unwrap(), &[]).unwrap();
+    let seed = Document::create(&app(&schema), &json!({"a":false,"z":9007199254740991i64}).to_string()).unwrap();
+    let mut d = Document::open(&app(&schema), &seed.checkpoint().unwrap(), &[]).unwrap();
     let mut view = View::of(&d);
     apply(&mut d, &mut view, &replace(json!(["a"]), json!(true)));
     for a in [false, true] {
-        assert_eq!(refused(&mut d, &replace(json!([]), json!({"a":a,"z":-9007199254740991i64}))), Code::OutOfRange);
+        let late = json!({"intents":[{"type":"set","path":["a"],"value":a},{"type":"replace","path":[],"value":{"a":a,"z":"many"}}]});
+        assert_eq!(refused(&mut d, &late.to_string()), Code::TypeMismatch);
         if !a {
             assert!(d.can_undo(), "a refused import keeps undo");
             view.publish(&d.undo().unwrap().publication.unwrap());

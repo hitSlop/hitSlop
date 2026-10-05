@@ -23,16 +23,11 @@ Raw results:
 - `capture-snapshot-spike-2026-10-04.json`: unoptimized gate failure.
 - `capture-snapshot-breakdown-2026-10-04.json`: phase diagnosis, six runs per variant.
 - `capture-snapshot-optimized-2026-10-04.json`: 20-pair optimized gate and memory.
-- `capture-snapshot-baseline-test.swift.txt`: original baseline-only Swift test harness.
-- `capture-snapshot-optimized-harness.swift.txt`: isolated baseline executable harness.
 
-The isolated harness was linked against the preserved baseline `libHitSlopHost.a`,
-Swift modules, FFI headers and resource bundle in `/private/tmp/hitslop-capture-spike`.
-That isolation allowed concurrent owner changes without contaminating the baseline.
-The startup stylesheet in that harness is implemented in production by Root.svelte's
-renderer-only hide when Export is present. The new production path additionally
-removes live-editor focus, selection, scroll and input restoration. The harnesses are
-historical reproduction source, deliberately excluded from the current Swift test target.
+The baseline ran in an isolated harness linked against the preserved `aa82b548` build,
+so concurrent owner changes could not contaminate it. Its startup stylesheet is what
+production now does in Root.svelte: a renderer page hides the App when Export is present.
+The production path also drops live-editor focus, selection, scroll and input restoration.
 
 Production integration checks passed after replacement: 12 native tests covering
 pending input, saved default view, editor resize independence, theme isolation,

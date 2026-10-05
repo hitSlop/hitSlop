@@ -202,7 +202,7 @@ export function swiftContracts(
     return sendable;
   }
   /** A union of requests discriminated by `method`. Socket requests are routed: each names
-   * its document, and mutations carry the owner's epoch. */
+   * its document. */
   function requests(name: string, schema: TSchema) {
     const union = schema as Schema;
     if (!union.anyOf || Object.keys(union).some((k) => k !== "anyOf")) unsupported(name);
@@ -220,7 +220,7 @@ export function swiftContracts(
         const method = value as string;
         const type = prefix + title(method) + "Request";
         const sendable = structure(type, schema, method);
-        return { method, name: type, sendable, epoch: schema.required?.includes("epoch") ?? false };
+        return { method, name: type, sendable };
       });
     });
     if (new Set(variants.map((v) => identifier(v.method))).size !== variants.length) unsupported(`${name}.method`);
@@ -229,27 +229,12 @@ export function swiftContracts(
     for (const v of variants) lines.push(`  case ${identifier(v.method)}(${v.name})`);
     lines.push("\n  public enum Method: String, CaseIterable, Sendable {");
     for (const v of variants) lines.push(`    case ${identifier(v.method)} = ${quote(v.method)}`);
-    if (routed) {
-      lines.push("    public var requiresEpoch: Bool {", "      switch self {");
-      for (const v of variants) lines.push(`      case .${identifier(v.method)}: return ${v.epoch}`);
-      lines.push("      }", "    }");
-    }
     lines.push("  }", "\n  public var method: Method {", "    switch self {");
     for (const v of variants) lines.push(`    case .${identifier(v.method)}: return .${identifier(v.method)}`);
     lines.push("    }", "  }");
     if (routed) {
-      lines.push("  public var requiresEpoch: Bool { method.requiresEpoch }", "  public var documentPath: String {", "    switch self {");
+      lines.push("  public var documentPath: String {", "    switch self {");
       for (const v of variants) lines.push(`    case .${identifier(v.method)}(let value): return value.documentPath`);
-      lines.push("    }", "  }", "  public var epoch: String? {", "    switch self {");
-      for (const v of variants)
-        lines.push(v.epoch ? `    case .${identifier(v.method)}(let value): return value.epoch` : `    case .${identifier(v.method)}: return nil`);
-      lines.push("    }", "  }", "\n  public func with(epoch: String) -> Self {", "    switch self {");
-      for (const v of variants)
-        lines.push(
-          v.epoch
-            ? `    case .${identifier(v.method)}(var value): value.epoch = epoch; return .${identifier(v.method)}(value)`
-            : `    case .${identifier(v.method)}: return self`,
-        );
       lines.push("    }", "  }");
     }
     lines.push(
@@ -313,18 +298,14 @@ export function swiftContracts(
 public struct SocketReplyHeader: Decodable, Sendable {
   public let ok: Bool
   public let method: SocketRequest.Method?
-  public let epoch: String?
-  public let coreBuildId: String?
   public let error: String?
   public let code: OutcomeCode?
   public let reason: CoreErrorCode?
   public let opIndex: Int?
-  private enum CodingKeys: String, CodingKey { case ok, method, epoch, coreBuildId, error, code, reason, opIndex }
+  private enum CodingKeys: String, CodingKey { case ok, method, error, code, reason, opIndex }
   public init(from decoder: Decoder) throws {
     let fields = try decoder.container(keyedBy: CodingKeys.self)
     ok = try fields.decode(Bool.self, forKey: .ok)
-    epoch = try fields.decodeIfPresent(String.self, forKey: .epoch)
-    coreBuildId = try fields.decodeIfPresent(String.self, forKey: .coreBuildId)
     error = try fields.decodeIfPresent(String.self, forKey: .error)
     opIndex = try fields.decodeIfPresent(Int.self, forKey: .opIndex)
     method = try fields.decodeIfPresent(String.self, forKey: .method).flatMap(SocketRequest.Method.init(rawValue:))

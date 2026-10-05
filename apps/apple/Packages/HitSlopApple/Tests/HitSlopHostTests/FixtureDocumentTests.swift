@@ -27,7 +27,7 @@ extension HostTests {
       let conformance = record["kind"] as? String != "template"
       if conformance {
         #expect(try await command("batch", url: root, setTitle("Live command")).ok)
-        #expect(try await command("theme.set", url: root, ["values": ["accent": "#654321"]]).ok)
+        #expect(try await setTheme(["accent": "#654321"], url: root).ok)
       }
       try await controller.session.close()
       if conformance {
@@ -46,7 +46,7 @@ extension HostTests {
       #expect((PDFDocument(data: pdf)?.pageCount ?? 0) > 0)
       try await session.close()
       #expect(try await savedValue(root) == saved)
-      // SQLite replay, scenarios, issues and current-engine convergence run in Bun.
+      // SQLite replay, scenarios and current-engine convergence run in Bun.
       // This test retains the frozen apps' WebKit, CLI, theme and export boundary.
     }
   }

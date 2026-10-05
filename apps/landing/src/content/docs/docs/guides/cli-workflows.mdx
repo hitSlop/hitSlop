@@ -13,11 +13,11 @@ Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx
 | --- | --- |
 | `bunx @hitslop/cli COMMAND` | Run the authoring CLI without a global install. |
 | `slop COMMAND` | After `bun install -g @hitslop/cli`, with Bun's bin directory on your PATH. |
-| `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" COMMAND` | Run native document commands directly, without Node or Bun. |
+| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" COMMAND` | Run document commands directly, without Node or Bun. |
 
 Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
 
-For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` in the native commands.
+For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/slop-engine"` in the native commands.
 
 Append `--help` to any command to see its arguments.
 
@@ -187,9 +187,9 @@ Update the global CLI with `bun install -g @hitslop/cli@VERSION`, replacing `VER
 Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
 
 The CLI and native owner use the same generated socket contract. Socket requests
-carry the document path and, for mutations, the owner's epoch. Correlation IDs are
-not part of this contract; each request receives its reply on its own exchange.
+carry the document path and the command protocol they are written in. Correlation IDs
+are not part of this contract; each request receives its reply on its own exchange.
 
 `apply` submits one operation through the same batch path as `batch`. Both read modes
 use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
-schema, sequence, version, value, and issues.
+schema, the app's declared palette, and the sequence, version, value and effective theme.

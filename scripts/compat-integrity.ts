@@ -64,9 +64,9 @@ export async function verifyCorpus(root: string, release: Release) {
   for (const name of Object.keys(release.storage)) {
     for (const path of [`documents/${name}.slop`, `expected/${name}.json`, `scenarios/${name}.json`])
       assert.ok(release.files[path], `${release.release}: missing ${path}`);
-    if (name !== "conformance-anomalies") assert.ok(release.files[`pages/${name}.json`], `Missing page scenario: ${name}`);
+    assert.ok(release.files[`pages/${name}.json`], `Missing page scenario: ${name}`);
   }
-  for (const name of ["conformance", "conformance-compacted", "conformance-anomalies", "fixture-checklist", "fixture-scalars", "fixture-collections"])
+  for (const name of ["conformance", "conformance-compacted", "fixture-checklist", "fixture-scalars", "fixture-collections"])
     assert.ok(release.storage[name], `Missing required conformance case: ${name}`);
   for (const path of ["cli/transcript.json", "cli/install/package.json", "cli/install/bun.lock"])
     assert.ok(release.files[path], `Missing ${path}`);

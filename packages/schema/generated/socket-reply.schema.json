@@ -5,37 +5,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
-        "coreBuildId"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "hello"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "coreBuildId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
-        "method",
-        "epoch",
         "state"
       ],
       "properties": {
@@ -47,15 +16,11 @@
           "type": "string",
           "const": "get"
         },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
         "state": {
           "type": "object",
           "required": [
             "schema",
+            "theme",
             "state"
           ],
           "properties": {
@@ -64,13 +29,23 @@
               "properties": {},
               "additionalProperties": true
             },
+            "theme": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "type": "string",
+                  "maxLength": 9
+                }
+              },
+              "additionalProperties": false,
+              "maxProperties": 256
+            },
             "state": {
               "type": "object",
               "required": [
                 "sequence",
                 "version",
                 "value",
-                "issues",
                 "theme"
               ],
               "properties": {
@@ -83,67 +58,6 @@
                   "type": "string"
                 },
                 "value": {},
-                "issues": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "code",
-                      "path"
-                    ],
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "type_mismatch",
-                          "out_of_range",
-                          "unknown_field",
-                          "invalid_key",
-                          "invalid_id",
-                          "duplicate_id"
-                        ]
-                      },
-                      "path": {
-                        "type": "array",
-                        "items": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            {
-                              "type": "object",
-                              "required": [
-                                "id"
-                              ],
-                              "properties": {
-                                "id": {
-                                  "type": "string",
-                                  "pattern": "^[0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-]{1,64}$"
-                                }
-                              },
-                              "additionalProperties": false
-                            },
-                            {
-                              "type": "object",
-                              "required": [
-                                "index"
-                              ],
-                              "properties": {
-                                "index": {
-                                  "type": "integer",
-                                  "minimum": 0
-                                }
-                              },
-                              "additionalProperties": false
-                            }
-                          ]
-                        },
-                        "maxItems": 64
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                },
                 "theme": {
                   "type": "object",
                   "patternProperties": {
@@ -169,7 +83,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
         "ids",
         "sequence"
       ],
@@ -181,11 +94,6 @@
         "method": {
           "type": "string",
           "const": "batch"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "ids": {
           "type": "array",
@@ -216,11 +124,6 @@
           "type": "string",
           "const": "export"
         },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
         "output": {
           "type": "string",
           "minLength": 1,
@@ -234,283 +137,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
-        "state"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.get"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "state": {
-          "type": "object",
-          "required": [
-            "defaults",
-            "overrides",
-            "effective"
-          ],
-          "properties": {
-            "defaults": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "overrides": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "effective": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
-        "method",
-        "epoch",
-        "state"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.set"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "state": {
-          "type": "object",
-          "required": [
-            "defaults",
-            "overrides",
-            "effective"
-          ],
-          "properties": {
-            "defaults": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "overrides": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "effective": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
-        "method",
-        "epoch",
-        "state"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.reset"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "state": {
-          "type": "object",
-          "required": [
-            "defaults",
-            "overrides",
-            "effective"
-          ],
-          "properties": {
-            "defaults": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "overrides": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "effective": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
-        "method",
-        "epoch",
-        "state"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.import"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "state": {
-          "type": "object",
-          "required": [
-            "defaults",
-            "overrides",
-            "effective"
-          ],
-          "properties": {
-            "defaults": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "overrides": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            },
-            "effective": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {
-                  "type": "string",
-                  "maxLength": 9
-                }
-              },
-              "additionalProperties": false,
-              "maxProperties": 256
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
-        "method",
-        "epoch",
         "state"
       ],
       "properties": {
@@ -521,11 +147,6 @@
         "method": {
           "type": "string",
           "const": "theme.export"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "state": {
           "type": "object",
@@ -547,7 +168,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
         "state"
       ],
       "properties": {
@@ -558,11 +178,6 @@
         "method": {
           "type": "string",
           "const": "attachments.list"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "state": {
           "type": "array",
@@ -595,7 +210,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
         "state"
       ],
       "properties": {
@@ -606,11 +220,6 @@
         "method": {
           "type": "string",
           "const": "attachments.read"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "state": {
           "type": "object",
@@ -633,7 +242,6 @@
       "required": [
         "ok",
         "method",
-        "epoch",
         "state"
       ],
       "properties": {
@@ -644,11 +252,6 @@
         "method": {
           "type": "string",
           "const": "attachments.put"
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "state": {
           "type": "object",
@@ -684,11 +287,6 @@
         "ok": {
           "type": "boolean",
           "const": false
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "error": {
           "type": "string"

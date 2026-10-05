@@ -19,8 +19,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     return liveWebView
   }
   public let file: SlopFile
-  /// The owner's epoch: socket clients name it, and it rotates on discard.
-  public var epoch: String { owner.epoch }
   private enum Renderer {
     case opening, ready
     case failed(String, terminated: Bool)
@@ -142,7 +140,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     owner.onUndoState = { [weak self] state in
       DispatchQueue.main.async { self?.undoAvailability = state }
     }
-    owner.publishUndoState()
     owner.onSaveStatus = { [weak self] status in
       DispatchQueue.main.async {
         guard let self else { return }
@@ -159,8 +156,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func currentTheme() async throws -> SlopThemeState {
     try SlopThemeState(try await owner.loadTheme())
   }
-  public func beginThemeGesture() { owner.beginThemeGesture() }
-  public func endThemeGesture() { owner.endThemeGesture() }
   /// Applies a panel change in the order changes are made. It is accepted in memory,
   /// restyles the page, and is saved like an edit. `reply` reports the owner's theme
   /// revision once the change is accepted (unchanged when it changed nothing), or the
@@ -168,7 +163,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func changeTheme(_ change: SlopThemeChange, reply: @escaping @MainActor (Result<Int, Error>) -> Void = { _ in }) {
     guard !closing, !closed else { return reply(.failure(SlopFailure("Document is closing"))) }
     owner.enqueueTheme(change) { result in
-      Task { @MainActor in reply(result.map(\.revision)) }
+      Task { @MainActor in reply(result) }
     }
   }
   /// The full palette as a theme file, the bytes the core writes for every export.
@@ -326,17 +321,22 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     _ controller: WKUserContentController, didReceive message: WKScriptMessage,
     replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
+    let invalid = { replyHandler(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil) }
     guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
       message.frameInfo.securityOrigin.protocol == "slop",
       message.frameInfo.securityOrigin.host == "app",
-      let request = PageRequest.checked(message.body)
-    else {
-      replyHandler(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil)
-      return
+      let body = message.body as? [String: Any],
+      let method = (body["method"] as? String).flatMap(PageRequest.Method.init(rawValue:))
+    else { return invalid() }
+    switch method {
+    case .open, .apply, .text, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
+      return servePage(body, storage: method == .attachmentsPut || method == .attachmentsRead, reply: replyHandler)
+    case .config, .windowResize, .ready, .pageRecovered, .failed, .pageError: break
     }
+    guard let request = PageRequest.checked(body) else { return invalid() }
     switch request {
-    case .open, .apply, .text, .flush, .undo, .redo:
-      owner.admitPage(request, view: view) { replyHandler($0, nil) }
+    case .open, .apply, .text, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
+      invalid()
     case .config:
       let page = message.webView
       Task { @MainActor [weak self] in
@@ -380,8 +380,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       if isReady { report(SlopPageIssue(message: r.error, isOperation: r.kind == .operation)) }
       else { failOpening(r.error, reason: .authoredException, classification: .authored) }
       replyHandler(PageResult.pageError.json, nil)
-    case .attachmentsPut, .attachmentsRead:
-      servePageStorage(request, reply: replyHandler)
     }
   }
 
@@ -391,7 +389,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     do {
       _ = try await webView.callHost(.flush(.init()))
     } catch {
-      if let failure = try? await owner.currentSaveFailure() { throw failure }
+      if let failure = owner.saveFailure { throw failure }
       throw error
     }
   }
@@ -434,26 +432,21 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the
   /// editor barrier; the independent copy remains alive even if this window then closes.
-  public func withCaptureSnapshot<T>(expectedEpoch: String? = nil, _ render: (URL) async throws -> T) async throws -> T {
+  public func withCaptureSnapshot<T>(_ render: (URL) async throws -> T) async throws -> T {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("capture.slop")
     try await withCapture {
       guard !closed else { throw SlopFailure("Document closed") }
-      if let expectedEpoch, epoch != expectedEpoch { throw OwnerReplaced() }
       if !closePrepared { try await flush() }
-      if let expectedEpoch, epoch != expectedEpoch { throw OwnerReplaced() }
-      try await owner.copy(to: source)
-      // A discard already admitted before this capture can finish across either await.
-      // Once this check passes, the independent copy has no dependency on live epoch.
-      if let expectedEpoch, epoch != expectedEpoch { throw OwnerReplaced() }
+      try await owner.copy(to: source, durable: false)
     }
     return try await render(source)
   }
 
   /// Whether this session saved any change, so its document's artwork may be out of date.
-  public func edited() async -> Bool { await owner.edited() }
+  public var edited: Bool { owner.edited }
 
   /// Serializes source acquisition in an editor or rendering in a disposable page.
   /// The flag stays set across queued acquisitions so close cannot release the source.
@@ -488,7 +481,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       closePrepared = true
     } catch {
       closing = false
-      if let failure = try? await owner.currentSaveFailure() { throw failure }
+      if let failure = owner.saveFailure { throw failure }
       throw error
     }
   }

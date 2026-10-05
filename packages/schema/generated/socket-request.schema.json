@@ -3,10 +3,16 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
         "method"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
@@ -22,11 +28,17 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
         "method",
         "attachmentID"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
@@ -48,21 +60,21 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
-        "epoch",
         "method",
         "bytes"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "method": {
           "type": "string",
@@ -78,96 +90,16 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
         "method"
       ],
       "properties": {
-        "documentPath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
-        "method": {
-          "type": "string",
-          "const": "theme.get"
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "documentPath",
-        "epoch",
-        "method",
-        "values"
-      ],
-      "properties": {
-        "documentPath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.set"
-        },
-        "values": {
-          "type": "object",
-          "patternProperties": {
-            "^.*$": {
-              "type": "string",
-              "maxLength": 9
-            }
-          },
-          "additionalProperties": false,
-          "maxProperties": 256
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "documentPath",
-        "epoch",
-        "method"
-      ],
-      "properties": {
-        "documentPath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.reset"
-        },
-        "token": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "documentPath",
-        "method"
-      ],
-      "properties": {
         "documentPath": {
           "type": "string",
           "minLength": 1,
@@ -183,51 +115,24 @@
     {
       "type": "object",
       "required": [
-        "documentPath",
-        "epoch",
-        "method",
-        "file"
-      ],
-      "properties": {
-        "documentPath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "method": {
-          "type": "string",
-          "const": "theme.import"
-        },
-        "file": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 66560
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
+        "protocol",
         "documentPath",
         "method"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
         },
         "method": {
-          "enum": [
-            "hello",
-            "get"
-          ]
+          "type": "string",
+          "const": "get"
         }
       },
       "additionalProperties": false
@@ -235,21 +140,21 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
-        "epoch",
         "method",
         "ops"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "method": {
           "type": "string",
@@ -266,22 +171,22 @@
     {
       "type": "object",
       "required": [
+        "protocol",
         "documentPath",
-        "epoch",
         "method",
         "format",
         "output"
       ],
       "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "documentPath": {
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
-        },
-        "epoch": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
         },
         "method": {
           "type": "string",

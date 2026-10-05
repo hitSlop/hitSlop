@@ -15,8 +15,9 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 `slop-engine` ships with the CLI for macOS and Linux, and beside `hitslop-native` in
 `hitSlop.app/Contents/Helpers`. It creates, reads and edits documents without Bun,
-WebKit or a running app. The TypeScript CLI sends document requests to the engine;
-opening a window, PNG/PDF export and native template artwork use the Swift helper.
+WebKit or a running app. The TypeScript CLI runs only the engine; opening a window,
+PNG/PDF export and native template artwork run in the Swift helper, which the engine
+passes them to.
 `slop check` and `slop build` use the CLI's engine for validation and packing. Add
 `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
@@ -35,7 +36,7 @@ metadata, not npm availability; see [releasing](releasing.md).
 | `remove` | `{"type":"remove","path":[...],"index":0,"count":1}` | Scalar lists; `count` defaults to 1 |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
-| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter adds the difference, and an optional or record entry the value leaves out is removed. Refused where it would overwrite a stored anomaly |
+| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value, and an optional or record entry the value leaves out is removed |
 
 `slop import PATH FILE [--path JSON]` sends one `replace` with the file's JSON (up to just
 under 1 MiB), so `slop get` output, edited or from another document of the same
@@ -44,15 +45,15 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 ## Ownership and retries
 
-An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each live connection starts with a small `hello` handshake that returns the owner's core build and epoch, without a document snapshot. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
+An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
 
-Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
+Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
 ## Helper requests
 
 `slop-engine request` reads one `HelperRequest` (`@hitslop/schema/socket`) from standard
 input, at most 1 MiB (16 MiB for an attachment upload), and prints one `SocketReply` line.
-A request names no epoch: the Rust router supplies the live owner's. A success carries its
+A request names no protocol: the engine adds the one it was called with. A success carries its
 method and required result fields (`SocketReply` in `@hitslop/schema/socket`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
@@ -72,23 +73,25 @@ engine or the checkout's `target/release/slop-engine`. Linux uses the CLI or che
 engine. Authoring validation and packing always select the CLI engine, independently of
 an installed app, unless `HITSLOP_ENGINE` is set.
 
-`HITSLOP_NATIVE_CLI` selects an explicit rendering helper. On macOS, when that override
-is set without `HITSLOP_ENGINE`, document commands require `slop-engine` beside the
-selected helper; they do not fall back to another deployment. `bun run build` places the
-engine beside the Debug helper. Missing or non-executable overrides fail, and an
-executed tool is never retried through another binary. Native helper discovery otherwise
-checks the same two app locations. `open`, `export`, `build --artwork native` and
-`register` require macOS and the native helper; document creation and editing do not.
+The CLI runs only the document engine. What needs AppKit or WebKit (`open`, `export`,
+`build --artwork native` and `register`) the engine passes, unchanged, to the app's
+rendering helper, so those require macOS and hitSlop.app; document creation and editing
+do not. The engine finds the helper beside itself (inside the app), then in the same two
+app locations. `HITSLOP_NATIVE_CLI` selects an explicit helper; on macOS, when it is set
+without `HITSLOP_ENGINE`, the CLI requires `slop-engine` beside that helper and does not
+fall back to another deployment. `bun run build` places the engine beside the Debug
+helper. Missing or non-executable overrides fail, and an executed tool is never retried
+through another binary.
 
-The CLI and Mac app update separately. Both executables report their command protocol
-range with `--protocol` (`{"version":N,"minimum":M}`). The CLI checks that range before
-running document commands or native rendering and supplies `--client-protocol VERSION`.
-Unversioned calls mean protocol 1; unsupported selections fail before document access.
-The selected engine or helper then checks a live owner's exact core build through
-`hello`. The app bundles matching engine, helper and owner builds; quit an older running
-app and reopen with the installed one if they differ. `slop-engine --build-id` and
-`hitslop-native --core-build` print that identity. A CLI-only release may reuse an
-installed app while the protocol and [installed-consumer checks](releasing.md) pass.
+The CLI and Mac app update separately. The CLI names its command protocol on every
+engine call (`--client-protocol VERSION`), and the engine names it in every request to a
+live owner. An engine, helper or owner that does not serve it refuses before document
+access, with exit status 2 or `requires_update`, and says which side to update;
+unversioned calls mean protocol 1. Each executable reports the range it serves with
+`--protocol` (`{"version":N,"minimum":M}`). The app bundles its engine, helper and owner
+built from one core; `slop-engine --build-id` and `hitslop-native --core-build` print it.
+A CLI-only release may reuse an installed app while the protocol and
+[installed-consumer checks](releasing.md) pass.
 
 ## File engine
 

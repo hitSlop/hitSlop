@@ -133,7 +133,7 @@ impl Document {
         // Every path validates the base first: an unknown operation must never reach Loro.
         let (base_at, base_vv) = decode_version(&self.doc, &r.base)?;
         // An unset optional text reads as "": the first edit from "" creates it.
-        let at = resolve(&self.doc, &self.schema, &r.path, &Rows::new(&self.lists))?;
+        let at = resolve(&self.doc, &self.app.schema, &r.path, &Rows::new(&self.lists))?;
         if at.absent && matches!(unwrap_optional(&at.node), Node::Text {}) {
             if !r.from.is_empty() {
                 return Err(err(Code::PathNotFound, "Text was cleared"));
@@ -150,9 +150,9 @@ impl Document {
                 });
             }
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
-            put(&map, &key, &Node::Text {}, &json!(r.to), &writer(&self.doc), at.shared, &mut Rows::new(&self.lists))?;
+            put(&map, &key, &Node::Text {}, &json!(r.to), &mut Rows::new(&self.lists))?;
             self.doc.commit();
-            let publication = self.publish()?;
+            let publication = self.publish()?.map(|p| p.json);
             if publication.is_some() {
                 self.record_typing(before.clone(), &r.path, &r.from, &r.to, r.selectionEnd);
             }
@@ -206,7 +206,7 @@ impl Document {
             // Although merged as an import, this is the person's edit. Its step starts
             // at the owner's current version, not the page's older base.
             let branch = branch_at(&self.doc, &base_at)?;
-            let text = text_at(&branch, &self.schema, &r.path, &HashMap::new())?;
+            let text = text_at(&branch, &self.app.schema, &r.path, &HashMap::new())?;
             if text.id() != current.id() {
                 return Err(err(Code::PathNotFound, "Text identity changed"));
             }
@@ -232,7 +232,7 @@ impl Document {
             }
             (version_token(&branch.oplog_frontiers()), positions)
         };
-        let publication = self.publish()?;
+        let publication = self.publish()?.map(|p| p.json);
         if publication.is_some() {
             if concurrent {
                 // A concurrent merge ends the run and is its own undo step.

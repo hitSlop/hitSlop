@@ -35,7 +35,6 @@ extension HostTests {
       let state = try #require(snapshot["state"] as? [String: Any])
       #expect((state["value"] as? [String: Any])?["title"] as? String == "Batch edit")
       #expect(state["version"] is String)
-      #expect(state["issues"] is [Any])
       let schema = try JSONSerialization.jsonObject(with: Data(SlopFile(url: root).descriptor.utf8)) as! [String: Any]
       #expect(NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema))
       // A malformed batch is refused before anything is sent: not applied.
@@ -140,16 +139,18 @@ extension HostTests {
     // A closed document exports its saved state with the initial view, taking no lock:
     // it renders even while another process holds the document.
     let saved = try Data(contentsOf: root)
-    let holder = try NativeStore.open(path: root.path, mode: .document)
-    defer { try? holder.close() }
+    let holder = try DocumentOwner(url: root)
     let closed = folder.appendingPathComponent("closed.pdf")
     let reply = try await export("pdf", to: closed)
     #expect(reply["ok"] as? Bool == true, "\(reply)")
     #expect(PDFDocument(data: try Data(contentsOf: closed))?.string?.contains("Selected view") == false)
     #expect(try Data(contentsOf: root) == saved)
+    try await holder.close()
   }
 
-  @Test @MainActor func staleEpochsAreRefusedAsReplaced() async throws {
+  // Failure: an engine of another build sent the live app a request it could not read,
+  // and the refusal did not say which side to update. Oracle: the code and saved value.
+  @Test @MainActor func aRequestInAnUnservedProtocolIsRefusedByTheLiveOwner() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -161,14 +162,15 @@ extension HostTests {
     let advertised = try Fixtures.object(discovery)
     let path = try #require(advertised["socket"] as? String)
     let documentPath = try #require(advertised["documentPath"] as? String)
-    let stale = try JSONSerialization.data(withJSONObject: [
-      "method": "batch", "documentPath": documentPath, "epoch": "old",
+    let newer = try JSONSerialization.data(withJSONObject: [
+      "protocol": HelperProtocol.version + 1, "method": "batch", "documentPath": documentPath,
       "ops": #"[{"type":"set","path":["title"],"value":"must not apply"}]"#,
     ])
-    let response = try await Task.detached { try SocketClient.call(path: path, request: stale) }.value
+    let response = try await Task.detached { try SocketClient.call(path: path, request: newer) }.value
     let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
     #expect(refusal["ok"] as? Bool == false)
-    #expect(refusal["code"] as? String == "owner_replaced")
+    #expect(refusal["reason"] as? String == "requires_update")
+    #expect((refusal["error"] as? String)?.contains("update hitSlop") == true)
     #expect(try await savedValue(root) == before)
     try await controller.session.close()
   }

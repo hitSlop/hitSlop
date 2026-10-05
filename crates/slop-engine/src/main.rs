@@ -5,12 +5,60 @@
 //! until the document next opens or the app's launch sweep); `schema <file>` prints its app's
 //! document descriptor. `request` routes through the live owner or acquires the writer
 //! lock and runs the same owner in-process; its classified result is printed as JSON.
-//! Other refusals print a message on stderr and exit 1; a usage error exits 2.
+//! What needs AppKit or WebKit (exporting, `screenshot` artwork, `open` in a window) runs
+//! in the app's helper, which the engine passes it to unchanged, so the CLI talks to one
+//! binary. Other refusals print a message on stderr and exit 1; a usage error exits 2.
 //! `HITSLOP_TEST_REGISTRY` selects an isolated registry for tests.
 use hitslop_core::{command, file, registry};
-use std::io::Read;
-use std::path::Path;
-use std::process::ExitCode;
+use std::io::{Read, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
+
+/// The app's helper. `HITSLOP_NATIVE_CLI` names one; otherwise the helper beside this
+/// engine (inside the app), then the installed app's.
+fn helper() -> Result<PathBuf, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("Opening windows, exporting and native artwork require macOS and hitSlop.app; document edits and authoring run anywhere.".into());
+    }
+    let executable = |path: &Path| std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+    if let Some(named) = std::env::var_os("HITSLOP_NATIVE_CLI").filter(|named| !named.is_empty()) {
+        let named = PathBuf::from(named);
+        return if executable(&named) { Ok(named) } else { Err("HITSLOP_NATIVE_CLI is not executable".into()) };
+    }
+    let beside = std::env::current_exe().ok().and_then(|engine| Some(engine.parent()?.join("hitslop-native")));
+    let home = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications/hitSlop.app/Contents/Helpers/hitslop-native"));
+    beside
+        .into_iter()
+        .chain([PathBuf::from("/Applications/hitSlop.app/Contents/Helpers/hitslop-native")])
+        .chain(home)
+        .find(|path| executable(path))
+        .ok_or_else(|| "Install hitSlop.app in /Applications or ~/Applications to open windows, export or render artwork".into())
+}
+/// Runs the helper in `protocol` with `args` and `input` on its standard input. Its output
+/// and exit status are this command's.
+fn native(protocol: u64, args: &[&str], input: Option<&str>) -> ExitCode {
+    let run = || -> std::io::Result<Option<i32>> {
+        let helper = helper().map_err(std::io::Error::other)?;
+        let mut child = Command::new(helper)
+            .arg("--client-protocol")
+            .arg(protocol.to_string())
+            .args(args)
+            .stdin(if input.is_some() { Stdio::piped() } else { Stdio::inherit() })
+            .spawn()?;
+        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+            stdin.write_all(input.as_bytes())?;
+        }
+        Ok(child.wait()?.code())
+    };
+    match run() {
+        Ok(code) => ExitCode::from(code.unwrap_or(1).clamp(0, 255) as u8),
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
 
 fn validate_app() -> Result<(), String> {
     let mut input = String::new();
@@ -29,6 +77,8 @@ fn main() -> ExitCode {
         println!("{}", command::protocol());
         return ExitCode::SUCCESS;
     }
+    // The protocol the caller speaks; unversioned callers speak protocol 1.
+    let mut protocol = 1;
     if args.first() == Some(&"--client-protocol") {
         let Some(version) = args.get(1).and_then(|v| v.parse().ok()) else {
             eprintln!("Invalid client protocol");
@@ -38,6 +88,7 @@ fn main() -> ExitCode {
             eprintln!("Unsupported client protocol; update hitSlop and @hitslop/cli");
             return ExitCode::from(2);
         }
+        protocol = version;
         args.drain(..2);
     }
     if let Some(folder) =
@@ -52,7 +103,10 @@ fn main() -> ExitCode {
             .read_to_string(&mut input)
         {
             Ok(_) => {
-                println!("{}", command::request(&input, None));
+                if command::is_export(&input) {
+                    return native(protocol, &["request"], Some(&input));
+                }
+                println!("{}", command::request(&input, protocol, None));
                 ExitCode::SUCCESS
             }
             Err(error) => {
@@ -60,6 +114,9 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+    if matches!(args.first(), Some(&"open" | &"screenshot")) {
+        return native(protocol, &args, None);
     }
     if args.as_slice() == ["validate-app"] {
         return match validate_app() {
@@ -101,7 +158,7 @@ fn main() -> ExitCode {
         ["--build-id"] => Ok(Some(hitslop_core::BUILD_ID.to_owned())),
         _ => {
             eprintln!(
-                "usage: slop-engine validate-app < app.json | pack <stage> <file> | inspect <file> | schema <file> | request | create --from <template> --output <file> | --protocol | --build-id"
+                "usage: slop-engine [--client-protocol N] validate-app < app.json | pack <stage> <file> | inspect <file> | schema <file> | request | create --from <template> --output <file> | open <file> | screenshot <file> --output <png> [--target preview|icon] [--if-present] | --protocol | --build-id"
             );
             return ExitCode::from(2);
         }

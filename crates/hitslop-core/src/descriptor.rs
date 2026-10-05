@@ -141,8 +141,8 @@ impl Node {
                 }
             }
             Self::Optional { inner } => {
-                // Optional lists and counters wait for a design that keeps their
-                // identity when two replicas create them concurrently.
+                // Optional lists, records and counters are not implemented; no slop
+                // needs them.
                 if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text {}) {
                     return Err(err(Code::InvalidSchema, "Optional holds a scalar, text or an object"));
                 }
@@ -160,11 +160,7 @@ impl Node {
     pub(super) fn validate(&self, value: &Value, row: bool) -> Result<()> {
         match self {
             // Writes and stored values share one scalar rule.
-            scalar if is_scalar(scalar) => match issues::scalar_issue(scalar, value) {
-                None => Ok(()),
-                Some(IssueCode::OutOfRange) => Err(err(Code::OutOfRange, "Value is outside its bounds")),
-                Some(_) => Err(err(Code::TypeMismatch, "Value does not match descriptor")),
-            },
+            scalar if is_scalar(scalar) => check::scalar(scalar, value),
             Self::Text {} if value.is_string() => Ok(()),
             Self::Counter {} if value.as_i64().is_some_and(safe) => Ok(()),
             // `null` is never a value: an optional is set or absent.

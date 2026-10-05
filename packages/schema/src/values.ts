@@ -15,6 +15,11 @@ export const ThemeValuesSchema = T.Record(ThemeTokenSchema, T.String({ maxLength
   additionalProperties: false,
   maxProperties: ThemeTokenRule.tokens,
 });
+/** Palette changes: each token's new color, or `null` to return it to the template's. */
+export const ThemeChangesSchema = T.Record(ThemeTokenSchema, T.Union([T.String({ maxLength: 9 }), T.Null()]), {
+  additionalProperties: false,
+  maxProperties: ThemeTokenRule.tokens,
+});
 /** A shared theme file: the template it was made for and its full palette. */
 export const ThemeFileSchema = Strict({
   template: T.String({ ...ManifestText.slug }),

@@ -1,12 +1,12 @@
-//! Descriptor-driven operations over three peers: atomic refusals, publication replay,
-//! checkpoint reopen and seed-plus-log reopen are independent observations.
+//! Descriptor-driven edits to one owner: atomic refusals, publication replay and reopen
+//! are independent observations of every step.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View, next, snapshot};
+use support::{app, View, next, snapshot};
 use serde_json::{json, Value};
 
 /// A valid value of `node`; `n` varies strings, choices and in-range numbers so
-/// concurrent last-writer-wins conflicts can actually diverge.
+/// successive edits differ.
 fn value(node: &Value, n: usize) -> Value {
     match node["kind"].as_str().unwrap() {
         "text" => json!(format!("edit {n} 🪴")),
@@ -119,74 +119,90 @@ fn intent(rng: &mut u64, serial: &mut usize, descriptor: &Value, current: &Value
         _ => json!({"type":"set","path":path,"value":value(node, n)}),
     }
 }
-/// The descriptor node a path names, and whether the path passes an optional value or a
-/// record entry, whose lists are created (and published) with their parent.
-fn node_at<'a>(descriptor: &'a Value, path: &[Value]) -> (&'a Value, bool) {
-    path.iter().fold((descriptor, false), |(node, created), segment| {
-        let (node, created) = if node["kind"] == "optional" { (&node["inner"], true) } else { (node, created) };
-        match node["kind"].as_str().unwrap() {
-            "object" => (&node["properties"][segment.as_str().unwrap()], created),
-            "record" => (&node["value"], true),
-            _ => (&node["item"], created),
-        }
-    })
+/// One page text client: the field it types in, and the version and text it last saw.
+struct Typist { path: Vec<Value>, base: String, text: String }
+/// The text fields that hold text now: plain text, and set optional text.
+fn text_fields(descriptor: &Value, current: &Value) -> Vec<(Vec<Value>, String)> {
+    let mut all = vec![]; targets(descriptor, current, vec![], &mut all);
+    all.into_iter().filter(|(node, value, _)| {
+        node["kind"] == "text" || (node["kind"] == "optional" && node["inner"]["kind"] == "text" && value.is_string())
+    }).map(|(_, value, path)| (path, value.as_str().unwrap().to_owned())).collect()
 }
-/// Applies a publication to the page's view, which must equal a fresh snapshot. A clean
-/// document's row lists publish row operations, never a replacement of the whole list.
-fn published(doc: &Document, descriptor: &Value, view: &mut View, publication: &str) {
-    view.publish(publication);
-    view.check(doc, "publication");
-    if snapshot(doc)["issues"] == json!([]) {
-        let publication: Value = serde_json::from_str(publication).unwrap();
-        for op in publication["ops"].as_array().unwrap() {
-            let (node, created) = node_at(descriptor, op["path"].as_array().unwrap());
-            let rows = node["kind"] == "list" && node["item"]["kind"] == "object";
-            assert!(!(op["type"] == "set" && rows && !created), "a clean row list published a replacement: {op}");
-        }
-    }
-}
+/// The single-writer invariant, over the edits one owner actually receives: the agent's
+/// batches (including replacement), page text clients whose edits arrive late against
+/// older versions, undo and redo. Every accepted step leaves a document whose stored state
+/// matches its descriptor (reopening checks it), whose publications replay to a fresh
+/// snapshot and which reopens the same; every refusal changes nothing.
 fn run(name: &str, fixture: &str) {
+    use hitslop_core::Origin;
     let f: Value = serde_json::from_str(fixture).unwrap(); let schema = f["schema"].to_string();
     let (mut accepted, mut refused) = (0usize, 0usize);
     for seed in 1..=support::workload("HITSLOP_MODEL_SEEDS", 8) {
-        let mut rng = (seed as u64) * 0x9e3779b1; let mut serial = 0;
-        let original = Document::create(&schema, &f["initial"].to_string()).unwrap();
-        let checkpoint = original.checkpoint().unwrap(); let base = original.version();
-        let mut peers: Vec<_> = (0..3).map(|_| Document::open(&schema, &checkpoint, &[]).unwrap()).collect();
-        let mut views: Vec<_> = peers.iter().map(View::of).collect();
+        let mut rng = (seed as u64) * 0x9e3779b1 + 7; let mut serial = 0;
+        let mut doc = Document::create(&app(&schema), &f["initial"].to_string()).unwrap();
+        let mut view = View::of(&doc);
+        let mut typists: Vec<Typist> = vec![];
         for step in 0..support::workload("HITSLOP_MODEL_STEPS", 150) {
-            let peer = (next(&mut rng) as usize) % 3; let before = snapshot(&peers[peer]);
-            let ops: Vec<_> = (0..1 + (next(&mut rng) as usize) % 4).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
-            match peers[peer].apply(&json!({"intents":ops}).to_string()) {
-                Ok(reply) => { accepted += 1; published(&peers[peer], &f["schema"], &mut views[peer], &reply) }
+            let before = snapshot(&doc);
+            let n = next(&mut rng) as usize;
+            let outcome: Result<Option<String>, hitslop_core::Error> = match n % 12 {
+                0..=4 => {
+                    let ops: Vec<_> = (0..1 + next(&mut rng) % 3).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
+                    let origin = if n % 2 == 0 { Origin::Agent } else { Origin::Page };
+                    doc.apply_batch(&json!({"intents":ops}).to_string(), origin).map(|a| a.publication)
+                }
+                5 => {
+                    let mut all = vec![]; targets(&f["schema"], &before["value"], vec![], &mut all);
+                    let op = match all.get(n % (all.len() + 1)) {
+                        Some((node, _, path)) => json!({"type":"replace","path":path,"value":value(node, n)}),
+                        None => json!({"type":"replace","path":[],"value":value(&f["schema"], n)}),
+                    };
+                    doc.apply_batch(&json!({"intents":[op]}).to_string(), Origin::Agent).map(|a| a.publication)
+                }
+                6 | 7 => {
+                    let fields = text_fields(&f["schema"], &before["value"]);
+                    if typists.len() < 3 && !fields.is_empty() && n % 2 == 0 {
+                        let (path, text) = fields[n % fields.len()].clone();
+                        typists.push(Typist { path, base: before["version"].as_str().unwrap().to_owned(), text });
+                        Ok(None)
+                    } else if typists.is_empty() {
+                        Ok(None)
+                    } else {
+                        let typist = typists.remove(n % typists.len());
+                        let to = format!("{}·{serial}", typist.text); serial += 1;
+                        let caret = to.encode_utf16().count();
+                        let request = json!({"base":typist.base,"path":typist.path,"from":typist.text,"to":to,"selectionStart":caret,"selectionEnd":caret});
+                        doc.edit_text(&request.to_string()).map(|edit| {
+                            // A client keeps typing from the version its edit authored.
+                            typists.push(Typist { path: typist.path, base: edit.authored, text: to });
+                            edit.publication
+                        })
+                    }
+                }
+                8..=9 => doc.undo().map(|a| a.publication),
+                _ => doc.redo().map(|a| a.publication),
+            };
+            match outcome {
+                Ok(publication) => {
+                    accepted += 1;
+                    if let Some(publication) = publication { view.publish(&publication); }
+                    view.check(&doc, "single owner");
+                }
                 Err(_) => {
                     refused += 1;
-                    assert_eq!(snapshot(&peers[peer]), before, "{name}, seed {seed}, step {step}: refused batch changed state");
+                    assert_eq!(snapshot(&doc), before, "{name}, seed {seed}, step {step}: a refusal changed state");
                 }
             }
-            if step % 7 == 6 {
-                let updates: Vec<_> = peers.iter().map(|p| p.export_since(&base).unwrap()).collect();
-                for index in 0..3 { for update in &updates {
-                    let reply = peers[index].merge(update).unwrap(); published(&peers[index], &f["schema"], &mut views[index], &reply);
-                } }
-                for index in 1..3 {
-                    assert_eq!(views[0].value, views[index].value, "{name}, seed {seed}, step {step}: peers 0 and {index} diverged");
-                }
-            }
-            for (index, peer) in peers.iter().enumerate() {
-                let state = snapshot(peer); assert_eq!(views[index].value, state["value"]);
-                // The owner's maintained state equals the full recomputation.
-                assert_eq!(serde_json::from_str::<Value>(&peer.state().unwrap()).unwrap(), state, "{name}, seed {seed}, step {step}: state");
-                // Reopening replays everything since the seed, so it runs at merges only.
-                if step % 7 != 6 { continue; }
-                for reopened in [Document::open(&schema, &peer.checkpoint().unwrap(), &[]).unwrap(), Document::open(&schema, &checkpoint, &[peer.export_since(&base).unwrap()]).unwrap()] {
-                    let restored = snapshot(&reopened);
-                    for key in ["value", "issues", "version"] { assert_eq!(restored[key], state[key], "{name}, seed {seed}, step {step}: {key}"); }
-                }
+            let state = snapshot(&doc);
+            assert_eq!(serde_json::from_str::<Value>(&doc.state().unwrap()).unwrap(), state, "{name}, seed {seed}, step {step}: maintained state");
+            if step % 3 == 2 {
+                let reopened = Document::open(&app(&schema), &doc.checkpoint().unwrap(), &[])
+                    .unwrap_or_else(|e| panic!("{name}, seed {seed}, step {step}: a local edit stored invalid state: {e}"));
+                let restored = snapshot(&reopened);
+                for key in ["value", "version"] { assert_eq!(restored[key], state[key], "{name}, seed {seed}, step {step}: reopen {key}"); }
             }
         }
     }
-    // Refusals prove atomicity; most batches must still apply, or the model tests little.
     assert!(accepted >= refused, "{name}: {accepted} accepted, {refused} refused");
 }
 #[test]
@@ -198,14 +214,14 @@ fn collections_model() { run("collections", include_str!("../fixtures/collection
 #[test]
 fn nested_model() { run("nested", include_str!("../fixtures/nested.json")) }
 
-/// One live owner receives CLI changes between a page's typing acknowledgements. This
-/// exercises the actual local edit stream independently of replica exchange above.
+/// One live owner receives CLI changes between a page's typing acknowledgements: a fixed
+/// interleaving beside the random models above.
 #[test]
 fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
     use hitslop_core::Origin;
     const SCHEMA: &str = r#"{"kind":"object","properties":{"text":{"kind":"text"},"hits":{"kind":"counter"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}}}}"#;
     for seed in 1..=support::workload("HITSLOP_MODEL_SEEDS", 8) {
-        let mut doc = Document::create(SCHEMA, r#"{"text":"start","hits":0,"rows":[]}"#).unwrap();
+        let mut doc = Document::create(&app(SCHEMA), r#"{"text":"start","hits":0,"rows":[]}"#).unwrap();
         let mut view = View::of(&doc);
         for step in 0..24 {
             let before = snapshot(&doc);
@@ -237,8 +253,8 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             view.publish(&doc.redo().unwrap().publication.unwrap());
             view.check(&doc, "redo delayed typing");
             assert_eq!(snapshot(&doc)["value"], accepted["value"]);
-            let reopened = Document::open(SCHEMA, &doc.checkpoint().unwrap(), &[]).unwrap();
-            for key in ["value", "issues", "theme", "version"] {
+            let reopened = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
+            for key in ["value", "theme", "version"] {
                 assert_eq!(snapshot(&reopened)[key], snapshot(&doc)[key], "seed {seed}, step {step}: {key}");
             }
         }

@@ -215,6 +215,9 @@
             }
           }
         },
+        "theme": {
+          "accent": "#335577"
+        },
         "state": {
           "value": {
             "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
@@ -270,7 +273,6 @@
             "title": "Replay 2 é 中文",
             "version": "compat 2"
           },
-          "issues": [],
           "theme": {
             "accent": "#123456"
           }

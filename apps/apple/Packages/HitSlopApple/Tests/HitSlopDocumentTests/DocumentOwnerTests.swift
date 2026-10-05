@@ -51,21 +51,6 @@ import HitSlopTestSupport
     #expect(try value(closed)?["hits"] as? Int == batches, "each batch applied once")
   }
 
-  // A smoke test of the binding: a literal scenario applies, saves and reopens natively.
-  // The Rust and WASM tests run every scenario.
-  @Test func nativeBindingAppliesSavesAndReopensAScenario() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let store = try NativeStore.open(path: root.path, mode: .document)
-    let core = try store.document()
-    _ = try core.applyBatch(batchJson: increment, origin: .page)
-    if let job = try core.saveJob(store: store, forceCheckpoint: false) { try store.write(job: job) }
-    try store.close()
-    let reopened = try DocumentOwner(url: root, mode: .snapshot)
-    #expect(try await hits(reopened) == 3)
-    try await reopened.close()
-  }
-
   /// An owner shows the document from its store's one check, in either mode: the app a
   /// separate open reports. A file's header gives its kind, and a template is refused as a
   /// document before anything is written.
@@ -115,11 +100,7 @@ import HitSlopTestSupport
     #expect(try await hits(owner) == 3)
     try await owner.close()
     let reopened = try DocumentOwner(url: root)
-    #expect(reopened.epoch != owner.epoch)
     #expect(try await hits(reopened) == 3)
-    await #expect(throws: (any Error).self) {
-      _ = try await reopened.apply(batch: self.increment, epoch: owner.epoch)
-    }
     try await reopened.close()
   }
 
@@ -154,27 +135,6 @@ import HitSlopTestSupport
     let reopened = try DocumentOwner(url: root)
     #expect(try await hits(reopened) == 6)
     try await reopened.close()
-  }
-
-  // A snapshot reads saved state and its theme as saved, and can change nothing: not the
-  // document, the theme or the attachments.
-  @Test func snapshotOwnerReadsSavedStateAndOwnsNothing() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    _ = try await owner.apply(batch: increment)
-    let first = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
-    try await owner.flush()
-    let snapshot = try DocumentOwner(url: root, mode: .snapshot)
-    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#333333"}"##))
-    try await owner.flush()
-    #expect(try await hits(snapshot) == 3)
-    #expect(try await snapshot.loadTheme().state.effective == first.state.effective)
-    await #expect(throws: (any Error).self) { _ = try await snapshot.apply(batch: self.increment) }
-    await #expect(throws: (any Error).self) { _ = try await snapshot.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##)) }
-    await #expect(throws: (any Error).self) { _ = try await snapshot.putAttachment(base64: "AQ==") }
-    try await snapshot.close()
-    try await owner.close()
   }
 
   // Gap: direct binding tests cannot prove the production page/ctx bridge or live forwarding.
@@ -263,22 +223,16 @@ import HitSlopTestSupport
     let current = try await value(owner)["value"] as! [String: Any]
     let id = try #require(current["title"] as? String)
     #expect(id.count == 64)
-    #expect(try await owner.readAttachment(id) == Data("native attachment".utf8).base64EncodedString())
+    let read = try decodeReply(await owner.request(.attachmentsRead(.init(protocol: HelperProtocol.version, documentPath: resolved(owner), attachmentID: id))))
+    #expect((read.state as? [String: Any])?["bytes"] as? String == Data("native attachment".utf8).base64EncodedString())
     try await owner.close()
   }
 
-  // A theme refusal reaches the caller and keeps the theme. The core owns the palette rules.
-  @Test func aRefusedThemeChangeKeepsThePalette() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#abcdef"}"##))
-    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"red"}"##)) }
-    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.reset(token: "missing")) }
-    #expect(try await accent(owner) == "#abcdef")
-    try await owner.close()
+  /// A theme panel change; the sequence it was accepted at.
+  @discardableResult
+  func theme(_ owner: DocumentOwner, _ change: SlopThemeChange) async throws -> Int {
+    try await withCheckedThrowingContinuation { done in owner.enqueueTheme(change) { done.resume(with: $0) } }
   }
-
   func accent(_ owner: DocumentOwner) async throws -> String? {
     try JSONDecoder().decode([String: String].self, from: Data(try await owner.loadTheme().state.effective.utf8))["accent"]
   }
@@ -289,42 +243,20 @@ import HitSlopTestSupport
     return try await accent(snapshot)
   }
 
-  // A theme change is an edit: accepted in memory, saved by the owner's jobs, waited for
-  // by flush, export and close, and kept for a retry when its save fails (here, another
-  // connection holds the database).
-  @Test func themeChangesAreSavedLikeEdits() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    let hold = try Fixtures.DatabaseHold(root)
-    let changed = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
-    #expect(changed.revision > 0)
-    #expect(try await accent(owner) == "#111111")
-    await #expect(throws: (any Error).self) { _ = try await owner.exportTheme() }
-    hold.release()
-    #expect(try await owner.exportTheme().contains("#111111"))
-    #expect(try await savedAccent(root) == "#111111")
-    // Setting the template's color changes nothing; a later change is saved by close.
-    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).revision == changed.revision)
-    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##))
-    try await owner.close()
-    #expect(try await savedAccent(root) == "#222222")
-  }
-
   @Test func themeImportReplacesOverridesForItsTemplateOnly() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
+    try await theme(owner, .set(["accent": "#111111"]))
     let file = try await owner.exportTheme()
     #expect(file.contains(#""template":"runtime-conformance""#))
     #expect(file.hasSuffix("\n"))
-    _ = try await owner.applyTheme(.reset(token: nil))
+    try await theme(owner, .resetAll)
     let other = file.replacingOccurrences(of: "runtime-conformance", with: "habit-heatmap")
-    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.import(fileJson: other)) }
-    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.import(fileJson: "not a theme")) }
+    await #expect(throws: (any Error).self) { try await self.theme(owner, .importFile(other)) }
+    await #expect(throws: (any Error).self) { try await self.theme(owner, .importFile("not a theme")) }
     #expect(try await accent(owner) == "#335577")
-    _ = try await owner.applyTheme(.import(fileJson: file))
+    try await theme(owner, .importFile(file))
     #expect(try await accent(owner) == "#111111")
     try await owner.close()
     #expect(try await savedAccent(root) == "#111111")
@@ -334,15 +266,8 @@ import HitSlopTestSupport
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    func color(_ value: String) async throws {
-      try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-        owner.enqueueTheme(.set(["accent": value])) { done.resume(with: $0.map { _ in }) }
-      }
-    }
-    owner.beginThemeGesture()
-    try await color("#111111")
-    try await color("#222222")
-    owner.endThemeGesture()
+    try await theme(owner, .set(["accent": "#111111"]))
+    try await theme(owner, .set(["accent": "#222222"]))
     _ = try await owner.apply(batch: increment)
     _ = try await owner.undo()
     #expect(try await hits(owner) == 0)
@@ -355,63 +280,34 @@ import HitSlopTestSupport
     #expect(try await savedAccent(root) == "#222222")
   }
 
-  // Spike S-D. Failure: work queued by a replaced page, or captured before a discard,
-  // applied to state it never saw. Oracle: `owner_replaced` and an unchanged document.
-  @Test func requestsFromAReplacedViewOrEpochAreRefused() async throws {
+  // Spike S-D. Failure: work queued by a replaced page applied to state it never saw.
+  // Oracle: `owner_replaced` and an unchanged document.
+  @Test func requestsFromAReplacedViewAreRefused() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     owner.attach(view: "first")
     owner.attach(view: "second")
-    #expect(try await open(owner, view: "second") == nil)
-    #expect(try await open(owner, view: "first") is OwnerReplaced)
+    #expect(await page(owner, #"{"method":"open"}"#, view: "second") == nil)
+    #expect(await page(owner, #"{"method":"open"}"#, view: "first") is OwnerReplaced)
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
     _ = try await owner.apply(batch: increment, view: "second")
-    let epoch = owner.epoch
     try await owner.discardPending()
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, epoch: epoch) }
+    owner.attach(view: "third")
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.applyTheme(.reset(token: nil), epoch: epoch) }
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.putAttachment(base64: "AQ==", epoch: epoch) }
+    #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second") is OwnerReplaced)
     #expect(try await hits(owner) == 0)
     try await owner.close()
   }
-  /// A page's `open`; the error it fails with, if any.
-  func open(_ owner: DocumentOwner, view: String) async throws -> Error? {
-    await withCheckedContinuation { continuation in
-      owner.enqueuePage(.open(PageOpenRequest()), view: view) { result in
-        if case .failure(let error) = result { continuation.resume(returning: error) } else { continuation.resume(returning: nil) }
-      }
-    }
+  /// The owner's document path as the core resolved it, which a socket request names.
+  func resolved(_ owner: DocumentOwner) -> String {
+    guard let path = realpath(owner.file.url.path, nil) else { return owner.file.url.path }
+    defer { free(path) }
+    return String(cString: path)
   }
-
-  // Failure: a socket mutation captured before a discard applied to the restored state.
-  // Every mutating method is admitted against the epoch its client read.
-  @Test @MainActor func socketMutationsFromAReplacedEpochAreNotApplied() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    let epoch = owner.epoch
-    try await owner.discardPending()
-    #expect(owner.epoch != epoch)
-    // The real command client resolves the file path before the socket handshake.
-    // Keep this direct dispatch focused on an old epoch, not a /var path alias.
-    let resolved = try #require(realpath(owner.file.url.path, nil))
-    defer { free(resolved) }
-    let path = String(cString: resolved)
-    for request in [
-      SocketRequest.batch(.init(documentPath: path, epoch: epoch, ops: #"[{"type":"increment","path":["hits"],"by":1}]"#)),
-      .themeSet(.init(documentPath: path, epoch: epoch, values: ["accent": "#123456"])),
-      .themeReset(.init(documentPath: path, epoch: epoch)),
-      .attachmentsPut(.init(documentPath: path, epoch: epoch, bytes: "AQ==")),
-    ] {
-      let reply = try decodeReply(await owner.request(request))
-      #expect(reply.code == .ownerReplaced, "\(request.method): \(reply.error ?? "no error")")
-    }
-    #expect(try await hits(owner) == 0)
-    #expect(try await accent(owner) == "#335577")
-    #expect(try await owner.listAttachments().isEmpty)
-    try await owner.close()
+  /// A page request from `view`; the owner's refusal, if any.
+  func page(_ owner: DocumentOwner, _ json: String, view: String) async -> Error? {
+    await withCheckedContinuation { done in owner.page(json: json, view: view) { _, error in done.resume(returning: error) } }
   }
 }
 
@@ -435,78 +331,4 @@ extension DocumentOwnerTests {
     #expect(try await self.hits(session.owner) == 4)
     try await session.close()
   }
-
-  @Test @MainActor func pageAdmissionOrdersMixedEditsAndFencesOldOpenAndFlush() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    owner.attach(view: "first")
-    let initial = try await value(owner)
-    let title = (initial["value"] as! [String: Any])["title"] as! String
-    let base = initial["version"] as! String
-    let sequences: [Int] = await withCheckedContinuation { continuation in
-      var values: [Int] = []
-      let receive: @MainActor @Sendable ([String: Any]) -> Void = { reply in
-        values.append(reply["sequence"] as? Int ?? -1)
-        if values.count == 2 { continuation.resume(returning: values) }
-      }
-      admitPage(owner, ["method": "apply",
-        "batch": try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])], reply: receive)
-      admitPage(owner, ["method": "text",
-        "request": try! Fixtures.json(["base": base, "path": ["title"], "from": title, "to": title + "!",
-          "selectionStart": title.utf16.count + 1, "selectionEnd": title.utf16.count + 1])], reply: receive)
-    }
-    #expect(sequences == [1, 2])
-    owner.attach(view: "second")
-    for method in ["open", "flush"] {
-      let code: String? = await withCheckedContinuation { continuation in
-        admitPage(owner, ["method": method]) {
-          continuation.resume(returning: $0["code"] as? String)
-        }
-      }
-      #expect(code == "owner_replaced")
-    }
-    try await owner.close()
-  }
-
-  // Swift checks only the envelope; the core parses the payload. Either way a malformed
-  // or oversized request is a definite refusal that applies nothing.
-  @Test @MainActor func malformedPageRequestsAreRefusedNotUncertain() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    owner.attach(view: "page")
-    let increment = try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
-    let requests: [([String: Any], String)] = [
-      (["method": "apply"], "invalid_request"),
-      (["method": "apply", "batch": increment, "extra": true], "invalid_request"),
-      (["method": "flush", "batch": increment], "invalid_request"),
-      (["view": "", "method": "apply", "batch": increment], "invalid_request"),
-      (["method": "apply", "batch": try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
-      (["method": "text", "request": try! Fixtures.json(["base": "x"])], "invalid_request"),
-      (["method": "apply", "batch": ["intents": []]], "invalid_request"),
-      // The core bounds opaque document payloads in UTF-8 bytes.
-      (["method": "text", "request": String(repeating: "😀", count: 1_048_577)], "too_large"),
-    ]
-    for (request, reason) in requests {
-      let reply: [String?] = await withCheckedContinuation { continuation in
-        admitPage(owner, request, view: "page") { continuation.resume(returning: [$0["code"] as? String, $0["reason"] as? String]) }
-      }
-      #expect(reply == ["rejected", reason])
-    }
-    #expect(try await value(owner)["sequence"] as? Int == 0)
-    try await owner.close()
-  }
-}
-
-/// A page payload, as the page sends it: JSON text.
-
-// Exercise the same validated envelope and owner admission used by DocumentSession.
-@MainActor private func admitPage(_ owner: DocumentOwner, _ args: [String: Any], view: String = "first",
-  reply: @escaping @MainActor @Sendable ([String: Any]) -> Void
-) {
-  guard let request = PageRequest.checked(args) else {
-    return reply(RequestOutcome.page(OwnerError.rejected("Invalid page request")))
-  }
-  owner.admitPage(request, view: view, reply: reply)
 }

@@ -11,36 +11,30 @@ extension PageRequest {
 }
 
 extension DocumentSession {
-  /// Page attachment calls. They go through the owner, so they pass its admission;
-  /// document bytes never reach the page this way.
-  func servePageStorage(_ request: PageRequest, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
-    let owner = owner, view = view
-    Task { @MainActor [weak self] in
-      do {
-        let result: PageResult
-        switch request {
-        case .attachmentsRead(let r):
-          result = .attachmentsRead(.init(bytes: try await owner.readAttachment(r.attachmentID)))
-        case .attachmentsPut(let r):
-          result = .attachmentsPut(try await owner.putAttachment(base64: r.bytes, view: view))
-        default: throw OwnerError.rejected("Unsupported storage request")
-        }
-        reply(result.json, nil)
-      } catch {
-        switch RequestOutcome(error) {
-        case .saveFailed, .unknown:
-          // Only persistence failures are storage failures; a closing, replaced or
-          // invalidated owner is reported through its own lifecycle.
-          if !SlopFailureContext.isCancellation(error) {
-            let diagnostic = SlopFailureContext.classify(error)
-            if let self {
-              self.delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown ? .init(reason: .storage) : diagnostic)
-            }
-          }
-        case .rejected, .replaced, .closing, .invalidated: break
-        }
-        reply(RequestOutcome.page(error), nil)
+  /// A document request from the page. The owner checks and answers it, so document
+  /// bytes and edits never pass through Swift; a refused attachment read or write that
+  /// failed in storage is also the window's to report.
+  func servePage(_ body: [String: Any], storage: Bool, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
+    guard let json = try? JSONSerialization.data(withJSONObject: body) else {
+      return reply(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil)
+    }
+    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { answer, error in
+      DispatchQueue.main.async { [weak self] in
+        if storage, let error, let self { self.reportStorage(error) }
+        reply(try? JSONSerialization.jsonObject(with: Data(answer.utf8)), nil)
       }
+    }
+  }
+
+  /// Only persistence failures are storage failures; a closing, replaced or invalidated
+  /// owner is reported through its own lifecycle.
+  private func reportStorage(_ error: Error) {
+    switch RequestOutcome(error) {
+    case .saveFailed, .unknown:
+      guard !SlopFailureContext.isCancellation(error) else { return }
+      let diagnostic = SlopFailureContext.classify(error)
+      delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown ? .init(reason: .storage) : diagnostic)
+    case .rejected, .replaced, .closing, .invalidated: break
     }
   }
 }

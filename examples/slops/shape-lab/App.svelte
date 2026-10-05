@@ -31,13 +31,13 @@
 </script>
 
 <main data-variant={variant.kind} bind:this={root} class:shape-lab-skin={variant.skin} class="shape-lab" onpointermove={locate}>
-  <header class="shape-lab-heading"><span>01 / TOP</span><h1>Shape Lab</h1><p>{variant.name}</p><output class="shape-lab-skin-count">{doc.current.hits ?? "—"} clicks · {doc.current.lastTarget}</output></header>
+  <header class="shape-lab-heading"><span>01 / TOP</span><h1>Shape Lab</h1><p>{variant.name}</p><output class="shape-lab-skin-count">{doc.current.hits} clicks · {doc.current.lastTarget}</output></header>
   <button class="shape-lab-edge shape-lab-north" onclick={() => hit("North")}>N ↑</button>
   <button class="shape-lab-edge shape-lab-west" onclick={() => hit("West")}>W ←</button>
   <button class="shape-lab-edge shape-lab-east" onclick={() => hit("East")}>E →</button>
   <button class="shape-lab-edge shape-lab-south" onclick={() => hit("South")}>S ↓</button>
   <section class="shape-lab-readout" aria-label="Observed input">
-    <span class="shape-lab-caption">ACCEPTED CLICKS</span><strong>{doc.current.hits ?? "—"}</strong>
+    <span class="shape-lab-caption">ACCEPTED CLICKS</span><strong>{doc.current.hits}</strong>
     <p>Last: {doc.current.lastTarget}</p><p class="shape-lab-expectation">{variant.expectation}</p>
   </section>
   <label class="shape-lab-note">Edit / capture check<input aria-label="Capture note" use:bindText={doc.fields.note} /></label>

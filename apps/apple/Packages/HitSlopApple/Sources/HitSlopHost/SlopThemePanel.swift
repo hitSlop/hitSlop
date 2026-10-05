@@ -31,18 +31,10 @@ extension SlopDocumentWindowController {
     guard shown, let window, isContentReady, session.canEditTheme else { return closeThemePanel() }
     let editor = themeEditor ?? SlopThemeEditorModel(
       tokens: session.file.themeTokens.map { (name: $0.name, value: $0.value) },
-      beginGesture: { [weak self] in self?.session.beginThemeGesture() },
-      finishGesture: { [weak self] in self?.session.endThemeGesture() },
       send: { [weak self] change, reply in self?.session.changeTheme(change, reply: reply) })
     themeEditor = editor
     if themePanel == nil {
       themePanel = makeThemePanel(editor)
-      themeGestureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .keyDown]) { [weak editor] event in
-        // Mouse-up may deliver the picker's final color action; end after that action.
-        if event.type == .leftMouseUp { DispatchQueue.main.async { editor?.endGesture() } }
-        else { editor?.endGesture() }
-        return event
-      }
       telemetry.send(.themeEditorOpened)
     }
     layoutThemePanel()
@@ -62,9 +54,6 @@ extension SlopDocumentWindowController {
   func closeThemePanel() {
     guard let panel = themePanel else { return }
     themePanel = nil
-    themeEditor?.endGesture()
-    if let monitor = themeGestureMonitor { NSEvent.removeMonitor(monitor) }
-    themeGestureMonitor = nil
     themeEditor = nil
     // A color picker left open must never write into a document whose panel is gone.
     panel.contentView = nil
@@ -120,7 +109,6 @@ extension SlopDocumentWindowController {
   }
 
   func importTheme() async throws {
-    themeEditor?.endGesture()
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.json]
     panel.allowsMultipleSelection = false

@@ -131,6 +131,6 @@ export async function browserTransport(
     module_or_path: new URL("./core/hitslop_core_wasm_bg.wasm", import.meta.url).href,
   });
   return wasmTransport(
-    module.WasmDocument.createWithTheme(JSON.stringify(descriptor), JSON.stringify(initial), template, JSON.stringify(theme)),
+    module.WasmDocument.create(JSON.stringify(descriptor), JSON.stringify(initial), template, JSON.stringify(theme)),
   );
 }

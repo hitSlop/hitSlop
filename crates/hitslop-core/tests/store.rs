@@ -4,7 +4,6 @@
 use hitslop_core::file;
 use hitslop_core::registry::Lease;
 use hitslop_core::store::{Error, Mode, Store};
-use hitslop_core::theme::Change;
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
 use hitslop_core::Document;
 use rusqlite::Connection;
@@ -13,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use hitslop_core::Origin;
 mod support;
-use support::{isolate_registry, write_app, App};
+use support::{app, isolate_registry, write_app, App};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -82,55 +81,35 @@ fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     Some(job.is_checkpoint())
 }
 
-fn saved_updates(path: &Path) -> Vec<(i64, Vec<u8>)> {
-    let conn = sql(path);
-    let mut statement = conn.prepare("SELECT seq,bytes FROM updates ORDER BY seq").unwrap();
-    statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .unwrap().collect::<rusqlite::Result<_>>().unwrap()
-}
-
 // Failure: an absent checkpoint was treated as initial state even with saved updates,
-// and opening then deleted those updates. Every reader must preserve the damaged file.
-fn missing_checkpoint_is_preserved(access: impl FnOnce(&Path) -> Result<(), Error>) {
+// and opening then deleted those updates. Every open refuses the file and preserves it.
+fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
     let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    for title in ["First", "Second", "Third"] {
-        set_title(&mut doc, title);
-        save(&store, &mut doc);
-    }
-    store.close().unwrap();
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
-    let before = saved_updates(&path);
-    assert_eq!(before.len(), 3);
-    let result = access(&path);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
-    assert_eq!(saved_updates(&path), before);
-    let checkpoints: i64 = sql(&path).query_row("SELECT count(*) FROM checkpoint", [], |row| row.get(0)).unwrap();
-    assert_eq!(checkpoints, 0, "initial state must not be written");
-}
-
-#[test]
-fn writable_open_refuses_saved_updates_without_a_checkpoint() {
-    missing_checkpoint_is_preserved(|path| Store::open(path, Mode::Document)?.document().map(|_| ()));
-}
-
-#[test]
-fn snapshot_refuses_saved_updates_without_a_checkpoint() {
-    missing_checkpoint_is_preserved(|path| Store::open(path, Mode::Snapshot)?.document().map(|_| ()));
-}
-
-#[test]
-fn a_document_with_no_checkpoint_or_updates_is_refused_without_initializing() {
-    let (_dir, path) = document();
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
-    let before = std::fs::read(&path).unwrap();
-    for mode in [Mode::Snapshot, Mode::Document] {
-        let store = Store::open(&path, mode).unwrap();
-        let error = store.document().err().expect("a document requires its checkpoint");
-        assert!(matches!(error, Error::Failed(ref message) if message.contains("no checkpoint")));
-        assert_eq!(std::fs::read(&path).unwrap(), before);
+    if saved_edits {
+        let (store, mut doc) = open(&path);
+        for title in ["First", "Second", "Third"] {
+            set_title(&mut doc, title);
+            save(&store, &mut doc);
+        }
         store.close().unwrap();
     }
+    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let error = Store::open(&path, mode).err().expect("a document without saved state is refused");
+    assert!(error.to_string().contains("keep it for recovery"), "{error}");
+    assert_eq!(std::fs::read(&path).unwrap(), before, "nothing is written");
+}
+
+#[test]
+fn opening_refuses_saved_updates_without_a_checkpoint() {
+    missing_checkpoint_is_refused(Mode::Document, true);
+    missing_checkpoint_is_refused(Mode::Snapshot, true);
+}
+
+#[test]
+fn opening_refuses_a_document_with_no_checkpoint_or_updates() {
+    missing_checkpoint_is_refused(Mode::Document, false);
+    missing_checkpoint_is_refused(Mode::Snapshot, false);
 }
 
 #[test]
@@ -146,23 +125,6 @@ fn newly_created_document_snapshots_share_initial_row_ids_and_history() {
     assert_eq!(doc.state().unwrap(), first.state().unwrap());
     assert_eq!(std::fs::read(&path).unwrap(), bytes, "opening never initializes document state");
     store.close().unwrap();
-}
-
-#[test]
-fn append_refuses_saved_updates_without_a_checkpoint() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Saved edit");
-    save(&store, &mut doc);
-    set_title(&mut doc, "Pending edit");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    assert!(!job.is_checkpoint());
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
-    let before = saved_updates(&path);
-    let result = store.write(&job);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
-    assert_eq!(saved_updates(&path), before);
-    assert_eq!(title(&doc), "Pending edit");
 }
 
 #[test]
@@ -205,11 +167,11 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     assert_eq!(title(&open(&path).1), format!("Edit {appended}"));
 }
 
+/// Whether `doc` refuses `version` as a text base, as history before its retained start.
 fn stale(doc: &Document, version: &str) -> bool {
-    match doc.export_since(version) {
-        Ok(_) => false,
-        Err(e) => e.code.as_str() == "stale_base",
-    }
+    let request = json!({"base":version,"path":["title"],"from":"","to":"","selectionStart":0,"selectionEnd":0});
+    let mut scratch = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
+    matches!(scratch.edit_text(&request.to_string()), Err(e) if e.code.as_str() == "stale_base")
 }
 
 /// Incompressible text of `len` letters.
@@ -633,7 +595,7 @@ fn a_copy_has_the_same_history_and_theme() {
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     // The source stays open: the copy is an online backup through its writer.
-    store.copy_to(&copy).unwrap();
+    store.copy_to(&copy, true).unwrap();
     let (_copied_store, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
     assert_eq!(accent(&copied), "#123456");
@@ -648,8 +610,12 @@ fn saved_accent(path: &Path) -> String {
     let snapshot = Store::open(path, Mode::Snapshot).unwrap();
     accent(&snapshot.document().unwrap())
 }
+/// Applies one palette intent from the window; whether it changed the document.
+fn palette(doc: &mut Document, intent: Value) -> Result<bool, hitslop_core::Error> {
+    doc.apply_batch(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window).map(|a| a.publication.is_some())
+}
 fn set_accent(doc: &mut Document, color: &str) -> bool {
-    doc.theme(Change::Set(&json!({ "accent": color }).to_string())).unwrap().result.publication.is_some()
+    palette(doc, json!({"type":"setTheme","values":{ "accent": color }})).unwrap()
 }
 
 #[test]
@@ -677,7 +643,7 @@ fn a_theme_change_is_saved_by_the_next_job() {
     assert_eq!(saved_accent(&path), "#222222");
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     assert_eq!(title(&snapshot.document().unwrap()), "Both");
-    assert!(doc.theme(Change::Set(r##"{"unknown":"#000000"}"##)).is_err());
+    assert!(palette(&mut doc, json!({"type":"setTheme","values":{"unknown":"#000000"}})).is_err());
     store.close().unwrap();
     assert_eq!(accent(&open(&path).1), "#222222");
 }
@@ -728,7 +694,7 @@ fn a_failed_theme_save_keeps_the_change_for_a_retry() {
 fn an_unchanged_theme_is_not_written() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    assert!(doc.theme(Change::Reset(None)).unwrap().result.publication.is_none());
+    assert!(!palette(&mut doc, json!({"type":"setTheme","values":{},"replace":true})).unwrap());
     assert!(!set_accent(&mut doc, "#335577"), "setting the default changes nothing");
     assert_eq!(save(&store, &mut doc), None);
 }
@@ -751,13 +717,14 @@ fn a_theme_file_imports_only_into_its_template() {
     let (_store, mut doc) = open(&path);
     set_accent(&mut doc, "#606060");
     let other = json!({"template":"habit-heatmap","values":{"accent":"#000000"}}).to_string();
-    assert!(doc.theme(Change::Import(&other)).is_err());
-    assert!(doc.theme(Change::Import(r##"{"template":"checklist","values":{"missing":"#000000"}}"##)).is_err());
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":other})).is_err());
+    let missing = r##"{"template":"checklist","values":{"missing":"#000000"}}"##;
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":missing})).is_err());
     assert_eq!(accent(&doc), "#606060");
     let file = doc.export_theme().unwrap();
     assert_eq!(serde_json::from_str::<Value>(&file).unwrap()["template"], "checklist", "named by the document's template");
     set_accent(&mut doc, "#707070");
-    assert!(doc.theme(Change::Import(&file)).unwrap().result.publication.is_some());
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":file})).unwrap());
     assert_eq!(accent(&doc), "#606060");
 }
 

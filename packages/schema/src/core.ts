@@ -1,7 +1,7 @@
 import { Strict } from "./strict";
 import { Type, type Static } from "typebox";
-import { BatchLimits, CoreErrorCodes, IssueCodes, RowIdRule } from "./constants";
-import { ThemeValuesSchema } from "./values";
+import { BatchLimits, CoreErrorCodes, RowIdRule, ThemeFileLimit } from "./constants";
+import { ThemeChangesSchema, ThemeValuesSchema } from "./values";
 
 // Document core payloads. TypeBox is authoritative; Rust wire types are generated.
 // Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
@@ -46,9 +46,17 @@ export const variants = {
   },
   // The value at `path` (the whole document when empty) becomes `value`. Only the
   // differences are written: rows are matched by `$id`, and rows and text keep their
-  // identity, so concurrent edits elsewhere survive.
+  // identity, so open text fields keep their place.
   replace: { path: Type.Array(SegmentSchema, { maxItems: BatchLimits.pathSegments }), value: Type.Unknown() },
+  // The palette, beside the data, from the window or an agent (never the page): each
+  // listed color is set, or with `null` returned to the template's; `replace` returns
+  // every unlisted color to the template's too.
+  setTheme: { values: ThemeChangesSchema, replace: Type.Optional(Type.Boolean()) },
+  // A theme file made for this document's template replaces the palette. Its text; only
+  // the core parses it.
+  importTheme: { file: Type.String({ minLength: 2, maxLength: ThemeFileLimit }) },
 } as const;
+/** The data intents, which the page sends. */
 const OwnerIntentSchema = Type.Union([
   Strict({ type: Type.Literal("set"), ...variants.set }),
   Strict({ type: Type.Literal("insert"), ...variants.insert }),
@@ -58,7 +66,14 @@ const OwnerIntentSchema = Type.Union([
   Strict({ type: Type.Literal("increment"), ...variants.increment }),
   Strict({ type: Type.Literal("replace"), ...variants.replace }),
 ]);
+/** The palette intents, which only the window and agents send; a batch may mix them with
+ * data intents. */
+const PaletteIntentSchema = Type.Union([
+  Strict({ type: Type.Literal("setTheme"), ...variants.setTheme }),
+  Strict({ type: Type.Literal("importTheme"), ...variants.importTheme }),
+]);
 const BatchSchema = Strict({ intents: Type.Array(OwnerIntentSchema, { maxItems: BatchLimits.intents }) });
+/** A page's batch. */
 export type Batch = Static<typeof BatchSchema>;
 
 // Stateless text: the page's field was `from` at `base` (its last authored version) and
@@ -100,29 +115,19 @@ export const OwnerPatchOpSchema = Type.Union([
 ]);
 
 const sequence = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
-// Issues address stored anomalies. They do not authorize a repair on read. Rows are
-// addressed by their effective `$id`, as in the snapshot; scalar-list elements and
-// rows that are not objects by `{index}`.
-const IssueCodeSchema = Type.Enum(IssueCodes);
-export const OwnerIssueSchema = Strict({
-  code: IssueCodeSchema,
-  path: Type.Array(SegmentSchema, { maxItems: 64 }),
-});
 export const OwnerStateSchema = Strict({
   sequence,
   version: Type.String(),
   value: Type.Unknown(),
-  issues: Type.Array(OwnerIssueSchema),
   theme: ThemeValuesSchema,
 });
-/** One accepted change. `previous` lets the page prove the stream is contiguous;
- * `issues`, the complete current list, is present only when it changed. */
+/** One accepted change. `previous` lets the page prove the stream is contiguous; `theme`,
+ * the effective palette, is present only when it changed. */
 export const OwnerPublicationSchema = Strict({
   previous: sequence,
   sequence,
   version: Type.String(),
   ops: Type.Array(OwnerPatchOpSchema),
-  issues: Type.Optional(Type.Array(OwnerIssueSchema)),
   theme: Type.Optional(ThemeValuesSchema),
 });
 
@@ -134,6 +139,7 @@ export type Anchor = Static<typeof AnchorSchema>;
 export type OwnerState = Static<typeof OwnerStateSchema>;
 export type OwnerPublication = Static<typeof OwnerPublicationSchema>;
 export type OwnerIntent = Static<typeof OwnerIntentSchema>;
+export type PaletteIntent = Static<typeof PaletteIntentSchema>;
 export type OwnerPath = Segment[];
 export type OwnerPatchOp = Static<typeof OwnerPatchOpSchema>;
 export type EditText = Static<typeof EditTextSchema>;

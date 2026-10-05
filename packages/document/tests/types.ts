@@ -4,15 +4,13 @@ import { defineDocument, s, type Input } from "../src/schema";
 
 const counters = defineDocument({ count: s.counter() });
 export function counterTypes(doc: typeof counters) {
-  const count: number | null = doc.current.count;
-  // @ts-expect-error Overflow is observable and callers must handle null.
-  const unchecked: number = doc.current.count;
+  const count: number = doc.current.count;
   const valid: Input<typeof counters.descriptor> = { count: 1 };
-  // @ts-expect-error null is a read fallback, never a valid counter input.
+  // @ts-expect-error A counter's input is a number.
   const invalid: Input<typeof counters.descriptor> = { count: null };
   // @ts-expect-error Counter edits require numbers.
   void doc.fields.count.increment(null);
-  return { count, valid, unchecked, invalid };
+  return { count, valid, invalid };
 }
 
 const checklist = defineDocument({

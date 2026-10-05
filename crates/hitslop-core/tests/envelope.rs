@@ -14,10 +14,10 @@ fn each_envelope_kind_is_checked_against_its_contract() {
     let cases = [
         (
             Envelope::SocketRequest,
-            json!({"documentPath":"/tmp/a.slop","epoch":"e","method":"batch","ops":"{}"}),
+            json!({"documentPath":"/tmp/a.slop","protocol":1,"method":"batch","ops":"{}"}),
             json!({"documentPath":"/tmp/a.slop","method":"batch","ops":"{}"}),
         ),
-        (Envelope::SocketReply, json!({"ok":true,"method":"batch","epoch":"owner","sequence":3,"ids":["a"]}), json!({"ok":false,"code":"bogus"})),
+        (Envelope::SocketReply, json!({"ok":true,"method":"batch","sequence":3,"ids":["a"]}), json!({"ok":false,"code":"bogus"})),
         (
             Envelope::SocketDiscovery,
             json!({"socket":"/tmp/s","documentPath":"/tmp/a.slop"}),

@@ -7,10 +7,9 @@ import { join, resolve } from "node:path";
 import { debugHelper } from "./helper";
 import { exec } from "../packages/cli/src/process";
 import { strict as assert } from "node:assert";
-import type { SocketSuccessFor } from "../packages/schema/src/socket";
 import { validate } from "../packages/schema/src/validation";
 import { ThemeStateSchema, AttachmentInfoSchema, type AttachmentInfo } from "../packages/schema/src/values";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 export const corpus = join(repository, "tests/compat");
 export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
@@ -37,13 +36,12 @@ export type Release = {
 /** `expected/<name>.json`: the saved document as its release read it. */
 export type Expected = {
   value: unknown;
-  issues: unknown[];
   theme: Pick<ThemeState, "overrides" | "effective">;
   attachments: AttachmentInfo[];
 };
-type ThemeState = SocketSuccessFor<"theme.get">["state"];
+type ThemeState = Static<typeof ThemeStateSchema>;
 /** `scenarios/<name>.json`: a CLI edit replayed on the frozen document, and its result. */
-export type Scenario = { ops: unknown[]; value: unknown; issues: unknown[] };
+export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
  * with page-minted row IDs replaced by `minted-N`. */
 export type Page = { script: "contractTest" | "actions"; actions?: { selector: string; value: string; enter?: boolean }[]; value: unknown };
@@ -94,18 +92,18 @@ export async function slopJSON(args: string[]): Promise<any> {
   return JSON.parse(stdout);
 }
 
-/** What a later build must reproduce: the value and issues, not the version or sequence. */
+/** What a later build must reproduce: the value, not the version or sequence. */
 export async function savedState(document: string): Promise<Expected> {
   const { state } = await slopJSON(["get", document, "--snapshot"]);
   const theme = validate(ThemeStateSchema, await slopJSON(["theme", "get", document]), "slop theme get");
   const attachments = validate(Type.Array(AttachmentInfoSchema), await slopJSON(["attachments", "list", document]), "slop attachments list");
-  return { value: state.value, issues: state.issues, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
+  return { value: state.value, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
 }
 
 /** Normalizes the parts of CLI output that name a session rather than a document. */
 export function stable(output: unknown, args: readonly string[]): unknown {
   const omitSession = (value: any) => Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !["version", "epoch", "sequence"].includes(key)));
+    .filter(([key]) => !["version", "sequence"].includes(key)));
   if (output && typeof output === "object" && !Array.isArray(output)) {
     if (args[0] === "get" && args.includes("--snapshot")) {
       const frame = output as any;

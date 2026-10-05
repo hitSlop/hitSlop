@@ -1,19 +1,20 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { findNative, negotiate } from "./native";
+import { negotiate } from "./native";
+import { findDocumentEngine } from "./engine";
 import { projectSlug, stageProject } from "./build";
 import { pack } from "./engine";
 import { run } from "./process";
 import { defaultOutput, exists } from "./fs";
 
 
-/** Native artwork comes from the installed app's helper, never a compiler or checkout,
- * through the same protocol check as document commands. Returns the helper's command. */
+/** Native artwork comes from the installed app's renderer, never a compiler or checkout,
+ * through the document engine. Returns the command that renders it. */
 export async function prepareRenderer() {
   if (process.platform !== "darwin")
     throw new Error("--artwork native renders with hitSlop.app on macOS. Elsewhere, add artwork/preview.png and artwork/icon.png to the project.");
-  return negotiate(await findNative());
+  return negotiate(await findDocumentEngine());
 }
 
 /** Builds a project into a template file and returns its path: the stage, with artwork

@@ -1,8 +1,9 @@
-import { AppLimits, AttachmentIdRule, CoreErrorCodes, OutcomeCodes, HelperProtocol, IssueCodes, RowIdRule, AttachmentLimits, BatchLimits, DefaultWindowRadius, PackageFormat, PagePayloadLimit, AssetLimits, RuntimeABI, ShapeLimits, SocketLimits, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
+import { AppLimits, AttachmentIdRule, CoreErrorCodes, OutcomeCodes, HelperProtocol, RowIdRule, AttachmentLimits, BatchLimits, DefaultWindowRadius, PackageFormat, PagePayloadLimit, AssetLimits, RuntimeABI, ShapeLimits, SocketLimits, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
 import { SocketRequestSchema, SocketSuccessSchema, SocketFailureSchema } from "../packages/schema/src/socket";
-import { ThemeFileSchema } from "../packages/schema/src/values";
+import { PageRequestSchema } from "../packages/schema/src/page";
+import { ThemeChangesSchema, ThemeFileSchema } from "../packages/schema/src/values";
 import { AppRowSchema } from "../packages/schema/src/manifest";
-import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, OwnerPatchOpSchema as PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
+import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, OwnerPatchOpSchema as PatchOp, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
 
 // The deliberately small generator fails on unsupported types. It generates the
 // Rust deserialization envelope; descriptor interpretation stays inside the core.
@@ -15,6 +16,8 @@ function rust(schema: any): string {
   else if (schema.type === "array")
     result = `Vec<${schema.items === Segment ? "Segment" : schema.items === TextHunk ? "Hunk" : rust(schema.items)}>`;
   else if (schema.type === "string") result = "String";
+  else if (schema.type === "boolean") result = "bool";
+  else if (schema === ThemeChangesSchema) result = "std::collections::BTreeMap<String, Option<String>>";
   else if (schema.type === "integer") result = schema.minimum >= 0 ? "usize" : "i64";
   else if (schema.anyOf && schema.anyOf[0]?.properties?.before) result = "Anchor";
   else if (Object.keys(schema).length === 0) result = "Value";
@@ -46,10 +49,11 @@ const socketRust = (key: string, schema: any) => {
     : schema.type === "integer" ? "u64" : schema.type === "array" ? "Vec<String>" : "String";
   return optional(schema) ? `Option<${value}>` : value;
 };
-const socketRequests = SocketRequestSchema.anyOf.flatMap((schema) => {
+const requests = (union: { anyOf: any[] }) => union.anyOf.flatMap((schema) => {
   const method = schema.properties.method as { const?: string; enum?: string[] };
   return (method.enum ?? [method.const!]).map((method) => ({ method, fields: socketFields(schema) }));
 });
+const socketRequests = requests(SocketRequestSchema);
 const socketEnum = (name: string, members: { method: string; fields: [string, unknown][] }[], derives: string) => `
 #[cfg(feature = "storage")]
 #[derive(${derives})]
@@ -149,14 +153,10 @@ impl PatchOp {
 ${PatchOp.anyOf.map(schema => `        Self::${upper(schema.properties.type.const)} { path, .. } => path,`).join("\n")}
     } }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueCode { ${IssueCodes.map(pascal).join(", ")} }
-${record("Issue", OwnerIssueSchema, { code: "IssueCode", path: "Vec<Segment>" }, "Clone, Debug, PartialEq, Serialize")}
-${record("State", OwnerStateSchema, { sequence: "u64", issues: "Vec<Issue>", theme: "std::collections::BTreeMap<String, String>" })}
-${record("Publication", OwnerPublicationSchema, { previous: "u64", sequence: "u64", ops: "Vec<PatchOp>", issues: "Vec<Issue>", theme: "std::collections::BTreeMap<String, String>" })}
+${record("State", OwnerStateSchema, { sequence: "u64", theme: "std::collections::BTreeMap<String, String>" })}
+${record("Publication", OwnerPublicationSchema, { previous: "u64", sequence: "u64", ops: "Vec<PatchOp>", theme: "std::collections::BTreeMap<String, String>" })}
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Intent {
 ${Object.entries(variants)
   .map(
@@ -168,9 +168,10 @@ ${Object.entries(variants)
   .join("\n")}
 }
 impl Intent {
+    /// The data path; palette intents have none.
     pub fn path(&self) -> &[Segment] { match self {
-${Object.keys(variants)
-  .map((kind) => `        Self::${upper(kind)} { path, .. } => path,`)
+${Object.entries(variants)
+  .map(([kind, fields]) => "path" in fields ? `        Self::${upper(kind)} { path, .. } => path,` : `        Self::${upper(kind)} { .. } => &[],`)
   .join("\n")}
     } }
 }
@@ -199,24 +200,19 @@ pub struct EditText { ${Object.entries(editTextFields)
   .map(([key, schema]) => `pub ${key}: ${rust(schema)}`)
   .join(", ")} }
 
-${socketEnum("SocketRequest", socketRequests, "Debug, Serialize, Deserialize")}
+${socketEnum("SocketRequest", socketRequests, "Clone, Debug, Serialize, Deserialize")}
 #[cfg(feature = "storage")]
 impl SocketRequest {
-    pub fn needs_epoch(method: &str) -> bool { matches!(method, ${socketRequests.filter(({ fields }) => fields.some(([key]) => key === "epoch")).map(({ method }) => JSON.stringify(method)).join(" | ")}) }
     pub fn method(&self) -> &'static str { match self {
 ${socketRequests.map(({ method }) => `        Self::${socketName(method)} { .. } => "${method}",`).join("\n")}
     } }
     pub fn path(&self) -> &str { match self {
 ${socketRequests.map(({ method }) => `        Self::${socketName(method)} { documentPath, .. } => documentPath,`).join("\n")}
     } }
-    pub fn epoch(&self) -> Option<&str> { match self {
-${socketRequests.map(({ method, fields }) => `        Self::${socketName(method)} { ${fields.some(([key]) => key === "epoch") ? "epoch, .. } => Some(epoch)" : ".. } => None"},`).join("\n")}
-    } }
-    pub fn set_epoch(&mut self, next: &str) { match self {
-${socketRequests.filter(({ fields }) => fields.some(([key]) => key === "epoch")).map(({ method }) => `        Self::${socketName(method)} { epoch, .. } => *epoch = next.to_owned(),`).join("\n")}
-        _ => {},
-    } }
 }
+/// A page request. The core answers the document requests; the window's own (config,
+/// readiness, resizing, errors) are the host's, so their fields go unread here.
+${socketEnum("PageRequest", requests(PageRequestSchema), "Debug, Deserialize").replace("#[allow(non_snake_case)]", "#[allow(non_snake_case, dead_code)]")}
 ${socketEnum("SocketSuccess", SocketSuccessSchema.anyOf.map((schema) => ({ method: schema.properties.method.const, fields: socketFields(schema) })), "Debug, Serialize")}
 #[cfg(feature = "storage")]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

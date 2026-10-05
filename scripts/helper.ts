@@ -15,7 +15,7 @@ export const debugHelper = join(repository, "apps/apple/Packages/HitSlopApple/.b
 /** Which helper a script runs (the debug build unless named) and, for a relocated or
  * installed one, the folder and environment it runs in. */
 export type Helper = { helper?: string; cwd?: string; env?: Record<string, string | undefined> };
-type Method = Exclude<SocketMethod, "hello">;
+type Method = SocketMethod;
 type Request<M extends Method> = HelperRequestFor<M> & { method: M };
 
 /** One request as the CLI sends it, and the reply the helper prints; a refusal is a reply. */

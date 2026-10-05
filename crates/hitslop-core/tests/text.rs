@@ -3,7 +3,7 @@
 // characters, a misplaced caret, a resurrected row, or a panic on a bad base.
 // Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
 mod support;
-use support::{Edit, fixture, snapshot, trimmed};
+use support::{app, Edit, fixture, snapshot, trimmed};
 use hitslop_core::{Document, TextEdit};
 use serde_json::{json, Value};
 
@@ -12,7 +12,7 @@ fn schema() -> String {
     fixture("checklist")["schema"].to_string()
 }
 fn setup() -> Document {
-    Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap()
+    Document::create(&app(schema()), &fixture("checklist")["initial"].to_string()).unwrap()
 }
 fn title(d: &Document) -> String {
     snapshot(d)["value"]["title"].as_str().unwrap().to_owned()
@@ -73,7 +73,7 @@ fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
     let reply = page.edit(&mut d, "abcXYZ", 6);
     assert_eq!(title(&d), "RabcXYZ");
     assert_eq!(reply.selection_start, 7);
-    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(title(&reopened), "RabcXYZ");
 }
 
@@ -81,30 +81,17 @@ fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
 // implement for trimmed documents, so it failed on every document after a checkpoint.
 #[test]
 fn a_concurrent_edit_on_a_trimmed_document_merges() {
-    let mut d = Document::open(&schema(), &trimmed(&setup().checkpoint().unwrap()), &[]).unwrap();
+    let mut d = Document::open(&app(schema()), &trimmed(&setup().checkpoint().unwrap()), &[]).unwrap();
     let mut page = Binding::new(&d, json!(["title"]));
     page.edit(&mut d, "abcX", 4);
     splice(&mut d, 0, "R");
     let reply = page.edit(&mut d, "abcXY", 5);
     assert_eq!(title(&d), "RabcXY");
     assert_eq!(reply.selection_start, 6);
-    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(title(&reopened), "RabcXY");
 }
 
-#[test]
-fn remote_update_and_page_edit_both_survive() {
-    let mut d = setup();
-    let mut page = Binding::new(&d, json!(["title"]));
-    let base = d.version();
-    let mut peer = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
-    page.edit(&mut d, "abcX", 4);
-    splice(&mut peer, 0, "遠");
-    d.import(&peer.export_since(&base).unwrap()).unwrap();
-    let reply = page.edit(&mut d, "abcXYZ", 6);
-    assert_eq!(title(&d), "遠abcXYZ");
-    assert_eq!(reply.selection_start, 7);
-}
 
 #[test]
 fn two_bindings_on_one_field_with_delayed_replies_merge() {
@@ -193,12 +180,10 @@ fn removed_or_reinserted_rows_are_never_resurrected() {
 
 #[test]
 fn bad_bases_are_refused_on_every_path_without_panicking() {
+    // A version of another document's history.
     let foreign = {
         let mut other = setup();
-        let base = other.version();
-        let mut peer = Document::open(&schema(), &other.checkpoint().unwrap(), &[]).unwrap();
-        peer.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string()).unwrap();
-        other.import(&peer.export_since(&base).unwrap()).unwrap();
+        other.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string()).unwrap();
         other.version()
     };
     let mut d = setup();
@@ -212,8 +197,6 @@ fn bad_bases_are_refused_on_every_path_without_panicking() {
             assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
             assert_eq!(snapshot(&d), before);
         }
-        let code = d.export_since(base).unwrap_err().code.as_str();
-        assert!(["stale_base", "invalid_version"].contains(&code), "export since {base}: {code}");
     }
     // A known base whose text was not `from` is stale, never silently rebased.
     let page = Binding { path: json!(["title"]), base: d.version(), text: "zzz".into() };

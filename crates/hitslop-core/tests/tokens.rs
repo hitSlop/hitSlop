@@ -1,37 +1,23 @@
-// Version tokens: stable across reopen and merge order, and stale before a trimmed
-// document's retained history. Bad bases in text edits are refused in `text.rs`.
+// Version tokens: stable across reopen and replay, and stale before a trimmed document's
+// retained history. Bad bases in text edits are refused in `text.rs`.
 mod support;
-use support::{Edit, fixture, snapshot};
+use support::{app, Edit, fixture, knows, snapshot, updates_since};
 use hitslop_core::Document;
 use serde_json::json;
 fn create() -> Document {
     let f = fixture("checklist");
-    Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap()
-}
-/// A document whose history spans two peers.
-fn two_peers() -> Document {
-    let mut d = create();
-    let base = d.version();
-    let mut peer = Document::open(&fixture("checklist")["schema"].to_string(), &d.checkpoint().unwrap(), &[]).unwrap();
-    peer.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string())
-        .unwrap();
-    d.import(&peer.export_since(&base).unwrap()).unwrap();
-    d
+    Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap()
 }
 
 #[test]
-fn tokens_are_stable_across_reopen_and_merge_order() {
-    let d = two_peers();
+fn tokens_are_stable_across_reopen_and_replay() {
     let schema = fixture("checklist")["schema"].to_string();
-    let reopened = Document::open(&schema, &d.checkpoint().unwrap(), &[]).unwrap();
-    assert_eq!(reopened.version(), d.version());
-    // A token from an ancestor still exports exactly the later operations.
     let mut a = create();
-    let v0 = a.version();
     let seed = a.checkpoint().unwrap();
-    a.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string())
-        .unwrap();
-    let replayed = Document::open(&schema, &seed, &[a.export_since(&v0).unwrap()]).unwrap();
+    a.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string()).unwrap();
+    let reopened = Document::open(&app(&schema), &a.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(reopened.version(), a.version());
+    let replayed = Document::open(&app(&schema), &seed, &[updates_since(&seed, &a)]).unwrap();
     assert_eq!(snapshot(&replayed)["value"], snapshot(&a)["value"]);
     assert_eq!(replayed.version(), a.version());
 }
@@ -58,7 +44,7 @@ fn versions_before_retained_history_are_stale() {
     let loro = loro::LoroDoc::new();
     loro.import(&d.checkpoint().unwrap()).unwrap();
     let shallow = loro.export(loro::ExportMode::shallow_snapshot(&retained.unwrap())).unwrap();
-    let mut trimmed = Document::open(&fixture("checklist")["schema"].to_string(), &shallow, &[]).unwrap();
+    let mut trimmed = Document::open(&app(fixture("checklist")["schema"].to_string()), &shallow, &[]).unwrap();
     let before = snapshot(&trimmed);
     for (i, token) in tokens.iter().enumerate() {
         // The fast path (the text is still `from`) and the slow path (it changed since).
@@ -70,9 +56,10 @@ fn versions_before_retained_history_are_stale() {
             } else if from == "changed" {
                 assert_eq!(result.unwrap_err().code.as_str(), "stale_base", "token {i}: the text was not `from`");
             }
-            trimmed = Document::open(&fixture("checklist")["schema"].to_string(), &shallow, &[]).unwrap();
+            trimmed = Document::open(&app(fixture("checklist")["schema"].to_string()), &shallow, &[]).unwrap();
         }
-        assert_eq!(trimmed.export_since(token).is_ok(), i >= 2, "token {i}");
+        assert_eq!(knows(&mut trimmed, token, "abc"), i >= 2, "token {i}");
+        trimmed = Document::open(&app(fixture("checklist")["schema"].to_string()), &shallow, &[]).unwrap();
     }
     assert_eq!(snapshot(&trimmed), before);
 }

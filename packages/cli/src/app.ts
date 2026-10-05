@@ -38,7 +38,7 @@ const retrySection = {
 
 /** Document commands use the Rust owner; windows and rendering use the macOS helper. Authoring (init, check, dev, build) needs neither. */
 async function native(...argv: string[]) {
-  await (await import("./native")).runNative(argv);
+  await (await import("./native")).runEngine(argv);
 }
 /** Reads a template or a closed or open document with the file engine, on any platform:
  * saved state, never an open window's unsaved edits. */

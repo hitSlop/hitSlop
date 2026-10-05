@@ -20,36 +20,33 @@ test("native protocol selection defaults to 1 and refuses unknown versions befor
   expect(rejected.stderr).not.toContain("Missing");
 });
 
-// The CLI and the app update separately. Any helper whose protocol range includes this
-// CLI's version runs the command, whatever core it embeds; any other is refused before
-// the document command runs, with the side that must update.
-const protocols: [string, string | undefined][] = [
-  [JSON.stringify({ version: HelperProtocol.version, minimum: HelperProtocol.version }), undefined],
-  [JSON.stringify({ version: HelperProtocol.version + 2, minimum: HelperProtocol.version }), undefined],
-  [JSON.stringify({ version: HelperProtocol.version + 2, minimum: HelperProtocol.version + 1 }), "update @hitslop/cli"],
-  [JSON.stringify({ version: 0, minimum: 0 }), "update hitSlop"],
-  ["another-core", "did not report its command protocol"],
-  ["", "did not report its command protocol"],
+// The CLI runs the document engine, which passes an export to the selected helper.
+const engine = resolve("target/release/slop-engine");
+
+// The CLI and the app update separately. The CLI names its protocol; a tool that serves
+// it runs the command, whatever core it embeds, and any other refuses before the document
+// command runs, saying which side must update. The CLI passes that refusal on.
+const tools: [string, string | undefined][] = [
+  ["serves", undefined],
+  ["refuses", "Unsupported client protocol; update hitSlop"],
 ];
-test.each(protocols)("helper protocol %s", async (reported, refusal) => {
+test.each(tools)("a native tool that %s this CLI's protocol", async (behavior, refusal) => {
   if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-protocol-"));
   try {
     const helper = join(root, "helper");
     const touched = join(root, "command-ran");
     await writeFile(helper, `#!${process.execPath}
-if (process.argv[2] === "--protocol") console.log(${JSON.stringify(reported)});
-else {
-  await Bun.write(${JSON.stringify(touched)}, JSON.stringify({ args: process.argv.slice(2), request: await Bun.stdin.json() }));
-  console.log(JSON.stringify({ ok: true, method: "export", epoch: "owner", output: "capture.pdf" }));
-}
+if (${JSON.stringify(behavior)} === "refuses") { console.error(${JSON.stringify(refusal)}); process.exit(2); }
+await Bun.write(${JSON.stringify(touched)}, JSON.stringify({ args: process.argv.slice(2), request: await Bun.stdin.json() }));
+console.log(JSON.stringify({ ok: true, method: "export", output: "capture.pdf" }));
 `, { mode: 0o755 });
     const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "export", "example.slop", "--format", "pdf", "--output", "capture.pdf"], {
-      env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
+      env: { ...process.env, HITSLOP_ENGINE: engine, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
     });
     const code = await child.exited;
     if (refusal) {
-      expect(code).not.toBe(0);
+      expect(code).toBe(2);
       expect(await new Response(child.stderr).text()).toContain(refusal);
     } else expect(code).toBe(0);
     expect(await Bun.file(touched).exists()).toBe(!refusal);
@@ -65,7 +62,7 @@ test("explicit native helper overrides fail without falling back or retrying", a
   const root = await mkdtemp(join(tmpdir(), "hsl-native-discovery-"));
   const run = async (helper: string) => {
     const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "export", "example.slop", "--format", "pdf", "--output", "capture.pdf"], {
-      env: { ...process.env, HITSLOP_NATIVE_CLI: helper },
+      env: { ...process.env, HITSLOP_ENGINE: engine, HITSLOP_NATIVE_CLI: helper },
       stdout: "pipe",
       stderr: "pipe",
     });

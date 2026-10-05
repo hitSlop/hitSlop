@@ -4,7 +4,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./helper": "./src/helper.ts",
     "./constants": "./src/constants.ts",
     "./socket": "./src/socket.ts",
     "./validation": "./src/validation.ts",

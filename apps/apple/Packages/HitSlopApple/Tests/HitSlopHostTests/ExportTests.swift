@@ -40,7 +40,7 @@ extension HostTests {
     do {
       #expect(try await command("batch", url: root, setTitle("PDF color")).ok)
       for hex in ["e98996", "80aabb"] {
-        #expect(try await command("theme.set", url: root, ["values": ["surface": "#" + hex]]).ok)
+        #expect(try await setTheme(["surface": "#" + hex], url: root).ok)
         let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
         #expect(pdf.pageCount == 1)
         #expect(pdf.string?.contains("PDF color") == true)
@@ -257,16 +257,16 @@ extension HostTests {
       input.dispatchEvent(new Event('input', {bubbles:true})); true
       """)
     let blob = try Fixtures.png()
-    let attachment = try await session.owner.putAttachment(base64: blob.base64EncodedString())
+    let put = try await command("attachments.put", url: root, ["bytes": blob.base64EncodedString()])
+    let id = try #require((put.state as? [String: Any])?["id"] as? String)
     var sourceURL: URL?
     try await session.withCaptureSnapshot { source in
       sourceURL = source
       #expect(!session.capturing)
       #expect(try await command("batch", url: root, setTitle("Later edit")).ok)
       try await session.close()
-      let snapshot = try DocumentOwner(url: source, mode: .snapshot)
-      #expect(try await snapshot.readAttachment(attachment.id) == blob.base64EncodedString())
-      try await snapshot.close()
+      let read = try await command("attachments.read", url: source, ["attachmentID": id])
+      #expect((read.state as? [String: Any])?["bytes"] as? String == blob.base64EncodedString())
       let pdf = try #require(PDFDocument(data: try await SlopRenderer.withRenderSession(url: source) {
         try await SlopRenderer.exportPDFData(session: $0)
       }))

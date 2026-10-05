@@ -3,8 +3,9 @@
 hitSlop documents are local files (`.slop`): one SQLite database that pairs an immutable
 authored app with a structured document. One Rust core, `hitslop-core` on Loro, owns
 document semantics, durable storage and the live owner: the file, writer lock, edit queue
-and save scheduler. Swift `DocumentOwner` forwards typed requests and delivers owner
-events to the page; Loro bytes never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
+and save scheduler, and it answers the page's document requests. Swift `DocumentOwner`
+passes them through, answers the window's own, and delivers owner events to the page;
+Loro bytes never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
 
 ```text
 page (WebKit) ── requests ──▶ Swift DocumentOwner façade ──▶ Rust owner (edit worker)
@@ -14,7 +15,7 @@ page (WebKit) ── requests ──▶ Swift DocumentOwner façade ──▶ Ru
 
 slop ── slop-engine ── Rust command router ──▶ same Rust owner
                          live: owner's socket; closed: acquire writer lock
-slop ── hitslop-native ── open windows / render saved-state exports and artwork
+                     └── hitslop-native: open windows / render saved-state exports and artwork
 ```
 
 Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
@@ -32,11 +33,13 @@ evaluated descriptor, initial values and theme, and the CLI's file engine
 (`crates/slop-engine`, the same core built natively) packs the stage into a template,
 checking it as the app opens it; text assets are stored compressed, since every document
 carries its own copy of the app. Only `--artwork native` and `register` render artwork
-with the app, from a draft of the template. The CLI and the app update separately: each selected native tool reports its command
-protocol with `--protocol`. On a Mac, document commands prefer the app's bundled
-`slop-engine`; on Linux they use the CLI's engine. The engine and rendering helper use
-the shared Rust command router, which checks a live owner's exact core build before
-sending a request. The app bundles and signs both executables with the same core.
+with the app, from a draft of the template. The CLI and the app update separately: the
+CLI names its command protocol to the engine, and the engine names it in every request
+to a live owner; a side that does not serve it refuses and says which to update. On a
+Mac, document commands prefer the app's bundled `slop-engine`; on Linux they use the
+CLI's engine. The engine passes what needs AppKit or WebKit (exports, windows, native
+artwork) to the app's rendering helper. The app bundles and signs both executables with
+the same core.
 Saved documents carry what they need to be read: the
 file's `packageFormat` and `runtimeABI` requirements (`app` columns), the SQLite
 application ID and storage version, and the document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
@@ -61,21 +64,23 @@ schemas (`Envelope`); Swift only serializes them for that check and maps accepte
 Document payloads never need that: page batches and text edits, and CLI operations, cross
 as JSON text that only the core parses, and state returns as the core's JSON text, spliced
 into replies unparsed. All page methods use one `{ok, ...result}` or `{ok: false, code, error}` reply
-contract. WebKit correlates replies; native view tokens and socket epochs fence
-retired sessions without page-carried identity. Shared limits and codes live in TypeBox-free
+contract. The core answers the document requests (open, edits, text, undo, flush,
+attachments) and the window answers its own (config, readiness, resizing, errors).
+WebKit correlates replies; native view tokens fence retired pages without page-carried
+identity. Shared limits and codes live in TypeBox-free
 `packages/schema/src/constants.ts` and are generated into Rust and Swift.
 
 ## Layers
 
 | Layer | Where | Owns |
 |---|---|---|
-| Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
+| Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
 | File | `crates/hitslop-core/src/file.rs` (feature `storage`, native only) | The `.slop` file's layout and the checks every open runs; pack, create, copy; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
 | Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
-| Owner | `crates/hitslop-core/src/owner.rs` | Serial edit and persistence workers, save scheduling, epochs, view tokens, discard and close; Swift is a typed façade |
+| Owner | `crates/hitslop-core/src/owner.rs` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
 | Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, page-failure overlay, the save-failure sheet (from the owner's save status); its commands go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
@@ -93,26 +98,26 @@ retired sessions without page-carried identity. Shared limits and codes live in 
    it and a refusal reverts it. Assigned values commit after 150 ms without another
    assignment, or at the next barrier.
 2. **Host.** The page posts `apply {batch}`, the batch as JSON text. The native session checks
-   the sending WebView, frame and origin and supplies its view token. The owner job
-   checks that token before calling `apply_batch`. The reply is
-   `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
+   the sending WebView, frame and origin and hands the request, with its view token, to
+   the core's page dispatcher, which checks the envelope and the token before calling
+   `apply_batch`. The reply is `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
    document clean.
-3. **Push.** The core's publication, `{previous, sequence, version, ops, issues?, theme?}`, is
+3. **Push.** The core's publication, `{previous, sequence, version, ops, theme?}`, is
    appended to the session's push queue on the owner queue, so pushes keep owner order.
    One drain at a time delivers everything buffered through a single awaited
    generated host `publish` command. Swift never parses publications. An edit to an
    existing text field publishes a `text` op with its hunks (retain, insert, delete, in
-   code points of the previous text), not the whole field. `issues`, the complete list,
-   is present only when it changed. `theme` carries the effective palette only when
-   that palette changed; a theme-only publication still advances the sequence.
+   code points of the previous text), not the whole field. `theme` carries the
+   effective palette only when that palette changed; a theme-only publication still
+   advances the sequence.
 4. **Store.** The page applies publications in sequence order, ignores any at or below
    its sequence, and copies only the objects on the changed paths; unchanged rows keep
    their identity. The write's promise resolves once the store reaches the reply's
    sequence, so the snapshot has updated when `await` returns.
 
-Issues name rows by their effective `$id`, as edits and the snapshot do. The core keeps
-them current by recomputing only the places a change touched (a map entry, or a list
-whose rows changed); a full recomputation from the stored value remains the test oracle.
+One owner applies every edit, and every accepted edit keeps the stored state matching
+the descriptor, so a snapshot needs no repair. Opening checks the saved state against the
+app (descriptor and palette) and refuses a mismatch as `invalid_bytes` without writing.
 
 A gap (`previous` above the store's sequence), an apply failure, or the host's queue-overflow
 `resync` marker makes the page call `open` again and replace its state. The host keeps
@@ -147,21 +152,20 @@ the owner applies it, through the same precomputed script.
 Edit ▸ Undo and Redo revert changes made since the document opened: the person's, and
 an agent's made through the CLI or socket. A document opens with nothing to undo. The
 core keeps up to 100 steps per open document, each holding Loro frontiers before and
-after the edit. Loro's `revert_to` restores either version as a new change; there are no
-JSON snapshots or persistent undo records.
+after the edit. Undo and redo restore either version as a new change by reconciling
+toward its value as JSON replacement does (rows by `$id`, text by edit script), never
+with Loro's `revert_to`, which panics on some movable-list histories (Loro 1.16.2). There
+are no JSON snapshots or persistent undo records.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
-  are one step, so one undo reverts what the agent just did. Any other change, a
+  are one step, so one undo reverts what the agent just did. Consecutive window changes
+  to one palette color (a color panel drag) are one step. Any other change, a
   concurrent page text merge or undo/redo itself ends a run. The concurrent text edit
   is its own step, even though the text implementation imports a temporary branch.
 - **Refusals.** A batch or JSON replacement refused after a partial mutation rebuilds
   the owner at its pre-call version. Its history references survive replay, so undo,
   redo and the current run remain available. No-op edits also preserve history.
-- **Replica imports.** A raw replica import that adds operations clears the available
-  steps, so whole-document undo cannot erase external changes. Duplicate and refused
-  imports that add nothing leave history alone. This boundary does not apply to JSON
-  import or page typing. Selective undo across remote changes is deferred with collaboration.
 - **Result.** An undo is a new change: it publishes, autosaves and travels like any
   other. Nothing to undo publishes nothing.
 - **Window.** The document window's `NSUndoManager` (`DocumentUndoManager`) reports
@@ -190,9 +194,9 @@ JSON snapshots or persistent undo records.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
   `close` refuses new edits, flushes, trims history (below), writes the artwork its
   window captured ([close](#close-export-and-capture)), then releases the lock.
-  `discard` rotates the epoch,
-  waits for the write in flight, and reloads saved bytes; requests captured before it are
-  refused with `owner_replaced`.
+  `discard` waits for the write in flight and reloads saved bytes; work queued for the
+  discarded state (a waiting flush, a page that was replaced) is refused with
+  `owner_replaced`.
 - Save status flows one way, owner to window: the edited mark and the failure sheet. The
   page learns durability only through `flush`, which resolves once saved and rejects
   when the save fails.
@@ -271,8 +275,9 @@ read-only saved-state renderer. Socket work runs off the main actor; edit payloa
 remain JSON text until the core parses them.
 
 Edits print `{ids, sequence}` after saving and are never replayed automatically. The
-socket has one edit method, `batch`; CLI `apply` wraps one operation. Socket `get`
-returns `{schema, state}` after flushing. The CLI prints `state.value` by default and
+socket has one edit method, `batch`, for data and palette alike; CLI `apply` wraps one
+operation. Socket `get` returns `{schema, theme, state}` after flushing: the app's
+descriptor and declared palette, and the document's state. The CLI prints `state.value` by default and
 the complete payload with `get --snapshot`. Engine selection and protocol negotiation
 are detailed in the [CLI reference](guides/cli.md#helper-discovery-and-identity).
 
@@ -284,12 +289,15 @@ spelling per color), and fonts and derived values stay in the app's CSS. The ove
 live in Loro's root `theme` map, separate from the authored data tree. JSON replacement
 and import replace data only, so they preserve the palette. `theme.rs` holds the shared
 validation rules: declared tokens, canonical color spelling, 256 tokens and a 64 KiB
-effective palette. Opening checks stored overrides; malformed theme state is refused.
+effective palette. Opening refuses stored overrides no write could make.
 
-Set, reset and import are ordinary document edits. They advance the same sequence,
-publish effective values when changed, enter the undo history and are saved by the same
-jobs as data. A color-panel drag is one explicit undo group; mouse-up ends it, and a CLI
-theme command never joins it. Independent replica edits merge per color through Loro.
+Palette changes are batch intents beside the data ones: `setTheme {values, replace?}`
+sets colors (`null` returns one to the template's; `replace` returns every unlisted
+one) and `importTheme {file}` replaces the palette with a theme file. The window's theme
+panel and agents send them; the page cannot. They advance the same sequence, publish
+effective values when changed, enter the undo history and are saved by the same jobs as
+data, and a batch may change data and palette together. The window's consecutive
+changes to one color are one undo step, so a color panel drag undoes at once.
 
 A theme file is `{template, values}`: the manifest slug and full effective palette.
 Import checks the whole file, refuses another template or undeclared color, and replaces

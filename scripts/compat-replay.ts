@@ -6,7 +6,6 @@
 // Usage: bun scripts/compat-replay.ts [--release VERSION] [--installed]
 //   --release   also require a frozen entry for VERSION (the release gate)
 //   --installed install each frozen entry's npm CLI and run it against this helper
-import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
 import { exec } from "../packages/cli/src/process";
 import { assertExport, createDocument } from "./helper";
@@ -42,21 +41,6 @@ if (required) {
   assert.ok(entry?.release.frozen, `tests/compat/${required} must be captured and frozen before this release`);
   await verifyCandidate(entry.root, entry.release);
 }
-/** A template's initial values, read from the file outside the core. */
-const initialOf = (template: string) => {
-  const database = new Database(template, { readonly: true });
-  try {
-    return JSON.parse((database.query("SELECT initial FROM app").get() as { initial: string }).initial);
-  } finally {
-    database.close();
-  }
-};
-const stripIds = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(stripIds)
-    : value && typeof value === "object"
-      ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$id").map(([key, v]) => [key, stripIds(v)]))
-      : value;
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
 const scratch = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-")));
 let cases = 0;
@@ -94,20 +78,19 @@ try {
         await fresh();
         await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
         const { state } = await slopJSON(["get", copy, "--snapshot"]);
-        assert.deepEqual({ value: state.value, issues: state.issues }, { value: scenario.value, issues: scenario.issues }, `${name}/${document}: the edit did not reopen`);
+        assert.deepEqual(state.value, scenario.value, `${name}/${document}: the edit did not reopen`);
       }
       cases++;
       console.log(`PASS ${name}/${document}`);
     }
-    // Every template master still creates a document that reads as its initial values.
+    // Every template master still creates a document that reads as its release's did.
     for (const file of await readdir(join(root, "templates"))) {
       const output = join(scratch, `created-${file}`);
       await rm(output, { force: true });
       await createDocument(join(root, "templates", file), output, { helper }).catch((error) => assert.fail(`${name}/${file}: create failed: ${error.message}`));
       const { state } = await slopJSON(["get", output, "--snapshot"]);
-      const initial = initialOf(join(root, "templates", file));
-      assert.deepEqual(state.issues, [], `${name}/${file}: a new document has issues`);
-      assert.deepEqual(stripIds(state.value), stripIds(initial), `${name}/${file}: a new document differs from its initial values`);
+      const initial = await readJSON(join(root, "expected", `new-${file.slice(0, -".slop".length)}.json`));
+      assert.deepEqual(state.value, initial, `${name}/${file}: a new document differs from its release's`);
       cases++;
     }
     // The commands this release's CLI ran, in order, on its own document.

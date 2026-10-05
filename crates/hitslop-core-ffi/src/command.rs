@@ -8,7 +8,6 @@ pub struct NativeExportRequest {
     pub document_path: String,
     pub format: String,
     pub output: String,
-    pub epoch: Option<String>,
 }
 #[derive(uniffi::Enum)]
 pub enum NativeExportOutcome {
@@ -61,6 +60,11 @@ pub trait NativeExportHandler: Send + Sync {
 pub trait NativeCommandCompletion: Send + Sync {
     fn complete(&self, reply_json: String);
 }
+/// A page request's answer: the reply for the page, and the owner's failure when it refused.
+#[uniffi::export(callback_interface)]
+pub trait PageCompletion: Send + Sync {
+    fn complete(&self, reply_json: String, failure: Option<OwnerFailure>);
+}
 struct Exporter(Box<dyn NativeExportHandler>);
 impl core::ExportHandler for Exporter {
     fn export(&self, request: core::ExportRequest, completion: Arc<core::ExportCompletion>) {
@@ -69,7 +73,6 @@ impl core::ExportHandler for Exporter {
                 document_path: request.document_path,
                 format: request.format,
                 output: request.output,
-                epoch: request.epoch,
             },
             Arc::new(NativeExportCompletion(completion)),
         );
@@ -102,23 +105,29 @@ impl NativeSocketServer {
         self.0.stop();
     }
 }
+/// A request written in command `protocol`, as the engine runs it.
 #[uniffi::export]
 pub fn command_request(
     json: String,
+    protocol: u64,
     exporter: Option<Box<dyn NativeExportHandler>>,
     completion: Box<dyn NativeCommandCompletion>,
 ) {
     std::thread::spawn(move || {
         let exporter = exporter.map(|e| Arc::new(Exporter(e)) as Arc<dyn core::ExportHandler>);
-        completion.complete(core::request(&json, exporter));
+        completion.complete(core::request(&json, protocol, exporter));
     });
 }
 #[uniffi::export]
 impl NativeOwner {
+    /// One document request from the page `view`; the owner admits and answers it.
+    pub fn page(&self, json: String, view: String, completion: Box<dyn PageCompletion>) {
+        core::page(&self.0, view, &json, move |reply| completion.complete(reply.json, reply.failure.map(Into::into)));
+    }
     pub fn request(&self, json: String, completion: Box<dyn NativeCommandCompletion>) {
         let owner = self.0.clone();
         std::thread::spawn(move || {
-            completion.complete(core::dispatch(
+            completion.complete(core::serve(
                 &owner,
                 &json,
                 None,

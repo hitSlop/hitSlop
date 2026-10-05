@@ -4,7 +4,7 @@
 use crate::{file, store, theme, Document, Origin};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,12 +70,6 @@ impl From<store::Error> for Failure {
     }
 }
 type Result<T> = std::result::Result<T, Failure>;
-pub enum ThemeChange {
-    Get,
-    Set(String),
-    Reset(Option<String>),
-    Import(String),
-}
 pub enum Request {
     State,
     Apply {
@@ -94,10 +88,11 @@ pub enum Request {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
-    Edited,
-    SaveFailure,
+    /// The saved document, copied after a flush: `durable` for a copy a person keeps,
+    /// not for a capture's disposable source.
     Copy {
         destination: PathBuf,
+        durable: bool,
     },
     Artwork {
         name: String,
@@ -109,14 +104,9 @@ pub enum Request {
     PutAttachment {
         bytes: Vec<u8>,
     },
-    Theme {
-        change: ThemeChange,
-        gesture: bool,
-    },
+    /// The palette; changes are batch intents.
+    Theme,
     ExportTheme,
-    BeginThemeGesture,
-    EndThemeGesture,
-    PublishUndoState,
 }
 #[derive(Debug)]
 pub enum Reply {
@@ -138,9 +128,6 @@ pub enum Reply {
         state: theme::ThemeState,
         sequence: u64,
     },
-    Bool {
-        value: bool,
-    },
     Bytes {
         bytes: Option<Vec<u8>>,
     },
@@ -150,9 +137,6 @@ pub enum Reply {
     Attachment {
         item: store::Attachment,
     },
-    FailureState {
-        failure: Option<Failure>,
-    },
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStatus {
@@ -160,6 +144,8 @@ pub enum SaveStatus {
     Saving,
     Failed,
 }
+/// What the owner tells its listener, in order. The listener learns every fact this way:
+/// the owner states its undo state and save status when it starts, then each change.
 #[derive(Debug)]
 pub enum Event {
     Publication {
@@ -202,7 +188,6 @@ pub struct Owner {
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
-    epoch: Arc<Mutex<String>>,
 }
 impl Owner {
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
@@ -210,7 +195,6 @@ impl Owner {
         let store = Arc::new(store::Store::open(&path, mode)?);
         let core = store.document()?;
         let sequence = core.sequence();
-        let epoch = Arc::new(Mutex::new(crate::random_hex(16)));
         let (sender, receive) = mpsc::channel();
         let (persist, work) = mpsc::channel();
         let completion = sender.clone();
@@ -223,7 +207,7 @@ impl Owner {
             core,
             mode,
             store: store.clone(),
-            epoch: epoch.clone(),
+            generation: 0,
             persist,
             listener,
             view: None,
@@ -232,7 +216,6 @@ impl Owner {
             discarding: false,
             sequence,
             saved: sequence,
-            edited: false,
             writing: false,
             requested: false,
             deadline: None,
@@ -249,7 +232,6 @@ impl Owner {
             sender,
             store,
             path,
-            epoch,
         })
     }
     pub fn path(&self) -> &Path {
@@ -261,9 +243,6 @@ impl Owner {
     pub fn asset_reader(&self) -> Result<file::AssetReader> {
         Ok(self.store.asset_reader()?)
     }
-    pub fn epoch(&self) -> String {
-        self.epoch.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
     }
@@ -273,30 +252,16 @@ impl Owner {
     pub fn withdraw_discovery(&self) {
         self.store.withdraw_discovery();
     }
-    pub fn submit(
-        &self,
-        request: Request,
-        epoch: Option<String>,
-        view: Option<String>,
-        callback: Completion,
-    ) {
-        self.enqueue(request, epoch, view, None, callback);
+    pub fn submit(&self, request: Request, view: Option<String>, callback: Completion) {
+        self.enqueue(request, view, None, callback);
     }
     /// The deadline is checked on the edit worker, before the command is admitted.
-    pub fn submit_until(
-        &self,
-        request: Request,
-        epoch: Option<String>,
-        view: Option<String>,
-        deadline: Instant,
-        callback: Completion,
-    ) {
-        self.enqueue(request, epoch, view, Some(deadline), callback);
+    pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
+        self.enqueue(request, view, Some(deadline), callback);
     }
     fn enqueue(
         &self,
         request: Request,
-        epoch: Option<String>,
         view: Option<String>,
         deadline: Option<Instant>,
         callback: Completion,
@@ -304,7 +269,6 @@ impl Owner {
         if let Err(mpsc::SendError(Message::Request { callback, .. })) =
             self.sender.send(Message::Request {
                 request,
-                epoch,
                 view,
                 deadline,
                 callback,
@@ -323,24 +287,23 @@ impl Drop for Owner {
 enum Message {
     Request {
         request: Request,
-        epoch: Option<String>,
         view: Option<String>,
         deadline: Option<Instant>,
         callback: Completion,
     },
     Attach(String),
     Saved {
-        epoch: String,
+        generation: u64,
         target: u64,
         result: Result<()>,
     },
     Restored {
-        epoch: String,
+        generation: u64,
         result: Result<Document>,
         callback: Completion,
     },
     Stored {
-        epoch: String,
+        generation: u64,
         result: Result<Reply>,
         callback: Completion,
         closing: bool,
@@ -349,21 +312,21 @@ enum Message {
 }
 enum Work {
     Save {
-        epoch: String,
+        generation: u64,
         target: u64,
         job: store::SaveJob,
     },
     Restore {
-        epoch: String,
+        generation: u64,
         callback: Completion,
     },
     Store {
-        epoch: String,
+        generation: u64,
         action: StorageAction,
         callback: Completion,
     },
     Close {
-        epoch: String,
+        generation: u64,
         job: Option<store::SaveJob>,
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
@@ -371,7 +334,7 @@ enum Work {
     },
 }
 enum StorageAction {
-    Copy(PathBuf),
+    Copy(PathBuf, bool),
     Artwork(String),
     Attachments,
     ReadAttachment(String),
@@ -384,29 +347,29 @@ fn persistence(
 ) {
     for work in work {
         let done = match work {
-            Work::Save { epoch, target, job } => Message::Saved {
-                epoch,
+            Work::Save { generation, target, job } => Message::Saved {
+                generation,
                 target,
                 result: catch_unwind(AssertUnwindSafe(|| {
                     store.write(&job).map_err(Failure::from)
                 }))
                 .unwrap_or_else(|_| Err(poisoned())),
             },
-            Work::Restore { epoch, callback } => Message::Restored {
-                epoch,
+            Work::Restore { generation, callback } => Message::Restored {
+                generation,
                 callback,
                 result: catch_unwind(AssertUnwindSafe(|| store.document().map_err(Failure::from)))
                     .unwrap_or_else(|_| Err(poisoned())),
             },
             Work::Store {
-                epoch,
+                generation,
                 action,
                 callback,
             } => {
                 let result = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
                     Ok(match action {
-                        StorageAction::Copy(path) => {
-                            store.copy_to(&path)?;
+                        StorageAction::Copy(path, durable) => {
+                            store.copy_to(&path, durable)?;
                             Reply::Unit
                         }
                         StorageAction::Artwork(name) => Reply::Bytes {
@@ -425,14 +388,14 @@ fn persistence(
                 }))
                 .unwrap_or_else(|_| Err(poisoned()));
                 Message::Stored {
-                    epoch,
+                    generation,
                     result,
                     callback,
                     closing: false,
                 }
             }
             Work::Close {
-                epoch,
+                generation,
                 job,
                 preview,
                 icon,
@@ -458,7 +421,7 @@ fn persistence(
                 }))
                 .unwrap_or_else(|_| Err(poisoned()));
                 Message::Stored {
-                    epoch,
+                    generation,
                     result,
                     callback,
                     closing: true,
@@ -483,7 +446,7 @@ enum Lifecycle {
 }
 enum AfterSave {
     Reply(Reply),
-    Copy(PathBuf),
+    Copy(PathBuf, bool),
     Close {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
@@ -498,7 +461,8 @@ struct Actor {
     core: Document,
     store: Arc<store::Store>,
     mode: store::Mode,
-    epoch: Arc<Mutex<String>>,
+    /// Advances when a discard reloads saved state, so work begun before it is dropped.
+    generation: u64,
     persist: mpsc::Sender<Work>,
     listener: Listener,
     view: Option<String>,
@@ -507,7 +471,6 @@ struct Actor {
     discarding: bool,
     sequence: u64,
     saved: u64,
-    edited: bool,
     writing: bool,
     requested: bool,
     deadline: Option<Instant>,
@@ -517,13 +480,12 @@ struct Actor {
     undo: (bool, bool),
 }
 impl Actor {
-    fn epoch(&self) -> String {
-        self.epoch.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
     fn emit(&self, event: Event) {
         let _ = catch_unwind(AssertUnwindSafe(|| (self.listener)(event)));
     }
     fn run(mut self, messages: mpsc::Receiver<Message>) {
+        self.emit(Event::UndoState { can_undo: false, can_redo: false });
+        self.status(SaveStatus::Saved);
         loop {
             if self
                 .deadline
@@ -556,7 +518,6 @@ impl Actor {
                 Message::Attach(view) => self.view = Some(view),
                 Message::Request {
                     request,
-                    epoch,
                     view,
                     deadline,
                     callback,
@@ -575,7 +536,7 @@ impl Actor {
                     }
                     let mut callback = Some(callback);
                     let result = catch_unwind(AssertUnwindSafe(|| {
-                        self.request(request, epoch, view, &mut callback)
+                        self.request(request, view, &mut callback)
                     }))
                     .unwrap_or_else(|_| {
                         self.invalidated = true;
@@ -587,18 +548,17 @@ impl Actor {
                     }
                 }
                 Message::Saved {
-                    epoch,
+                    generation,
                     target,
                     result,
                 } => {
-                    if epoch != self.epoch() {
+                    if generation != self.generation {
                         continue;
                     }
                     self.writing = false;
                     match result {
                         Ok(()) => {
                             self.saved = self.saved.max(target);
-                            self.edited = true;
                             self.failure = None;
                             self.status(if self.sequence > self.saved {
                                 SaveStatus::Saving
@@ -614,11 +574,11 @@ impl Actor {
                     }
                 }
                 Message::Restored {
-                    epoch,
+                    generation,
                     result,
                     callback,
                 } => {
-                    if epoch != self.epoch() {
+                    if generation != self.generation {
                         complete(callback, Err(replaced()));
                         continue;
                     }
@@ -646,7 +606,7 @@ impl Actor {
                     }
                 }
                 Message::Stored {
-                    epoch,
+                    generation,
                     mut result,
                     callback,
                     closing,
@@ -658,7 +618,7 @@ impl Actor {
                             }
                         }
                     }
-                    if epoch != self.epoch() {
+                    if generation != self.generation {
                         complete(callback, Err(replaced()));
                         continue;
                     }
@@ -675,16 +635,14 @@ impl Actor {
         }
         self.reject_waiters(closed());
     }
-    fn admit(&self, recover: bool, epoch: Option<&str>, view: Option<&str>) -> Result<()> {
+    fn admit(&self, recover: bool, view: Option<&str>) -> Result<()> {
         if self.lifecycle == Lifecycle::Closed {
             return Err(closed());
         }
         if !recover && self.invalidated {
             return Err(poisoned());
         }
-        if epoch.is_some_and(|v| v != self.epoch())
-            || view.is_some_and(|v| Some(v) != self.view.as_deref())
-        {
+        if view.is_some_and(|v| Some(v) != self.view.as_deref()) {
             return Err(replaced());
         }
         Ok(())
@@ -704,18 +662,10 @@ impl Actor {
     fn request(
         &mut self,
         request: Request,
-        epoch: Option<String>,
         view: Option<String>,
         callback: &mut Option<Completion>,
     ) -> Result<Option<Reply>> {
-        self.admit(
-            matches!(
-                request,
-                Request::Discard | Request::SaveFailure | Request::Edited
-            ),
-            epoch.as_deref(),
-            view.as_deref(),
-        )?;
+        self.admit(matches!(request, Request::Discard), view.as_deref())?;
         let reply = match request {
             Request::State => Reply::State {
                 json: self.core.state()?,
@@ -723,7 +673,7 @@ impl Actor {
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;
                 let result = self.core.apply_batch(&batch_json, origin)?;
-                self.accepted(result.sequence, result.publication);
+                self.accepted(result.sequence, result.publication, result.theme_changed);
                 Reply::Applied {
                     sequence: result.sequence,
                     ids: result.ids,
@@ -732,7 +682,7 @@ impl Actor {
             Request::Text { request_json } => {
                 self.mutation()?;
                 let result = self.core.edit_text(&request_json)?;
-                self.accepted(result.sequence, result.publication);
+                self.accepted(result.sequence, result.publication, false);
                 Reply::Text {
                     sequence: result.sequence,
                     authored: result.authored,
@@ -747,52 +697,16 @@ impl Actor {
                 } else {
                     self.core.undo()?
                 };
-                self.accepted(result.sequence, result.publication);
+                self.accepted(result.sequence, result.publication, result.theme_changed);
                 Reply::Applied {
                     sequence: result.sequence,
                     ids: result.ids,
                 }
             }
-            Request::Theme { change, gesture } => {
-                if !matches!(change, ThemeChange::Get) {
-                    self.mutation()?;
-                    if !gesture {
-                        self.core.end_theme_gesture();
-                    }
-                }
-                let change = match &change {
-                    ThemeChange::Get => theme::Change::Get,
-                    ThemeChange::Set(v) => theme::Change::Set(v),
-                    ThemeChange::Reset(v) => theme::Change::Reset(v.as_deref()),
-                    ThemeChange::Import(v) => theme::Change::Import(v),
-                };
-                let applied = self.core.theme(change)?;
-                self.accepted(applied.result.sequence, applied.result.publication);
-                Reply::Theme {
-                    state: applied.state,
-                    sequence: applied.result.sequence,
-                }
-            }
-            Request::BeginThemeGesture => {
-                self.mutation()?;
-                self.core.begin_theme_gesture();
-                Reply::Unit
-            }
-            Request::EndThemeGesture => {
-                self.core.end_theme_gesture();
-                Reply::Unit
-            }
-            Request::PublishUndoState => {
-                self.emit(Event::UndoState {
-                    can_undo: self.core.can_undo(),
-                    can_redo: self.core.can_redo(),
-                });
-                Reply::Unit
-            }
-            Request::SaveFailure => Reply::FailureState {
-                failure: self.failure.clone(),
+            Request::Theme => Reply::Theme {
+                state: self.core.theme_state()?,
+                sequence: self.core.sequence(),
             },
-            Request::Edited => Reply::Bool { value: self.edited },
             Request::Flush => {
                 self.wait(callback, AfterSave::Reply(Reply::Unit))?;
                 return Ok(None);
@@ -802,8 +716,8 @@ impl Actor {
                 self.wait(callback, AfterSave::Reply(Reply::State { json }))?;
                 return Ok(None);
             }
-            Request::Copy { destination } => {
-                self.wait(callback, AfterSave::Copy(destination))?;
+            Request::Copy { destination, durable } => {
+                self.wait(callback, AfterSave::Copy(destination, durable))?;
                 return Ok(None);
             }
             Request::Close { preview, icon } => {
@@ -827,12 +741,12 @@ impl Actor {
                 if self.discarding || self.lifecycle == Lifecycle::Closing {
                     return Err(replaced());
                 }
-                *self.epoch.lock().unwrap_or_else(|e| e.into_inner()) = crate::random_hex(16);
+                self.generation += 1;
                 self.discarding = true;
                 self.deadline = None;
                 self.reject_waiters(replaced());
                 self.persist(Work::Restore {
-                    epoch: self.epoch(),
+                    generation: self.generation,
                     callback: callback.take().unwrap(),
                 });
                 return Ok(None);
@@ -860,16 +774,11 @@ impl Actor {
         };
         Ok(Some(reply))
     }
-    fn accepted(&mut self, sequence: u64, publication: Option<String>) {
+    fn accepted(&mut self, sequence: u64, publication: Option<String>, themed: bool) {
         self.refresh_undo();
         let Some(json) = publication else {
             return;
         };
-        #[derive(serde::Deserialize)]
-        struct Changed {
-            theme: Option<Box<serde_json::value::RawValue>>,
-        }
-        let themed = serde_json::from_str::<Changed>(&json).is_ok_and(|v| v.theme.is_some());
         let was_saved = self.sequence <= self.saved;
         self.sequence = sequence;
         self.emit(Event::Publication { json });
@@ -942,7 +851,7 @@ impl Actor {
             Ok(Some(job)) => {
                 self.writing = true;
                 self.persist(Work::Save {
-                    epoch: self.epoch(),
+                    generation: self.generation,
                     target: self.sequence,
                     job,
                 });
@@ -965,7 +874,7 @@ impl Actor {
             }
             match waiter.next {
                 AfterSave::Reply(reply) => complete(waiter.callback, Ok(reply)),
-                AfterSave::Copy(path) => self.storage(StorageAction::Copy(path), waiter.callback),
+                AfterSave::Copy(path, durable) => self.storage(StorageAction::Copy(path, durable), waiter.callback),
                 AfterSave::Close { preview, icon } => {
                     let job = if self.mode == store::Mode::Document {
                         catch_unwind(AssertUnwindSafe(|| self.store.close_job(&mut self.core)))
@@ -976,7 +885,7 @@ impl Actor {
                         None
                     };
                     self.persist(Work::Close {
-                        epoch: self.epoch(),
+                        generation: self.generation,
                         job,
                         preview,
                         icon,
@@ -988,7 +897,7 @@ impl Actor {
     }
     fn storage(&mut self, action: StorageAction, callback: Completion) {
         self.persist(Work::Store {
-            epoch: self.epoch(),
+            generation: self.generation,
             action,
             callback,
         });

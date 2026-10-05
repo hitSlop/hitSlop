@@ -150,6 +150,8 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
 for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
   await createDocument(join(root, "templates", slug + ".slop"), document, { helper });
+  // What a new document of this release's template holds: its initial checkpoint.
+  await writeFile(join(root, "expected", `new-${slug}.json`), JSON.stringify(await valueOf(document), null, 2) + "\n");
   const schema = await schemaOf(document);
   for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
   const theme = await slopJSON(["theme", "get", document]);
@@ -165,16 +167,13 @@ for (const slug of Object.keys(templates)) {
   const app = appOf(document);
   pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
 }
-// Storage shapes: a compacted (history-trimmed) checkpoint, and merged anomalies.
+// Storage shapes: a compacted (history-trimmed) checkpoint.
 for (const slug of ["conformance", "quick-checklist"]) {
   const compacted = join(documents, `${slug}-compacted.slop`);
   await copyFile(join(documents, slug + ".slop"), compacted);
   await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_checkpoint", "--", compacted]);
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
-const anomalies = join(documents, "conformance-anomalies.slop");
-await createDocument(join(root, "templates/conformance.slop"), anomalies, { helper });
-await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_anomalies", "--", anomalies]);
 
 // What each document reads as, and an edit to replay on it with its result.
 const names = (await readdir(documents)).filter((n) => n.endsWith(".slop")).map((n) => n.slice(0, -5)).sort();
@@ -182,18 +181,13 @@ const scratch = join(work, "Document.slop");
 for (const document of names) {
   const path = join(documents, document + ".slop");
   const expected: Expected = await savedState(path);
-  if (document !== "conformance-anomalies" && expected.issues.length) throw new Error(`${document} has issues: ${JSON.stringify(expected.issues)}`);
-  if (document === "conformance-anomalies" && !expected.issues.length) throw new Error("The anomaly document reads clean");
   await writeFile(join(root, "expected", document + ".json"), JSON.stringify(expected, null, 2) + "\n");
-  const ops =
-    document === "conformance-anomalies"
-      ? [{ type: "set", path: ["title"], value: "Anomalies survive ✓" }]
-      : edits(await schemaOf(path), expected.value, 3);
+  const ops = edits(await schemaOf(path), expected.value, 3);
   await rm(scratch, { recursive: true, force: true });
   await copyFile(path, scratch);
   await batch(scratch, ops);
   const { state } = await slopJSON(["get", scratch, "--snapshot"]);
-  const scenario: Scenario = { ops, value: state.value, issues: state.issues };
+  const scenario: Scenario = { ops, value: state.value };
   await writeFile(join(root, "scenarios", document + ".json"), JSON.stringify(scenario, null, 2) + "\n");
   // The old app must render its saved document.
   for (const format of ["png", "pdf"]) {
@@ -201,13 +195,11 @@ for (const document of names) {
     await slop(["export", path, "--format", format, "--output", output]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
     await rm(output);
   }
-  if (document !== "conformance-anomalies") {
-    const script = pageScripts[document]!;
-    const selected = actions[document.replace(/-compacted$/, "")];
-    if (script === "actions" && !selected) throw new Error(`Add an explicit page action for ${document} before capture`);
-    const page: Page = { script, ...(selected ? { actions: selected } : {}), value: null };
-    await writeFile(join(root, "pages", document + ".json"), JSON.stringify(page, null, 2) + "\n");
-  }
+  const script = pageScripts[document]!;
+  const selected = actions[document.replace(/-compacted$/, "")];
+  if (script === "actions" && !selected) throw new Error(`Add an explicit page action for ${document} before capture`);
+  const page: Page = { script, ...(selected ? { actions: selected } : {}), value: null };
+  await writeFile(join(root, "pages", document + ".json"), JSON.stringify(page, null, 2) + "\n");
 }
 
 // The commands a CLI of this release runs, and what they print.

@@ -50,10 +50,8 @@ export function svelteApp(App: Component, options: {
 
 function createAdapter(doc: SlopContext["document"]) {
   let current = $state.raw(doc.current);
-  let issues = $state.raw(doc.issues);
   const unsubscribe = doc.subscribe(() => {
     current = doc.current;
-    issues = doc.issues;
   });
   // A handle's `value` derives from the snapshot, so reading it depends on `current`.
   const unobserve = doc.observe(() => void current);
@@ -64,9 +62,6 @@ function createAdapter(doc: SlopContext["document"]) {
   const document: LiveDocument<ObjectNode> = {
     get current() {
       return current as Value<ObjectNode>;
-    },
-    get issues() {
-      return issues;
     },
     fields: doc.fields,
     at: doc.at,

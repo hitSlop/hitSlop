@@ -1,7 +1,7 @@
 #![cfg(feature = "storage")]
 use hitslop_core::{
     file,
-    owner::{Event, Failure, FailureKind, Owner, Reply, Request, ThemeChange},
+    owner::{Event, Failure, FailureKind, Owner, Reply, Request},
     store::{Mode, Store},
     Origin,
 };
@@ -51,7 +51,6 @@ fn submit(owner: &Owner, request: Request) -> mpsc::Receiver<Result<Reply, Failu
     owner.submit(
         request,
         None,
-        None,
         Box::new(move |result| {
             let _ = tx.send(result);
         }),
@@ -85,10 +84,11 @@ fn close(owner: &Owner) {
     )
     .unwrap();
 }
-fn theme(color: &str) -> Request {
-    Request::Theme {
-        change: ThemeChange::Set(json!({"accent":color}).to_string()),
-        gesture: false,
+/// A palette change to the accent, from the theme panel or an agent.
+fn theme(color: &str, origin: Origin) -> Request {
+    Request::Apply {
+        batch_json: json!({"intents":[{"type":"setTheme","values":{"accent":color}}]}).to_string(),
+        origin,
     }
 }
 
@@ -97,12 +97,12 @@ fn ordered_publications_flush_and_reopen_include_theme() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     let a = submit(&owner, set("First"));
-    let b = submit(&owner, theme("#123456"));
+    let b = submit(&owner, theme("#123456", Origin::Agent));
     let c = submit(&owner, set("Last"));
     let sequences: Vec<_> = [a, b, c]
         .into_iter()
         .map(|rx| match rx.recv().unwrap().unwrap() {
-            Reply::Applied { sequence, .. } | Reply::Theme { sequence, .. } => sequence,
+            Reply::Applied { sequence, .. } => sequence,
             _ => panic!("edit"),
         })
         .collect();
@@ -135,21 +135,13 @@ fn ordered_publications_flush_and_reopen_include_theme() {
     close(&reopened);
 }
 #[test]
-fn theme_and_content_share_undo_and_cli_theme_ends_panel_gesture() {
+fn theme_and_content_share_undo_and_an_agent_color_ends_the_panel_run() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
-    call(&owner, Request::BeginThemeGesture).unwrap();
     for color in ["#111111", "#222222"] {
-        call(
-            &owner,
-            Request::Theme {
-                change: ThemeChange::Set(json!({"accent":color}).to_string()),
-                gesture: true,
-            },
-        )
-        .unwrap();
+        call(&owner, theme(color, Origin::Window)).unwrap();
     }
-    call(&owner, theme("#333333")).unwrap();
+    call(&owner, theme("#333333", Origin::Agent)).unwrap();
     call(&owner, set("Content after theme")).unwrap();
     call(&owner, Request::Undo { redo: false }).unwrap();
     assert_eq!(state(&owner)["value"]["title"], "Saved");
@@ -228,27 +220,19 @@ fn failed_close_keeps_state_and_writer_lease_for_retry() {
     close(&saved);
 }
 #[test]
-fn discard_restores_data_and_theme_and_fences_old_epoch_and_view() {
+fn discard_restores_data_and_theme_and_fences_the_old_view() {
     let (_dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
     owner.attach("page".into());
-    let epoch = owner.epoch();
     call(&owner, set("Unsaved")).unwrap();
-    call(&owner, theme("#123456")).unwrap();
+    call(&owner, theme("#123456", Origin::Window)).unwrap();
     call(&owner, Request::Discard).unwrap();
-    assert_ne!(owner.epoch(), epoch);
     assert_eq!(state(&owner)["value"]["title"], "Saved");
     assert_eq!(state(&owner)["theme"]["accent"], "#335577");
-    for (epoch, view) in [(Some(epoch), None), (None, Some("page".into()))] {
-        let (tx, rx) = mpsc::channel();
-        owner.submit(
-            set("stale"),
-            epoch,
-            view,
-            Box::new(move |r| tx.send(r).unwrap()),
-        );
-        assert_eq!(rx.recv().unwrap().unwrap_err().kind, FailureKind::Replaced);
-    }
+    owner.attach("next page".into());
+    let (tx, rx) = mpsc::channel();
+    owner.submit(set("stale"), Some("page".into()), Box::new(move |r| tx.send(r).unwrap()));
+    assert_eq!(rx.recv().unwrap().unwrap_err().kind, FailureKind::Replaced);
     close(&owner);
 }
 #[test]
@@ -285,7 +269,7 @@ fn snapshot_refuses_mutations_and_closed_owner_refuses_every_request() {
     let (owner, _) = open(&path, Mode::Snapshot);
     for request in [
         set("No"),
-        theme("#123456"),
+        theme("#123456", Origin::Window),
         Request::Undo { redo: false },
         Request::PutAttachment { bytes: vec![1] },
     ] {
@@ -306,21 +290,20 @@ fn autosave_is_bounded_while_edits_continue() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     let start = Instant::now();
-    let mut saved = false;
+    use hitslop_core::owner::SaveStatus;
+    // The owner states it is saved when it starts; only a save after an edit counts.
+    let (mut saving, mut saved) = (false, false);
     let mut n = 0;
     while start.elapsed() < Duration::from_millis(1600) {
         call(&owner, set(&format!("{n}"))).unwrap();
         n += 1;
-        if events.try_iter().any(|e| {
-            matches!(
-                e,
-                Event::SaveStatus {
-                    status: hitslop_core::owner::SaveStatus::Saved,
-                    ..
-                }
-            )
-        }) {
-            saved = true;
+        for event in events.try_iter() {
+            if let Event::SaveStatus { status, .. } = event {
+                saving |= status == SaveStatus::Saving;
+                saved |= saving && status == SaveStatus::Saved;
+            }
+        }
+        if saved {
             break;
         }
         // Keep the stream below the idle deadline while allowing realistic processing.
@@ -350,6 +333,7 @@ fn an_admitted_copy_finishes_before_close_and_contains_its_flushed_edits() {
         &owner,
         Request::Copy {
             destination: destination.clone(),
+            durable: true,
         },
     );
     let closed = submit(
@@ -385,7 +369,6 @@ fn expired_command_does_not_mutate_or_publish() {
     owner.submit_until(
         set("Expired"),
         None,
-        None,
         Instant::now() - Duration::from_millis(1),
         Box::new(move |result| tx.send(result).unwrap()),
     );
@@ -411,4 +394,180 @@ fn owner_preserves_store_refusal_of_symbolic_link_documents() {
     for mode in [Mode::Document, Mode::Snapshot] {
         assert!(Owner::open(&alias, mode, Arc::new(|_| {})).is_err());
     }
+}
+
+/// The saved title, read without the owner (a snapshot takes no lock).
+fn saved_title(path: &Path) -> String {
+    let snapshot = Store::open(path, Mode::Snapshot).unwrap();
+    let value: Value = serde_json::from_str(&snapshot.document().unwrap().value().unwrap()).unwrap();
+    snapshot.close().unwrap();
+    value["title"].as_str().unwrap().to_owned()
+}
+fn saving(events: &mpsc::Receiver<Event>) -> Vec<hitslop_core::owner::SaveStatus> {
+    events
+        .try_iter()
+        .filter_map(|event| match event {
+            Event::SaveStatus { status, .. } => Some(status),
+            _ => None,
+        })
+        .collect()
+}
+
+// Failure: an undo changed the document without saving it, or undid only the person's
+// edits. Oracle: the saved bytes and the undo states the owner published.
+#[test]
+fn undo_saves_like_an_edit_and_reaches_agent_edits() {
+    let (_dir, path) = fixture();
+    let (owner, events) = open(&path, Mode::Document);
+    let agent = Request::Apply {
+        batch_json: json!({"intents":[{"type":"set","path":["title"],"value":"Agent"}]}).to_string(),
+        origin: Origin::Agent,
+    };
+    call(&owner, agent).unwrap();
+    call(&owner, set("Person")).unwrap();
+    call(&owner, Request::Flush).unwrap();
+    assert_eq!(saved_title(&path), "Person");
+    for expected in ["Agent", "Saved"] {
+        call(&owner, Request::Undo { redo: false }).unwrap();
+        call(&owner, Request::Flush).unwrap();
+        assert_eq!(saved_title(&path), expected);
+    }
+    let undo: Vec<_> = events
+        .try_iter()
+        .filter_map(|event| match event {
+            Event::UndoState { can_undo, can_redo } => Some((can_undo, can_redo)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(undo, [(false, false), (true, false), (true, true), (false, true)]);
+    close(&owner);
+    // A document opens with nothing to undo: the next session starts where this one saved.
+    let (reopened, events) = open(&path, Mode::Document);
+    let Reply::Applied { sequence, .. } = call(&reopened, Request::Undo { redo: false }).unwrap() else { panic!() };
+    assert_eq!(sequence, 0, "nothing to undo publishes nothing");
+    close(&reopened);
+    assert!(!events.try_iter().any(|e| matches!(e, Event::UndoState { can_undo: true, .. })));
+}
+
+// Failure: close released the writer lock or accepted edits before its final write
+// committed, letting another writer in or losing the late edit.
+#[test]
+fn close_refuses_edits_and_holds_the_lock_until_its_final_write() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(&owner, set("Before close")).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let closing = submit(&owner, Request::Close { preview: None, icon: None });
+    let refused = call(&owner, set("Too late")).unwrap_err();
+    assert_eq!(refused.kind, FailureKind::Closing);
+    assert!(hitslop_core::registry::Lease::acquire(&path).is_err(), "the lock is held until the final write");
+    lock.execute_batch("ROLLBACK").unwrap();
+    drop(lock);
+    closing.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    assert!(hitslop_core::registry::Lease::acquire(&path).is_ok());
+    assert_eq!(saved_title(&path), "Before close");
+}
+
+// Failure: another connection holding the database (a backup during Duplicate) must be a
+// definite, retryable failure, never mistaken for a lost reply or a conflict.
+#[test]
+fn a_busy_database_fails_a_flush_that_a_retry_completes() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(&owner, set("Retried")).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
+    lock.execute_batch("ROLLBACK").unwrap();
+    drop(lock);
+    call(&owner, Request::Flush).unwrap();
+    assert_eq!(saved_title(&path), "Retried");
+    close(&owner);
+}
+
+// Failure: discard fenced an active save, then a failed reload (a moved file) left writing
+// latched forever and published nothing. Oracle: the failure is published, and once the
+// file is back another edit becomes durable and close releases ownership.
+#[test]
+fn a_failed_discard_publishes_its_failure_and_saving_recovers() {
+    let (dir, path) = fixture();
+    let moved = dir.path().join("Moved.slop");
+    let (owner, events) = open(&path, Mode::Document);
+    call(&owner, set("Unsaved")).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let flush = submit(&owner, Request::Flush);
+    let discard = submit(&owner, Request::Discard);
+    // Discard rejects the old save's waiter before waiting for the persistence queue.
+    assert_eq!(flush.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Replaced);
+    std::fs::rename(&path, &moved).unwrap();
+    lock.execute_batch("ROLLBACK").unwrap();
+    drop(lock);
+    assert_eq!(discard.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Moved);
+    assert!(saving(&events).contains(&hitslop_core::owner::SaveStatus::Failed));
+    std::fs::rename(&moved, &path).unwrap();
+    call(&owner, Request::Discard).unwrap();
+    call(&owner, set("After")).unwrap();
+    call(&owner, Request::Flush).unwrap();
+    assert_eq!(saved_title(&path), "After");
+    close(&owner);
+    assert!(hitslop_core::registry::Lease::acquire(&path).is_ok());
+}
+
+#[test]
+fn a_discard_publishes_no_save_failure() {
+    let (_dir, path) = fixture();
+    let (owner, events) = open(&path, Mode::Document);
+    call(&owner, set("Unsaved")).unwrap();
+    call(&owner, Request::Discard).unwrap();
+    assert!(!saving(&events).contains(&hitslop_core::owner::SaveStatus::Failed));
+    assert_eq!(state(&owner)["value"]["title"], "Saved");
+    close(&owner);
+}
+
+// Failure: a flush admitted while discard reloaded saved bytes waited for the old
+// publication sequence, which the reloaded document (sequence 0) never reaches, so the
+// page hung. Oracle: the flush settles as replaced, and saving still works.
+#[test]
+fn a_flush_during_a_discard_reload_settles_as_replaced() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    owner.attach("page".into());
+    call(&owner, set("One")).unwrap();
+    call(&owner, set("Two")).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let discard = submit(&owner, Request::Discard);
+    let (tx, rx) = mpsc::channel();
+    owner.submit(Request::Flush, Some("page".into()), Box::new(move |r| tx.send(r).unwrap()));
+    assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Replaced);
+    lock.execute_batch("ROLLBACK").unwrap();
+    drop(lock);
+    discard.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    call(&owner, set("Three")).unwrap();
+    call(&owner, Request::Flush).unwrap();
+    assert_eq!(saved_title(&path), "Three");
+    close(&owner);
+}
+
+// A theme change is an edit: accepted in memory, saved by the owner's jobs, and waited for
+// by export, which fails while its save cannot complete. Oracle: the saved palette.
+#[test]
+fn a_theme_export_waits_for_the_save_of_its_palette() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    call(&owner, theme("#111111", Origin::Window)).unwrap();
+    assert_eq!(state(&owner)["theme"]["accent"], "#111111");
+    assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
+    lock.execute_batch("ROLLBACK").unwrap();
+    drop(lock);
+    let Reply::State { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
+    assert!(json.contains("#111111"));
+    close(&owner);
+    let (saved, _) = open(&path, Mode::Snapshot);
+    assert_eq!(state(&saved)["theme"]["accent"], "#111111");
+    close(&saved);
 }

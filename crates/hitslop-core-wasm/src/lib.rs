@@ -1,5 +1,5 @@
 //! wasm-bindgen adapter for the shared document core.
-use hitslop_core::{Applied, Document as Core, Origin};
+use hitslop_core::{AppSpec, Applied, Document as Core, Origin};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = coreBuildId)]
@@ -61,18 +61,17 @@ pub struct WasmDocument {
 }
 #[wasm_bindgen]
 impl WasmDocument {
-    #[wasm_bindgen(js_name = createWithTheme)]
-    pub fn create_with_theme(schema_json: &str, initial_json: &str, template: &str, defaults_json: &str) -> Result<WasmDocument, JsValue> {
-        Ok(Self { inner: Core::create_with_theme(schema_json, initial_json, template, defaults_json).map_err(error)? })
+    /// A new document of an app: its descriptor, its initial values, and optionally its
+    /// template's slug and declared colors.
+    pub fn create(schema_json: &str, initial_json: &str, template: Option<String>, theme_json: Option<String>) -> Result<WasmDocument, JsValue> {
+        let app = AppSpec::new(schema_json, template.as_deref().unwrap_or(""), theme_json.as_deref().unwrap_or("{}")).map_err(error)?;
+        Ok(Self { inner: Core::create(&app, initial_json).map_err(error)? })
     }
+    /// A palette change, as the window's theme panel makes it.
     #[wasm_bindgen(js_name = themeSet)]
     pub fn theme_set(&mut self, values_json: &str) -> Result<ApplyResult, JsValue> {
-        self.inner.theme(hitslop_core::theme::Change::Set(values_json)).map(|theme| applied(theme.result)).map_err(error)
-    }
-    pub fn create(schema_json: &str, initial_json: &str) -> Result<WasmDocument, JsValue> {
-        Ok(Self {
-            inner: Core::create(schema_json, initial_json).map_err(error)?,
-        })
+        let batch = format!(r#"{{"intents":[{{"type":"setTheme","values":{values_json}}}]}}"#);
+        self.inner.apply_batch(&batch, Origin::Window).map(applied).map_err(error)
     }
     /// The owner's current state, as a page opens it.
     pub fn state(&self) -> Result<String, JsValue> {

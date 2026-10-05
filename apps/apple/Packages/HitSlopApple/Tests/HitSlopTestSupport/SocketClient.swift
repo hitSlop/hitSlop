@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import HitSlopCore
 
-// Raw wire access for native stale-epoch integration tests; routing lives in Rust.
+// Raw wire access for native protocol integration tests; routing lives in Rust.
 public enum SocketClient {
   public static func call(path: String, request: Data) throws -> Data {
     // Callers bound each method's request; this bounds every message.

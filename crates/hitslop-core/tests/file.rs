@@ -91,7 +91,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(opened.kind, Kind::Template);
     assert_eq!((opened.app.package_format, opened.app.runtime_abi), (APP.format, APP.abi));
     assert_eq!(opened.app.descriptor, SCHEMA);
-    assert_eq!(opened.theme_tokens, vec![("accent".to_string(), "#335577".to_string())]);
+    assert_eq!(opened.spec.theme_tokens(), [("accent".to_string(), "#335577".to_string())]);
     let manifest: serde_json::Value = serde_json::from_str(&opened.app.manifest).unwrap();
     assert!(manifest.get("packageFormat").is_none() && manifest.get("runtimeABI").is_none(), "the markers are columns");
     assert_eq!(file::artwork(&a, &["preview"]).unwrap().map(|(_, png)| png), Some(png(640, 480, 6)));
@@ -113,7 +113,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
 }
 
 /// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
-/// as stored; text inside strings is kept exactly.
+/// as stored; text inside strings is kept exactly, in the descriptor and the initial state.
 #[test]
 fn pack_stores_the_app_as_compact_json() {
     let dir = tempfile::tempdir().unwrap();
@@ -125,7 +125,8 @@ fn pack_stores_the_app_as_compact_json() {
     file::pack(&stage, &out).unwrap();
     let opened = file::open(&out, true).unwrap();
     assert_eq!(opened.app.descriptor, SCHEMA);
-    assert_eq!(opened.app.initial, r#"{"title":"Spaced \"and\" \\ quoted"}"#);
+    let initial = Store::open(&out, Mode::Snapshot).unwrap().document().unwrap().value().unwrap();
+    assert_eq!(initial, r#"{"title":"Spaced \"and\" \\ quoted"}"#, "the template's checkpoint holds its initial values");
 }
 
 #[test]
@@ -326,7 +327,7 @@ fn a_store_keeps_the_app_its_open_checked() {
         let app = store.app();
         assert_eq!(app.kind, Kind::Document);
         assert_eq!(app.silhouette, read.silhouette);
-        assert_eq!((&app.theme_tokens, &app.skin), (&read.theme_tokens, &read.skin));
+        assert_eq!((app.spec.theme_tokens(), &app.skin), (read.spec.theme_tokens(), &read.skin));
         assert_eq!((&app.app.manifest, &app.app.descriptor, &app.app.theme), (&read.app.manifest, &read.app.descriptor, &read.app.theme));
         store.close().unwrap();
     }
@@ -355,7 +356,7 @@ fn create_and_copy_never_overwrite() {
     fs::write(&taken, "keep me").unwrap();
     assert_eq!(code(file::create_document(&dir.path().join("Template.slop"), &taken).unwrap_err()), Code::Exists);
     let store = Store::open(&doc, Mode::Document).unwrap();
-    assert_eq!(code(store.copy_to(&taken).unwrap_err()), Code::Exists);
+    assert_eq!(code(store.copy_to(&taken, true).unwrap_err()), Code::Exists);
     store.close().unwrap();
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep me");
     assert!(temporaries(dir.path()).is_empty());
@@ -506,14 +507,20 @@ fn an_open_document_copies_through_its_owner() {
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     store.put_attachment(b"photo").unwrap();
     let copy = dir.path().join("Copy.slop");
-    store.copy_to(&copy).unwrap();
-    assert_eq!(code(store.copy_to(&copy).unwrap_err()), Code::Exists);
+    store.copy_to(&copy, true).unwrap();
+    assert_eq!(code(store.copy_to(&copy, true).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert!(copied.document().unwrap().value().unwrap().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
+    // A capture's disposable source skips the syncs and reads the same.
+    let source = dir.path().join("Capture.slop");
+    store.copy_to(&source, false).unwrap();
+    let captured = Store::open(&source, Mode::Snapshot).unwrap();
+    assert!(captured.document().unwrap().value().unwrap().contains("Owner"));
+    assert_eq!(captured.attachments().unwrap().len(), 1);
 }
 
 /// A page's asset reader opens the file its store checked: a file put in its place is

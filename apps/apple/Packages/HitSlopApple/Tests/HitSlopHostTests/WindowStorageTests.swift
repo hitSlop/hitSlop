@@ -16,7 +16,6 @@ extension HostTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
-    let epoch = controller.session.epoch
     #expect(try await command("batch", url: root, setTitle("Preserved through interface reload")).ok)
     _ = try await controller.session.webView.callAsyncJavaScript(
       "dispatchEvent(new ErrorEvent('error', {error:new Error('Test application failure')})); return true",
@@ -30,38 +29,38 @@ extension HostTests {
     #expect(controller.issueBadge === badge)
     controller.dismissIssue()
     #expect(controller.issueBadge == nil)
-    let baseline = try await commandState("theme.get", url: root)
-    let theme = try await commandState("theme.set", url: root, ["values": ["accent": "#654321"]])
-    #expect(String(decoding: theme, as: UTF8.self).contains("#654321"))
+    let baseline = try await effectiveTheme(url: root)
+    #expect(try await setTheme(["accent": "#654321"], url: root).ok)
+    let theme = try await effectiveTheme(url: root)
+    #expect(theme["accent"] == "#654321")
     func accent() async throws -> String? {
       try await controller.session.webView.callAsyncJavaScript(
         "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
         arguments: [:], in: nil, contentWorld: .page) as? String
     }
     #expect(try await accent() == "#654321")
-    #expect(try await command("theme.set", url: root, ["values": ["unknown": "red"]]).code == .rejected)
+    #expect(try await setTheme(["unknown": "red"], url: root).code == .rejected)
     // A shared theme file round-trips through the live owner and restyles the page.
     let exported = try JSONSerialization.jsonObject(with: await commandState("theme.export", url: root)) as? [String: String]
     let shared = try #require(exported?["file"])
-    #expect(try await command("theme.reset", url: root).ok)
-    #expect(try await command("theme.import", url: root, ["file": shared]).ok)
+    #expect(try await setTheme([:], url: root, replace: true).ok)
+    #expect(try await themeCommand(["type": "importTheme", "file": shared], url: root).ok)
     try await controller.session.flush()
     #expect(try await accent() == "#654321")
     var foreign = try #require(try JSONSerialization.jsonObject(with: Data(shared.utf8)) as? [String: Any])
     foreign["template"] = "other-" + (foreign["template"] as? String ?? "")
     let foreignFile = String(decoding: try JSONSerialization.data(withJSONObject: foreign), as: UTF8.self)
-    #expect(try await command("theme.import", url: root, ["file": foreignFile]).code == .rejected)
+    #expect(try await themeCommand(["type": "importTheme", "file": foreignFile], url: root).code == .rejected)
     // A coded rejection is known not to have applied.
     let refused = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["missing"],"value":1}]"#])
     #expect(refused.code == .rejected)
     try await controller.session.reloadInterface()
-    #expect(controller.session.epoch == epoch)
     #expect(try await savedValue(root)?["title"] as? String == "Preserved through interface reload")
     let duplicate = root.deletingLastPathComponent().appendingPathComponent(
       UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: duplicate) }
     try await controller.session.copy(to: duplicate)
-    #expect(try await commandState("theme.get", url: duplicate) == commandState("theme.get", url: root))
+    #expect(try await effectiveTheme(url: duplicate) == effectiveTheme(url: root))
     // A duplicate carries the same saved state.
     #expect(try await savedValue(duplicate) == savedValue(root))
     // Pointer sampling continues while asynchronous close releases storage. A ready
@@ -76,12 +75,12 @@ extension HostTests {
       await Task.yield()
     }
     try await close.value
-    #expect(try await commandState("theme.get", url: root) == theme)
-    #expect(try await command("theme.reset", url: root, ["token": "accent"]).ok)
-    #expect(try await commandState("theme.get", url: root) == baseline)
+    #expect(try await effectiveTheme(url: root) == theme)
+    #expect(try await setTheme(["accent": nil], url: root).ok)
+    #expect(try await effectiveTheme(url: root) == baseline)
     // A closed document imports through the owner the command opens.
-    #expect(try await command("theme.import", url: root, ["file": shared]).ok)
-    #expect(try await commandState("theme.get", url: root) == theme)
+    #expect(try await themeCommand(["type": "importTheme", "file": shared], url: root).ok)
+    #expect(try await effectiveTheme(url: root) == theme)
   }
 
   // Failure: every CLI command ran a page close barrier that made the page inert, blurring
@@ -114,7 +113,6 @@ extension HostTests {
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let engine = controller.session
-    let epoch = engine.epoch
     weak var oldWebView = engine.webView
     #expect(try await command("batch", url: root, setTitle("Committed before renderer death")).ok)
     let pid = try #require(engine.webView.value(forKey: "_webProcessIdentifier") as? Int32)
@@ -124,7 +122,6 @@ extension HostTests {
     #expect(try liveDiscovery(path: root.path) != nil)
     #expect(Fixtures.isLocked(root))
     _ = try await controller.perform(.retry)
-    #expect(engine.epoch == epoch)
     #expect(oldWebView == nil)
     #expect(try await savedValue(root)?["title"] as? String == "Committed before renderer death")
     try await controller.session.close()

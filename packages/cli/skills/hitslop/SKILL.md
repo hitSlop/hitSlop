@@ -7,7 +7,7 @@ description: Create, fill, open, and export useful hitSlop documents, or build a
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Use `bunx @hitslop/cli`, or install with `bun install -g @hitslop/cli` and use `slop`. Installed macOS editing uses the bundled Swift hitslop-native helper without Node/Bun. Use the Mac catalog browser for templates registered under ~/.hitslop/templates. File → New from Template opens that browser. For new source read hitslop-authoring and hitslop-design. Local templates and recents work offline. Remote catalog loading, publication, and sharing are deferred.
+Use `bunx @hitslop/cli`, or install with `bun install -g @hitslop/cli` and use `slop`. Installed macOS editing uses the app's bundled slop-engine without Node/Bun. Use the Mac catalog browser for templates registered under ~/.hitslop/templates. File → New from Template opens that browser. For new source read hitslop-authoring and hitslop-design. Local templates and recents work offline. Remote catalog loading, publication, and sharing are deferred.
 
 Build with slop build SOURCE. Make a writable document with `slop create --from TEMPLATE --output PATH` at a fresh user-selected path; never edit a master under ~/.hitslop/templates or copy one by hand. Open it with `slop open PATH`.
 

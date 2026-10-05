@@ -8,7 +8,7 @@ extension SlopRenderer {
                                       deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
         try refuseExisting(output)
         try deadline.check()
-        let data = try await exportData(session: session, format: format, expectedEpoch: deadline.expectedEpoch)
+        let data = try await exportData(session: session, format: format)
         try publishExport(data, to: output, deadline: deadline)
     }
 
@@ -21,13 +21,13 @@ extension SlopRenderer {
         try refuseExisting(output)
         let data = try await withRenderSession(url: root) { try await exportData(session: $0, format: format) }
         try publishExport(data, to: output, deadline: deadline)
-        return SocketReply.export(output: output.path, epoch: nil)
+        return SocketReply.export(output: output.path)
     }
 
-    private static func exportData(session: DocumentSession, format: ExportFormat, expectedEpoch: String? = nil) async throws -> Data {
+    private static func exportData(session: DocumentSession, format: ExportFormat) async throws -> Data {
         switch format {
-        case .png: try await exportPNGData(session: session, expectedEpoch: expectedEpoch)
-        case .pdf: try await exportPDFData(session: session, expectedEpoch: expectedEpoch)
+        case .png: try await exportPNGData(session: session)
+        case .pdf: try await exportPDFData(session: session)
         }
     }
 

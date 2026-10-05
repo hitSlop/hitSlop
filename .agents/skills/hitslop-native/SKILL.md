@@ -39,7 +39,7 @@ ownership and shows a native retry; close and export flush first.
 core wire; run `bun run schema:generate` and never edit generated files. The core checks
 envelopes and manifests against those schemas and parses payloads strictly. WebKit
 correlates page replies; Swift checks the sender and supplies its native view token.
-Keep native view fences and socket epochs when changing the page protocol. Released
+Keep native view fences and the command protocol check when changing the page or socket protocol. Released
 documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 `tests/compat` passing (`CompatCorpusTests`, `bun run test:compat`).
 

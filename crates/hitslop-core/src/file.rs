@@ -20,11 +20,12 @@ pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
 /// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;
 /// `app` is what the author built, written once by `pack` and identical in a template and
-/// its documents, so saved state always belongs to its descriptor. `document`,
-/// `checkpoint`, `updates` and `attachments` are the document; a template has no rows in
-/// them. An asset's `size` is its length; `encoding` is how `bytes` holds it (`encode`).
+/// its documents, so saved state always belongs to its descriptor. A template's
+/// `checkpoint` holds its initial state; a document starts as a copy and adds its
+/// `document` row, then `updates` and `attachments`. An asset's `size` is its length;
+/// `encoding` is how `bytes` holds it (`encode`).
 pub(crate) const SCHEMA: &str = "\
-CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, initial TEXT NOT NULL, theme TEXT NOT NULL);
+CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, theme TEXT NOT NULL);
 CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL);
 CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL);
 CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1));
@@ -197,11 +198,11 @@ fn layout(conn: &Connection) -> Result<()> {
 fn app_sizes(conn: &Connection) -> Result<()> {
     let (manifest, longest, theme) = (
         one(conn, "SELECT length(CAST(manifest AS BLOB)) FROM app")?,
-        one(conn, "SELECT max(length(CAST(descriptor AS BLOB)), length(CAST(initial AS BLOB))) FROM app")?,
+        one(conn, "SELECT length(CAST(descriptor AS BLOB)) FROM app")?,
         one(conn, "SELECT length(CAST(theme AS BLOB)) FROM app")?,
     );
     if manifest > MANIFEST_BYTES as i64 || longest > APP_TEXT_BYTES as i64 || theme > crate::wire::THEME_LIMIT as i64 {
-        return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
+        return Err(invalid("The app's manifest, schema or theme is too large"));
     }
     Ok(())
 }
@@ -248,9 +249,10 @@ fn stored_artwork(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-/// Whether the file is a template or a document: a template holds no document state. A
-/// document's attachments are within their limits and named by their hashes; the saved
-/// state's own budget is the store's (`checked_bounds`).
+/// Whether the file is a template or a document. Both hold exactly one checkpoint: a
+/// template's is its initial state, which only a document adds updates and attachments
+/// to. A document's attachments are within their limits and named by their hashes; the
+/// saved state's own budget is the store's (`checked_bounds`).
 fn state(conn: &Connection) -> Result<Kind> {
     let documents = one(conn, "SELECT count(*) FROM document")?;
     let checkpoints = one(conn, "SELECT count(*) FROM checkpoint")?;
@@ -260,9 +262,12 @@ fn state(conn: &Connection) -> Result<Kind> {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })
         .map_err(sqlite("read"))?;
+    if checkpoints != 1 {
+        return Err(invalid("The file has no saved state; keep it for recovery"));
+    }
     let kind = if documents == 0 {
-        if checkpoints + updates + attachments > 0 {
-            return Err(invalid("A template holds no document state"));
+        if updates + attachments > 0 {
+            return Err(invalid("A template holds no document edits"));
         }
         Kind::Template
     } else {
@@ -358,35 +363,34 @@ fn png(bytes: &[u8], label: &str) -> Result<(u32, u32, bool)> {
     Ok((width, height, bytes[25] == 6))
 }
 
-/// What the author built, as `pack` writes it.
+/// What the author built, as `pack` writes it. Its initial values become the template's
+/// checkpoint.
 pub struct App {
     pub package_format: u64,
     pub runtime_abi: u64,
     /// The authored manifest, without the markers.
     pub manifest: String,
     pub descriptor: String,
-    pub initial: String,
     /// The declared colors and their defaults.
     pub theme: String,
 }
-/// What checking an app found: its template's slug, its parsed descriptor, its window shape, its declared colors in the order the author wrote them, and the window
-/// skin's PNG when the manifest names one.
+/// What checking an app found: what its documents are instances of, its window shape, and
+/// the window skin's PNG when the manifest names one.
 struct CheckedApp {
-    slug: String,
-    schema: crate::Node,
+    spec: crate::AppSpec,
     silhouette: shape::Silhouette,
-    theme_tokens: Vec<(String, String)>,
     skin: Option<Vec<u8>>,
 }
 /// The content rules `pack` applies and every open relies on, each run once.
-fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::Node, Vec<(String, String)>)> {
+fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::AppSpec)> {
     let window = crate::manifest::validate(&app.manifest, app.package_format).map_err(Error::Rejected)?;
-    let schema = crate::descriptor::checked(&app.descriptor, &app.initial).map_err(Error::Rejected)?;
+    let schema = crate::descriptor::descriptor(&app.descriptor).map_err(Error::Rejected)?;
     let theme_tokens = crate::theme::validate_defaults(&app.theme).map_err(Error::Rejected)?;
-    Ok((window, schema, theme_tokens))
+    let spec = crate::AppSpec::of(schema, &window.slug, theme_tokens);
+    Ok((window, spec))
 }
 fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Result<CheckedApp> {
-    let (window, schema, theme_tokens) = check_app_values(app)?;
+    let (window, spec) = check_app_values(app)?;
     let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
     std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
     let skin = match &window.skin {
@@ -404,7 +408,7 @@ fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Resu
             Some(bytes)
         }
     };
-    Ok(CheckedApp { slug: window.slug, schema, silhouette: window.silhouette, theme_tokens, skin })
+    Ok(CheckedApp { spec, silhouette: window.silhouette, skin })
 }
 
 /// A template or document a host opened: its kind and markers, its app as stored, and what
@@ -412,11 +416,9 @@ fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Resu
 pub struct OpenedApp {
     pub kind: Kind,
     pub app: App,
-    /// The template's slug, which names it in theme files.
-    pub slug: String,
-    pub(crate) schema: crate::Node,
+    /// What its documents are instances of: the descriptor and the declared palette.
+    pub spec: crate::AppSpec,
     pub silhouette: shape::Silhouette,
-    pub theme_tokens: Vec<(String, String)>,
     /// The window skin's PNG, when the manifest names one.
     pub skin: Option<Vec<u8>>,
     /// The file's size in bytes when it was opened.
@@ -432,10 +434,8 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     let found = check_app(&app, &|key| read_asset(conn, key))?;
     Ok(OpenedApp {
         kind,
-        slug: found.slug,
-        schema: found.schema,
+        spec: found.spec,
         silhouette: found.silhouette,
-        theme_tokens: found.theme_tokens,
         skin: found.skin,
         bytes: fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0),
         app,
@@ -475,14 +475,13 @@ pub fn kind(path: &Path) -> Result<Kind> {
     checked(path).map(|(_, kind)| kind)
 }
 fn read_app(conn: &Connection) -> Result<App> {
-    conn.query_row("SELECT package_format,runtime_abi,manifest,descriptor,initial,theme FROM app WHERE id=1", [], |r| {
+    conn.query_row("SELECT package_format,runtime_abi,manifest,descriptor,theme FROM app WHERE id=1", [], |r| {
         Ok(App {
             package_format: r.get::<_, i64>(0)? as u64,
             runtime_abi: r.get::<_, i64>(1)? as u64,
             manifest: r.get(2)?,
             descriptor: r.get(3)?,
-            initial: r.get(4)?,
-            theme: r.get(5)?,
+            theme: r.get(4)?,
         })
     })
     .map_err(sqlite("read app"))
@@ -585,8 +584,9 @@ impl Staged {
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
-    /// Publishes the finished file without replacing anything at `dest`.
-    pub(crate) fn publish_new(mut self, dest: &Path) -> Result<()> {
+    /// Publishes the finished file without replacing anything at `dest`; a durable one's
+    /// folder entry is synced too.
+    pub(crate) fn publish_new(mut self, dest: &Path, durable: bool) -> Result<()> {
         let (from, to) = (cstring(&self.path)?, cstring(&resolve(dest)?)?);
         #[cfg(target_os = "macos")]
         // SAFETY: valid C strings.
@@ -603,7 +603,9 @@ impl Staged {
             });
         }
         self.published = true;
-        sync_folder(dest);
+        if durable {
+            sync_folder(dest);
+        }
         Ok(())
     }
     /// Publishes over a template, never over a document.
@@ -620,7 +622,7 @@ impl Staged {
             sync_folder(dest);
             return Ok(());
         }
-        self.publish_new(dest)
+        self.publish_new(dest, true)
     }
 }
 impl Drop for Staged {
@@ -642,8 +644,9 @@ fn sync_folder(path: &Path) {
     }
 }
 
-/// Writes a template: the app's row, its assets and its artwork, in one transaction.
-fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
+/// Writes a template: the app's row, its initial checkpoint, its assets and its artwork, in
+/// one transaction.
+fn write_template(path: &Path, app: &App, initial: &[u8], assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
     let conn = writer(path, true)?;
     conn.execute_batch("PRAGMA auto_vacuum=FULL;").map_err(sqlite("create"))?;
     configure_writer(&conn)?;
@@ -651,10 +654,11 @@ fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork:
     tx.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"))
         .map_err(sqlite("create"))?;
     tx.execute(
-        "INSERT INTO app VALUES(1,?,?,?,?,?,?)",
-        params![app.package_format as i64, app.runtime_abi as i64, app.manifest, app.descriptor, app.initial, app.theme],
+        "INSERT INTO app VALUES(1,?,?,?,?,?)",
+        params![app.package_format as i64, app.runtime_abi as i64, app.manifest, app.descriptor, app.theme],
     )
     .map_err(sqlite("create"))?;
+    tx.execute("INSERT INTO checkpoint VALUES(1,?)", [initial]).map_err(sqlite("create"))?;
     for (key, bytes) in assets {
         let (encoding, stored) = encode(key, bytes)?;
         tx.execute("INSERT INTO assets VALUES(?,?,?,?)", params![key, encoding, bytes.len() as i64, stored.as_ref()]).map_err(sqlite("create"))?;
@@ -667,10 +671,10 @@ fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork:
 }
 
 /// Packs a build's stage into a template at `dest`. The stage is the build's folder:
-/// `app.json` (the `app` row: requirements, manifest, descriptor, initial values and
-/// theme), `assets/` and optional `artwork/preview.png` and `artwork/icon.png`. Everything
-/// is checked before the template is published; a rebuild replaces a template, never a
-/// document.
+/// `app.json` (the `app` row: requirements, manifest, descriptor and theme, and the initial
+/// values its checkpoint is made from), `assets/` and optional `artwork/preview.png` and
+/// `artwork/icon.png`. Everything is checked before the template is published; a rebuild
+/// replaces a template, never a document.
 pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     let file = stage.join("app.json");
     let size = fs::metadata(&file).map_err(|e| invalid(format!("app.json: {e}")))?.len();
@@ -678,7 +682,7 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
     let text = fs::read_to_string(&file).map_err(|e| invalid(format!("app.json: {e}")))?;
-    let app = parse_app(&text)?;
+    let (app, initial) = parse_app(&text)?;
     let assets = stage_assets(&stage.join("assets"))?;
     let mut artwork = vec![];
     for name in ARTWORK {
@@ -694,9 +698,10 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
         }
     }
     let lookup = |key: &str| Ok(assets.iter().find(|(k, _)| k == key).map(|(_, b)| b.clone()));
-    check_app(&app, &lookup)?;
+    let checked = check_app(&app, &lookup)?;
+    let initial = initial_checkpoint(&checked.spec, &initial)?;
     let staged = Staged::beside(dest)?;
-    write_template(staged.path(), &app, &assets, &artwork)?;
+    write_template(staged.path(), &app, &initial, &assets, &artwork)?;
     if check(&reader(staged.path())?, true)? != Kind::Template {
         return Err(failed("Packing produced document state"));
     }
@@ -705,7 +710,8 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
 /// Maximum evaluated app row accepted by packing and authoring validation.
 pub const APP_INPUT_BYTES: usize = MANIFEST_BYTES + 2 * APP_TEXT_BYTES + crate::wire::THEME_LIMIT;
 
-fn parse_app(input: &str) -> Result<App> {
+/// The app row and its initial values, from a build's `app.json`.
+fn parse_app(input: &str) -> Result<(App, String)> {
     if input.len() > APP_INPUT_BYTES {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
@@ -715,19 +721,29 @@ fn parse_app(input: &str) -> Result<App> {
         || row.initial.get().len() > APP_TEXT_BYTES || row.theme.get().len() > crate::wire::THEME_LIMIT {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
-    Ok(App {
+    let app = App {
         package_format: row.packageFormat,
         runtime_abi: row.runtimeABI,
         manifest: compact(row.manifest.get()),
         descriptor: compact(row.descriptor.get()),
-        initial: compact(row.initial.get()),
         theme: compact(row.theme.get()),
-    })
+    };
+    Ok((app, row.initial.get().to_owned()))
+}
+/// The template's initial state: `initial`, checked against the app, as its checkpoint.
+fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {
+    let checkpoint = crate::Document::initial_checkpoint(app, initial).map_err(Error::Rejected)?;
+    if checkpoint.len() + 512 > crate::STORAGE_BYTES {
+        return Err(invalid("The app's initial values are too large"));
+    }
+    Ok(checkpoint)
 }
 /// Checks evaluated app values with the same rules as packing and opening; assets are
 /// checked later when they exist. Refuses unsupported markers before interpreting values.
 pub fn validate_app(input: &str) -> Result<()> {
-    check_app_values(&parse_app(input)?).map(|_| ())
+    let (app, initial) = parse_app(input)?;
+    let (_, spec) = check_app_values(&app)?;
+    initial_checkpoint(&spec, &initial).map(|_| ())
 }
 /// Parsed JSON text without the whitespace between its tokens, in the order written: the
 /// `app` row's text is one line, so hosts pass it on without re-encoding it.
@@ -778,9 +794,14 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
 /// Copies `source` to `dest` through SQLite's online backup into a temporary file beside
 /// `dest`, then checks it and publishes it without replacing anything; `create` adds the
 /// document row a template lacks.
-pub(crate) fn copy(source: &Connection, dest: &Path, initial: Option<&[u8]>) -> Result<()> {
+/// A `durable` copy is a document a person keeps; a capture's source, read once and then
+/// deleted, skips the syncs.
+pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool) -> Result<()> {
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
+    if !durable {
+        output.execute_batch("PRAGMA synchronous=OFF; PRAGMA journal_mode=OFF;").map_err(sqlite("configure"))?;
+    }
     {
         let backup = rusqlite::backup::Backup::new(source, &mut output).map_err(sqlite("Cannot copy the document"))?;
         match backup.step(-1).map_err(sqlite("Cannot copy the document"))? {
@@ -789,31 +810,27 @@ pub(crate) fn copy(source: &Connection, dest: &Path, initial: Option<&[u8]>) -> 
             _ => return Err(failed("The copy did not complete")),
         }
     }
-    configure_writer(&output)?;
-    if let Some(checkpoint) = initial {
-        let tx = output.unchecked_transaction().map_err(sqlite("Cannot create the document"))?;
-        tx.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
-        tx.execute("INSERT INTO checkpoint VALUES(1,?)", [checkpoint]).map_err(sqlite("Cannot create the document"))?;
-        tx.commit().map_err(sqlite("Cannot create the document"))?;
+    if durable {
+        configure_writer(&output)?;
+    }
+    if create {
+        output.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
     }
     check(&output, false)?;
     output.close().map_err(|(_, e)| sqlite("close")(e))?;
-    staged.publish_new(dest)
+    staged.publish_new(dest, durable)
 }
-/// A new document from a template: the same app, with its initial state already durable.
+/// A new document from a template: a copy of it, its initial state included, with the
+/// document row added.
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     let source = reader(template)?;
     // The app is checked in the same read as the copy: a template the app would refuse
     // to open publishes nothing.
     let read = source.unchecked_transaction().map_err(sqlite("read"))?;
-    let app = opened(&read, template, true)?;
-    if app.kind != Kind::Template {
+    if opened(&read, template, true)?.kind != Kind::Template {
         return Err(invalid("Documents are created from a template"));
     }
-    let doc = crate::Document::create_with(app.schema, &app.app.initial).map_err(Error::Rejected)?;
-    let checkpoint = doc.checkpoint().map_err(Error::Rejected)?;
-    if checkpoint.len() + 512 > crate::STORAGE_BYTES { return Err(Error::Full); }
-    copy(&read, dest, Some(&checkpoint))
+    copy(&read, dest, true, true)
 }
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.

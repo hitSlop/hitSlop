@@ -10,6 +10,6 @@
   <p class="shape-lab-caption">SHAPE LAB / {mode.toUpperCase()}</p>
   <h1>Four corners. One rectangle.</h1><p>{variant.name}</p>
   <p class="shape-lab-export-note">{doc.current.note}</p>
-  <p>{doc.current.hits ?? "Unavailable"} accepted clicks · Last: {doc.current.lastTarget}</p>
+  <p>{doc.current.hits} accepted clicks · Last: {doc.current.lastTarget}</p>
   <p>Window geometry must not cut this sheet.</p>
 </article>

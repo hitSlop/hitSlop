@@ -18,7 +18,6 @@ export type Scope<N extends ObjectNode> = {
   readonly fields: Handle<N, "tx">;
   readonly at: At<"tx">;
 };
-export type Issue = import("@hitslop/schema/core").OwnerState["issues"][number];
 export type AttachmentInfo = import("@hitslop/schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type CaptureMode = "preview" | "export" | "icon";

@@ -2,13 +2,13 @@
   "value": {
     "tasks": [
       {
-        "$id": "67714d2rh48v2v45yybmqbhzfc",
+        "$id": "x-6yyyw505f331nsw29bjpvh38",
         "archived": false,
         "done": false,
         "text": "Make a little room for the weekend"
       },
       {
-        "$id": "ete8jfp41k3yvekry444m30cng",
+        "$id": "x-03yyw505d331nca39bjpvj38",
         "archived": false,
         "done": true,
         "text": "Send the first draft"
@@ -20,7 +20,7 @@
         "text": "Compat 1 ✓ café 🦊"
       },
       {
-        "$id": "4p3002qz4q07p3f1jt7e7f0v5c",
+        "$id": "x-kgyyw505e3315k339bjpbj38",
         "archived": false,
         "done": false,
         "text": "Take a walk without my phone"
@@ -34,13 +34,12 @@
     ],
     "title": "Replay 2 é 中文"
   },
-  "issues": [],
   "theme": {
     "overrides": {
-      "accent": "#123456"
+      "surface": "#123456"
     },
     "effective": {
-      "accent": "#123456",
+      "accent": "#a43d59",
       "control": "#f1dfc9",
       "controlBorder": "#d8c0af",
       "filed": "#fff5e9",
@@ -52,7 +51,7 @@
       "rule": "#ead9cb",
       "success": "#94d7c0",
       "successBorder": "#6c354b",
-      "surface": "#e98996"
+      "surface": "#123456"
     }
   },
   "attachments": []

@@ -4,7 +4,7 @@
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-Each one is a document you and your agent share. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` you can keep, copy and send to a friend.
+Each one is a document you and your agent share. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
@@ -36,7 +36,7 @@ hitSlop is built for tools with one clear job and a little character. It comes w
 ## Keep the app. Keep the work.
 
 - Your documents live on your Mac. You don't need an account or a server.
-- The interface, saved data and imported files travel together. Close a document before moving it in Finder, and send the file itself to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder, and send the file itself to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
@@ -256,6 +256,45 @@ In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins
 
 Then point the commands from [You and your agent, one document](#you-and-your-agent-one-document) at your document's path. With it open, the count ticks up and the accent turns purple, and the next export and icon capture use the new values. `slop theme reset` returns to the template's colors.
 
+## How it's built
+
+A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
+
+| Layer | Built with | Role |
+| --- | --- | --- |
+| Document engine | Rust, Loro | Merging text, lists and counters; atomic edits; the single owner of the document |
+| File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
+| Mac app | Swift, SwiftUI, AppKit, WebKit, [TCA](https://github.com/pointfreeco/swift-composable-architecture) | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
+| Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
+| Author SDK and CLI | `@hitslop/document`, `@hitslop/cli`, Bun | Schemas, `slop dev` (the core compiled to WASM), build, edit and export |
+| Contracts | TypeBox | One schema for the CLI, socket and page, generated into Rust and Swift |
+
+```text
+page (WebKit) ──▶ Swift façade ──▶ Rust owner ──▶ .slop
+slop CLI ───────────────────────▶ Rust owner      (the open window's, or the closed file's lock)
+```
+
+- App and agent edits take one path, so an open window updates live and a closed file is edited without starting WebKit.
+- Text merges character by character.
+- A failed save keeps the document open and shows a retry.
+
+### Inside a .slop
+
+```text
+app          package_format, runtime_abi, manifest, descriptor, theme   one row: what the author built
+assets       path, encoding (identity | br), size, bytes                app.js, app.css, fonts
+artwork      name (preview | icon), png                                 Quick Look preview and Finder icon
+-- added when you make a document from a template
+document     id                                                         the document's identity
+checkpoint   bytes                                                      the saved Loro snapshot, including theme changes
+updates      seq, bytes                                                 Loro updates saved since the checkpoint
+attachments  id (SHA-256), bytes                                        files you import
+```
+
+Any SQLite tool shows these tables. `checkpoint` and `updates` hold Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. A template is the first three tables plus a `checkpoint` of its starting values; making a document copies it and adds the rest. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
+
+[Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
+
 ## Work on hitSlop
 
 Use the Bun version pinned in `package.json`, Xcode, and XcodeGen on macOS:
@@ -277,7 +316,7 @@ bun slop dev examples/slops/quick-checklist
 Other projects exploring personal software and interactive documents:
 
 - [Hyperclay](https://hyperclay.com/): HTML files you can reshape in place, where the live document is the source of truth.
-- [Capsule](https://withcapsule.app/): documents that run like apps, shared as single files.
+- [Capsule](https://withcapsule.app/): documents that run like apps, shared as single SQLite files.
 - [bento](https://bento.page/): an office suite that fits in one self-contained HTML file.
 - [Decker](https://beyondloom.com/decker/): HyperCard-style decks of interactive cards.
 - [TiddlyWiki](https://tiddlywiki.com/): a personal wiki that lives in one HTML file.
