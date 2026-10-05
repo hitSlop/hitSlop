@@ -253,14 +253,12 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
 #[test]
 fn stored_values_are_bounded_as_writes_bound_them() {
     let many_tokens = format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
-    let long_override = format!(r#"{{"accent":"{}"}}"#, "a".repeat(1 << 20));
-    let cases: [(&str, &str, Option<Vec<u8>>); 7] = [
+    let cases: [(&str, &str, Option<Vec<u8>>); 6] = [
         ("oversized artwork", "INSERT INTO artwork VALUES('preview', ?)", Some(png(100_000, 100_000, 6))),
         ("artwork that is not a PNG", "INSERT INTO artwork VALUES('icon', ?)", Some(b"not a png".to_vec())),
         ("theme defaults over budget", "UPDATE app SET theme=CAST(? AS TEXT)", Some(many_tokens.into_bytes())),
-        ("theme overrides over budget", "UPDATE document SET theme=CAST(? AS TEXT)", Some(long_override.into_bytes())),
         ("a misnumbered checkpoint", "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')", None),
-        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2,'{}')", None),
+        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2)", None),
         ("a misnumbered app row", "PRAGMA ignore_check_constraints=ON; UPDATE app SET id=2", None),
     ];
     let mut accepted = vec![];

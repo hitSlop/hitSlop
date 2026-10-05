@@ -42,13 +42,13 @@ import WebKit
   // A theme can change after config is read but before the app finishes mounting.
   @Test @MainActor func themeChangesDuringMountReachTheReadyPage() async throws {
     let stage = try Fixtures.stage()
-    try Data("""
+    try Fixtures.writeApp("""
       export default { async mount() {
         globalThis.mountStarted = true;
         await new Promise(resolve => globalThis.finishMount = resolve);
         return {};
       }};
-      """.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+      """, to: stage)
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
@@ -69,7 +69,7 @@ import WebKit
       }
       #expect(try await accent() == "#123456")
       let reset = try await session.owner.applyTheme(.reset(token: "accent"))
-      let expected = try JSONDecoder().decode([String: String].self, from: Data(reset.effective.utf8))["accent"]
+      let expected = try JSONDecoder().decode([String: String].self, from: Data(reset.state.effective.utf8))["accent"]
       for _ in 0..<100 {
         if try await accent() == expected { break }
         try await Task.sleep(for: .milliseconds(10))
@@ -80,11 +80,11 @@ import WebKit
   }
 
   // The theme panel's changes are edits: applied in the order made, settled on the page
-  // before a flush returns (so an export shows them), held back from a capture in
-  // progress, reported to the window, and saved by close.
+  // before a flush returns, copied into a stable capture source, reported to the
+  // window, and saved by close.
   @Test @MainActor func panelThemeChangesSettleBeforeFlushAndSaveOnClose() async throws {
     let stage = try Fixtures.stage()
-    try Data("export default { mount() { return {}; } };".utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    try Fixtures.writeApp("export default { mount() { return {}; } };", to: stage)
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
@@ -119,71 +119,21 @@ import WebKit
       #expect(refused != nil)
       #expect(try await accent() == "#335577")
 
-      try await session.withCapture {
+      try await session.withCaptureSnapshot { source in
         session.changeTheme(.set(["accent": "#abcabc"]))
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(try await accent() == "#335577", "a capture in progress is not restyled")
+        try await session.flush()
+        #expect(try await accent() == "#abcabc", "the editor remains live during snapshot rendering")
+        let snapshot = try DocumentOwner(url: source, mode: .snapshot)
+        let effective = try JSONDecoder().decode([String: String].self,
+          from: Data(try await snapshot.loadTheme().state.effective.utf8))
+        #expect(effective["accent"] == "#335577")
+        try await snapshot.close()
       }
-      try await eventually(timeout: .seconds(1)) { try await accent() == "#abcabc" }
-      #expect(try await accent() == "#abcabc")
 
       session.changeTheme(.set(["accent": "#fedcba"]))
       try await session.close()
       #expect(try await saved() == "#fedcba")
     } catch { try? await session.close(); throw error }
-  }
-
-  @Test @MainActor func socketRejectsMalformedEnvelopesBeforeDispatch() async throws {
-    let handled = Locked(false)
-    let server = try SocketServer { _, _ in
-      handled.modify { $0 = true }
-      return SocketReply(ok: true, epoch: "test").encoded()
-    }
-    defer { server.stop() }
-    let path = server.path
-    for payload in [
-      "not json", "{}",
-      #"{"method":"export","documentPath":"/tmp/a.slop","format":"pdf","output":"/tmp/a.pdf"}"#,
-    ] {
-      let data = try await Task.detached {
-        try SocketClient.call(path: path, request: Data(payload.utf8))
-      }.value
-      let reply = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-      #expect(reply["ok"] as? Bool == false)
-      #expect(reply["error"] as? String == "Invalid socket request")
-    }
-    #expect(!handled.value)
-    // Past the request limit, only an attachment upload is parsed at all.
-    let oversized = try await Task.detached {
-      try SocketClient.call(path: path, request: Data(repeating: 65, count: 1_048_577))
-    }.value
-    #expect(String(decoding: oversized, as: UTF8.self).contains("Invalid socket request"))
-    #expect(!handled.value)
-  }
-  @Test @MainActor func socketBoundsConcurrentClientsWithoutBlockingMainActor() async throws {
-    let replies = Locked<[CheckedContinuation<Data, Never>]>([])
-    let server = try SocketServer { _, _ in
-      await withCheckedContinuation { continuation in replies.modify { $0.append(continuation) } }
-    }
-    defer { server.stop() }
-    let path = server.path
-    let request = Data(#"{"method":"get","documentPath":"/tmp/a.slop"}"#.utf8)
-    // The synchronous client must not occupy Swift's cooperative executor.
-    func call() async throws -> Data {
-      try await withCheckedThrowingContinuation { continuation in
-        DispatchQueue.global().async {
-          continuation.resume(with: Result { try SocketClient.call(path: path, request: request) })
-        }
-      }
-    }
-    let tasks = (0..<16).map { _ in Task { try await call() } }
-    await eventually(timeout: .seconds(2)) { replies.value.count >= 16 }
-    #expect(replies.value.count == 16)
-    await #expect(throws: (any Error).self) {
-      _ = try await call()
-    }
-    for reply in replies.value { reply.resume(returning: SocketReply(ok: true, state: [:]).encoded()) }
-    for task in tasks { _ = try await task.value }
   }
 
   // Decoding and normalization must never turn a request into anything but an app asset
@@ -251,7 +201,7 @@ import WebKit
       let accepted = try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
       #expect(accepted as? Bool == resizable)
       #expect(resized == resizable)
-      // A capture owns the view's size; the page cannot resize the window meanwhile.
+      // The acquisition barrier prevents a page resize until the source has been copied.
       resized = false
       let duringCapture = try await session.withCapture {
         try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)

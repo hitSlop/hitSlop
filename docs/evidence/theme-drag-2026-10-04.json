@@ -1,0 +1,1439 @@
+{
+  "measurements" : [
+    {
+      "acceptanceMS" : {
+        "max" : 3.8863749941810966,
+        "p50" : 0.31775003299117088,
+        "p95" : 1.0801666649058461
+      },
+      "acceptanceSamples" : [
+        {
+          "index" : 0,
+          "latencyMS" : 1.2435833923518658,
+          "sequence" : 1
+        },
+        {
+          "index" : 1,
+          "latencyMS" : 1.04674999602139,
+          "sequence" : 2
+        },
+        {
+          "index" : 2,
+          "latencyMS" : 3.8863749941810966,
+          "sequence" : 3
+        },
+        {
+          "index" : 3,
+          "latencyMS" : 3.563208389095962,
+          "sequence" : 4
+        },
+        {
+          "index" : 4,
+          "latencyMS" : 0.64662494696676731,
+          "sequence" : 5
+        },
+        {
+          "index" : 5,
+          "latencyMS" : 0.4020417109131813,
+          "sequence" : 6
+        },
+        {
+          "index" : 6,
+          "latencyMS" : 0.22379157599061728,
+          "sequence" : 7
+        },
+        {
+          "index" : 7,
+          "latencyMS" : 0.25450007524341345,
+          "sequence" : 8
+        },
+        {
+          "index" : 8,
+          "latencyMS" : 0.25387504138052464,
+          "sequence" : 9
+        },
+        {
+          "index" : 9,
+          "latencyMS" : 0.25662500411272049,
+          "sequence" : 10
+        },
+        {
+          "index" : 10,
+          "latencyMS" : 0.32650004141032696,
+          "sequence" : 11
+        },
+        {
+          "index" : 11,
+          "latencyMS" : 0.35987503360956907,
+          "sequence" : 12
+        },
+        {
+          "index" : 12,
+          "latencyMS" : 0.49733335617929697,
+          "sequence" : 13
+        },
+        {
+          "index" : 13,
+          "latencyMS" : 0.52670831792056561,
+          "sequence" : 14
+        },
+        {
+          "index" : 14,
+          "latencyMS" : 0.5768750561401248,
+          "sequence" : 15
+        },
+        {
+          "index" : 15,
+          "latencyMS" : 0.26079162489622831,
+          "sequence" : 16
+        },
+        {
+          "index" : 16,
+          "latencyMS" : 0.49887492787092924,
+          "sequence" : 17
+        },
+        {
+          "index" : 17,
+          "latencyMS" : 0.28933328576385975,
+          "sequence" : 18
+        },
+        {
+          "index" : 18,
+          "latencyMS" : 0.3060000017285347,
+          "sequence" : 19
+        },
+        {
+          "index" : 19,
+          "latencyMS" : 0.26983325369656086,
+          "sequence" : 20
+        },
+        {
+          "index" : 20,
+          "latencyMS" : 0.25287503376603127,
+          "sequence" : 21
+        },
+        {
+          "index" : 21,
+          "latencyMS" : 0.26787503156810999,
+          "sequence" : 22
+        },
+        {
+          "index" : 22,
+          "latencyMS" : 0.30312500894069672,
+          "sequence" : 23
+        },
+        {
+          "index" : 23,
+          "latencyMS" : 0.31775003299117088,
+          "sequence" : 24
+        },
+        {
+          "index" : 24,
+          "latencyMS" : 0.2842083340510726,
+          "sequence" : 25
+        },
+        {
+          "index" : 25,
+          "latencyMS" : 0.28312508948147297,
+          "sequence" : 26
+        },
+        {
+          "index" : 26,
+          "latencyMS" : 0.27929164934903383,
+          "sequence" : 27
+        },
+        {
+          "index" : 27,
+          "latencyMS" : 0.26537501253187656,
+          "sequence" : 28
+        },
+        {
+          "index" : 28,
+          "latencyMS" : 0.25729171466082335,
+          "sequence" : 29
+        },
+        {
+          "index" : 29,
+          "latencyMS" : 0.26937504298985004,
+          "sequence" : 30
+        },
+        {
+          "index" : 30,
+          "latencyMS" : 0.24983333423733711,
+          "sequence" : 31
+        },
+        {
+          "index" : 31,
+          "latencyMS" : 0.26758329477161169,
+          "sequence" : 32
+        },
+        {
+          "index" : 32,
+          "latencyMS" : 0.29254169203341007,
+          "sequence" : 33
+        },
+        {
+          "index" : 33,
+          "latencyMS" : 0.27166667860001326,
+          "sequence" : 34
+        },
+        {
+          "index" : 34,
+          "latencyMS" : 0.24670828133821487,
+          "sequence" : 35
+        },
+        {
+          "index" : 35,
+          "latencyMS" : 0.25099993217736483,
+          "sequence" : 36
+        },
+        {
+          "index" : 36,
+          "latencyMS" : 0.25866669602692127,
+          "sequence" : 37
+        },
+        {
+          "index" : 37,
+          "latencyMS" : 0.27299998328089714,
+          "sequence" : 38
+        },
+        {
+          "index" : 38,
+          "latencyMS" : 0.26583333965390921,
+          "sequence" : 39
+        },
+        {
+          "index" : 39,
+          "latencyMS" : 0.25566667318344116,
+          "sequence" : 40
+        },
+        {
+          "index" : 40,
+          "latencyMS" : 1.0801666649058461,
+          "sequence" : 41
+        },
+        {
+          "index" : 41,
+          "latencyMS" : 0.3480416489765048,
+          "sequence" : 42
+        },
+        {
+          "index" : 42,
+          "latencyMS" : 0.57191669475287199,
+          "sequence" : 43
+        },
+        {
+          "index" : 43,
+          "latencyMS" : 0.28620834928005934,
+          "sequence" : 44
+        },
+        {
+          "index" : 44,
+          "latencyMS" : 0.55987492669373751,
+          "sequence" : 45
+        },
+        {
+          "index" : 45,
+          "latencyMS" : 0.32704172190278769,
+          "sequence" : 46
+        },
+        {
+          "index" : 46,
+          "latencyMS" : 0.45816670171916485,
+          "sequence" : 47
+        },
+        {
+          "index" : 47,
+          "latencyMS" : 0.63433335162699223,
+          "sequence" : 48
+        },
+        {
+          "index" : 48,
+          "latencyMS" : 0.54658332373946905,
+          "sequence" : 49
+        },
+        {
+          "index" : 49,
+          "latencyMS" : 0.46216673217713833,
+          "sequence" : 50
+        },
+        {
+          "index" : 50,
+          "latencyMS" : 0.47100009396672249,
+          "sequence" : 51
+        },
+        {
+          "index" : 51,
+          "latencyMS" : 0.45458332169800997,
+          "sequence" : 52
+        },
+        {
+          "index" : 52,
+          "latencyMS" : 0.55158324539661407,
+          "sequence" : 53
+        },
+        {
+          "index" : 53,
+          "latencyMS" : 0.53816661238670349,
+          "sequence" : 54
+        },
+        {
+          "index" : 54,
+          "latencyMS" : 0.64258335623890162,
+          "sequence" : 55
+        },
+        {
+          "index" : 55,
+          "latencyMS" : 0.43129164259880781,
+          "sequence" : 56
+        },
+        {
+          "index" : 56,
+          "latencyMS" : 0.64183329232037067,
+          "sequence" : 57
+        },
+        {
+          "index" : 57,
+          "latencyMS" : 0.43066672515124083,
+          "sequence" : 58
+        },
+        {
+          "index" : 58,
+          "latencyMS" : 0.95095834694802761,
+          "sequence" : 59
+        },
+        {
+          "index" : 59,
+          "latencyMS" : 0.27412490453571081,
+          "sequence" : 60
+        }
+      ],
+      "acceptedUpdates" : 60,
+      "build" : "Debug native test bundle",
+      "cadenceMS" : 16,
+      "coreBuild" : "e469f93b652d545c",
+      "date" : "2026-10-04",
+      "failures" : [
+
+      ],
+      "finalColor" : "#ec1380",
+      "method" : "Synthetic palette gesture through DocumentSession.beginThemeGesture\/changeTheme\/endThemeGesture, shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer\/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
+      "observedColors" : 56,
+      "pageEarliestCoveredUpdateMS" : {
+        "max" : 6.9453125,
+        "p50" : 1.108154296875,
+        "p95" : 3.875244140625
+      },
+      "pageMatchingUpdateMS" : {
+        "max" : 6.59716796875,
+        "p50" : 1.108154296875,
+        "p95" : 3.875244140625
+      },
+      "pageSamples" : [
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 4.822021484375,
+          "index" : 0,
+          "matchingUpdateMS" : 4.822021484375,
+          "value" : "#00ff80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.943115234375,
+          "index" : 1,
+          "matchingUpdateMS" : 1.943115234375,
+          "value" : "#04fb80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 6.9453125,
+          "index" : 3,
+          "matchingUpdateMS" : 6.59716796875,
+          "value" : "#0cf380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 0.59326171875,
+          "index" : 5,
+          "matchingUpdateMS" : 0.242431640625,
+          "value" : "#14eb80"
+        },
+        {
+          "coversUpdates" : 3,
+          "earliestCoveredUpdateMS" : 1.934326171875,
+          "index" : 8,
+          "matchingUpdateMS" : 1.615234375,
+          "value" : "#20df80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.388427734375,
+          "index" : 9,
+          "matchingUpdateMS" : 0.388427734375,
+          "value" : "#24db80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.894287109375,
+          "index" : 10,
+          "matchingUpdateMS" : 0.894287109375,
+          "value" : "#28d780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.68408203125,
+          "index" : 11,
+          "matchingUpdateMS" : 0.68408203125,
+          "value" : "#2cd380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.273193359375,
+          "index" : 12,
+          "matchingUpdateMS" : 1.273193359375,
+          "value" : "#30cf80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.6552734375,
+          "index" : 13,
+          "matchingUpdateMS" : 0.6552734375,
+          "value" : "#34cb80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.502197265625,
+          "index" : 14,
+          "matchingUpdateMS" : 1.502197265625,
+          "value" : "#38c780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.931396484375,
+          "index" : 15,
+          "matchingUpdateMS" : 0.931396484375,
+          "value" : "#3cc380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.35009765625,
+          "index" : 16,
+          "matchingUpdateMS" : 1.35009765625,
+          "value" : "#40bf80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.28125,
+          "index" : 17,
+          "matchingUpdateMS" : 0.28125,
+          "value" : "#44bb80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.691162109375,
+          "index" : 18,
+          "matchingUpdateMS" : 0.691162109375,
+          "value" : "#48b780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.3671875,
+          "index" : 19,
+          "matchingUpdateMS" : 1.3671875,
+          "value" : "#4cb380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.90234375,
+          "index" : 20,
+          "matchingUpdateMS" : 0.90234375,
+          "value" : "#50af80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.72119140625,
+          "index" : 21,
+          "matchingUpdateMS" : 0.72119140625,
+          "value" : "#54ab80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.161376953125,
+          "index" : 22,
+          "matchingUpdateMS" : 0.161376953125,
+          "value" : "#58a780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.122314453125,
+          "index" : 23,
+          "matchingUpdateMS" : 1.122314453125,
+          "value" : "#5ca380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.63427734375,
+          "index" : 24,
+          "matchingUpdateMS" : 0.63427734375,
+          "value" : "#609f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.88720703125,
+          "index" : 25,
+          "matchingUpdateMS" : 0.88720703125,
+          "value" : "#649b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.5380859375,
+          "index" : 26,
+          "matchingUpdateMS" : 0.5380859375,
+          "value" : "#689780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.433349609375,
+          "index" : 27,
+          "matchingUpdateMS" : 0.433349609375,
+          "value" : "#6c9380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.50732421875,
+          "index" : 28,
+          "matchingUpdateMS" : 0.50732421875,
+          "value" : "#708f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.456298828125,
+          "index" : 29,
+          "matchingUpdateMS" : 0.456298828125,
+          "value" : "#748b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.9853515625,
+          "index" : 30,
+          "matchingUpdateMS" : 0.9853515625,
+          "value" : "#788780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.46826171875,
+          "index" : 31,
+          "matchingUpdateMS" : 0.46826171875,
+          "value" : "#7c8380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.108154296875,
+          "index" : 32,
+          "matchingUpdateMS" : 1.108154296875,
+          "value" : "#807f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.187255859375,
+          "index" : 33,
+          "matchingUpdateMS" : 1.187255859375,
+          "value" : "#847b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.973388671875,
+          "index" : 34,
+          "matchingUpdateMS" : 0.973388671875,
+          "value" : "#887780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.231201171875,
+          "index" : 35,
+          "matchingUpdateMS" : 0.231201171875,
+          "value" : "#8c7380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.00439453125,
+          "index" : 36,
+          "matchingUpdateMS" : 1.00439453125,
+          "value" : "#906f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.287353515625,
+          "index" : 37,
+          "matchingUpdateMS" : 0.287353515625,
+          "value" : "#946b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.513427734375,
+          "index" : 38,
+          "matchingUpdateMS" : 0.513427734375,
+          "value" : "#986780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.30908203125,
+          "index" : 39,
+          "matchingUpdateMS" : 1.30908203125,
+          "value" : "#9c6380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.664306640625,
+          "index" : 40,
+          "matchingUpdateMS" : 2.664306640625,
+          "value" : "#a05f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.551025390625,
+          "index" : 41,
+          "matchingUpdateMS" : 0.551025390625,
+          "value" : "#a45b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.93017578125,
+          "index" : 42,
+          "matchingUpdateMS" : 1.93017578125,
+          "value" : "#a85780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.502197265625,
+          "index" : 43,
+          "matchingUpdateMS" : 0.502197265625,
+          "value" : "#ac5380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 3.875244140625,
+          "index" : 44,
+          "matchingUpdateMS" : 3.875244140625,
+          "value" : "#b04f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 0.789306640625,
+          "index" : 45,
+          "matchingUpdateMS" : 0.789306640625,
+          "value" : "#b44b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.990478515625,
+          "index" : 46,
+          "matchingUpdateMS" : 1.990478515625,
+          "value" : "#b84780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.113037109375,
+          "index" : 47,
+          "matchingUpdateMS" : 2.113037109375,
+          "value" : "#bc4380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.646240234375,
+          "index" : 48,
+          "matchingUpdateMS" : 2.646240234375,
+          "value" : "#c03f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.373291015625,
+          "index" : 49,
+          "matchingUpdateMS" : 2.373291015625,
+          "value" : "#c43b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 3.00732421875,
+          "index" : 50,
+          "matchingUpdateMS" : 3.00732421875,
+          "value" : "#c83780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 3.164306640625,
+          "index" : 51,
+          "matchingUpdateMS" : 3.164306640625,
+          "value" : "#cc3380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.09619140625,
+          "index" : 52,
+          "matchingUpdateMS" : 2.09619140625,
+          "value" : "#d02f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.335205078125,
+          "index" : 53,
+          "matchingUpdateMS" : 2.335205078125,
+          "value" : "#d42b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.940185546875,
+          "index" : 54,
+          "matchingUpdateMS" : 2.940185546875,
+          "value" : "#d82780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.239990234375,
+          "index" : 55,
+          "matchingUpdateMS" : 1.239990234375,
+          "value" : "#dc2380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.65234375,
+          "index" : 56,
+          "matchingUpdateMS" : 2.65234375,
+          "value" : "#e01f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.6484375,
+          "index" : 57,
+          "matchingUpdateMS" : 1.6484375,
+          "value" : "#e41b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 2.848388671875,
+          "index" : 58,
+          "matchingUpdateMS" : 2.848388671875,
+          "value" : "#e81780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 1.986083984375,
+          "index" : 59,
+          "matchingUpdateMS" : 1.986083984375,
+          "value" : "#ec1380"
+        }
+      ],
+      "platform" : "Version 26.6.2 (Build 25G83)",
+      "requestedUpdates" : 60,
+      "rows" : 10,
+      "singleUndoRestoredStart" : true,
+      "startColor" : "#a43d59",
+      "submissionOffsetsMS" : [
+        0,
+        19.877916667610407,
+        53.876041667535901,
+        54.224416613578796,
+        133.22812505066395,
+        133.57970828656107,
+        133.88804171700031,
+        134.12983331363648,
+        134.20770829543471,
+        148.43383338302374,
+        162.92862500995398,
+        176.13754165358841,
+        197.54970830399543,
+        211.16741665173322,
+        225.32045829575509,
+        246.89166666939855,
+        256.47200003731996,
+        276.54112502932549,
+        292.13229171000421,
+        309.45475003682077,
+        322.92029168456793,
+        337.10170828271657,
+        357.66220837831497,
+        372.70070833619684,
+        389.18895833194256,
+        404.93529161904007,
+        418.28500002156943,
+        438.38995834812522,
+        452.31583330314606,
+        469.36770831234753,
+        484.83820830006152,
+        496.3547500083223,
+        518.71537498664111,
+        528.6364583298564,
+        549.85079169273376,
+        564.5921666873619,
+        580.81945835147053,
+        592.53666666336358,
+        615.31058338005096,
+        626.51500001084059,
+        646.15912502631545,
+        656.27220831811428,
+        676.89333332236856,
+        689.32187499012798,
+        710.9487917041406,
+        724.03499996289611,
+        736.83358333073556,
+        758.71058332268149,
+        772.17741671483964,
+        785.45095829758793,
+        806.81712494697422,
+        819.65937500353903,
+        837.72762503940612,
+        850.48870835453272,
+        867.88408330176026,
+        885.58437500614673,
+        900.17224999610335,
+        913.17587497178465,
+        934.97641663998365,
+        947.83808337524533
+      ]
+    },
+    {
+      "acceptanceMS" : {
+        "max" : 0.35408337134867907,
+        "p50" : 0.20204170141369104,
+        "p95" : 0.27145829517394304
+      },
+      "acceptanceSamples" : [
+        {
+          "index" : 0,
+          "latencyMS" : 0.26329164393246174,
+          "sequence" : 1
+        },
+        {
+          "index" : 1,
+          "latencyMS" : 0.17725001089274883,
+          "sequence" : 2
+        },
+        {
+          "index" : 2,
+          "latencyMS" : 0.21474994719028473,
+          "sequence" : 3
+        },
+        {
+          "index" : 3,
+          "latencyMS" : 0.27145829517394304,
+          "sequence" : 4
+        },
+        {
+          "index" : 4,
+          "latencyMS" : 0.19283336587250233,
+          "sequence" : 5
+        },
+        {
+          "index" : 5,
+          "latencyMS" : 0.22895843721926212,
+          "sequence" : 6
+        },
+        {
+          "index" : 6,
+          "latencyMS" : 0.24025002494454384,
+          "sequence" : 7
+        },
+        {
+          "index" : 7,
+          "latencyMS" : 0.20770833361893892,
+          "sequence" : 8
+        },
+        {
+          "index" : 8,
+          "latencyMS" : 0.20587502513080835,
+          "sequence" : 9
+        },
+        {
+          "index" : 9,
+          "latencyMS" : 0.20204170141369104,
+          "sequence" : 10
+        },
+        {
+          "index" : 10,
+          "latencyMS" : 0.1713333185762167,
+          "sequence" : 11
+        },
+        {
+          "index" : 11,
+          "latencyMS" : 0.18208334222435951,
+          "sequence" : 12
+        },
+        {
+          "index" : 12,
+          "latencyMS" : 0.18862495198845863,
+          "sequence" : 13
+        },
+        {
+          "index" : 13,
+          "latencyMS" : 0.17170840874314308,
+          "sequence" : 14
+        },
+        {
+          "index" : 14,
+          "latencyMS" : 0.20600005518645048,
+          "sequence" : 15
+        },
+        {
+          "index" : 15,
+          "latencyMS" : 0.17116672825068235,
+          "sequence" : 16
+        },
+        {
+          "index" : 16,
+          "latencyMS" : 0.19970827270299196,
+          "sequence" : 17
+        },
+        {
+          "index" : 17,
+          "latencyMS" : 0.18108333460986614,
+          "sequence" : 18
+        },
+        {
+          "index" : 18,
+          "latencyMS" : 0.2269999822601676,
+          "sequence" : 19
+        },
+        {
+          "index" : 19,
+          "latencyMS" : 0.20587502513080835,
+          "sequence" : 20
+        },
+        {
+          "index" : 20,
+          "latencyMS" : 0.20229164510965347,
+          "sequence" : 21
+        },
+        {
+          "index" : 21,
+          "latencyMS" : 0.20270829554647207,
+          "sequence" : 22
+        },
+        {
+          "index" : 22,
+          "latencyMS" : 0.18929166253656149,
+          "sequence" : 23
+        },
+        {
+          "index" : 23,
+          "latencyMS" : 0.20795839373022318,
+          "sequence" : 24
+        },
+        {
+          "index" : 24,
+          "latencyMS" : 0.19420823082327843,
+          "sequence" : 25
+        },
+        {
+          "index" : 25,
+          "latencyMS" : 0.23141666315495968,
+          "sequence" : 26
+        },
+        {
+          "index" : 26,
+          "latencyMS" : 0.28470833785831928,
+          "sequence" : 27
+        },
+        {
+          "index" : 27,
+          "latencyMS" : 0.19024999346584082,
+          "sequence" : 28
+        },
+        {
+          "index" : 28,
+          "latencyMS" : 0.21291675511747599,
+          "sequence" : 29
+        },
+        {
+          "index" : 29,
+          "latencyMS" : 0.21591666154563427,
+          "sequence" : 30
+        },
+        {
+          "index" : 30,
+          "latencyMS" : 0.26404170785099268,
+          "sequence" : 31
+        },
+        {
+          "index" : 31,
+          "latencyMS" : 0.35408337134867907,
+          "sequence" : 32
+        },
+        {
+          "index" : 32,
+          "latencyMS" : 0.18679164350032806,
+          "sequence" : 33
+        },
+        {
+          "index" : 33,
+          "latencyMS" : 0.18699991051107645,
+          "sequence" : 34
+        },
+        {
+          "index" : 34,
+          "latencyMS" : 0.20166672766208649,
+          "sequence" : 35
+        },
+        {
+          "index" : 35,
+          "latencyMS" : 0.18566672224551439,
+          "sequence" : 36
+        },
+        {
+          "index" : 36,
+          "latencyMS" : 0.22950000129640102,
+          "sequence" : 37
+        },
+        {
+          "index" : 37,
+          "latencyMS" : 0.17695839051157236,
+          "sequence" : 38
+        },
+        {
+          "index" : 38,
+          "latencyMS" : 0.17574999947100878,
+          "sequence" : 39
+        },
+        {
+          "index" : 39,
+          "latencyMS" : 0.22979173809289932,
+          "sequence" : 40
+        },
+        {
+          "index" : 40,
+          "latencyMS" : 0.17650006338953972,
+          "sequence" : 41
+        },
+        {
+          "index" : 41,
+          "latencyMS" : 0.17716665752232075,
+          "sequence" : 42
+        },
+        {
+          "index" : 42,
+          "latencyMS" : 0.17583323642611504,
+          "sequence" : 43
+        },
+        {
+          "index" : 43,
+          "latencyMS" : 0.18762506078928709,
+          "sequence" : 44
+        },
+        {
+          "index" : 44,
+          "latencyMS" : 0.17862499225884676,
+          "sequence" : 45
+        },
+        {
+          "index" : 45,
+          "latencyMS" : 0.1922916853800416,
+          "sequence" : 46
+        },
+        {
+          "index" : 46,
+          "latencyMS" : 0.25041669141501188,
+          "sequence" : 47
+        },
+        {
+          "index" : 47,
+          "latencyMS" : 0.19683327991515398,
+          "sequence" : 48
+        },
+        {
+          "index" : 48,
+          "latencyMS" : 0.23429165594279766,
+          "sequence" : 49
+        },
+        {
+          "index" : 49,
+          "latencyMS" : 0.19654165953397751,
+          "sequence" : 50
+        },
+        {
+          "index" : 50,
+          "latencyMS" : 0.22679171524941921,
+          "sequence" : 51
+        },
+        {
+          "index" : 51,
+          "latencyMS" : 0.19612500909715891,
+          "sequence" : 52
+        },
+        {
+          "index" : 52,
+          "latencyMS" : 0.2261666813865304,
+          "sequence" : 53
+        },
+        {
+          "index" : 53,
+          "latencyMS" : 0.20999996922910213,
+          "sequence" : 54
+        },
+        {
+          "index" : 54,
+          "latencyMS" : 0.20362506620585918,
+          "sequence" : 55
+        },
+        {
+          "index" : 55,
+          "latencyMS" : 0.24766672868281603,
+          "sequence" : 56
+        },
+        {
+          "index" : 56,
+          "latencyMS" : 0.32312504481524229,
+          "sequence" : 57
+        },
+        {
+          "index" : 57,
+          "latencyMS" : 0.19212497863918543,
+          "sequence" : 58
+        },
+        {
+          "index" : 58,
+          "latencyMS" : 0.19020831678062677,
+          "sequence" : 59
+        },
+        {
+          "index" : 59,
+          "latencyMS" : 0.21387508604675531,
+          "sequence" : 60
+        }
+      ],
+      "acceptedUpdates" : 60,
+      "build" : "Debug native test bundle",
+      "cadenceMS" : 16,
+      "coreBuild" : "e469f93b652d545c",
+      "date" : "2026-10-04",
+      "failures" : [
+
+      ],
+      "finalColor" : "#ec1380",
+      "method" : "Synthetic palette gesture through DocumentSession.beginThemeGesture\/changeTheme\/endThemeGesture, shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer\/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
+      "observedColors" : 35,
+      "pageEarliestCoveredUpdateMS" : {
+        "max" : 56.31298828125,
+        "p50" : 44.468017578125,
+        "p95" : 53.02099609375
+      },
+      "pageMatchingUpdateMS" : {
+        "max" : 41.765869140625,
+        "p50" : 32.760986328125,
+        "p95" : 41.631103515625
+      },
+      "pageSamples" : [
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 36.217041015625,
+          "index" : 0,
+          "matchingUpdateMS" : 36.217041015625,
+          "value" : "#00ff80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 41.924072265625,
+          "index" : 2,
+          "matchingUpdateMS" : 28.93701171875,
+          "value" : "#08f780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 40.745849609375,
+          "index" : 3,
+          "matchingUpdateMS" : 40.745849609375,
+          "value" : "#0cf380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 50.170166015625,
+          "index" : 5,
+          "matchingUpdateMS" : 35.302001953125,
+          "value" : "#14eb80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 46.7890625,
+          "index" : 7,
+          "matchingUpdateMS" : 31.034912109375,
+          "value" : "#1ce380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 42.930908203125,
+          "index" : 9,
+          "matchingUpdateMS" : 31.31787109375,
+          "value" : "#24db80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 38.494873046875,
+          "index" : 10,
+          "matchingUpdateMS" : 38.494873046875,
+          "value" : "#28d780"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 50.166015625,
+          "index" : 12,
+          "matchingUpdateMS" : 34.2080078125,
+          "value" : "#30cf80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 46.335205078125,
+          "index" : 14,
+          "matchingUpdateMS" : 30.81591796875,
+          "value" : "#38c780"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 41.612060546875,
+          "index" : 16,
+          "matchingUpdateMS" : 27.1708984375,
+          "value" : "#40bf80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 38.363037109375,
+          "index" : 17,
+          "matchingUpdateMS" : 38.363037109375,
+          "value" : "#44bb80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 56.31298828125,
+          "index" : 19,
+          "matchingUpdateMS" : 41.631103515625,
+          "value" : "#4cb380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 52.9931640625,
+          "index" : 21,
+          "matchingUpdateMS" : 36.32373046875,
+          "value" : "#54ab80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 49.22021484375,
+          "index" : 23,
+          "matchingUpdateMS" : 31.322998046875,
+          "value" : "#5ca380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 48.632080078125,
+          "index" : 25,
+          "matchingUpdateMS" : 27.971923828125,
+          "value" : "#649b80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 39.984130859375,
+          "index" : 27,
+          "matchingUpdateMS" : 28.05126953125,
+          "value" : "#6c9380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 38.489990234375,
+          "index" : 28,
+          "matchingUpdateMS" : 38.489990234375,
+          "value" : "#708f80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 50.15087890625,
+          "index" : 30,
+          "matchingUpdateMS" : 30.86083984375,
+          "value" : "#788780"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 44.468017578125,
+          "index" : 32,
+          "matchingUpdateMS" : 31.119873046875,
+          "value" : "#807f80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 40.551025390625,
+          "index" : 33,
+          "matchingUpdateMS" : 40.551025390625,
+          "value" : "#847b80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 51.617919921875,
+          "index" : 35,
+          "matchingUpdateMS" : 37.39208984375,
+          "value" : "#8c7380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 50.429931640625,
+          "index" : 37,
+          "matchingUpdateMS" : 32.760986328125,
+          "value" : "#946b80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 41.799072265625,
+          "index" : 39,
+          "matchingUpdateMS" : 25.989990234375,
+          "value" : "#9c6380"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 36.93310546875,
+          "index" : 40,
+          "matchingUpdateMS" : 36.93310546875,
+          "value" : "#a05f80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 47.9521484375,
+          "index" : 42,
+          "matchingUpdateMS" : 31.92919921875,
+          "value" : "#a85780"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 42.950927734375,
+          "index" : 44,
+          "matchingUpdateMS" : 29.6630859375,
+          "value" : "#b04f80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 38.996826171875,
+          "index" : 46,
+          "matchingUpdateMS" : 26.114990234375,
+          "value" : "#b84780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 30.406005859375,
+          "index" : 47,
+          "matchingUpdateMS" : 30.406005859375,
+          "value" : "#bc4380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 45.681884765625,
+          "index" : 49,
+          "matchingUpdateMS" : 25.572998046875,
+          "value" : "#c43b80"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 41.409912109375,
+          "index" : 50,
+          "matchingUpdateMS" : 41.409912109375,
+          "value" : "#c83780"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 49.748046875,
+          "index" : 52,
+          "matchingUpdateMS" : 36.30908203125,
+          "value" : "#d02f80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 46.27294921875,
+          "index" : 54,
+          "matchingUpdateMS" : 31.296875,
+          "value" : "#d82780"
+        },
+        {
+          "coversUpdates" : 1,
+          "earliestCoveredUpdateMS" : 41.765869140625,
+          "index" : 55,
+          "matchingUpdateMS" : 41.765869140625,
+          "value" : "#dc2380"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 53.02099609375,
+          "index" : 57,
+          "matchingUpdateMS" : 36.905029296875,
+          "value" : "#e41b80"
+        },
+        {
+          "coversUpdates" : 2,
+          "earliestCoveredUpdateMS" : 49.967041015625,
+          "index" : 59,
+          "matchingUpdateMS" : 33.94873046875,
+          "value" : "#ec1380"
+        }
+      ],
+      "platform" : "Version 26.6.2 (Build 25G83)",
+      "requestedUpdates" : 60,
+      "rows" : 1000,
+      "singleUndoRestoredStart" : true,
+      "startColor" : "#a43d59",
+      "submissionOffsetsMS" : [
+        0,
+        23.292458266951144,
+        36.28000000026077,
+        51.470666658133268,
+        70.046791573986411,
+        84.914499893784523,
+        101.42845823429525,
+        117.1820416348055,
+        133.28633329365402,
+        144.89854162093252,
+        165.72249995078892,
+        181.05066660791636,
+        197.00879161246121,
+        212.88195822853595,
+        228.40149991679937,
+        245.60541659593582,
+        260.04595833364874,
+        277.85391663201153,
+        289.90466659888625,
+        304.58566662855446,
+        323.2244165847078,
+        339.89287493750453,
+        355.9979583369568,
+        373.89429158065468,
+        384.58595832344145,
+        405.24549991823733,
+        421.23333329800516,
+        433.1666249781847,
+        450.72795823216438,
+        467.06649998668581,
+        486.35687492787838,
+        500.74966659303755,
+        514.09808325115591,
+        532.6670833164826,
+        549.59962493740022,
+        563.82570823188871,
+        577.7879583183676,
+        595.45774990692735,
+        613.41916664969176,
+        629.228291567415,
+        645.28524992056191,
+        661.26604157034308,
+        677.28937498759478,
+        693.26799991540611,
+        706.55508327763528,
+        723.22149993851781,
+        736.10399989411235,
+        758.81262496113777,
+        770.53683332633227,
+        790.64533323980868,
+        802.80816659796983,
+        822.47058325447142,
+        835.91029164381325,
+        853.9454999845475,
+        868.92183322925121,
+        885.45333326328546,
+        901.19779156520963,
+        917.31395828537643,
+        933.25274996459484,
+        949.27062490023673
+      ]
+    }
+  ]
+}

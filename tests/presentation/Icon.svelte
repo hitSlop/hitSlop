@@ -1,10 +1,11 @@
 <script lang="ts">
+import doc from "./schema";
 
-function checkRender(kind: "editor" | "export" | "icon") {
-    const failure = (globalThis as any).__presentationFailure;
-    if (failure?.kind === kind) throw failure.error;
-    return "";
-  }
+// Saved state makes the fresh renderer fail, independently of editor-local globals.
+function checkRender() {
+  if (doc.current.count === -2001) throw new Error("Snippet failed");
+  return "";
+}
 </script>
 
-<div class="icon">{checkRender("icon")}</div>
+<div class="icon">{checkRender()}</div>

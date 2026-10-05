@@ -321,7 +321,8 @@ Layout 1:
 
 | Kind | Stored as |
 |---|---|
-| the document | the root map `data`, one entry per field |
+| the authored document data | the root map `data`, one entry per field |
+| document theme overrides | the root map `theme`, declared color token → canonical color string |
 | `s.text()` | a `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
@@ -332,6 +333,13 @@ Layout 1:
 | `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
 | `s.list(scalar)` | a `LoroMovableList` of values |
 | `s.record(value)` | a `LoroMap` of key to the value's representation |
+
+The theme map is host-owned and outside the authored descriptor. Defaults remain in the
+immutable app row; the effective palette combines them with these overrides. Per-color
+writes merge through Loro, use the same undo history and saved updates as data, and
+advance the same publication sequence. JSON replacement targets `data`, so it never
+replaces the theme. State carries the effective `theme`; publications include it when
+it changes, including on a theme-only edit.
 
 A container whose path from its nearest row (or the document) passes an optional field or
 a record entry can be created by more than one replica. It is created with Loro's

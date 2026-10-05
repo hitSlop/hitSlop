@@ -3,7 +3,7 @@ title: Data and schemas
 description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
 ---
 
-The hitSlop app owns each document. Its Rust core (on Loro) merges and validates every edit, and the app stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
+The Rust document owner (on Loro), shared by the hitSlop app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
 
 ## Define the shape
 

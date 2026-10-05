@@ -30,78 +30,6 @@ private final class PublicationTimes: @unchecked Sendable {
 }
 
 @Suite(.serialized) struct BenchmarkTests {
-  /// A color drag in the theme panel: 120 changes at 60 Hz through the owner, timed from
-  /// each change to the page's style and to the next frame after it. Coalesced deliveries
-  /// count from the earliest change they cover.
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_THEME"] == "1")) @MainActor
-  func themeDragCost() async throws {
-    _ = NSApplication.shared
-    let repository = Fixtures.repository.path
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    var records: [[String: Any]] = []
-    for rows in [10, 1000] {
-      let stage = try Fixtures.nativeStage()
-      try Fixtures.updateApp(stage) { $0["initial"] = [
-        "title": "Theme drag",
-        "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-      ] }
-      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
-      // A shown window, so WebKit paints frames as it would for the person dragging.
-      let controller = try await SlopDocumentWindowController.open(url: root)
-      controller.showWindow(nil)
-      await controller.waitForPresentation()
-      let session = controller.session
-      do {
-        _ = try await session.webView.callAsyncJavaScript("""
-          globalThis.__themeLog = [];
-          new MutationObserver(() => {
-            const entry = { value: document.documentElement.style.getPropertyValue('--slop-accent'),
-              styled: performance.timeOrigin + performance.now() };
-            globalThis.__themeLog.push(entry);
-            requestAnimationFrame(() => { entry.frame = performance.timeOrigin + performance.now(); });
-          }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
-          return true
-          """, arguments: [:], in: nil, contentWorld: .page)
-        var sent: [(value: String, at: Double)] = []
-        for step in 0..<120 {
-          let value = String(format: "#%02x%02x%02x", step * 2, 255 - step * 2, 128)
-          sent.append((value, Date().timeIntervalSince1970 * 1000))
-          session.changeTheme(.set(["accent": value]))
-          try await Task.sleep(for: .milliseconds(16))
-        }
-        try await session.flush()
-        try await Task.sleep(for: .milliseconds(100))
-        let log = try await session.webView.callAsyncJavaScript("return globalThis.__themeLog", arguments: [:], in: nil, contentWorld: .page) as? [[String: Any]] ?? []
-        var styled: [Double] = [], framed: [Double] = []
-        var next = 0
-        for entry in log {
-          guard let value = entry["value"] as? String, let index = sent.firstIndex(where: { $0.value == value }),
-            index >= next, let at = (entry["styled"] as? NSNumber)?.doubleValue else { continue }
-          styled.append(at - sent[next].at)
-          // A frame arrives only while WebKit paints the window; a background test window may not.
-          if let frame = (entry["frame"] as? NSNumber)?.doubleValue { framed.append(frame - sent[next].at) }
-          next = index + 1
-        }
-        func summary(_ values: [Double]) -> [String: Double] {
-          let sorted = values.sorted()
-          guard !sorted.isEmpty else { return [:] }
-          return ["p50": sorted[sorted.count / 2], "p95": sorted[min(sorted.count - 1, sorted.count * 95 / 100)], "max": sorted.last!]
-        }
-        records.append([
-          "rows": rows, "changes": sent.count, "deliveries": styled.count,
-          "changeToStyleMS": summary(styled), "changeToFrameMS": summary(framed),
-          "lastValueShown": (log.last?["value"] as? String) == sent.last?.value,
-        ])
-        try await controller.closeDocument()
-      } catch { try? await controller.closeDocument(); throw error }
-    }
-    let output = URL(fileURLWithPath: repository + "/.hitslop/evidence/theme-drag.json")
-    try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try JSONSerialization.data(withJSONObject: ["measurements": records], options: [.prettyPrinted, .sortedKeys]).write(to: output)
-    print("theme drag:", records)
-  }
-
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_CAPTURE"] == "1")) @MainActor
   func previewCaptureCost() async throws {
     _ = NSApplication.shared
@@ -127,15 +55,19 @@ private final class PublicationTimes: @unchecked Sendable {
           let elapsed = Date().timeIntervalSince(start) * 1000
           if sample > 0 { total.append(elapsed) }
         }
-        // Separate preparations, always restored, so total captures are not double-counted.
+        // Measure preparation in fresh saved renderers, separate from total capture cost.
         for sample in 0..<6 {
-          let measurement = try await session.webView.callAsyncJavaScript("""
-            const token = crypto.randomUUID(), start = performance.now();
-            try {
-              const box = await globalThis.__slop.capture.begin(token, "preview");
-              return {preview_prepare_ms: performance.now() - start, height_css_px: box.height, dedicated: box.dedicated};
-            } finally { await globalThis.__slop.capture.restore(token); }
-            """, arguments: [:], in: nil, contentWorld: .page) as! [String: Any]
+          let measurement = try await session.withCaptureSnapshot { source in
+            try await SlopRenderer.withRenderSession(url: source) { renderer in
+              return try await renderer.webView.callAsyncJavaScript("""
+                const token = crypto.randomUUID(), start = performance.now();
+                try {
+                  const box = await globalThis.__slop.capture.begin(token, "preview");
+                  return {preview_prepare_ms: performance.now() - start, height_css_px: box.height, dedicated: box.dedicated};
+                } finally { await globalThis.__slop.capture.restore(token); }
+                """, arguments: [:], in: nil, contentWorld: .page) as! [String: Any]
+            }
+          }
           if sample > 0 { preparation.append(measurement) }
         }
         let sorted = total.sorted()
@@ -175,7 +107,7 @@ private final class PublicationTimes: @unchecked Sendable {
           "method":
             "Frameless window controllers with hover panels in the Host test harness, not the catalog application. One sequential run per cell, fully rendered rows, host plus identified WebContent physical footprints; excludes GPU/network processes. Creation plus opening, warm machine. Checkbox acceptance, rendering and durable drain. Owner publication callback to JS arrival matched by sequence using epoch clocks (approximately millisecond precision); includes test timestamp/JSON decoding overhead. Only the first 100 edits enter publication phase samples; save-status pushes are excluded. Debug helper/test bundle, not an optimized app. Absolute memory only; no leak or matched-control percentage claim.",
           "results": records, "failure": failure as Any? ?? NSNull(),
-          "variant": ["label": label, "noDOM": noDOM, "autosaveMS": DocumentOwner.autosaveDelayMS],
+          "variant": ["label": label, "noDOM": noDOM],
         ], options: [.prettyPrinted, .sortedKeys]
       ).write(to: out.appendingPathComponent("native-owner-windows\(label.isEmpty ? "" : "-" + label).json"))
     }
@@ -199,7 +131,7 @@ private final class PublicationTimes: @unchecked Sendable {
           try FileManager.default.moveItem(at: app, to: stage.appendingPathComponent("assets/benchmark-authored.js"))
           // Attribution only: CSS appended to the authored styles (HITSLOP_BENCH_CSS).
           let css = String(decoding: try JSONSerialization.data(withJSONObject: [environment["HITSLOP_BENCH_CSS"] ?? ""]), as: UTF8.self)
-          try Data("""
+          try Fixtures.writeApp("""
             import authored from './benchmark-authored.js';
             export default { mount(ctx, target) {
               const css = \(css)[0];
@@ -212,7 +144,7 @@ private final class PublicationTimes: @unchecked Sendable {
               globalThis.benchmarkRendered = () => view?.rendered?.();
               return view;
             } };
-            """.utf8).write(to: app)
+            """, to: stage)
           let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows)-\(count)-\(index).slop"))
           windows.append(try await SlopDocumentWindowController.open(url: root))
         }

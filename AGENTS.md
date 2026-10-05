@@ -10,8 +10,8 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - **Every released slop stays openable.** See [Compatibility](#compatibility).
 - `hitslop-core` (Rust on Loro) owns document semantics and durable storage: the `.slop`
   file (one SQLite database holding the app and its saved state), the writer lock and the
-  save policy. The Swift `DocumentOwner` schedules saves and owns
-  the socket and delivery to the page; Loro bytes never reach Swift. The page shell
+  save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
+  is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
@@ -26,7 +26,7 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for authoring validation, `slop dev` and tests only.
+  document engine. The WASM core is for `slop dev` and tests only; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 

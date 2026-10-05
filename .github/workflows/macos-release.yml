@@ -103,6 +103,8 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/dmg"
           test "$(lipo -archs "$APP/Contents/MacOS/hitSlop")" = "arm64"
           test "$(lipo -archs "$APP/Contents/Helpers/hitslop-native")" = "arm64"
+          test "$(lipo -archs "$APP/Contents/Helpers/slop-engine")" = "arm64"
+          test "$("$APP/Contents/Helpers/slop-engine" --build-id)" = "$("$APP/Contents/Helpers/hitslop-native" --core-build)"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"

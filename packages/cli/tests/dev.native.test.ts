@@ -58,20 +58,13 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
     expect(await frame.locator("[data-count]").textContent()).toBe("3");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
-    const main = await readFile(join(source, "main.ts"), "utf8");
-    await rm(join(source, "main.ts"));
-    await page
-      .frames()
-      .find((frame) => frame.url().includes("/app.html"))!
-      .waitForFunction(
-        () =>
-          document.querySelector("[data-probe]") && !document.body.hasAttribute("data-fixture-mounted"),
-      );
-    await writeFile(join(source, "main.ts"), main);
-    await page
-      .frames()
-      .find((frame) => frame.url().includes("/app.html"))!
-      .waitForFunction(() => Boolean(document.body.dataset.fixtureMounted));
+    // Adding a conventional stylesheet refreshes the generated entry.
+    await rm(join(source, "styles.css"));
+    await page.frames().find((frame) => frame.url().includes("/app.html"))!
+      .waitForFunction(() => ![...document.querySelectorAll("style")].some(style => style.dataset.viteDevId?.endsWith("/styles.css")));
+    await writeFile(join(source, "styles.css"), "body { --entry-probe: ready; }");
+    await page.frames().find((frame) => frame.url().includes("/app.html"))!
+      .waitForFunction(() => getComputedStyle(document.body).getPropertyValue("--entry-probe").trim() === "ready");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const response = await fetch(new URL("/@fs/etc/passwd", dev.url));
     expect(response.status).toBe(403);

@@ -36,16 +36,16 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
     expect(js).not.toContain("/__shell__/");
     expect(js).not.toContain("loro_wasm_bg");
     expect(await readdir(output)).not.toContain("app.html");
-    const entry = 'import App from "./App.svelte"; import schema from "./schema.ts"; import { svelteApp } from "@hitslop/document/svelte"; export default svelteApp(App, { schema });\n';
+    const app = await readFile(join(source, "App.svelte"), "utf8");
     for (const [code, error] of [
       // Apps never embed a document engine; the host's core owns the document.
       ['import {LoroDoc} from "loro-crdt"; console.log(new LoroDoc());', "cannot import loro-crdt"],
-      ['const runtime = await import("/__shell__/index.js"); console.log(runtime);', "cannot import /__shell__/index.js"],
+      ['import("/__shell__/index.js").then(console.log);', "cannot import /__shell__/index.js"],
       ["globalThis.webkit.messageHandlers.storage.postMessage({ method: 'ready' });", "host bridge"],
       ['import "./remote.css";', "remote stylesheets, fonts or scripts"],
     ] as const) {
       await writeFile(join(source, "remote.css"), '@font-face { font-family: R; src: url("https://example.com/r.woff2"); }');
-      await writeFile(join(source, "main.ts"), entry + code);
+      await writeFile(join(source, "App.svelte"), app.replace('<script lang="ts">', `<script lang="ts">\n${code}`));
       await expect(stage(source, join(root, "bad"))).rejects.toThrow(error);
     }
   } finally {
@@ -58,8 +58,8 @@ test("build refuses a theme that is not a palette of hex colors", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     for (const [name, theme, error] of [
-      ["font", `{ font: '"Avenir Next", sans-serif' }`, "slop.ts theme: out_of_range: Theme color font must be lowercase"],
-      ["opaque", `{ accent: "#aabbccff" }`, "slop.ts theme: out_of_range: Theme color accent"],
+      ["font", `{ font: '"Avenir Next", sans-serif' }`, "Theme color font must be lowercase"],
+      ["opaque", `{ accent: "#aabbccff" }`, "Theme color accent"],
       ["derived", `{ rule: "color-mix(in srgb, var(--slop-ink) 14%, transparent)" }`, "Theme color rule"],
     ] as const) {
       const source = join(root, name);
@@ -88,15 +88,15 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
     expect(await readFile(join(output, "assets/app.js"), "utf8")).not.toContain(sentinel);
     for (const [name, fields, statements, error] of [
       ["mismatch", { schema: "defineDocument({ title: s.text() })" }, 'import { defineDocument, s } from "@hitslop/document";', "slop.ts: schema must be schema.ts's default export"],
-      ["unknown", { lineage: '"future"' }, "", 'slop.ts: Invalid manifest at /: unknown field "lineage"'],
-      ["field", { title: '""' }, "", "slop.ts: Invalid manifest at /title:"],
+      ["unknown", { lineage: '"future"' }, "", 'Invalid manifest at /'],
+      ["field", { title: '""' }, "", "Invalid manifest at /title"],
       ["no-initial", { initial: "undefined" }, "", "slop.ts: initial is required"],
       ["no-theme", { theme: "undefined" }, "", "slop.ts: theme is required"],
       ["css-import", {}, 'import "./styles.css";', "slop.ts: styles.css cannot be imported here"],
       ["outside-import", {}, 'import "../sentinel/schema";', "slop.ts: ../sentinel/schema.ts is outside the project"],
       ["slug", { slug: '"other-slug"' }, "", "slop.ts: remove slug"],
-      ["initial", { initial: "{ ...slop.initial, title: 42 }" }, "", "slop.ts initial"],
-      ["theme", { theme: '{ accent: "#ABCDEF" }' }, "", "slop.ts theme"],
+      ["initial", { initial: "{ ...slop.initial, title: 42 }" }, "", "type_mismatch"],
+      ["theme", { theme: '{ accent: "#ABCDEF" }' }, "", "Theme color"],
     ] as const) {
       const project = join(root, name);
       await cp("examples/slops/quick-checklist", project, { recursive: true });
@@ -145,7 +145,7 @@ test("slop check reports slop.ts errors a build would refuse", async () => {
     await overrideSlop(source, { theme: '{ ...slop.theme, accent: "#ABCDEF" }' });
     const failed = await check();
     expect(failed.code).not.toBe(0);
-    expect(failed.stderr).toContain("slop.ts theme");
+    expect(failed.stderr).toContain("Theme color");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -216,13 +216,12 @@ test("copied fonts retain their URLs without duplicate bundles", async () => {
     `,
     );
     await writeFile(
-      join(source, "main.ts"),
-      `import "./styles.css"; import App from "./App.svelte"; import schema from "./schema.ts"; import { svelteApp } from "@hitslop/document/svelte"; export default svelteApp(App, { schema });` +
-        `
+      join(source, "App.svelte"),
+      `<script>
       import './font-test.css';
       import fontURL from './assets/fonts/My Font.ttf';
       console.log(fontURL);
-    `,
+      </script><p>Fonts</p>`,
     );
     const output = await stage(source, join(root, "fonts"));
     const files = await readdir(join(output, "assets"), { recursive: true });
@@ -250,12 +249,8 @@ test("Svelte styles compile identically in different checkout locations", async 
       const source = join(root, location);
       await cp("packages/cli/templates/checklist", source, { recursive: true });
       await writeFile(
-        join(source, "Styled.svelte"),
+        join(source, "App.svelte"),
         "<p>Portable styles</p><style>p { color: rebeccapurple; }</style>",
-      );
-      await writeFile(
-        join(source, "main.ts"),
-        'import { mount } from "svelte"; import Styled from "./Styled.svelte"; export default { mount: (ctx, target) => (mount(Styled, { target }), {}) };',
       );
       const built = await stage(source, join(root, location + "-stage"));
       outputs.push(await readFile(join(built, "assets/app.js"), "utf8"));
@@ -282,14 +277,14 @@ for (const [name, properties, initial, code] of [
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("custom main owns registration and conventional capture discovery is exact-case", async () => {
+test("only generated Svelte entries build and capture discovery is exact-case", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("packages/cli/templates/checklist", source, { recursive: true });
     await writeFile(join(source, "Export.svelte"), '<script>const = ;</script>');
     await writeFile(join(source, "main.ts"), 'export default {mount(){return {rendered(){},unmount(){}}}};');
-    await stage(source, join(root, "custom"));
+    await expect(stage(source, join(root, "custom"))).rejects.toThrow("main.ts is not supported");
     await rm(join(source, "main.ts"));
     await expect(stage(source, join(root, "discovered"))).rejects.toThrow();
     await rm(join(source, "Export.svelte"));

@@ -75,7 +75,23 @@ enum RequestOutcome: Equatable {
   /// The socket's failure reply for `error`.
   static func socket(_ error: Error, epoch: String? = nil) -> SocketReply {
     let outcome = RequestOutcome(error)
-    return SocketReply(ok: false, epoch: epoch, error: error.localizedDescription, code: outcome.code,
-      reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex)
+    return .failure(SocketFailure(epoch: epoch, error: error.localizedDescription, code: outcome.code,
+      reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex))
+  }
+
+  /// Native rendering reports the same outcome categories as page and socket requests.
+  static func native(_ error: Error) -> OwnerFailure {
+    let outcome = RequestOutcome(error)
+    let kind: OwnerFailureKind
+    switch outcome {
+    case .rejected: kind = .rejected
+    case .replaced: kind = .replaced
+    case .closing: kind = .closing
+    case .invalidated: kind = .invalidated
+    case .saveFailed: kind = .saveFailed
+    case .unknown: kind = .failed
+    }
+    return OwnerFailure(kind: kind, message: error.localizedDescription,
+      reason: outcome.refusal.reason?.rawValue, opIndex: outcome.refusal.opIndex.map(UInt32.init))
   }
 }

@@ -36,15 +36,14 @@ const retrySection = {
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
 };
 
-/** Document commands run in the macOS helper, which reaches a live window or owns a
- * closed document. Authoring (init, check, dev, build) needs neither. */
+/** Document commands use the Rust owner; windows and rendering use the macOS helper. Authoring (init, check, dev, build) needs neither. */
 async function native(...argv: string[]) {
   await (await import("./native")).runNative(argv);
 }
 /** Reads a template or a closed or open document with the file engine, on any platform:
  * saved state, never an open window's unsaved edits. */
 async function readSlop(command: "schema" | "inspect", path: string) {
-  return (await import("./engine")).engine([command, path]);
+  return (await import("./native")).readDocument(command, path);
 }
 const documents = () => import("./documents");
 
@@ -337,13 +336,6 @@ export const app = new Crust("slop", {
             description: 'Where to replace, as a JSON path (default: the whole document), e.g. \'["rows"]\'',
           })
           .action(async ({ args, flags }) => (await documents()).importValue(args.document, args.file, flags.path)),
-    ),
-  )
-  .add(
-    defineCommand(
-      "compact",
-      { description: "Checkpoint document storage", sections: [retrySection] },
-      (c) => c.args(document).action(async ({ args }) => (await documents()).compact(args.document)),
     ),
   )
   .add(

@@ -122,6 +122,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// The theme panel beside the window, while shown.
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
+  var themeGestureMonitor: Any?
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
   /// Undo for this window's document; see `DocumentUndoManager`.
@@ -319,7 +320,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
 
-  /// Saves and releases the document, writing artwork rendered from its page first, so
+  /// Saves and releases the document, writing artwork rendered from its saved state first, so
   /// Finder, Quick Look and the catalog show it as it closed. A failed close shows the
   /// window again, open and editable.
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
@@ -332,20 +333,17 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
     } catch {
-      if artwork != nil { window?.orderFront(nil) }
       reportLifecycleFailure(operation, error: error)
       throw error
     }
   }
   /// The page's preview and icon, when this session changed the document or it has no
-  /// preview yet. The window leaves the screen first: capture resizes the page.
+  /// preview yet. Rendering uses an independent snapshot without disturbing the window.
   private func closingArtwork() async -> SlopRenderedArtwork? {
     guard isContentReady, session.isReady, !session.rendererDead else { return nil }
     let edited = await session.edited()
     let preview = edited ? nil : await session.artwork(.preview)
     guard edited || preview == nil else { return nil }
-    hideToolbar()
-    window?.orderOut(nil)
     return await SlopRenderer.artwork(session: session, telemetry: telemetry)
   }
 

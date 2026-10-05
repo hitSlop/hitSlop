@@ -30,11 +30,10 @@ export async function fontsSettled(page: Document) {
 export async function mountViewLifecycle(options: {
   mount(): DocumentView | Promise<DocumentView>;
   document: Pick<OwnerDocument<any>, "flush" | "undo" | "redo" | "prepareClose" | "cancelClose">;
-  applyTheme(values: Record<string, string>): void;
   target: HTMLElement;
   recovered?: () => Promise<unknown>;
 }) {
-  const { mount, target, document: doc, applyTheme, recovered } = options;
+  const { mount, target, document: doc, recovered } = options;
   let view = await mount();
   await view.rendered();
   await fontsSettled(target.ownerDocument);
@@ -57,8 +56,6 @@ export async function mountViewLifecycle(options: {
         target.ownerDocument.removeEventListener("hitslop:render-error", failed);
       }
     },
-    /** Theme writes are validated and saved by the native owner; the page only applies them. */
-    applyTheme,
     flush: () => doc.flush(),
     undo: () => doc.undo(),
     redo: () => doc.redo(),

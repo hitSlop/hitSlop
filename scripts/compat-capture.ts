@@ -169,7 +169,7 @@ for (const slug of Object.keys(templates)) {
 for (const slug of ["conformance", "quick-checklist"]) {
   const compacted = join(documents, `${slug}-compacted.slop`);
   await copyFile(join(documents, slug + ".slop"), compacted);
-  await slop(["compact", compacted]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
+  await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_checkpoint", "--", compacted]);
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
 const anomalies = join(documents, "conformance-anomalies.slop");
@@ -228,7 +228,6 @@ for (const args of [
   ["attachments", "import", "{document}", "{attachment}"],
   ["attachments", "export", "{document}", attachmentID, "--output", "{output}"],
   ["attachments", "list", "{document}"],
-  ["compact", "{document}"],
   ["get", "{document}"],
 ]) {
   const exported = join(work, "attachment-export.txt");

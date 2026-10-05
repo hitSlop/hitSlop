@@ -50,13 +50,13 @@ the application behind a hole, not merely that a DOM element ignores them.
 
 Use optional `Export.svelte`, discovered alongside `App.svelte`. It receives
 `mode: "preview" | "export"` and reads the same document by importing `schema.ts`.
-Pass the current data and selected view; share presentation and theme components.
+Render saved data in a fresh page; transient editor selection is not carried over. Share presentation and theme components.
 Use normal flow rather than viewport heights or scrolling panels. This view also
 supplies the catalog and Quick Look preview (captured at the export object’s
 size, not the empty editor window). Without it, use `data-slop-capture="static"`
 styles and `data-slop-export="hide"` on editing controls.
 
-PNG exports use current width and full content height at 2×, within 16384 pixels
+PNG exports use the saved presentation width and full content height at 2×, within 16384 pixels
 per side and 24 megapixels. PDF retains selectable text on one content-sized page.
 Dedicated exports do not inherit native window masks. Fonts, visible images, and
 stable geometry are awaited; asynchronous charts can use `capture.onPrepare`.

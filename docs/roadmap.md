@@ -47,8 +47,8 @@ In order, with the reasoning in [ideas](ideas.md):
   benchmarks record footprints only and make no leak claim.
 - Text drafts that can't be saved are reported and dropped, in two cases. One case is a draft
   whose outcome is unknown when its field unmounts, which includes a draft that became
-  unresolved earlier. The other is a draft sent from a version a live `slop compact` trimmed,
-  to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
+  unresolved earlier. The other is a draft sent from a version that automatic retention
+  had to trim in a session exceeding its storage budget, to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
   shows the saved text. The fix to plan is a recoverable draft with an explicit discard.
   Holding the close barrier instead made windows impossible to close.
 - Each removed optional value or record entry that held a container, and each removed
@@ -62,18 +62,25 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
   in the app, and select the ones that ship.
-- **One page policy.** Generate the page's content security policy from `packages/schema`
-  for the app and `slop dev` (stating `worker-src slop:`), so the preview refuses what
-  the app refuses. Then have `slop build` emit worker and worklet entry points as files in
-  `assets`, so `new Worker` and `addModule` load `slop://` URLs; `blob:` and `data:` code
-  stays refused, and a refused load says why in plain language. WebKit doesn't isolate
-  `slop:` pages, so there is no `SharedArrayBuffer`.
-- **CLI document editing off macOS.** Authoring and reading files (`build`, `schema`,
-  `inspect`) already run anywhere through the Rust `slop-engine`; document edits still
-  run in the Swift helper. Move them into the engine (closed documents under the writer
-  lock, live ones through the owner's socket), ship it inside the app too (the CLI already
-  carries an engine per platform), and have the CLI prefer the app's copy on a Mac so it never writes a format the installed app can't read. The Swift helper
-  keeps screenshot, export and open.
+- **Worker and worklet assets.** The shared page CSP now comes from `packages/schema`
+  for native and browser pages. Explicit worker policy and build support for worker and
+  worklet entry points remain: emit them as files in `assets` so `new Worker` and
+  `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
+  understandable. WebKit does not isolate `slop:` pages, so there is no
+  `SharedArrayBuffer`.
+
+## Implemented foundation
+
+- Rust owns edit admission, save scheduling, discard, close, command dispatch and the
+  live socket. Swift delivers events and provides native UI and rendering.
+- The engine creates and edits documents on macOS and Linux. Mac document commands
+  prefer the engine shipped with the app; authoring validation uses the CLI's engine.
+- Theme overrides share Loro storage, sequence, publications, undo and saving with data.
+- Authoring has one generated Svelte entry. `Export.svelte` and `Icon.svelte` remain
+  optional; captures use fresh saved-state pages, with a fresh App as the export fallback.
+
+Implementation decisions, measurements and verification are recorded in the
+[pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
 

@@ -25,7 +25,7 @@
 </script>
 
 <svelte:boundary onerror={reportRenderError}>
-  <div data-hitslop-root>
+  <div data-hitslop-root style:display|important={ctx.capture.isRenderer() && Export ? "none" : undefined}>
     <App />
   </div>
   {#snippet failed(error)}

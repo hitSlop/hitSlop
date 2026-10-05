@@ -1,5 +1,30 @@
 // Plain-JS consumer of the ctx interface. No engine or private bridge imports.
 export default {
+  descriptor: {
+    "kind": "object",
+    "properties": {
+      "title": {
+        "kind": "text"
+      },
+      "rows": {
+        "kind": "list",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "text": {
+              "kind": "text"
+            },
+            "done": {
+              "kind": "boolean"
+            }
+          }
+        }
+      },
+      "hits": {
+        "kind": "counter"
+      }
+    }
+  },
   mount(ctx, target) {
     const doc = ctx.document;
     const output = document.createElement("p");

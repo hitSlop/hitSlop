@@ -8,26 +8,26 @@ extension SlopRenderer {
                                       deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
         try refuseExisting(output)
         try deadline.check()
-        let data = try await exportData(session: session, format: format)
+        let data = try await exportData(session: session, format: format, expectedEpoch: deadline.expectedEpoch)
         try publishExport(data, to: output, deadline: deadline)
     }
 
-    /// `slop export` of a closed document (`DocumentCommand.run`'s `closed`): its saved
+    /// `slop export` of a closed document (`DocumentCommand.run`'s renderer callback): its saved
     /// state, rendered from a snapshot that takes no lock. An open document exports its
-    /// live view through its owner instead.
-    public static func exportClosed(_ root: URL, format: ExportFormat, output: URL) async throws -> SocketReply {
+    /// saved state after its owner drains pending edits.
+    public static func exportClosed(_ root: URL, format: ExportFormat, output: URL,
+                                    deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws -> SocketReply {
         let output = output.standardizedFileURL
         try refuseExisting(output)
-        let deadline = NativeCommandDeadline()
         let data = try await withRenderSession(url: root) { try await exportData(session: $0, format: format) }
         try publishExport(data, to: output, deadline: deadline)
-        return SocketReply(ok: true, output: output.path)
+        return SocketReply.export(output: output.path, epoch: nil)
     }
 
-    private static func exportData(session: DocumentSession, format: ExportFormat) async throws -> Data {
+    private static func exportData(session: DocumentSession, format: ExportFormat, expectedEpoch: String? = nil) async throws -> Data {
         switch format {
-        case .png: try await exportPNGData(session: session)
-        case .pdf: try await exportPDFData(session: session)
+        case .png: try await exportPNGData(session: session, expectedEpoch: expectedEpoch)
+        case .pdf: try await exportPDFData(session: session, expectedEpoch: expectedEpoch)
         }
     }
 

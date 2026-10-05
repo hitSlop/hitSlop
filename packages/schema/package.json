@@ -10,6 +10,7 @@
     "./validation": "./src/validation.ts",
     "./core": "./src/core.ts",
     "./page": "./src/page.ts",
+    "./policy": "./src/policy.ts",
     "./values": "./src/values.ts"
   },
   "dependencies": {

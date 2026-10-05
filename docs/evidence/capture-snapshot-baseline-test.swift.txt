@@ -1,0 +1,85 @@
+import AppKit
+import Darwin
+import Foundation
+import Testing
+import HitSlopTestSupport
+@testable import HitSlopDocument
+@testable import HitSlopHost
+
+@Suite(.serialized) struct CaptureSnapshotBenchmarks {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_SNAPSHOT"] == "1")) @MainActor
+  func savedCopyAgainstLiveCapture() async throws {
+    _ = NSApplication.shared
+    let folder = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let root = try Fixtures.native()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let initial: [String: Any] = [
+      "title": "Snapshot capture measurement",
+      "tasks": (0..<5000).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
+    ]
+    let session = try await DocumentSession.open(url: root)
+    _ = try await session.owner.apply(batch: Fixtures.json(["intents": [["type": "replace", "path": [], "value": initial]]]))
+    try await session.owner.flush()
+    session.load()
+    try await session.waitUntilReady()
+    var live: [Double] = [], snapshot: [Double] = [], memory: [[String: Any]] = []
+    var rendererPIDs = Set<Int32>()
+    func footprint(_ pid: Int32) -> UInt64? {
+      var usage = rusage_info_v4()
+      let result = withUnsafeMutablePointer(to: &usage) { ptr in
+        ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+      }
+      return result == 0 ? usage.ri_phys_footprint : nil
+    }
+    func observe(_ renderer: DocumentSession) {
+      let key = "_webProcessIdentifier"
+      if renderer.webView.responds(to: NSSelectorFromString(key)),
+         let pid = (renderer.webView.value(forKey: key) as? NSNumber)?.int32Value { rendererPIDs.insert(pid) }
+    }
+    func recordMemory(_ sample: Int) {
+      let content = rendererPIDs.compactMap { footprint($0) }
+      memory.append(["sample": sample, "hostMiB": Double(footprint(getpid()) ?? 0) / 1_048_576,
+        "captureWebContentMiB": Double(content.reduce(0, +)) / 1_048_576, "remainingCaptureProcesses": content.count])
+    }
+    do {
+      recordMemory(-1)
+      for sample in 0..<21 {
+        let first = Date()
+        _ = try await SlopRenderer.previewPNGData(session: session)
+        let oldMS = Date().timeIntervalSince(first) * 1000
+        let second = Date()
+        try await session.flush()
+        let copy = folder.appendingPathComponent("capture-\(sample).slop")
+        try await session.owner.copy(to: copy)
+        _ = try await SlopRenderer.withRenderSession(url: copy) { renderer in
+          observe(renderer)
+          return try await SlopRenderer.previewPNGData(session: renderer)
+        }
+        try FileManager.default.removeItem(at: copy)
+        let newMS = Date().timeIntervalSince(second) * 1000
+        if sample > 0 { live.append(oldMS); snapshot.append(newMS) }
+        recordMemory(sample)
+      }
+      try await session.close()
+      try await Task.sleep(for: .seconds(2))
+      recordMemory(22)
+    } catch { try? await session.close(); throw error }
+    func p95(_ values: [Double]) -> Double { values.sorted()[Int(ceil(Double(values.count) * 0.95)) - 1] }
+    // Gate the added cost of each matched capture. Subtracting the two p95s would let
+    // unrelated live-path outliers conceal a consistent regression in the candidate.
+    let paired = zip(snapshot, live).map { $0 - $1 }
+    let added = p95(paired)
+    let evidence: [String: Any] = ["rows": 5000, "warmup": 1, "samples": 20,
+      "build": "Debug native test bundle", "baseline": "live editor preview capture",
+      "candidate": "page flush + core SQLite backup + fresh snapshot WebView preview + close + cleanup",
+      "liveMS": live, "snapshotMS": snapshot, "liveP95MS": p95(live), "snapshotP95MS": p95(snapshot),
+      "pairedAddedMS": paired, "addedP95MS": added, "p95DifferenceMS": p95(snapshot) - p95(live),
+      "latencyGatePassed": added <= 1000, "memory": memory,
+      "memoryScope": "Host physical footprint and identified capture WebContent processes; excludes source WebContent, GPU and network processes. Warm-up/cache growth is not a leak verdict."]
+    let output = Fixtures.repository.appendingPathComponent("docs/evidence/capture-snapshot-spike-2026-10-04.json")
+    try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: output)
+    print("Snapshot capture added p95: \(added) ms; evidence: \(output.path)")
+    #expect(added <= 1000, "Snapshot replacement gate: added p95 must be at most 1 second")
+  }
+}

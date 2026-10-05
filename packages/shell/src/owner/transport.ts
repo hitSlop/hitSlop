@@ -123,12 +123,14 @@ export function wasmTransport(core: any): OwnerTransport {
 export async function browserTransport(
   descriptor: unknown,
   initial: unknown,
+  template: string,
+  theme: Record<string, string>,
 ): Promise<OwnerTransport> {
   const module = await import(new URL("./core/hitslop_core_wasm.js", import.meta.url).href);
   await module.default({
     module_or_path: new URL("./core/hitslop_core_wasm_bg.wasm", import.meta.url).href,
   });
   return wasmTransport(
-    module.WasmDocument.create(JSON.stringify(descriptor), JSON.stringify(initial)),
+    module.WasmDocument.createWithTheme(JSON.stringify(descriptor), JSON.stringify(initial), template, JSON.stringify(theme)),
   );
 }

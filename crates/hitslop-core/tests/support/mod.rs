@@ -121,11 +121,12 @@ impl Edit for Document {
 pub struct View {
     pub value: Value,
     pub issues: Value,
+    pub theme: Value,
 }
 impl View {
     pub fn of(doc: &Document) -> Self {
         let state: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
-        Self { value: state["value"].clone(), issues: state["issues"].clone() }
+        Self { value: state["value"].clone(), issues: state["issues"].clone(), theme: state["theme"].clone() }
     }
     pub fn publish(&mut self, publication: &str) {
         let publication: Value = serde_json::from_str(publication).unwrap();
@@ -133,12 +134,16 @@ impl View {
         if let Some(issues) = publication.get("issues") {
             self.issues = issues.clone();
         }
+        if let Some(theme) = publication.get("theme") {
+            self.theme = theme.clone();
+        }
     }
     /// Equal to a fresh snapshot, value and issues.
     pub fn check(&self, doc: &Document, context: &str) {
         let fresh: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
         assert_eq!(self.value, fresh["value"], "{context}: projection diverged");
         assert_eq!(self.issues, fresh["issues"], "{context}: issues diverged");
+        assert_eq!(self.theme, fresh["theme"], "{context}: theme diverged");
     }
 }
 // Independent test consumer, not the publisher implementation.

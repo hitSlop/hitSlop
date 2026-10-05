@@ -7,10 +7,10 @@ import { join, resolve } from "node:path";
 import { debugHelper } from "./helper";
 import { exec } from "../packages/cli/src/process";
 import { strict as assert } from "node:assert";
-import { SocketResults } from "../packages/schema/src/socket";
+import type { SocketSuccessFor } from "../packages/schema/src/socket";
 import { validate } from "../packages/schema/src/validation";
-import type { AttachmentInfo } from "../packages/schema/src/values";
-import type { Static } from "typebox";
+import { ThemeStateSchema, AttachmentInfoSchema, type AttachmentInfo } from "../packages/schema/src/values";
+import { Type } from "typebox";
 
 export const corpus = join(repository, "tests/compat");
 export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
@@ -41,7 +41,7 @@ export type Expected = {
   theme: Pick<ThemeState, "overrides" | "effective">;
   attachments: AttachmentInfo[];
 };
-type ThemeState = Static<(typeof SocketResults)["theme.get"]>["state"];
+type ThemeState = SocketSuccessFor<"theme.get">["state"];
 /** `scenarios/<name>.json`: a CLI edit replayed on the frozen document, and its result. */
 export type Scenario = { ops: unknown[]; value: unknown; issues: unknown[] };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
@@ -97,8 +97,8 @@ export async function slopJSON(args: string[]): Promise<any> {
 /** What a later build must reproduce: the value and issues, not the version or sequence. */
 export async function savedState(document: string): Promise<Expected> {
   const { state } = await slopJSON(["get", document, "--snapshot"]);
-  const theme = validate(SocketResults["theme.get"].properties.state, await slopJSON(["theme", "get", document]), "slop theme get");
-  const attachments = validate(SocketResults["attachments.list"].properties.state, await slopJSON(["attachments", "list", document]), "slop attachments list");
+  const theme = validate(ThemeStateSchema, await slopJSON(["theme", "get", document]), "slop theme get");
+  const attachments = validate(Type.Array(AttachmentInfoSchema), await slopJSON(["attachments", "list", document]), "slop attachments list");
   return { value: state.value, issues: state.issues, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
 }
 

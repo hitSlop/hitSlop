@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
@@ -21,32 +22,6 @@ import HitSlopTestSupport
   }
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
-  @Test(arguments: [Optional<String>.none, "another-core"])
-  @MainActor func liveOwnerWithWrongCoreIdentityIsRefusedBeforeCommands(identity: String?) async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    let forwarded = Locked(0)
-    let server = try SocketServer { request, _ in
-      if request.method == .hello { return SocketReply(ok: true, epoch: owner.epoch, coreBuildId: identity).encoded() }
-      forwarded.modify { $0 += 1 }
-      return await owner.request(request)
-    }
-    defer { server.stop() }
-    try owner.publishDiscovery(JSONSerialization.data(withJSONObject: ["socket": server.path, "documentPath": root.path]))
-    let output = root.deletingPathExtension().appendingPathExtension("png")
-    for (method, fields) in [("get", [:]), ("batch", ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#]),
-                             ("export", ["format": "png", "output": output.path])] {
-      let reply = try await command(method, url: root, fields)
-      #expect(!reply.ok)
-      #expect(reply.error?.contains("Quit and reopen hitSlop") == true, "\(method)")
-    }
-    #expect(!FileManager.default.fileExists(atPath: output.path))
-    #expect(forwarded.value == 0)
-    #expect(try await hits(owner) == 0)
-    try await owner.close()
-  }
-
   // Failure: the helper validated a live reply, and the validator refuses JSON over 48 MiB,
   // while a closed reply went unchecked, so a large document read closed but not live.
   // Oracle: near-limit batches each apply once, and the live and closed reads of a reply
@@ -55,9 +30,8 @@ import HitSlopTestSupport
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    let server = try SocketServer { request, _ in await owner.request(request) }
+    let server = try owner.startServer(exporter: NativeExports { _, _, _, _ in throw OwnerError.rejected("No renderer") })
     defer { server.stop() }
-    try owner.publishDiscovery(JSONSerialization.data(withJSONObject: ["socket": server.path, "documentPath": root.path]))
     // U+0001 is stored as one byte and written to JSON as six (`\u0001`): the reply outgrows
     // 48 MiB while the document stays far inside its 32 MiB.
     let text = String(repeating: "\\u0001", count: 140_000)
@@ -195,7 +169,7 @@ import HitSlopTestSupport
     _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#333333"}"##))
     try await owner.flush()
     #expect(try await hits(snapshot) == 3)
-    #expect(try await snapshot.loadTheme().state.effective == first.effective)
+    #expect(try await snapshot.loadTheme().state.effective == first.state.effective)
     await #expect(throws: (any Error).self) { _ = try await snapshot.apply(batch: self.increment) }
     await #expect(throws: (any Error).self) { _ = try await snapshot.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##)) }
     await #expect(throws: (any Error).self) { _ = try await snapshot.putAttachment(base64: "AQ==") }
@@ -323,14 +297,15 @@ import HitSlopTestSupport
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     let hold = try Fixtures.DatabaseHold(root)
-    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).changed)
+    let changed = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
+    #expect(changed.revision > 0)
     #expect(try await accent(owner) == "#111111")
     await #expect(throws: (any Error).self) { _ = try await owner.exportTheme() }
     hold.release()
     #expect(try await owner.exportTheme().contains("#111111"))
     #expect(try await savedAccent(root) == "#111111")
     // Setting the template's color changes nothing; a later change is saved by close.
-    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).changed == false)
+    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).revision == changed.revision)
     _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##))
     try await owner.close()
     #expect(try await savedAccent(root) == "#222222")
@@ -349,10 +324,35 @@ import HitSlopTestSupport
     await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.import(fileJson: other)) }
     await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.import(fileJson: "not a theme")) }
     #expect(try await accent(owner) == "#335577")
-    #expect(try await owner.applyTheme(.import(fileJson: file)).changed)
+    _ = try await owner.applyTheme(.import(fileJson: file))
     #expect(try await accent(owner) == "#111111")
     try await owner.close()
     #expect(try await savedAccent(root) == "#111111")
+  }
+
+  @Test func aThemeDragIsOneDocumentUndoStep() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(url: root)
+    func color(_ value: String) async throws {
+      try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+        owner.enqueueTheme(.set(["accent": value])) { done.resume(with: $0.map { _ in }) }
+      }
+    }
+    owner.beginThemeGesture()
+    try await color("#111111")
+    try await color("#222222")
+    owner.endThemeGesture()
+    _ = try await owner.apply(batch: increment)
+    _ = try await owner.undo()
+    #expect(try await hits(owner) == 0)
+    #expect(try await accent(owner) == "#222222")
+    _ = try await owner.undo()
+    #expect(try await accent(owner) == "#335577")
+    _ = try await owner.undo(redo: true)
+    #expect(try await accent(owner) == "#222222")
+    try await owner.close()
+    #expect(try await savedAccent(root) == "#222222")
   }
 
   // Spike S-D. Failure: work queued by a replaced page, or captured before a discard,
@@ -371,7 +371,6 @@ import HitSlopTestSupport
     try await owner.discardPending()
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, epoch: epoch) }
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
-    await #expect(throws: OwnerReplaced.self) { try await owner.compact(epoch: epoch) }
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.applyTheme(.reset(token: nil), epoch: epoch) }
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.putAttachment(base64: "AQ==", epoch: epoch) }
     #expect(try await hits(owner) == 0)
@@ -394,16 +393,20 @@ import HitSlopTestSupport
     let owner = try DocumentOwner(url: root)
     let epoch = owner.epoch
     try await owner.discardPending()
-    let path = root.path
+    #expect(owner.epoch != epoch)
+    // The real command client resolves the file path before the socket handshake.
+    // Keep this direct dispatch focused on an old epoch, not a /var path alias.
+    let resolved = try #require(realpath(owner.file.url.path, nil))
+    defer { free(resolved) }
+    let path = String(cString: resolved)
     for request in [
       SocketRequest.batch(.init(documentPath: path, epoch: epoch, ops: #"[{"type":"increment","path":["hits"],"by":1}]"#)),
-      .compact(.init(documentPath: path, epoch: epoch)),
       .themeSet(.init(documentPath: path, epoch: epoch, values: ["accent": "#123456"])),
       .themeReset(.init(documentPath: path, epoch: epoch)),
       .attachmentsPut(.init(documentPath: path, epoch: epoch, bytes: "AQ==")),
     ] {
       let reply = try decodeReply(await owner.request(request))
-      #expect(reply.code == .ownerReplaced, "\(request.method)")
+      #expect(reply.code == .ownerReplaced, "\(request.method): \(reply.error ?? "no error")")
     }
     #expect(try await hits(owner) == 0)
     #expect(try await accent(owner) == "#335577")

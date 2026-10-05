@@ -197,3 +197,50 @@ fn scalars_model() { run("scalars", include_str!("../fixtures/scalars.json")) }
 fn collections_model() { run("collections", include_str!("../fixtures/collections.json")) }
 #[test]
 fn nested_model() { run("nested", include_str!("../fixtures/nested.json")) }
+
+/// One live owner receives CLI changes between a page's typing acknowledgements. This
+/// exercises the actual local edit stream independently of replica exchange above.
+#[test]
+fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
+    use hitslop_core::Origin;
+    const SCHEMA: &str = r#"{"kind":"object","properties":{"text":{"kind":"text"},"hits":{"kind":"counter"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}}}}"#;
+    for seed in 1..=support::workload("HITSLOP_MODEL_SEEDS", 8) {
+        let mut doc = Document::create(SCHEMA, r#"{"text":"start","hits":0,"rows":[]}"#).unwrap();
+        let mut view = View::of(&doc);
+        for step in 0..24 {
+            let before = snapshot(&doc);
+            let from = before["value"]["text"].as_str().unwrap();
+            let to = format!("{from}p{seed}-{step}");
+            let base = doc.version();
+            // This CLI prefix arrives while the page is typing against its older base.
+            let prefixed = format!("A{from}");
+            let agent = doc.apply_batch(&json!({"intents":[
+                {"type":"set","path":["text"],"value":prefixed},
+                {"type":"increment","path":["hits"],"by":1},
+            ]}).to_string(), Origin::Agent).unwrap();
+            view.publish(&agent.publication.unwrap());
+            view.check(&doc, "owner CLI batch");
+            let caret = to.encode_utf16().count();
+            let typed = doc.edit_text(&json!({"base":base,"path":["text"],"from":from,"to":to,
+                "selectionStart":caret,"selectionEnd":caret}).to_string()).unwrap();
+            view.publish(&typed.publication.unwrap());
+            view.check(&doc, "delayed page edit");
+            assert_eq!(snapshot(&doc)["value"]["text"], format!("A{to}"));
+            assert_eq!(snapshot(&doc)["value"]["hits"], step + 1);
+            let accepted = snapshot(&doc);
+            // An earlier valid mutation in a refused batch must roll back too.
+            assert!(doc.apply_batch(r#"{"intents":[{"type":"set","path":["text"],"value":"partial"},{"type":"increment","path":["hits"],"by":0}]}"#, Origin::Agent).is_err());
+            assert_eq!(snapshot(&doc), accepted);
+            view.publish(&doc.undo().unwrap().publication.unwrap());
+            view.check(&doc, "undo delayed typing");
+            assert_eq!(snapshot(&doc)["value"]["text"], prefixed);
+            view.publish(&doc.redo().unwrap().publication.unwrap());
+            view.check(&doc, "redo delayed typing");
+            assert_eq!(snapshot(&doc)["value"], accepted["value"]);
+            let reopened = Document::open(SCHEMA, &doc.checkpoint().unwrap(), &[]).unwrap();
+            for key in ["value", "issues", "theme", "version"] {
+                assert_eq!(snapshot(&reopened)[key], snapshot(&doc)[key], "seed {seed}, step {step}: {key}");
+            }
+        }
+    }
+}

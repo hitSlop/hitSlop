@@ -61,6 +61,14 @@ pub struct WasmDocument {
 }
 #[wasm_bindgen]
 impl WasmDocument {
+    #[wasm_bindgen(js_name = createWithTheme)]
+    pub fn create_with_theme(schema_json: &str, initial_json: &str, template: &str, defaults_json: &str) -> Result<WasmDocument, JsValue> {
+        Ok(Self { inner: Core::create_with_theme(schema_json, initial_json, template, defaults_json).map_err(error)? })
+    }
+    #[wasm_bindgen(js_name = themeSet)]
+    pub fn theme_set(&mut self, values_json: &str) -> Result<ApplyResult, JsValue> {
+        self.inner.theme(hitslop_core::theme::Change::Set(values_json)).map(|theme| applied(theme.result)).map_err(error)
+    }
     pub fn create(schema_json: &str, initial_json: &str) -> Result<WasmDocument, JsValue> {
         Ok(Self {
             inner: Core::create(schema_json, initial_json).map_err(error)?,

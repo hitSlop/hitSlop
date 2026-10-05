@@ -4,10 +4,9 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Static } from "typebox";
 import { pack } from "../packages/cli/src/engine";
 import { exec, run } from "../packages/cli/src/process";
-import { SocketReplySchema, SocketResults, type HelperRequestFor, type SocketMethod, type SocketReply } from "../packages/schema/src/socket";
+import { SocketReplySchema, type SocketSuccessFor, type HelperRequestFor, type SocketMethod, type SocketReply } from "../packages/schema/src/socket";
 import { validate } from "../packages/schema/src/validation";
 import { repository } from "./runtime-artifacts";
 
@@ -23,13 +22,15 @@ type Request<M extends Method> = HelperRequestFor<M> & { method: M };
 export async function helperReply<M extends Method>(body: Request<M>, { helper = debugHelper, ...placement }: Helper = {}): Promise<SocketReply> {
   const { stdout, stderr, code } = await exec([helper, "request"], { ...placement, stdin: JSON.stringify(body), timeout: 120_000 });
   if (code) throw new Error(`hitslop-native request ${body.method} failed (${code}): ${stderr.trim()}`);
-  return validate(SocketReplySchema, JSON.parse(stdout), `hitslop-native ${body.method} reply`);
+  const reply = validate(SocketReplySchema, JSON.parse(stdout), `hitslop-native ${body.method} reply`);
+  if (reply.ok && reply.method !== body.method) throw new Error(`hitslop-native ${body.method} returned ${reply.method}`);
+  return reply;
 }
 /** A request's result, as its method's contract requires it; a refusal fails. */
-export async function helperRequest<M extends Method>(body: Request<M>, options?: Helper): Promise<Static<(typeof SocketResults)[M]>> {
+export async function helperRequest<M extends Method>(body: Request<M>, options?: Helper): Promise<SocketSuccessFor<M>> {
   const reply = await helperReply(body, options);
   if (!reply.ok) throw new Error(`${body.method}: ${reply.error}`);
-  return validate(SocketResults[body.method], reply, `hitslop-native ${body.method} result`);
+  return reply as SocketSuccessFor<M>;
 }
 /** An export at `path` that is a real file of its format: past 100 bytes, with the PNG or PDF
  * signature. */

@@ -215,6 +215,7 @@ const AGENT: &str = "agent";
 enum Run {
     Typing { path: Vec<Segment>, text: String, caret: usize },
     Agent,
+    Theme,
 }
 /// One document edit, restored by Loro as a new change. Only version references are
 /// kept here; document values and their history remain in Loro.
@@ -233,6 +234,12 @@ pub struct Applied {
     pub ids: Vec<String>,
     pub publication: Option<String>,
 }
+/// A palette command and the document change it accepted.
+#[derive(Debug)]
+pub struct ThemeApplied {
+    pub state: theme::ThemeState,
+    pub result: Applied,
+}
 /// A stateless text edit. `authored` is the version right after this edit on its own
 /// branch; the page sends it as the next `base`. Selections are UTF-16 offsets in the
 /// merged text. A caret-only request publishes nothing.
@@ -249,6 +256,8 @@ pub struct TextEdit {
 pub struct Document {
     doc: LoroDoc,
     schema: Node,
+    theme: theme::Theme,
+    theme_gesture: bool,
     sequence: u64,
     /// Every movable list's order and row identities as of the last publication.
     lists: HashMap<ContainerID, ListState>,
@@ -278,6 +287,8 @@ impl Document {
             run: None,
             doc,
             schema,
+            theme: theme::Theme::default(),
+            theme_gesture: false,
             sequence: 0,
             issues: vec![],
             events,
@@ -290,6 +301,16 @@ impl Document {
     }
     pub fn create(schema: &str, initial: &str) -> Result<Self> {
         Self::create_with(descriptor(schema)?, initial)
+    }
+    /// Creates a document with the app's immutable palette defaults.
+    pub fn create_with_theme(schema: &str, initial: &str, template: &str, defaults: &str) -> Result<Self> {
+        let tokens = theme::validate_defaults(defaults)?;
+        let mut doc = Self::create(schema, initial)?;
+        doc.configure_theme(template, &tokens);
+        Ok(doc)
+    }
+    pub(crate) fn configure_theme(&mut self, template: &str, defaults: &[(String, String)]) {
+        self.theme = theme::Theme::new(template, defaults);
     }
     /// A new document of an already parsed descriptor.
     pub(crate) fn create_with(schema: Node, initial: &str) -> Result<Self> {
@@ -311,6 +332,13 @@ impl Document {
             return Err(err(Code::TooLarge, "Input bytes"));
         }
         Self::open_with(descriptor(schema)?, checkpoint, |e| e, |import| updates.iter().try_for_each(|bytes| import(bytes)))
+    }
+    /// Opens saved data and overrides under the app's immutable palette defaults.
+    pub fn open_with_theme(schema: &str, checkpoint: &[u8], updates: &[Vec<u8>], template: &str, defaults: &str) -> Result<Self> {
+        let tokens = theme::validate_defaults(defaults)?;
+        let mut doc = Self::open(schema, checkpoint, updates)?;
+        doc.configure_theme(template, &tokens);
+        Ok(doc)
     }
     /// Imports `checkpoint`, then each update `updates` passes to its import function, in
     /// order. Storage streams rows through it without copying them, failing in its own
@@ -440,7 +468,7 @@ impl Document {
     /// `{sequence, version, value, issues}` for a page or a reader, with the issues the
     /// owner maintains. `snapshot` recomputes the same state from the full value.
     pub fn state(&self) -> Result<String> {
-        Ok(encode(&State { version: self.version(), value: self.projected()?, issues: self.issues.clone(), sequence: self.sequence }))
+        Ok(encode(&State { version: self.version(), value: self.projected()?, issues: self.issues.clone(), sequence: self.sequence, theme: self.theme.effective(&self.doc.get_map(theme::ROOT))? }))
     }
     pub fn snapshot(&self) -> Result<String> {
         // Deliberately recomputed from the full value: this is the oracle that
@@ -460,7 +488,7 @@ impl Document {
             sort_issues(&mut found);
             value
         };
-        Ok(encode(&State { version: self.version(), value, issues: found, sequence: self.sequence }))
+        Ok(encode(&State { version: self.version(), value, issues: found, sequence: self.sequence, theme: self.theme.effective(&self.doc.get_map(theme::ROOT))? }))
     }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
@@ -523,6 +551,41 @@ impl Document {
     /// The publication sequence: the number of published changes since open.
     pub fn sequence(&self) -> u64 {
         self.sequence
+    }
+    /// Reads or changes the palette through the same commit, publication and undo path
+    /// as authored data. A command outside a panel gesture is one undo step.
+    pub fn theme(&mut self, change: theme::Change) -> Result<ThemeApplied> {
+        let before = self.doc.state_frontiers();
+        if let Err(error) = self.theme.change(&self.doc.get_map(theme::ROOT), change) {
+            self.abort(&before)?;
+            return Err(error);
+        }
+        self.doc.commit();
+        let publication = self.publish_or_abort(&before)?;
+        if publication.is_some() {
+            let continues = self.theme_gesture && matches!(self.run, Some(Run::Theme));
+            self.record(before, self.theme_gesture.then_some(Run::Theme), continues);
+        }
+        Ok(ThemeApplied {
+            state: self.theme_state()?,
+            result: Applied { sequence: self.sequence, ids: vec![], publication },
+        })
+    }
+    pub fn theme_state(&self) -> Result<theme::ThemeState> {
+        self.theme.state(&self.doc.get_map(theme::ROOT))
+    }
+    pub fn export_theme(&self) -> Result<String> {
+        self.theme.export(&self.doc.get_map(theme::ROOT))
+    }
+    /// Starts a panel gesture. Hosts end it before any independent theme command;
+    /// intervening data edits also stop extension of the previous theme undo step.
+    pub fn begin_theme_gesture(&mut self) {
+        self.run = None;
+        self.theme_gesture = true;
+    }
+    pub fn end_theme_gesture(&mut self) {
+        self.theme_gesture = false;
+        if matches!(self.run, Some(Run::Theme)) { self.run = None; }
     }
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
     pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
@@ -692,16 +755,25 @@ impl Document {
     /// when the document did not change: no publication, and the sequence stays.
     fn publish(&mut self) -> Result<Option<String>> {
         let events = std::mem::take(&mut *self.events.lock().unwrap());
-        let Some(published) = publication::publish(&self.doc, &self.schema, &mut self.lists, events)? else {
+        let theme = publication::theme_changed(&self.doc, &events)
+            .then(|| self.theme.effective(&self.doc.get_map(theme::ROOT))).transpose()?;
+        let published = publication::publish(&self.doc, &self.schema, &mut self.lists, events)?;
+        if published.is_none() && theme.is_none() {
             return Ok(None);
+        }
+        let (ops, changed) = match published {
+            Some(published) => {
+                let changed = (published.rescan || !self.issues.is_empty()) && self.refresh_issues(&published.dirty);
+                (published.ops, changed)
+            }
+            None => (vec![], false),
         };
-        let changed = (published.rescan || !self.issues.is_empty()) && self.refresh_issues(&published.dirty);
         let next = self
             .sequence
             .checked_add(1)
             .ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
         let issues = changed.then(|| self.issues.clone());
-        let response = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops: published.ops, issues });
+        let response = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops, issues, theme });
         self.sequence = next;
         Ok(Some(response))
     }
@@ -760,3 +832,11 @@ pub mod file;
 pub mod registry;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod manifest;
+
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod owner;
+
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod command;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod socket;

@@ -30,11 +30,11 @@ test("document commands send one request and print its reply", async () => {
     // Records the request it reads and answers like an owner that accepted a batch.
     await writeFile(
       helper,
-      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else { await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, ids: ["r1"], sequence: 3 })); }\n`,
+      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else { await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", epoch: "owner", ids: ["r1"], sequence: 3 })); }\n`,
       { mode: 0o755 },
     );
     const op = '{ "type": "set", "path": ["title"], "value": "hello \\"world\\"" }';
-    const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper });
+    const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(applied.code).toBe(0);
     expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"], sequence: 3 });
     const { args, body } = JSON.parse(await Bun.file(sent).text());
@@ -43,7 +43,7 @@ test("document commands send one request and print its reply", async () => {
     expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), ops: `[${op}]` });
     const data = join(root, "new data.json");
     await writeFile(data, '{"n": 1.50}');
-    const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper });
+    const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(imported.code).toBe(0);
     expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).ops).toBe('[{"type":"replace","path":["rows"],"value":{"n": 1.50}}]');
   } finally {
@@ -61,7 +61,7 @@ test("a refused edit says whether it was applied", async () => {
       `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else console.log(JSON.stringify({ ok: false, error: "No such row", code: "rejected", reason: "path_not_found" }));\n`,
       { mode: 0o755 },
     );
-    const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_NATIVE_CLI: helper });
+    const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(refused.code).not.toBe(0);
     expect(refused.stderr).toContain("No such row");
     expect(refused.stderr).toContain("Not applied.");
@@ -83,7 +83,7 @@ test("a success missing its method's result is an unknown outcome", async () => 
       { mode: 0o755 },
     );
     for (const args of [["batch", "a.slop", "--ops", "[]"], ["export", "a.slop", "--format", "pdf", "--output", join(root, "a.pdf")]]) {
-      const reply = await run(args, { HITSLOP_NATIVE_CLI: helper });
+      const reply = await run(args, { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
       expect(reply.code).not.toBe(0);
       expect(reply.stdout).toBe("");
       expect(reply.stderr).toContain("outcome unknown");
@@ -93,7 +93,7 @@ test("a success missing its method's result is an unknown outcome", async () => 
   }
 });
 
-test("create and open forward to a helper that serves this CLI's protocol", async () => {
+test("create and open negotiate the selected engine or native helper protocol", async () => {
   if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-create-open-"));
   try {
@@ -108,14 +108,14 @@ test("create and open forward to a helper that serves this CLI's protocol", asyn
     };
     const matching = await helper("matching", JSON.parse(served));
     const create = ["create", "--from", "a template.slop", "--output", "my doc.slop"];
-    const created = await run(create, { HITSLOP_NATIVE_CLI: matching });
+    const created = await run(create, { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
     expect(created.code).toBe(0);
     expect(JSON.parse(created.stdout)).toEqual([...selection, ...create]);
-    const opened = await run(["open", "my doc.slop"], { HITSLOP_NATIVE_CLI: matching });
+    const opened = await run(["open", "my doc.slop"], { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
     expect(opened.code).toBe(0);
     expect(JSON.parse(opened.stdout)).toEqual([...selection, "open", "my doc.slop"]);
     const newer = { version: HelperProtocol.version + 1, minimum: HelperProtocol.version + 1 };
-    const refused = await run(create, { HITSLOP_NATIVE_CLI: await helper("newer", JSON.stringify(newer)) });
+    const refused = await run(create, { HITSLOP_ENGINE: await helper("newer", JSON.stringify(newer)) });
     expect(refused.code).not.toBe(0);
     expect(refused.stdout).toBe("");
   } finally {

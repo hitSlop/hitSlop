@@ -11,28 +11,20 @@ import HitSlopTestSupport
 @testable import HitSlopDocument
 
 extension HostTests {
-  @Test @MainActor func captureRestoresCurrentWindowSizeAfterConcurrentResize() async throws {
+  @Test @MainActor func captureDoesNotTouchTheEditorDuringResize() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let view = controller.session.webView
     _ = try await view.evaluateJavaScript("""
-      globalThis.stopResizeProbe = __slop.capture.onPrepare(() => new Promise(resolve => {
-        globalThis.releaseResizeProbe = resolve;
-      })); true
+      globalThis.editorCaptureCalls = 0;
+      __slop.capture.onPrepare(() => { globalThis.editorCaptureCalls++; }); true
       """)
     let capture = Task { try await SlopRenderer.exportPNGData(session: controller.session) }
-    var prepared = false
-    for _ in 0..<100 {
-      prepared = try await view.evaluateJavaScript("typeof globalThis.releaseResizeProbe === 'function'") as? Bool == true
-      if prepared { break }
-      try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(prepared)
     controller.window?.setContentSize(NSSize(width: 600, height: 450))
-    _ = try await view.evaluateJavaScript("globalThis.releaseResizeProbe?.(); globalThis.stopResizeProbe(); true")
-    _ = try await capture.value
+    #expect(NSImage(data: try await capture.value) != nil)
+    #expect(try await view.evaluateJavaScript("globalThis.editorCaptureCalls") as? Int == 0)
     #expect(view.frame == controller.window?.contentView?.bounds)
     try await controller.session.close()
     controller.close()
@@ -121,7 +113,7 @@ extension HostTests {
     #expect(try Data(contentsOf: root) == before)
   }
 
-  @Test @MainActor func captureComponentsAreLazyAndUseCurrentDocumentAndSelectedView() async throws {
+  @Test @MainActor func captureComponentsAreLazyAndUseSavedDocumentWithDefaultView() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -160,10 +152,9 @@ extension HostTests {
     #expect(PDFDocument(data: pdf)?.string?.contains("A little breathing room.") == true)
     _ = try await view.evaluateJavaScript("[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
     let filedPDF = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
-    #expect(filedPDF.string?.contains("Filed tasks") == true)
-    for row in rows {
-      #expect(filedPDF.string?.contains(row["text"] as? String ?? "") == true)
-    }
+    #expect(filedPDF.string?.contains("A little breathing room.") == true)
+    #expect(filedPDF.string?.contains("Filed tasks") == false)
+    #expect(try await view.evaluateJavaScript("document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
     #expect(try await savedValue(root) == filed)
     try await session.close()
@@ -226,56 +217,108 @@ extension HostTests {
     #expect(page.bounds(for: .mediaBox).height > 5000)
   }
 
-  @Test @MainActor func captureFailureRestoresEditorAndMissingIconIsOptional() async throws {
+  @Test @MainActor func captureFailureLeavesEditorAndSavedArtworkAlone() async throws {
     _ = NSApplication.shared
-    let root = try contractFixture()
+    let root = try contractFixture { stage in
+      let artwork = stage.appendingPathComponent("artwork", isDirectory: true)
+      try FileManager.default.createDirectory(at: artwork, withIntermediateDirectories: true)
+      try Fixtures.png().write(to: artwork.appendingPathComponent("preview.png"))
+      let app = stage.appendingPathComponent("assets/app.js")
+      let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
+        of: "const doc = ctx.document;",
+        with: "const doc = ctx.document; ctx.capture.onPrepare(() => { if (ctx.capture.isRenderer()) throw new Error('capture test failure'); });")
+      try Data(script.utf8).write(to: app)
+    }
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
-    #expect(try await SlopRenderer.iconPNGData(session: session) == nil)
-    _ = try await session.webView.callAsyncJavaScript(
-      "globalThis.stopFailure=globalThis.__slop.capture.onPrepare(()=>{throw new Error('capture test failure')});return true",
-      arguments: [:], in: nil, contentWorld: .page)
+    let oldPreview = try #require(await session.artwork(.preview))
     await #expect(throws: (any Error).self) {
       try await SlopRenderer.exportPNGData(session: session)
     }
+    let artwork = await SlopRenderer.artwork(session: session, telemetry: SlopTelemetry { _ in })
+    #expect(artwork.preview == nil && artwork.icon == nil)
     #expect(session.capturing == false)
-    #expect(
-      try await session.webView.evaluateJavaScript(
-        "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
-    _ = try await session.webView.evaluateJavaScript("globalThis.stopFailure()")
-    #expect(NSImage(data: try await SlopRenderer.exportPNGData(session: session)) != nil)
-    try await session.close()
+    #expect(try await session.webView.evaluateJavaScript(
+      "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
+    try await session.close(artwork: artwork)
+    #expect(SlopArtwork.png(root, .preview) == oldPreview)
   }
 
-  // A queued capture takes over without clearing `capturing`, so no page or socket
-  // request runs between two captures.
-  @Test @MainActor func queuedCapturesKeepTheSessionCapturingAcrossTheHandOff() async throws {
-    _ = NSApplication.shared
+  @Test @MainActor func savedCaptureSourceSurvivesEditorChangesAndClose() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
-    // The watcher outranks the captures, so it runs before a resumed capture would.
-    var finished = 0, gaps = 0
-    let captures = (0..<2).map { _ in
-      Task(priority: .background) { @MainActor in
-        defer { finished += 1 }
-        return try await SlopRenderer.previewPNGData(session: session)
-      }
+    _ = try await session.webView.evaluateJavaScript("""
+      const input = document.querySelector('#draft'); input.value = 'Snapshot draft';
+      input.dispatchEvent(new Event('input', {bubbles:true})); true
+      """)
+    let blob = try Fixtures.png()
+    let attachment = try await session.owner.putAttachment(base64: blob.base64EncodedString())
+    var sourceURL: URL?
+    try await session.withCaptureSnapshot { source in
+      sourceURL = source
+      #expect(!session.capturing)
+      #expect(try await command("batch", url: root, setTitle("Later edit")).ok)
+      try await session.close()
+      let snapshot = try DocumentOwner(url: source, mode: .snapshot)
+      #expect(try await snapshot.readAttachment(attachment.id) == blob.base64EncodedString())
+      try await snapshot.close()
+      let pdf = try #require(PDFDocument(data: try await SlopRenderer.withRenderSession(url: source) {
+        try await SlopRenderer.exportPDFData(session: $0)
+      }))
+      #expect(pdf.string?.contains("Snapshot draft") == true)
+      #expect(pdf.string?.contains("Later edit") == false)
+      #expect(try await SlopRenderer.iconPNGData(url: source) == nil)
     }
-    var started = false
-    while finished < 2 {
-      if session.capturing { started = true } else if started { gaps += 1 }
-      await Task.yield()
+    #expect(!FileManager.default.fileExists(atPath: try #require(sourceURL).path))
+    #expect(try await savedValue(root)?["title"] as? String == "Later edit")
+  }
+
+  @Test @MainActor func failedSaveDoesNotAcquireCaptureSourceOrReleaseOwnership() async throws {
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    let hold = try Fixtures.DatabaseHold(root)
+    _ = try await session.owner.apply(batch: Fixtures.json(["intents": [[
+      "type": "set", "path": ["title"], "value": "Unsaved edit"
+    ]]]))
+    var rendered = false
+    await #expect(throws: (any Error).self) {
+      try await session.withCaptureSnapshot { _ in rendered = true }
     }
-    for capture in captures { _ = try await capture.value }
-    #expect(gaps == 0)
-    #expect(session.capturing == false)
+    #expect(!rendered && !session.capturing)
+    #expect(Fixtures.isLocked(root))
+    hold.release()
     try await session.close()
   }
+
+  @Test @MainActor func missingExportUsesFreshReadOnlyApp() async throws {
+    let root = try contractFixture { stage in
+      let script = """
+      export default { mount(ctx, target) {
+        const root = document.createElement('main'); root.dataset.hitslopRoot = '';
+        root.textContent = 'Fallback: ' + ctx.document.current.title;
+        target.append(root); return { unmount() { root.remove(); } };
+      } };
+      """
+      try Data(script.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    #expect(try await command("batch", url: root, setTitle("Saved fallback")).ok)
+    let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+    #expect(pdf.string?.contains("Fallback: Saved fallback") == true)
+    try await session.close()
+  }
+
 }
 
 extension HostTests {

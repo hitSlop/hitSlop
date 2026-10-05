@@ -7,6 +7,9 @@ public enum AttachmentLimits {
   public static let name = 255
   public static let encodedFile = 13981016
 }
+public enum AppResourcePolicy {
+  public static let contentSecurityPolicy = "default-src 'none'; script-src slop: 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
+}
 extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
   public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "health")!, SlopCategory(rawValue: "creative")!, SlopCategory(rawValue: "music")!, SlopCategory(rawValue: "other")!]

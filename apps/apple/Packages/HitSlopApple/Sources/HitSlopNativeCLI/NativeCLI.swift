@@ -68,12 +68,11 @@ struct Request: AsyncParsableCommand {
     let method = (try? JSONSerialization.jsonObject(with: input) as? [String: Any])?["method"] as? String
     let export = method == SocketRequest.Method.export.rawValue
     if export { bootstrapApp() }
-    let reply = await DocumentCommand.run(json: input, closed: export ? Self.exportClosed : nil)
+    let reply = await DocumentCommand.run(json: input, export: export ? Self.exportClosed : nil)
     FileHandle.standardOutput.write(reply + [10])
   }
-  @MainActor private static func exportClosed(_ root: URL, _ request: SocketRequest) async throws -> SocketReply {
-    guard case .export(let r) = request else { throw ValidationError("Not an export") }
-    return try await SlopRenderer.exportClosed(root, format: r.format, output: URL(fileURLWithPath: r.output))
+  @MainActor private static func exportClosed(_ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline) async throws {
+    _ = try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
   }
 }
 

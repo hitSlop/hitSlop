@@ -21,8 +21,7 @@ import WebKit
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title><link rel=\"stylesheet\" href=\"/assets/app.css\"></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>".utf8)
   /// Scripts only from the document and the shell; WebAssembly may compile (MilkDrop presets
   /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.
-  nonisolated private static let contentSecurityPolicy =
-    "default-src 'none'; script-src slop: 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
+  nonisolated private static let contentSecurityPolicy = AppResourcePolicy.contentSecurityPolicy
   private static let reads = DispatchQueue(label: "hitslop.scheme", qos: .userInitiated, attributes: .concurrent)
   let shell: URL
   /// The document's assets, through its owner's long-lived connection.

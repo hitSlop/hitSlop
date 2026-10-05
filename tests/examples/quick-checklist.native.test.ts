@@ -40,11 +40,9 @@ test("Enter while composing keeps the task editor; Enter after composing moves t
     expect(await focused(page)).toBe("New task");
   }), 60000);
 
-// A preview stands for the document, so it shows the active list whichever tab is open;
-// an explicit export shows the tab the person chose.
-test("previews show the active tasks; exports show the selected tab", () =>
+// A fresh renderer starts with the default local view for both preview and export.
+test("fresh preview and export show the default active tasks", () =>
   preview(async (page) => {
-    await page.frameLocator("iframe").getByRole("tab", { name: /Filed/ }).click();
     const capture = (mode: "preview" | "export") =>
       app(page).evaluate(async (mode) => {
         const { capture } = (globalThis as any).__slop;
@@ -59,5 +57,5 @@ test("previews show the active tasks; exports show the selected tab", () =>
     const preview = await capture("preview");
     expect(preview).toContain("Send the first draft");
     expect(preview).not.toContain("No filed tasks yet");
-    expect(await capture("export")).toContain("No filed tasks yet.");
+    expect(await capture("export")).toContain("Send the first draft");
   }), 60000);

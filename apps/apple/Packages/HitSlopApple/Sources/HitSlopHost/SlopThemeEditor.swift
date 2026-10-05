@@ -71,16 +71,40 @@ enum SlopThemeColor {
   @ObservationIgnored private var nextDraft = 0
   private(set) var errors: [String: String] = [:]
   @ObservationIgnored private let send: Send
+  @ObservationIgnored private let beginGesture: () -> Void
+  @ObservationIgnored private let finishGesture: () -> Void
+  @ObservationIgnored private var gesture = false
 
-  init(tokens: [(name: String, value: String)], send: @escaping Send) {
+  init(tokens: [(name: String, value: String)], beginGesture: @escaping () -> Void = {},
+    finishGesture: @escaping () -> Void = {}, send: @escaping Send) {
     rows = tokens.map { Row(id: $0.name, label: SlopThemeColor.label($0.name), original: $0.value) }
     self.send = send
+    self.beginGesture = beginGesture
+    self.finishGesture = finishGesture
   }
   func value(_ row: Row) -> String { drafts[row.id]?.value ?? effective[row.id] ?? row.original }
   func isChanged(_ row: Row) -> Bool { value(row) != row.original }
   var hasChanges: Bool { rows.contains(where: isChanged) }
 
   func set(_ row: Row, _ color: String) {
+    endGesture()
+    sendColor(row, color)
+  }
+  /// AppKit keeps delivering picker values while tracking a drag. Mouse-up ends that
+  /// explicit undo group; typed values and independent commands remain separate edits.
+  func pick(_ row: Row, _ color: String) {
+    let event = NSApp.currentEvent?.type
+    if event == .leftMouseDragged || event == .leftMouseDown {
+      if !gesture { gesture = true; beginGesture() }
+    } else if event != .leftMouseUp { endGesture() }
+    sendColor(row, color)
+  }
+  func endGesture() {
+    guard gesture else { return }
+    gesture = false
+    finishGesture()
+  }
+  private func sendColor(_ row: Row, _ color: String) {
     errors[row.id] = nil
     guard value(row) != color else { return }
     let draft = draft(row, color)
@@ -110,6 +134,7 @@ enum SlopThemeColor {
   }
   func reset(_ row: Row) { set(row, row.original) }
   func resetAll() {
+    endGesture()
     errors = [:]
     var pending: [String: Int] = [:]
     for row in rows where isChanged(row) { pending[row.id] = draft(row, row.original) }
@@ -178,7 +203,7 @@ struct SlopThemeEditor: View {
         Button("Export…", action: exportTheme)
         Spacer()
         Button("Reset to Original", action: model.resetAll).disabled(!model.hasChanges)
-          .help("Returns every color to the template's. Theme changes aren't undoable.")
+          .help("Returns every color to the template's. Use Undo to restore your colors.")
       }
       .controlSize(.small)
       .padding(.horizontal, 14).padding(.vertical, 10)
@@ -202,7 +227,7 @@ private struct SlopThemeRow: View {
       HStack(spacing: 8) {
         ColorPicker(row.label, selection: Binding(
           get: { SlopThemeColor.color(value) ?? CGColor(gray: 0, alpha: 1) },
-          set: { color in if let hex = SlopThemeColor.hex(color) { model.set(row, hex) } }),
+          set: { color in if let hex = SlopThemeColor.hex(color) { model.pick(row, hex) } }),
           supportsOpacity: true)
           .labelsHidden()
         Circle().fill(Color.accentColor).frame(width: 5, height: 5).opacity(changed ? 1 : 0)

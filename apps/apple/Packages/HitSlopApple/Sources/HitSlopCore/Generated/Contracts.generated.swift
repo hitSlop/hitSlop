@@ -293,32 +293,6 @@ public struct SocketBatchRequest: Sendable {
   }
 }
 
-public struct SocketCompactRequest: Sendable {
-  public var `documentPath`: String
-  public var `epoch`: String
-
-  public init(`documentPath`: String, `epoch`: String) {
-    self.`documentPath` = `documentPath`
-    self.`epoch` = `epoch`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketCompactRequest.documentPath") }
-    self.`documentPath` = `documentPath`
-    guard let `epoch` = json["epoch"] as? String else { throw ContractMappingError.field("SocketCompactRequest.epoch") }
-    self.`epoch` = `epoch`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "compact"
-    result["documentPath"] = `documentPath`
-    result["epoch"] = `epoch`
-    return result
-  }
-}
-
 public enum SocketExportRequestFormat: String, CaseIterable, Sendable {
   case `png` = "png"
   case `pdf` = "pdf"
@@ -372,7 +346,6 @@ public enum SocketRequest: Sendable {
   case `hello`(SocketHelloRequest)
   case `get`(SocketGetRequest)
   case `batch`(SocketBatchRequest)
-  case `compact`(SocketCompactRequest)
   case `export`(SocketExportRequest)
 
   public enum Method: String, CaseIterable, Sendable {
@@ -387,7 +360,6 @@ public enum SocketRequest: Sendable {
     case `hello` = "hello"
     case `get` = "get"
     case `batch` = "batch"
-    case `compact` = "compact"
     case `export` = "export"
     public var requiresEpoch: Bool {
       switch self {
@@ -402,7 +374,6 @@ public enum SocketRequest: Sendable {
       case .`hello`: return false
       case .`get`: return false
       case .`batch`: return true
-      case .`compact`: return true
       case .`export`: return true
       }
     }
@@ -421,7 +392,6 @@ public enum SocketRequest: Sendable {
     case .`hello`: return .`hello`
     case .`get`: return .`get`
     case .`batch`: return .`batch`
-    case .`compact`: return .`compact`
     case .`export`: return .`export`
     }
   }
@@ -439,7 +409,6 @@ public enum SocketRequest: Sendable {
     case .`hello`(let value): return value.documentPath
     case .`get`(let value): return value.documentPath
     case .`batch`(let value): return value.documentPath
-    case .`compact`(let value): return value.documentPath
     case .`export`(let value): return value.documentPath
     }
   }
@@ -456,7 +425,6 @@ public enum SocketRequest: Sendable {
     case .`hello`: return nil
     case .`get`: return nil
     case .`batch`(let value): return value.epoch
-    case .`compact`(let value): return value.epoch
     case .`export`(let value): return value.epoch
     }
   }
@@ -474,7 +442,6 @@ public enum SocketRequest: Sendable {
     case .`hello`: return self
     case .`get`: return self
     case .`batch`(var value): value.epoch = epoch; return .`batch`(value)
-    case .`compact`(var value): value.epoch = epoch; return .`compact`(value)
     case .`export`(var value): value.epoch = epoch; return .`export`(value)
     }
   }
@@ -494,7 +461,6 @@ public enum SocketRequest: Sendable {
     case .`hello`: self = .`hello`(try SocketHelloRequest(json: json))
     case .`get`: self = .`get`(try SocketGetRequest(json: json))
     case .`batch`: self = .`batch`(try SocketBatchRequest(json: json))
-    case .`compact`: self = .`compact`(try SocketCompactRequest(json: json))
     case .`export`: self = .`export`(try SocketExportRequest(json: json))
     }
   }
@@ -512,7 +478,6 @@ public enum SocketRequest: Sendable {
     case .`hello`(let value): return value.json
     case .`get`(let value): return value.json
     case .`batch`(let value): return value.json
-    case .`compact`(let value): return value.json
     case .`export`(let value): return value.json
     }
   }
@@ -885,6 +850,331 @@ public enum PageRequest: Sendable {
   }
 }
 
+public struct HostPublishRequest: Sendable {
+  public var `payload`: String
+
+  public init(`payload`: String) {
+    self.`payload` = `payload`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `payload` = json["payload"] as? String else { throw ContractMappingError.field("HostPublishRequest.payload") }
+    self.`payload` = `payload`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "publish"
+    result["payload"] = `payload`
+    return result
+  }
+}
+
+public struct HostFlushRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "flush"
+    return result
+  }
+}
+
+public struct HostUndoRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "undo"
+    return result
+  }
+}
+
+public struct HostRedoRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "redo"
+    return result
+  }
+}
+
+public struct HostPrepareCloseRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "prepareClose"
+    return result
+  }
+}
+
+public struct HostCancelCloseRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "cancelClose"
+    return result
+  }
+}
+
+public struct HostCloseRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "close"
+    return result
+  }
+}
+
+public struct HostReloadInterfaceRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "reloadInterface"
+    return result
+  }
+}
+
+public enum HostCaptureBeginRequestMode: String, CaseIterable, Sendable {
+  case `preview` = "preview"
+  case `export` = "export"
+  case `icon` = "icon"
+}
+
+public struct HostCaptureBeginRequest: Sendable {
+  public var `token`: String
+  public var `mode`: HostCaptureBeginRequestMode
+
+  public init(`token`: String, `mode`: HostCaptureBeginRequestMode) {
+    self.`token` = `token`
+    self.`mode` = `mode`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `token` = json["token"] as? String else { throw ContractMappingError.field("HostCaptureBeginRequest.token") }
+    self.`token` = `token`
+    guard let `mode` = (json["mode"] as? String).flatMap(HostCaptureBeginRequestMode.init(rawValue:)) else { throw ContractMappingError.field("HostCaptureBeginRequest.mode") }
+    self.`mode` = `mode`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "capture.begin"
+    result["token"] = `token`
+    result["mode"] = `mode`.rawValue
+    return result
+  }
+}
+
+public struct HostCaptureSettleRequest: Sendable {
+  public var `token`: String
+
+  public init(`token`: String) {
+    self.`token` = `token`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `token` = json["token"] as? String else { throw ContractMappingError.field("HostCaptureSettleRequest.token") }
+    self.`token` = `token`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "capture.settle"
+    result["token"] = `token`
+    return result
+  }
+}
+
+public struct HostCaptureRestoreRequest: Sendable {
+  public var `token`: String
+
+  public init(`token`: String) {
+    self.`token` = `token`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `token` = json["token"] as? String else { throw ContractMappingError.field("HostCaptureRestoreRequest.token") }
+    self.`token` = `token`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "capture.restore"
+    result["token"] = `token`
+    return result
+  }
+}
+
+public enum HostRequest: Sendable {
+  case `publish`(HostPublishRequest)
+  case `flush`(HostFlushRequest)
+  case `undo`(HostUndoRequest)
+  case `redo`(HostRedoRequest)
+  case `prepareClose`(HostPrepareCloseRequest)
+  case `cancelClose`(HostCancelCloseRequest)
+  case `close`(HostCloseRequest)
+  case `reloadInterface`(HostReloadInterfaceRequest)
+  case `captureBegin`(HostCaptureBeginRequest)
+  case `captureSettle`(HostCaptureSettleRequest)
+  case `captureRestore`(HostCaptureRestoreRequest)
+
+  public enum Method: String, CaseIterable, Sendable {
+    case `publish` = "publish"
+    case `flush` = "flush"
+    case `undo` = "undo"
+    case `redo` = "redo"
+    case `prepareClose` = "prepareClose"
+    case `cancelClose` = "cancelClose"
+    case `close` = "close"
+    case `reloadInterface` = "reloadInterface"
+    case `captureBegin` = "capture.begin"
+    case `captureSettle` = "capture.settle"
+    case `captureRestore` = "capture.restore"
+  }
+
+  public var method: Method {
+    switch self {
+    case .`publish`: return .`publish`
+    case .`flush`: return .`flush`
+    case .`undo`: return .`undo`
+    case .`redo`: return .`redo`
+    case .`prepareClose`: return .`prepareClose`
+    case .`cancelClose`: return .`cancelClose`
+    case .`close`: return .`close`
+    case .`reloadInterface`: return .`reloadInterface`
+    case .`captureBegin`: return .`captureBegin`
+    case .`captureSettle`: return .`captureSettle`
+    case .`captureRestore`: return .`captureRestore`
+    }
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let raw = json["method"] as? String, let method = Method(rawValue: raw) else { throw ContractMappingError.field("HostRequest.method") }
+    switch method {
+    case .`publish`: self = .`publish`(try HostPublishRequest(json: json))
+    case .`flush`: self = .`flush`(try HostFlushRequest(json: json))
+    case .`undo`: self = .`undo`(try HostUndoRequest(json: json))
+    case .`redo`: self = .`redo`(try HostRedoRequest(json: json))
+    case .`prepareClose`: self = .`prepareClose`(try HostPrepareCloseRequest(json: json))
+    case .`cancelClose`: self = .`cancelClose`(try HostCancelCloseRequest(json: json))
+    case .`close`: self = .`close`(try HostCloseRequest(json: json))
+    case .`reloadInterface`: self = .`reloadInterface`(try HostReloadInterfaceRequest(json: json))
+    case .`captureBegin`: self = .`captureBegin`(try HostCaptureBeginRequest(json: json))
+    case .`captureSettle`: self = .`captureSettle`(try HostCaptureSettleRequest(json: json))
+    case .`captureRestore`: self = .`captureRestore`(try HostCaptureRestoreRequest(json: json))
+    }
+  }
+
+  public var json: [String: Any] {
+    switch self {
+    case .`publish`(let value): return value.json
+    case .`flush`(let value): return value.json
+    case .`undo`(let value): return value.json
+    case .`redo`(let value): return value.json
+    case .`prepareClose`(let value): return value.json
+    case .`cancelClose`(let value): return value.json
+    case .`close`(let value): return value.json
+    case .`reloadInterface`(let value): return value.json
+    case .`captureBegin`(let value): return value.json
+    case .`captureSettle`(let value): return value.json
+    case .`captureRestore`(let value): return value.json
+    }
+  }
+}
+
+public struct HostCaptureResult: Sendable {
+  public var `x`: Double
+  public var `y`: Double
+  public var `width`: Double
+  public var `height`: Double
+  public var `dedicated`: Bool
+
+  public init(`x`: Double, `y`: Double, `width`: Double, `height`: Double, `dedicated`: Bool) {
+    self.`x` = `x`
+    self.`y` = `y`
+    self.`width` = `width`
+    self.`height` = `height`
+    self.`dedicated` = `dedicated`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `x` = json["x"] as? Double else { throw ContractMappingError.field("HostCaptureResult.x") }
+    self.`x` = `x`
+    guard let `y` = json["y"] as? Double else { throw ContractMappingError.field("HostCaptureResult.y") }
+    self.`y` = `y`
+    guard let `width` = json["width"] as? Double else { throw ContractMappingError.field("HostCaptureResult.width") }
+    self.`width` = `width`
+    guard let `height` = json["height"] as? Double else { throw ContractMappingError.field("HostCaptureResult.height") }
+    self.`height` = `height`
+    guard let `dedicated` = json["dedicated"] as? Bool else { throw ContractMappingError.field("HostCaptureResult.dedicated") }
+    self.`dedicated` = `dedicated`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["x"] = `x`
+    result["y"] = `y`
+    result["width"] = `width`
+    result["height"] = `height`
+    result["dedicated"] = `dedicated`
+    return result
+  }
+}
+
 public enum OutcomeCode: String, CaseIterable, Sendable {
   case `rejected` = "rejected"
   case `ownerReplaced` = "owner_replaced"
@@ -940,112 +1230,135 @@ public struct PageFailure: Sendable {
   }
 }
 
-public struct SocketReply {
-  public var `ok`: Bool
+public struct SocketFailure: Sendable {
   public var `epoch`: String?
-  public var `coreBuildId`: String?
-  public var `state`: Any?
-  public var `ids`: [String]?
-  public var `sequence`: Int?
-  public var `output`: String?
-  public var `error`: String?
-  public var `code`: OutcomeCode?
+  public var `error`: String
+  public var `code`: OutcomeCode
   public var `reason`: CoreErrorCode?
   public var `opIndex`: Int?
 
-  public init(`ok`: Bool, `epoch`: String? = nil, `coreBuildId`: String? = nil, `state`: Any? = nil, `ids`: [String]? = nil, `sequence`: Int? = nil, `output`: String? = nil, `error`: String? = nil, `code`: OutcomeCode? = nil, `reason`: CoreErrorCode? = nil, `opIndex`: Int? = nil) {
-    self.`ok` = `ok`
+  public init(`epoch`: String? = nil, `error`: String, `code`: OutcomeCode, `reason`: CoreErrorCode? = nil, `opIndex`: Int? = nil) {
     self.`epoch` = `epoch`
-    self.`coreBuildId` = `coreBuildId`
-    self.`state` = `state`
-    self.`ids` = `ids`
-    self.`sequence` = `sequence`
-    self.`output` = `output`
     self.`error` = `error`
     self.`code` = `code`
     self.`reason` = `reason`
     self.`opIndex` = `opIndex`
   }
 
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `ok` = json["ok"] as? Bool else { throw ContractMappingError.field("SocketReply.ok") }
-    self.`ok` = `ok`
-    if let value = json["epoch"] {
-      guard let mapped = value as? String else { throw ContractMappingError.field("SocketReply.epoch") }
-      self.`epoch` = mapped
-    } else {
-      self.`epoch` = nil
-    }
-    if let value = json["coreBuildId"] {
-      guard let mapped = value as? String else { throw ContractMappingError.field("SocketReply.coreBuildId") }
-      self.`coreBuildId` = mapped
-    } else {
-      self.`coreBuildId` = nil
-    }
-    if let value = json["state"] {
-      self.`state` = value
-    } else {
-      self.`state` = nil
-    }
-    if let value = json["ids"] {
-      guard let mapped = value as? [String] else { throw ContractMappingError.field("SocketReply.ids") }
-      self.`ids` = mapped
-    } else {
-      self.`ids` = nil
-    }
-    if let value = json["sequence"] {
-      guard let mapped = value as? Int else { throw ContractMappingError.field("SocketReply.sequence") }
-      self.`sequence` = mapped
-    } else {
-      self.`sequence` = nil
-    }
-    if let value = json["output"] {
-      guard let mapped = value as? String else { throw ContractMappingError.field("SocketReply.output") }
-      self.`output` = mapped
-    } else {
-      self.`output` = nil
-    }
-    if let value = json["error"] {
-      guard let mapped = value as? String else { throw ContractMappingError.field("SocketReply.error") }
-      self.`error` = mapped
-    } else {
-      self.`error` = nil
-    }
-    if let value = json["code"] {
-      guard let mapped = (value as? String).flatMap(OutcomeCode.init(rawValue:)) else { throw ContractMappingError.field("SocketReply.code") }
-      self.`code` = mapped
-    } else {
-      self.`code` = nil
-    }
-    if let value = json["reason"] {
-      guard let mapped = (value as? String).flatMap(CoreErrorCode.init(rawValue:)) else { throw ContractMappingError.field("SocketReply.reason") }
-      self.`reason` = mapped
-    } else {
-      self.`reason` = nil
-    }
-    if let value = json["opIndex"] {
-      guard let mapped = value as? Int else { throw ContractMappingError.field("SocketReply.opIndex") }
-      self.`opIndex` = mapped
-    } else {
-      self.`opIndex` = nil
-    }
-  }
-
   public var json: [String: Any] {
     var result: [String: Any] = [:]
-    result["ok"] = `ok`
+    result["ok"] = false
     if let value = `epoch` { result["epoch"] = value }
-    if let value = `coreBuildId` { result["coreBuildId"] = value }
-    if let value = `state` { result["state"] = value }
-    if let value = `ids` { result["ids"] = value }
-    if let value = `sequence` { result["sequence"] = value }
-    if let value = `output` { result["output"] = value }
-    if let value = `error` { result["error"] = value }
-    if let value = `code` { result["code"] = value.rawValue }
+    result["error"] = `error`
+    result["code"] = `code`.rawValue
     if let value = `reason` { result["reason"] = value.rawValue }
     if let value = `opIndex` { result["opIndex"] = value }
     return result
+  }
+}
+
+/// A complete reply. A success cannot be constructed without its method's result.
+public enum SocketReply: Sendable {
+  case `hello`(`epoch`: String, `coreBuildId`: String)
+  case `get`(`epoch`: String, `stateJSON`: String)
+  case `batch`(`epoch`: String, `ids`: [String], `sequence`: Int)
+  case `export`(`output`: String, `epoch`: String?)
+  case `themeGet`(`epoch`: String, `stateJSON`: String)
+  case `themeSet`(`epoch`: String, `stateJSON`: String)
+  case `themeReset`(`epoch`: String, `stateJSON`: String)
+  case `themeImport`(`epoch`: String, `stateJSON`: String)
+  case `themeExport`(`epoch`: String, `stateJSON`: String)
+  case `attachmentsList`(`epoch`: String, `stateJSON`: String)
+  case `attachmentsRead`(`epoch`: String, `stateJSON`: String)
+  case `attachmentsPut`(`epoch`: String, `stateJSON`: String)
+  case failure(SocketFailure)
+
+  private var header: [String: Any] {
+    switch self {
+    case .`hello`(let `epoch`, let `coreBuildId`):
+      return ["ok": true, "method": "hello", "epoch": `epoch`, "coreBuildId": `coreBuildId`]
+    case .`get`(let `epoch`, _):
+      return ["ok": true, "method": "get", "epoch": `epoch`]
+    case .`batch`(let `epoch`, let `ids`, let `sequence`):
+      return ["ok": true, "method": "batch", "epoch": `epoch`, "ids": `ids`, "sequence": `sequence`]
+    case .`export`(let `output`, let `epoch`):
+      var result: [String: Any] = ["ok": true, "method": "export", "output": `output`]
+      if let `epoch` { result["epoch"] = `epoch` }
+      return result
+    case .`themeGet`(let `epoch`, _):
+      return ["ok": true, "method": "theme.get", "epoch": `epoch`]
+    case .`themeSet`(let `epoch`, _):
+      return ["ok": true, "method": "theme.set", "epoch": `epoch`]
+    case .`themeReset`(let `epoch`, _):
+      return ["ok": true, "method": "theme.reset", "epoch": `epoch`]
+    case .`themeImport`(let `epoch`, _):
+      return ["ok": true, "method": "theme.import", "epoch": `epoch`]
+    case .`themeExport`(let `epoch`, _):
+      return ["ok": true, "method": "theme.export", "epoch": `epoch`]
+    case .`attachmentsList`(let `epoch`, _):
+      return ["ok": true, "method": "attachments.list", "epoch": `epoch`]
+    case .`attachmentsRead`(let `epoch`, _):
+      return ["ok": true, "method": "attachments.read", "epoch": `epoch`]
+    case .`attachmentsPut`(let `epoch`, _):
+      return ["ok": true, "method": "attachments.put", "epoch": `epoch`]
+    case .failure(let failure): return failure.json
+    }
+  }
+
+  private var stateJSON: String? {
+    switch self {
+    case .`get`(_, let state): return state
+    case .`themeGet`(_, let state): return state
+    case .`themeSet`(_, let state): return state
+    case .`themeReset`(_, let state): return state
+    case .`themeImport`(_, let state): return state
+    case .`themeExport`(_, let state): return state
+    case .`attachmentsList`(_, let state): return state
+    case .`attachmentsRead`(_, let state): return state
+    case .`attachmentsPut`(_, let state): return state
+    default: return nil
+    }
+  }
+
+  /// Encodes routing fields and splices the core's state without interpreting it.
+  public func encoded() -> Data {
+    guard var bytes = try? JSONSerialization.data(withJSONObject: header, options: .withoutEscapingSlashes) else {
+      return Data(#"{"ok":false,"code":"unknown_outcome","error":"Invalid response. Outcome unknown; run slop get before another edit."}"#.utf8)
+    }
+    if let stateJSON {
+      bytes.removeLast()
+      bytes.append(contentsOf: #","state":"#.utf8)
+      bytes.append(contentsOf: stateJSON.utf8)
+      bytes.append(UInt8(ascii: "}"))
+    }
+    return bytes
+  }
+}
+
+/// Routing and outcome metadata read beside the original reply bytes; never a result.
+public struct SocketReplyHeader: Decodable, Sendable {
+  public let ok: Bool
+  public let method: SocketRequest.Method?
+  public let epoch: String?
+  public let coreBuildId: String?
+  public let error: String?
+  public let code: OutcomeCode?
+  public let reason: CoreErrorCode?
+  public let opIndex: Int?
+  private enum CodingKeys: String, CodingKey { case ok, method, epoch, coreBuildId, error, code, reason, opIndex }
+  public init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    ok = try fields.decode(Bool.self, forKey: .ok)
+    epoch = try fields.decodeIfPresent(String.self, forKey: .epoch)
+    coreBuildId = try fields.decodeIfPresent(String.self, forKey: .coreBuildId)
+    error = try fields.decodeIfPresent(String.self, forKey: .error)
+    opIndex = try fields.decodeIfPresent(Int.self, forKey: .opIndex)
+    method = try fields.decodeIfPresent(String.self, forKey: .method).flatMap(SocketRequest.Method.init(rawValue:))
+    code = try fields.decodeIfPresent(String.self, forKey: .code).flatMap(OutcomeCode.init(rawValue:))
+    reason = try fields.decodeIfPresent(String.self, forKey: .reason).flatMap(CoreErrorCode.init(rawValue:))
+    guard ok ? method != nil : (code != nil && error != nil) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid socket reply header"))
+    }
   }
 }
 
@@ -1160,14 +1473,12 @@ public struct PageConfigResult {
   public var `runtimeABI`: Int
   public var `readOnly`: Bool
   public var `presentation`: [String: Any]
-  public var `theme`: [String: String]
   public var `descriptor`: [String: Any]
 
-  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String], `descriptor`: [String: Any]) {
+  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `descriptor`: [String: Any]) {
     self.`runtimeABI` = `runtimeABI`
     self.`readOnly` = `readOnly`
     self.`presentation` = `presentation`
-    self.`theme` = `theme`
     self.`descriptor` = `descriptor`
   }
 
@@ -1176,7 +1487,6 @@ public struct PageConfigResult {
     result["runtimeABI"] = `runtimeABI`
     result["readOnly"] = `readOnly`
     result["presentation"] = `presentation`
-    result["theme"] = `theme`
     result["descriptor"] = `descriptor`
     return result
   }

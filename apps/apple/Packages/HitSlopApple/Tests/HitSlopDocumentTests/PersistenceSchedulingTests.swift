@@ -5,18 +5,10 @@ import Testing
 import HitSlopTestSupport
 @testable import HitSlopDocument
 
-/// Holds the owner's persistence queue until released, so the next write waits in flight:
-/// exported and handed to storage, not yet run.
-final class StorageHold: @unchecked Sendable {
-  private let released = DispatchSemaphore(value: 0)
-  init(_ owner: DocumentOwner) { owner.storageQueue.async { self.released.wait() } }
-  func release() { released.signal() }
-}
-
 /// Saves run on their own queue so a slow write never blocks edits. Each write must
 /// acknowledge exactly what it contained, and close/discard must fence writes in flight.
 /// Oracle: the bytes on disk, read back independently of the owner. Faults are real: a held
-/// queue, a moved file, another connection holding the database.
+/// database, a moved file, and another connection holding SQLite's write lock.
 @Suite(.serialized) struct PersistenceSchedulingTests {
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
@@ -44,17 +36,10 @@ final class StorageHold: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     defer { hold.release() }
-    let mutations = Locked(0)
-    let server = try SocketServer { request, _ in
-      if request.method == .batch { mutations.modify { $0 += 1 } }
-      return await owner.request(request)
-    }
+    let server = try owner.startServer(exporter: NativeExports { _, _, _, _ in throw OwnerError.rejected("No renderer") })
     defer { server.stop() }
-    try owner.publishDiscovery(JSONSerialization.data(withJSONObject: [
-      "socket": server.path, "documentPath": root.path,
-    ]))
     let reply = Task { @MainActor () -> (OutcomeCode?, String?) in
       let reply = try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#])
       return (reply.code, reply.error)
@@ -68,7 +53,6 @@ final class StorageHold: @unchecked Sendable {
     try await discarding.value
     #expect(code == .unknownOutcome)
     #expect(error?.contains("could not be confirmed") == true)
-    #expect(mutations.value == 1)
     #expect(try savedHits(root) == 3)
     try await owner.close()
   }
@@ -97,7 +81,7 @@ final class StorageHold: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     let first = Task { try await owner.flush() }
     try await edit(owner)
     let second = Task { try await owner.flush() }
@@ -115,7 +99,7 @@ final class StorageHold: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     let saving = Task { try await owner.flush() }
     _ = try await owner.state()
     let discarding = Task { try await owner.discardPending() }
@@ -135,7 +119,7 @@ final class StorageHold: @unchecked Sendable {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     let closing = Task { try await owner.close() }
     #expect(await eventually(timeout: .seconds(5)) { (try? await edit(owner)) == nil })
     #expect(Fixtures.isLocked(root))
@@ -244,7 +228,7 @@ extension PersistenceSchedulingTests {
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: moved) }
     let owner = try DocumentOwner(url: root)
     try await edit(owner)
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     let saving = Task { try await owner.flush() }
     _ = try await owner.state()
     let discarding = Task { try await owner.discardPending() }
@@ -304,7 +288,7 @@ extension PersistenceSchedulingTests {
     try await edit(owner)
     try await edit(owner)
     // The reload waits behind the held queue while discard is under way.
-    let hold = StorageHold(owner)
+    let hold = try Fixtures.DatabaseHold(root)
     let discarding = Task { try await owner.discardPending() }
     while true {
       let refused: Bool = await withCheckedContinuation { continuation in

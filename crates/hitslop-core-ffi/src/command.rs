@@ -1,0 +1,129 @@
+//! Native transport adapter. All routing, framing and document commands live in Rust;
+//! only a validated export request is handed to the native renderer.
+use super::*;
+use hitslop_core::{command as core, owner};
+
+#[derive(uniffi::Record)]
+pub struct NativeExportRequest {
+    pub document_path: String,
+    pub format: String,
+    pub output: String,
+    pub epoch: Option<String>,
+}
+#[derive(uniffi::Enum)]
+pub enum NativeExportOutcome {
+    Success { output: String },
+    Failure { failure: OwnerFailure },
+}
+#[derive(uniffi::Object)]
+pub struct NativeExportCompletion(Arc<core::ExportCompletion>);
+#[uniffi::export]
+impl NativeExportCompletion {
+    pub fn is_active(&self) -> bool {
+        self.0.is_active()
+    }
+    pub fn complete(&self, outcome: NativeExportOutcome) {
+        self.0.complete(match outcome {
+            NativeExportOutcome::Success { output } => Ok(output),
+            NativeExportOutcome::Failure { failure } => Err(failure.into()),
+        });
+    }
+}
+impl From<OwnerFailure> for owner::Failure {
+    fn from(value: OwnerFailure) -> Self {
+        use OwnerFailureKind as K;
+        Self {
+            kind: match value.kind {
+                K::Rejected => owner::FailureKind::Rejected,
+                K::Replaced => owner::FailureKind::Replaced,
+                K::Closing => owner::FailureKind::Closing,
+                K::Closed => owner::FailureKind::Closed,
+                K::ReadOnly => owner::FailureKind::ReadOnly,
+                K::Invalidated => owner::FailureKind::Invalidated,
+                K::Locked => owner::FailureKind::Locked,
+                K::Busy => owner::FailureKind::Busy,
+                K::Full => owner::FailureKind::Full,
+                K::Moved => owner::FailureKind::Moved,
+                K::SaveFailed => owner::FailureKind::SaveFailed,
+                K::Failed => owner::FailureKind::Failed,
+            },
+            message: value.message,
+            reason: value.reason,
+            op_index: value.op_index,
+        }
+    }
+}
+#[uniffi::export(callback_interface)]
+pub trait NativeExportHandler: Send + Sync {
+    fn export(&self, request: NativeExportRequest, completion: Arc<NativeExportCompletion>);
+}
+#[uniffi::export(callback_interface)]
+pub trait NativeCommandCompletion: Send + Sync {
+    fn complete(&self, reply_json: String);
+}
+struct Exporter(Box<dyn NativeExportHandler>);
+impl core::ExportHandler for Exporter {
+    fn export(&self, request: core::ExportRequest, completion: Arc<core::ExportCompletion>) {
+        self.0.export(
+            NativeExportRequest {
+                document_path: request.document_path,
+                format: request.format,
+                output: request.output,
+                epoch: request.epoch,
+            },
+            Arc::new(NativeExportCompletion(completion)),
+        );
+    }
+}
+#[derive(uniffi::Object)]
+pub struct NativeSocketServer(hitslop_core::socket::Server);
+#[uniffi::export]
+impl NativeSocketServer {
+    #[uniffi::constructor]
+    pub fn start(
+        owner: Arc<NativeOwner>,
+        exporter: Box<dyn NativeExportHandler>,
+    ) -> Result<Arc<Self>, CoreError> {
+        Ok(Arc::new(Self(hitslop_core::socket::Server::start(
+            owner.0.clone(),
+            Arc::new(Exporter(exporter)),
+        )?)))
+    }
+    pub fn path(&self) -> String {
+        self.0.path().to_string_lossy().into_owned()
+    }
+    pub fn publish(&self) -> Result<(), CoreError> {
+        Ok(self.0.publish()?)
+    }
+    pub fn withdraw(&self) {
+        self.0.withdraw();
+    }
+    pub fn stop(&self) {
+        self.0.stop();
+    }
+}
+#[uniffi::export]
+pub fn command_request(
+    json: String,
+    exporter: Option<Box<dyn NativeExportHandler>>,
+    completion: Box<dyn NativeCommandCompletion>,
+) {
+    std::thread::spawn(move || {
+        let exporter = exporter.map(|e| Arc::new(Exporter(e)) as Arc<dyn core::ExportHandler>);
+        completion.complete(core::request(&json, exporter));
+    });
+}
+#[uniffi::export]
+impl NativeOwner {
+    pub fn request(&self, json: String, completion: Box<dyn NativeCommandCompletion>) {
+        let owner = self.0.clone();
+        std::thread::spawn(move || {
+            completion.complete(core::dispatch(
+                &owner,
+                &json,
+                None,
+                std::time::Instant::now() + core::COMMAND_TIMEOUT,
+            ))
+        });
+    }
+}

@@ -26,7 +26,7 @@ Fonts, sizes and colors derived from the palette belong in your CSS. A derived c
 
 ## Write ordinary CSS
 
-For a Svelte app, the builder includes `styles.css` automatically and emits a separate, minified `assets/app.css`. A custom `main.ts` must import its styles explicitly. Styles ship as ordinary CSS.
+The generated Svelte entry includes `styles.css` automatically and emits a separate, minified `assets/app.css`. Styles ship as ordinary CSS.
 
 ```css title="styles.css"
 :root {
@@ -50,7 +50,7 @@ Bits UI menus can render in portals. Give the portal content its own class and t
 
 ## Let people change the colors
 
-In the Mac app, the palette button in a document's toolbar, or **Window ▸ Theme**, opens the theme panel beside the window. It shows a color picker and hex field for every declared color. Changes restyle the slop as you make them and save with the document like any edit. **Reset to Original** returns every color to the template's. Theme changes aren't part of Edit ▸ Undo.
+In the Mac app, the palette button in a document's toolbar, or **Window ▸ Theme**, opens the theme panel beside the window. It shows a color picker and hex field for every declared color. Changes restyle the slop as you make them and save with the document like any edit. **Reset to Original** returns every color to the template's. **Edit ▸ Undo** restores the previous colors; a color-picker drag is one undo step.
 
 **Export Theme…** saves the document's full palette as a theme file. **Import Theme…** replaces the palette with one exported from a document made with the same template; colors the file leaves out return to the template's. A file made for another template, or naming a color this template doesn't declare, is refused whole.
 
@@ -90,6 +90,6 @@ Only declared colors can change, and a document stores only the ones that differ
 
 Every presentation mode receives host page resets, window sizing, and initial size variables. The automatic app root fills the window; prefer `height: 100%`, grid, or flex inside it; override the page sizing deliberately only when your layout needs it. Keep surface styling in your app. Transparent and PNG-skinned modes also override ordinary `html`/`body` backgrounds with transparency, so paint the visible surface inside the wrapper. Use the native toolbar handle for dragging. See [manifest and windows](/docs/guides/manifest-and-windows/) and [PNG window skins](/docs/guides/png-window-skins/).
 
-Dedicated `Icon.svelte` and `Export.svelte` components use the same current document and theme as the editor. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `Export.svelte`, mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
+Dedicated `Icon.svelte` and `Export.svelte` components render saved document data and theme in a fresh read-only page. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `Export.svelte`, a fresh App is the fallback; mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
 
 See [how .slop files work](/docs/concepts/how-slop-files-work/) for how a theme travels with a document.

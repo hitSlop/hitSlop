@@ -1,12 +1,11 @@
 import type { SlopApp } from "@hitslop/document/abi";
 
-/** The package's app, refused before it mounts when it is not one, or when it was built for
- * another document than the file's: a custom `main.ts` registers its own schema, which the
- * build cannot see. */
+/** The generated app must match the file's descriptor: authored schema modules can
+ * evaluate differently in the build process and the browser. */
 export function checkedApp(app: unknown, descriptor: unknown): SlopApp {
   const view = app as Partial<SlopApp> | undefined;
   if (!view || typeof view.mount !== "function") throw new Error("assets/app.js must export default { mount(ctx, target) }");
-  if (view.descriptor !== undefined && !sameJSON(view.descriptor, descriptor))
+  if (!view.descriptor || !sameJSON(view.descriptor, descriptor))
     throw new Error("This app was built for a different document: its schema does not match the file's");
   return view as SlopApp;
 }

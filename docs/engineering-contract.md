@@ -18,7 +18,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, issues, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ app | `hitslop-native --protocol` (`{version, minimum}`) | Selects the adapter named by `--client-protocol`; omission means 1. Keeps serving every protocol from `minimum`; protocol 1 is today's commands, arguments, outputs and exit statuses |
+| CLI ↔ native tools | `slop-engine --protocol` and `hitslop-native --protocol` (`{version, minimum}`) | Selects the adapter named by `--client-protocol`; omission means 1. Keeps serving every protocol from `minimum`; protocol 1 is today's commands, arguments, outputs and exit statuses |
 
 Markers are requirements, not release numbers: refactors never raise them, and app,
 CLI and SDK versions never stand for them. An additive `ctx` API still raises
@@ -38,8 +38,8 @@ saved document; a security fix that must reject old documents needs an assessmen
 recovery path for their data. Public boundaries grow additively: `ctx` and handle
 methods (new object-handle members start with `$`; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
-`data-hitslop-root` and the embed relay. The helper and the live owner ship in one
-bundle and keep an exact core build check. Loro is pinned exactly and upgraded only
+`data-hitslop-root` and the embed relay. The engine, rendering helper and live owner ship in one
+Mac app bundle and keep an exact core build check. Loro is pinned exactly and upgraded only
 with the corpus passing.
 
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
@@ -54,8 +54,8 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - `hitslop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
   (the writer lock, the `.slop` file, the save policy), and is the only code that opens a
   `.slop` file: the app, the helper, Quick Look and the CLI's `slop-engine` all read and
-  write through it. Swift `DocumentOwner` schedules saves and owns the socket and
-  delivery; Loro bytes never reach Swift. The page shell (`packages/shell`) holds no CRDT.
+  write through it. The Rust owner schedules saves and serializes edits; Swift
+  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/shell`) holds no CRDT.
 - A `.slop` file is one SQLite database. A template holds only its app: the `app` row
   (manifest, descriptor, initial values, theme defaults and the two requirements),
   `assets` (including `app.js`) and optional preview and icon `artwork`. A document also
@@ -71,7 +71,9 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   and the last confirmed saved version, and show a native retry. The store re-reads its
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
-- Flush unsent text and pending writes before close or export. Successful close destroys WebViews.
+- Flush unsent text and pending writes before close or export. Captures render saved
+  state in a fresh read-only page; optional `Export.svelte` supplies the layout, otherwise
+  a fresh App uses its default local UI state. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`. The stored descriptor is not JSON Schema.
   Initial values are read only when a document is created. Descriptor kinds exist only once Rust,
   the SDK and a fixture implement them (today: text, boolean, string, number, integer, enum,
@@ -83,12 +85,12 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   identity; merged anomalies are preserved and flagged, never repaired on read.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
   JavaScriptCore engine or a second document engine. The WASM core ships only in the
-  CLI, for authoring validation, `slop dev` and tests.
+  CLI, for `slop dev` and tests. The native engine validates authoring input.
 - TypeBox owns platform contracts (`packages/schema`). Run `bun run schema:generate`;
   never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
-  every build it packs, not app semantics. Swift validates envelopes and decodes what the
-  core checked.
+  every build it packs, not authored UI behavior. Rust validates generated page and
+  socket envelopes; Swift checks the page sender and decodes the accepted native models.
 - Attachments are host-owned immutable content-addressed blobs in the file's
   `attachments` table, referenced by ordinary document fields.
 - Preserve the macOS client: TCA features, catalog and Recents, slop windows and

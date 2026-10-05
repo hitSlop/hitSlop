@@ -7,8 +7,6 @@ import { request } from "../src/native";
 
 /** The helper `scripts/test.ts` names, which renders native artwork. */
 const renderer = process.env.HITSLOP_NATIVE_CLI!;
-import { compileAppWithVite } from "../src/vite";
-import { mkdir } from "node:fs/promises";
 import { overrideSlop } from "./source-fixture";
 
 /** A built file's preview or icon, read outside the engine. */
@@ -25,41 +23,25 @@ function artwork(file: string, name: "preview" | "icon"): Buffer {
 
 // The shell applies theme defaults before mount, so the first view is never unstyled.
 // Existing controller tests do not mount apps.
-test("plain DOM adapter mounts with theme defaults and renders without Svelte or an embedded engine", async () => {
+test("generated Svelte app mounts with theme defaults before native capture", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("packages/cli/templates/checklist", source, { recursive: true });
     await overrideSlop(source, { theme: '{ accent: "#123456" }' });
-    await writeFile(
-      join(source, "main.ts"),
-      `
-      import "./styles.css";
-      import type {SlopApp} from "@hitslop/document/abi";
-      export default {
-        mount(ctx, target) {
-          const doc = ctx.document;
-          const root = document.createElement("main");
-          root.dataset.hitslopRoot = "";
-          root.style.backgroundColor = "var(--slop-accent)";
-          const render = () => { root.textContent = String(doc.current.title); };
-          render();
-          target.append(root);
+    await writeFile(join(source, "App.svelte"), `
+      <script>
+        import { onMount } from "svelte";
+        import doc from "./schema";
+        let root;
+        onMount(() => {
           if (getComputedStyle(root).backgroundColor !== "rgb(18, 52, 86)")
             throw new Error("Theme defaults were not applied before mount");
-          const stop = doc.subscribe(render);
-          return { rendered() {}, unmount() { stop(); root.remove(); } };
-        },
-      } satisfies SlopApp;
-    `,
-    );
-    // A non-Svelte app bundles neither the Svelte compiler/runtime nor SDK internals.
-    const stage = join(root, "graph");
-    await mkdir(join(stage, "assets"), { recursive: true });
-    const inputs = await compileAppWithVite(source, stage);
-    expect(inputs.some((input) => input.endsWith("main.ts"))).toBe(true);
-    for (const input of inputs) expect(input).not.toMatch(/svelte|loro-crdt|document\/src\//);
-    const output = await buildTemplate(source, [renderer], join(root, "plain.slop"));
+        });
+      </script>
+      <main bind:this={root} style="background:var(--slop-accent)">{doc.current.title}</main>
+    `);
+    const output = await buildTemplate(source, [renderer], join(root, "svelte.slop"));
     const png = artwork(output, "preview");
     expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
   } finally {

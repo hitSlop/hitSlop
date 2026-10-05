@@ -28,12 +28,10 @@ extension HostTests {
       if conformance {
         #expect(try await command("batch", url: root, setTitle("Live command")).ok)
         #expect(try await command("theme.set", url: root, ["values": ["accent": "#654321"]]).ok)
-        #expect(try await command("compact", url: root).ok)
       }
       try await controller.session.close()
       if conformance {
         #expect(try await command("batch", url: root, setTitle("Closed command")).ok)
-        #expect(try await command("compact", url: root).ok)
         #expect(try await command("batch", url: root, setTitle("Candidate update")).ok)
       }
       // Renders run the authored app (including its self-checks) against a snapshot:

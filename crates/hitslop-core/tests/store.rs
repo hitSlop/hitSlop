@@ -120,6 +120,35 @@ fn snapshot_refuses_saved_updates_without_a_checkpoint() {
 }
 
 #[test]
+fn a_document_with_no_checkpoint_or_updates_is_refused_without_initializing() {
+    let (_dir, path) = document();
+    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    for mode in [Mode::Snapshot, Mode::Document] {
+        let store = Store::open(&path, mode).unwrap();
+        let error = store.document().err().expect("a document requires its checkpoint");
+        assert!(matches!(error, Error::Failed(ref message) if message.contains("no checkpoint")));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        store.close().unwrap();
+    }
+}
+
+#[test]
+fn newly_created_document_snapshots_share_initial_row_ids_and_history() {
+    let (_dir, path) = document_with(SCHEMA, r#"{"title":"Saved","rows":[{"text":"One"},{"text":"Two"}]}"#);
+    let bytes = std::fs::read(&path).unwrap();
+    let read = || Store::open(&path, Mode::Snapshot).unwrap().document().unwrap();
+    let first = read();
+    let second = read();
+    assert_eq!(first.state().unwrap(), second.state().unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "initial snapshots never write");
+    let (store, doc) = open(&path);
+    assert_eq!(doc.state().unwrap(), first.state().unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "opening never initializes document state");
+    store.close().unwrap();
+}
+
+#[test]
 fn append_refuses_saved_updates_without_a_checkpoint() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
@@ -139,6 +168,7 @@ fn append_refuses_saved_updates_without_a_checkpoint() {
 #[test]
 fn a_new_document_saves_its_first_checkpoint_and_reopens_with_its_edits() {
     let (_dir, path) = document();
+    assert!(stored(&path).checkpoint_bytes > 0, "creation publishes the initial checkpoint before any open");
     let (store, mut doc) = open(&path);
     assert_eq!(stored(&path).rows, 0);
     assert!(stored(&path).checkpoint_bytes > 0);
@@ -431,17 +461,17 @@ fn doodle_like_use_stays_bounded() {
 #[test]
 fn snapshots_never_lock_or_modify_the_document() {
     let (_dir, path) = document();
-    // Never opened by a writer: no saved state yet, so a snapshot starts from the app's
-    // initial values in memory.
+    // A snapshot reads the initial checkpoint without taking ownership.
     let before = std::fs::read(&path).unwrap();
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     let mut doc = snapshot.document().unwrap();
     assert_eq!(title(&doc), "Saved");
-    assert_eq!(std::fs::read(&path).unwrap(), before, "a render of an unsaved document writes nothing");
+    assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
     let job = snapshot.job(&mut doc, false).unwrap().unwrap();
     assert!(matches!(snapshot.write(&job), Err(Error::Closed)), "snapshots own nothing");
-    assert!(matches!(snapshot.theme(Change::Reset(None)), Err(Error::Closed)));
+    set_accent(&mut doc, "#123456");
+    assert!(matches!(snapshot.write(&snapshot.job(&mut doc, false).unwrap().unwrap()), Err(Error::Closed)));
     assert_eq!(std::fs::read(&path).unwrap(), before);
     drop(hitslop_core::registry::Lease::acquire(&path).expect("a snapshot holds no lock"));
 }
@@ -599,45 +629,44 @@ fn a_copy_has_the_same_history_and_theme() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Copied");
-    set_accent(&store, "#123456");
+    set_accent(&mut doc, "#123456");
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     // The source stays open: the copy is an online backup through its writer.
     store.copy_to(&copy).unwrap();
-    let (copied_store, copied) = open(&copy);
+    let (_copied_store, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
-    assert_eq!(accent(&copied_store), "#123456");
+    assert_eq!(accent(&copied), "#123456");
     assert_eq!(copied.version(), doc.version());
 }
 
-fn accent(store: &Store) -> String {
-    let (theme, _) = store.theme(Change::Get).unwrap();
+fn accent(doc: &Document) -> String {
+    let theme = doc.theme_state().unwrap();
     serde_json::from_str::<Value>(&theme.effective).unwrap()["accent"].as_str().unwrap().into()
 }
 fn saved_accent(path: &Path) -> String {
     let snapshot = Store::open(path, Mode::Snapshot).unwrap();
-    snapshot.document().unwrap();
-    accent(&snapshot)
+    accent(&snapshot.document().unwrap())
 }
-fn set_accent(store: &Store, color: &str) -> bool {
-    store.theme(Change::Set(&json!({ "accent": color }).to_string())).unwrap().1
+fn set_accent(doc: &mut Document, color: &str) -> bool {
+    doc.theme(Change::Set(&json!({ "accent": color }).to_string())).unwrap().result.publication.is_some()
 }
 
 #[test]
 fn a_theme_change_is_saved_by_the_next_job() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    assert_eq!(accent(&store), "#335577");
-    assert!(set_accent(&store, "#111111"));
+    assert_eq!(accent(&doc), "#335577");
+    assert!(set_accent(&mut doc, "#111111"));
     // Accepted in memory like an edit; durable once a job writes it.
-    assert_eq!(accent(&store), "#111111");
+    assert_eq!(accent(&doc), "#111111");
     assert_eq!(saved_accent(&path), "#335577");
     let before = stored(&path);
     assert_eq!(save(&store, &mut doc), Some(false));
-    assert_eq!(stored(&path), before, "a theme-only job writes no document bytes");
+    assert_eq!(stored(&path).rows, before.rows + 1, "theme changes share the Loro update log");
     assert_eq!(saved_accent(&path), "#111111");
     // A theme change and an edit are saved in one transaction.
-    set_accent(&store, "#222222");
+    set_accent(&mut doc, "#222222");
     set_title(&mut doc, "Both");
     let job = store.job(&mut doc, false).unwrap().unwrap();
     let other = hold(&path);
@@ -648,9 +677,9 @@ fn a_theme_change_is_saved_by_the_next_job() {
     assert_eq!(saved_accent(&path), "#222222");
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     assert_eq!(title(&snapshot.document().unwrap()), "Both");
-    assert!(matches!(store.theme(Change::Set(r##"{"unknown":"#000000"}"##)), Err(Error::Rejected(_))));
+    assert!(doc.theme(Change::Set(r##"{"unknown":"#000000"}"##)).is_err());
     store.close().unwrap();
-    assert_eq!(accent(&open(&path).0), "#222222");
+    assert_eq!(accent(&open(&path).1), "#222222");
 }
 
 // Failure: a theme change checked ownership under the mutex a save holds for its whole
@@ -658,8 +687,7 @@ fn a_theme_change_is_saved_by_the_next_job() {
 // on the owner's edit queue.
 #[test]
 fn a_theme_change_never_waits_for_a_save_in_progress() {
-    use std::sync::mpsc::channel;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
     let store = Arc::new(store);
@@ -669,17 +697,12 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     let other = hold(&path);
     let writer = { let store = store.clone(); std::thread::spawn(move || store.write(&job)) };
     std::thread::sleep(Duration::from_millis(200));
-    let (done, changed) = channel();
-    let theme = {
-        let store = store.clone();
-        std::thread::spawn(move || done.send(store.theme(Change::Set(r##"{"accent":"#808080"}"##)).map(|(_, changed)| changed)))
-    };
-    let accepted = changed.recv_timeout(Duration::from_secs(1));
+    let began = Instant::now();
+    assert!(set_accent(&mut doc, "#808080"));
+    assert!(began.elapsed() < Duration::from_secs(1), "the theme change waited for the save");
     assert!(!writer.is_finished(), "the save was still in progress");
     other.execute_batch("COMMIT").unwrap();
     writer.join().unwrap().unwrap();
-    theme.join().unwrap().ok();
-    assert!(accepted.expect("the theme change waited for the save").unwrap());
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
 }
@@ -688,12 +711,12 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
 fn a_failed_theme_save_keeps_the_change_for_a_retry() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    set_accent(&store, "#303030");
+    set_accent(&mut doc, "#303030");
     let other = hold(&path);
     let job = store.job(&mut doc, false).unwrap().expect("a theme-only job");
     assert!(matches!(store.write(&job), Err(Error::Busy)));
     other.execute_batch("COMMIT").unwrap();
-    assert_eq!(accent(&store), "#303030");
+    assert_eq!(accent(&doc), "#303030");
     assert_eq!(saved_accent(&path), "#335577");
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#303030");
@@ -705,8 +728,8 @@ fn a_failed_theme_save_keeps_the_change_for_a_retry() {
 fn an_unchanged_theme_is_not_written() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    assert!(!store.theme(Change::Reset(None)).unwrap().1);
-    assert!(!set_accent(&store, "#335577"), "setting the default changes nothing");
+    assert!(doc.theme(Change::Reset(None)).unwrap().result.publication.is_none());
+    assert!(!set_accent(&mut doc, "#335577"), "setting the default changes nothing");
     assert_eq!(save(&store, &mut doc), None);
 }
 
@@ -714,28 +737,28 @@ fn an_unchanged_theme_is_not_written() {
 fn reloading_after_a_discard_drops_unsaved_theme_changes() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    set_accent(&store, "#404040");
+    set_accent(&mut doc, "#404040");
     save(&store, &mut doc);
-    set_accent(&store, "#505050");
+    set_accent(&mut doc, "#505050");
     let mut reloaded = store.document().unwrap();
-    assert_eq!(accent(&store), "#404040");
+    assert_eq!(accent(&reloaded), "#404040");
     assert_eq!(save(&store, &mut reloaded), None, "nothing is left to save");
 }
 
 #[test]
 fn a_theme_file_imports_only_into_its_template() {
     let (_dir, path) = document();
-    let (store, _) = open(&path);
-    set_accent(&store, "#606060");
+    let (_store, mut doc) = open(&path);
+    set_accent(&mut doc, "#606060");
     let other = json!({"template":"habit-heatmap","values":{"accent":"#000000"}}).to_string();
-    assert!(matches!(store.theme(Change::Import(&other)), Err(Error::Rejected(_))));
-    assert!(matches!(store.theme(Change::Import(r##"{"template":"checklist","values":{"missing":"#000000"}}"##)), Err(Error::Rejected(_))));
-    assert_eq!(accent(&store), "#606060");
-    let file = store.export_theme().unwrap();
+    assert!(doc.theme(Change::Import(&other)).is_err());
+    assert!(doc.theme(Change::Import(r##"{"template":"checklist","values":{"missing":"#000000"}}"##)).is_err());
+    assert_eq!(accent(&doc), "#606060");
+    let file = doc.export_theme().unwrap();
     assert_eq!(serde_json::from_str::<Value>(&file).unwrap()["template"], "checklist", "named by the document's template");
-    set_accent(&store, "#707070");
-    assert!(store.theme(Change::Import(&file)).unwrap().1);
-    assert_eq!(accent(&store), "#606060");
+    set_accent(&mut doc, "#707070");
+    assert!(doc.theme(Change::Import(&file)).unwrap().result.publication.is_some());
+    assert_eq!(accent(&doc), "#606060");
 }
 
 // Failure: a read-only connection beside the writer in the same process (a copy of an
@@ -791,7 +814,7 @@ fn save_then_die() {
     let (store, mut doc) = open(Path::new(&path));
     let job = match save.as_str() {
         "theme" => {
-            assert!(set_accent(&store, "#123456"));
+            assert!(set_accent(&mut doc, "#123456"));
             store.job(&mut doc, false).unwrap().unwrap()
         }
         kind => {
@@ -819,7 +842,7 @@ fn a_committed_save_survives_its_process_being_killed() {
         // Opening as the writer proves the lock died with the child.
         let (store, doc) = open(&path);
         match save {
-            "theme" => assert_eq!(accent(&store), "#123456"),
+            "theme" => assert_eq!(accent(&doc), "#123456"),
             kind => assert_eq!(title(&doc), format!("Saved by {kind}")),
         }
         store.close().unwrap();

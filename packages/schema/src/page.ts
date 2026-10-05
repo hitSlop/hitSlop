@@ -7,7 +7,6 @@ import {
   AttachmentBytesSchema,
   AttachmentInfoSchema,
   OutcomeCodeSchema,
-  ThemeValuesSchema,
 } from "./values";
 import { ErrorTextLimit, PagePayloadLimit, WindowBounds } from "./constants";
 
@@ -73,7 +72,6 @@ export const PageResults = {
     runtimeABI: T.Integer({ minimum: 1 }),
     readOnly: T.Boolean(),
     presentation: SlopPresentationSchema,
-    theme: ThemeValuesSchema,
     /** The app's document descriptor, from the document file; the core validated it. */
     descriptor: T.Object({}, { additionalProperties: true }),
   }),
@@ -91,3 +89,24 @@ const PagePushSchema = T.Union([
   Strict({ type: T.Literal("resync") }),
 ]);
 export type PagePush = Static<typeof PagePushSchema>;
+
+/** Private host-to-shell calls. Host and shell ship together; authored apps use ctx. */
+const HostRequests = {
+  publish: Strict({ method: T.Literal("publish"), payload: T.String() }),
+  flush: Strict({ method: T.Literal("flush") }),
+  undo: Strict({ method: T.Literal("undo") }),
+  redo: Strict({ method: T.Literal("redo") }),
+  prepareClose: Strict({ method: T.Literal("prepareClose") }),
+  cancelClose: Strict({ method: T.Literal("cancelClose") }),
+  close: Strict({ method: T.Literal("close") }),
+  reloadInterface: Strict({ method: T.Literal("reloadInterface") }),
+  "capture.begin": Strict({ method: T.Literal("capture.begin"), token: T.String(), mode: T.Enum(["preview", "export", "icon"]) }),
+  "capture.settle": Strict({ method: T.Literal("capture.settle"), token: T.String() }),
+  "capture.restore": Strict({ method: T.Literal("capture.restore"), token: T.String() }),
+} as const;
+export const HostRequestSchema = T.Union(Object.values(HostRequests));
+export type HostRequest = { [K in keyof typeof HostRequests]: Static<(typeof HostRequests)[K]> }[keyof typeof HostRequests];
+export const HostCaptureResultSchema = Strict({
+  x: T.Number(), y: T.Number(), width: T.Number(), height: T.Number(), dedicated: T.Boolean(),
+});
+export type HostCaptureResult = Static<typeof HostCaptureResultSchema>;

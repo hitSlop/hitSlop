@@ -25,7 +25,7 @@ slop apply "My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
 slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
 ```
 
-With the window open, the count ticks up and the accent turns purple as each command runs. Text merges character by character, so your agent's edit doesn't wipe out what you're typing elsewhere in the same field. hitSlop doesn't upload your documents: the agent edits them through the hitSlop app on your Mac, even while they're closed.
+With the window open, the count ticks up and the accent turns purple as each command runs. Text merges character by character, so your agent's edit doesn't wipe out what you're typing elsewhere in the same field. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
 
 ## Small enough to be yours
 
@@ -43,7 +43,7 @@ hitSlop is built for tools with one clear job and a little character. It comes w
 
 ## Make your own with an agent
 
-You need Bun 1.4.2 or newer and the hitSlop Mac app.
+Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows, register templates and export PNG/PDF.
 
 ```sh
 bunx @hitslop/cli@4.0.0 init weekend-kit
@@ -82,7 +82,7 @@ Run commands with `bunx @hitslop/cli@4.0.0`, or install it with `bun install -g 
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
 | Install agent guidance | `bun install -g @hitslop/cli`, then `slop skills install`; skills update with the global CLI |
 
-Document commands work through the installed Mac app, even while it's closed. Call `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` directly to edit without Node or Bun. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+Document creation and editing run on macOS and Linux. On a Mac, the CLI prefers the engine shipped with hitSlop; opening windows and exporting PNG/PDF use the Mac app. Call `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` directly to edit without Node or Bun. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
 
 ## Where it's going
 
@@ -195,8 +195,8 @@ The theme's colors are available as CSS variables; fonts and other styling stay 
 
 `App.svelte` defines the window. The CLI discovers the two optional capture components:
 
-- `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop captures the editor; mark controls with `data-slop-export="hide"` to leave them out.
-- `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, hitSlop uses its generic icon.
+- `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
+- `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, Finder can use the saved preview; without artwork, it uses the generic document icon.
 
 Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Register renders the template's initial artwork from starting values.
 
@@ -234,8 +234,8 @@ main.wins-card { min-height: 100%; }
 ```
 
 The builder connects `App.svelte` and `styles.css` to the host runtime automatically
-through `defineSlop`; no `main.ts` is needed. For a non-Svelte app, an optional
-`main.ts` can export `default { mount(ctx, target) }` and import its styles. See the
+through `defineSlop`. Authoring uses this generated Svelte entry; custom `main.ts`
+entries are refused. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 
 ### 4. Take it for a spin

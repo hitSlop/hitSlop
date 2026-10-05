@@ -6,7 +6,7 @@ Launch includes the signed/notarized Apple silicon Mac app and matching `@hitslo
 
 A CLI-only release keeps the shipped SDK packages and Mac app. Publish only the
 CLI; keep SDK versions and Mac tags unchanged. This is supported while the shipped
-app's helper serves the CLI's command protocol (`hitslop-native --protocol`) and can
+app's engine and rendering helper serve the CLI's command protocol (`--protocol`) and can
 read the package format emitted by the builder and run the project's SDK runtime ABI.
 An unsupported requirement needs a compatible Mac release first: publish the app before an SDK or CLI that raises `runtimeABI`, `packageFormat` or the command protocol. A compatible protocol does not replace the installed-consumer smoke
 checks below.
@@ -62,7 +62,7 @@ bun run release:check
 
 `bun run hygiene` runs only repository hygiene and does not establish release readiness.
 
-The complete gate checks hygiene; builds the page shell, helper, and all active templates; verifies generated contracts, types, and skills; runs JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
+The complete gate checks hygiene; builds the page shell, native tools, and all active templates; verifies generated contracts, types, and skills; runs JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
 
 Bundled selection comes from `examples/slops/bundled.json`. Every selected package must be present in the app with no unexpected stale starters. Every package is checked for matching build bytes, valid manifest/schema/initial data, immutable contents, and preview/icon artwork. Installed create/schema/get/reopen/PNG/PDF checks run on Quick Checklist. Set `HITSLOP_TEMPLATE_EXHAUSTIVE=1` to run those installed checks on every bundled template. Schema-specific mutation/crash probes use known fixtures separately. Packed consumer tests also compile the public getting-started tutorial; its code is an executable contract.
 
@@ -70,7 +70,7 @@ Bundled selection comes from `examples/slops/bundled.json`. Every selected packa
 
 The tiers are listed in [testing](../testing.md#ci); the full `release:check` runs once, in the Release macOS workflow, on a tag before signing or manually as a dry run.
 
-CI restores SwiftPM `.build` by toolchain, lockfile and source identity, with a compatible restore prefix. The template cache reuses complete, fingerprinted template files; damaged entries rebuild, compiler/SDK/page-shell/renderer and file-engine inputs and inherited TypeScript configuration invalidate entries, CLI routing and unrelated scripts do not, and removed templates are pruned. Misses log their changed inputs. Master pushes keep the release template cache warm for tags. Local and CI template builds default to `.hitslop/template-cache`; `HITSLOP_TEMPLATE_CACHE_DIR` can override the location. `build` prepares the page shell/helper, while `build:templates` prepares the complete artwork corpus. Native artwork rendering remains outside the fast job.
+CI restores SwiftPM `.build` by toolchain, lockfile and source identity, with a compatible restore prefix. The template cache reuses complete, fingerprinted template files; damaged entries rebuild, compiler/SDK/page-shell/renderer and file-engine inputs and inherited TypeScript configuration invalidate entries, CLI routing and unrelated scripts do not, and removed templates are pruned. Misses log their changed inputs. Master pushes keep the release template cache warm for tags. Local and CI template builds default to `.hitslop/template-cache`; `HITSLOP_TEMPLATE_CACHE_DIR` can override the location. `build` prepares the page shell, engine and helper, while `build:templates` prepares the complete artwork corpus. Native artwork rendering remains outside the fast job.
 
 Bundled templates are black boxes: every one compiles, opens and reopens in Bun, then renders PNG/PDF and reopens in the native smoke. Conformance fixtures and native boundary tests cover platform edits, picker cancellation, persistence and exports. Application-specific walkthroughs are removed. The gate retains PNG/PDF evidence without visual snapshot comparison.
 
@@ -88,7 +88,7 @@ scripts/package-macos-release.sh
 bun scripts/release-artifact.ts /path/to/hitSlop.app
 ```
 
-Embedding ships the native executable and its HitSlopDocument resource bundle. Verification checks matching host/helper runtime catalogs and exercises installed helpers with a system-only PATH, including PNG/PDF. Native editing needs no checkout, Node, or Bun. `HITSLOP_NATIVE_CLI` selects an explicit matching helper for authoring verification.
+Embedding ships and signs `slop-engine`, `hitslop-native` and the helper's HitSlopDocument resource bundle. Verification checks matching host/helper page shells, exact core identities across app/engine/helper, matching command protocols and engine architecture/signature. It exercises installed engine creation and editing plus helper PNG/PDF export with a system-only PATH. Native editing needs no checkout, Node or Bun. `HITSLOP_NATIVE_CLI` selects an explicit helper for verification; document commands then require its sibling engine unless `HITSLOP_ENGINE` is set.
 
 Developer ID, notarization, provisioning, App Store Connect, and Sparkle private keys remain outside Git. The tagged GitHub workflow runs the gate once (`release:check --skip-app`), then archives one Release app. `package-macos-release.sh` runs host-crash acceptance and the compatibility corpus replay with the signed app's helper before notarizing (it needs the Debug helper from `bun run build`; `HITSLOP_SKIP_ACCEPTANCE=1` skips it). The workflow then verifies DMG/ZIP artifacts and publishes the Mac release. It does not publish npm packages. Release the exact tested commit.
 

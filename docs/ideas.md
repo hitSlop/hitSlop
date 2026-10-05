@@ -170,9 +170,9 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Builds on:** the single file (the app travels with the data) and the owner's Loro
   update import and export. Row-syncing SQLite services (Turso, SQLite Sync) were
   considered and rejected: they replicate rows, while the document's merges live in Loro.
-- **Contract change:** theme overrides are a row outside Loro and need merge semantics
-  (last writer per color, or a move into Loro) before they sync. Attachments travel
-  separately, by hash, so "edits synced" and "file complete" are different states.
+- **Remaining work:** theme overrides already merge in Loro, last writer per color.
+  Attachments travel separately, by hash, so "edits synced" and "file complete" are
+  different states. Sync also needs retention and undo policies for offline replicas.
 
 ### Realtime collaboration on Durable Objects
 
@@ -191,8 +191,9 @@ a person and their agent edit the same live document. What's missing is the slop
   - Check Loro's own sync tooling before writing new framing.
 - **Placement:**
   - The Rust core owns the sync messages and the acknowledged version (a `sync` feature).
-  - Swift owns the socket, authentication and scheduling, and carries frames as opaque
-    bytes.
+  - A future Swift sync adapter could handle remote networking and authentication,
+    carrying frames as opaque bytes. The Rust owner would schedule imports and saving;
+    this is separate from the local command socket it already owns.
   - Remote frames enter the owner queue as `import`. The page sees them as publications,
     exactly like a CLI edit, and text bindings already merge concurrent edits from the
     history they saw.

@@ -18,7 +18,7 @@ bunx @hitslop/cli batch My.slop --ops '[{"type":"set","path":["title"],"value":"
 
 Read the descriptor and current state before choosing operations. The CLI prints JSON and reports failures on stderr. Successful mutations acknowledge persistence. If transport fails, run `get` before another edit; do not blindly retry.
 
-The installed app's helper sends edits to the open document's socket, or edits a closed document directly without loading its interface. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. Installed native editing itself needs no Bun; the `bunx` command is its convenient authoring-CLI entrypoint.
+The Rust engine sends edits to the open document's socket, or edits a closed document directly without loading its interface. On a Mac, the CLI prefers the engine shipped with the app; Linux uses the CLI's bundled engine. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. Installed native editing itself needs no Bun; the `bunx` command is its convenient authoring-CLI entrypoint.
 
 Theme colors use separate commands, or the theme panel in the window, and are saved with the document's edits, in the same database:
 

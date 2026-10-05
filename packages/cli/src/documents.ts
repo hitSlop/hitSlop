@@ -3,8 +3,7 @@
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "@hitslop/schema/constants";
-import { EpochMethods, SocketResults, type HelperRequestFor, type SocketMethod } from "@hitslop/schema/socket";
-import { validate } from "@hitslop/schema/validation";
+import { EpochMethods, type HelperRequestFor, type SocketMethod, type SocketReply, type SocketSuccessFor } from "@hitslop/schema/socket";
 import type { OutcomeCode } from "@hitslop/schema/values";
 
 type ExportFormat = (typeof ExportFormats)[number];
@@ -20,15 +19,14 @@ const outcomes: Record<OutcomeCode, string> = {
 
 /** One request, and its successful reply's result as the method's contract requires it.
  * A failed request that carries the owner's epoch says what it means for the next edit. */
-async function send<M extends Exclude<SocketMethod, "hello">>(request: HelperRequestFor<M> & { method: M }) {
+async function send<M extends Exclude<SocketMethod, "hello">>(request: HelperRequestFor<M> & { method: M }): Promise<SocketSuccessFor<M>> {
   const { ExitStatus, request: helper } = await import("./native");
   const outcome = (code: OutcomeCode) => (EpochMethods.has(request.method) ? outcomes[code] : undefined);
-  const reply = await helper(request).catch((error) => {
+  const reply: SocketReply = await helper<M>(request).catch((error) => {
     throw error instanceof ExitStatus ? new ExitStatus(error.code, outcome("unknown_outcome")) : error;
   });
-  if (!reply.ok) throw new Error([reply.error ?? "Document operation failed", outcome(reply.code ?? "unknown_outcome")].filter(Boolean).join("\n"));
-  const { method } = request;
-  return validate(SocketResults[method], reply, `hitSlop.app sent an invalid ${method} reply; outcome unknown, run slop get before another edit`);
+  if (!reply.ok) throw new Error([reply.error, outcome(reply.code)].filter(Boolean).join("\n"));
+  return reply as SocketSuccessFor<M>;
 }
 /** The document a request names. */
 const at = (document: string) => ({ documentPath: resolve(document) });
@@ -85,9 +83,6 @@ export async function importValue(document: string, file: string, path = "[]") {
   if (json(value) === undefined) throw new Error("The file must hold one JSON value");
   if (!Array.isArray(json(path))) throw new Error(`--path must be a JSON array, such as '["rows"]'`);
   await batch(document, `[{"type":"replace","path":${path},"value":${value}}]`);
-}
-export async function compact(document: string) {
-  await send({ method: "compact", ...at(document) });
 }
 export async function exportDocument(document: string, format: ExportFormat, output: string) {
   console.log((await send({ method: "export", ...at(document), format, output: resolve(output) })).output);

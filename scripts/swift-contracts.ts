@@ -31,6 +31,8 @@ export function swiftContracts(
   pageRequest: TSchema,
   pageFailure: TSchema,
   pageResults: Record<string, TSchema>,
+  hostRequest: TSchema,
+  hostCaptureResult: TSchema,
 ) {
   const declarations: string[] = [];
   /** Each emitted enumeration's cases, by type name. */
@@ -262,10 +264,84 @@ export function swiftContracts(
     lines.push("    }", "  }", "}");
     declarations.push(lines.join("\n"));
   }
+  /** Complete socket successes, and one classified failure. Core-owned state remains
+   * JSON text until the encoder splices it into the envelope. */
+  function socketReplies(schema: TSchema) {
+    const union = schema as Schema;
+    if (!union.anyOf) unsupported("SocketReply");
+    const failure = union.anyOf.find((member) => member.properties?.ok?.const === false);
+    if (!failure) unsupported("SocketReply.failure");
+    structure("SocketFailure", failure, undefined, false);
+    const variants = union.anyOf.filter((member) => member !== failure).map((member) => {
+      checkKeys(member, "SocketReply");
+      const method = member.properties?.method?.const;
+      if (typeof method !== "string" || member.properties?.ok?.const !== true) unsupported("SocketReply.method");
+      const fields = Object.entries(member.properties!).filter(([key]) => key !== "ok" && key !== "method").map(([key, value]) => ({
+        key,
+        name: identifier(key === "state" ? "stateJSON" : key),
+        type: key === "state" ? "String" : fieldType(value, "Socket" + title(method) + title(key), "SocketReply." + method + "." + key).type,
+        optional: !member.required?.includes(key),
+      })).sort((a, b) => Number(a.optional) - Number(b.optional));
+      return { method, fields };
+    });
+    const lines = ["/// A complete reply. A success cannot be constructed without its method's result.", "public enum SocketReply: Sendable {"];
+    for (const variant of variants) {
+      lines.push(`  case ${identifier(variant.method)}(${variant.fields.map((f) => `${f.name}: ${f.type}${f.optional ? "?" : ""}`).join(", ")})`);
+    }
+    lines.push("  case failure(SocketFailure)", "", "  private var header: [String: Any] {", "    switch self {");
+    for (const variant of variants) {
+      const pattern = variant.fields.map((f) => f.key === "state" ? "_" : `let ${f.name}`).join(", ");
+      lines.push(`    case .${identifier(variant.method)}(${pattern}):`);
+      const header = [`"ok": true`, `"method": ${quote(variant.method)}`, ...variant.fields.filter((f) => f.key !== "state" && !f.optional).map((f) => `${quote(f.key)}: ${f.name}`)];
+      const optional = variant.fields.filter((f) => f.optional);
+      if (optional.length) {
+        lines.push(`      var result: [String: Any] = [${header.join(", ")}]`);
+        for (const field of optional) lines.push(`      if let ${field.name} { result[${quote(field.key)}] = ${field.name} }`);
+        lines.push("      return result");
+      } else lines.push(`      return [${header.join(", ")}]`);
+    }
+    lines.push("    case .failure(let failure): return failure.json", "    }", "  }", "", "  private var stateJSON: String? {", "    switch self {");
+    for (const variant of variants.filter((v) => v.fields.some((f) => f.key === "state"))) {
+      lines.push(`    case .${identifier(variant.method)}(${variant.fields.map((f) => f.key === "state" ? "let state" : "_").join(", ")}): return state`);
+    }
+    lines.push("    default: return nil", "    }", "  }", "", "  /// Encodes routing fields and splices the core's state without interpreting it.", "  public func encoded() -> Data {", "    guard var bytes = try? JSONSerialization.data(withJSONObject: header, options: .withoutEscapingSlashes) else {",
+      '      return Data(#"{"ok":false,"code":"unknown_outcome","error":"Invalid response. Outcome unknown; run slop get before another edit."}"#.utf8)',
+      "    }", "    if let stateJSON {", "      bytes.removeLast()", '      bytes.append(contentsOf: #",\"state\":"#.utf8)', "      bytes.append(contentsOf: stateJSON.utf8)", '      bytes.append(UInt8(ascii: "}"))', "    }", "    return bytes", "  }", "}");
+    declarations.push(lines.join("\n"));
+    // Helpers only inspect this header; the state projection is skipped by JSONDecoder.
+    declarations.push(`/// Routing and outcome metadata read beside the original reply bytes; never a result.
+public struct SocketReplyHeader: Decodable, Sendable {
+  public let ok: Bool
+  public let method: SocketRequest.Method?
+  public let epoch: String?
+  public let coreBuildId: String?
+  public let error: String?
+  public let code: OutcomeCode?
+  public let reason: CoreErrorCode?
+  public let opIndex: Int?
+  private enum CodingKeys: String, CodingKey { case ok, method, epoch, coreBuildId, error, code, reason, opIndex }
+  public init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    ok = try fields.decode(Bool.self, forKey: .ok)
+    epoch = try fields.decodeIfPresent(String.self, forKey: .epoch)
+    coreBuildId = try fields.decodeIfPresent(String.self, forKey: .coreBuildId)
+    error = try fields.decodeIfPresent(String.self, forKey: .error)
+    opIndex = try fields.decodeIfPresent(Int.self, forKey: .opIndex)
+    method = try fields.decodeIfPresent(String.self, forKey: .method).flatMap(SocketRequest.Method.init(rawValue:))
+    code = try fields.decodeIfPresent(String.self, forKey: .code).flatMap(OutcomeCode.init(rawValue:))
+    reason = try fields.decodeIfPresent(String.self, forKey: .reason).flatMap(CoreErrorCode.init(rawValue:))
+    guard ok ? method != nil : (code != nil && error != nil) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid socket reply header"))
+    }
+  }
+}`);
+  }
   requests("SocketRequest", request);
   requests("PageRequest", pageRequest);
+  requests("HostRequest", hostRequest);
+  structure("HostCaptureResult", hostCaptureResult as Schema);
   structure("PageFailure", pageFailure as Schema, undefined, false);
-  structure("SocketReply", reply as Schema);
+  socketReplies(reply);
   structure("SocketDiscovery", discovery as Schema);
   // One case per page method; a result with fields carries its generated structure.
   const results = Object.entries(pageResults).map(([method, schema]) => {

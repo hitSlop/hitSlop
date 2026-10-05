@@ -4,7 +4,7 @@ import HitSlopDocument
 
 /// Runs one document request as `hitslop-native request` does (the CLI sends no epoch),
 /// and maps its reply.
-@MainActor public func command(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> SocketReply {
+@MainActor public func command(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> DecodedReply {
   var request = fields
   request["method"] = method
   request["documentPath"] = url.path
@@ -26,7 +26,23 @@ public final class Locked<Value>: @unchecked Sendable {
   public func modify(_ change: (inout Value) -> Void) { lock.withLock { change(&stored) } }
 }
 
-/// A socket reply line as the client maps it.
-public func decodeReply(_ data: Data) throws -> SocketReply {
-  try SocketReply(json: JSONSerialization.jsonObject(with: data) as! [String: Any])
+/// Tests inspect payloads as well as the header; production routing never parses them.
+public struct DecodedReply {
+  public let header: SocketReplyHeader
+  public let state: Any?
+  public let ids: [String]?
+  public let sequence: Int?
+  public let output: String?
+  public var ok: Bool { header.ok }
+  public var error: String? { header.error }
+  public var code: OutcomeCode? { header.code }
+  public var reason: CoreErrorCode? { header.reason }
+  public var epoch: String? { header.epoch }
+  public var opIndex: Int? { header.opIndex }
+}
+public func decodeReply(_ data: Data) throws -> DecodedReply {
+  let header = try JSONDecoder().decode(SocketReplyHeader.self, from: data)
+  let value = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+  return DecodedReply(header: header, state: value["state"], ids: value["ids"] as? [String],
+    sequence: value["sequence"] as? Int, output: value["output"] as? String)
 }

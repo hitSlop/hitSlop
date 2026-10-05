@@ -13,7 +13,7 @@ bun run test
 bun run swift:test
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine is copied beside the Debug helper so an explicit `HITSLOP_NATIVE_CLI` selects a matching deployment. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 

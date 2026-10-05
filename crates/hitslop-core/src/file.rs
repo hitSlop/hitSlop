@@ -27,7 +27,7 @@ pub(crate) const SCHEMA: &str = "\
 CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, initial TEXT NOT NULL, theme TEXT NOT NULL);
 CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL);
 CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL);
-CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1), theme TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1));
 CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), bytes BLOB NOT NULL);
 CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
 CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL);";
@@ -198,7 +198,7 @@ fn app_sizes(conn: &Connection) -> Result<()> {
     let (manifest, longest, theme) = (
         one(conn, "SELECT length(CAST(manifest AS BLOB)) FROM app")?,
         one(conn, "SELECT max(length(CAST(descriptor AS BLOB)), length(CAST(initial AS BLOB))) FROM app")?,
-        one(conn, "SELECT max(length(CAST(theme AS BLOB))) FROM (SELECT theme FROM app UNION ALL SELECT theme FROM document)")?,
+        one(conn, "SELECT length(CAST(theme AS BLOB)) FROM app")?,
     );
     if manifest > MANIFEST_BYTES as i64 || longest > APP_TEXT_BYTES as i64 || theme > crate::wire::THEME_LIMIT as i64 {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
@@ -379,10 +379,14 @@ struct CheckedApp {
     skin: Option<Vec<u8>>,
 }
 /// The content rules `pack` applies and every open relies on, each run once.
-fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Result<CheckedApp> {
+fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::Node, Vec<(String, String)>)> {
     let window = crate::manifest::validate(&app.manifest, app.package_format).map_err(Error::Rejected)?;
     let schema = crate::descriptor::checked(&app.descriptor, &app.initial).map_err(Error::Rejected)?;
     let theme_tokens = crate::theme::validate_defaults(&app.theme).map_err(Error::Rejected)?;
+    Ok((window, schema, theme_tokens))
+}
+fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Result<CheckedApp> {
+    let (window, schema, theme_tokens) = check_app_values(app)?;
     let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
     std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
     let skin = match &window.skin {
@@ -670,20 +674,11 @@ fn write_template(path: &Path, app: &App, assets: &[(String, Vec<u8>)], artwork:
 pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     let file = stage.join("app.json");
     let size = fs::metadata(&file).map_err(|e| invalid(format!("app.json: {e}")))?.len();
-    if size > (MANIFEST_BYTES + 2 * APP_TEXT_BYTES + crate::wire::THEME_LIMIT) as u64 {
+    if size > APP_INPUT_BYTES as u64 {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
     let text = fs::read_to_string(&file).map_err(|e| invalid(format!("app.json: {e}")))?;
-    let row: crate::wire::AppRow = serde_json::from_str(&text).map_err(|e| invalid(format!("app.json: {e}")))?;
-    requirements(row.packageFormat.try_into().unwrap_or(i64::MAX), row.runtimeABI.try_into().unwrap_or(i64::MAX))?;
-    let app = App {
-        package_format: row.packageFormat,
-        runtime_abi: row.runtimeABI,
-        manifest: compact(row.manifest.get()),
-        descriptor: compact(row.descriptor.get()),
-        initial: compact(row.initial.get()),
-        theme: compact(row.theme.get()),
-    };
+    let app = parse_app(&text)?;
     let assets = stage_assets(&stage.join("assets"))?;
     let mut artwork = vec![];
     for name in ARTWORK {
@@ -706,6 +701,33 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
         return Err(failed("Packing produced document state"));
     }
     staged.publish_template(dest)
+}
+/// Maximum evaluated app row accepted by packing and authoring validation.
+pub const APP_INPUT_BYTES: usize = MANIFEST_BYTES + 2 * APP_TEXT_BYTES + crate::wire::THEME_LIMIT;
+
+fn parse_app(input: &str) -> Result<App> {
+    if input.len() > APP_INPUT_BYTES {
+        return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
+    }
+    let row: crate::wire::AppRow = serde_json::from_str(input).map_err(|e| invalid(format!("app.json: {e}")))?;
+    requirements(row.packageFormat.try_into().unwrap_or(i64::MAX), row.runtimeABI.try_into().unwrap_or(i64::MAX))?;
+    if row.manifest.get().len() > MANIFEST_BYTES || row.descriptor.get().len() > APP_TEXT_BYTES
+        || row.initial.get().len() > APP_TEXT_BYTES || row.theme.get().len() > crate::wire::THEME_LIMIT {
+        return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
+    }
+    Ok(App {
+        package_format: row.packageFormat,
+        runtime_abi: row.runtimeABI,
+        manifest: compact(row.manifest.get()),
+        descriptor: compact(row.descriptor.get()),
+        initial: compact(row.initial.get()),
+        theme: compact(row.theme.get()),
+    })
+}
+/// Checks evaluated app values with the same rules as packing and opening; assets are
+/// checked later when they exist. Refuses unsupported markers before interpreting values.
+pub fn validate_app(input: &str) -> Result<()> {
+    check_app_values(&parse_app(input)?).map(|_| ())
 }
 /// Parsed JSON text without the whitespace between its tokens, in the order written: the
 /// `app` row's text is one line, so hosts pass it on without re-encoding it.
@@ -756,7 +778,7 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
 /// Copies `source` to `dest` through SQLite's online backup into a temporary file beside
 /// `dest`, then checks it and publishes it without replacing anything; `create` adds the
 /// document row a template lacks.
-pub(crate) fn copy(source: &Connection, dest: &Path, create: bool) -> Result<()> {
+pub(crate) fn copy(source: &Connection, dest: &Path, initial: Option<&[u8]>) -> Result<()> {
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
     {
@@ -768,23 +790,30 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool) -> Result<()>
         }
     }
     configure_writer(&output)?;
-    if create {
-        output.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
+    if let Some(checkpoint) = initial {
+        let tx = output.unchecked_transaction().map_err(sqlite("Cannot create the document"))?;
+        tx.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
+        tx.execute("INSERT INTO checkpoint VALUES(1,?)", [checkpoint]).map_err(sqlite("Cannot create the document"))?;
+        tx.commit().map_err(sqlite("Cannot create the document"))?;
     }
     check(&output, false)?;
     output.close().map_err(|(_, e)| sqlite("close")(e))?;
     staged.publish_new(dest)
 }
-/// A new document from a template: the same app, no saved state yet.
+/// A new document from a template: the same app, with its initial state already durable.
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     let source = reader(template)?;
     // The app is checked in the same read as the copy: a template the app would refuse
     // to open publishes nothing.
     let read = source.unchecked_transaction().map_err(sqlite("read"))?;
-    if opened(&read, template, true)?.kind != Kind::Template {
+    let app = opened(&read, template, true)?;
+    if app.kind != Kind::Template {
         return Err(invalid("Documents are created from a template"));
     }
-    copy(&read, dest, true)
+    let doc = crate::Document::create_with(app.schema, &app.app.initial).map_err(Error::Rejected)?;
+    let checkpoint = doc.checkpoint().map_err(Error::Rejected)?;
+    if checkpoint.len() + 512 > crate::STORAGE_BYTES { return Err(Error::Full); }
+    copy(&read, dest, Some(&checkpoint))
 }
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.

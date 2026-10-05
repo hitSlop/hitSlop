@@ -3,11 +3,11 @@ title: Icons, previews, and exports
 description: Design live icons and export views, then capture native PNG and PDF output.
 ---
 
-The editor, Finder artwork, and exported document should feel like the same object. They can have different layouts while reading the same live state and theme.
+The editor, Finder artwork, and exported document should feel like the same object. They can have different layouts while reading the same saved data and theme.
 
 ## Declare capture views
 
-The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.svelte`. An authored `main.ts` takes precedence and registers components explicitly with `svelteApp(App, { schema, export: Export, icon: Icon })` from `@hitslop/document/svelte`. Export receives `mode: "preview" | "export"`:
+The CLI generates the entry for `App.svelte` and discovers optional `Export.svelte` and `Icon.svelte`. Custom `main.ts` entries are refused. Export receives `mode: "preview" | "export"`:
 
 ```svelte
 <main class="note-editor">
@@ -37,7 +37,12 @@ The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.sve
 <div class="note-icon">{doc.current.tasks.length}</div>
 ```
 
-Without `Icon.svelte`, build prints a notice and the host uses its generic icon. Use your app's existing document facade; never open a second store for capture. When an export should reflect the editor's selected tab, share pure presentation helpers and pass that view state explicitly. Capture components mount lazily, so they should derive content from current state, not keep a private copy of it. A rendering failure in an export or icon component rejects that capture without replacing the editor or reporting an application-render error. Capture restores the editor and clears the component's failure state; a later attempt renders it again. Editor rendering failures still use the native application-error recovery path.
+Use the app's existing document facade in capture components. Captures render saved
+data in a fresh read-only page. If an export should show a selected tab or report, save
+that choice in the document; transient editor state is not carried into the capture.
+A missing `Export.svelte` falls back to a fresh `App.svelte` with its default local view.
+An export or icon component that throws fails that capture without changing the live
+editor. A later attempt gets a fresh rendering page.
 
 ## Design an icon at 512 × 512
 
@@ -59,7 +64,7 @@ An absent icon is optional. If you declare an icon and it throws, capture fails 
 
 ## Make exports readable
 
-Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `Export.svelte`, the editor is never captured. If no dedicated export view is declared, the editor is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
+Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `Export.svelte`, the editor is never captured. If no dedicated export view is declared, a fresh App rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 
@@ -79,18 +84,14 @@ bunx @hitslop/cli export My.slop --format png --output My.png
 bunx @hitslop/cli export My.slop --format pdf --output My.pdf
 ```
 
-An export never replaces the document it renders. Open documents export the selected live view after sending unsent text and saving. Closed documents render a private saved snapshot using their initial view. Theme overrides apply in both cases. The original document is not used as a scratch rendering workspace.
+An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy in a fresh page. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
 
-Capture waits for fonts, visible images and a stable layout, and blocks edits while it runs; afterwards the editor's focus, selection and scroll are restored. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
+The editor barrier lasts through saving and copying; rendering then proceeds independently. Capture waits for fonts, visible images and a stable layout in the fresh page. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
 
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
-
-## Other frameworks
-
-An app without `svelteApp` registers capture views itself with `ctx.capture.registerTarget("export" | "icon", { element, prepare, restore })`. Targets must be direct children of `body`. `capture.onPrepare` supports asynchronous readiness. Dispose registrations on unmount, and never change saved state to prepare a view.
 
 ## Quick Look and Finder artwork
 
 Registration, or `slop build --artwork native`, captures the initial preview and, when declared, icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
-Test normal and narrow windows, empty and populated data, themed output, live selected views, and closed exports. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.
+Test normal and narrow windows, empty and populated data, themed output, default local views, saved view choices, and exports from open and closed documents. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

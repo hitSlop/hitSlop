@@ -32,7 +32,6 @@ export const SocketRequestSchema = T.Union([
   Strict({ ...mutation, method: T.Literal("theme.import"), file: T.String({ minLength: 2, maxLength: ThemeFileLimit }) }),
   Strict({ ...base, method: T.Enum(["hello", "get"]) }),
   Strict({ ...mutation, method: T.Literal("batch"), ops: operations }),
-  Strict({ ...mutation, method: T.Literal("compact") }),
   Strict({
     ...mutation,
     method: T.Literal("export"),
@@ -40,42 +39,34 @@ export const SocketRequestSchema = T.Union([
     output: path,
   }),
 ]);
-export const SocketReplySchema = Strict({
-  ok: T.Boolean(),
+/** Every successful result names its method and carries all fields that method promises. */
+export const SocketSuccessSchema = T.Union([
+  Strict({ ok: T.Literal(true), method: T.Literal("hello"), epoch: identity, coreBuildId: identity }),
+  Strict({ ok: T.Literal(true), method: T.Literal("get"), epoch: identity,
+    state: Strict({ schema: T.Object({}, { additionalProperties: true }), state: OwnerStateSchema }) }),
+  Strict({ ok: T.Literal(true), method: T.Literal("batch"), epoch: identity,
+    ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }) }),
+  // A closed export reads a snapshot without creating an owner or epoch.
+  Strict({ ok: T.Literal(true), method: T.Literal("export"), epoch: T.Optional(identity), output: path }),
+  Strict({ ok: T.Literal(true), method: T.Literal("theme.get"), epoch: identity, state: ThemeStateSchema }),
+  Strict({ ok: T.Literal(true), method: T.Literal("theme.set"), epoch: identity, state: ThemeStateSchema }),
+  Strict({ ok: T.Literal(true), method: T.Literal("theme.reset"), epoch: identity, state: ThemeStateSchema }),
+  Strict({ ok: T.Literal(true), method: T.Literal("theme.import"), epoch: identity, state: ThemeStateSchema }),
+  Strict({ ok: T.Literal(true), method: T.Literal("theme.export"), epoch: identity, state: Strict({ file: T.String() }) }),
+  Strict({ ok: T.Literal(true), method: T.Literal("attachments.list"), epoch: identity, state: T.Array(AttachmentInfoSchema) }),
+  Strict({ ok: T.Literal(true), method: T.Literal("attachments.read"), epoch: identity, state: Strict({ bytes: AttachmentBytesSchema }) }),
+  Strict({ ok: T.Literal(true), method: T.Literal("attachments.put"), epoch: identity, state: AttachmentInfoSchema }),
+]);
+/** A classified failure. Unknown outcomes are explicit, never inferred from missing fields. */
+export const SocketFailureSchema = Strict({
+  ok: T.Literal(false),
   epoch: T.Optional(identity),
-  /** hello: exact build identity of the owner's document core. */
-  coreBuildId: T.Optional(identity),
-  /** The method's result (`SocketResults`), as the core's JSON. */
-  state: T.Optional(T.Unknown()),
-  /** batch: the IDs of inserted rows (minted or supplied) and the owner sequence. */
-  ids: T.Optional(T.Array(T.String())),
-  sequence: T.Optional(T.Integer({ minimum: 0 })),
-  output: T.Optional(path),
-  error: T.Optional(T.String()),
-  /** A failure's outcome (`OutcomeCodes`); absent means unknown. */
-  code: T.Optional(OutcomeCodeSchema),
-  /** A refusal's core error code, and the intent it refused. */
+  error: T.String(),
+  code: OutcomeCodeSchema,
   reason: T.Optional(CoreErrorCodeSchema),
   opIndex: T.Optional(T.Integer({ minimum: 0 })),
 });
-/** What each method's successful reply must carry beside `ok`; a reply without it is an
- * unknown outcome, never a result with defaults. */
-const theme = T.Object({ state: ThemeStateSchema });
-export const SocketResults = {
-  get: T.Object({ state: Strict({ schema: T.Object({}, { additionalProperties: true }), state: OwnerStateSchema }) }),
-  batch: T.Object({ ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }) }),
-  compact: T.Object({}),
-  export: T.Object({ output: path }),
-  "theme.get": theme,
-  "theme.set": theme,
-  "theme.reset": theme,
-  "theme.import": theme,
-  /** The theme file's text, as the core writes it. */
-  "theme.export": T.Object({ state: Strict({ file: T.String() }) }),
-  "attachments.list": T.Object({ state: T.Array(AttachmentInfoSchema) }),
-  "attachments.read": T.Object({ state: Strict({ bytes: AttachmentBytesSchema }) }),
-  "attachments.put": T.Object({ state: AttachmentInfoSchema }),
-} as const satisfies Record<Exclude<SocketMethod, "hello">, T.TObject>;
+export const SocketReplySchema = T.Union([...SocketSuccessSchema.anyOf, SocketFailureSchema]);
 /** Methods whose requests carry the owner's epoch: a failure leaves an outcome to report. */
 export const EpochMethods: ReadonlySet<SocketMethod> = new Set(
   SocketRequestSchema.anyOf.flatMap((member) =>
@@ -102,3 +93,8 @@ export type HelperRequestFor<M extends SocketMethod> = HelperRequest extends inf
     : never
   : never;
 export type SocketReply = T.Static<typeof SocketReplySchema>;
+
+export type SocketSuccess = T.Static<typeof SocketSuccessSchema>;
+export type SocketFailure = T.Static<typeof SocketFailureSchema>;
+export type SocketSuccessFor<M extends SocketMethod> = Extract<SocketSuccess, { method: M }>;
+export type SocketReplyFor<M extends SocketMethod> = SocketSuccessFor<M> | SocketFailure;

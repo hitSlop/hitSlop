@@ -41,10 +41,10 @@ test.each(protocols)("helper protocol %s", async (reported, refusal) => {
 if (process.argv[2] === "--protocol") console.log(${JSON.stringify(reported)});
 else {
   await Bun.write(${JSON.stringify(touched)}, JSON.stringify({ args: process.argv.slice(2), request: await Bun.stdin.json() }));
-  console.log(JSON.stringify({ ok: true }));
+  console.log(JSON.stringify({ ok: true, method: "export", epoch: "owner", output: "capture.pdf" }));
 }
 `, { mode: 0o755 });
-    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "compact", "example.slop"], {
+    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "export", "example.slop", "--format", "pdf", "--output", "capture.pdf"], {
       env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
     });
     const code = await child.exited;
@@ -56,7 +56,7 @@ else {
     if (!refusal)
       expect(await Bun.file(touched).json()).toEqual({
         args: ["--client-protocol", String(HelperProtocol.version), "request"],
-        request: { method: "compact", documentPath: resolve("example.slop") },
+        request: { method: "export", documentPath: resolve("example.slop"), format: "pdf", output: resolve("capture.pdf") },
       });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -64,7 +64,7 @@ else {
 test("explicit native helper overrides fail without falling back or retrying", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-native-discovery-"));
   const run = async (helper: string) => {
-    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "get", "example.slop"], {
+    const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", "export", "example.slop", "--format", "pdf", "--output", "capture.pdf"], {
       env: { ...process.env, HITSLOP_NATIVE_CLI: helper },
       stdout: "pipe",
       stderr: "pipe",

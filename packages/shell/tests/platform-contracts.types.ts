@@ -18,7 +18,7 @@ function contracts(handle: SlopPageHandle) {
     const epoch: string = reply.epoch;
   });
   call({ method: "config" }).then(reply => {
-    const theme: Record<string, string> = reply.theme;
+    const descriptor: object = reply.descriptor;
     // @ts-expect-error Method inference must not widen the reply to any.
     const bytes: string = reply.bytes;
   });

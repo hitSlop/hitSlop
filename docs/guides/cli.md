@@ -11,14 +11,15 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 | `bunx @hitslop/cli@4.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
 | `slop COMMAND` | Run after `bun install -g @hitslop/cli@4.0.0`, with Bun's bin directory on PATH. |
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
-| `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" request` | Send one document request directly, without Node or Bun ([helper requests](#helper-requests)). |
+| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` | Send one document request directly, without Node or Bun ([helper requests](#helper-requests)). |
 
-`hitslop-native` ships in `hitSlop.app/Contents/Helpers` and links the same Rust core as
-the app. Document commands need neither Bun nor a running app. The TypeScript CLI sends
-each macOS document command to it as one request, and runs its `create` and `open`. `slop build`, `slop schema`
-and `slop inspect` run the CLI's file engine instead, on any platform. Add `--help`
-to any command for its arguments. Package versions here reflect repository metadata, not
-npm availability; see [releasing](releasing.md).
+`slop-engine` ships with the CLI for macOS and Linux, and beside `hitslop-native` in
+`hitSlop.app/Contents/Helpers`. It creates, reads and edits documents without Bun,
+WebKit or a running app. The TypeScript CLI sends document requests to the engine;
+opening a window, PNG/PDF export and native template artwork use the Swift helper.
+`slop check` and `slop build` use the CLI's engine for validation and packing. Add
+`--help` to a CLI command for its arguments. Package versions here reflect repository
+metadata, not npm availability; see [releasing](releasing.md).
 
 ## Operations
 
@@ -43,56 +44,65 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 ## Ownership and retries
 
-An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the native owner in the helper process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request starts with a small `hello` handshake that returns the owner's core build and epoch, without a document snapshot. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
+An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each live connection starts with a small `hello` handshake that returns the owner's core build and epoch, without a document snapshot. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
 
 Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. The owner's epoch rotates when unsaved edits are discarded, so a request aimed at replaced state is refused. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
 ## Helper requests
 
-`hitslop-native request` reads one `SocketRequest` (`@hitslop/schema/socket`) from standard
+`slop-engine request` reads one `HelperRequest` (`@hitslop/schema/socket`) from standard
 input, at most 1 MiB (16 MiB for an attachment upload), and prints one `SocketReply` line.
-A request names no epoch: the helper supplies the live owner's. A success carries its
-method's result (`SocketResults` in `@hitslop/schema/socket`); the CLI treats a success
+A request names no epoch: the Rust router supplies the live owner's. A success carries its
+method and required result fields (`SocketReply` in `@hitslop/schema/socket`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
 `save_failed` was applied but not saved; after `unknown_outcome`, run `get` before another
-edit. The helper exits non-zero only when it printed no reply. Files are the caller's: the
+edit. The executable exits non-zero only when it printed no reply. Files are the caller's: the
 CLI reads an imported attachment or theme file itself and writes exported bytes. An export
 never replaces a file, including the document under another spelling of its path; to
 export again, remove the old file first.
 
 ## Helper discovery and identity
 
-`HITSLOP_NATIVE_CLI` selects an explicit executable for both document commands and
-template capture. Missing or non-executable overrides fail; an executed helper is never
-retried through another binary. Discovery otherwise checks `/Applications/hitSlop.app`,
-then `~/Applications/hitSlop.app`. Authoring never compiles Swift; `build --artwork native`
-and `register` require an installed app. Bun is the only JavaScript runtime authoring needs; native
-document editing is macOS-only, with no Bun fallback.
+`HITSLOP_ENGINE` selects an explicit engine and takes precedence for document commands
+and authoring. Without it, macOS document commands first use the app's engine in
+`/Applications/hitSlop.app`, then `~/Applications/hitSlop.app`, then the CLI's platform
+engine or the checkout's `target/release/slop-engine`. Linux uses the CLI or checkout
+engine. Authoring validation and packing always select the CLI engine, independently of
+an installed app, unless `HITSLOP_ENGINE` is set.
 
-The CLI and the Mac app update separately. Before each native document command, the
-CLI asks the helper which command protocols it serves (`hitslop-native --protocol`
-prints `{"version":N,"minimum":M}`), including `HITSLOP_NATIVE_CLI` overrides, and runs
-the command with `--client-protocol VERSION` when its own protocol is in that range, whatever core either embeds. Unversioned native calls mean protocol 1; unsupported selections fail before document access.
-Otherwise it names the side to update. App updates keep serving older protocols:
-protocol 1 is today's request and reply schemas and the `create`, `open` and `screenshot`
-subcommands. The helper still
-checks the live owner's exact core build (`hello`) before reading, editing or exporting
-through its socket, because both ship in one app bundle; quit an older running app and
-reopen with the installed one. `hitslop-native --core-build` prints that identity. A
-CLI-only release may reuse an installed Mac app while it serves the CLI's protocol and
-the installed-consumer checks in [releasing](releasing.md) pass.
+`HITSLOP_NATIVE_CLI` selects an explicit rendering helper. On macOS, when that override
+is set without `HITSLOP_ENGINE`, document commands require `slop-engine` beside the
+selected helper; they do not fall back to another deployment. `bun run build` places the
+engine beside the Debug helper. Missing or non-executable overrides fail, and an
+executed tool is never retried through another binary. Native helper discovery otherwise
+checks the same two app locations. `open`, `export`, `build --artwork native` and
+`register` require macOS and the native helper; document creation and editing do not.
+
+The CLI and Mac app update separately. Both executables report their command protocol
+range with `--protocol` (`{"version":N,"minimum":M}`). The CLI checks that range before
+running document commands or native rendering and supplies `--client-protocol VERSION`.
+Unversioned calls mean protocol 1; unsupported selections fail before document access.
+The selected engine or helper then checks a live owner's exact core build through
+`hello`. The app bundles matching engine, helper and owner builds; quit an older running
+app and reopen with the installed one if they differ. `slop-engine --build-id` and
+`hitslop-native --core-build` print that identity. A CLI-only release may reuse an
+installed app while the protocol and [installed-consumer checks](releasing.md) pass.
 
 ## File engine
 
-`slop-engine` (`crates/slop-engine`) is the native build of the same Rust core, for files:
-`pack` turns a build's stage into a template, `inspect` prints what a `.slop` file holds
-(its kind, requirements, manifest, assets, artwork, attachments, saved-state sizes, and
-whether a live owner published its socket), and `schema` prints its descriptor. Reads use
-the saved file, never an open window's unsaved edits. `HITSLOP_ENGINE` selects an explicit
-executable; otherwise the CLI uses its platform build, then a checkout's
-`target/release/slop-engine`, which `bun run build` and `bun run test` prepare.
+`slop-engine` (`crates/slop-engine`) is the native build of the shared Rust core.
+`validate-app` checks bounded evaluated app JSON on standard input. `pack` turns a build
+stage into an immutable template. `create --from TEMPLATE --output DOCUMENT` creates a
+writable copy, makes missing parent folders and prints its resolved path.
+
+`inspect` prints a file's kind, requirements, manifest, asset/artwork/attachment and
+saved-state sizes, and whether an owner published its socket. `schema` prints the
+stored descriptor. These two commands read the saved file; `request` routes through the
+live or in-process owner and waits for persistence where its method requires it.
+Checkpoint and retention maintenance are automatic; there is no public compaction
+command.
 
 ## Agent skills
 

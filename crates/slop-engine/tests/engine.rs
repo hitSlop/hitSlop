@@ -2,7 +2,8 @@
 //! build prints why and publishes nothing.
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::io::Write;
 
 fn engine(args: &[&Path]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_slop-engine")).args(args).output().unwrap()
@@ -51,4 +52,46 @@ fn a_refused_build_says_why_and_publishes_nothing() {
     assert!(!String::from_utf8_lossy(&refused.stderr).trim().is_empty());
     assert!(!out.exists());
     assert_eq!(engine(&[Path::new("unknown")]).status.code(), Some(2), "a usage error");
+}
+
+fn validate(input: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_slop-engine"))
+        .arg("validate-app").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().unwrap();
+    // An oversized request can close the reader before every extra byte is written.
+    let _ = child.stdin.take().unwrap().write_all(input);
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn validates_metadata_without_assets_and_matches_pack_refusals() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let good = fs::read(stage.join("app.json")).unwrap();
+    fs::remove_dir_all(stage.join("assets")).unwrap();
+    assert!(validate(&good).status.success());
+    fs::create_dir(stage.join("assets")).unwrap();
+    fs::write(stage.join("assets/app.js"), "export default {};").unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&good).unwrap();
+    for (field, replacement) in [
+        ("initial", serde_json::json!({"title": 7})),
+        ("theme", serde_json::json!({"accent": "#ABCDEF"})),
+        ("descriptor", serde_json::json!({"kind": "future"})),
+        ("manifest", serde_json::json!({"title": "Incomplete"})),
+        ("packageFormat", serde_json::json!(999)),
+    ] {
+        let mut value = value.clone();
+        value[field] = replacement;
+        let bytes = serde_json::to_vec(&value).unwrap();
+        fs::write(stage.join("app.json"), &bytes).unwrap();
+        let checked = validate(&bytes);
+        let packed = engine(&[Path::new("pack"), &stage, &dir.path().join("refused.slop")]);
+        assert_eq!(checked.status.code(), Some(1), "{field}");
+        assert_eq!(checked.stderr, packed.stderr, "{field}");
+    }
+    assert_eq!(validate(b"{broken").status.code(), Some(1));
+    let too_large = vec![b' '; hitslop_core::file::APP_INPUT_BYTES + 1];
+    let refused = validate(&too_large);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("large"));
 }

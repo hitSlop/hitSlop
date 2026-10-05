@@ -26,7 +26,7 @@ export type CaptureMode = "preview" | "export" | "icon";
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
    * shell refuses to mount it on a document of another. */
-  readonly descriptor?: object;
+  readonly descriptor: object;
   mount(ctx: SlopContext, target: HTMLElement): SlopView | Promise<SlopView>;
 }
 /** `rendered` resolves after pending framework updates reach the DOM. */

@@ -1,10 +1,12 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
-//! the colors an app declares, which the person may override. No document engine.
+//! the colors an app declares, with overrides in the document's own Loro history.
 use crate::wire::{ThemeFile, THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIX, THEME_TOKENS};
 use crate::{encode, err, parse, Code, Result};
 use std::collections::BTreeMap;
+use loro::{LoroMap, LoroValue, ValueOrContainer};
 
-type Values = BTreeMap<String, String>;
+pub(crate) type Values = BTreeMap<String, String>;
+pub(crate) const ROOT: &str = "theme";
 fn valid_name(name: &str) -> bool {
     name.len() <= THEME_NAME_LIMIT
         && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
@@ -95,19 +97,17 @@ pub struct ThemeState {
     pub effective: String,
 }
 
-/// A document's palette: its template's declared colors and the owner's overrides. The
+/// A document's immutable palette: its template's declared colors. The
 /// template's slug names it in theme files.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Theme {
     template: String,
     defaults: Values,
-    overrides: Values,
 }
 impl Theme {
-    /// The palette over `defaults`, which `validate_defaults` returned. Stored overrides are
-    /// kept as read: reading never fails on them.
-    pub fn new(template: &str, defaults: &[(String, String)], overrides: &str) -> Result<Self> {
-        Ok(Self { template: template.into(), defaults: defaults.iter().cloned().collect(), overrides: parse(overrides)? })
+    /// The palette over defaults already checked by `validate_defaults`.
+    pub fn new(template: &str, defaults: &[(String, String)]) -> Self {
+        Self { template: template.into(), defaults: defaults.iter().cloned().collect() }
     }
     /// The defaults with `overrides` applied.
     fn over(&self, overrides: &Values) -> Values {
@@ -115,23 +115,22 @@ impl Theme {
         effective.extend(overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
         effective
     }
-    fn effective(&self) -> Values {
-        self.over(&self.overrides)
+    pub fn effective(&self, map: &LoroMap) -> Result<Values> {
+        Ok(self.over(&overrides(map)?))
     }
-    pub fn state(&self) -> ThemeState {
-        ThemeState { defaults: encode(&self.defaults), overrides: encode(&self.overrides), effective: encode(&self.effective()) }
-    }
-    pub fn overrides(&self) -> String {
-        encode(&self.overrides)
+    pub fn state(&self, map: &LoroMap) -> Result<ThemeState> {
+        let overrides = overrides(map)?;
+        Ok(ThemeState { defaults: encode(&self.defaults), overrides: encode(&overrides), effective: encode(&self.over(&overrides)) })
     }
     /// Applies a change under the palette rules; the theme is unchanged unless the whole
     /// result is valid. Overrides equal to their default are dropped, so resetting a token
     /// and setting its default are the same change. Returns whether the overrides changed.
-    pub fn change(&mut self, change: Change) -> Result<bool> {
+    pub fn change(&self, map: &LoroMap, change: Change) -> Result<bool> {
+        let current = overrides(map)?;
         let mut next = match change {
             Change::Get => return Ok(false),
             Change::Set(values) => {
-                let mut next = self.overrides.clone();
+                let mut next = current.clone();
                 next.extend(parse::<Values>(values)?);
                 next
             }
@@ -139,7 +138,7 @@ impl Theme {
                 if !self.defaults.contains_key(token) {
                     return Err(err(Code::InvalidKey, format!("Unknown theme token: {token}")));
                 }
-                let mut next = self.overrides.clone();
+                let mut next = current.clone();
                 next.remove(token);
                 next
             }
@@ -149,17 +148,36 @@ impl Theme {
         check(&next, &self.defaults)?;
         next.retain(|name, value| self.defaults.get(name) != Some(value));
         bound(&self.over(&next))?;
-        if next == self.overrides {
+        if next == current {
             return Ok(false);
         }
-        self.overrides = next;
+        for name in current.keys().filter(|name| !next.contains_key(*name)) {
+            map.delete(name).map_err(crate::engine)?;
+        }
+        for (name, value) in &next {
+            if current.get(name) != Some(value) {
+                map.insert(name, value.as_str()).map_err(crate::engine)?;
+            }
+        }
         Ok(true)
     }
     /// The full effective palette as a theme file for this template: canonical JSON and a
     /// final newline, the bytes every export writes.
-    pub fn export(&self) -> String {
-        encode(&ThemeFile { template: self.template.clone(), values: self.effective() }) + "\n"
+    pub fn export(&self, map: &LoroMap) -> Result<String> {
+        Ok(encode(&ThemeFile { template: self.template.clone(), values: self.effective(map)? }) + "\n")
     }
+}
+/// Reads without normalizing or changing the saved entries. Normal writes validate the
+/// complete proposed palette before touching this map.
+fn overrides(map: &LoroMap) -> Result<Values> {
+    let mut values = Values::new();
+    let mut invalid = false;
+    map.for_each(|key, value| match value {
+        ValueOrContainer::Value(LoroValue::String(value)) => { values.insert(key.to_owned(), value.to_string()); }
+        _ => invalid = true,
+    });
+    if invalid { return Err(err(Code::InvalidBytes, "Theme overrides must contain colors")); }
+    Ok(values)
 }
 /// A theme file's palette, refused whole unless it is a theme file for `template`.
 fn read_file(template: &str, file: &str) -> Result<Values> {
@@ -179,9 +197,17 @@ mod tests {
     use super::*;
     use serde_json::json;
     const DEFAULTS: &str = r##"{"paper":"#f4efe6","accent":"#a43d59","ink":"#2a2522"}"##;
-    fn theme() -> Theme {
-        Theme::new("kanban-board", &validate_defaults(DEFAULTS).unwrap(), "{}").unwrap()
+    struct Palette(crate::Document);
+    impl Palette {
+        fn new(template: &str, defaults: &str) -> Self {
+            Self(crate::Document::create_with_theme(r#"{"kind":"object","properties":{}}"#, "{}", template, defaults).unwrap())
+        }
+        fn change(&mut self, change: Change) -> Result<bool> { self.0.theme(change).map(|v| v.result.publication.is_some()) }
+        fn state(&self) -> ThemeState { self.0.theme_state().unwrap() }
+        fn overrides(&self) -> String { self.state().overrides }
+        fn export(&self) -> String { self.0.export_theme().unwrap() }
     }
+    fn theme() -> Palette { Palette::new("kanban-board", DEFAULTS) }
     fn code(result: Result<impl std::fmt::Debug>) -> Code {
         result.unwrap_err().code
     }
@@ -243,7 +269,8 @@ mod tests {
         assert_eq!(code(theme.change(Change::Reset(Some("missing")))), Code::InvalidKey);
         assert_eq!(theme.overrides(), r##"{"ink":"#000000"}"##);
         // Reading never fails on stored overrides.
-        let stored = Theme::new("kanban-board", &validate_defaults(DEFAULTS).unwrap(), r##"{"ink":"black"}"##).unwrap();
+        let stored = Palette::new("kanban-board", DEFAULTS);
+        stored.0.doc.get_map(ROOT).insert("ink", "black").unwrap();
         assert_eq!(stored.overrides(), r##"{"ink":"black"}"##);
     }
 
@@ -292,7 +319,7 @@ mod tests {
         let defaults: Values = (0..THEME_TOKENS).map(|n| (format!("t{n:a<63}"), "#00000000".to_owned())).collect();
         let defaults = encode(&defaults);
         assert!(defaults.len() <= THEME_LIMIT);
-        let mut theme = Theme::new("a-template-with-a-long-name-that-uses-all-sixty-four-characters-x", &validate_defaults(&defaults).unwrap(), "{}").unwrap();
+        let mut theme = Palette::new("a-template-with-a-long-name-that-uses-all-sixty-four-characters-x", &defaults);
         let file = theme.export();
         assert!(file.len() <= THEME_FILE_LIMIT, "{}", file.len());
         theme.change(Change::Import(&file)).unwrap();

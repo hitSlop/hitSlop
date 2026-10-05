@@ -1,4 +1,5 @@
 import { previewResizeScript } from "./preview-resize";
+import { appContentSecurityPolicy } from "@hitslop/schema/policy";
 import { createServer, type Plugin, type ViteDevServer } from "vite";
 import { readFile, mkdtemp, rm, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -94,8 +95,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
     signal?.throwIfAborted();
     const config = await appConfig(source);
     signal?.throwIfAborted();
-    const policy =
-      "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:* https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'";
+    const policy = appContentSecurityPolicy("browser");
     const page =
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module" src="/@vite/client"></script></head><body><script type="module" src="/__shell__/boot.js"></script></body></html>';
     const conventional = new Set(entryFiles.map((file) => join(source, file)));

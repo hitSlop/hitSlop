@@ -28,19 +28,19 @@ async function request(binary: string, body: Record<string, unknown>, killAfter?
   try { reply = JSON.parse(out); } catch {}
   return { reply, error, code };
 }
-async function title(root: string) {
-  const { value } = (await helperRequest({ method: "get", documentPath: root })).state.state;
+async function title(root: string, helper: string) {
+  const { value } = (await helperRequest({ method: "get", documentPath: root }, { helper })).state.state;
   return String((value as { title: unknown }).title);
 }
 
 export async function runCrashMatrix(hostCheck = false) {
   useTestRegistry();
-  const binary = debugHelper;
+  const binary = process.env.HITSLOP_NATIVE_CLI ?? debugHelper;
   const folder = await mkdtemp(join(tmpdir(), "hitslop-crash-"));
   const results: string[] = [];
   try {
-    const root = await documentFromStage(fixture, join(folder, "Killed.slop"));
-    let saved = await title(root);
+    const root = await documentFromStage(fixture, join(folder, "Killed.slop"), { helper: binary });
+    let saved = await title(root, binary);
     let interrupted = 0;
     for (let round = 0; round < rounds; round++) {
       // Large enough that its save takes measurable time; the kill moves later each round.
@@ -50,7 +50,7 @@ export async function runCrashMatrix(hostCheck = false) {
       const acknowledged = code === 0 && reply?.ok === true;
       if (!acknowledged) interrupted++;
       // Reading the document also takes its lock: the killed helper's died with it.
-      const after = await title(root);
+      const after = await title(root, binary);
       if (acknowledged) assert.equal(after, value, `round ${round}: an acknowledged edit was lost`);
       else assert.ok(after === saved || after === value, `round ${round}: the document is neither as it was nor as edited`);
       saved = after;
@@ -60,7 +60,7 @@ export async function runCrashMatrix(hostCheck = false) {
     console.log(`PASS helper killed mid-edit: ${interrupted} of ${rounds} edits interrupted, none torn`);
     if (hostCheck) {
       // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
-      const root = await documentFromStage(fixture, join(folder, "Host.slop"));
+      const root = await documentFromStage(fixture, join(folder, "Host.slop"), { helper: binary });
       const app = process.env.HITSLOP_APP_BINARY ?? resolve("generated/app/hitSlop.app/Contents/MacOS/hitSlop");
       const host = Bun.spawn([app, root], { stdout: "ignore", stderr: "ignore" });
       try {
@@ -78,7 +78,7 @@ export async function runCrashMatrix(hostCheck = false) {
         host.kill("SIGKILL");
         await host.exited;
       }
-      assert.equal(await title(root), "Native acknowledged");
+      assert.equal(await title(root, binary), "Native acknowledged");
       results.push("host:acknowledged-write-survives-death");
     }
     await mkdir(".hitslop/evidence", { recursive: true });

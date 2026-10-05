@@ -58,7 +58,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
     expect(await readdir(destination)).toEqual(["beta.slop"]);
     // A document, even one a template became, is never embedded as a starter.
     const document = new Database(join(root, "alpha.slop"));
-    document.run("INSERT INTO document(id, theme) VALUES(1, '{}')");
+    document.run("INSERT INTO document(id) VALUES(1)");
     document.close();
     await expect(embedTemplates(root, destination, inventory("alpha"))).rejects.toThrow("Not a template");
     expect(await readdir(destination)).toEqual(["beta.slop"]);

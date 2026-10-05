@@ -86,6 +86,10 @@ export class OwnerDocument<N extends ObjectNode> {
   get issues(): OwnerState["issues"] {
     return this.store.state.issues;
   }
+  /** Effective palette from the same ordered owner frame as the document. */
+  get theme(): OwnerState["theme"] {
+    return this.store.state.theme;
+  }
   subscribe(listener: () => void) {
     this.listeners.add(listener);
     return () => {

@@ -3,14 +3,15 @@
 import { expect, test } from "bun:test";
 import { Type as T } from "typebox";
 import { swiftContracts } from "../../../scripts/swift-contracts";
-import { PageFailureSchema, PageRequestSchema, PageResults } from "../src/page";
-import { SocketDiscoverySchema, SocketReplySchema, SocketRequestSchema } from "../src/socket";
+import { HostCaptureResultSchema, HostRequestSchema, PageFailureSchema, PageRequestSchema, PageResults } from "../src/page";
+import { SocketDiscoverySchema, SocketReplySchema, SocketRequestSchema, SocketSuccessSchema } from "../src/socket";
 
 test("one enumeration name with two definitions fails generation", () => {
-  const generate = (reply: typeof SocketReplySchema | ReturnType<typeof T.Object>) =>
-    swiftContracts(SocketRequestSchema, reply, SocketDiscoverySchema, PageRequestSchema, PageFailureSchema, PageResults);
+  const generate = (reply: T.TSchema) =>
+    swiftContracts(SocketRequestSchema, reply, SocketDiscoverySchema, PageRequestSchema, PageFailureSchema, PageResults, HostRequestSchema, HostCaptureResultSchema);
   expect(() => generate(SocketReplySchema)).not.toThrow();
   // The page failure's `OutcomeCode` and this one differ.
-  const conflicting = T.Object({ ok: T.Boolean(), code: T.Optional(T.Enum(["rejected"], { title: "OutcomeCode" })) }, { additionalProperties: false });
+  const conflicting = T.Union([...SocketSuccessSchema.anyOf,
+    T.Object({ ok: T.Literal(false), error: T.String(), code: T.Enum(["rejected"], { title: "OutcomeCode" }) }, { additionalProperties: false })]);
   expect(() => generate(conflicting)).toThrow("OutcomeCode");
 });

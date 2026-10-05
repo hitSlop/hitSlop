@@ -28,6 +28,39 @@ function fixture() {
   return { core, open, edit };
 }
 
+test("theme-only publications share ordering and recover from a missing theme change", async () => {
+  const definition = defineDocument({ title: s.text() });
+  const core = wasm.WasmDocument.createWithTheme(JSON.stringify(definition.descriptor),
+    JSON.stringify({ title: "Title" }), "theme-test", JSON.stringify({ accent: "#112233" }));
+  const open = async () => JSON.parse(core.snapshot());
+  const seen: string[] = [];
+  const store = new Store(open, () => seen.push(store.state.theme.accent!));
+  try {
+    store.load(await open());
+    const value = store.state.value;
+    const first = JSON.parse(core.themeSet(JSON.stringify({ accent: "#445566" })).publication!);
+    expect(first.ops).toEqual([]);
+    store.publish([{ type: "publication", publication: first }]);
+    await store.reached(first.sequence);
+    expect(store.state.value).toBe(value);
+    expect(store.state.theme).toEqual({ accent: "#445566" });
+    // Theme omitted from a later content publication retains the accepted palette.
+    const edit = core.applyBatch(JSON.stringify({ intents: [{ type: "set", path: ["title"], value: "Changed" }] }));
+    store.publish([{ type: "publication", publication: JSON.parse(edit.publication!) }]);
+    expect(store.state.theme).toEqual({ accent: "#445566" });
+    // Lose one theme delivery: the next publication detects the gap and reads one frame.
+    core.themeSet(JSON.stringify({ accent: "#778899" }));
+    const latest = JSON.parse(core.themeSet(JSON.stringify({ accent: "#aabbcc" })).publication!);
+    store.publish([{ type: "publication", publication: latest }]);
+    await elapsing(store.reached(latest.sequence));
+    expect(store.state.theme).toEqual({ accent: "#aabbcc" });
+    expect(store.state.value).toEqual({ title: "Changed" });
+    store.publish([{ type: "publication", publication: first }]);
+    expect(store.state.theme).toEqual({ accent: "#aabbcc" });
+    expect(seen).toEqual(["#112233", "#445566", "#445566", "#aabbcc"]);
+  } finally { core.free(); }
+});
+
 test("recovery retries transient reads and preserves the accepted counter increment", async () => {
   const { core, open, edit } = fixture();
   let attempts = 0;

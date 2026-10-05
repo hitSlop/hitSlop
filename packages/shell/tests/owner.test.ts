@@ -475,7 +475,6 @@ test("view reload remounts against the same document and keeps flushed edits", a
         return { rendered: () => {}, unmount: () => {} };
       },
       document: doc,
-      applyTheme: () => {},
       target,
       recovered: async () => {
         recovered++;

@@ -21,6 +21,7 @@ import HitSlopTestSupport
     try FileManager.default.removeItem(at: app)
     try FileManager.default.copyItem(at: Fixtures.repository.appendingPathComponent("tests/abi/probe/app.js"), to: app)
     try edit(stage)
+    try Fixtures.writeApp(String(contentsOf: app, encoding: .utf8), to: stage)
     return try Fixtures.document(stage: stage)
   }
 

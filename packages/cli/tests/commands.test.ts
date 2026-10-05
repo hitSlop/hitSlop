@@ -161,7 +161,6 @@ test("invalid input fails before opening documents or building source", async ()
     ["apply", "missing.slop"],
     ["batch", "missing.slop"],
     ["import", "missing.slop"],
-    ["compact", "missing.slop", "--wat"],
     ["theme", "set", "missing.slop"],
     ["attachments", "export", "missing.slop", "id"],
     ["export", "missing.slop", "--format", "jpeg", "--output", "x"],

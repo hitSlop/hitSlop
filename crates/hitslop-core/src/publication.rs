@@ -43,6 +43,11 @@ pub(crate) struct Event {
 }
 pub(crate) type Events = Arc<Mutex<Vec<Event>>>;
 
+pub(super) fn theme_changed(doc: &LoroDoc, events: &[Event]) -> bool {
+    let root = doc.get_map(theme::ROOT).id();
+    events.iter().any(|event| event.path.first().is_some_and(|(container, _)| *container == root))
+}
+
 fn slot(v: &ValueOrContainer) -> Slot {
     match v {
         ValueOrContainer::Value(v) => Slot::Value(v.clone()),

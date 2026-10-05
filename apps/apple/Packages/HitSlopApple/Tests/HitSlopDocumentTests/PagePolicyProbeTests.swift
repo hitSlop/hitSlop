@@ -13,7 +13,6 @@ import WebKit
     let stage = try Fixtures.stage()
     let assets = stage.appendingPathComponent("assets")
     let files: [String: Data] = [
-      "app.js": Data("export default { mount() { return {}; } };".utf8),
       "worker.js": Data("postMessage('worker');".utf8),
       "module.js": Data("export {}; postMessage('module');".utf8),
       "module.mjs": Data("export {}; postMessage('mjs');".utf8),
@@ -29,6 +28,7 @@ import WebKit
       "tone.wav": Self.wav(seconds: 3),
     ]
     for (name, data) in files { try data.write(to: assets.appendingPathComponent(name)) }
+    try Fixtures.writeApp("export default { mount() { return {}; } };", to: stage)
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
 

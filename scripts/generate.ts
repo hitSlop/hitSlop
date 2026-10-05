@@ -6,7 +6,8 @@ import { SlopManifestSchema } from "../packages/schema/src/index";
 import { SlopCategories, WindowBounds, AttachmentLimits, base64Length, StorageLimits, ThemeLimit, ThemeFileLimit, ErrorTextLimit, PagePayloadLimit, PushLimits, SocketLimits, AssetLimits, PackageFormat, RuntimeABI, HelperProtocol } from "../packages/schema/src/constants";
 import { rustOwnerWire } from "./rust-contracts";
 import { swiftContracts } from "./swift-contracts";
-import { PageFailureSchema, PageRequestSchema, PageResults } from "../packages/schema/src/page";
+import { PageFailureSchema, PageRequestSchema, PageResults, HostRequestSchema, HostCaptureResultSchema } from "../packages/schema/src/page";
+import { appContentSecurityPolicy } from "../packages/schema/src/policy";
 import {
   SocketRequestSchema,
   SocketReplySchema,
@@ -35,6 +36,9 @@ public enum AttachmentLimits {
   /// The longest file name and MIME type a reference keeps, in UTF-8 bytes.
   public static let name = ${AttachmentLimits.name}
   public static let encodedFile = ${base64Length(AttachmentLimits.file)}
+}
+public enum AppResourcePolicy {
+  public static let contentSecurityPolicy = ${JSON.stringify(appContentSecurityPolicy("native"))}
 }
 extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
@@ -104,6 +108,8 @@ public enum Limits {
         PageRequestSchema,
         PageFailureSchema,
         PageResults,
+        HostRequestSchema,
+        HostCaptureResultSchema,
       ),
   };
   for (const [name, value] of Object.entries(outputs)) {

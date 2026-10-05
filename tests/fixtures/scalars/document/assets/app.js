@@ -1,5 +1,102 @@
 // Plain-JS consumer of the ctx interface for the scalar kinds. No engine or bridge imports.
 export default {
+  descriptor: {
+    "kind": "object",
+    "properties": {
+      "title": {
+        "kind": "text"
+      },
+      "currency": {
+        "kind": "enum",
+        "values": [
+          "CAD",
+          "USD",
+          "EUR"
+        ]
+      },
+      "label": {
+        "kind": "string",
+        "maxLength": 4
+      },
+      "ratio": {
+        "kind": "number",
+        "min": 0,
+        "max": 1
+      },
+      "rating": {
+        "kind": "integer",
+        "min": 1,
+        "max": 5
+      },
+      "memo": {
+        "kind": "optional",
+        "inner": {
+          "kind": "string"
+        }
+      },
+      "limit": {
+        "kind": "optional",
+        "inner": {
+          "kind": "integer",
+          "min": 0,
+          "max": 999
+        }
+      },
+      "photo": {
+        "kind": "optional",
+        "inner": {
+          "kind": "object",
+          "properties": {
+            "id": {
+              "kind": "string"
+            },
+            "name": {
+              "kind": "string"
+            }
+          }
+        }
+      },
+      "box": {
+        "kind": "optional",
+        "inner": {
+          "kind": "object",
+          "properties": {
+            "items": {
+              "kind": "list",
+              "item": {
+                "kind": "object",
+                "properties": {
+                  "done": {
+                    "kind": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "rows": {
+        "kind": "list",
+        "item": {
+          "kind": "object",
+          "properties": {
+            "text": {
+              "kind": "text"
+            },
+            "amount": {
+              "kind": "number"
+            },
+            "note": {
+              "kind": "optional",
+              "inner": {
+                "kind": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   mount(ctx, target) {
     const doc = ctx.document;
     const output = document.createElement("p");

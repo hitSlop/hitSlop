@@ -13,7 +13,7 @@ try {
   const helpers = join(folder, "hitSlop.app/Contents/Helpers");
   await mkdir(helpers, { recursive: true });
   const build = resolve("apps/apple/Packages/HitSlopApple/.build/debug");
-  for (const name of ["hitslop-native", "HitSlopApple_HitSlopDocument.bundle"])
+  for (const name of ["hitslop-native", "slop-engine", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
   const template = resolve("generated/native-fixtures/quick-checklist.slop");
   const document = join(folder, "List.slop");
@@ -22,27 +22,28 @@ try {
     cwd: folder,
     env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
   };
-  await createDocument(template, document, placement);
+  const ownerPlacement = { ...placement, helper: join(helpers, "slop-engine") };
+  await createDocument(template, document, ownerPlacement);
   /** A request the helper must refuse, saying `why`. */
   const refused = async (body: Parameters<typeof helperReply>[0], why: string) => {
-    const reply = await helperReply(body, placement);
+    const reply = await helperReply(body, body.method === "export" ? placement : ownerPlacement);
     assert.equal(reply.ok, false, "Expected refusal, but the helper succeeded");
     assert.ok(`${reply.reason} ${reply.error}`.includes(why), `Expected a refusal for ${why}, got ${reply.error}`);
   };
   type Task = { $id: string; text: string; done: boolean; archived: boolean };
   const value = async () =>
-    (await helperRequest({ method: "get", documentPath: document }, placement)).state.state.value as { title: string; tasks: Task[] };
+    (await helperRequest({ method: "get", documentPath: document }, ownerPlacement)).state.state.value as { title: string; tasks: Task[] };
   const batch = async (path: string, ops: unknown[], refusal?: string) => {
     const body = { method: "batch" as const, documentPath: path, ops: JSON.stringify(ops) };
     if (refusal) await refused(body, refusal);
-    else await helperRequest(body, placement);
+    else await helperRequest(body, ownerPlacement);
   };
   // A template is never edited: the enclosing app's bundled masters stay as built.
   const master = join(folder, "hitSlop.app/Contents/Resources/StarterTemplates/Checklist.slop");
   await mkdir(join(master, ".."), { recursive: true });
   await copyFile(template, master);
   const masterBytes = await readFile(master);
-  await batch(master, [{ type: "set", path: ["title"], value: "Must refuse" }], "create a document from it");
+  await batch(master, [{ type: "set", path: ["title"], value: "Must refuse" }], "is_template");
   assert.ok((await readFile(master)).equals(masterBytes), "Bundled master bytes changed");
   await batch(document, [{ type: "set", path: ["title"], value: "Relocated native edit" }]);
   assert.equal((await value()).title, "Relocated native edit");
@@ -74,7 +75,7 @@ try {
   await value();
   await refused({ method: "export", documentPath: document, format: "pdf", output: join(folder, "broken.pdf") }, "Incomplete page shell");
   console.log(
-    "PASS relocated helper: closed editing, PNG/PDF export, no Bun, no checkout page-shell fallback",
+    "PASS relocated native tools: Rust closed editing, PNG/PDF export, no Bun, no checkout page-shell fallback",
   );
 } finally {
   await rm(folder, { recursive: true, force: true });

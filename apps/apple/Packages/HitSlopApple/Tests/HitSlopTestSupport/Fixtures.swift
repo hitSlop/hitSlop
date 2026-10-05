@@ -65,6 +65,21 @@ public enum Fixtures {
     return stage
   }
 
+  /// Writes a raw platform probe against the stage's descriptor, as the generated Svelte
+  /// entry does. An explicit descriptor stays explicit (including a deliberate mismatch).
+  /// Throw-only probes remain unchanged so startup failures keep their intended cause.
+  /// Call this after changing the stage descriptor; compiled apps keep their own declaration.
+  public static func writeApp(_ source: String, to stage: URL) throws {
+    var source = source
+    if source.range(of: #"export\s+default\s*\{\s*descriptor\s*:"#, options: .regularExpression) == nil,
+      let entry = source.range(of: #"export\s+default\s*\{"#, options: .regularExpression) {
+      let row = try object(String(contentsOf: stage.appendingPathComponent("app.json"), encoding: .utf8))
+      let descriptor = try json(row["descriptor"]!)
+      source.replaceSubrange(entry, with: "export default { descriptor: \(descriptor),")
+    }
+    try Data(source.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+  }
+
   /// A minimal app's stage: an app that mounts nothing and an empty descriptor. `manifest`
   /// replaces fields of the default manifest; `theme` is written as given, so its colors
   /// keep their order.
@@ -74,7 +89,6 @@ public enum Fixtures {
   ) throws -> URL {
     let stage = try folder().appendingPathComponent("stage")
     try FileManager.default.createDirectory(at: stage.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    try Data("export default { mount() { return {}; } };".utf8).write(to: stage.appendingPathComponent("assets/app.js"))
     var manifest: [String: Any] = [
       "author": ["name": "Fixture Author", "url": "https://example.com"], "slug": slug, "title": "Fixture",
       "description": "A test app.", "categories": ["utilities"], "presentation": ["width": 320, "height": 240],
@@ -83,6 +97,7 @@ public enum Fixtures {
     let manifestJSON = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
     let app = #"{"packageFormat":\#(PackageFormat.level),"runtimeABI":\#(RuntimeABI.level),"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
     try Data(app.utf8).write(to: stage.appendingPathComponent("app.json"))
+    try writeApp("export default { mount() { return {}; } };", to: stage)
     return stage
   }
 
@@ -160,7 +175,8 @@ public enum Fixtures {
       app["descriptor"] = spec["schema"]
       app["initial"] = spec["initial"]
     }
-    if let app { try Data(app.utf8).write(to: stage.appendingPathComponent("assets/app.js")) }
+    let source = try app ?? String(contentsOf: repository.appendingPathComponent("tests/fixtures/checklist/document/assets/app.js"), encoding: .utf8)
+    try writeApp(source, to: stage)
     return try document(stage: stage)
   }
 

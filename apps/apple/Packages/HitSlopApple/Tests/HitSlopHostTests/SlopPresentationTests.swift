@@ -66,7 +66,7 @@ extension HostTests {
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-    @MainActor func captureRestoresAnOperableEditor() async throws {
+    @MainActor func captureLeavesTheEditorOperable() async throws {
         for kind in ["standard", "ellipse", "washer"] {
             try await withPresentationSession(kind) { (session: DocumentSession) async throws in
                 let view = session.webView
@@ -91,8 +91,10 @@ extension HostTests {
             events.issue = { issues.append($0.message) }
             session.delegate = events
             for kind in ["export", "icon"] {
-                _ = try await session.webView.evaluateJavaScript(
-                    "globalThis.__presentationFailure = {kind:'\(kind)',error:new Error('Snippet failed')}; true")
+                let current = try #require(await savedValue(session.file.url)?["count"] as? Int)
+                let failing = kind == "export" ? -1001 : -2001
+                let ops = try Fixtures.json([["type": "increment", "path": ["count"], "by": failing - current]])
+                #expect(try await command("batch", url: session.file.url, ["ops": ops]).ok)
                 await #expect(throws: (any Error).self) {
                     if kind == "icon" {
                         _ = try await SlopRenderer.iconPNGData(session: session)
@@ -110,7 +112,6 @@ extension HostTests {
                         [...document.querySelectorAll('[data-slop-capture-target]')].every(e => e.hidden && !e.childElementCount);
                     """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
                 #expect(issues.isEmpty)
-                _ = try await session.webView.evaluateJavaScript("delete globalThis.__presentationFailure; true")
                 let data = kind == "icon"
                     ? try await SlopRenderer.iconPNGData(session: session)
                     : try await SlopRenderer.exportPNGData(session: session)
@@ -287,21 +288,34 @@ extension HostTests {
     // Failure: a full-length fallback PNG export was clipped by the window silhouette
     // stretched to the export's height. The silhouette describes the window: only a
     // window-sized capture is masked, and longer exports are unmasked, like PDF.
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-    @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
-        let kind = try #require(try shapeLabKinds(fallback: true).first { $0.contains("rounded") })
-        try await withPresentationSession(kind) { session in
-            _ = try await session.webView.callAsyncJavaScript("""
-                const tall = document.createElement('div');
-                tall.style.height = '1600px';
-                document.querySelector('[data-hitslop-root]').appendChild(tall);
-                return true;
-                """, arguments: [:], in: nil, contentWorld: .page)
+    @Test @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
+        let root = try contractFixture { stage in
+            try Fixtures.updateManifest(stage) {
+                $0["presentation"] = ["width": 480, "height": 360, "shape": "50%"]
+            }
+            try Fixtures.writeApp("""
+                export default { mount(ctx, target) {
+                    document.body.style.margin = '0';
+                    const content = document.createElement('main');
+                    content.dataset.hitslopRoot = '';
+                    content.style.cssText = 'height:1600px;background:white';
+                    content.textContent = ctx.document.current.title;
+                    target.append(content);
+                    return { unmount() { content.remove(); } };
+                } };
+                """, to: stage)
+        }
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = try await DocumentSession.open(url: root)
+        session.load()
+        try await session.waitUntilReady()
+        do {
             let png = try await SlopRenderer.exportPNGData(session: session)
             let image = try #require(NSBitmapImageRep(data: png))
             #expect(image.pixelsHigh > 2 * 360 * 2)
             #expect((image.colorAt(x: 0, y: 0)?.alphaComponent ?? 0) > 0.99)
             #expect((image.colorAt(x: 0, y: image.pixelsHigh - 1)?.alphaComponent ?? 0) > 0.99)
-        }
+            try await session.close()
+        } catch { try? await session.close(); throw error }
     }
 }

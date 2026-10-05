@@ -270,7 +270,10 @@
             "title": "Replay 2 é 中文",
             "version": "compat 2"
           },
-          "issues": []
+          "issues": [],
+          "theme": {
+            "accent": "#123456"
+          }
         }
       }
     },
@@ -357,8 +360,8 @@
       ],
       "code": 0,
       "stdout": {
-        "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
         "byteLength": 28,
+        "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
         "name": "attachment.txt",
         "mimeType": "text/plain"
       }
@@ -393,14 +396,6 @@
           "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418"
         }
       ]
-    },
-    {
-      "args": [
-        "compact",
-        "{document}"
-      ],
-      "code": 0,
-      "stdout": ""
     },
     {
       "args": [

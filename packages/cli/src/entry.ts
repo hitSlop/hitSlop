@@ -5,13 +5,12 @@ import { exists } from "./fs";
 /** The files whose presence decides the entry: adding or removing one changes it. */
 export const entryFiles = ["main.ts", "App.svelte", "schema.ts", "styles.css", "Export.svelte", "Icon.svelte"];
 
-/** Exact-case conventional components; an authored main.ts owns all registration. */
+/** Exact-case conventional components; every app uses the generated Svelte entry. */
 export async function discoverEntry(source: string): Promise<{ code: string; files: string[] }> {
   const names = new Set(await readdir(source));
   const has = async (name: string) => names.has(name) && (await exists(join(source, name), true));
-  if (await has("main.ts"))
-    return { code: 'export { default } from "./main.ts";', files: ["main.ts"] };
-  if (!(await has("App.svelte"))) throw new Error(`${source} needs App.svelte (or main.ts)`);
+  if (await has("main.ts")) throw new Error("main.ts is not supported; use App.svelte, with optional Export.svelte and Icon.svelte");
+  if (!(await has("App.svelte"))) throw new Error(`${source} needs App.svelte`);
   const files = ["App.svelte", "schema.ts"];
   // schema.ts is required: its default export becomes the live document once mounted.
   const imports = [

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Build, embed, and sign a configuration-selected hitslop-native in an existing .app.
+# Build, embed, and sign the native renderer and Rust document engine in an existing .app.
 # Usage: embed-hitslop-native.sh <HitSlop.app>
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -69,11 +69,34 @@ if [ ! -f "$helper" ]; then
   exit 70
 fi
 
+# Build the document engine for exactly the architectures embedded by this host.
+# Its core must match the Swift library; checking IDs catches stale generated bindings.
+cargo=${CARGO:-"$HOME/.cargo/bin/cargo"}
+set --
+for arch in $archs; do
+  case "$arch" in
+    arm64) target=aarch64-apple-darwin ;;
+    x86_64) target=x86_64-apple-darwin ;;
+    *) continue ;;
+  esac
+  "$cargo" build --locked --release --manifest-path "$repo_root/Cargo.toml" \
+    --target-dir "$repo_root/target" --target "$target" -p slop-engine
+  set -- "$@" "$repo_root/target/$target/release/slop-engine"
+done
+engine="$scratch/slop-engine"
+/usr/bin/lipo -create "$@" -output "$engine"
+if [ "$("$engine" --build-id)" != "$("$helper" --core-build)" ]; then
+  echo "slop-engine and hitslop-native embed different cores; rebuild native bindings" >&2
+  exit 70
+fi
+
 # SwiftPM executables locate Bundle.module resources beside the executable.
 # Host resources are not visible to this independently-built helper.
 /bin/mkdir -p "$app/Contents/Helpers"
 /bin/cp "$helper" "$app/Contents/Helpers/hitslop-native"
 /bin/chmod 755 "$app/Contents/Helpers/hitslop-native"
+/bin/cp "$engine" "$app/Contents/Helpers/slop-engine"
+/bin/chmod 755 "$app/Contents/Helpers/slop-engine"
 
 # Xcode does not automatically sign nested content added by a run script. Use
 # its resolved identity for normal builds and an ad-hoc signature when signing
@@ -97,4 +120,5 @@ for module in HitSlopDocument; do
   /usr/bin/codesign --force --sign "$signing_identity" "$embedded"
 done
 /usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/hitslop-native"
-echo "Embedded $app/Contents/Helpers/hitslop-native"
+/usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/slop-engine"
+echo "Embedded hitslop-native and slop-engine in $app/Contents/Helpers"

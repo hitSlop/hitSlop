@@ -88,8 +88,11 @@ pub struct ThemeState {
     pub defaults: String,
     pub overrides: String,
     pub effective: String,
-    /// Whether the command changed the overrides.
-    pub changed: bool,
+}
+#[derive(uniffi::Record)]
+pub struct ThemeResult {
+    pub state: ThemeState,
+    pub result: ApplyResult,
 }
 
 /// The platform envelopes whose generated contracts the core evaluates.
@@ -220,6 +223,30 @@ impl NativeDocument {
 }
 #[uniffi::export]
 impl NativeDocument {
+    /// Reads or changes the palette as part of this document's ordered state.
+    pub fn theme(&self, change: ThemeChange) -> Result<ThemeResult, CoreError> {
+        use hitslop_core::theme::Change;
+        let change = match &change {
+            ThemeChange::Get => Change::Get,
+            ThemeChange::Set { values_json } => Change::Set(values_json),
+            ThemeChange::Reset { token } => Change::Reset(token.as_deref()),
+            ThemeChange::Import { file_json } => Change::Import(file_json),
+        };
+        self.call(|d| {
+            let applied = d.theme(change)?;
+            let state = applied.state;
+            Ok(ThemeResult { state: ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective }, result: applied.result.into() })
+        })
+    }
+    pub fn export_theme(&self) -> Result<String, CoreError> {
+        self.call(|d| Ok(d.export_theme()?))
+    }
+    pub fn begin_theme_gesture(&self) -> Result<(), CoreError> {
+        self.call(|d| { d.begin_theme_gesture(); Ok(()) })
+    }
+    pub fn end_theme_gesture(&self) -> Result<(), CoreError> {
+        self.call(|d| { d.end_theme_gesture(); Ok(()) })
+    }
     pub fn sequence(&self) -> Result<u64, CoreError> {
         self.call(|d| Ok(d.sequence()))
     }
@@ -308,9 +335,8 @@ impl NativeStore {
     pub fn asset_reader(&self) -> Result<Arc<AssetReader>, CoreError> {
         Ok(Arc::new(AssetReader(Mutex::new(self.0.asset_reader()?))))
     }
-    /// The saved document, or the app's initial values saved as its first checkpoint, with
-    /// its palette over the app's theme defaults. Also the reload after discarding unsaved
-    /// edits.
+    /// Saved data and theme, or transient initial values for a template snapshot.
+    /// Also the reload after discarding unsaved edits.
     pub fn document(&self) -> Result<Arc<NativeDocument>, CoreError> {
         let core = catch_unwind(AssertUnwindSafe(|| self.0.document())).map_err(|_| invalidated("engine_panic: open failed"))??;
         Ok(Arc::new(NativeDocument { inner: Mutex::new(Some(core)) }))
@@ -350,23 +376,6 @@ impl NativeStore {
     }
     pub fn write(&self, job: Arc<SaveJob>) -> Result<(), CoreError> {
         Ok(self.0.write(&job.0)?)
-    }
-    /// Runs a theme command against the palette in memory. Runs on the edit queue; the
-    /// next save job writes a change, and a snapshot refuses changes.
-    pub fn theme(&self, change: ThemeChange) -> Result<ThemeState, CoreError> {
-        use hitslop_core::theme::Change;
-        let change = match &change {
-            ThemeChange::Get => Change::Get,
-            ThemeChange::Set { values_json } => Change::Set(values_json),
-            ThemeChange::Reset { token } => Change::Reset(token.as_deref()),
-            ThemeChange::Import { file_json } => Change::Import(file_json),
-        };
-        let (state, changed) = self.0.theme(change)?;
-        Ok(ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective, changed })
-    }
-    /// The full palette as a theme file for this document's template.
-    pub fn export_theme(&self) -> Result<String, CoreError> {
-        Ok(self.0.export_theme()?)
     }
     /// Releases the database, then the writer lock. A failed close keeps ownership.
     pub fn close(&self) -> Result<(), CoreError> {
@@ -534,3 +543,9 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+mod owner;
+pub use owner::*;
+
+mod command;
+pub use command::*;

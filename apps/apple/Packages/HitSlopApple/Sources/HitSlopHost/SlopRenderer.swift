@@ -10,28 +10,44 @@ import WebKit
     public static func previewPNGData(url: URL) async throws -> Data {
         try await withRenderSession(url: url) { try await capture(session: $0, output: .previewPNG) }
     }
-    static func previewPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .previewPNG) }
-    public static func exportPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .exportPNG) }
-    public static func exportPDFData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .pdf) }
+    static func previewPNGData(session: DocumentSession) async throws -> Data { try await withSavedRenderer(session) { try await capture(session: $0, output: .previewPNG) } }
+    public static func exportPNGData(session: DocumentSession, expectedEpoch: String? = nil) async throws -> Data { try await withSavedRenderer(session, expectedEpoch: expectedEpoch) { try await capture(session: $0, output: .exportPNG) } }
+    public static func exportPDFData(session: DocumentSession, expectedEpoch: String? = nil) async throws -> Data { try await withSavedRenderer(session, expectedEpoch: expectedEpoch) { try await capture(session: $0, output: .pdf) } }
 
     /// The artwork a closing window writes into its document: its preview and, when the
     /// app draws one, its icon. A capture that fails is reported and left out.
     public static func artwork(session: DocumentSession, telemetry: SlopTelemetry) async -> SlopRenderedArtwork {
-        var preview: Data?, icon: Data?
-        do { preview = try await capture(session: session, output: .previewPNG) }
-        catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
-        do { icon = try await iconPNGData(session: session) }
-        catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
-        return SlopRenderedArtwork(preview: preview, icon: icon)
+        do {
+            return try await withSavedRenderer(session) { renderer in
+                var preview: Data?, icon: Data?
+                do { preview = try await capture(session: renderer, output: .previewPNG) }
+                catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) } }
+                do { icon = try await captureIcon(session: renderer) }
+                catch { if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) } }
+                return SlopRenderedArtwork(preview: preview, icon: icon)
+            }
+        } catch {
+            if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+            return SlopRenderedArtwork(preview: nil, icon: nil)
+        }
+    }
+
+    private static func withSavedRenderer<T>(_ session: DocumentSession, expectedEpoch: String? = nil,
+        _ capture: @MainActor (DocumentSession) async throws -> T
+    ) async throws -> T {
+        if session.isSnapshot { return try await capture(session) }
+        return try await session.withCaptureSnapshot(expectedEpoch: expectedEpoch) { source in
+            try await withRenderSession(url: source, capture)
+        }
     }
 
     /// Background renders read the saved document as a snapshot: they take no ownership
     /// and never write to the file.
     static func withRenderSession<T>(
-        url: URL, renderTargetsEnabled: Bool = false,
+        url: URL,
         _ capture: @MainActor (DocumentSession) async throws -> T
     ) async throws -> T {
-        let session = try await DocumentSession.open(url: url, renderTargetsEnabled: renderTargetsEnabled, storage: .snapshot)
+        let session = try await DocumentSession.open(url: url, storage: .snapshot)
         let window = hiddenWindow(session)
         let result: Result<T, Error>
         do {
@@ -53,16 +69,20 @@ import WebKit
     }
 
     public static func iconPNGData(url: URL) async throws -> Data? {
-        try await withRenderSession(url: url, renderTargetsEnabled: true) { session in
+        try await withRenderSession(url: url) { session in
             try await iconPNGData(session: session)
         }
     }
 
     public static func iconPNGData(session: DocumentSession) async throws -> Data? {
+        try await withSavedRenderer(session) { try await captureIcon(session: $0) }
+    }
+
+    private static func captureIcon(session: DocumentSession) async throws -> Data? {
         try await withCapture(session) { view, token, originalFrame in
             view.frame.size = CGSize(width: max(512, originalFrame.width), height: max(512, originalFrame.height))
-            let value = try await begin(view, token: token, mode: "icon")
-            guard value["dedicated"] as? Bool == true else { return nil }
+            let value = try await begin(view, token: token, mode: .icon)
+            guard value.dedicated else { return nil }
             let rect = try geometry(value)
             guard rect.width > 0, abs(rect.width - rect.height) < 0.5,
                   rect.minX >= -0.5, rect.minY >= -0.5,
@@ -77,42 +97,34 @@ import WebKit
         }
     }
 
-    /// One capture of a session: it waits for exclusive use, saves pending edits, and
-    /// afterward restores the frame, the page's capture state and the background, whatever
-    /// `body` did. `body` begins the page's capture mode itself.
+    /// Capture only a disposable read-only page. Reset the render viewport between
+    /// preview and icon; no editor focus, frame or input state is involved.
     private static func withCapture<T>(
         _ session: DocumentSession,
         _ body: (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
     ) async throws -> T {
-        try await session.withCapture { try await captured(session, body) }
-    }
-    private static func captured<T>(
-        _ session: DocumentSession,
-        _ body: (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
-    ) async throws -> T {
-        try await session.flush()
-        try Task.checkCancellation()
-        let view = session.webView, token = UUID().uuidString, originalFrame = view.frame
-        let background = WebViewBackground.get(view)
-        defer { WebViewBackground.set(background, on: view) }
-        do {
-            let result = try await body(view, token, originalFrame)
-            restoreFrame(view, original: originalFrame)
-            try await restore(view, token: token)
+        try await session.withCapture {
             try Task.checkCancellation()
-            return result
-        } catch {
-            restoreFrame(view, original: originalFrame)
-            try? await restore(view, token: token)
-            throw captureFailure(error)
+            let view = session.webView, token = UUID().uuidString, frame = view.frame
+            let background = WebViewBackground.get(view)
+            defer { view.frame = frame; WebViewBackground.set(background, on: view) }
+            do {
+                let result = try await body(view, token, frame)
+                try await restore(view, token: token)
+                try Task.checkCancellation()
+                return result
+            } catch {
+                try? await restore(view, token: token)
+                throw captureFailure(error)
+            }
         }
     }
 
     private static func capture(session: DocumentSession, output: CaptureOutput) async throws -> Data {
         let isPreview = output == .previewPNG
         return try await withCapture(session) { view, token, originalFrame in
-            var measurement = try await begin(view, token: token, mode: isPreview ? "preview" : "export")
-            let dedicated = measurement["dedicated"] as? Bool == true
+            var measurement = try await begin(view, token: token, mode: isPreview ? .preview : .export)
+            let dedicated = measurement.dedicated
             var width = originalFrame.width
             var height = isPreview ? originalFrame.height : max(dedicated ? 1 : originalFrame.height, try geometry(measurement).height)
             var rect = CGRect(x: 0, y: 0, width: width, height: height)
@@ -240,34 +252,27 @@ import WebKit
             throw SlopFailure("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
         }
     }
-    private static func geometry(_ value: [String: Any]) throws -> CGRect {
-        guard let width = value["width"] as? NSNumber, let height = value["height"] as? NSNumber else { throw SlopFailure("Could not measure capture content") }
-        return CGRect(x: (value["x"] as? NSNumber)?.doubleValue ?? 0, y: (value["y"] as? NSNumber)?.doubleValue ?? 0, width: width.doubleValue, height: height.doubleValue)
+    private static func geometry(_ value: HostCaptureResult) throws -> CGRect {
+        guard value.width.isFinite, value.height.isFinite, value.x.isFinite, value.y.isFinite else {
+            throw SlopFailure("Could not measure capture content")
+        }
+        return CGRect(x: value.x, y: value.y, width: value.width, height: value.height)
     }
-    private static func begin(_ view: WKWebView, token: String, mode: String) async throws -> [String: Any] {
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopFailure("Could not prepare capture") }
-        return value
+    private static func begin(_ view: WKWebView, token: String, mode: HostCaptureBeginRequestMode) async throws -> HostCaptureResult {
+        guard let value = try await view.callHost(.captureBegin(.init(token: token, mode: mode))) as? [String: Any] else {
+            throw SlopFailure("Could not prepare capture")
+        }
+        return try HostCaptureResult(json: value)
     }
-    /// `begin` has already settled at the current size; only a resize needs another settle,
-    /// which returns the settled measurement.
-    private static func resizeAndSettle(_ view: WKWebView, to size: CGSize, token: String, measurement: inout [String: Any]) async throws {
+    private static func resizeAndSettle(_ view: WKWebView, to size: CGSize, token: String, measurement: inout HostCaptureResult) async throws {
         guard view.frame.size != size else { return }
         view.frame.size = size
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopFailure("Could not measure capture") }
-        measurement = value
-    }
-    /// A user can resize the native window while an asynchronous capture is running.
-    /// Restore the editor into today's container, not the frame from capture start.
-    private static func restoreFrame(_ view: WKWebView, original: CGRect) {
-        if let window = view.window, window.contentView !== view, let container = view.superview {
-            view.frame = container.bounds
-        } else {
-            view.frame = original
+        guard let value = try await view.callHost(.captureSettle(.init(token: token))) as? [String: Any] else {
+            throw SlopFailure("Could not measure capture")
         }
+        measurement = try HostCaptureResult(json: value)
     }
-
     private static func restore(_ view: WKWebView, token: String) async throws {
-        _ = try await view.callAsyncJavaScript("await window.__slop.capture.restore(token)", arguments: ["token": token], in: nil, contentWorld: .page)
+        _ = try await view.callHost(.captureRestore(.init(token: token)))
     }
-
 }

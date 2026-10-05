@@ -2,7 +2,6 @@
 //! this core and reads as that release recorded, takes the release's recorded edit, saves,
 //! trims its history on close and reopens to the recorded result. See docs/testing.md.
 use hitslop_core::store::{Mode, Store};
-use hitslop_core::theme::Change;
 use hitslop_core::Origin;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -24,7 +23,7 @@ fn read(root: &Path) -> (Value, Value) {
     let store = Store::open(root, Mode::Snapshot).unwrap();
     let doc = store.document().unwrap();
     let state: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
-    let (theme, _) = store.theme(Change::Get).unwrap();
+    let theme = doc.theme_state().unwrap();
     let theme = json!({
         "overrides": serde_json::from_str::<Value>(&theme.overrides).unwrap(),
         "effective": serde_json::from_str::<Value>(&theme.effective).unwrap(),

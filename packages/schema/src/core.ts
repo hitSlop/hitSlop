@@ -1,6 +1,7 @@
 import { Strict } from "./strict";
 import { Type, type Static } from "typebox";
 import { BatchLimits, CoreErrorCodes, IssueCodes, RowIdRule } from "./constants";
+import { ThemeValuesSchema } from "./values";
 
 // Document core payloads. TypeBox is authoritative; Rust wire types are generated.
 // Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
@@ -112,6 +113,7 @@ export const OwnerStateSchema = Strict({
   version: Type.String(),
   value: Type.Unknown(),
   issues: Type.Array(OwnerIssueSchema),
+  theme: ThemeValuesSchema,
 });
 /** One accepted change. `previous` lets the page prove the stream is contiguous;
  * `issues`, the complete current list, is present only when it changed. */
@@ -121,6 +123,7 @@ export const OwnerPublicationSchema = Strict({
   version: Type.String(),
   ops: Type.Array(OwnerPatchOpSchema),
   issues: Type.Optional(Type.Array(OwnerIssueSchema)),
+  theme: Type.Optional(ThemeValuesSchema),
 });
 
 export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes, { title: "CoreErrorCode" });

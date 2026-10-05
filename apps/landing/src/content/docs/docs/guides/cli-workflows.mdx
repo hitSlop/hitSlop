@@ -15,7 +15,7 @@ Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx
 | `slop COMMAND` | After `bun install -g @hitslop/cli`, with Bun's bin directory on your PATH. |
 | `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" COMMAND` | Run native document commands directly, without Node or Bun. |
 
-Use `bunx` or `slop` for the examples below. Build, register, and document commands use the installed Mac app, which can be closed. Browser preview works without it.
+Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
 
 For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` in the native commands.
 
@@ -93,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints nothing; ordinary edits never need it. You can edit a document while it is open or closed. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
