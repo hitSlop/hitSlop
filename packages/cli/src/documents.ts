@@ -67,16 +67,26 @@ export async function get(document: string, snapshot: boolean) {
   print(snapshot ? { schema, theme, state: frame } : frame.value);
 }
 /** An atomic batch. `ops` stays the text given, so numbers keep their spelling. Its text
- * sets merge from `base` when given. */
-export async function batch(document: string, ops: string, base?: string) {
+ * sets merge from `base` when given. The `attach` files are stored in the same request,
+ * before the operations that reference them (`attachmentsRef` prints a reference). */
+export async function batch(document: string, ops: string, base?: string, attach: string[] = []) {
   if (!Array.isArray(json(ops))) throw new Error("--ops must be a JSON array of operations");
-  const { ids, sequence, version } = await send({ method: "batch", ...at(document), ops, ...(base === undefined ? {} : { base }) });
+  const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
+  if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
+    throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
+  const { ids, sequence, version } = await send({
+    method: "batch",
+    ...at(document),
+    ops,
+    ...(base === undefined ? {} : { base }),
+    ...(attachments.length ? { attachments } : {}),
+  });
   print({ ids, sequence, version });
 }
-export async function apply(document: string, op: string, base?: string) {
+export async function apply(document: string, op: string, base?: string, attach: string[] = []) {
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
-  await batch(document, `[${op}]`, base);
+  await batch(document, `[${op}]`, base, attach);
 }
 /** One `replace`: the value at `path` (the whole document by default) becomes the file's
  * JSON. Both are spliced as written; the core parses and validates the result. */
@@ -129,16 +139,22 @@ export async function themeImport(document: string, file: string) {
 export async function attachmentsList(document: string) {
   print((await send({ method: "attachments.list", ...at(document) })).state);
 }
-/** Saves a file and prints its reference: the stored identity, the file's name and type. */
-export async function attachmentsImport(document: string, file: string) {
+/** A file as an attachment: its bytes, and the reference a document's operations store:
+ * its identity (the SHA-256 of its bytes), length, name and type. */
+async function reference(file: string) {
   const name = basename(file);
   const mimeType = Bun.file(file).type.split(";")[0] || "application/octet-stream";
-  const bytes = (s: string) => new TextEncoder().encode(s).length;
-  if (bytes(name) > AttachmentLimits.name || bytes(mimeType) > AttachmentLimits.name)
+  const length = (s: string) => new TextEncoder().encode(s).length;
+  if (length(name) > AttachmentLimits.name || length(mimeType) > AttachmentLimits.name)
     throw new Error(`File name or type exceeds ${AttachmentLimits.name} bytes`);
-  const encoded = Buffer.from(await read(file, AttachmentLimits.file)).toString("base64");
-  const stored = (await send({ method: "attachments.put", ...at(document), bytes: encoded })).state;
-  print({ ...stored, name, mimeType });
+  const bytes = await read(file, AttachmentLimits.file);
+  const id = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  return { bytes, ref: { id, byteLength: bytes.length, name, mimeType } };
+}
+/** Prints a file's reference without reading any document: operations name it, and
+ * `--attach` stores the file in their batch. */
+export async function attachmentsRef(file: string) {
+  print((await reference(file)).ref);
 }
 /** Writes an attachment's bytes to `output`. */
 export async function attachmentsExport(document: string, id: string, output: string) {

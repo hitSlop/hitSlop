@@ -91,6 +91,8 @@ extension HostTests {
       try before.write(to: stage.appendingPathComponent("artwork/preview.png"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
+    let stored = try #require(SlopArtwork.png(root, .preview))
+    #expect(Fixtures.pixels(stored) == Fixtures.pixels(before))
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
     #expect(controller.isLoading)
@@ -102,7 +104,7 @@ extension HostTests {
     #expect(controller.openingProgress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(controller.isContentReady)
-    #expect(SlopArtwork.png(root, .preview) == before, "opening never rewrites artwork")
+    #expect(SlopArtwork.png(root, .preview) == stored, "opening never rewrites artwork")
     try await controller.session.close()
     controller.close()
   }

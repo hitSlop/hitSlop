@@ -59,10 +59,11 @@ extension HostTests {
     let duplicate = root.deletingLastPathComponent().appendingPathComponent(
       UUID().uuidString + ".slop")
     defer { try? FileManager.default.removeItem(at: duplicate) }
-    try await controller.session.copy(to: duplicate)
+    _ = try await controller.duplicateDocument(to: duplicate)
     #expect(try await effectiveTheme(url: duplicate) == effectiveTheme(url: root))
-    // A duplicate carries the same saved state.
+    // A duplicate carries the same saved state, and a preview rendered from it.
     #expect(try await savedValue(duplicate) == savedValue(root))
+    #expect(SlopArtwork.png(duplicate, .preview) != nil)
     // Pointer sampling continues while asynchronous close releases storage. A ready
     // session must never expose an already-destroyed renderer to the native toolbar.
     var finished = false

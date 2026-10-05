@@ -30,7 +30,6 @@ test("socket successes require their complete method result", () => {
     { ok: true, method: "theme.export", state: { file: "{}" } },
     { ok: true, method: "attachments.list", state: [{ id, byteLength: 3 }] },
     { ok: true, method: "attachments.read", state: { bytes: "YWJj" } },
-    { ok: true, method: "attachments.put", state: { id, byteLength: 3 } },
   ];
   for (const reply of replies) {
     expect(Check(SocketReplySchema, reply)).toBe(true);

@@ -42,7 +42,7 @@ extension HostTests {
       let duplicate = root.deletingLastPathComponent().appendingPathComponent(
         UUID().uuidString + ".slop")
       defer { try? FileManager.default.removeItem(at: duplicate) }
-      try await controller.session.copy(to: duplicate)
+      try await controller.session.copy(to: duplicate, artwork: nil)
       #expect(try liveDiscovery(path: duplicate.path) == nil)
       #expect(try await savedValue(duplicate)?["title"] as? String == "Native socket edit")
       // Finishing at the controller boundary must also close native chrome and release WebKit.

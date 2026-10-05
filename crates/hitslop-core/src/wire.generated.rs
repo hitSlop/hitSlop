@@ -189,14 +189,12 @@ pub(crate) enum SocketRequest {
     AttachmentsList { protocol: u64, documentPath: String },
     #[serde(rename = "attachments.read")]
     AttachmentsRead { protocol: u64, documentPath: String, attachmentID: String },
-    #[serde(rename = "attachments.put")]
-    AttachmentsPut { protocol: u64, documentPath: String, bytes: String },
     #[serde(rename = "theme.export")]
     ThemeExport { protocol: u64, documentPath: String },
     #[serde(rename = "get")]
     Get { protocol: u64, documentPath: String },
     #[serde(rename = "batch")]
-    Batch { protocol: u64, documentPath: String, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String> },
+    Batch { protocol: u64, documentPath: String, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] attachments: Option<Vec<String>> },
     #[serde(rename = "export")]
     Export { protocol: u64, documentPath: String, format: String, output: String },
 }
@@ -206,7 +204,6 @@ impl SocketRequest {
     pub fn method(&self) -> &'static str { match self {
         Self::AttachmentsList { .. } => "attachments.list",
         Self::AttachmentsRead { .. } => "attachments.read",
-        Self::AttachmentsPut { .. } => "attachments.put",
         Self::ThemeExport { .. } => "theme.export",
         Self::Get { .. } => "get",
         Self::Batch { .. } => "batch",
@@ -215,7 +212,6 @@ impl SocketRequest {
     pub fn path(&self) -> &str { match self {
         Self::AttachmentsList { documentPath, .. } => documentPath,
         Self::AttachmentsRead { documentPath, .. } => documentPath,
-        Self::AttachmentsPut { documentPath, .. } => documentPath,
         Self::ThemeExport { documentPath, .. } => documentPath,
         Self::Get { documentPath, .. } => documentPath,
         Self::Batch { documentPath, .. } => documentPath,
@@ -276,8 +272,6 @@ pub(crate) enum SocketSuccess {
     AttachmentsList { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "attachments.read")]
     AttachmentsRead { state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "attachments.put")]
-    AttachmentsPut { state: Box<serde_json::value::RawValue> },
 }
 
 #[cfg(feature = "storage")]

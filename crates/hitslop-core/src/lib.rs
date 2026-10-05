@@ -640,6 +640,39 @@ impl Document {
     pub(crate) fn retain_from(&mut self, start: &Frontiers) {
         self.floor = self.doc.frontiers_to_vv(start).unwrap_or_else(|| self.doc.oplog_vv());
     }
+    /// The `stored` attachment IDs this state names: each one that appears in a string, a
+    /// text or a map key, alone or inside longer text such as markdown. A false match only
+    /// keeps a blob, so a blob the state references is never left out.
+    #[cfg(feature = "storage")]
+    pub(crate) fn attachment_references(&self, stored: &[String]) -> HashSet<String> {
+        let stored: HashSet<&str> = stored.iter().map(String::as_str).collect();
+        let mut found = HashSet::new();
+        let mut scan = |text: &str| {
+            for run in text.split(|c: char| !matches!(c, '0'..='9' | 'a'..='f')).filter(|run| run.len() >= 64) {
+                for start in 0..=run.len() - 64 {
+                    if let Some(id) = stored.get(&run[start..start + 64]) {
+                        found.insert(id.to_string());
+                    }
+                }
+            }
+        };
+        let root = self.doc.get_deep_value();
+        let mut pending = vec![&root];
+        while let Some(value) = pending.pop() {
+            match value {
+                loro::LoroValue::String(text) => scan(text),
+                loro::LoroValue::List(items) => pending.extend(items.iter()),
+                loro::LoroValue::Map(entries) => {
+                    for (key, value) in entries.iter() {
+                        scan(key);
+                        pending.push(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        found
+    }
     pub fn checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
     }

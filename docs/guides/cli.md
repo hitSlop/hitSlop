@@ -54,7 +54,7 @@ Successful mutations acknowledge persistence. No automatic replay or public retr
 ## Helper requests
 
 `slop-engine request` reads one `HelperRequest` (`@hitslop/schema/socket`) from standard
-input, at most 1 MiB (16 MiB for an attachment upload), and prints one `SocketReply` line.
+input, at most 1 MiB (16 MiB for a batch carrying attachments), and prints one `SocketReply` line.
 A request names no protocol: the engine adds the one it was called with. A success carries its
 method and required result fields (`SocketReply` in `@hitslop/schema/socket`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
@@ -62,7 +62,7 @@ without it as an unknown outcome. A refusal is a reply with
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
 `save_failed` was applied but not saved; after `unknown_outcome`, run `get` before another
 edit. The executable exits non-zero only when it printed no reply. Files are the caller's: the
-CLI reads an imported attachment or theme file itself and writes exported bytes. An export
+CLI reads an attached file or theme file itself and writes exported bytes. An export
 never replaces a file, including the document under another spelling of its path; to
 export again, remove the old file first.
 

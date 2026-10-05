@@ -4,7 +4,7 @@ use hitslop_core::file::{self, Kind};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
 use hitslop_core::{Code, Origin};
-use rusqlite::Connection;
+use rusqlite::{config::DbConfig, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
 mod support;
@@ -94,6 +94,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(opened.spec.theme_tokens(), [("accent".to_string(), "#335577".to_string())]);
     let manifest: serde_json::Value = serde_json::from_str(&opened.app.manifest).unwrap();
     assert!(manifest.get("packageFormat").is_none() && manifest.get("runtimeABI").is_none(), "the markers are columns");
+    // A header alone is no image oxipng can read, so it is stored as it is.
     assert_eq!(file::artwork(&a, &["preview"]).unwrap().map(|(_, png)| png), Some(png(640, 480, 6)));
     let summary = file::inspect(&a).unwrap();
     assert_eq!(summary["kind"], "template");
@@ -110,6 +111,60 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(code(file::pack(&stage, &doc).unwrap_err()), Code::Exists);
     assert_eq!(fs::read(&doc).unwrap(), before);
     assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A real PNG of 8-bit RGBA `pixels`, stored uncompressed.
+fn encoded(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![];
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::NoCompression);
+    encoder.write_header().unwrap().write_image_data(pixels).unwrap();
+    bytes
+}
+/// A PNG's pixels as 8-bit RGBA, whatever colour type it stores.
+fn decoded(png: &[u8]) -> Vec<u8> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().unwrap();
+    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buffer).unwrap();
+    let pixels = &buffer[..info.buffer_size()];
+    match info.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => pixels.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::GrayscaleAlpha => pixels.chunks(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => unreachable!("normalizing expands a palette"),
+    }
+}
+
+/// Packing stores artwork losslessly smaller: every pixel decodes the same, fully
+/// transparent ones keep their colour, and packing stays reproducible.
+#[test]
+fn packed_artwork_is_losslessly_smaller() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let bands = [[0x33, 0x55, 0x77, 255], [0xee, 0xee, 0xe0, 255], [0x10, 0x20, 0x30, 255], [0xff, 0x80, 0, 255]];
+    let preview: Vec<u8> = (0..320 * 200usize).flat_map(|i| bands[i % 320 / 80]).collect();
+    let icon: Vec<u8> = (0..64 * 64usize)
+        .flat_map(|i| if i % 2 == 0 { [(i % 251) as u8, (i * 7 % 256) as u8, 9, 0] } else { bands[0] })
+        .collect();
+    let inputs = [("preview", encoded(320, 200, &preview), preview), ("icon", encoded(64, 64, &icon), icon)];
+    fs::create_dir(stage.join("artwork")).unwrap();
+    for (name, input, _) in &inputs {
+        fs::write(stage.join(format!("artwork/{name}.png")), input).unwrap();
+    }
+    let (a, b) = (dir.path().join("A.slop"), dir.path().join("B.slop"));
+    file::pack(&stage, &a).unwrap();
+    file::pack(&stage, &b).unwrap();
+    assert_eq!(fs::read(&a).unwrap(), fs::read(&b).unwrap(), "packing is reproducible");
+    for (name, input, pixels) in &inputs {
+        let (_, stored) = file::artwork(&a, &[name]).unwrap().unwrap();
+        assert!(stored.len() < input.len(), "the {name} is stored smaller");
+        assert_eq!(&decoded(&stored), pixels, "the {name} decodes to the same pixels");
+    }
 }
 
 /// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
@@ -192,7 +247,6 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         "CREATE TRIGGER extra_trigger AFTER INSERT ON updates BEGIN DELETE FROM attachments; END",
         "INSERT INTO assets VALUES('../escape.js', 'identity', 1, x'00')",
         "INSERT INTO assets VALUES('short.js', 'identity', 2, x'00')",
-        "INSERT INTO assets VALUES('unnumbered.js', 'identity', 'one', x'00')",
         "INSERT INTO assets VALUES('expanded.js', 'br', 2, x'789c')",
         "INSERT INTO updates(bytes) VALUES(x'00')",
         "DELETE FROM app",
@@ -205,6 +259,22 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         assert!(file::open(&damaged, true).is_err(), "{ddl}");
         assert!(Store::open(&damaged, Mode::Snapshot).is_err(), "{ddl}");
     }
+    // STRICT refuses a mistyped size, but a file written without STRICT and then given it
+    // back holds one all the same; opens that skip the quick check still refuse it.
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let strict: String = raw(&doc).query_row("SELECT sql FROM sqlite_schema WHERE name='assets'", [], |r| r.get(0)).unwrap();
+    let rewrite = |sql: &str| {
+        let conn = raw(&doc);
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, false).unwrap();
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_WRITABLE_SCHEMA, true).unwrap();
+        conn.execute("UPDATE sqlite_schema SET sql=? WHERE name='assets'", [sql]).unwrap();
+    };
+    rewrite(&strict.replace(" STRICT", ""));
+    raw(&doc).execute_batch("INSERT INTO assets VALUES('unnumbered.js', 'identity', 'one', x'00')").unwrap();
+    rewrite(&strict);
+    assert!(file::open(&doc, false).is_err() && file::open(&doc, true).is_err());
+    assert!(Store::open(&doc, Mode::Snapshot).is_err());
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     raw(&doc).execute("INSERT INTO assets VALUES('big.bin', 'identity', ?1, zeroblob(?1))", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
@@ -356,7 +426,7 @@ fn create_and_copy_never_overwrite() {
     fs::write(&taken, "keep me").unwrap();
     assert_eq!(code(file::create_document(&dir.path().join("Template.slop"), &taken).unwrap_err()), Code::Exists);
     let store = Store::open(&doc, Mode::Document).unwrap();
-    assert_eq!(code(store.copy_to(&taken, true).unwrap_err()), Code::Exists);
+    assert_eq!(code(store.copy_clean(&taken, &[]).unwrap_err()), Code::Exists);
     store.close().unwrap();
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep me");
     assert!(temporaries(dir.path()).is_empty());
@@ -479,6 +549,23 @@ fn artwork_is_written_by_the_writer() {
     assert_eq!(file::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
 }
 
+/// A closing window's capture is stored losslessly smaller; one oxipng cannot read (a
+/// header alone) is stored as it is.
+#[test]
+fn written_artwork_is_losslessly_smaller() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let pixels: Vec<u8> = (0..240 * 160usize).flat_map(|i| if i % 240 < 120 { [0x33, 0x55, 0x77, 255] } else { [0xee, 0xee, 0xe0, 255] }).collect();
+    let (preview, icon) = (encoded(240, 160, &pixels), png(512, 512, 6));
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    store.set_artwork(&[("preview", &preview), ("icon", &icon)]).unwrap();
+    let stored = store.artwork("preview").unwrap().unwrap();
+    assert!(stored.len() < preview.len());
+    assert_eq!(decoded(&stored), pixels);
+    assert_eq!(store.artwork("icon").unwrap(), Some(icon));
+    store.close().unwrap();
+}
+
 /// Each close replaces the artwork; the pages the old images held leave the file.
 #[test]
 fn replaced_artwork_leaves_no_free_pages() {
@@ -497,6 +584,23 @@ fn replaced_artwork_leaves_no_free_pages() {
     assert_eq!(free, 0);
 }
 
+/// Replaced values leave no trace in the file on any SQLite, whatever its default: here,
+/// artwork small enough to stay in its page.
+#[test]
+fn replaced_values_leave_no_bytes_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let marker = b"replaced-artwork-7f3a9c1e5b2d";
+    let mut first = png(64, 64, 6);
+    first.extend_from_slice(marker);
+    first.resize(1024, b'.');
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    store.set_artwork(&[("preview", &first)]).unwrap();
+    store.set_artwork(&[("preview", &png(64, 64, 6))]).unwrap();
+    store.close().unwrap();
+    assert!(!fs::read(&doc).unwrap().windows(marker.len()).any(|w| w == marker));
+}
+
 #[test]
 fn an_open_document_copies_through_its_owner() {
     let dir = tempfile::tempdir().unwrap();
@@ -505,19 +609,23 @@ fn an_open_document_copies_through_its_owner() {
     let mut state = store.document().unwrap();
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
-    store.put_attachment(b"photo").unwrap();
+    let photo = store.put_attachment(b"photo").unwrap().id;
+    let reference = format!(r#"{{"intents":[{{"type":"set","path":["title"],"value":"Shared {photo}"}}]}}"#);
+    state.apply_batch(&reference, Origin::Page).unwrap();
+    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
-    store.copy_to(&copy, true).unwrap();
-    assert_eq!(code(store.copy_to(&copy, true).unwrap_err()), Code::Exists);
+    store.copy_clean(&copy, &[("preview", &png(640, 480, 6))]).unwrap();
+    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert!(copied.document().unwrap().value().unwrap().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
+    assert_eq!(copied.artwork("preview").unwrap(), Some(png(640, 480, 6)));
     // A capture's disposable source skips the syncs and reads the same.
     let source = dir.path().join("Capture.slop");
-    store.copy_to(&source, false).unwrap();
+    store.capture_source(&source).unwrap();
     let captured = Store::open(&source, Mode::Snapshot).unwrap();
     assert!(captured.document().unwrap().value().unwrap().contains("Owner"));
     assert_eq!(captured.attachments().unwrap().len(), 1);
@@ -573,7 +681,7 @@ fn assets_are_served_whole_or_in_ranges() {
     assert_eq!(file::content_type("data.unknown"), "application/octet-stream");
     assert_eq!(file::descriptor(&doc).unwrap(), SCHEMA);
     // Damaged compressed text is an error, never served.
-    raw(&doc).execute("UPDATE assets SET bytes=x'00' || substr(bytes, 2) WHERE path='app.js'", []).unwrap();
+    raw(&doc).execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes, 2) AS BLOB) WHERE path='app.js'", []).unwrap();
     assert!(reader.read_range("app.js", 0, u64::MAX).is_err());
     assert!(file::open(&doc, false).is_err(), "the app's checks read app.js");
 }

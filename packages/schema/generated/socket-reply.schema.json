@@ -245,45 +245,6 @@
       "type": "object",
       "required": [
         "ok",
-        "method",
-        "state"
-      ],
-      "properties": {
-        "ok": {
-          "type": "boolean",
-          "const": true
-        },
-        "method": {
-          "type": "string",
-          "const": "attachments.put"
-        },
-        "state": {
-          "type": "object",
-          "required": [
-            "id",
-            "byteLength"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "pattern": "^[0123456789abcdef]{64}$",
-              "minLength": 64,
-              "maxLength": 64
-            },
-            "byteLength": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "ok",
         "error",
         "code"
       ],

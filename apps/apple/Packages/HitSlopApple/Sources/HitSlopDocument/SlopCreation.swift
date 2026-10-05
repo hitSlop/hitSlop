@@ -3,7 +3,7 @@ import HitSlopCore
 import HitSlopCoreBinding
 
 /// New documents: created from a template here, or copied by an open document's owner
-/// (`DocumentOwner.copy(to:)`), so saves wait behind the copy.
+/// (`DocumentOwner.copy(to:artwork:)`), so saves wait behind the copy.
 extension SlopFile {
   /// Where a new document goes: `url` with the `.slop` extension, on a local volume, and
   /// outside the installed and bundled templates.

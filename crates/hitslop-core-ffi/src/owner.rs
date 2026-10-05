@@ -86,9 +86,15 @@ pub enum OwnerRequest {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
+    /// A copy a person keeps, as a document of its own, with the artwork rendered for it.
     Copy {
         destination: String,
-        durable: bool,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
+    /// The saved document as stored, for a capture to render once.
+    CaptureSource {
+        destination: String,
     },
     Artwork {
         name: String,
@@ -116,9 +122,13 @@ impl From<OwnerRequest> for core::Request {
             OwnerRequest::Flush => Self::Flush,
             OwnerRequest::Discard => Self::Discard,
             OwnerRequest::Close { preview, icon } => Self::Close { preview, icon },
-            OwnerRequest::Copy { destination, durable } => Self::Copy {
+            OwnerRequest::Copy { destination, preview, icon } => Self::Copy {
                 destination: destination.into(),
-                durable,
+                preview,
+                icon,
+            },
+            OwnerRequest::CaptureSource { destination } => Self::CaptureSource {
+                destination: destination.into(),
             },
             OwnerRequest::Artwork { name } => Self::Artwork { name },
             OwnerRequest::Attachments => Self::Attachments,

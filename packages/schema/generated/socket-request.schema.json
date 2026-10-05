@@ -62,36 +62,6 @@
       "required": [
         "protocol",
         "documentPath",
-        "method",
-        "bytes"
-      ],
-      "properties": {
-        "protocol": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "documentPath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "method": {
-          "type": "string",
-          "const": "attachments.put"
-        },
-        "bytes": {
-          "type": "string",
-          "maxLength": 13981016
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
-        "protocol",
-        "documentPath",
         "method"
       ],
       "properties": {
@@ -167,6 +137,14 @@
         },
         "base": {
           "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 13981016
+          },
+          "minItems": 1
         }
       },
       "additionalProperties": false

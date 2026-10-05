@@ -38,6 +38,13 @@ const baseFlag = {
   description:
     "The version you read (state.version from get --snapshot) or last wrote (a batch's version). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
 } as const;
+const attachFlag = {
+  name: "attach",
+  type: "string",
+  multiple: true,
+  description:
+    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. A file nothing references is removed when the document closes",
+} as const;
 const retrySection = {
   title: "Retries",
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
@@ -99,7 +106,7 @@ export const app = new Crust("slop", {
   .add(
     defineCommand(
       "attachments",
-      { description: "Import, inspect, and export document attachments" },
+      { description: "Reference, inspect, and export document attachments" },
       (c) =>
         c
           .add(
@@ -109,12 +116,12 @@ export const app = new Crust("slop", {
           )
           .add(
             defineCommand(
-              "import",
-              { description: "Save a file and print its reference as JSON" },
+              "ref",
+              { description: "Print a file's reference as JSON, for operations that store it with --attach" },
               (c) =>
                 c
-                  .args(document, { name: "file", type: "string", required: true })
-                  .action(async ({ args }) => (await documents()).attachmentsImport(args.document, args.file)),
+                  .args({ name: "file", type: "string", required: true })
+                  .action(async ({ args }) => (await documents()).attachmentsRef(args.file)),
             ),
           )
           .add(
@@ -310,8 +317,9 @@ export const app = new Crust("slop", {
               description: "Operation object as JSON",
             },
             baseFlag,
+            attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.base)),
+          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.base, flags.attach)),
     ),
   )
   .add(
@@ -329,8 +337,9 @@ export const app = new Crust("slop", {
               description: "Array of operations as JSON",
             },
             baseFlag,
+            attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.base)),
+          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.base, flags.attach)),
     ),
   )
   .add(

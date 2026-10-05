@@ -99,20 +99,35 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     let mut theme = request(&path, "batch");
     theme["ops"] = r##"[{"type":"setTheme","values":{"accent":"#123456"}}]"##.into();
     assert_eq!(run(theme)["method"], "batch");
-    let mut put = request(&path, "attachments.put");
-    put["bytes"] = "YWJj".into();
-    let attachment = run(put);
-    let id = attachment["state"]["id"].as_str().unwrap();
+    // A blob arrives with the batch that references it, here inside text.
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    let stored = || run(request(&path, "attachments.list"))["state"].as_array().unwrap().len();
+    let mut attach = request(&path, "batch");
+    attach["ops"] = format!(r#"[{{"type":"set","path":["title"],"value":"Cover: {ABC}"}}]"#).into();
+    attach["attachments"] = json!(["YWJj"]);
+    assert_eq!(run(attach)["method"], "batch");
     let mut read = request(&path, "attachments.read");
-    read["attachmentID"] = id.into();
+    read["attachmentID"] = ABC.into();
     assert_eq!(run(read)["state"]["bytes"], "YWJj");
-    assert_eq!(
-        run(request(&path, "attachments.list"))["state"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    // A refused batch's blob is stored first, then reclaimed as its command closes.
+    let mut refused = request(&path, "batch");
+    refused["ops"] = r#"[{"type":"set","path":["missing"],"value":1}]"#.into();
+    refused["attachments"] = json!(["ZGVm"]);
+    assert_eq!(run(refused)["ok"], false);
+    assert_eq!(stored(), 1);
+    // Once nothing references it, a blob is reclaimed at the next close.
+    let mut removed = request(&path, "batch");
+    removed["ops"] = r#"[{"type":"set","path":["title"],"value":"No cover"}]"#.into();
+    run(removed);
+    assert_eq!(stored(), 0);
+    // A command that only reads writes nothing, even beside a blob nothing references.
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute("INSERT INTO attachments VALUES(?, x'00')", [&"f".repeat(64)])
+        .unwrap();
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(run(request(&path, "get"))["method"], "get");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
     let state = run(request(&path, "get"));
     assert_eq!(state["state"]["state"]["value"]["hits"], 1);
     assert_eq!(state["state"]["state"]["theme"]["accent"], "#123456");

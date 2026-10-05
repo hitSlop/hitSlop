@@ -416,13 +416,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func artwork(_ name: SlopArtwork.Name) async -> Data? {
     try? await owner.artwork(name)
   }
-  /// Copies the document to `destination`, with everything the owner accepted saved first.
-  /// Never replaces an existing file. The copy gets its own Finder icon: file metadata is
-  /// not part of the copy.
+  /// Copies the document to `destination`, with everything the owner accepted saved first,
+  /// as a document of its own: no history, only the attachments its state references, and
+  /// `artwork` rendered for it (none when nil). Never replaces an existing file. The copy
+  /// gets its own Finder icon: file metadata is not part of the copy.
   /// Returns the copy's canonical URL (the identity Recents and live owners use).
-  @discardableResult public func copy(to destination: URL) async throws -> URL {
+  @discardableResult public func copy(to destination: URL, artwork: SlopRenderedArtwork?) async throws -> URL {
     guard !closed, !closing else { throw SlopFailure("Document is closing") }
-    try await owner.copy(to: destination)
+    try await owner.copy(to: destination, artwork: artwork)
     let copied = try SlopFile.resolvedRoot(destination)
     SlopFinderIcon.refresh(copied)
     return copied
@@ -440,7 +441,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     try await withCapture {
       guard !closed else { throw SlopFailure("Document closed") }
       if !closePrepared { try await flush() }
-      try await owner.copy(to: source, durable: false)
+      try await owner.captureSource(to: source)
     }
     return try await render(source)
   }

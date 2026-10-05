@@ -178,10 +178,16 @@ public final class DocumentOwner: @unchecked Sendable {
       native.request(json: String(decoding: bytes, as: UTF8.self), completion: CommandCompletion { done.resume(returning: $0) })
     }
   }
-  /// The saved document at `destination`: `durable` for a copy a person keeps, not for a
-  /// capture's disposable source.
-  func copy(to destination: URL, durable: Bool = true) async throws {
-    try await unit(.copy(destination: destination.path, durable: durable))
+  /// The saved document at `destination` as a document of its own: its current state
+  /// without history, the attachments that state references, and `artwork` (none when
+  /// nil) in place of the original's.
+  func copy(to destination: URL, artwork: SlopRenderedArtwork?) async throws {
+    try await unit(.copy(destination: destination.path, preview: artwork?.preview, icon: artwork?.icon))
+  }
+  /// The saved document at `destination` as stored, without syncing: a capture's source,
+  /// rendered once and then deleted.
+  func captureSource(to destination: URL) async throws {
+    try await unit(.captureSource(destination: destination.path))
   }
   func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
     guard case .bytes(let bytes) = try await call(.artwork(name: name.rawValue)) else { throw SlopFailure("Invalid artwork response") }

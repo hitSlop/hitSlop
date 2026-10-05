@@ -85,11 +85,16 @@ pub enum Request {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
-    /// The saved document, copied after a flush: `durable` for a copy a person keeps,
-    /// not for a capture's disposable source.
+    /// The saved document, copied after a flush as a document of its own
+    /// (`Store::copy_clean`), with the artwork its window rendered for it.
     Copy {
         destination: PathBuf,
-        durable: bool,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
+    /// The saved document as stored, copied after a flush for a capture to render once.
+    CaptureSource {
+        destination: PathBuf,
     },
     Artwork {
         name: String,
@@ -327,8 +332,17 @@ enum Work {
         callback: Completion,
     },
 }
+/// The artwork a window rendered, by name, leaving out what it did not render.
+fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(&'static str, &'a [u8])> {
+    [("preview", preview), ("icon", icon)].into_iter().filter_map(|(name, png)| Some((name, png.as_deref()?))).collect()
+}
 enum StorageAction {
-    Copy(PathBuf, bool),
+    Copy {
+        path: PathBuf,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
+    CaptureSource(PathBuf),
     Artwork(String),
     Attachments,
     ReadAttachment(String),
@@ -362,8 +376,12 @@ fn persistence(
             } => {
                 let result = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
                     Ok(match action {
-                        StorageAction::Copy(path, durable) => {
-                            store.copy_to(&path, durable)?;
+                        StorageAction::Copy { path, preview, icon } => {
+                            store.copy_clean(&path, &named_artwork(&preview, &icon))?;
+                            Reply::Unit
+                        }
+                        StorageAction::CaptureSource(path) => {
+                            store.capture_source(&path)?;
                             Reply::Unit
                         }
                         StorageAction::Artwork(name) => Reply::Bytes {
@@ -400,16 +418,14 @@ fn persistence(
                     if let Some(job) = job {
                         let _ = store.write(&job);
                     }
-                    let mut artwork = vec![];
-                    if let Some(ref bytes) = preview {
-                        artwork.push(("preview", bytes.as_slice()));
-                    }
-                    if let Some(ref bytes) = icon {
-                        artwork.push(("icon", bytes.as_slice()));
-                    }
+                    let artwork = named_artwork(&preview, &icon);
                     if !artwork.is_empty() {
                         let _ = store.set_artwork(&artwork);
                     }
+                    // After the final save, when no import can be waiting for its
+                    // reference: the page's barrier drained its imports, and an agent's
+                    // blobs arrive in the batch that references them.
+                    let _ = store.reclaim_attachments();
                     store.close()?;
                     Ok(Reply::Unit)
                 }))
@@ -440,7 +456,12 @@ enum Lifecycle {
 }
 enum AfterSave {
     Reply(Reply),
-    Copy(PathBuf, bool),
+    Copy {
+        path: PathBuf,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
+    CaptureSource(PathBuf),
     Close {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
@@ -703,8 +724,12 @@ impl Actor {
                 self.wait(callback, AfterSave::Reply(Reply::State { json }))?;
                 return Ok(None);
             }
-            Request::Copy { destination, durable } => {
-                self.wait(callback, AfterSave::Copy(destination, durable))?;
+            Request::Copy { destination, preview, icon } => {
+                self.wait(callback, AfterSave::Copy { path: destination, preview, icon })?;
+                return Ok(None);
+            }
+            Request::CaptureSource { destination } => {
+                self.wait(callback, AfterSave::CaptureSource(destination))?;
                 return Ok(None);
             }
             Request::Close { preview, icon } => {
@@ -861,7 +886,10 @@ impl Actor {
             }
             match waiter.next {
                 AfterSave::Reply(reply) => complete(waiter.callback, Ok(reply)),
-                AfterSave::Copy(path, durable) => self.storage(StorageAction::Copy(path, durable), waiter.callback),
+                AfterSave::Copy { path, preview, icon } => {
+                    self.storage(StorageAction::Copy { path, preview, icon }, waiter.callback)
+                }
+                AfterSave::CaptureSource(path) => self.storage(StorageAction::CaptureSource(path), waiter.callback),
                 AfterSave::Close { preview, icon } => {
                     let job = if self.mode == store::Mode::Document {
                         catch_unwind(AssertUnwindSafe(|| self.store.close_job(&mut self.core)))

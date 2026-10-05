@@ -90,18 +90,23 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
     guard case .local(let template) = try #require(store.templates.first).source else { throw SlopFailure("Not a template entry") }
     _ = try SlopFile.create(from: template, to: destination)
     #expect(try SlopFile(url: destination).manifest.categories == [.utilities, .other])
-    #expect(SlopArtwork.png(destination, .preview) == png)
-    #expect(SlopArtwork.png(destination, .icon) == iconPNG)
+    // The core stores artwork losslessly re-encoded: a document copies its template's
+    // bytes, and written artwork keeps its pixels.
+    let (templatePreview, templateIcon) = (SlopArtwork.png(file, .preview), SlopArtwork.png(file, .icon))
+    #expect(Fixtures.pixels(templatePreview) == Fixtures.pixels(png))
+    #expect(Fixtures.pixels(templateIcon) == Fixtures.pixels(iconPNG))
+    #expect(SlopArtwork.png(destination, .preview) == templatePreview)
+    #expect(SlopArtwork.png(destination, .icon) == templateIcon)
     #expect(Fixtures.hasCustomIcon(destination), "Finder shows the template's artwork as the new document's icon")
     let updatedPreview = try coloredArtwork(.red)
     try await writeArtwork(destination, preview: updatedPreview)
-    #expect(SlopArtwork.png(destination, .preview) == updatedPreview)
-    #expect(SlopArtwork.png(destination, .icon) == iconPNG)
+    #expect(Fixtures.pixels(SlopArtwork.png(destination, .preview)) == Fixtures.pixels(updatedPreview))
+    #expect(SlopArtwork.png(destination, .icon) == templateIcon)
     let updatedIcon = try coloredArtwork(.blue)
     try await writeArtwork(destination, icon: updatedIcon)
-    #expect(SlopArtwork.png(destination, .icon) == updatedIcon)
+    #expect(Fixtures.pixels(SlopArtwork.png(destination, .icon)) == Fixtures.pixels(updatedIcon))
     // The template keeps its own artwork.
-    #expect(SlopArtwork.png(file, .icon) == iconPNG)
+    #expect(SlopArtwork.png(file, .icon) == templateIcon)
 }
 
 @Test @MainActor func discoversOnlyTopLevelPackages() async throws {

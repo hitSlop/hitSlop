@@ -58,6 +58,20 @@ public enum Fixtures {
     return output as Data
   }
 
+  /// A PNG's pixels drawn into 8-bit RGBA, to compare images however they are encoded: the
+  /// core stores artwork losslessly re-encoded.
+  public static func pixels(_ png: Data?) -> Data? {
+    guard let png, let source = CGImageSourceCreateWithData(png as CFData, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+      let context = CGContext(
+        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    guard let data = context.data else { return nil }
+    return Data(bytes: data, count: image.width * image.height * 4)
+  }
+
   /// A temporary copy of a stage in the repository, for a test to change before packing.
   public static func stage(_ source: String = "tests/fixtures/checklist/document") throws -> URL {
     let stage = try folder().appendingPathComponent("stage")

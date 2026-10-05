@@ -160,9 +160,9 @@ for (const slug of Object.keys(templates)) {
   if (slug === "conformance") {
     const file = join(work, "attachment.txt");
     await writeFile(file, "Compatibility corpus attachment ✓\n");
-    const ref = await slopJSON(["attachments", "import", document, file]);
+    const ref = await slopJSON(["attachments", "ref", file]);
+    await slopJSON(["apply", document, "--attach", file, "--op", JSON.stringify({ type: "set", path: ["attachment"], value: ref.id })]);
     await rm(file);
-    await batch(document, [{ type: "set", path: ["attachment"], value: ref.id }]);
   }
   const app = appOf(document);
   pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
@@ -220,7 +220,8 @@ for (const args of [
   ["apply", "{document}", "--op", JSON.stringify({ type: "set", path: ["count"], value: 1000 })],
   ["theme", "get", "{document}"],
   ["theme", "set", "{document}", "--values", JSON.stringify({ accent: "#204060" })],
-  ["attachments", "import", "{document}", "{attachment}"],
+  ["attachments", "ref", "{attachment}"],
+  ["apply", "{document}", "--attach", "{attachment}", "--op", JSON.stringify({ type: "set", path: ["attachment"], value: attachmentID })],
   ["attachments", "export", "{document}", attachmentID, "--output", "{output}"],
   ["attachments", "list", "{document}"],
   ["get", "{document}"],

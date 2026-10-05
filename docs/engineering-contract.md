@@ -14,7 +14,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| The app in a `.slop` file: the `app` row (manifest, descriptor encoding, initial values, theme), assets and artwork | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
+| The app in a `.slop` file: the `app` row (manifest, descriptor encoding, theme), assets and artwork | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
 | App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
@@ -56,10 +56,11 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   `.slop` file: the app, the helper, Quick Look and the CLI's `slop-engine` all read and
   write through it. The Rust owner schedules saves and serializes edits; Swift
   `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/shell`) holds no CRDT.
-- A `.slop` file is one SQLite database. A template holds only its app: the `app` row
-  (manifest, descriptor, initial values, theme defaults and the two requirements),
-  `assets` (including `app.js`) and optional preview and icon `artwork`. A document also
-  holds its identity, theme overrides, saved state and attachments. No engine, source,
+- A `.slop` file is one SQLite database. A template holds its app: the `app` row
+  (manifest, descriptor, theme defaults and the two requirements), `assets` (including
+  `app.js`) and optional preview and icon `artwork`, and its initial values as its
+  `checkpoint`. A document also holds its identity, theme overrides, saved state and
+  attachments. No engine, source,
   dependencies or caches.
 
 ## Rules

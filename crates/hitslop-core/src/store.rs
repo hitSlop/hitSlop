@@ -96,6 +96,9 @@ struct Account {
     /// The version this session opened at: where a checkpoint trimmed while open keeps
     /// history from, and how close tells whether the session edited.
     opened: Frontiers,
+    /// Whether this session saved an edit or stored an attachment: only then can a blob
+    /// have lost its last reference, so a session that only read reclaims nothing.
+    changed: bool,
 }
 /// One document's storage. `Document` mode owns the file: it holds the writer lock and
 /// persists writes. `Snapshot` mode reads the saved state without the lock and writes
@@ -228,7 +231,12 @@ impl Store {
             app,
             owned: AtomicBool::new(lease.is_some()),
             backing: Mutex::new(Backing { conn: Some(conn), lease }),
-            account: Mutex::new(Account { meta: Metadata::default(), saved: VersionVector::default(), opened: Frontiers::default() }),
+            account: Mutex::new(Account {
+                meta: Metadata::default(),
+                saved: VersionVector::default(),
+                opened: Frontiers::default(),
+                changed: false,
+            }),
         })
     }
 
@@ -268,7 +276,8 @@ impl Store {
             let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
             load(&read, &self.app.spec)
         })?;
-        *lock(&self.account) = Account { meta, saved: doc.doc.oplog_vv(), opened: doc.doc.oplog_frontiers() };
+        let mut account = lock(&self.account);
+        *account = Account { meta, saved: doc.doc.oplog_vv(), opened: doc.doc.oplog_frontiers(), changed: account.changed };
         Ok(doc)
     }
 
@@ -338,6 +347,7 @@ impl Store {
         let mut account = lock(&self.account);
         account.meta = meta;
         account.saved = job.version.clone();
+        account.changed = true;
         Ok(())
     }
     /// Runs `work` on the store's connection. Apple's SQLite stops a connection for good
@@ -421,6 +431,7 @@ impl Store {
         }
         let id = attachment_id(bytes);
         self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &id, bytes))?;
+        lock(&self.account).changed = true;
         Ok(Attachment { id, bytes: bytes.len() as u64 })
     }
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
@@ -455,18 +466,15 @@ impl Store {
         self.read(|conn| file::read_artwork(conn, name))
     }
     /// Writes the document's artwork (`preview`, `icon`) through the writer's connection: a
-    /// window renders it from the open document as it closes. Checked as `pack` checks it.
+    /// window renders it from the open document as it closes. Checked as `pack` checks it,
+    /// and optimized at oxipng's fastest level, before the connection is taken: a close
+    /// releases the writer lock only after this write.
     pub fn set_artwork(&self, artwork: &[(&str, &[u8])]) -> Result<()> {
         self.check(true)?;
-        for (name, png) in artwork {
-            if !file::ARTWORK.contains(name) {
-                return Err(invalid(format!("Unknown artwork {name}")));
-            }
-            file::check_artwork(&format!("The {name} artwork"), png)?;
-        }
+        let optimized = optimized_artwork(artwork)?;
         self.connected(&mut lock(&self.backing).conn, |conn| {
             let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("write artwork"))?;
-            for (name, png) in artwork {
+            for (name, png) in &optimized {
                 tx.execute("INSERT INTO artwork VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png", params![name, png])
                     .map_err(sqlite("write artwork"))?;
             }
@@ -499,13 +507,96 @@ impl Store {
         }
     }
 
-    /// Copies the open document to `dest` from the writer's own connection, so saves queue
-    /// behind the copy instead of timing out. Duplicate and Share a Copy use it after
-    /// flushing, `durable`; a capture's disposable source skips the syncs.
-    pub fn copy_to(&self, dest: &Path, durable: bool) -> Result<()> {
+    /// Copies the open document to `dest` as a document of its own, from the writer's own
+    /// connection so saves queue behind the copy: its current state without history, only
+    /// the attachments that state references, and `artwork` (none when empty) in place of
+    /// the original's, which can show what was since deleted. Duplicate and Share a Copy
+    /// use it after flushing; the original and its session are untouched.
+    pub fn copy_clean(&self, dest: &Path, artwork: &[(&str, &[u8])]) -> Result<()> {
         self.check(true)?;
-        self.read(|conn| file::copy(conn, dest, false, durable))
+        let artwork = optimized_artwork(artwork)?;
+        let app = &self.app.spec;
+        self.read(|conn| file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, &artwork))))
     }
+    /// Copies the open document to `dest` as it is stored, without syncing: a capture's
+    /// source, rendered once and then deleted.
+    pub fn capture_source(&self, dest: &Path) -> Result<()> {
+        self.check(true)?;
+        self.read(|conn| file::copy(conn, dest, false, false, None))
+    }
+    /// Deletes the attachments the saved state no longer references, in a transaction of
+    /// their own, and returns how many. The owner calls it as it closes, after its final
+    /// save, when no import can be waiting for its reference. A session that saved no edit
+    /// and stored no attachment reclaims nothing, so reading never writes the file.
+    pub fn reclaim_attachments(&self) -> Result<usize> {
+        self.check(true)?;
+        if !lock(&self.account).changed {
+            return Ok(0);
+        }
+        self.connected(&mut lock(&self.backing).conn, |conn| {
+            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("reclaim attachments"))?;
+            let deleted = delete_unreferenced(&tx, None, &self.app.spec)?;
+            tx.commit().map_err(sqlite("reclaim attachments"))?;
+            Ok(deleted)
+        })
+    }
+}
+
+/// Artwork as a write stores it: named `preview` or `icon`, checked as `pack` checks it,
+/// and optimized at oxipng's fastest level, before any connection is taken.
+fn optimized_artwork<'a>(artwork: &[(&'a str, &[u8])]) -> Result<Vec<(&'a str, Vec<u8>)>> {
+    artwork
+        .iter()
+        .map(|&(name, png)| {
+            if !file::ARTWORK.contains(&name) {
+                return Err(invalid(format!("Unknown artwork {name}")));
+            }
+            file::check_artwork(&format!("The {name} artwork"), png)?;
+            Ok((name, file::optimize_png(png.to_vec(), 0)))
+        })
+        .collect()
+}
+/// A copy's state made its own, in one transaction: the current state without history,
+/// the attachments it references, and `artwork` in place of the original's.
+fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(&str, Vec<u8>)]) -> Result<()> {
+    let (doc, _) = load(conn, app)?;
+    let state = doc.doc.export(ExportMode::shallow_snapshot(&doc.doc.oplog_frontiers())).map_err(failed)?;
+    if !within(0, checkpoint_row(state.len())) {
+        return Err(Error::Full);
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("clean copy"))?;
+    tx.execute("UPDATE checkpoint SET bytes=? WHERE id=1", [&state]).map_err(sqlite("clean copy"))?;
+    tx.execute_batch("DELETE FROM updates; DELETE FROM artwork").map_err(sqlite("clean copy"))?;
+    delete_unreferenced(&tx, Some(&doc), app)?;
+    for (name, png) in artwork {
+        tx.execute("INSERT INTO artwork VALUES(?,?)", params![name, png]).map_err(sqlite("clean copy"))?;
+    }
+    tx.commit().map_err(sqlite("clean copy"))
+}
+/// Deletes the attachments `doc`, or the saved state when none is given, does not
+/// reference (`Document::attachment_references`), inside the caller's transaction.
+fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::AppSpec) -> Result<usize> {
+    let stored: Vec<String> = conn
+        .prepare("SELECT id FROM attachments")
+        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
+        .map_err(sqlite("list attachments"))?;
+    if stored.is_empty() {
+        return Ok(0);
+    }
+    let loaded;
+    let doc = match doc {
+        Some(doc) => doc,
+        None => {
+            loaded = load(conn, app)?.0;
+            &loaded
+        }
+    };
+    let referenced = doc.attachment_references(&stored);
+    let mut deleted = 0;
+    for id in stored.iter().filter(|id| !referenced.contains(*id)) {
+        deleted += conn.execute("DELETE FROM attachments WHERE id=?", [id]).map_err(sqlite("delete attachment"))?;
+    }
+    Ok(deleted)
 }
 
 /// A stored attachment: its identity (the SHA-256 of its bytes) and size.

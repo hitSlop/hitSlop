@@ -206,7 +206,9 @@ code. Refactoring adapters raises no format or ABI marker.
 - **Dependencies for the browser build:** SQLite, brotli decoding, sha2 and the
   jsonschema manifest validator. Check each one's target support and its size; don't
   just remove `cfg` guards. Authoring validation stays native; browser opening runs
-  the shared checks.
+  the shared checks. Artwork optimization (`file::optimize_png`, oxipng over the C
+  libdeflate) is native-only today: the browser either stores artwork as captured or
+  enables libdeflater's `freestanding` feature, measured like the others.
 - **The worker protocol** is TypeBox-owned and generated. Pages and the SDK use the
   existing operations; authored slops need no OPFS API or storage rewrite.
 
@@ -372,7 +374,7 @@ The spike changes no product code. Its results settle the
   - Mobile: iOS Safari and Android Chrome.
 - **Fixtures** (copies only; never edit `tests/compat`):
   - **F1.** A copy of `tests/compat/dev/documents/fixture-collections.slop` with a
-    theme override and one attachment, added with `slop attachments import` and the
+    theme override and one attachment, added with `slop apply --attach` and the
     app.
   - **F2.** Every `tests/compat/dev/documents/*.slop`.
   - **F3.** About 150 MiB, built from a template whose assets are random, so Brotli

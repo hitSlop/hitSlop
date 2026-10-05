@@ -33,12 +33,14 @@ its compiled CSS. Fonts and layout require editing the authoring
 source and rebuilding. After an uncertain result inspect `theme get` before another
 change. PNG/PDF exports include the effective theme.
 
-Use `slop attachments list PATH`, `slop attachments import PATH FILE`, and
-`slop attachments export PATH ID --output FILE`. Import returns a reference with
-id/name/mimeType/byteLength; store it in the app schema through apply/batch.
+Use `slop attachments ref FILE` to print a file's reference (id/name/mimeType/byteLength)
+without touching the document, then store it in the app schema with
+`slop apply PATH --attach FILE --op ...` (or `batch --attach`, repeatable): the file and
+its reference are saved together. `slop attachments list PATH` and
+`slop attachments export PATH ID --output FILE` read them back. Store the `id` exactly as
+printed; a file whose ID appears nowhere in the document is removed when it closes.
 Never write attachments into the file yourself. Limits are 10 MiB per file, 100 MiB and
-256 unique files per document. Removing a reference retains its blob. Inspect
-attachments after an uncertain import.
+256 unique files per document. After an uncertain edit, run `get` before another.
 
 The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
 Catch semantic refusals with `isRejected(error)` and other document outcomes with

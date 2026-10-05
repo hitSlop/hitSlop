@@ -60,37 +60,6 @@ public struct SocketAttachmentsReadRequest: Sendable {
   }
 }
 
-public struct SocketAttachmentsPutRequest: Sendable {
-  public var `protocol`: Int
-  public var `documentPath`: String
-  public var `bytes`: String
-
-  public init(`protocol`: Int, `documentPath`: String, `bytes`: String) {
-    self.`protocol` = `protocol`
-    self.`documentPath` = `documentPath`
-    self.`bytes` = `bytes`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `protocol` = json["protocol"] as? Int else { throw ContractMappingError.field("SocketAttachmentsPutRequest.protocol") }
-    self.`protocol` = `protocol`
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketAttachmentsPutRequest.documentPath") }
-    self.`documentPath` = `documentPath`
-    guard let `bytes` = json["bytes"] as? String else { throw ContractMappingError.field("SocketAttachmentsPutRequest.bytes") }
-    self.`bytes` = `bytes`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "attachments.put"
-    result["protocol"] = `protocol`
-    result["documentPath"] = `documentPath`
-    result["bytes"] = `bytes`
-    return result
-  }
-}
-
 public struct SocketThemeExportRequest: Sendable {
   public var `protocol`: Int
   public var `documentPath`: String
@@ -148,12 +117,14 @@ public struct SocketBatchRequest: Sendable {
   public var `documentPath`: String
   public var `ops`: String
   public var `base`: String?
+  public var `attachments`: [String]?
 
-  public init(`protocol`: Int, `documentPath`: String, `ops`: String, `base`: String? = nil) {
+  public init(`protocol`: Int, `documentPath`: String, `ops`: String, `base`: String? = nil, `attachments`: [String]? = nil) {
     self.`protocol` = `protocol`
     self.`documentPath` = `documentPath`
     self.`ops` = `ops`
     self.`base` = `base`
+    self.`attachments` = `attachments`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
@@ -170,6 +141,12 @@ public struct SocketBatchRequest: Sendable {
     } else {
       self.`base` = nil
     }
+    if let value = json["attachments"] {
+      guard let mapped = value as? [String] else { throw ContractMappingError.field("SocketBatchRequest.attachments") }
+      self.`attachments` = mapped
+    } else {
+      self.`attachments` = nil
+    }
   }
 
   public var json: [String: Any] {
@@ -179,6 +156,7 @@ public struct SocketBatchRequest: Sendable {
     result["documentPath"] = `documentPath`
     result["ops"] = `ops`
     if let value = `base` { result["base"] = value }
+    if let value = `attachments` { result["attachments"] = value }
     return result
   }
 }
@@ -227,7 +205,6 @@ public struct SocketExportRequest: Sendable {
 public enum SocketRequest: Sendable {
   case `attachmentsList`(SocketAttachmentsListRequest)
   case `attachmentsRead`(SocketAttachmentsReadRequest)
-  case `attachmentsPut`(SocketAttachmentsPutRequest)
   case `themeExport`(SocketThemeExportRequest)
   case `get`(SocketGetRequest)
   case `batch`(SocketBatchRequest)
@@ -236,7 +213,6 @@ public enum SocketRequest: Sendable {
   public enum Method: String, CaseIterable, Sendable {
     case `attachmentsList` = "attachments.list"
     case `attachmentsRead` = "attachments.read"
-    case `attachmentsPut` = "attachments.put"
     case `themeExport` = "theme.export"
     case `get` = "get"
     case `batch` = "batch"
@@ -247,7 +223,6 @@ public enum SocketRequest: Sendable {
     switch self {
     case .`attachmentsList`: return .`attachmentsList`
     case .`attachmentsRead`: return .`attachmentsRead`
-    case .`attachmentsPut`: return .`attachmentsPut`
     case .`themeExport`: return .`themeExport`
     case .`get`: return .`get`
     case .`batch`: return .`batch`
@@ -258,7 +233,6 @@ public enum SocketRequest: Sendable {
     switch self {
     case .`attachmentsList`(let value): return value.documentPath
     case .`attachmentsRead`(let value): return value.documentPath
-    case .`attachmentsPut`(let value): return value.documentPath
     case .`themeExport`(let value): return value.documentPath
     case .`get`(let value): return value.documentPath
     case .`batch`(let value): return value.documentPath
@@ -272,7 +246,6 @@ public enum SocketRequest: Sendable {
     switch method {
     case .`attachmentsList`: self = .`attachmentsList`(try SocketAttachmentsListRequest(json: json))
     case .`attachmentsRead`: self = .`attachmentsRead`(try SocketAttachmentsReadRequest(json: json))
-    case .`attachmentsPut`: self = .`attachmentsPut`(try SocketAttachmentsPutRequest(json: json))
     case .`themeExport`: self = .`themeExport`(try SocketThemeExportRequest(json: json))
     case .`get`: self = .`get`(try SocketGetRequest(json: json))
     case .`batch`: self = .`batch`(try SocketBatchRequest(json: json))
@@ -284,7 +257,6 @@ public enum SocketRequest: Sendable {
     switch self {
     case .`attachmentsList`(let value): return value.json
     case .`attachmentsRead`(let value): return value.json
-    case .`attachmentsPut`(let value): return value.json
     case .`themeExport`(let value): return value.json
     case .`get`(let value): return value.json
     case .`batch`(let value): return value.json
@@ -1046,7 +1018,6 @@ public enum SocketReply: Sendable {
   case `themeExport`(`stateJSON`: String)
   case `attachmentsList`(`stateJSON`: String)
   case `attachmentsRead`(`stateJSON`: String)
-  case `attachmentsPut`(`stateJSON`: String)
   case failure(SocketFailure)
 
   private var header: [String: Any] {
@@ -1063,8 +1034,6 @@ public enum SocketReply: Sendable {
       return ["ok": true, "method": "attachments.list"]
     case .`attachmentsRead`(_):
       return ["ok": true, "method": "attachments.read"]
-    case .`attachmentsPut`(_):
-      return ["ok": true, "method": "attachments.put"]
     case .failure(let failure): return failure.json
     }
   }
@@ -1075,7 +1044,6 @@ public enum SocketReply: Sendable {
     case .`themeExport`(let state): return state
     case .`attachmentsList`(let state): return state
     case .`attachmentsRead`(let state): return state
-    case .`attachmentsPut`(let state): return state
     default: return nil
     }
   }

@@ -23,15 +23,17 @@ pub(crate) const STORAGE_VERSION: i64 = 1;
 /// its documents, so saved state always belongs to its descriptor. A template's
 /// `checkpoint` holds its initial state; a document starts as a copy and adds its
 /// `document` row, then `updates` and `attachments`. An asset's `size` is its length;
-/// `encoding` is how `bytes` holds it (`encode`).
+/// `encoding` is how `bytes` holds it (`encode`). The tables are STRICT: SQLite refuses a
+/// mistyped write and the quick check finds a mistyped row, but a file is untrusted bytes,
+/// so every open still checks what it reads.
 pub(crate) const SCHEMA: &str = "\
-CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, theme TEXT NOT NULL);
-CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL);
-CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL);
-CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1));
-CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), bytes BLOB NOT NULL);
-CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
-CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL);";
+CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, theme TEXT NOT NULL) STRICT;
+CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL) STRICT;
+CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL) STRICT;
+CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1)) STRICT;
+CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), bytes BLOB NOT NULL) STRICT;
+CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL) STRICT;
+CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL) STRICT;";
 
 use crate::wire::{APP_TEXT_BYTES, ASSET_PATH_BYTES, MANIFEST_BYTES};
 /// The artwork a file may hold, as the `artwork` table's CHECK names it.
@@ -59,9 +61,12 @@ pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<C
     Ok(conn)
 }
 /// The writer's durability: a rollback journal that exists only while a save commits, and
-/// a full sync of every commit.
+/// a full sync of every commit. Deleted content is zeroed where that costs no extra write
+/// (FAST): Apple's SQLite does so by default, the bundled SQLite of the Linux engines and
+/// the browser does not, and a shared file should not depend on which one wrote it.
 pub(crate) fn configure_writer(conn: &Connection) -> Result<()> {
-    conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON;").map_err(sqlite("configure"))
+    conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA secure_delete=FAST;")
+        .map_err(sqlite("configure"))
 }
 /// A writer's connection: read-write, creating a new file when `create`. An existing file
 /// is checked before `configure_writer`, so a file this build refuses is never written.
@@ -346,6 +351,27 @@ pub(crate) fn check_artwork(label: &str, bytes: &[u8]) -> Result<()> {
         return Err(invalid(format!("{label} is too large")));
     }
     png(bytes, label).map(|_| ())
+}
+/// The decoded bytes optimizing may hold: artwork larger than this is stored as it is.
+const OPTIMIZE_DECODED_BYTES: usize = 64 << 20;
+/// Artwork that `check_artwork` accepted, losslessly smaller when oxipng finds a smaller
+/// encoding at `level`: every pixel decodes the same, fully transparent ones too. Anything
+/// oxipng refuses, panics on or cannot shrink is kept as it is, so optimizing never fails
+/// a write.
+pub(crate) fn optimize_png(bytes: Vec<u8>, level: u8) -> Vec<u8> {
+    let options = oxipng::Options {
+        // oxipng's display chunks (`StripChunks::Safe`) plus gAMA and cHRM, which macOS may
+        // apply to a PNG without an sRGB or ICC chunk; other metadata goes.
+        strip: oxipng::StripChunks::Keep(oxipng::indexset! {
+            *b"cICP", *b"iCCP", *b"sRGB", *b"gAMA", *b"cHRM", *b"pHYs", *b"acTL", *b"fcTL", *b"fdAT"
+        }),
+        max_decompressed_size: Some(OPTIMIZE_DECODED_BYTES),
+        ..oxipng::Options::from_preset(level)
+    };
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| oxipng::optimize_from_memory(&bytes, &options))) {
+        Ok(Ok(smaller)) if smaller.len() < bytes.len() => smaller,
+        _ => bytes,
+    }
 }
 /// A PNG's width and height, and whether it carries alpha (colour type 6), from its header.
 fn png(bytes: &[u8], label: &str) -> Result<(u32, u32, bool)> {
@@ -691,7 +717,8 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
             Ok(meta) if meta.is_file() => {
                 let bytes = fs::read(&file).map_err(failed)?;
                 check_artwork(&format!("artwork/{name}.png"), &bytes)?;
-                artwork.push((name.to_string(), bytes));
+                // Packing runs once per build, so it can afford oxipng's default level, 2.
+                artwork.push((name.to_string(), optimize_png(bytes, 2)));
             }
             Ok(_) => return Err(invalid(format!("artwork/{name}.png must be a regular file"))),
             Err(_) => {}
@@ -795,8 +822,15 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
 /// `dest`, then checks it and publishes it without replacing anything; `create` adds the
 /// document row a template lacks.
 /// A `durable` copy is a document a person keeps; a capture's source, read once and then
-/// deleted, skips the syncs.
-pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool) -> Result<()> {
+/// deleted, skips the syncs. `clean` changes the staged copy before its checks, which then
+/// include SQLite's quick check.
+pub(crate) fn copy(
+    source: &Connection,
+    dest: &Path,
+    create: bool,
+    durable: bool,
+    clean: Option<&dyn Fn(&Connection) -> Result<()>>,
+) -> Result<()> {
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
     if !durable {
@@ -816,7 +850,10 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool
     if create {
         output.execute("INSERT INTO document(id) VALUES(1)", []).map_err(sqlite("Cannot create the document"))?;
     }
-    check(&output, false)?;
+    if let Some(clean) = clean {
+        clean(&output)?;
+    }
+    check(&output, clean.is_some())?;
     output.close().map_err(|(_, e)| sqlite("close")(e))?;
     staged.publish_new(dest, durable)
 }
@@ -830,7 +867,7 @@ pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     if opened(&read, template, true)?.kind != Kind::Template {
         return Err(invalid("Documents are created from a template"));
     }
-    copy(&read, dest, true, true)
+    copy(&read, dest, true, true, None)
 }
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.

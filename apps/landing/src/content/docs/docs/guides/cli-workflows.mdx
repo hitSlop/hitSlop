@@ -123,16 +123,18 @@ bunx @hitslop/cli theme import Other.slop Purple.json
 ## Work with attachments
 
 ```sh
-bunx @hitslop/cli attachments import My.slop ./photo.png
+bunx @hitslop/cli attachments ref ./photo.png
+# Store the printed reference where the app expects it, attaching the file in the same edit.
+bunx @hitslop/cli apply My.slop --attach ./photo.png \
+  --op '{"type":"set","path":["photo"],"value":{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}}'
 bunx @hitslop/cli attachments list My.slop
-# Replace ATTACHMENT_ID with an ID returned by import or list.
 bunx @hitslop/cli attachments export My.slop ATTACHMENT_ID \
   --output ./photo-copy.png
 ```
 
-Import saves the file and returns its ID, name, type, and size. Ask your agent to store that reference in the appropriate document field so the app can use it. List shows saved attachment IDs and sizes.
+`attachments ref` prints a file's reference (its ID, size, name and type) without reading the document. `--attach` on `apply` or `batch` saves the file in the same edit that stores the reference, so both succeed or neither does; repeat it for more files. Ask your agent to store the reference where the app expects it. A file nothing references any more is removed when the document closes, and a duplicate or shared copy carries only the files its document references. List shows saved attachment IDs and sizes.
 
-Attachment export refuses existing output files and the document itself. After an uncertain import, inspect the attachment list before another command.
+Attachment export refuses existing output files and the document itself. After an uncertain edit, run `get` before another command.
 
 ## Export PNG or PDF
 

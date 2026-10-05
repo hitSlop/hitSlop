@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { cp, mkdtemp, rm, symlink, readFile, lstat } from "node:fs/promises";
+import { cp, mkdtemp, rm, symlink, readFile, lstat, writeFile } from "node:fs/promises";
 import { loadProject, normalizeApp } from "../src/build";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -179,6 +179,7 @@ test("invalid input fails before opening documents or building source", async ()
     ["get", "missing.slop", "--wat"],
     ["apply", "missing.slop"],
     ["batch", "missing.slop"],
+    ["apply", "missing.slop", "--op", "{}", "--attach", "missing.png"],
     ["import", "missing.slop"],
     ["theme", "set", "missing.slop"],
     ["attachments", "export", "missing.slop", "id"],
@@ -188,6 +189,24 @@ test("invalid input fails before opening documents or building source", async ()
     const result = await run(args, { HITSLOP_NATIVE_CLI: "/nonexistent" });
     expect(result.code).not.toBe(0);
     expect(result.stderr).not.toContain("HITSLOP_NATIVE_CLI");
+  }
+});
+
+test("attachments ref prints a file's reference without opening any document", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slop-ref-"));
+  try {
+    const file = join(dir, "note.txt");
+    await writeFile(file, "abc");
+    const result = await run(["attachments", "ref", file], { HITSLOP_NATIVE_CLI: "/nonexistent" });
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      byteLength: 3,
+      name: "note.txt",
+      mimeType: "text/plain",
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

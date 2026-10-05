@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import HitSlopCore
 import HitSlopDocument
@@ -16,6 +17,15 @@ import HitSlopDocument
   return try JSONSerialization.data(withJSONObject: reply.state ?? [:], options: [.fragmentsAllowed, .sortedKeys])
 }
 
+/// Stores `bytes` and sets `path` to its ID in one agent batch, as `slop apply --attach`
+/// does, and returns the ID.
+@MainActor public func attach(_ bytes: Data, at path: [String], url: URL) async throws -> String {
+  let id = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+  let ops = String(decoding: try JSONSerialization.data(withJSONObject: [["type": "set", "path": path, "value": id]]), as: UTF8.self)
+  let reply = try await command("batch", url: url, ["ops": ops, "attachments": [bytes.base64EncodedString()]])
+  guard reply.ok else { throw SlopFailure(reply.error ?? "Attach failed") }
+  return id
+}
 /// Sets palette colors as an agent's batch; `nil` returns a color to the template's.
 @MainActor public func setTheme(_ values: [String: String?], url: URL, replace: Bool = false) async throws -> DecodedReply {
   try await themeCommand(["type": "setTheme", "values": values.mapValues { $0 ?? NSNull() as Any }, "replace": replace], url: url)

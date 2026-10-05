@@ -22,12 +22,20 @@ const operations = T.String({ minLength: 2, maxLength: SocketLimits.request });
 export const SocketRequestSchema = T.Union([
   Strict({ ...base, method: T.Literal("attachments.list") }),
   Strict({ ...base, method: T.Literal("attachments.read"), attachmentID: AttachmentIDSchema }),
-  Strict({ ...base, method: T.Literal("attachments.put"), bytes: AttachmentBytesSchema }),
   Strict({ ...base, method: T.Literal("theme.export") }),
   Strict({ ...base, method: T.Literal("get") }),
   // `base`: the version the agent read (`get`) or last wrote (a batch's `version`); its
-  // text sets merge with edits made since instead of replacing them.
-  Strict({ ...base, method: T.Literal("batch"), ops: operations, base: T.Optional(T.String()) }),
+  // text sets merge with edits made since instead of replacing them. `attachments` are
+  // stored before the operations, which reference them by ID, so a blob and its reference
+  // arrive in one request: a document's attachments no reference names are reclaimed when
+  // it closes.
+  Strict({
+    ...base,
+    method: T.Literal("batch"),
+    ops: operations,
+    base: T.Optional(T.String()),
+    attachments: T.Optional(T.Array(AttachmentBytesSchema, { minItems: 1 })),
+  }),
   Strict({
     ...base,
     method: T.Literal("export"),
@@ -46,7 +54,6 @@ export const SocketSuccessSchema = T.Union([
   Strict({ ok: T.Literal(true), method: T.Literal("theme.export"), state: Strict({ file: T.String() }) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.list"), state: T.Array(AttachmentInfoSchema) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.read"), state: Strict({ bytes: AttachmentBytesSchema }) }),
-  Strict({ ok: T.Literal(true), method: T.Literal("attachments.put"), state: AttachmentInfoSchema }),
 ]);
 /** A classified failure. Unknown outcomes are explicit, never inferred from missing fields. */
 export const SocketFailureSchema = Strict({
@@ -58,7 +65,7 @@ export const SocketFailureSchema = Strict({
 });
 export const SocketReplySchema = T.Union([...SocketSuccessSchema.anyOf, SocketFailureSchema]);
 /** Methods that change the document: a failure leaves an outcome to report. */
-export const MutationMethods: ReadonlySet<SocketMethod> = new Set(["batch", "attachments.put"]);
+export const MutationMethods: ReadonlySet<SocketMethod> = new Set(["batch"]);
 /** A live owner's discovery, in the registry (`~/.hitslop/live`): where it listens. */
 export const SocketDiscoverySchema = Strict({
   socket: path,

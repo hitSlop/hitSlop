@@ -216,7 +216,8 @@ snapshots or persistent undo records.
   or discard for a full document.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
   `close` refuses new edits, flushes, trims history (below), writes the artwork its
-  window captured ([close](#close-export-and-capture)), then releases the lock.
+  window captured ([close](#close-export-and-capture)), reclaims attachments nothing
+  references ([attachments](#themes-and-attachments)), then releases the lock.
   `discard` waits for the write in flight and reloads saved bytes; work queued for the
   discarded state (a waiting flush, a page that was replaced) is refused with
   `owner_replaced`.
@@ -253,9 +254,15 @@ removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
-Duplicate and Share a Copy flush what the page accepted, then copy from the owner's own
-connection with SQLite's online backup, so saves queue behind the copy. The copy is
-published without replacing anything. A window writes the file's
+Duplicate and Share a Copy flush what the page accepted, render artwork from the saved
+state, then copy from the owner's own connection with SQLite's online backup, so saves
+queue behind the copy. The copy is made a document of its own before it is published
+(`Store::copy_clean`): its saved state becomes a checkpoint with no history, it keeps
+only the attachments that state references, and it carries the rendered artwork, or none
+if rendering failed, never the original's. Nothing deleted before the copy is in it, and
+writers zero deleted content (`secure_delete=FAST`) on every platform. The copy is
+published without replacing anything. A capture's source is a plain backup, rendered
+once and deleted. A window writes the file's
 artwork as it closes ([close](#close-export-and-capture)). Finder, Mail and the share sheet
 show it through the app's Quick Look extensions, which read the file's artwork read-only;
 a file without artwork shows the `.slop` document icon.
@@ -278,8 +285,7 @@ through its writer connection and releases the lock. Finder's custom icon reflec
 saved artwork. A failed capture keeps old artwork and does not stop close; a failed save
 keeps the window and ownership for retry. An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
-refuses, leaves the blob unreferenced, which is harmless: blobs are addressed by their
-hash.
+refuses, leaves the blob unreferenced until the document closes.
 
 ## CLI
 
@@ -329,7 +335,12 @@ There is no separate host-to-page theme delivery loop.
 
 Attachments are content-addressed immutable blobs in the file's `attachments` table,
 stored on the owner's persistence queue through its own connection, before the edit
-that references one is accepted.
+that references one is accepted. An agent's blobs arrive in the `batch` that references
+them (`slop apply --attach`), so no close falls between a blob and its reference. A blob
+is referenced while its ID appears in a string, text or map key of the state
+(`Document::attachment_references`). A close after a session that saved an edit or stored
+a blob deletes the rest, after the final save; undo covers the open session only, so
+history keeps nothing alive.
 
 ## Tests and performance
 

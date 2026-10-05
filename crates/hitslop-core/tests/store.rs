@@ -585,7 +585,7 @@ fn checkpoints_reclaim_free_pages() {
 }
 
 #[test]
-fn a_copy_has_the_same_history_and_theme() {
+fn a_copy_has_the_same_state_version_and_theme() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Copied");
@@ -593,11 +593,50 @@ fn a_copy_has_the_same_history_and_theme() {
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     // The source stays open: the copy is an online backup through its writer.
-    store.copy_to(&copy, true).unwrap();
+    store.copy_clean(&copy, &[]).unwrap();
     let (_copied_store, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
     assert_eq!(accent(&copied), "#123456");
     assert_eq!(copied.version(), doc.version());
+}
+
+/// A copy is a document of its own: the current state without history (a title replaced
+/// before the copy is nowhere in its bytes), the attachments that state references, in a
+/// field or inside text, and the artwork it was given. The original and its session's
+/// undo are untouched.
+#[test]
+fn a_copy_keeps_the_current_state_and_only_what_it_references() {
+    const NOTES: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"cover":{"kind":"string"},"notes":{"kind":"text"}}}"#;
+    let (dir, path) = document_with(NOTES, r#"{"title":"Saved","cover":"","notes":""}"#);
+    let (store, mut doc) = open(&path);
+    let [cover, inline, _removed] = [&b"cover"[..], b"inline", b"removed"].map(|bytes| store.put_attachment(bytes).unwrap().id);
+    let replaced = "replaced-before-the-copy-4b1d";
+    set_title(&mut doc, replaced);
+    set_title(&mut doc, "Kept");
+    let reference = json!({"intents":[
+        {"type":"set","path":["cover"],"value":cover},
+        {"type":"set","path":["notes"],"value":format!("![photo](attachment/{inline}) and more")},
+    ]});
+    doc.apply_batch(&reference.to_string(), Origin::Page).unwrap();
+    save(&store, &mut doc);
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let holds = |path: &Path, text: &str| std::fs::read(path).unwrap().windows(text.len()).any(|w| w == text.as_bytes());
+    assert!(holds(&path, replaced), "the original keeps its history");
+    assert!(!holds(&copy, replaced), "the copy keeps none");
+    assert_eq!(stored(&copy).rows, 0);
+    let copied = Store::open(&copy, Mode::Document).unwrap();
+    let mut kept: Vec<String> = copied.attachments().unwrap().into_iter().map(|a| a.id).collect();
+    kept.sort();
+    let mut referenced = vec![cover, inline];
+    referenced.sort();
+    assert_eq!(kept, referenced);
+    assert_eq!(copied.artwork("preview").unwrap(), None, "no artwork given, none copied");
+    assert_eq!(title(&copied.document().unwrap()), "Kept");
+    assert_eq!(store.attachments().unwrap().len(), 3, "the original keeps every blob");
+    assert!(doc.undo().unwrap().publication.is_some(), "the session's undo is untouched");
+    assert!(doc.undo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), replaced);
 }
 
 fn accent(doc: &Document) -> String {

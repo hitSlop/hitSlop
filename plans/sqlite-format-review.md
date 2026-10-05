@@ -1,7 +1,7 @@
 # SQLite format review and optimization plan
 
-Status: proposed, 2026-10-05; revised the same day after review. Implementation has not
-started. This plan assumes breaking pre-launch changes are allowed: `tests/compat` holds
+Status: all four steps implemented 2026-10-05 (uncommitted), after review and the Loro
+sync pass. This plan assumes breaking pre-launch changes are allowed: `tests/compat` holds
 only `dev`, and nothing is frozen. It does not authorize changing released documents or
 frozen corpus entries.
 
@@ -63,32 +63,61 @@ What copies carry today:
 - `secure_delete` is never set. Apple's SQLite defaults to FAST (`2`, checked on 3.51.0);
   the bundled SQLite of the Linux engines and sqlite-wasm-rs default to `0`.
 
+Spikes (2026-10-05), run outside the repo:
+
+- **Loro (`c00c9fa`, the pinned main).** A text span inserted then deleted, one typed a
+  character at a time then deleted, a replaced map value and a removed list item were
+  each checked in every export:
+
+  | Export | Deleted content present |
+  | --- | --- |
+  | Full snapshot (saved below 4 MiB today) | all four |
+  | Shallow snapshot at an earlier cut | all four |
+  | Shallow snapshot at the latest version | none |
+  | State only | none |
+
+  The shallow snapshot at the latest version re-imports to an identical value. 1.16.2
+  gave the same table.
+- **`secure_delete`.** After a backup, replacing the checkpoint and deleting the updates
+  and two attachments: at `0`, the start of every deleted row and blob stays in the copy,
+  even with FULL auto-vacuum; at FAST or ON, none does.
+- **Artwork.** `oxipng -o 2 --strip safe` on the six real captures (Quick Checklist,
+  Shape Lab, a saved document) gave identical decoded pixels at 46–64% of the original
+  size. Quick Checklist's artwork falls from 107 to about 59 KB. A 960 × 1,240 preview
+  took about 0.2–0.6 s at level 2 and 0.12 s at level 0 (65%), single-threaded, CLI.
+
 ## Immediate sequence
 
 ### 1. Clean copies
 
-One Rust owner operation writes every copy that leaves the owner: Publish (share links),
-Send File and Duplicate. Captures, which are temporary and never leave the machine, stay
-plain backups. The operation never changes the original:
+One Rust owner operation writes every copy that leaves the owner: Publish (share links,
+when it lands), Send File and Duplicate. Captures, which are temporary and never leave the
+machine, stay plain backups. The operation never changes the original.
+
+Implemented as `Store::copy_clean`, the owner's `Copy { destination, preview, icon }`
+(captures use `CaptureSource`). It runs on the persistence thread, on the copy's own
+saved state, never the live document, so `retain_from` and the session's undo are
+untouched:
 
 1. Back up into the staged file.
-2. Replace its checkpoint with a shallow snapshot at the latest version, exported from
-   the owner's document after the flush. Export only: `trimmed()` also calls
-   `retain_from`, which would cut the live session's undo history.
-3. Delete its `updates` and every attachment the snapshot doesn't reference
+2. Load the staged file's saved state and replace its checkpoint with a shallow snapshot
+   at its latest version.
+3. Delete its `updates` and every attachment that state doesn't reference
    ([attachment scan](#attachment-scan)).
-4. Render artwork from the copy's state. A copy whose render fails carries no artwork,
-   never the original's.
+4. Store the artwork the window rendered from the saved state for the copy
+   (`SlopRenderer.artwork`); a render that fails leaves the copy with none, never the
+   original's.
 5. Run every open check, with the quick check, then publish without replacing anything.
 
-Set `PRAGMA secure_delete=FAST` in `file::configure_writer`, so leftover bytes are
+`file::configure_writer` sets `PRAGMA secure_delete=FAST`, so leftover bytes are
 format policy rather than a property of the linked SQLite. FAST zeroes deleted cell
 content; FULL auto-vacuum truncates freed pages or overwrites them with relocated ones in
 the same commit.
 
-The original keeps its history while it is under 4 MiB. Trimming at every close would
-make an agent's second text edit from one `get` fail as `stale_base`, because each closed
-CLI command runs its own owner session. The guarantee to document: a copy carries the
+The original keeps its history while it is under 4 MiB. An agent passes the version it
+read as `--base`, and each closed CLI command runs its own owner session: trimming at
+every close would move the floor past that version, so the agent's next based edit
+would fail as `stale_base`. The guarantee to document: a copy carries the
 current state, the attachments it references and artwork of that state; the original
 keeps history under 4 MiB and keeps blobs until [reclamation](#4-attachment-reclamation).
 
@@ -97,7 +126,8 @@ No marker changes: shallow checkpoints are already written today.
 #### Attachment scan
 
 A stored attachment is referenced when its ID (64 lowercase hex characters) appears in
-any string or text of the current state, including inside longer text such as markdown.
+any string, text or map key of the current state, including inside longer text such as
+markdown (`Document::attachment_references`).
 The scan reads materialized values, not bytes; the IDs to look for come from the
 `attachments` table (at most 256). A false match only keeps a blob. An app that stores a
 transformed ID loses that attachment, so author docs say to store the reference's `id`
@@ -122,6 +152,9 @@ and existing apps would still need the scan. It stays a possible authoring featu
   engines and the browser build bundle their own.
 - The exact-layout check refuses files written before the change. Repack templates and
   regenerate the dev corpus with the compat writers; no migration or adapter.
+- Implemented. Tests that craft a mistyped row now drop `STRICT` from the schema text,
+  insert, and restore it, as a hand-edited file would; the `typeof(size)` check still
+  refuses it on opens without the quick check.
 
 ### 3. Artwork
 
@@ -129,12 +162,20 @@ Capture encodes every image as 8-bit RGBA with default settings
 (`SlopPreviewImage.png`), including fully opaque rectangular windows. Optimize
 losslessly in one Rust step that both `pack` and `Store::set_artwork` use: drop an
 opaque alpha channel, use a palette when there are at most 256 colors, and choose better
-filters and compression. Keep a result only when it is smaller and its decoded pixels
-are identical. Pin the optimizer's latest release.
+filters and compression. Keep a result only when it is smaller; otherwise, or on any
+error, keep the input, so optimization never fails a pack or a close.
 
-Adopt it in `pack` first: it costs nothing at runtime and covers the shipped templates.
-Time it on every bundled template's preview and icon (release build, p50 and p95)
-before putting it on the close path, and record the result under `docs/evidence/`.
+Use `oxipng =10.2.1` (MIT) with default features off: no CLI, no rayon pool in the app
+process, no zopfli. It compiles libdeflate, which is C, so it stays out of the wasm
+core. `optimize_alpha` stays off, so even fully transparent pixels keep their color.
+`imagequant` is excluded: it is GPL-3.0-or-later and lossy.
+
+Implemented 2026-10-05 (uncommitted) as `file::optimize_png`. `pack` uses level 2, once
+per build. A closing window's artwork uses level 0 in `Store::set_artwork`, because the
+owner releases the writer lock only after writing it: a preview and its icon take at most
+35 ms (p95), where level 1 reaches 153 ms and level 2 about 300 ms
+([measurements](../docs/evidence/artwork-optimization-2026-10-05.md)). The release engine
+grew by 288 KB.
 
 Preview and icon roles, dimensions and PNG/PDF exports stay as they are. A lower capture
 resolution is a separate experiment across Finder, Quick Look, the catalog and
@@ -144,7 +185,9 @@ high-density displays. No new artwork codec.
 
 Today an import stores its blob before its reference edit. A refused or abandoned import,
 and a removed reference, leave the blob behind, so repeated imports can reach the
-100 MiB or 256-file limit while the document uses little media.
+100 MiB or 256-file limit while the document uses little media. Reclamation also bears
+on the [roadmap](../docs/roadmap.md#open-now)'s open decision about Time Machine copying
+whole documents at the current attachment limits.
 
 Reachability is the saved current state only. Undo covers the open session, and nothing
 reads retained history after close, so neither is a root. A future history UI keeps its
@@ -158,7 +201,7 @@ The blocker is the CLI's two-step import. `slop attachments import` stores a blo
 close would delete the blob between them; so would a person closing the window between
 them. Fix the API first:
 
-1. Make attachment import a `batch` intent, as the page's
+1. Make attachment import part of a `batch`, as the page's
    `ctx.attachments.import(file, reference)` already pairs blob and reference. The CLI
    reads the file and computes its SHA-256, so one request carries the blob and the
    operations that use its ID; no placeholders. The owner stores the blob, then applies
@@ -169,7 +212,19 @@ them. Fix the API first:
    between the save and the deletion leaves only orphans. Skip the step when there are
    no attachments or an earlier step failed. Closed CLI sessions run it too.
 
-Update the runtime reference's "Unreferenced blobs remain" sentence when this ships.
+Implemented 2026-10-05 (uncommitted):
+
+- The socket `batch` takes `attachments` (base64, stored before its operations, 16 MiB per
+  request); `attachments.put` is gone from the socket, and the page's request is
+  unchanged. The CLI has `slop attachments ref FILE` (a local reference, no document) and
+  a repeatable `--attach FILE` on `apply` and `batch`; `attachments import` is gone.
+- `Store::reclaim_attachments` runs in the owner's close after the final save and the
+  artwork. It loads the saved state from the writer connection and scans it. It runs only
+  after a session that saved an edit or stored an attachment, so a command that only
+  reads never writes the file; orphans from older sessions go at the next one that edits.
+- Cost on the development M1 (release build), for a document holding attachments, of the
+  extra load and scan at close: 1,000 rows 5 ms, 5,000 rows 29 ms (34 ms max), 20,000
+  rows 169 ms (196 ms max). Only sessions that changed something pay it.
 
 ## Not now
 
@@ -205,7 +260,9 @@ close and failed-save ownership retention, and the independent package, runtime,
 and layout requirements. Pre-launch, the schema change replaces development artifacts
 and keeps every requirement at 1. After release, a SQL layout change needs a
 storage-version migration under the lock, and the attachment scan only widens. Physical
-tuning (`secure_delete`, artwork encoding) raises nothing.
+tuning (`secure_delete`, artwork encoding) raises nothing. Clean copies rely on what
+Loro's shallow snapshot drops, so their deletion test gates every Loro upgrade,
+including the return from the git pin to crates.io.
 
 ## Verification
 
@@ -216,14 +273,14 @@ Tests live at the owning boundary, never on SQL spelling or version constants:
   clean copy holds no `updates`, its checkpoint has no history before the copy, its
   attachments are exactly the referenced ones, and it passes every open check while the
   original and its undo history are unchanged. A string deleted before the copy appears
-  nowhere in the copy's bytes.
+  nowhere in the copy's bytes. Optimized artwork decodes to the input's pixels, including
+  fully transparent ones, and packing stays reproducible.
 - **Owner:** an attach batch stores the blob and its reference together, and a refused
   one leaves only an orphan; cleanup at close keeps every referenced blob (in a field,
   inside text, shared by two references) and removes orphans; a crash between the final
   save and cleanup reopens with the saved state and the orphans; failed saves skip it.
 - **Native:** clean copies render their own artwork, and a failed render yields none.
-  Finder, Quick Look and PNG/PDF export keep working. Artwork optimization checks
-  decoded pixels, not only PNG headers.
+  Finder, Quick Look and PNG/PDF export keep working.
 
 Iterate with the affected `bun run verify` tier and run `bun run verify` before calling
 a step done; `bun run verify --native` at the end when Swift, the FFI or the helper
@@ -232,6 +289,5 @@ A bug regression test must fail before its fix.
 
 The pass is complete when the four steps ship with their tests, the artwork decision is
 recorded under `docs/evidence/`, the dev artifacts are regenerated, and the architecture,
-runtime reference and engineering contract describe the result. Their stale wording: the
-engineering contract lists initial values in the `app` row, but a template's
-checkpoint holds them.
+runtime reference and engineering contract describe the result. The engineering
+contract's stale wording (initial values in the `app` row) is fixed.

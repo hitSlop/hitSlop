@@ -252,13 +252,14 @@ extension HostTests {
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
+    // Attached before the draft replaces the title: the capture source still holds the
+    // blob, though nothing references it once the draft is saved.
+    let blob = try Fixtures.png()
+    let id = try await attach(blob, at: ["title"], url: root)
     _ = try await session.webView.evaluateJavaScript("""
       const input = document.querySelector('#draft'); input.value = 'Snapshot draft';
       input.dispatchEvent(new Event('input', {bubbles:true})); true
       """)
-    let blob = try Fixtures.png()
-    let put = try await command("attachments.put", url: root, ["bytes": blob.base64EncodedString()])
-    let id = try #require((put.state as? [String: Any])?["id"] as? String)
     var sourceURL: URL?
     try await session.withCaptureSnapshot { source in
       sourceURL = source

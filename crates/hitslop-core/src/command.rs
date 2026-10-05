@@ -208,8 +208,9 @@ fn parse(input: &str) -> Result<SocketRequest> {
     }
     let request: SocketRequest =
         serde_json::from_value(value).map_err(|_| invalid("Invalid socket request"))?;
+    // A batch carrying attachments may reach the attachment limit; anything else is small.
     if input.len() > wire::SOCKET_REQUEST
-        && !matches!(request, SocketRequest::AttachmentsPut { .. })
+        && !matches!(request, SocketRequest::Batch { attachments: Some(_), .. })
     {
         return Err(invalid("Oversized socket request"));
     }
@@ -251,7 +252,16 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                     ))?,
                 }
             }
-            SocketRequest::Batch { ops, base, .. } => {
+            SocketRequest::Batch { ops, base, attachments, .. } => {
+                // The blobs first, in this one request: their reference edits follow, so
+                // no close can find a blob waiting for its reference. A refused batch
+                // leaves only blobs nothing references, which its close reclaims.
+                for bytes in attachments.unwrap_or_default() {
+                    let bytes = data_encoding::BASE64.decode(bytes.as_bytes()).map_err(|_| invalid("Invalid attachment bytes"))?;
+                    let Reply::Attachment { .. } = call(owner, Request::PutAttachment { bytes }, deadline)? else {
+                        return Err(unexpected());
+                    };
+                }
                 // `ops` was checked to be an array; the core parses the batch.
                 let batch_json = match base {
                     Some(base) => format!("{{\"base\":{},\"intents\":{ops}}}", json!(base)),
@@ -297,17 +307,6 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                 };
                 SocketSuccess::AttachmentsRead {
                     state: fragment(json!({"bytes": data_encoding::BASE64.encode(&bytes)}))?,
-                }
-            }
-            SocketRequest::AttachmentsPut { bytes, .. } => {
-                let bytes = data_encoding::BASE64
-                    .decode(bytes.as_bytes())
-                    .map_err(|_| invalid("Invalid attachment bytes"))?;
-                let Reply::Attachment { item } = call(owner, Request::PutAttachment { bytes }, deadline)? else {
-                    return Err(unexpected());
-                };
-                SocketSuccess::AttachmentsPut {
-                    state: fragment(json!({"id":item.id,"byteLength":item.bytes}))?,
                 }
             }
             SocketRequest::Export {

@@ -356,16 +356,29 @@
     {
       "args": [
         "attachments",
-        "import",
-        "{document}",
+        "ref",
         "{attachment}"
       ],
       "code": 0,
       "stdout": {
-        "byteLength": 28,
         "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
+        "byteLength": 28,
         "name": "attachment.txt",
         "mimeType": "text/plain"
+      }
+    },
+    {
+      "args": [
+        "apply",
+        "{document}",
+        "--attach",
+        "{attachment}",
+        "--op",
+        "{\"type\":\"set\",\"path\":[\"attachment\"],\"value\":\"b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418\"}"
+      ],
+      "code": 0,
+      "stdout": {
+        "ids": []
       }
     },
     {
@@ -390,10 +403,6 @@
       "code": 0,
       "stdout": [
         {
-          "byteLength": 36,
-          "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610"
-        },
-        {
           "byteLength": 28,
           "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418"
         }
@@ -406,7 +415,7 @@
       ],
       "code": 0,
       "stdout": {
-        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "attachment": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
         "cells": {
           "compat-1": {
             "input": "Compat 1 ✓ café 🦊"

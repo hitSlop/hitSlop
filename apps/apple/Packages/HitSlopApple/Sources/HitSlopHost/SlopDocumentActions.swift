@@ -79,7 +79,7 @@ extension SlopDocumentWindowController {
     telemetry.send(.breadcrumb(.duplicate, .started))
     try await saveAccepted(for: .duplicate)
     do {
-      let copied = try await session.copy(to: try SlopFile.newDocumentURL(target))
+      let copied = try await session.copy(to: try SlopFile.newDocumentURL(target), artwork: await copyArtwork())
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return copied
     } catch { telemetry.failure(.duplicate, error: error); throw error }
@@ -94,11 +94,18 @@ extension SlopDocumentWindowController {
     let copy = folder.appendingPathComponent(url.lastPathComponent)
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-      try await session.copy(to: copy)
+      try await session.copy(to: copy, artwork: await copyArtwork())
     } catch { telemetry.failure(.share, error: error); throw error }
     guard let view = window?.contentView else { return }
     NSSharingServicePicker(items: [copy]).show(relativeTo: .zero, of: view, preferredEdge: .minY)
     telemetry.send(.breadcrumb(.share, .completed))
+  }
+
+  /// The artwork a copy carries, rendered from the saved state it is made from: the
+  /// document's own artwork can show what was since deleted. None when rendering fails.
+  private func copyArtwork() async -> SlopRenderedArtwork? {
+    guard session.isReady else { return nil }
+    return await SlopRenderer.artwork(session: session, telemetry: telemetry)
   }
 
   /// Saves what the document accepted before it is copied: a live page sends unsent text

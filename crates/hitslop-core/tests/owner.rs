@@ -333,7 +333,8 @@ fn an_admitted_copy_finishes_before_close_and_contains_its_flushed_edits() {
         &owner,
         Request::Copy {
             destination: destination.clone(),
-            durable: true,
+            preview: None,
+            icon: None,
         },
     );
     let closed = submit(
