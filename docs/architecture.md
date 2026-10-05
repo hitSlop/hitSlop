@@ -127,35 +127,58 @@ history.
 
 ## Text
 
-A text binding keeps the user's text in the field. It sends at most one request at a
-time: `text {base, path, from, to, selection}`, meaning "this field was `from` at
-`base` and is now `to`".
+The page and agents change text the same way: a `set` in a batch that names a `base`
+version means "this field was `from` at `base` and is now `value`". A text binding keeps
+the user's text in the field and sends at most one such batch at a time,
+`{base, intents: [{type: "set", path, value, from, selection}]}`. An agent passes the
+version it read (`--base`); its set has no `from`, so the core reads the field's text at
+`base`.
 
 - The core computes the edit script on a throwaway document (its diff mutates while it
-  runs, so it never touches the owner) and checks that the script reproduces `to`.
+  runs, so it never touches the owner) and checks that the script reproduces the value.
 - **Fast path:** the owner's field still equals `from`, so the script applies directly.
-- **Slow path:** the field changed concurrently. The script is applied on a branch at
+- **Merge path:** the field changed since `base`. The script is applied on a branch at
   `base` (a state-only copy, which trimmed documents allow) and merged with Loro; the
-  caret is mapped through cursors.
-- The reply names `authored`, the version right after this edit on its own branch. If the
-  user kept typing, the next request goes from the sent text at `authored`.
+  caret is mapped through cursors. A field whose container `base` never saw (a row
+  removed and inserted again) is `path_not_found`.
+- A set carrying `selection` is the page's edit and its batch's only intent. The reply
+  names `authored`, the version right after this edit on its own branch, and the merged
+  selection. If the user kept typing, the next batch goes from the sent text at
+  `authored`.
 - During IME composition nothing is sent. Close and export commit a composition.
   Retargeting or unmounting a binding sends its unsent text first.
 - Every token is checked against the document's history before Loro sees it, so a
   malformed or foreign base returns `stale_base`, never a panic.
 
-A text handle's `set(value)` and the CLI's `set` replace the whole field as it is when
-the owner applies it, through the same precomputed script.
+A text set without a base (a text handle's `set(value)`, or the CLI without `--base`)
+replaces the whole field as it is when the owner applies it, through the same script.
+
+Merging works at three levels:
+- **Characters.** Loro gives each character an identity. A concurrent insert lands next
+  to the character it was typed beside, and inserts at one position are ordered by peer,
+  so two people's typing never interleaves. Coarser units are worse: words duplicate when
+  two people fix different letters of one word, lines conflict across paragraphs, and a
+  whole field is last-writer-wins.
+- **Typing.** The script keeps the common prefix up to the caret and the common suffix,
+  so a keystroke is one splice and no diff runs.
+- **Replacements.** Where a span is both deleted and inserted (a paste over a selection,
+  autocorrect, a rewrite), Loro's character diff runs over the changed window. Its matches
+  are then cleaned up as diff-match-patch's semantic cleanup does: a kept run between
+  edits that is no longer than the larger edit on each side becomes part of the
+  replacement, so a rewritten word does not keep stray letters that a concurrent
+  keystroke could anchor to. Loro's refined diff stays off: it prices every gap the same
+  whatever the field's length, so it would turn two small edits in a short field into
+  one replacement.
 
 ## Undo
 
 Edit ▸ Undo and Redo revert changes made since the document opened: the person's, and
 an agent's made through the CLI or socket. A document opens with nothing to undo. The
 core keeps up to 100 steps per open document, each holding Loro frontiers before and
-after the edit. Undo and redo restore either version as a new change by reconciling
-toward its value as JSON replacement does (rows by `$id`, text by edit script), never
-with Loro's `revert_to`, which panics on some movable-list histories (Loro 1.16.2). There
-are no JSON snapshots or persistent undo records.
+after the edit. Undo and redo restore either version as a new change with Loro's
+`revert_to`, which inverts the operations between the two versions (the palette with the
+data) and applies all of them or none. A restored row keeps its `$id`. There are no JSON
+snapshots or persistent undo records.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
@@ -208,9 +231,7 @@ refused and preserved for recovery. A checkpoint replaces the log at 256 updates
 
 History is trimmed when nothing is editing. After its final save, a session that edited
 a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
-no history: undo covers the open session only, and Loro 1.16.2 keeps everything deleted
-before a cut in the cut's starting state, so only a cut at the latest version reclaims a
-document that deletes a lot. While open, a checkpoint over 16 MiB keeps the session's
+no history: undo covers the open session only, so nothing reads it later. While open, a checkpoint over 16 MiB keeps the session's
 history when that fits and none otherwise, so a concurrent text edit can still branch
 from where the session opened. There is no public live-compaction command. Only the checkpoint may
 start history late. Rollback rebuilds from where history starts; a version before it

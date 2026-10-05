@@ -3,8 +3,8 @@
 // characters, a misplaced caret, a resurrected row, or a panic on a bad base.
 // Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
 mod support;
-use support::{app, Edit, fixture, snapshot, trimmed};
-use hitslop_core::{Document, TextEdit};
+use support::{app, Edit, fixture, snapshot, trimmed, type_text, typed};
+use hitslop_core::{Document, Origin};
 use serde_json::{json, Value};
 
 const ROW: &str = "00000000000000000000000000000001";
@@ -19,6 +19,18 @@ fn title(d: &Document) -> String {
 }
 fn utf16(s: &str) -> usize {
     s.encode_utf16().count()
+}
+/// What a page reads from its text edit's reply.
+struct Reply {
+    authored: String,
+    selection_start: usize,
+    publication: Option<String>,
+}
+impl Reply {
+    fn of(applied: hitslop_core::Applied) -> Self {
+        let text = applied.text.expect("a text edit's reply");
+        Self { authored: text.authored, selection_start: text.selection[0], publication: applied.publication }
+    }
 }
 /// One page binding: its authored version and the text it last sent.
 struct Binding {
@@ -39,19 +51,18 @@ impl Binding {
         Self { path, base: d.version(), text: at.as_str().unwrap().to_owned() }
     }
     fn request(&self, to: &str, caret: usize) -> String {
-        json!({"base":self.base,"path":self.path,"from":self.text,"to":to,"selectionStart":caret,"selectionEnd":caret})
-            .to_string()
+        typed(&self.base, self.path.clone(), &self.text, to, caret)
     }
     /// Sends `to` with the caret at a UTF-16 offset; adopts the reply like the page does.
-    fn edit(&mut self, d: &mut Document, to: &str, caret: usize) -> TextEdit {
-        let reply = d.edit_text(&self.request(to, caret)).unwrap();
+    fn edit(&mut self, d: &mut Document, to: &str, caret: usize) -> Reply {
+        let reply = Reply::of(d.apply_batch(&self.request(to, caret), Origin::Page).unwrap());
         self.base = reply.authored.clone();
         self.text = to.to_owned();
         reply
     }
     fn refused(&self, d: &mut Document, to: &str) -> String {
         let before = snapshot(d);
-        let code = d.edit_text(&self.request(to, utf16(to))).unwrap_err().code.as_str();
+        let code = d.apply_batch(&self.request(to, utf16(to)), Origin::Page).unwrap_err().code.as_str();
         assert_eq!(snapshot(d), before, "a refused edit changed the document");
         code.to_owned()
     }
@@ -139,8 +150,8 @@ fn emoji_selection_maps_in_utf16_and_a_split_surrogate_is_refused() {
     assert_eq!(title(&d), "éabc😀");
     assert_eq!(reply.selection_start, 6);
     let before = snapshot(&d);
-    let bad = json!({"base":page.base,"path":["title"],"from":page.text,"to":"abc😀!","selectionStart":4,"selectionEnd":4});
-    assert_eq!(d.edit_text(&bad.to_string()).unwrap_err().code.as_str(), "out_of_range");
+    let bad = type_text(&mut d, &page.base, json!(["title"]), &page.text, "abc😀!", 4);
+    assert_eq!(bad.unwrap_err().code.as_str(), "out_of_range");
     assert_eq!(snapshot(&d), before);
 }
 
@@ -149,7 +160,7 @@ fn caret_only_moves_publish_nothing() {
     let mut d = setup();
     let page = Binding::new(&d, json!(["title"]));
     let before = snapshot(&d);
-    let reply = d.edit_text(&page.request("abc", 1)).unwrap();
+    let reply = Reply::of(d.apply_batch(&page.request("abc", 1), Origin::Page).unwrap());
     assert_eq!(snapshot(&d), before);
     assert_eq!(reply.authored, page.base);
     assert!(reply.publication.is_none());
@@ -192,8 +203,7 @@ fn bad_bases_are_refused_on_every_path_without_panicking() {
         // fast (owner text equals `from`), no-op (`from == to`) and slow paths.
         for (from, to) in [("Rabc", "RabcX"), ("abc", "abc"), ("abc", "abcX")] {
             let before = snapshot(&d);
-            let request = json!({"base":base,"path":["title"],"from":from,"to":to,"selectionStart":0,"selectionEnd":0});
-            let code = d.edit_text(&request.to_string()).unwrap_err().code.as_str();
+            let code = type_text(&mut d, base, json!(["title"]), from, to, 0).unwrap_err().code.as_str();
             assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
             assert_eq!(snapshot(&d), before);
         }
@@ -231,9 +241,91 @@ fn a_keystroke_publishes_only_its_change() {
         d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
         let to = format!("{}x{}", &from[..2 * (length / 2)], &from[2 * (length / 2)..]);
         let caret = utf16(&to[..2 * (length / 2) + 1]);
-        let edit = d.edit_text(&json!({"base":d.version(),"path":["title"],"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string()).unwrap();
+        let base = d.version();
+        let edit = type_text(&mut d, &base, json!(["title"]), &from, &to, caret).unwrap();
         let publication: Value = serde_json::from_str(&edit.publication.unwrap()).unwrap();
         assert_eq!(publication["ops"], json!([{"type":"text","path":["title"],"delta":[{"retain":length / 2},{"insert":"x"}]}]));
         assert_eq!(title(&d), to);
     }
+}
+
+// Failure: an agent's text set replaced the field as the owner held it, so whatever the
+// person typed after the agent read the document was deleted. Oracle: literal merged
+// text, and undo of the agent's step alone.
+#[test]
+fn an_agents_set_from_its_read_keeps_what_the_person_typed_since() {
+    let mut d = setup();
+    d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":"Buy milk"}]}).to_string()).unwrap();
+    let read = d.version();
+    let mut page = Binding::new(&d, json!(["title"]));
+    page.edit(&mut d, "Buy milk and eggs", 17);
+    let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":"Buy oat milk"}]});
+    d.apply_batch(&agent.to_string(), Origin::Agent).unwrap();
+    assert_eq!(title(&d), "Buy oat milk and eggs");
+    d.undo().unwrap();
+    assert_eq!(title(&d), "Buy milk and eggs", "undo reverts the agent's step alone");
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(title(&reopened), "Buy milk and eggs");
+}
+
+// Failure: a batch refused after one of its text sets merged a branch kept the merged
+// operations. Oracle: an unchanged snapshot, and a document that still edits and reopens.
+#[test]
+fn a_based_batch_refused_after_its_merge_changes_nothing() {
+    let mut d = setup();
+    let read = d.version();
+    splice(&mut d, 3, "!"); // the field changes after the agent's read: its set merges
+    let before = snapshot(&d);
+    let batch = json!({"base":read,"intents":[
+        {"type":"set","path":["title"],"value":"xyz"},
+        {"type":"set","path":["rows",{"id":ROW},"done"],"value":"not a boolean"}]});
+    assert_eq!(d.apply_batch(&batch.to_string(), Origin::Agent).unwrap_err().op_index, Some(1));
+    assert_eq!(snapshot(&d), before);
+    splice(&mut d, 0, "R");
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(title(&reopened), "Rabc!");
+}
+
+#[test]
+fn text_set_fields_are_refused_where_they_do_not_apply() {
+    let mut d = setup();
+    let base = d.version();
+    let before = snapshot(&d);
+    let refused = |d: &mut Document, batch: Value| d.apply_batch(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned();
+    // A text edit with a selection is its own batch: its reply answers that edit.
+    let typing = json!({"type":"set","path":["title"],"value":"abcX","from":"abc","selection":{"start":4,"end":4}});
+    let increment = json!({"type":"increment","path":["hits"],"by":1});
+    assert_eq!(refused(&mut d, json!({"base":base,"intents":[typing, increment]})), "invalid_request");
+    // `from` and `selection` describe a change from the batch's base, and only of text.
+    assert_eq!(refused(&mut d, json!({"intents":[typing]})), "invalid_request");
+    let done = json!({"type":"set","path":["rows",{"id":ROW},"done"],"value":true,"from":"false"});
+    assert_eq!(refused(&mut d, json!({"base":base,"intents":[done]})), "type_mismatch");
+    assert_eq!(snapshot(&d), before);
+}
+
+/// An agent rewrites the title from what it read while the page, from the same version,
+/// types `typed`; the merged title.
+fn rewrite_beside_typing(from: &str, rewrite: &str, typed: &str) -> String {
+    let mut d = setup();
+    d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
+    let read = d.version();
+    let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":rewrite}]});
+    d.apply_batch(&agent.to_string(), Origin::Agent).unwrap();
+    type_text(&mut d, &read, json!(["title"]), from, typed, utf16(typed)).unwrap();
+    title(&d)
+}
+
+// Failure: a rewrite kept letters of the old word that happen to match the new one, so a
+// concurrent keystroke anchored to them landed inside the new word ("lauXndry").
+// Oracle: the new word stays whole and the keystroke lands at its edge.
+#[test]
+fn a_rewrite_keeps_its_new_word_whole_beside_a_concurrent_keystroke() {
+    assert_eq!(rewrite_beside_typing("dry cleaning", "laundry", "dry cleaXning"), "laundryX");
+}
+
+// Failure (word-sized merging): two people fixing different letters of one word
+// duplicated it. Oracle: both fixes, once.
+#[test]
+fn a_correction_and_a_capitalization_of_one_word_both_apply() {
+    assert_eq!(rewrite_beside_typing("recieve", "receive", "Recieve"), "Receive");
 }

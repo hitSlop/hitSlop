@@ -1,7 +1,7 @@
 // Version tokens: stable across reopen and replay, and stale before a trimmed document's
 // retained history. Bad bases in text edits are refused in `text.rs`.
 mod support;
-use support::{app, Edit, fixture, knows, snapshot, updates_since};
+use support::{app, Edit, fixture, knows, snapshot, type_text, updates_since};
 use hitslop_core::Document;
 use serde_json::json;
 fn create() -> Document {
@@ -49,8 +49,7 @@ fn versions_before_retained_history_are_stale() {
     for (i, token) in tokens.iter().enumerate() {
         // The fast path (the text is still `from`) and the slow path (it changed since).
         for from in ["abc", "changed"] {
-            let request = json!({"base":token,"path":["title"],"from":from,"to":"abc!","selectionStart":0,"selectionEnd":0});
-            let result = trimmed.edit_text(&request.to_string());
+            let result = type_text(&mut trimmed, token, json!(["title"]), from, "abc!", 0);
             if i < 2 {
                 assert_eq!(result.unwrap_err().code.as_str(), "stale_base", "token {i}, from {from}");
             } else if from == "changed" {

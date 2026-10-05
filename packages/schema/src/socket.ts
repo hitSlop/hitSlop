@@ -25,7 +25,9 @@ export const SocketRequestSchema = T.Union([
   Strict({ ...base, method: T.Literal("attachments.put"), bytes: AttachmentBytesSchema }),
   Strict({ ...base, method: T.Literal("theme.export") }),
   Strict({ ...base, method: T.Literal("get") }),
-  Strict({ ...base, method: T.Literal("batch"), ops: operations }),
+  // `base`: the version the agent read (`get`) or last wrote (a batch's `version`); its
+  // text sets merge with edits made since instead of replacing them.
+  Strict({ ...base, method: T.Literal("batch"), ops: operations, base: T.Optional(T.String()) }),
   Strict({
     ...base,
     method: T.Literal("export"),
@@ -39,7 +41,7 @@ export const SocketSuccessSchema = T.Union([
   Strict({ ok: T.Literal(true), method: T.Literal("get"),
     state: Strict({ schema: T.Object({}, { additionalProperties: true }), theme: ThemeValuesSchema, state: OwnerStateSchema }) }),
   Strict({ ok: T.Literal(true), method: T.Literal("batch"),
-    ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }) }),
+    ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }), version: T.String() }),
   Strict({ ok: T.Literal(true), method: T.Literal("export"), output: path }),
   Strict({ ok: T.Literal(true), method: T.Literal("theme.export"), state: Strict({ file: T.String() }) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.list"), state: T.Array(AttachmentInfoSchema) }),

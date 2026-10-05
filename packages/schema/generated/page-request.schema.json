@@ -35,25 +35,6 @@
     {
       "type": "object",
       "required": [
-        "method",
-        "request"
-      ],
-      "properties": {
-        "method": {
-          "type": "string",
-          "const": "text"
-        },
-        "request": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 4194304
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "type": "object",
-      "required": [
         "method"
       ],
       "properties": {

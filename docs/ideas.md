@@ -82,6 +82,10 @@ a person and their agent edit the same live document. What's missing is the slop
   `packages/cli/src/build.ts`.
 - **Contract change:** templates contain no source today. Shipping source also raises
   questions about licenses and private notes in briefs.
+- **Constraints:** compressed and optional, with a size limit and provenance; source
+  files and dependency metadata only, never dependencies, build caches, credentials or
+  chat history; extracted without executing code and never served to the page.
+  Rebuilding produces a new app.
 
 ### Additive app upgrades
 

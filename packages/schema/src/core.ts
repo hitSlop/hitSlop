@@ -18,9 +18,22 @@ export const AnchorSchema = Type.Union([
   Strict({ before: Type.String() }),
   Strict({ after: Type.String() }),
 ]);
+/** A text selection in UTF-16 offsets. */
+export const SelectionSchema = Strict({
+  start: Type.Integer({ minimum: 0 }),
+  end: Type.Integer({ minimum: 0 }),
+});
 export const variants = {
-  // Scalars, optional objects, and whole text fields (as the text is at execution).
-  set: { path, value: Type.Unknown() },
+  // Scalars, optional objects, and whole text fields. Without the batch's `base`, text is
+  // replaced as it is at execution. With it, the set changes the field from `from` (else
+  // the field's text at `base`) and merges with edits made since, so neither side's
+  // characters are lost; `selection`, the page's caret, is mapped through the merge.
+  set: {
+    path,
+    value: Type.Unknown(),
+    from: Type.Optional(Type.String()),
+    selection: Type.Optional(SelectionSchema),
+  },
   // Rows take `id`/`at`; scalar-list elements take `index` (default: append).
   insert: {
     path,
@@ -72,21 +85,14 @@ const PaletteIntentSchema = Type.Union([
   Strict({ type: Type.Literal("setTheme"), ...variants.setTheme }),
   Strict({ type: Type.Literal("importTheme"), ...variants.importTheme }),
 ]);
-const BatchSchema = Strict({ intents: Type.Array(OwnerIntentSchema, { maxItems: BatchLimits.intents }) });
-/** A page's batch. */
+/** A batch. `base` is the version its text sets were written against (a page's last
+ * authored version, or the version an agent read); a set carrying `selection` is the
+ * page's text edit and the batch's only intent. */
+export const BatchSchema = Strict({
+  base: Type.Optional(Type.String()),
+  intents: Type.Array(OwnerIntentSchema, { maxItems: BatchLimits.intents }),
+});
 export type Batch = Static<typeof BatchSchema>;
-
-// Stateless text: the page's field was `from` at `base` (its last authored version) and
-// is now `to`. The owner computes the edit script and merges it; no draft state.
-export const editTextFields = {
-  base: Type.String(),
-  path,
-  from: Type.String(),
-  to: Type.String(),
-  selectionStart: Type.Integer({ minimum: 0 }),
-  selectionEnd: Type.Integer({ minimum: 0 }),
-};
-const EditTextSchema = Strict(editTextFields);
 
 /** One hunk of a text change, in Unicode code points of the field's previous text. */
 export const TextHunkSchema = Type.Union([
@@ -142,5 +148,4 @@ export type OwnerIntent = Static<typeof OwnerIntentSchema>;
 export type PaletteIntent = Static<typeof PaletteIntentSchema>;
 export type OwnerPath = Segment[];
 export type OwnerPatchOp = Static<typeof OwnerPatchOpSchema>;
-export type EditText = Static<typeof EditTextSchema>;
 export type TextHunk = Static<typeof TextHunkSchema>;

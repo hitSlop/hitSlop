@@ -25,7 +25,7 @@ slop apply "My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
 slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
 ```
 
-With the window open, the count ticks up and the accent turns purple as each command runs. Text merges character by character, so your agent's edit doesn't wipe out what you're typing elsewhere in the same field. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
+With the window open, the count ticks up and the accent turns purple as each command runs. Text merges character by character, and your agent edits from the version it read, so its edit doesn't wipe out what you typed in the same field since. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
 
 ## Small enough to be yours
 

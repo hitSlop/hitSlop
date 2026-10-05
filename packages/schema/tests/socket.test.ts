@@ -25,7 +25,7 @@ test("socket successes require their complete method result", () => {
   const id = "a".repeat(64);
   const replies = [
     { ok: true, method: "get", state: { schema: {}, theme: { accent: "#123456" }, state: { sequence: 0, version: "v", value: {}, theme: { accent: "#123456" } } } },
-    { ok: true, method: "batch", ids: [], sequence: 3 },
+    { ok: true, method: "batch", ids: [], sequence: 3, version: "00" },
     { ok: true, method: "export", output: "/tmp/doc.pdf" },
     { ok: true, method: "theme.export", state: { file: "{}" } },
     { ok: true, method: "attachments.list", state: [{ id, byteLength: 3 }] },

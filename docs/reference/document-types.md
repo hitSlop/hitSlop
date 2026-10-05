@@ -127,7 +127,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `invalid_request` | a malformed request, rows addressed by index, or scalar elements by id |
 | `invalid_id` | a row `id` outside 1–64 characters of `A–Z a–z 0–9 _ -` |
 | `invalid_path` | a command path longer than 64 segments |
-| `stale_base` | a text edit whose `from` no longer matches the field at its version, or a version from another history |
+| `stale_base` | a text edit whose `from` no longer matches the field at its version, a version before the document's retained history, or one from another history |
 | `invalid_version` | a version token that is not one the core issued |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
 
@@ -147,7 +147,7 @@ document: create a document from it) and `engine_error` (an unexpected Loro fail
 
 ## Text
 
-`s.text()` is for anything a person types. Concurrent character edits merge, and
+`s.text()` is for anything a person types. Edits merge character by character, and
 neither side's typing is lost.
 
 - **`bindText(input, handle)`** keeps the user's text in the field and sends each change
@@ -156,7 +156,9 @@ neither side's typing is lost.
   binding sends its unsent text first.
 - **`text.set(value)`** replaces the whole field as it is when the owner applies it. It
   uses a minimal edit script, so concurrent typing outside the changed span survives.
-- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`.
+- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `--base VERSION`
+  (the version you read), the set changes the field from its text at that version, so
+  typing done since is kept.
 
 ## Scalars
 

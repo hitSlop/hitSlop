@@ -76,9 +76,6 @@ pub enum Request {
         batch_json: String,
         origin: Origin,
     },
-    Text {
-        request_json: String,
-    },
     Undo {
         redo: bool,
     },
@@ -114,15 +111,12 @@ pub enum Reply {
     State {
         json: String,
     },
+    /// `version` is the document's after the change; `text` answers the page's text edit.
     Applied {
         sequence: u64,
         ids: Vec<String>,
-    },
-    Text {
-        sequence: u64,
-        authored: String,
-        selection_start: u32,
-        selection_end: u32,
+        version: String,
+        text: Option<crate::TextEdit>,
     },
     Theme {
         state: theme::ThemeState,
@@ -677,17 +671,8 @@ impl Actor {
                 Reply::Applied {
                     sequence: result.sequence,
                     ids: result.ids,
-                }
-            }
-            Request::Text { request_json } => {
-                self.mutation()?;
-                let result = self.core.edit_text(&request_json)?;
-                self.accepted(result.sequence, result.publication, false);
-                Reply::Text {
-                    sequence: result.sequence,
-                    authored: result.authored,
-                    selection_start: result.selection_start as u32,
-                    selection_end: result.selection_end as u32,
+                    version: self.core.version(),
+                    text: result.text,
                 }
             }
             Request::Undo { redo } => {
@@ -701,6 +686,8 @@ impl Actor {
                 Reply::Applied {
                     sequence: result.sequence,
                     ids: result.ids,
+                    version: self.core.version(),
+                    text: None,
                 }
             }
             Request::Theme => Reply::Theme {

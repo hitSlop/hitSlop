@@ -136,7 +136,7 @@ pub struct Publication { pub previous: u64, pub sequence: u64, pub version: Stri
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Intent {
-    Set { path: Vec<Segment>, value: Value },
+    Set { path: Vec<Segment>, value: Value, from: Option<String>, selection: Option<Selection> },
     Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor>, index: Option<usize> },
     Remove { path: Vec<Segment>, id: Option<String>, index: Option<usize>, count: Option<usize> },
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
@@ -162,7 +162,11 @@ impl Intent {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Batch { pub intents: Vec<Intent> }
+pub struct Batch { pub base: Option<String>, pub intents: Vec<Intent> }
+/// A text selection in UTF-16 offsets.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Selection { pub start: usize, pub end: usize }
 /// A shared theme file: the template it was made for and its palette.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -174,10 +178,6 @@ pub struct ThemeFile { pub template: String, pub values: std::collections::BTree
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub struct AppRow { pub packageFormat: u64, pub runtimeABI: u64, pub manifest: Box<serde_json::value::RawValue>, pub descriptor: Box<serde_json::value::RawValue>, pub initial: Box<serde_json::value::RawValue>, pub theme: Box<serde_json::value::RawValue> }
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(non_snake_case)]
-pub struct EditText { pub base: String, pub path: Vec<Segment>, pub from: String, pub to: String, pub selectionStart: usize, pub selectionEnd: usize }
 
 
 #[cfg(feature = "storage")]
@@ -196,7 +196,7 @@ pub(crate) enum SocketRequest {
     #[serde(rename = "get")]
     Get { protocol: u64, documentPath: String },
     #[serde(rename = "batch")]
-    Batch { protocol: u64, documentPath: String, ops: String },
+    Batch { protocol: u64, documentPath: String, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String> },
     #[serde(rename = "export")]
     Export { protocol: u64, documentPath: String, format: String, output: String },
 }
@@ -234,8 +234,6 @@ pub(crate) enum PageRequest {
     Open {  },
     #[serde(rename = "apply")]
     Apply { batch: String },
-    #[serde(rename = "text")]
-    Text { request: String },
     #[serde(rename = "flush")]
     Flush {  },
     #[serde(rename = "undo")]
@@ -269,7 +267,7 @@ pub(crate) enum SocketSuccess {
     #[serde(rename = "get")]
     Get { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "batch")]
-    Batch { ids: Vec<String>, sequence: u64 },
+    Batch { ids: Vec<String>, sequence: u64, version: String },
     #[serde(rename = "export")]
     Export { output: String },
     #[serde(rename = "theme.export")]

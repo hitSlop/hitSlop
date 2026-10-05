@@ -251,13 +251,15 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                     ))?,
                 }
             }
-            SocketRequest::Batch { ops, .. } => {
-                let Reply::Applied { sequence, ids } = call(
+            SocketRequest::Batch { ops, base, .. } => {
+                // `ops` was checked to be an array; the core parses the batch.
+                let batch_json = match base {
+                    Some(base) => format!("{{\"base\":{},\"intents\":{ops}}}", json!(base)),
+                    None => format!("{{\"intents\":{ops}}}"),
+                };
+                let Reply::Applied { sequence, ids, version, .. } = call(
                     owner,
-                    Request::Apply {
-                        batch_json: format!("{{\"intents\":{ops}}}"),
-                        origin: crate::Origin::Agent,
-                    },
+                    Request::Apply { batch_json, origin: crate::Origin::Agent },
                     deadline,
                 )?
                 else {
@@ -267,7 +269,7 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                 saving = true;
                 call_after(owner, Request::Flush, deadline)?;
                 saving = false;
-                SocketSuccess::Batch { ids, sequence }
+                SocketSuccess::Batch { ids, sequence, version }
             }
             SocketRequest::ThemeExport { .. } => {
                 saving = true;
@@ -353,12 +355,10 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageRep
             _ => None,
         }),
         Some(PageRequest::Apply { batch }) => (Request::Apply { batch_json: batch, origin: crate::Origin::Page }, |reply| match reply {
-            Reply::Applied { sequence, ids } => Some(json!({ "sequence": sequence, "ids": ids })),
-            _ => None,
-        }),
-        Some(PageRequest::Text { request }) => (Request::Text { request_json: request }, |reply| match reply {
-            Reply::Text { sequence, authored, selection_start, selection_end } => Some(json!({
-                "sequence": sequence, "authored": authored, "selectionStart": selection_start, "selectionEnd": selection_end,
+            Reply::Applied { sequence, ids, text: None, .. } => Some(json!({ "sequence": sequence, "ids": ids })),
+            Reply::Applied { sequence, ids, text: Some(text), .. } => Some(json!({
+                "sequence": sequence, "ids": ids, "authored": text.authored,
+                "selectionStart": text.selection[0], "selectionEnd": text.selection[1],
             })),
             _ => None,
         }),

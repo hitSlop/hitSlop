@@ -251,6 +251,7 @@ pub(super) fn execute(
     op: &Intent,
     ids: &mut Vec<String>,
     rows: &mut Rows,
+    texts: &mut text::Texts,
 ) -> Result<()> {
     let schema = &app.schema;
     match op {
@@ -258,9 +259,16 @@ pub(super) fn execute(
         Intent::ImportTheme { file } => app.theme.import(&doc.get_map(theme::ROOT), file)?,
         // Replace resolves its own path, which may be empty (the whole document).
         Intent::Replace { path, value } => replace::replace(doc, schema, path, value, ids, rows)?,
-        Intent::Set { value, .. } => {
+        Intent::Set { value, from, selection, .. } => {
             let at = resolve(doc, schema, op.path(), rows)?;
             let kind = unwrap_optional(&at.node);
+            // A text set from the batch's base merges with what changed since.
+            if matches!(kind, Node::Text {}) && at.element.is_none() && (texts.base.is_some() || from.is_some() || selection.is_some()) {
+                return text::set(doc, schema, op.path(), at, value, from.as_deref(), *selection, rows, texts);
+            }
+            if from.is_some() || selection.is_some() {
+                return Err(err(Code::TypeMismatch, "`from` and `selection` apply to text"));
+            }
             // One scalar-list element: last writer wins.
             if let Some((list, index)) = &at.element {
                 kind.validate(value, false)?;

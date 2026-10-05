@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use hitslop_core::Origin;
 mod support;
-use support::{app, isolate_registry, write_app, App};
+use support::{app, isolate_registry, type_text, write_app, App};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -169,9 +169,8 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
 
 /// Whether `doc` refuses `version` as a text base, as history before its retained start.
 fn stale(doc: &Document, version: &str) -> bool {
-    let request = json!({"base":version,"path":["title"],"from":"","to":"","selectionStart":0,"selectionEnd":0});
     let mut scratch = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
-    matches!(scratch.edit_text(&request.to_string()), Err(e) if e.code.as_str() == "stale_base")
+    matches!(type_text(&mut scratch, version, json!(["title"]), "", "", 0), Err(e) if e.code.as_str() == "stale_base")
 }
 
 /// Incompressible text of `len` letters.
@@ -379,8 +378,7 @@ fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let base = doc.version();
     doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page).unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
-    let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcX","selectionStart":4,"selectionEnd":4});
-    let result = doc.edit_text(&request.to_string()).map(|_| ());
+    let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
     save(&store, &mut doc);
     store.close().unwrap();
     let store = Store::open(&path, Mode::Document).unwrap();

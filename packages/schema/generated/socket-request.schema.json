@@ -164,6 +164,9 @@
           "type": "string",
           "minLength": 2,
           "maxLength": 1048576
+        },
+        "base": {
+          "type": "string"
         }
       },
       "additionalProperties": false

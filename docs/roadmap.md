@@ -38,6 +38,9 @@ In order, with the reasoning in [ideas](ideas.md):
 - Decide whether Time Machine copying a whole document at the current attachment limits
   is acceptable, or lower the limits for launch.
 - Confirm the platforms the CLI's engine ships for (Windows isn't planned).
+- Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
+  relies on are not on crates.io. Return to an exact crates.io version once one ships
+  them, with the corpus passing.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
@@ -93,8 +96,8 @@ anomaly handling. Collaboration means a new document layout whose containers mor
 one replica can create (optional values, record entries) merge by identity, with a
 lossless migration from layout 1, plus defined handling for states two valid replicas
 can merge into (duplicate row IDs, counters summed past the safe range). Frontier version
-tokens and stateless text edits already carry over: a page's text request names the
-history it saw, and the core merges it with what changed since. Closing a large document
+tokens and stateless text edits already carry over: a text set names the version it was
+written against, and the core merges it with what changed since. Closing a large document
 trims all history, so sync will need a retention policy compatible with offline replicas,
 and selective undo that preserves remote changes.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than

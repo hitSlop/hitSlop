@@ -77,9 +77,6 @@ pub enum OwnerRequest {
         batch_json: String,
         origin: EditOrigin,
     },
-    Text {
-        request_json: String,
-    },
     Undo {
         redo: bool,
     },
@@ -115,7 +112,6 @@ impl From<OwnerRequest> for core::Request {
                 batch_json,
                 origin: origin.into(),
             },
-            OwnerRequest::Text { request_json } => Self::Text { request_json },
             OwnerRequest::Undo { redo } => Self::Undo { redo },
             OwnerRequest::Flush => Self::Flush,
             OwnerRequest::Discard => Self::Discard,
@@ -143,12 +139,6 @@ pub enum OwnerReply {
         sequence: u64,
         ids: Vec<String>,
     },
-    Text {
-        sequence: u64,
-        authored: String,
-        selection_start: u32,
-        selection_end: u32,
-    },
     Theme {
         state: ThemeState,
         sequence: u64,
@@ -171,18 +161,7 @@ impl From<core::Reply> for OwnerReply {
         match value {
             core::Reply::Unit => Self::Unit,
             core::Reply::State { json } => Self::State { json },
-            core::Reply::Applied { sequence, ids } => Self::Applied { sequence, ids },
-            core::Reply::Text {
-                sequence,
-                authored,
-                selection_start,
-                selection_end,
-            } => Self::Text {
-                sequence,
-                authored,
-                selection_start,
-                selection_end,
-            },
+            core::Reply::Applied { sequence, ids, .. } => Self::Applied { sequence, ids },
             core::Reply::Theme { state, sequence } => Self::Theme {
                 state: ThemeState {
                     defaults: state.defaults,

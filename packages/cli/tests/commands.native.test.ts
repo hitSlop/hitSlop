@@ -29,17 +29,21 @@ test("document commands send one request and print its reply", async () => {
     // Records the request it reads and answers like an owner that accepted a batch.
     await writeFile(
       helper,
-      `#!${process.execPath}\n{ await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", ids: ["r1"], sequence: 3 })); }\n`,
+      `#!${process.execPath}\n{ await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", ids: ["r1"], sequence: 3, version: "v3" })); }\n`,
       { mode: 0o755 },
     );
     const op = '{ "type": "set", "path": ["title"], "value": "hello \\"world\\"" }';
     const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(applied.code).toBe(0);
-    expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"], sequence: 3 });
+    expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"], sequence: 3, version: "v3" });
     const { args, body } = JSON.parse(await Bun.file(sent).text());
     expect(args).toEqual([...selection, "request"]);
     // The operation reaches the core as written, inside the batch.
     expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), ops: `[${op}]` });
+    // `--base` names the version the agent read; its text sets merge from there.
+    const based = await run(["batch", "a file.slop", "--ops", `[${op}]`, "--base", "v1"], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
+    expect(based.code).toBe(0);
+    expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).base).toBe("v1");
     const data = join(root, "new data.json");
     await writeFile(data, '{"n": 1.50}');
     const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });

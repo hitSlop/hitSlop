@@ -6,7 +6,6 @@ test("page envelopes unify document and host methods with opaque core payloads",
   for (const request of [
     { method: "open" },
     { method: "apply", batch: '{"intents":[]}' },
-    { method: "text", request: "{}" },
     { method: "undo" },
     { method: "flush" },
     { method: "config" },
@@ -15,7 +14,8 @@ test("page envelopes unify document and host methods with opaque core payloads",
     expect(Check(PageRequestSchema, request)).toBe(true);
   for (const request of [
     { method: "apply", batch: {} },
-    { method: "text" },
+    // Text edits are batches: a set from the batch's base.
+    { method: "text", request: "{}" },
     { method: "config", extra: true },
   ])
     expect(Check(PageRequestSchema, request)).toBe(false);

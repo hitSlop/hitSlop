@@ -2,7 +2,7 @@
 //! are independent observations of every step.
 mod support;
 use hitslop_core::Document;
-use support::{app, View, next, snapshot};
+use support::{app, View, next, snapshot, type_text};
 use support::generate::{intent, targets, value};
 use serde_json::{json, Value};
 
@@ -16,8 +16,8 @@ fn text_fields(descriptor: &Value, current: &Value) -> Vec<(Vec<Value>, String)>
     }).map(|(_, value, path)| (path, value.as_str().unwrap().to_owned())).collect()
 }
 /// The single-writer invariant, over the edits one owner actually receives: the agent's
-/// batches (including replacement), page text clients whose edits arrive late against
-/// older versions, undo and redo. Every accepted step leaves a document whose stored state
+/// batches (including replacement, and text sets from the version it last read), page
+/// text clients whose edits arrive late against older versions, undo and redo. Every accepted step leaves a document whose stored state
 /// matches its descriptor (reopening checks it), whose publications replay to a fresh
 /// snapshot and which reopens the same; every refusal changes nothing.
 fn run(name: &str, fixture: &str) {
@@ -29,6 +29,8 @@ fn run(name: &str, fixture: &str) {
         let mut doc = Document::create(&app(&schema), &f["initial"].to_string()).unwrap();
         let mut view = View::of(&doc);
         let mut typists: Vec<Typist> = vec![];
+        // The version the agent last read; its batches' text sets merge from it.
+        let mut read: Option<String> = None;
         for step in 0..support::workload("HITSLOP_MODEL_STEPS", 150) {
             let before = snapshot(&doc);
             let n = next(&mut rng) as usize;
@@ -36,7 +38,12 @@ fn run(name: &str, fixture: &str) {
                 0..=4 => {
                     let ops: Vec<_> = (0..1 + next(&mut rng) % 3).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
                     let origin = if n % 2 == 0 { Origin::Agent } else { Origin::Page };
-                    doc.apply_batch(&json!({"intents":ops}).to_string(), origin).map(|a| a.publication)
+                    let mut batch = json!({"intents":ops});
+                    if origin == Origin::Agent {
+                        if n % 3 == 0 || read.is_none() { read = Some(before["version"].as_str().unwrap().to_owned()); }
+                        batch["base"] = json!(read);
+                    }
+                    doc.apply_batch(&batch.to_string(), origin).map(|a| a.publication)
                 }
                 5 => {
                     let mut all = vec![]; targets(&f["schema"], &before["value"], vec![], &mut all);
@@ -58,10 +65,9 @@ fn run(name: &str, fixture: &str) {
                         let typist = typists.remove(n % typists.len());
                         let to = format!("{}·{serial}", typist.text); serial += 1;
                         let caret = to.encode_utf16().count();
-                        let request = json!({"base":typist.base,"path":typist.path,"from":typist.text,"to":to,"selectionStart":caret,"selectionEnd":caret});
-                        doc.edit_text(&request.to_string()).map(|edit| {
+                        type_text(&mut doc, &typist.base, json!(typist.path), &typist.text, &to, caret).map(|edit| {
                             // A client keeps typing from the version its edit authored.
-                            typists.push(Typist { path: typist.path, base: edit.authored, text: to });
+                            typists.push(Typist { path: typist.path, base: edit.text.unwrap().authored, text: to });
                             edit.publication
                         })
                     }
@@ -124,8 +130,7 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             view.publish(&agent.publication.unwrap());
             view.check(&doc, "owner CLI batch");
             let caret = to.encode_utf16().count();
-            let typed = doc.edit_text(&json!({"base":base,"path":["text"],"from":from,"to":to,
-                "selectionStart":caret,"selectionEnd":caret}).to_string()).unwrap();
+            let typed = type_text(&mut doc, &base, json!(["text"]), from, &to, caret).unwrap();
             view.publish(&typed.publication.unwrap());
             view.check(&doc, "delayed page edit");
             assert_eq!(snapshot(&doc)["value"]["text"], format!("A{to}"));

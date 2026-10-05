@@ -11,8 +11,8 @@ The document semantics every host uses: the Swift app and helper natively, and
 - `hitslop-core-wasm`: wasm-bindgen adapter for browser development and Bun tests.
 - `slop-engine`: the CLI's file tool (`pack`, `inspect`, `schema`) on any platform.
 
-The root toolchain/lockfile pin Rust 1.96.1, Loro 1.16.2, UniFFI 0.32.2 and
-wasm-bindgen 0.2.127. Install the matching bindings generators and the test runner once
+The root toolchain/lockfile pin Rust 1.96.1, Loro main at `c00c9fa` (an exact git rev
+until crates.io publishes its fixes), UniFFI 0.32.2 and wasm-bindgen 0.2.127. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 
 ```sh

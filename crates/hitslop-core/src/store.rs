@@ -304,9 +304,7 @@ impl Store {
 
     /// The checkpoint to write as the owner closes, after its last save: a session that
     /// edited a document larger than `TRIM_BYTES` leaves no history. Undo covers the open
-    /// session only, so nothing reads it later, and a cut before the latest version would
-    /// keep, in its starting state, everything deleted before it (Loro 1.16.2). None when
-    /// nothing would shrink.
+    /// session only, so nothing reads it later. None when nothing would shrink.
     pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
         let (meta, opened) = {
             let account = lock(&self.account);

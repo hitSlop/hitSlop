@@ -173,19 +173,6 @@ impl Theme {
         Ok(encode(&ThemeFile { template: self.template.clone(), values: self.effective(map)? }) + "\n")
     }
 }
-/// Makes the overrides in `current` what `past` holds: undo and redo of a palette change.
-pub(crate) fn restore(current: &LoroMap, past: &LoroMap) -> Result<()> {
-    let (now, then) = (overrides(current)?, overrides(past)?);
-    for name in now.keys().filter(|name| !then.contains_key(*name)) {
-        current.delete(name).map_err(crate::engine)?;
-    }
-    for (name, value) in &then {
-        if now.get(name) != Some(value) {
-            current.insert(name, value.as_str()).map_err(crate::engine)?;
-        }
-    }
-    Ok(())
-}
 /// The saved overrides. Opening checks them (`Theme::check_stored`) and every write
 /// validates the complete proposed palette before touching this map.
 fn overrides(map: &LoroMap) -> Result<Values> {

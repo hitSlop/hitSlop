@@ -447,7 +447,7 @@ export class OwnerDocument<N extends ObjectNode> {
             sequence: this.store.state.sequence,
           };
         },
-        send: (request) => { this.store.assertWritable(); return this.transport.text(request); },
+        send: (batch) => { this.store.assertWritable(); return this.transport.apply(batch); },
         reached: (sequence) => this.store.reached(sequence),
         recover: () => this.store.resync(),
         readOnly: () => !!this.transport.readOnly,

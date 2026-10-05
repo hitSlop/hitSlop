@@ -66,16 +66,17 @@ export async function get(document: string, snapshot: boolean) {
   const { schema, theme, state: frame } = (await send({ method: "get", ...at(document) })).state;
   print(snapshot ? { schema, theme, state: frame } : frame.value);
 }
-/** An atomic batch. `ops` stays the text given, so numbers keep their spelling. */
-export async function batch(document: string, ops: string) {
+/** An atomic batch. `ops` stays the text given, so numbers keep their spelling. Its text
+ * sets merge from `base` when given. */
+export async function batch(document: string, ops: string, base?: string) {
   if (!Array.isArray(json(ops))) throw new Error("--ops must be a JSON array of operations");
-  const { ids, sequence } = await send({ method: "batch", ...at(document), ops });
-  print({ ids, sequence });
+  const { ids, sequence, version } = await send({ method: "batch", ...at(document), ops, ...(base === undefined ? {} : { base }) });
+  print({ ids, sequence, version });
 }
-export async function apply(document: string, op: string) {
+export async function apply(document: string, op: string, base?: string) {
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
-  await batch(document, `[${op}]`);
+  await batch(document, `[${op}]`, base);
 }
 /** One `replace`: the value at `path` (the whole document by default) becomes the file's
  * JSON. Both are spliced as written; the core parses and validates the result. */

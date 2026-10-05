@@ -402,9 +402,11 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         (json!({"view":"","method":"apply","batch":increment}), "invalid_request"),
         (json!({"method":"apply","batch":{"intents":[]}}), "invalid_request"),
         (json!({"method":"apply","batch":json!({"intents":[{"type":"increment","path":["hits"],"by":1,"extra":1}]}).to_string()}), "invalid_request"),
+        // Text edits are batches now; there is no separate text request.
         (json!({"method":"text","request":json!({"base":"x"}).to_string()}), "invalid_request"),
+        (json!({"method":"apply","batch":json!({"base":"x","intents":[]}).to_string()}), "invalid_version"),
         // The core bounds opaque document payloads in UTF-8 bytes.
-        (json!({"method":"text","request":"😀".repeat(1_048_577)}), "too_large"),
+        (json!({"method":"apply","batch":"😀".repeat(1_048_577)}), "too_large"),
     ] {
         let reply = page_json(&page(&owner, "page", &refused.to_string()));
         assert_eq!((reply["code"].as_str(), reply["reason"].as_str()), (Some("rejected"), Some(reason)), "{refused:.120}");
@@ -413,6 +415,29 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     let Reply::State { json } = call(&owner, Request::State).unwrap() else { panic!() };
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
+}
+// Failure: an agent's batch replaced text written after its `get`. Oracle: the literal
+// merged text, with the reply's version serving as the next base.
+#[test]
+fn a_based_batch_keeps_text_written_since_the_agents_read() {
+    let (_dir, path) = document();
+    let set = |title: &str, base: Option<&Value>| {
+        let mut batch = request(&path, "batch");
+        batch["ops"] = json!([{"type":"set","path":["title"],"value":title}]).to_string().into();
+        if let Some(base) = base {
+            batch["base"] = base.clone();
+        }
+        run(batch)
+    };
+    let title = || run(request(&path, "get"))["state"]["state"]["value"]["title"].clone();
+    let read = run(request(&path, "get"))["state"]["state"]["version"].clone();
+    set("Initial typed", None);
+    let reply = set("First", Some(&read));
+    assert_eq!(title(), "First typed");
+    // The reply's version holds the merged text, so the agent rewrites what it saw.
+    set("First typed!", None);
+    set("Second typed", Some(&reply["version"]));
+    assert_eq!(title(), "Second typed!");
 }
 struct Delayed(Mutex<mpsc::Sender<Arc<ExportCompletion>>>);
 impl ExportHandler for Delayed {

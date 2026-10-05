@@ -3,7 +3,7 @@ import { SocketRequestSchema, SocketSuccessSchema, SocketFailureSchema } from ".
 import { PageRequestSchema } from "../../packages/schema/src/page";
 import { ThemeChangesSchema, ThemeFileSchema } from "../../packages/schema/src/values";
 import { AppRowSchema } from "../../packages/schema/src/manifest";
-import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, OwnerPatchOpSchema as PatchOp, OwnerStateSchema, OwnerPublicationSchema } from "../../packages/schema/src/core";
+import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, SelectionSchema as Selection, TextHunkSchema as TextHunk, BatchSchema, OwnerPatchOpSchema as PatchOp, OwnerStateSchema, OwnerPublicationSchema } from "../../packages/schema/src/core";
 
 // The deliberately small generator fails on unsupported types. It generates the
 // Rust deserialization envelope; descriptor interpretation stays inside the core.
@@ -20,6 +20,8 @@ function rust(schema: any): string {
   else if (schema === ThemeChangesSchema) result = "std::collections::BTreeMap<String, Option<String>>";
   else if (schema.type === "integer") result = schema.minimum >= 0 ? "usize" : "i64";
   else if (schema.anyOf && schema.anyOf[0]?.properties?.before) result = "Anchor";
+  // `Type.Optional` copies the schema, so match the selection by its shape.
+  else if (schema.type === "object" && Object.keys(schema.properties).join() === Object.keys(Selection.properties).join()) result = "Selection";
   else if (Object.keys(schema).length === 0) result = "Value";
   else throw new Error(`Unhandled wire type: ${JSON.stringify(schema)}`);
   return optional(schema) ? `Option<${result}>` : result;
@@ -177,7 +179,15 @@ ${Object.entries(variants)
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Batch { pub intents: Vec<Intent> }
+pub struct Batch { ${Object.entries(BatchSchema.properties)
+  .map(([key, schema]) => `pub ${key}: ${key === "intents" ? "Vec<Intent>" : rust(schema)}`)
+  .join(", ")} }
+/// A text selection in UTF-16 offsets.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Selection { ${Object.entries(Selection.properties)
+  .map(([key, schema]) => `pub ${key}: ${rust(schema)}`)
+  .join(", ")} }
 /// A shared theme file: the template it was made for and its palette.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -192,12 +202,6 @@ pub struct ThemeFile { ${Object.entries(ThemeFileSchema.properties)
 #[allow(non_snake_case)]
 pub struct AppRow { ${Object.entries(AppRowSchema.properties)
   .map(([key, schema]) => `pub ${key}: ${(schema as any).type === "integer" ? "u64" : "Box<serde_json::value::RawValue>"}`)
-  .join(", ")} }
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(non_snake_case)]
-pub struct EditText { ${Object.entries(editTextFields)
-  .map(([key, schema]) => `pub ${key}: ${rust(schema)}`)
   .join(", ")} }
 
 ${socketEnum("SocketRequest", socketRequests, "Clone, Debug, Serialize, Deserialize")}

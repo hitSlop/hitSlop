@@ -1,5 +1,5 @@
 mod support;
-use support::{app, Edit, View, apply_patches, fixture, snapshot, updates_since};
+use support::{app, Edit, View, apply_patches, fixture, snapshot, type_text, updates_since};
 // Failure: the core accepts a wrong edit or publishes part of a rejected batch.
 // Oracle: literal fixtures for identity and atomicity cases, with Unicode results
 // spelled out independently.
@@ -132,11 +132,10 @@ fn owner_keeps_working_after_a_late_rejection() {
         projected.publish(reply);
         projected.check(d, "publication");
     };
-    let edit = |base: &str, from: &str, to: &str| {
-        let caret = to.encode_utf16().count();
-        json!({"base":base,"path":["title"],"from":from,"to":to,"selectionStart":caret,"selectionEnd":caret}).to_string()
+    let edit = |d: &mut Document, base: &str, from: &str, to: &str| {
+        type_text(d, base, json!(["title"]), from, to, to.encode_utf16().count()).unwrap()
     };
-    let e = d.edit_text(&edit(&v0, "abc", "abcX")).unwrap();
+    let e = edit(&mut d, &v0, "abc", "abcX");
     check(&d, &mut projected, e.publication.as_deref().unwrap());
     // Late rejection: the first intent mutated before the second failed.
     let late = r#"{"intents":[{"type":"set","path":["rows",{"id":"00000000000000000000000000000001"},"done"],"value":true},{"type":"remove","path":["rows"],"id":"missing"}]}"#;
@@ -148,9 +147,9 @@ fn owner_keeps_working_after_a_late_rejection() {
     let r = d.apply(r#"{"intents":[{"type":"move","path":["rows"],"id":"00000000000000000000000000000001"}]}"#).unwrap();
     check(&d, &mut projected, &r);
     // The page keeps typing from its authored version while the owner moved on.
-    let e = d.edit_text(&edit(&e.authored, "abcX", "abcXY")).unwrap();
+    let e = edit(&mut d, &e.text.unwrap().authored, "abcX", "abcXY");
     check(&d, &mut projected, e.publication.as_deref().unwrap());
-    let e = d.edit_text(&edit(&e.authored, "abcXY", "abcXYZ")).unwrap();
+    let e = edit(&mut d, &e.text.unwrap().authored, "abcXY", "abcXYZ");
     check(&d, &mut projected, e.publication.as_deref().unwrap());
     assert_eq!(snapshot(&d)["value"]["title"], "abcXYZ");
     // Updates saved by the rebuilt owner replay from before the rejection.

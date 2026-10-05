@@ -77,7 +77,7 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
+`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, or an agent writing from the version it read) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
 
 Scalar fields (booleans, strings, numbers, integers and enums) have a `value` for Svelte's `bind:`, which works with native inputs and with component libraries such as bits-ui. Assigning shows the value at once and saves it once the person pauses, so dragging a range or typing a date writes once. An emptied control clears an optional field. Svelte binds only to a name or a property path, so give a row's handle a name with `{@const row = doc.at(task)}` before binding its fields.
 

@@ -147,11 +147,13 @@ public struct SocketBatchRequest: Sendable {
   public var `protocol`: Int
   public var `documentPath`: String
   public var `ops`: String
+  public var `base`: String?
 
-  public init(`protocol`: Int, `documentPath`: String, `ops`: String) {
+  public init(`protocol`: Int, `documentPath`: String, `ops`: String, `base`: String? = nil) {
     self.`protocol` = `protocol`
     self.`documentPath` = `documentPath`
     self.`ops` = `ops`
+    self.`base` = `base`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
@@ -162,6 +164,12 @@ public struct SocketBatchRequest: Sendable {
     self.`documentPath` = `documentPath`
     guard let `ops` = json["ops"] as? String else { throw ContractMappingError.field("SocketBatchRequest.ops") }
     self.`ops` = `ops`
+    if let value = json["base"] {
+      guard let mapped = value as? String else { throw ContractMappingError.field("SocketBatchRequest.base") }
+      self.`base` = mapped
+    } else {
+      self.`base` = nil
+    }
   }
 
   public var json: [String: Any] {
@@ -170,6 +178,7 @@ public struct SocketBatchRequest: Sendable {
     result["protocol"] = `protocol`
     result["documentPath"] = `documentPath`
     result["ops"] = `ops`
+    if let value = `base` { result["base"] = value }
     return result
   }
 }
@@ -317,27 +326,6 @@ public struct PageApplyRequest: Sendable {
     var result: [String: Any] = [:]
     result["method"] = "apply"
     result["batch"] = `batch`
-    return result
-  }
-}
-
-public struct PageTextRequest: Sendable {
-  public var `request`: String
-
-  public init(`request`: String) {
-    self.`request` = `request`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `request` = json["request"] as? String else { throw ContractMappingError.field("PageTextRequest.request") }
-    self.`request` = `request`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["method"] = "text"
-    result["request"] = `request`
     return result
   }
 }
@@ -561,7 +549,6 @@ public struct PagePageErrorRequest: Sendable {
 public enum PageRequest: Sendable {
   case `open`(PageOpenRequest)
   case `apply`(PageApplyRequest)
-  case `text`(PageTextRequest)
   case `flush`(PageFlushRequest)
   case `undo`(PageUndoRequest)
   case `redo`(PageRedoRequest)
@@ -577,7 +564,6 @@ public enum PageRequest: Sendable {
   public enum Method: String, CaseIterable, Sendable {
     case `open` = "open"
     case `apply` = "apply"
-    case `text` = "text"
     case `flush` = "flush"
     case `undo` = "undo"
     case `redo` = "redo"
@@ -595,7 +581,6 @@ public enum PageRequest: Sendable {
     switch self {
     case .`open`: return .`open`
     case .`apply`: return .`apply`
-    case .`text`: return .`text`
     case .`flush`: return .`flush`
     case .`undo`: return .`undo`
     case .`redo`: return .`redo`
@@ -616,7 +601,6 @@ public enum PageRequest: Sendable {
     switch method {
     case .`open`: self = .`open`(try PageOpenRequest(json: json))
     case .`apply`: self = .`apply`(try PageApplyRequest(json: json))
-    case .`text`: self = .`text`(try PageTextRequest(json: json))
     case .`flush`: self = .`flush`(try PageFlushRequest(json: json))
     case .`undo`: self = .`undo`(try PageUndoRequest(json: json))
     case .`redo`: self = .`redo`(try PageRedoRequest(json: json))
@@ -635,7 +619,6 @@ public enum PageRequest: Sendable {
     switch self {
     case .`open`(let value): return value.json
     case .`apply`(let value): return value.json
-    case .`text`(let value): return value.json
     case .`flush`(let value): return value.json
     case .`undo`(let value): return value.json
     case .`redo`(let value): return value.json
@@ -1058,7 +1041,7 @@ public struct SocketFailure: Sendable {
 /// A complete reply. A success cannot be constructed without its method's result.
 public enum SocketReply: Sendable {
   case `get`(`stateJSON`: String)
-  case `batch`(`ids`: [String], `sequence`: Int)
+  case `batch`(`ids`: [String], `sequence`: Int, `version`: String)
   case `export`(`output`: String)
   case `themeExport`(`stateJSON`: String)
   case `attachmentsList`(`stateJSON`: String)
@@ -1070,8 +1053,8 @@ public enum SocketReply: Sendable {
     switch self {
     case .`get`(_):
       return ["ok": true, "method": "get"]
-    case .`batch`(let `ids`, let `sequence`):
-      return ["ok": true, "method": "batch", "ids": `ids`, "sequence": `sequence`]
+    case .`batch`(let `ids`, let `sequence`, let `version`):
+      return ["ok": true, "method": "batch", "ids": `ids`, "sequence": `sequence`, "version": `version`]
     case .`export`(let `output`):
       return ["ok": true, "method": "export", "output": `output`]
     case .`themeExport`(_):
@@ -1177,28 +1160,13 @@ public struct PageOpenResult: Sendable {
 public struct PageApplyResult: Sendable {
   public var `sequence`: Int
   public var `ids`: [String]
+  public var `authored`: String?
+  public var `selectionStart`: Int?
+  public var `selectionEnd`: Int?
 
-  public init(`sequence`: Int, `ids`: [String]) {
+  public init(`sequence`: Int, `ids`: [String], `authored`: String? = nil, `selectionStart`: Int? = nil, `selectionEnd`: Int? = nil) {
     self.`sequence` = `sequence`
     self.`ids` = `ids`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["sequence"] = `sequence`
-    result["ids"] = `ids`
-    return result
-  }
-}
-
-public struct PageTextResult: Sendable {
-  public var `sequence`: Int
-  public var `authored`: String
-  public var `selectionStart`: Int
-  public var `selectionEnd`: Int
-
-  public init(`sequence`: Int, `authored`: String, `selectionStart`: Int, `selectionEnd`: Int) {
-    self.`sequence` = `sequence`
     self.`authored` = `authored`
     self.`selectionStart` = `selectionStart`
     self.`selectionEnd` = `selectionEnd`
@@ -1207,9 +1175,10 @@ public struct PageTextResult: Sendable {
   public var json: [String: Any] {
     var result: [String: Any] = [:]
     result["sequence"] = `sequence`
-    result["authored"] = `authored`
-    result["selectionStart"] = `selectionStart`
-    result["selectionEnd"] = `selectionEnd`
+    result["ids"] = `ids`
+    if let value = `authored` { result["authored"] = value }
+    if let value = `selectionStart` { result["selectionStart"] = value }
+    if let value = `selectionEnd` { result["selectionEnd"] = value }
     return result
   }
 }
@@ -1317,7 +1286,6 @@ public struct PageWindowResizeResult: Sendable {
 public enum PageResult {
   case `open`(PageOpenResult)
   case `apply`(PageApplyResult)
-  case `text`(PageTextResult)
   case `flush`
   case `undo`(PageUndoResult)
   case `redo`(PageRedoResult)
@@ -1335,7 +1303,6 @@ public enum PageResult {
     switch self {
     case .`open`(let value): result = value.json
     case .`apply`(let value): result = value.json
-    case .`text`(let value): result = value.json
     case .`flush`: result = [:]
     case .`undo`(let value): result = value.json
     case .`redo`(let value): result = value.json

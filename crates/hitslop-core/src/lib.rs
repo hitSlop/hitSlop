@@ -262,13 +262,15 @@ struct Step {
 const UNDO_STEPS: usize = 100;
 
 /// A committed batch: its publication sequence, the IDs of inserted rows, the publication
-/// to deliver (absent when the batch changed nothing) and whether it changed the palette.
+/// to deliver (absent when the batch changed nothing), whether it changed the palette and,
+/// for the page's text edit, what the page continues from.
 #[derive(Debug)]
 pub struct Applied {
     pub sequence: u64,
     pub ids: Vec<String>,
     pub publication: Option<String>,
     pub theme_changed: bool,
+    pub text: Option<TextEdit>,
 }
 /// A published change: its JSON, and whether it changed the palette.
 struct Published {
@@ -303,16 +305,13 @@ impl AppSpec {
         self.theme.tokens()
     }
 }
-/// A stateless text edit. `authored` is the version right after this edit on its own
-/// branch; the page sends it as the next `base`. Selections are UTF-16 offsets in the
-/// merged text. A caret-only request publishes nothing.
+/// The page's text edit, a batch whose set carries `selection`. `authored` is the version
+/// right after the edit on its own branch; the page sends it as the next `base`. The
+/// selection is in UTF-16 offsets of the merged text.
 #[derive(Debug)]
 pub struct TextEdit {
-    pub sequence: u64,
     pub authored: String,
-    pub selection_start: usize,
-    pub selection_end: usize,
-    pub publication: Option<String>,
+    pub selection: [usize; 2],
 }
 
 /// Exactly one host executor owns this value. Neither binding contains semantics.
@@ -465,16 +464,28 @@ impl Document {
         if batch.intents.len() > wire::BATCH_INTENTS {
             return Err(err(Code::TooLarge, format!("Batch exceeds {} intents", wire::BATCH_INTENTS)));
         }
+        if batch.intents.len() > 1 && batch.intents.iter().any(|op| matches!(op, Intent::Set { selection: Some(_), .. })) {
+            return Err(err(Code::InvalidRequest, "A text edit with a selection is its own batch"));
+        }
+        // Every path validates the base first: an unknown operation must never reach Loro.
+        let base = match batch.base {
+            Some(token) => {
+                let (at, vv) = decode_version(&self.doc, &token)?;
+                Some(text::Base { token, at, vv })
+            }
+            None => None,
+        };
         let before = self.doc.state_frontiers();
         let mut ids = vec![];
         let mut failure = None;
-        {
+        let typed = {
             let mut rows = Rows::new(&self.lists);
+            let mut texts = text::Texts { base: base.as_ref(), floor: &self.floor, agent: origin == Origin::Agent, typed: None };
             for (index, op) in batch.intents.iter().enumerate() {
                 let result = if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
                     Err(err(Code::InvalidRequest, "The page cannot change the palette"))
                 } else {
-                    execute(&self.doc, &self.app, op, &mut ids, &mut rows)
+                    execute(&self.doc, &self.app, op, &mut ids, &mut rows, &mut texts)
                 };
                 if let Err(mut e) = result {
                     e.op_index = Some(index);
@@ -482,7 +493,8 @@ impl Document {
                     break;
                 }
             }
-        }
+            texts.typed
+        };
         if let Some(e) = failure {
             self.abort(&before)?;
             return Err(e);
@@ -493,23 +505,34 @@ impl Document {
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
         if published.is_some() {
-            let run = match (origin, batch.intents.as_slice()) {
-                (Origin::Agent, _) => Some(Run::Agent),
-                // One color set, not reset: a color panel sends one per step of a drag.
-                (Origin::Window, [Intent::SetTheme { values, replace: None | Some(false) }]) => match values.first_key_value() {
-                    Some((token, Some(_))) if values.len() == 1 => Some(Run::Color(token.clone())),
-                    _ => None,
-                },
-                _ => None,
-            };
-            let continues = run.is_some() && run == self.run;
-            self.record(before, run, continues);
+            match &typed {
+                // A merged edit ends the typing run and is its own undo step.
+                Some(typed) if origin != Origin::Agent && typed.merged => self.record(before, None, false),
+                Some(typed) if origin != Origin::Agent => {
+                    self.record_typing(before, &typed.path, &typed.from, &typed.to, typed.caret)
+                }
+                _ => {
+                    let run = match (origin, batch.intents.as_slice()) {
+                        (Origin::Agent, _) => Some(Run::Agent),
+                        // One color set, not reset: a color panel sends one per step of a drag.
+                        (Origin::Window, [Intent::SetTheme { values, replace: None | Some(false) }]) => match values.first_key_value() {
+                            Some((token, Some(_))) if values.len() == 1 => Some(Run::Color(token.clone())),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    let continues = run.is_some() && run == self.run;
+                    self.record(before, run, continues);
+                }
+            }
         }
-        Ok(Self::applied(self.sequence, ids, published))
+        // An edit applied to the live text has the batch's version as its own.
+        let text = typed.map(|typed| TextEdit { authored: typed.authored.unwrap_or_else(|| self.version()), selection: typed.selection });
+        Ok(Self::applied(self.sequence, ids, published, text))
     }
-    fn applied(sequence: u64, ids: Vec<String>, published: Option<Published>) -> Applied {
+    fn applied(sequence: u64, ids: Vec<String>, published: Option<Published>, text: Option<TextEdit>) -> Applied {
         let theme_changed = published.as_ref().is_some_and(|p| p.theme);
-        Applied { sequence, ids, publication: published.map(|p| p.json), theme_changed }
+        Applied { sequence, ids, publication: published.map(|p| p.json), theme_changed, text }
     }
     /// Reverts the person's last undo step, or reapplies the last undone one. Nothing to
     /// undo publishes nothing.
@@ -527,36 +550,27 @@ impl Document {
         };
         let Some(target) = target else {
             self.run = None;
-            return Ok(Self::applied(self.sequence, vec![], None));
+            return Ok(Self::applied(self.sequence, vec![], None, None));
         };
         let before = self.doc.state_frontiers();
-        if let Err(error) = self.restore(&target) {
-            self.abort(&before)?;
-            return Err(error);
-        }
+        // A new change that makes the document what it was at `target`. Loro applies it
+        // all or nothing, so a refusal leaves the document as it was.
+        self.doc.revert_to(&target).map_err(|e| match e {
+            loro::LoroError::SwitchToVersionBeforeShallowRoot | loro::LoroError::FrontiersNotFound(_) => {
+                err(Code::StaleBase, "That version precedes this document's retained history")
+            }
+            e => engine(e),
+        })?;
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
-        // A failed restore leaves the stacks and grouping untouched.
+        // A refused revert leaves the stacks and grouping untouched.
         if undo {
             self.redo.push(self.undo.pop_back().expect("checked"));
         } else {
             self.undo.push_back(self.redo.pop().expect("checked"));
         }
         self.run = None;
-        Ok(Self::applied(self.sequence, vec![], published))
-    }
-    /// Makes the value and palette what they were at `target` by reconciling toward that
-    /// value as `replace` does: rows by `$id`, text by edit script, order by moves. Never
-    /// Loro's `revert_to`, which panics on some movable-list histories (Loro 1.16.2; see
-    /// `tests/undo.rs`).
-    fn restore(&mut self, target: &Frontiers) -> Result<()> {
-        let past = LoroDoc::new();
-        let state = self.doc.export(ExportMode::state_only(Some(target))).map_err(|_| err(Code::StaleBase, "That version precedes this document's retained history"))?;
-        past.import(&state).map_err(engine)?;
-        let value = project(Some(&self.app.schema), raw(&past));
-        let mut rows = Rows::new(&self.lists);
-        replace::replace(&self.doc, &self.app.schema, &[], &value, &mut vec![], &mut rows)?;
-        theme::restore(&self.doc.get_map(theme::ROOT), &past.get_map(theme::ROOT))
+        Ok(Self::applied(self.sequence, vec![], published, None))
     }
     /// Records only a successfully published edit. No-op edits and refusals preserve
     /// both the current run and redo. Extending a run keeps its original before-version.
@@ -632,9 +646,8 @@ impl Document {
 }
 /// A new long-lived replica holding exactly the history up to `frontiers`, with its own
 /// peer. Built by replaying the operations from where `doc`'s history starts (a trimmed
-/// document's starting state, else nothing), never with `LoroDoc::fork_at`: a `fork_at`
-/// replica of an older version can later resolve concurrent map writes differently from
-/// a fresh one holding the same operations (reproduced with plain Loro 1.16.2).
+/// document's starting state, else nothing), because Loro does not implement
+/// `LoroDoc::fork_at` for trimmed documents.
 pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
     // Measured before any export commits pending operations; those lie outside `vv`.
     let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;

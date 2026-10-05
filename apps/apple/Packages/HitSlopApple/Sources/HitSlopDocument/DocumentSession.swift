@@ -329,13 +329,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       let method = (body["method"] as? String).flatMap(PageRequest.Method.init(rawValue:))
     else { return invalid() }
     switch method {
-    case .open, .apply, .text, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
+    case .open, .apply, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
       return servePage(body, storage: method == .attachmentsPut || method == .attachmentsRead, reply: replyHandler)
     case .config, .windowResize, .ready, .pageRecovered, .failed, .pageError: break
     }
     guard let request = PageRequest.checked(body) else { return invalid() }
     switch request {
-    case .open, .apply, .text, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
+    case .open, .apply, .flush, .undo, .redo, .attachmentsPut, .attachmentsRead:
       invalid()
     case .config:
       let page = message.webView

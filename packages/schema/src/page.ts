@@ -18,7 +18,6 @@ const text = T.String({ maxLength: ErrorTextLimit });
 const PageRequests = {
   open: Strict({ method: T.Literal("open") }),
   apply: Strict({ method: T.Literal("apply"), batch: payload }),
-  text: Strict({ method: T.Literal("text"), request: payload }),
   flush: Strict({ method: T.Literal("flush") }),
   undo: Strict({ method: T.Literal("undo") }),
   redo: Strict({ method: T.Literal("redo") }),
@@ -58,12 +57,14 @@ export const PageFailureSchema = Strict({
 export type PageFailure = Static<typeof PageFailureSchema>;
 export const PageResults = {
   open: Strict({ state: T.String() }),
-  apply: Strict({ sequence, ids: T.Array(T.String()) }),
-  text: Strict({
+  // A text edit (a batch whose set carries `selection`) also gets the version right after
+  // it on its own branch, the page's next `base`, and its selection in the merged text.
+  apply: Strict({
     sequence,
-    authored: T.String(),
-    selectionStart: sequence,
-    selectionEnd: sequence,
+    ids: T.Array(T.String()),
+    authored: T.Optional(T.String()),
+    selectionStart: T.Optional(sequence),
+    selectionEnd: T.Optional(sequence),
   }),
   flush: Strict({}),
   undo: Strict({ sequence }),

@@ -84,7 +84,8 @@
         "ok",
         "method",
         "ids",
-        "sequence"
+        "sequence",
+        "version"
       ],
       "properties": {
         "ok": {
@@ -104,6 +105,9 @@
         "sequence": {
           "type": "integer",
           "minimum": 0
+        },
+        "version": {
+          "type": "string"
         }
       },
       "additionalProperties": false

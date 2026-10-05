@@ -6,8 +6,19 @@ import { OwnerDocument } from "../src/owner/document";
 import { wasmTransport, type OwnerTransport } from "../src/owner/transport";
 import { defineDocument, s } from "@hitslop/document";
 import { Check } from "typebox/value";
-import { OwnerStateSchema, OwnerPublicationSchema, } from "@hitslop/schema/core";
+import { OwnerStateSchema, OwnerPublicationSchema, type Batch } from "@hitslop/schema/core";
 import type { PagePush } from "@hitslop/schema/page";
+/** Wraps the transport's text edits (batches whose set carries a selection); other
+ * batches pass straight through. */
+function interceptText(
+  transport: OwnerTransport,
+  wrap: (send: OwnerTransport["apply"]) => OwnerTransport["apply"],
+) {
+  const apply = transport.apply;
+  const text = wrap(apply);
+  const typed = (batch: Batch) => batch.intents.some((op) => op.type === "set" && op.selection !== undefined);
+  transport.apply = (batch) => (typed(batch) ? text(batch) : apply(batch));
+}
 const moduleURL = new URL("../../../generated/core/wasm/hitslop_core_wasm.js", import.meta.url);
 const wasm = await import(moduleURL.href);
 wasm.initSync({
@@ -373,11 +384,10 @@ test("retargeting a binding sends the old field's unsent text first", async () =
 for (const delay of [0, 20, 100]) {
   test(`text binding retains newer input across a ${delay}ms owner reply`, async () => {
     const { core, doc, transport } = await open();
-    const send = transport.text;
-    transport.text = async (request) => {
+    interceptText(transport, (send) => async (batch) => {
       if (delay) await Bun.sleep(delay);
-      return send(request);
-    };
+      return send(batch);
+    });
     const input = field();
     const binding = doc.bindText(input, doc.fields.title);
     try {
@@ -401,11 +411,10 @@ test("a concurrent whole-field set and page typing survive and undo separately",
   const input = field();
   const binding = doc.bindText(input, doc.fields.title);
   const hold = gate();
-  const send = transport.text;
-  transport.text = async (request) => {
+  interceptText(transport, (send) => async (batch) => {
     await hold.promise;
-    return send(request);
-  };
+    return send(batch);
+  });
   try {
     input.type("Hello!");
     await doc.fields.title.set("Oh Hello"); // lands while the page's request waits
@@ -498,12 +507,11 @@ for (const retarget of [false, true]) {
     const input = field();
     const binding = doc.bindText(input, doc.fields.rows.item("a").text);
     const held = gate(), entered = gate();
-    const send = transport.text;
     let first = true;
-    transport.text = async request => {
+    interceptText(transport, (send) => async (batch) => {
       if (first) { first = false; entered.release(); await held.promise; }
-      return send(request);
-    };
+      return send(batch);
+    });
     try {
       input.type("First!");
       await entered.promise;
@@ -598,7 +606,7 @@ for (const text of [false, true]) test(`an unknown ${text ? "text" : "scalar"} o
   const input = field();
   const binding = text ? doc.bindText(input, doc.fields.value as never) : undefined;
   const refused = async () => { throw new DocumentError("unknown_outcome", "connection lost"); };
-  transport.text = refused; transport.apply = refused;
+  transport.apply = refused;
   try {
     if (text) input.type("unsent draft");
     else (doc.fields.value as unknown as { value: string }).value = "unsent draft";
@@ -620,14 +628,13 @@ test("recovery confirms a lost text reply before draining newer input", async ()
   const binding = doc.bindText(input, doc.fields.value);
   const held = gate(), entered = gate();
   let calls = 0;
-  const apply = transport.apply, send = transport.text;
+  const apply = transport.apply;
   const lost = async <T>(operation: () => Promise<T>) => {
     const result = await operation();
     if (++calls === 1) { entered.release(); await held.promise; throw new DocumentError("unknown_outcome", "lost reply"); }
     return result;
   };
   transport.apply = batch => lost(() => apply(batch));
-  transport.text = request => lost(() => send(request));
   try {
     input.type("AB"); await entered.promise;
     input.type("ABC"); held.release();
@@ -675,7 +682,7 @@ test("a destroyed text binding with an unresolvable draft does not block close",
   const input = field();
   const binding = doc.bindText(input, doc.fields.value);
   const refused = async () => { throw new DocumentError("unknown_outcome", "connection lost"); };
-  transport.text = refused; transport.apply = refused;
+  transport.apply = refused;
   try {
     input.type("unsent draft");
     binding.destroy();

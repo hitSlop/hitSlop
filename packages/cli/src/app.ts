@@ -31,6 +31,13 @@ const slopFile = {
   required: true,
   description: "Path to a .slop template or document",
 } as const;
+/** The version an agent's text sets were written against. */
+const baseFlag = {
+  name: "base",
+  type: "string",
+  description:
+    "The version you read (state.version from get --snapshot) or last wrote (a batch's version). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
+} as const;
 const retrySection = {
   title: "Retries",
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
@@ -295,13 +302,16 @@ export const app = new Crust("slop", {
       (c) =>
         c
           .args(document)
-          .flags({
-            name: "op",
-            type: "string",
-            required: true,
-            description: "Operation object as JSON",
-          })
-          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op)),
+          .flags(
+            {
+              name: "op",
+              type: "string",
+              required: true,
+              description: "Operation object as JSON",
+            },
+            baseFlag,
+          )
+          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.base)),
     ),
   )
   .add(
@@ -311,13 +321,16 @@ export const app = new Crust("slop", {
       (c) =>
         c
           .args(document)
-          .flags({
-            name: "ops",
-            type: "string",
-            required: true,
-            description: "Array of operations as JSON",
-          })
-          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops)),
+          .flags(
+            {
+              name: "ops",
+              type: "string",
+              required: true,
+              description: "Array of operations as JSON",
+            },
+            baseFlag,
+          )
+          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.base)),
     ),
   )
   .add(

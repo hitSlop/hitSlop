@@ -5,7 +5,7 @@
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{json, Value};
-use support::{app, View, fixture, value};
+use support::{app, View, fixture, type_text, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";
@@ -64,8 +64,8 @@ fn rows_and_text_keep_their_identity() {
     assert_eq!((v["title"].clone(), v["rows"][1]["done"].clone()), (json!("New title"), json!(true)));
     view.check(&d, "after the replace");
     // A text field opened before the replace still edits the same text.
-    let request = json!({"base":base,"path":["rows",{"id":A},"text"],"from":"A","to":"AX","selectionStart":2,"selectionEnd":2});
-    view.publish(&d.edit_text(&request.to_string()).unwrap().publication.unwrap());
+    let typed = type_text(&mut d, &base, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
+    view.publish(&typed.publication.unwrap());
     assert_eq!(value(&d)["rows"][1]["text"], "AX");
     view.check(&d, "after typing in a kept row");
 }

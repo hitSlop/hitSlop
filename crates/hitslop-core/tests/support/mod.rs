@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 pub mod generate;
-use hitslop_core::{AppSpec, Document, Error};
+use hitslop_core::{AppSpec, Applied, Document, Error};
 use serde_json::{json, Value};
 use hitslop_core::Origin;
 /// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
@@ -81,11 +81,20 @@ pub fn updates_since(seed: &[u8], d: &Document) -> Vec<u8> {
     full.import(&d.checkpoint().unwrap()).unwrap();
     full.export(loro::ExportMode::updates(&base.oplog_vv())).unwrap()
 }
+/// The page's text edit as a batch: `path` went from `from`, its text at `base`, to `to`,
+/// with the caret at a UTF-16 offset of `to`.
+pub fn typed(base: &str, path: Value, from: &str, to: &str, caret: usize) -> String {
+    json!({"base":base,"intents":[{"type":"set","path":path,"value":to,"from":from,"selection":{"start":caret,"end":caret}}]})
+        .to_string()
+}
+/// Applies the page's text edit (`typed`).
+pub fn type_text(d: &mut Document, base: &str, path: Value, from: &str, to: &str, caret: usize) -> Result<Applied, Error> {
+    d.apply_batch(&typed(base, path, from, to, caret), Origin::Page)
+}
 /// Whether `d` still accepts `version` as a text base: a no-change edit of `["title"]`
 /// (holding `text`) from it is refused as stale or invalid otherwise.
 pub fn knows(d: &mut Document, version: &str, text: &str) -> bool {
-    let request = json!({"base":version,"path":["title"],"from":text,"to":text,"selectionStart":0,"selectionEnd":0});
-    match d.edit_text(&request.to_string()) {
+    match type_text(d, version, json!(["title"]), text, text, 0) {
         Ok(_) => true,
         Err(e) => {
             assert!(["stale_base", "invalid_version"].contains(&e.code.as_str()), "{}", e.code.as_str());

@@ -151,7 +151,9 @@ state and its descriptor never part. The app declares the descriptor it was buil
 shell refuses to mount an app on a document of another: key order never matters. Schema evolution is deferred.
 
 The native page protocol has one request/reply envelope for document edits and host
-services. TypeBox owns it in `@hitslop/schema/page`; core payloads are in
+services. Text edits are batches: a binding's `apply` names its `base` and a `set` with
+`from` and `selection`, and the reply adds `authored` and the merged selection
+([architecture](../architecture.md#text)). TypeBox owns it in `@hitslop/schema/page`; core payloads are in
 `@hitslop/schema/core`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies lifecycle identity after checking the sender.
 The host enters the shell through `__slop` for publications, capture and lifecycle.

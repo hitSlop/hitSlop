@@ -258,22 +258,25 @@ code. Refactoring adapters raises no format or ABI marker.
 ## Publication artifact
 
 Publishing is a new native owner operation. It writes a new file and never mutates the
-original. Send File keeps today's SQLite-backup copy.
+original. Send File and Duplicate use the same operation
+([clean copies](sqlite-format-review.md#1-clean-copies)), so no copy that leaves the
+owner carries history or removed attachments; only captures keep the plain backup.
 
 - **State without history.** Export a checkpoint at the latest frontiers
   (`state_only` or a shallow snapshot there). Only a cut before the latest version
   keeps deleted content in its base state (see `Store::close_job`).
 - **Attachments that are still referenced.** Nothing deletes from `attachments` today,
   so a whole-file copy carries every attachment ever added, including removed ones.
-  - v1 rule: include an attachment only when its ID (64 hex characters,
+  - Rule: include an attachment only when its ID (64 hex characters,
     `AttachmentIdPattern`) appears inside any string in the current state, including
     within longer text such as markdown. The scan reads materialized values, not
-    bytes.
+    bytes. Close-time reclamation uses the same
+    [attachment scan](sqlite-format-review.md#attachment-scan).
   - A false inclusion would need the exact SHA-256 of a stored attachment. An app that
     stores a transformed ID loses that image in the recipient's copy, which breaks
     the image but leaks nothing.
-  - A typed attachment descriptor kind is the lasting fix. It needs Rust, the SDK and
-    a fixture first, and existing apps would still need the scan.
+  - A typed attachment descriptor kind would miss IDs inside text, and existing apps
+    would still need the scan; it is an authoring feature, not a prerequisite.
 - **Artwork** is rendered for the published state, not taken from the close-time
   artwork.
 - **Checks.** The artifact must pass every open check, or publishing is refused with a

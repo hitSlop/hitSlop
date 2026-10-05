@@ -24,11 +24,13 @@ metadata, not npm availability; see [releasing](releasing.md).
 
 ## Operations
 
-`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids, sequence}`: `ids` lists inserted row IDs, and `slop get` prints the value.
+`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids, sequence, version}`: `ids` lists inserted row IDs, `version` is the document's version after the edit, and `slop get` prints the value.
+
+Both take `--base VERSION`, the version you read (`state.version` from `slop get --snapshot`) or last wrote (a batch's `version`). Text `set`s in the batch then change each field from its text at that version and merge with edits made since, such as typing in an open window, instead of replacing them. Pass it whenever you rewrite text you read. Without it, a text `set` replaces the field as it is when the owner applies it. Other operations are unaffected.
 
 | Operation | Shape | Targets |
 | --- | --- | --- |
-| `set` | `{"type":"set","path":[...],"value":v}` | Scalars (within their bounds), optional values and objects, whole text fields (the text as it is when the owner applies it), record entries (`[...,"key"]` creates or replaces), scalar list elements (`[...,{"index":n}]`) and whole scalar lists |
+| `set` | `{"type":"set","path":[...],"value":v}` | Scalars (within their bounds), optional values and objects, whole text fields (from `--base`, else the text as it is when the owner applies it), record entries (`[...,"key"]` creates or replaces), scalar list elements (`[...,{"index":n}]`) and whole scalar lists |
 | `clear` | `{"type":"clear","path":[...]}` | Optional fields and record entries; clearing an unset one does nothing |
 | `insert` | `{"type":"insert","path":[...],"value":v,"id":"optional","at":{"after":"$id"}}` | Object-row lists; supply `id` for an insert you may retry |
 | `insert` | `{"type":"insert","path":[...],"value":v,"index":0}` | Scalar lists; omit `index` to append |

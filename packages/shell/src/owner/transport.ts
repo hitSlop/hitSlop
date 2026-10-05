@@ -1,5 +1,5 @@
 import { CoreErrorCodes } from "@hitslop/schema/constants";
-import type { Batch, CoreErrorCode, EditText, OwnerState } from "@hitslop/schema/core";
+import type { Batch, CoreErrorCode, OwnerState } from "@hitslop/schema/core";
 import type { PagePush, PageResult } from "@hitslop/schema/page";
 import { DocumentError } from "@hitslop/document/internal";
 import { call } from "../bridge";
@@ -9,7 +9,6 @@ export interface OwnerTransport {
   readonly readOnly: boolean;
   open(): Promise<OwnerState>;
   apply(batch: Batch): Promise<PageResult<"apply">>;
-  text(request: EditText): Promise<PageResult<"text">>;
   flush(): Promise<void>;
   undo(): Promise<PageResult<"undo">>;
   redo(): Promise<PageResult<"redo">>;
@@ -26,7 +25,6 @@ export function nativeTransport(
     readOnly,
     open: async () => JSON.parse((await call({ method: "open" })).state),
     apply: (batch) => call({ method: "apply", batch: JSON.stringify(batch) }),
-    text: (request) => call({ method: "text", request: JSON.stringify(request) }),
     flush: async () => {
       await call({ method: "flush" });
     },
@@ -92,17 +90,13 @@ export function wasmTransport(core: any): OwnerTransport {
     readOnly: false,
     open: async () => JSON.parse(core.state()),
     apply: async (batch) => {
-      const applied = execute(() => core.applyBatch(JSON.stringify(batch)));
-      return { sequence: applied.sequence, ids: [...applied.ids] };
-    },
-    text: async (request) => {
-      const edit = execute(() => core.editText(JSON.stringify(request)));
-      return {
-        sequence: edit.sequence,
-        authored: edit.authored,
-        selectionStart: edit.selectionStart,
-        selectionEnd: edit.selectionEnd,
-      };
+      const { sequence, ids, authored, selectionStart, selectionEnd } = execute(() =>
+        core.applyBatch(JSON.stringify(batch)),
+      );
+      // A text edit's reply also carries what the page continues from.
+      return authored === undefined
+        ? { sequence, ids: [...ids] }
+        : { sequence, ids: [...ids], authored, selectionStart, selectionEnd };
     },
     flush: async () => {},
     undo: async () => {

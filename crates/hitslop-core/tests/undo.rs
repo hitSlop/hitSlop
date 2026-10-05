@@ -6,7 +6,7 @@
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{json, Value};
-use support::{app, View, fixture, value};
+use support::{app, View, fixture, type_text, value};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {
@@ -49,12 +49,11 @@ impl Field {
         Self { path, base: d.version(), text: text.into() }
     }
     fn edit(&mut self, d: &mut Document, view: &mut View, to: &str, caret: usize) {
-        let request = json!({"base":self.base,"path":self.path,"from":self.text,"to":to,"selectionStart":caret,"selectionEnd":caret});
-        let reply = d.edit_text(&request.to_string()).unwrap();
+        let reply = type_text(d, &self.base, self.path.clone(), &self.text, to, caret).unwrap();
         if let Some(publication) = reply.publication {
             view.publish(&publication);
         }
-        self.base = reply.authored;
+        self.base = reply.text.unwrap().authored;
         self.text = to.into();
     }
 }
@@ -379,7 +378,7 @@ fn noops_and_refusals_preserve_runs_and_redo_but_new_edits_clear_redo() {
 // Failure: Loro 1.16.2's `revert_to` panicked (an out-of-bounds movable-list delta)
 // redoing an agent's step that inserted rows before others and moved one, after the
 // earlier rows were removed; the owner then refused every call until reloaded. Found by
-// the single-owner model. Undo and redo now reconcile toward the earlier value.
+// the single-owner model; fixed in Loro main (cdbc239), which undo now uses.
 #[test]
 fn redoing_inserted_and_moved_rows_after_a_removal_restores_them() {
     let (mut d, mut view) = setup();

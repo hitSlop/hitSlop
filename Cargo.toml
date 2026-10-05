@@ -7,7 +7,9 @@ edition = "2021"
 publish = false
 
 [workspace.dependencies]
-loro = "=1.16.2"
+# Loro main: its fixes (revert_to, malformed-import errors, smaller snapshots) are not on
+# crates.io yet. An exact rev; return to `=1.16.x` once one is published.
+loro = { git = "https://github.com/loro-dev/loro", rev = "c00c9fa501f8d32f68d6255eacb7035a67fb6ab6" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
