@@ -42,12 +42,10 @@ pub enum Envelope {
     PageRequest,
 }
 
-/// The largest envelope is an attachment upload (16 MiB on the socket, less on the
-/// bridge); anything bigger is refused before parsing.
-const MAX_BYTES: usize = 48 * 1024 * 1024;
-
+/// Whether `json` is a well-formed envelope of `kind`. The largest is an attachment upload
+/// on the socket; anything bigger is refused before parsing.
 pub fn is_valid(kind: Envelope, json: &[u8]) -> bool {
-    if json.len() > MAX_BYTES {
+    if json.len() > crate::wire::SOCKET_ATTACHMENT {
         return false;
     }
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(json) else {

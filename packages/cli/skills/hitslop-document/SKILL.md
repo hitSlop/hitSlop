@@ -14,7 +14,7 @@ Read schema first. Supported types are text, boolean, string, number, integer, e
 Never open a .slop file with SQLite or another tool, and never keep a JSON copy of a document. The CLI routes to the live host or acquires exclusive ownership when closed.
 A failed transport can have an unknown outcome. Run slop get before issuing another edit; never automatically replay a mutation.
 
-get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export captures the live selected view when open and the initial view when closed; export never replaces the document it renders.
+get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export captures the live selected view when open and the initial view when closed. Every export (native, theme and attachment) refuses an existing destination; to export again, remove the old file first.
 
 A theme is a palette of declared colors. Use `slop theme get PATH` to inspect the
 template's colors, the document's changes and the effective palette. Change declared
@@ -33,8 +33,8 @@ Use `slop attachments list PATH`, `slop attachments import PATH FILE`, and
 `slop attachments export PATH ID --output FILE`. Import returns a reference with
 id/name/mimeType/byteLength; store it in the app schema through apply/batch.
 Never write attachments into the file yourself. Limits are 10 MiB per file, 100 MiB and
-256 unique files per document. Removing a reference retains its blob. Export
-refuses existing destinations. Inspect attachments after an uncertain import.
+256 unique files per document. Removing a reference retains its blob. Inspect
+attachments after an uncertain import.
 
 The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
 Catch semantic refusals with `isRejected(error)` and other document outcomes with

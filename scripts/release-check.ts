@@ -1,13 +1,10 @@
 /** One release gate and a retained report, including failed stages. Does not publish. */
 import { mkdir, writeFile } from "node:fs/promises";
+import { exec, run } from "../packages/cli/src/process";
 const directory = ".hitslop/evidence";
 await mkdir(directory, { recursive: true });
-const git = Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" });
-const commit = (await new Response(git.stdout).text()).trim();
-if (await git.exited) throw new Error("Cannot identify release commit");
-const status = Bun.spawn(["git", "status", "--porcelain"], { stdout: "pipe" });
-const dirty = (await new Response(status.stdout).text()).trim().length > 0;
-if (await status.exited) throw new Error("Cannot identify working tree state");
+const commit = (await run(["git", "rev-parse", "HEAD"], { failure: "Cannot identify release commit" })).trim();
+const dirty = (await run(["git", "status", "--porcelain"], { failure: "Cannot identify working tree state" })).trim().length > 0;
 const report: Record<string, unknown> = {
   commit,
   dirty,
@@ -45,11 +42,7 @@ try {
     ...(process.argv.includes("--skip-app") ? [] : ["apple:build", "test:native-crash"]),
   ]) {
     const start = performance.now();
-    const child = Bun.spawn([process.execPath, "run", ...command.split(" ")], {
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    const code = await child.exited;
+    const { code } = await exec([process.execPath, "run", ...command.split(" ")], { inherit: ["stdout", "stderr"] });
     stages.push({ command, code, seconds: (performance.now() - start) / 1000 });
     if (code) throw new Error(`Release stage failed: ${command}`);
   }

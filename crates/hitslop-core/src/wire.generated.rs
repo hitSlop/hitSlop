@@ -50,7 +50,7 @@ pub const STORAGE_ROWS: usize = 4096;
 /// An app: its manifest and its descriptor or initial values, in bytes, and its longest
 /// asset path; one asset's bytes, the asset count and their total bytes; and the largest
 /// image it may carry, per side and in pixels.
-#[cfg(feature = "schema-validation")]
+#[cfg(feature = "storage")]
 pub(crate) const MANIFEST_BYTES: usize = 65536;
 pub(crate) const APP_TEXT_BYTES: usize = 4194304;
 #[cfg(feature = "storage")]
@@ -72,6 +72,9 @@ pub(crate) const SHAPE_VIEW_BOX: f64 = 16384.0;
 pub(crate) const BATCH_INTENTS: usize = 1000;
 pub(crate) const PATH_SEGMENTS: usize = 64;
 pub(crate) const PAGE_PAYLOAD: usize = 4194304;
+/// The largest socket request, an attachment upload; no envelope the core checks is larger.
+#[cfg(feature = "storage")]
+pub(crate) const SOCKET_ATTACHMENT: usize = 16777216;
 /// An attachment's identity: the SHA-256 of its bytes, in lowercase hex.
 #[cfg(feature = "storage")]
 pub(crate) fn valid_attachment_id(id: &str) -> bool {

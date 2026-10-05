@@ -20,25 +20,17 @@ final class StorageHold: @unchecked Sendable {
 @Suite(.serialized) struct PersistenceSchedulingTests {
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
-  func fixture() throws -> URL {
-    let stage = try Fixtures.stage()
-    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: Fixtures.repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
-    try Fixtures.updateApp(stage) { app in
-      app["descriptor"] = spec["schema"]
-      app["initial"] = spec["initial"]
-    }
-    return try Fixtures.document(stage: stage)
-  }
+  func fixture() throws -> URL { try Fixtures.checklistDocument() }
 
   /// The saved value, read without the owner (snapshot mode takes no lock).
   func savedHits(_ root: URL) throws -> Int? {
     let core = try NativeStore.open(path: root.path, mode: .snapshot).document()
-    let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
+    let frame = try Fixtures.object(core.state())
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
   /// The owner's live value.
   func liveHits(_ owner: DocumentOwner) async throws -> Int? {
-    let frame = try JSONSerialization.jsonObject(with: Data(try await owner.state().utf8)) as! [String: Any]
+    let frame = try Fixtures.object(await owner.state())
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
 
@@ -68,7 +60,7 @@ final class StorageHold: @unchecked Sendable {
       return (reply.code, reply.error)
     }
     // Accepted, and waiting for its save.
-    while try await liveHits(owner) != 3 { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(try await eventually(timeout: .seconds(5)) { try await liveHits(owner) == 3 })
     let discarding = Task { try await owner.discardPending() }
     // Discard rejects the socket's flush before its reload waits for the held queue.
     let (code, error) = try await reply.value
@@ -145,7 +137,7 @@ final class StorageHold: @unchecked Sendable {
     try await edit(owner)
     let hold = StorageHold(owner)
     let closing = Task { try await owner.close() }
-    while (try? await edit(owner)) != nil { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(await eventually(timeout: .seconds(5)) { (try? await edit(owner)) == nil })
     #expect(Fixtures.isLocked(root))
     hold.release()
     try await closing.value
@@ -159,7 +151,7 @@ final class StorageHold: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
-    let states = Locked<[UndoAvailability]>([])
+    let states = Locked<[UndoState]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     _ = try await owner.apply(batch: increment)
     _ = try await owner.apply(batch: increment, origin: .page)
@@ -171,8 +163,8 @@ final class StorageHold: @unchecked Sendable {
     _ = try await owner.undo()
     try await owner.flush()
     #expect(try savedHits(root) == 0, "the agent's edit is undone too")
-    #expect(states.value == [UndoAvailability(canUndo: true, canRedo: false), UndoAvailability(canUndo: true, canRedo: true),
-      UndoAvailability(canUndo: false, canRedo: true)])
+    #expect(states.value == [UndoState(canUndo: true, canRedo: false), UndoState(canUndo: true, canRedo: true),
+      UndoState(canUndo: false, canRedo: true)])
     try await owner.close()
   }
 
@@ -185,7 +177,7 @@ final class StorageHold: @unchecked Sendable {
     _ = try await agent.apply(batch: increment)
     try await agent.close()
     let owner = try DocumentOwner(url: root)
-    let states = Locked<[UndoAvailability]>([])
+    let states = Locked<[UndoState]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     owner.publishUndoState()
     _ = try await owner.undo()
@@ -316,7 +308,7 @@ extension PersistenceSchedulingTests {
     let discarding = Task { try await owner.discardPending() }
     while true {
       let refused: Bool = await withCheckedContinuation { continuation in
-        owner.enqueuePage(.flush, view: "page") { result in
+        owner.enqueuePage(.flush(PageFlushRequest()), view: "page") { result in
           if case .failure(let error) = result { continuation.resume(returning: error is OwnerReplaced) }
           else { continuation.resume(returning: false) }
         }

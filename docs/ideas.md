@@ -95,10 +95,10 @@ a person and their agent edit the same live document. What's missing is the slop
   Rust checks that the change is additive, and the document keeps its Loro state.
 - **Why:** remixing is a dead end if every schema change strands existing data.
 - **Builds on:** preserve-and-flag (merged anomalies are kept and reported, never
-  repaired), which already keeps unexpected values safe; saved state compared with its
-  descriptor by meaning (`same_schema`), so "additive" is a comparison of two parsed
-  descriptors; and the [compatibility](engineering-contract.md#compatibility) markers
-  and corpus.
+  repaired), which already keeps unexpected values safe; saved state stored with its
+  app row, so replacing the row compares the old and new parsed descriptors in the same
+  commit; and the [compatibility](engineering-contract.md#compatibility) markers and
+  corpus.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
   they were created with. This is the one deferral worth pulling forward.
 
@@ -129,8 +129,9 @@ a person and their agent edit the same live document. What's missing is the slop
   kanban board, or as a printable sheet. Translating between different schemas (lenses, as
   in Ink & Switch's Cambria) can come later, if ever.
 - **Why:** data should outlive any one interface.
-- **Builds on:** the saved descriptor, compared by meaning
-  ([runtime reference](reference/runtime.md#schema-identity)).
+- **Builds on:** the descriptor in each document's app row
+  ([runtime reference](reference/runtime.md#schema-identity)), which the core parses, so
+  two apps' descriptors compare by meaning.
 - **Contract change:** a document bundles its app today; the app would be chosen when the
   document opens.
 

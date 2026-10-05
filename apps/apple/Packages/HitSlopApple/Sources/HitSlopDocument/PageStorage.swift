@@ -22,8 +22,7 @@ extension DocumentSession {
         case .attachmentsRead(let r):
           result = .attachmentsRead(.init(bytes: try await owner.readAttachment(r.attachmentID)))
         case .attachmentsPut(let r):
-          let stored = try await owner.putAttachment(base64: r.bytes, view: view)
-          result = .attachmentsPut(.init(id: stored.id, byteLength: stored.byteLength))
+          result = .attachmentsPut(try await owner.putAttachment(base64: r.bytes, view: view))
         default: throw OwnerError.rejected("Unsupported storage request")
         }
         reply(result.json, nil)
@@ -35,8 +34,7 @@ extension DocumentSession {
           if !SlopFailureContext.isCancellation(error) {
             let diagnostic = SlopFailureContext.classify(error)
             if let self {
-              self.delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown || error is SlopError
-                ? .init(reason: .storage) : diagnostic)
+              self.delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown ? .init(reason: .storage) : diagnostic)
             }
           }
         case .rejected, .replaced, .closing, .invalidated: break

@@ -1,12 +1,11 @@
 use super::*;
-pub(super) const ALPHABET: &[u8] = crate::wire::ID_ALPHABET;
 fn fnv(text: &str) -> u64 {
     text.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
 }
 pub(super) fn derived(internal: &str) -> String {
     let mut bits = (u128::from(fnv(internal)) << 64) | u128::from(fnv(&format!("hitslop:{internal}")));
     let mut out = String::from("x-");
-    for _ in 0..24 { out.push(ALPHABET[(bits & 31) as usize] as char); bits >>= 5; }
+    for _ in 0..24 { out.push(wire::ID_ALPHABET[(bits & 31) as usize] as char); bits >>= 5; }
     out
 }
 /// A row's stored `$id`, when it is a valid application ID.

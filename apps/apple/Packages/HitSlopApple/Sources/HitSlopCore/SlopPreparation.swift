@@ -3,9 +3,13 @@ import Foundation
 /// Bounded blocking work (filesystem, SQLite opening, synchronous engine setup)
 /// runs here, outside both the UI actor and Swift's cooperative thread pool.
 public enum SlopPreparation {
-  private static let queue = DispatchQueue(label: "com.hitslop.preparation", qos: .userInitiated)
+  /// Opening documents, at the priority of a person waiting for a window.
+  public static let documents = DispatchQueue(label: "com.hitslop.preparation", qos: .userInitiated)
+  /// The catalog's file work, away from document opening.
+  public static let catalog = DispatchQueue(label: "hitslop.catalog", qos: .utility)
 
-  public static func run<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+  /// Runs `work` on `queue`, off the main actor.
+  public static func run<T: Sendable>(on queue: DispatchQueue = documents, _ work: @escaping @Sendable () throws -> T) async throws -> T {
     try Task.checkCancellation()
     // Always deliver resources produced by work, even after cancellation. The
     // caller owns disposing them before propagating cancellation.

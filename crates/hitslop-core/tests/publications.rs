@@ -3,15 +3,9 @@
 // snapshots, with literal outcomes covered by conformance.rs.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View};
+use support::{Edit, View, fixture, next};
 use serde_json::{json, Value};
 use hitslop_core::Origin;
-fn next(rng: &mut u64) -> u64 {
-    *rng ^= *rng << 13;
-    *rng ^= *rng >> 7;
-    *rng ^= *rng << 17;
-    *rng
-}
 fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
     let view: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
     let rows = view["value"]["rows"].as_array().unwrap();
@@ -45,7 +39,7 @@ fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
 }
 #[test]
 fn seeded_local_and_remote_steps() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
+    let f: Value = fixture("checklist");
     let schema = f["schema"].to_string();
     let mut rng = 0x5eeda11u64;
     let mut id = 100u64;
@@ -76,7 +70,7 @@ fn seeded_local_and_remote_steps() {
 }
 #[test]
 fn merged_duplicate_ids_publish_exactly_and_stay_flagged() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
+    let f: Value = fixture("checklist");
     let schema = f["schema"].to_string();
     let mut a = Document::create(&schema, &f["initial"].to_string()).unwrap();
     let mut b = Document::open(&schema, &a.checkpoint().unwrap(), &[]).unwrap();
@@ -118,7 +112,7 @@ fn merged_duplicate_ids_publish_exactly_and_stay_flagged() {
 // dirty. Oracle: no publication and an unchanged sequence and version.
 #[test]
 fn a_batch_that_changes_nothing_publishes_nothing() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
+    let f: Value = fixture("checklist");
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let (sequence, version) = (d.sequence(), d.version());
     let applied = d.apply_batch(r#"{"intents":[]}"#, Origin::Page).unwrap();
@@ -131,7 +125,7 @@ fn a_batch_that_changes_nothing_publishes_nothing() {
 // creates an anomaly carries the complete list, addressed by row ID.
 #[test]
 fn issues_are_republished_only_when_they_change() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap();
+    let f: Value = fixture("checklist");
     let schema = f["schema"].to_string();
     let mut a = Document::create(&schema, &f["initial"].to_string()).unwrap();
     let mut b = Document::open(&schema, &a.checkpoint().unwrap(), &[]).unwrap();

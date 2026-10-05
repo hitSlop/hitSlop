@@ -5,6 +5,7 @@ import { fileDigest, repository, verifyShellCopies } from "./runtime-artifacts";
 import { releases } from "./compat";
 import { verifyCandidate, verifyCorpus } from "./compat-integrity";
 import { enginePlatforms } from "./core-build";
+import { exec, run } from "../packages/cli/src/process";
 
 const project = await readFile(join(repository, "apps/apple/project.yml"), "utf8");
 const version = project.match(/MARKETING_VERSION: "([^"]+)"/)?.[1];
@@ -38,20 +39,16 @@ for (const name of ["schema", "document", "cli"]) {
 // The published CLI carries the file engine for every supported platform, each built from
 // the producing candidate's commit and core.
 const cliPackage = join(output, `hitslop-cli-${packageVersions.cli}.tgz`);
-const listing = Bun.spawn(["/usr/bin/tar", "-tzf", cliPackage], { stdout: "pipe" });
-const packed = await new Response(listing.stdout).text();
-if (await listing.exited) throw new Error("Cannot list the CLI package");
+const packed = await run(["/usr/bin/tar", "-tzf", cliPackage], { failure: "Cannot list the CLI package" });
 for (const platform of enginePlatforms) {
   if (!packed.includes(`package/engine/${platform}/slop-engine`))
     throw new Error(`The CLI package has no file engine for ${platform}; capture with the engines workflow's artifacts in generated/engines`);
-  const read = Bun.spawn(["/usr/bin/tar", "-xOzf", cliPackage, `package/engine/${platform}/engine.json`], { stdout: "pipe" });
-  const recorded = JSON.parse((await new Response(read.stdout).text()) || "{}");
-  if ((await read.exited) || recorded.commit !== entry.release.commit || recorded.buildId !== entry.release.producer.coreBuildID)
+  const read = await exec(["/usr/bin/tar", "-xOzf", cliPackage, `package/engine/${platform}/engine.json`]);
+  const recorded = JSON.parse(read.stdout || "{}");
+  if (read.code || recorded.commit !== entry.release.commit || recorded.buildId !== entry.release.producer.coreBuildID)
     throw new Error(`The CLI package's ${platform} engine was not built from the release candidate (${entry.release.commit}, core ${entry.release.producer.coreBuildID})`);
 }
-const git = Bun.spawn(["git", "rev-parse", "HEAD"], { cwd: repository, stdout: "pipe" });
-const commit = (await new Response(git.stdout).text()).trim();
-if (await git.exited) throw new Error("Cannot identify release commit");
+const commit = (await run(["git", "rev-parse", "HEAD"], { cwd: repository, failure: "Cannot identify release commit" })).trim();
 const hashes: Record<string, string> = {};
 for (const file of retained) hashes[file] = await fileDigest(join(output, file));
 await writeFile(join(output, "release-record.json"), JSON.stringify({ commit, tag: process.env.GITHUB_REF_NAME, macVersion: version, macBuild: build, packageVersions, shell, artifacts: hashes }, null, 2) + "\n");

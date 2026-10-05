@@ -23,9 +23,7 @@ extension HostTests {
       arguments: [:], in: nil, contentWorld: .page)
     // An issue that leaves the slop running shows as the badge, not a blocking sheet,
     // and a CLI edit leaves it until the person dismisses it.
-    for _ in 0..<40 where controller.issueBadge == nil {
-      try await Task.sleep(for: .milliseconds(25))
-    }
+    await eventually(timeout: .seconds(1)) { controller.issueBadge != nil }
     let badge = try #require(controller.issueBadge)
     #expect(controller.window?.attachedSheet == nil)
     #expect(try await command("batch", url: root, setTitle("Preserved through interface reload")).ok)
@@ -121,7 +119,7 @@ extension HostTests {
     #expect(try await command("batch", url: root, setTitle("Committed before renderer death")).ok)
     let pid = try #require(engine.webView.value(forKey: "_webProcessIdentifier") as? Int32)
     #expect(Darwin.kill(pid, SIGKILL) == 0)
-    for _ in 0..<200 where !engine.rendererDead { try await Task.sleep(for: .milliseconds(25)) }
+    await eventually(timeout: .seconds(5)) { engine.rendererDead }
     #expect(engine.rendererDead)
     #expect(try liveDiscovery(path: root.path) != nil)
     #expect(Fixtures.isLocked(root))
@@ -224,9 +222,7 @@ extension HostTests {
       controller.session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
     #expect(pid > 0)
     if pid > 0 { #expect(Darwin.kill(pid, SIGKILL) == 0) }
-    for _ in 0..<100 where !controller.session.rendererDead {
-      try await Task.sleep(for: .milliseconds(30))
-    }
+    await eventually(timeout: .seconds(3)) { controller.session.rendererDead }
     #expect(controller.session.rendererDead)
     try await controller.prepareToClose()
     try await controller.session.close()

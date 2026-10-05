@@ -724,7 +724,7 @@ private func catalogImageKey(_ artwork: CatalogArtwork, maxPixelSize: Int) -> NS
     if let cached = catalogImages.object(forKey: key) { return cached }
     let (file, name) = (artwork.file, artwork.name)
     let decoded = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-        guard let png = SlopArtwork.png(file, name == .icon ? .icon : .preview),
+        guard let png = SlopArtwork.png(file, name),
               let source = CGImageSourceCreateWithData(png as CFData, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,

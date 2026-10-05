@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
+import HitSlopCoreBinding
 import ImageIO
-import SQLite3
 import Testing
 import HitSlopTestSupport
 @testable import HitSlopCore
@@ -26,7 +26,7 @@ import HitSlopTestSupport
     try FileManager.default.copyItem(at: document, to: renamed)
     #expect(throws: SlopError.self) { _ = try SlopFile(url: renamed) }
     let foreign = folder.appendingPathComponent("foreign.slop")
-    try sql(foreign, "CREATE TABLE t(x)")
+    try Fixtures.sql(foreign, "CREATE TABLE t(x)")
     #expect(throws: SlopError.self) { _ = try SlopFile(url: foreign) }
 }
 
@@ -42,7 +42,7 @@ import HitSlopTestSupport
     defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
     let document = template.deletingLastPathComponent().appendingPathComponent("document.slop")
     try SlopFile.create(from: template, to: document)
-    for (url, kind) in [(template, SlopFile.Kind.template), (document, .document)] {
+    for (url, kind) in [(template, FileKind.template), (document, .document)] {
         let file = try SlopFile(url: url)
         #expect(file.kind == kind)
         #expect(file.manifest.categories == [.productivity, .other])
@@ -68,7 +68,7 @@ import HitSlopTestSupport
 @Test func aNewerFileAsksForAnUpdate() throws {
     let document = try Fixtures.document(stage: stage())
     defer { try? FileManager.default.removeItem(at: document) }
-    try sql(document, "UPDATE app SET runtime_abi = \(RuntimeABI.level + 1)")
+    try Fixtures.sql(document, "UPDATE app SET runtime_abi = \(RuntimeABI.level + 1)")
     #expect(throws: SlopRequiresUpdate.self) { _ = try SlopFile(url: document) }
     #expect(SlopFailureContext.classify(SlopRequiresUpdate()).reason == .requiresUpdate)
 }
@@ -96,18 +96,5 @@ private func stage(skin: Bool = false) throws -> URL {
 }
 
 private func writeSkin(to url: URL, width: Int, height: Int) throws {
-    let bytes = Data(repeating: 255, count: width * height * 4)
-    guard let provider = CGDataProvider(data: bytes as CFData),
-          let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
-          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { throw SlopError.invalid("could not create test skin") }
-    CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { throw SlopError.invalid("could not write test skin") }
-}
-
-/// Runs one statement on `url` outside the core, as a damaged or foreign writer would.
-private func sql(_ url: URL, _ statement: String) throws {
-    var db: OpaquePointer?
-    defer { sqlite3_close(db) }
-    guard sqlite3_open(url.path, &db) == SQLITE_OK, sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK
-    else { throw SlopError.invalid(String(cString: sqlite3_errmsg(db))) }
+    try Fixtures.png(width: width, height: height) { _, _ in 255 }.write(to: url)
 }

@@ -1,3 +1,4 @@
+import type { Anchor } from "@hitslop/schema/core";
 import type {
   CounterNode,
   Input,
@@ -14,7 +15,7 @@ import type {
 
 /** Live handles write asynchronously: a write resolves once `current` shows it. Inside
  * `change()`, transaction handles collect the same writes synchronously. */
-export type Mode = "live" | "tx";
+type Mode = "live" | "tx";
 type Write<M extends Mode, R = void> = M extends "tx" ? R : Promise<R>;
 
 export type InsertResult = { readonly id: string };
@@ -39,10 +40,9 @@ type ScalarWrites<V, M extends Mode> = {
 /** For Svelte `bind:`. Reading gives the shown value; assigning shows it at once and
  * commits it once it settles (a refused value reverts and is reported). */
 type Bindable<V, M extends Mode> = M extends "live" ? { value: V } : unknown;
-export type ScalarHandle<V, M extends Mode = "live"> = ScalarWrites<V, M> & Bindable<V, M>;
-export type RowDestination = { before: string } | { after: string };
+type ScalarHandle<V, M extends Mode = "live"> = ScalarWrites<V, M> & Bindable<V, M>;
 /** Plain values addressed by index. */
-export type ScalarListHandle<V, M extends Mode = "live"> = {
+type ScalarListHandle<V, M extends Mode = "live"> = {
   /** Inserts at `index` (default: the end). */
   insert(value: V, index?: number): Write<M>;
   set(index: number, value: V): Write<M>;
@@ -58,9 +58,9 @@ type ValueHandle<N extends Node, M extends Mode> =
         ? {
             item(id: string): Handle<I, M>;
             /** Mints the row's `$id`; inside `change()` it is available immediately. */
-            insert(value: Input<I>, destination?: RowDestination): Write<M, InsertResult>;
+            insert(value: Input<I>, destination?: Anchor): Write<M, InsertResult>;
             remove(id: string): Write<M>;
-            move(id: string, destination?: RowDestination): Write<M>;
+            move(id: string, destination?: Anchor): Write<M>;
           }
         : ScalarListHandle<Value<I>, M>
       : N extends RecordNode<infer V>

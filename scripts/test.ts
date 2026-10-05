@@ -1,6 +1,7 @@
 import { buildCoreWasm, buildEngine } from "./core-build";
 import { buildShell } from "./runtime";
 import { useTestRegistry } from "./runtime-artifacts";
+import { debugHelper } from "./helper";
 useTestRegistry();
 const native = process.argv.includes("--native");
 if (!native) {
@@ -8,7 +9,6 @@ if (!native) {
   await buildShell();
 }
 await buildEngine();
-if (native) await (await import("./native-fixtures")).prepareNativeFixtures();
 // Package tests, and the examples' behavior tests.
 const files = ["packages/{document,shell,cli,schema}/tests/**/*.test.ts", "tests/examples/**/*.test.ts"]
   .flatMap((pattern) => [...new Bun.Glob(pattern).scanSync(".")])
@@ -18,9 +18,7 @@ const child = Bun.spawn([process.execPath, "test", ...files.map((f) => "./" + f)
   env: native
     ? {
         ...process.env,
-        HITSLOP_NATIVE_CLI:
-          process.env.HITSLOP_NATIVE_CLI ??
-          `${process.cwd()}/apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native`,
+        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
       }
     : process.env,
   stdout: "inherit",

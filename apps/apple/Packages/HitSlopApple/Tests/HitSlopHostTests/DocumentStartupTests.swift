@@ -123,7 +123,7 @@ extension HostTests {
       #expect(controller.window?.isVisible == false)
       #expect(!controller.session.isReady)
       // WebKit can finish asynchronous cancellation on the next run-loop turn.
-      for _ in 0..<100 where webView != nil { try await Task.sleep(for: .milliseconds(10)) }
+      await eventually(timeout: .seconds(1)) { webView == nil }
       #expect(webView == nil)
     }
   }
@@ -185,7 +185,7 @@ extension HostTests {
     let controller = try await SlopDocumentWindowController.open(url: root, presentsWindow: true)
     let progress = try #require(controller.openingProgress)
     progress.cancelOpening()
-    for _ in 0..<200 where controller.isLoading { try await Task.sleep(for: .milliseconds(10)) }
+    await eventually(timeout: .seconds(2)) { !controller.isLoading }
     #expect(!controller.isLoading)
     #expect(!controller.isContentReady)
     #expect(controller.window?.isVisible == false)
@@ -206,9 +206,7 @@ extension HostTests {
     }
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
-    for _ in 0..<200 where controller.openingProgress?.panel == nil {
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    await eventually(timeout: .seconds(2)) { controller.openingProgress?.panel != nil }
     #expect(controller.openingProgress?.panel?.isVisible == true)
     #expect(controller.window?.isVisible == false)
     weak var view = controller.session.webView
@@ -218,7 +216,7 @@ extension HostTests {
     await #expect(throws: (any Error).self) { try await export.value }
     #expect(!FileManager.default.fileExists(atPath: output.path))
     #expect(controller.openingProgress == nil)
-    for _ in 0..<100 where view != nil { try await Task.sleep(for: .milliseconds(10)) }
+    await eventually(timeout: .seconds(1)) { view == nil }
     #expect(view == nil)
   }
 }
@@ -276,10 +274,9 @@ extension HostTests {
     func finishes(within limit: Duration, _ work: @escaping @MainActor () async throws -> Void) async throws -> Bool {
       let finished = Locked(false)
       let task = Task { @MainActor in try await work(); finished.modify { $0 = true } }
-      let end = ContinuousClock.now.advanced(by: limit)
-      while !finished.value, ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(50)) }
-      if finished.value { try await task.value }
-      return finished.value
+      guard await eventually(timeout: limit, { finished.value }) else { return false }
+      try await task.value
+      return true
     }
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
@@ -287,7 +284,7 @@ extension HostTests {
     #expect(try await finishes(within: .seconds(6)) { try await controller.session.close() })
     controller.close()
     // An abandoned page is released with its view, ending its scripts.
-    #expect(try await finishes(within: .seconds(3)) { while page != nil { try await Task.sleep(for: .milliseconds(50)) } })
+    #expect(await eventually(timeout: .seconds(3)) { page == nil })
     #expect(try await command("get", url: root).ok)
     #expect(try await finishes(within: .seconds(10)) {
       _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }

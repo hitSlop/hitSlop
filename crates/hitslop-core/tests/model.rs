@@ -2,14 +2,9 @@
 //! checkpoint reopen and seed-plus-log reopen are independent observations.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View};
+use support::{Edit, View, next, snapshot};
 use serde_json::{json, Value};
 
-fn next(rng: &mut u64) -> usize {
-    *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17;
-    *rng as usize
-}
-fn snapshot(doc: &Document) -> Value { serde_json::from_str(&doc.snapshot().unwrap()).unwrap() }
 /// A valid value of `node`; `n` varies strings, choices and in-range numbers so
 /// concurrent last-writer-wins conflicts can actually diverge.
 fn value(node: &Value, n: usize) -> Value {
@@ -70,14 +65,14 @@ fn invalid(node: &Value, n: usize) -> Value {
     }
 }
 fn anchor(rng: &mut u64, items: &[Value]) -> Option<Value> {
-    let n = next(rng);
+    let n = next(rng) as usize;
     let target = items.get(n % items.len().max(1))?;
     match n % 3 { 0 => Some(json!({"before":target["$id"]})), 1 => Some(json!({"after":target["$id"]})), _ => None }
 }
 fn intent(rng: &mut u64, serial: &mut usize, descriptor: &Value, current: &Value) -> Value {
     let mut choices = vec![]; targets(descriptor, current, vec![], &mut choices);
-    let (node, current, path) = &choices[next(rng) % choices.len()];
-    let n = next(rng); *serial += 1;
+    let (node, current, path) = &choices[next(rng) as usize % choices.len()];
+    let n = next(rng) as usize; *serial += 1;
     // Deliberate bad values exercise atomic rollback, not a mirrored validator.
     if n % 11 == 0 && node["kind"] != "list" && node["kind"] != "record" && node["kind"] != "counter" {
         return json!({"type":"set","path":path,"value":invalid(node, n)});
@@ -160,8 +155,8 @@ fn run(name: &str, fixture: &str) {
         let mut peers: Vec<_> = (0..3).map(|_| Document::open(&schema, &checkpoint, &[]).unwrap()).collect();
         let mut views: Vec<_> = peers.iter().map(View::of).collect();
         for step in 0..support::workload("HITSLOP_MODEL_STEPS", 150) {
-            let peer = next(&mut rng) % 3; let before = snapshot(&peers[peer]);
-            let ops: Vec<_> = (0..1 + next(&mut rng) % 4).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
+            let peer = (next(&mut rng) as usize) % 3; let before = snapshot(&peers[peer]);
+            let ops: Vec<_> = (0..1 + (next(&mut rng) as usize) % 4).map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"])).collect();
             match peers[peer].apply(&json!({"intents":ops}).to_string()) {
                 Ok(reply) => { accepted += 1; published(&peers[peer], &f["schema"], &mut views[peer], &reply) }
                 Err(_) => {

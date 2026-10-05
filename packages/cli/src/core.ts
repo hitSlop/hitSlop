@@ -17,6 +17,11 @@ async function check(label: string, run: (core: any) => void): Promise<void> {
   }
 }
 
+/** The exact build identity of this CLI's document core, which the helper's must match. */
+export async function coreBuildId(): Promise<string> {
+  return (await (binding ??= loadBinding())).coreBuildId();
+}
+
 export function validateDocument(descriptor: unknown, initial: unknown): Promise<void> {
   return check("slop.ts initial", (core) => core.validate(JSON.stringify(descriptor), JSON.stringify(initial)));
 }

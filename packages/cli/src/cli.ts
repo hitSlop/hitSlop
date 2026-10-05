@@ -14,9 +14,19 @@ const globalSkills = defineExtension(defineExtensionId("hitslop:global-skills"))
   );
 });
 
+/** A helper that exited without a reply printed why: the CLI exits with its status, after
+ * what that means for the command. */
+const helperExit = defineExtension(defineExtensionId("hitslop:helper-exit")).onError(async (error) => {
+  const { ExitStatus } = await import("./native");
+  if (!(error instanceof ExitStatus)) return false;
+  if (error.message) console.error(error.message);
+  process.exit(error.code);
+});
+
 const argv = process.argv.slice(2);
 
 await app
   .extend(globalSkills)
+  .extend(helperExit)
   .extend(interactiveUpdates())
   .execute({ argv: argv.length ? argv : ["--help"] });

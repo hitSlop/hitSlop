@@ -3,14 +3,12 @@
 //! although all held the same operations (reproduced with plain Loro 1.16.2).
 //! Oracle: a fresh replica opened from the seed plus every peer's updates.
 mod support;
-use support::{Edit, View};
+use support::{Edit, View, next, trimmed, value};
 use hitslop_core::{Code, Document};
 use loro::{ExportMode, LoroDoc};
-use serde_json::{json, Value};
+use serde_json::json;
 use hitslop_core::Origin;
 
-fn next(rng: &mut u64) -> u64 { *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17; *rng }
-fn value(doc: &Document) -> Value { serde_json::from_str::<Value>(&doc.snapshot().unwrap()).unwrap()["value"].clone() }
 
 /// A document's full checkpoint and the same document trimmed to its latest version.
 fn trimmed_document() -> (String, Vec<u8>, Vec<u8>) {
@@ -72,11 +70,6 @@ fn shallow_import_is_refused_without_changing_the_owner() {
     assert_eq!(owner.snapshot().unwrap(), before, "value, version, sequence and issues stay unchanged");
 }
 
-fn trimmed(checkpoint: &[u8]) -> Vec<u8> {
-    let loro = LoroDoc::new();
-    loro.import(checkpoint).unwrap();
-    loro.export(ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap()
-}
 
 #[test]
 fn refused_batches_keep_replicas_convergent() {

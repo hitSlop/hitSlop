@@ -1,9 +1,9 @@
+import { repository } from "./runtime-artifacts";
 import { readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { exists } from "../packages/cli/src/fs";
 import { projectSlug } from "../packages/cli/src/build";
 
-export const repository = resolve(import.meta.dir, "..");
 export type TemplateSource = { slug: string; source: string; bundled: boolean };
 
 /** Only immediate authored projects (folders with a `slop.ts`) are active; archives and

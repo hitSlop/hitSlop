@@ -19,7 +19,7 @@ import HitSlopCore
             bytesPerRow: 0,
             bitsPerPixel: 0
         ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
-            throw SlopError.invalid("could not encode rendered image")
+            throw SlopFailure("could not encode rendered image")
         }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
@@ -27,7 +27,7 @@ import HitSlopCore
         context.flushGraphics()
         NSGraphicsContext.restoreGraphicsState()
         guard let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw SlopError.invalid("could not encode rendered image")
+            throw SlopFailure("could not encode rendered image")
         }
         return png
     }

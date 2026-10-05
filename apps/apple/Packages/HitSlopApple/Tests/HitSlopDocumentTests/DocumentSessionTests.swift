@@ -54,12 +54,9 @@ import WebKit
     let session = try await DocumentSession.open(url: root)
     session.load()
     do {
-      var mounted = false
-      for _ in 0..<200 where !mounted {
-        mounted = (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
-        if !mounted { try await Task.sleep(for: .milliseconds(25)) }
-      }
-      #expect(mounted)
+      #expect(await eventually(timeout: .seconds(5)) {
+        (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
+      })
       _ = try await session.owner.applyTheme(.set(valuesJson: ##"{"accent":"#123456"}"##))
       _ = try await session.webView.callAsyncJavaScript("finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
       try await session.waitUntilReady()
@@ -127,7 +124,7 @@ import WebKit
         try await Task.sleep(for: .milliseconds(150))
         #expect(try await accent() == "#335577", "a capture in progress is not restyled")
       }
-      for _ in 0..<100 where try await accent() != "#abcabc" { try await Task.sleep(for: .milliseconds(10)) }
+      try await eventually(timeout: .seconds(1)) { try await accent() == "#abcabc" }
       #expect(try await accent() == "#abcabc")
 
       session.changeTheme(.set(["accent": "#fedcba"]))
@@ -180,7 +177,7 @@ import WebKit
       }
     }
     let tasks = (0..<16).map { _ in Task { try await call() } }
-    for _ in 0..<200 where replies.value.count < 16 { try await Task.sleep(for: .milliseconds(10)) }
+    await eventually(timeout: .seconds(2)) { replies.value.count >= 16 }
     #expect(replies.value.count == 16)
     await #expect(throws: (any Error).self) {
       _ = try await call()
@@ -199,7 +196,7 @@ import WebKit
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: shell) }
     try FileManager.default.createDirectory(at: shell.appendingPathComponent("loro"), withIntermediateDirectories: true)
     for path in ["loro/test.js", "secret.js"] { try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path)) }
-    let handler = SchemeHandler(assets: try AssetReader.open(path: root.path), shell: shell)
+    let handler = SchemeHandler(assets: try NativeStore.open(path: root.path, mode: .snapshot).assetReader(), shell: shell)
     let view = WKWebView()
     for path in [
       "app", "document.slop", "assets%2F..%2Fapp", "assets/..%2Fapp.js", "assets/%2e%2e/app.js", "assets//test.js",

@@ -138,7 +138,7 @@ extension SlopDocumentWindowController {
     defer { try? handle.close() }
     let bytes = try handle.read(upToCount: Limits.themeFile + 1) ?? Data()
     guard bytes.count <= Limits.themeFile, let text = String(data: bytes, encoding: .utf8) else {
-      throw SlopError.invalid("Not a hitSlop theme file")
+      throw SlopFailure("Not a hitSlop theme file")
     }
     return text
   }

@@ -37,12 +37,11 @@ public enum CatalogFilter: Hashable, Sendable {
 /// A slop's preview or icon artwork: the file holding it and which one. The file's
 /// modification date and size participate in view reloads and decoded-image caching.
 public struct CatalogArtwork: Hashable, Sendable {
-    public enum Name: String, Sendable { case preview, icon }
     public let file: URL
-    public let name: Name
+    public let name: SlopArtwork.Name
     public let modifiedAt: Date?
     public let byteCount: Int?
-    public init(file: URL, name: Name, modifiedAt: Date?, byteCount: Int?) {
+    public init(file: URL, name: SlopArtwork.Name, modifiedAt: Date?, byteCount: Int?) {
         self.file = file; self.name = name; self.modifiedAt = modifiedAt; self.byteCount = byteCount
     }
 }

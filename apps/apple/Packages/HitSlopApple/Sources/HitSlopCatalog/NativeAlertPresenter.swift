@@ -4,8 +4,6 @@ import HitSlopFeatures
 
 /// Holds presentation identity until AppKit reports dismissal. Store state remains authoritative.
 @MainActor final class NativeAlertPresenter {
-    /// Presents an alert and reports the action of the button chosen; nil acknowledges it.
-    typealias Present = @MainActor (AlertState<ErrorAlertAction>, NSWindow?, @escaping @MainActor (ErrorAlertAction?) -> Void) -> Void
     private struct Request {
         let alert: AlertState<ErrorAlertAction>
         weak var window: NSWindow?
@@ -14,9 +12,6 @@ import HitSlopFeatures
     }
     private var pending: [Request] = []
     private var active: [UUID: Request] = [:]
-    private let present: Present
-
-    init(present: @escaping Present = NativeAlertPresenter.presentAlert) { self.present = present }
 
     func enqueue(_ alert: AlertState<ErrorAlertAction>, window: NSWindow?, isCurrent: @escaping @MainActor () -> Bool, dismiss: @escaping @MainActor (ErrorAlertAction?) -> Void) {
         guard active[alert.id] == nil, !pending.contains(where: { $0.alert.id == alert.id }) else { return }
@@ -33,7 +28,7 @@ import HitSlopFeatures
             guard !active.values.contains(where: { $0.window === request.window }) else { index += 1; continue }
             pending.remove(at: index)
             active[request.alert.id] = request
-            present(request.alert, request.window) { [weak self] action in
+            Self.presentAlert(request.alert, window: request.window) { [weak self] action in
                 guard let self, let completed = self.active.removeValue(forKey: request.alert.id) else { return }
                 if completed.isCurrent() { completed.dismiss(action) }
                 Task { [weak self] in self?.drain() }
@@ -41,6 +36,7 @@ import HitSlopFeatures
         }
     }
 
+    /// Presents an alert and reports the action of the button chosen; nil acknowledges it.
     private static func presentAlert(_ state: AlertState<ErrorAlertAction>, window: NSWindow?, completion: @escaping @MainActor (ErrorAlertAction?) -> Void) {
         let alert = NSAlert()
         alert.messageText = String(state: state.title)

@@ -21,7 +21,7 @@ import HitSlopTestSupport
     #expect(window.title == "fixture.slop")
     #expect(window.miniwindowTitle == "fixture.slop")
     // The owner reads the icon off the main thread.
-    for _ in 0..<100 where window.miniwindowImage == nil { try await Task.sleep(for: .milliseconds(20)) }
+    await eventually(timeout: .seconds(2)) { window.miniwindowImage != nil }
     #expect(window.miniwindowImage != nil)
     #expect(controller.documentTitle == "fixture.slop")
     #expect(controller.dockMenuImage.size == NSSize(width: 16, height: 16))

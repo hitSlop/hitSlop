@@ -58,7 +58,9 @@ without it as an unknown outcome. A refusal is a reply with
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
 `save_failed` was applied but not saved; after `unknown_outcome`, run `get` before another
 edit. The helper exits non-zero only when it printed no reply. Files are the caller's: the
-CLI reads an imported attachment or theme file itself and writes exported bytes.
+CLI reads an imported attachment or theme file itself and writes exported bytes. An export
+never replaces a file, including the document under another spelling of its path; to
+export again, remove the old file first.
 
 ## Helper discovery and identity
 

@@ -45,8 +45,8 @@ extension SlopDocumentWindowController {
         refreshToolbarHover()
       },
       drag: { [weak self] event in self?.dragWindow(with: event) }, pinned: isPinned,
-      commandsEnabled: commandsEnabled && isContentReady,
-      themeShown: isThemeShown, themeEnabled: commandsEnabled && isContentReady && session.canEditTheme,
+      commandsEnabled: isAvailable(.pin(!isPinned)),
+      themeShown: isThemeShown, themeEnabled: isAvailable(.theme(!isThemeShown)),
       minimize: { [weak self] in self?.miniaturizeFromToolbar() },
       send: { [weak self] command in self?.request(command) }, editors: SlopEditors.installed)
   }

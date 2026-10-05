@@ -8,7 +8,9 @@
 //   --installed install each frozen entry's npm CLI and run it against this helper
 import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
-import { copyFile, cp, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { exec } from "../packages/cli/src/process";
+import { assertExport, createDocument } from "./helper";
+import { copyFile, cp, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -80,12 +82,11 @@ try {
         assert.equal(sha256(bytes), id, `${name}/${document}: attachment ${id} bytes`);
         await rm(output);
       }
-      for (const [format, magic] of [["png", "89504e470d0a1a0a"], ["pdf", "25504446"]] as const) {
+      for (const format of ["png", "pdf"] as const) {
         const output = join(scratch, `${document}.${format}`);
         const { code, stderr } = await slop(["export", copy, "--format", format, "--output", output]);
         assert.equal(code, 0, `${name}/${document}: the old app did not render: ${stderr.trim()}`);
-        const bytes = await Bun.file(output).bytes();
-        assert.equal(Buffer.from(bytes.subarray(0, magic.length / 2)).toString("hex"), magic, `${name}/${document}: ${format}`);
+        await assertExport(output, format);
         await rm(output);
       }
       const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
@@ -102,8 +103,7 @@ try {
     for (const file of await readdir(join(root, "templates"))) {
       const output = join(scratch, `created-${file}`);
       await rm(output, { force: true });
-      const created = Bun.spawnSync([helper, "create", "--from", join(root, "templates", file), "--output", output], { stderr: "pipe" });
-      assert.equal(created.exitCode, 0, `${name}/${file}: create failed: ${created.stderr.toString().trim()}`);
+      await createDocument(join(root, "templates", file), output, { helper }).catch((error) => assert.fail(`${name}/${file}: create failed: ${error.message}`));
       const { state } = await slopJSON(["get", output, "--snapshot"]);
       const initial = initialOf(join(root, "templates", file));
       assert.deepEqual(state.issues, [], `${name}/${file}: a new document has issues`);
@@ -139,10 +139,10 @@ try {
       const project = join(scratch, `${name}-cli`);
       await cp(join(root, "cli"), project, { recursive: true });
       const installation = join(project, "install");
-      const install = Bun.spawn([process.execPath, "install", "--frozen-lockfile"], { cwd: installation, stdout: "inherit", stderr: "inherit" });
-      assert.equal(await install.exited, 0, `${name}: the released CLI did not install`);
+      const install = await exec([process.execPath, "install", "--frozen-lockfile"], { cwd: installation, inherit: ["stdout", "stderr"] });
+      assert.equal(install.code, 0, `${name}: the released CLI did not install`);
       const metadata = await Bun.file(join(installation, "node_modules/@hitslop/cli/package.json")).json();
-      const bin = typeof metadata.bin === "string" ? metadata.bin : metadata.bin.slop;
+      const bin = metadata.bin?.slop;
       assert.equal(typeof bin, "string", "Archived CLI has no public slop executable");
       const executable = join(installation, "node_modules/@hitslop/cli", bin);
       assert.ok(transcript?.commands.length, `${name}: no CLI scenarios`);
@@ -151,22 +151,18 @@ try {
       for (const { args, code: expectedCode, stdout: expectedOutput, outputHash } of transcript.commands) {
         const exported = join(scratch, `${name}-installed-export.txt`);
         const resolved = args.map(arg => arg === "{document}" ? copy : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg);
-        const child = Bun.spawn([process.execPath, executable, ...resolved], {
-          cwd: installation, env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, stdout: "pipe", stderr: "pipe",
+        const { stdout, stderr, code } = await exec([process.execPath, executable, ...resolved], {
+          cwd: installation, env: { ...process.env, HITSLOP_NATIVE_CLI: helper }, timeout: 120_000,
         });
-        const timeout = setTimeout(() => child.kill(), 120_000);
-        try {
-          const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-          assert.equal(code, expectedCode, `${name}: archived CLI ${args[0]}: ${stderr.trim()}`);
-          let output: unknown = stdout.trim();
-          try { output = JSON.parse(stdout); } catch {}
-          if (outputHash) {
-            assert.equal(await fileDigest(exported), outputHash);
-            output = String(output).replaceAll(exported, "{output}");
-            await rm(exported);
-          }
-          assertOutput(output, expectedOutput, args, `${name}: archived CLI ${args[0]}`);
-        } finally { clearTimeout(timeout); }
+        assert.equal(code, expectedCode, `${name}: archived CLI ${args[0]}: ${stderr.trim()}`);
+        let output: unknown = stdout.trim();
+        try { output = JSON.parse(stdout); } catch {}
+        if (outputHash) {
+          assert.equal(await fileDigest(exported), outputHash);
+          output = String(output).replaceAll(exported, "{output}");
+          await rm(exported);
+        }
+        assertOutput(output, expectedOutput, args, `${name}: archived CLI ${args[0]}`);
       }
       cases++;
       console.log(`PASS ${name}: the released CLI`);

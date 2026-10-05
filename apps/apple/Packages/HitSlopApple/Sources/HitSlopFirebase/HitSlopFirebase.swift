@@ -8,9 +8,7 @@ public enum HitSlopFirebase {
     public static func configure() {
         // Debug and test hosts never initialize Firebase, including its startup collection.
         #if !DEBUG
-        guard NSClassFromString("XCTestCase") == nil,
-              ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
-              FirebaseApp.allApps?.isEmpty != false else { return }
+        guard FirebaseApp.allApps?.isEmpty != false else { return }
         FirebaseApp.configure()
         Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(true)
         Analytics.setAnalyticsCollectionEnabled(true)

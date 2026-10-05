@@ -29,52 +29,14 @@ private final class PublicationTimes: @unchecked Sendable {
   }
 }
 
-/// Median milliseconds of `runs` timed runs; `work` returns what to release untimed.
-@MainActor private func medianMS(runs: Int = 20, _ work: () async throws -> (() async throws -> Void)) async throws -> Double {
-  var times: [Double] = []
-  for _ in 0..<runs {
-    let start = DispatchTime.now().uptimeNanoseconds
-    let release = try await work()
-    times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
-    try await release()
-  }
-  return times.sorted()[times.count / 2]
-}
-
 @Suite(.serialized) struct BenchmarkTests {
-  /// Preparing a document for its window: the file's checks, its app and the writer, before
-  /// any WebView. Documents of 10 and 5,000 saved rows; median of 20 opens.
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_OPEN"] == "1")) @MainActor
-  func documentPrepareCost() async throws {
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    var record: [String: Any] = [:]
-    for rows in [10, 5000] {
-      let stage = try Fixtures.nativeStage()
-      try Fixtures.updateApp(stage) { $0["initial"] = [
-        "title": "Open cost",
-        "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-      ] }
-      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
-      // The first open saves the initial values as the document's checkpoint.
-      try await DocumentSession.prepare(url: root).owner.close()
-      let bytes = try FileManager.default.attributesOfItem(atPath: root.path)[.size] as? Int ?? 0
-      record["prepare-\(rows)-rows-ms"] = try await medianMS {
-        let prepared = try await DocumentSession.prepare(url: root)
-        return { try await prepared.owner.close() }
-      }
-      record["prepare-\(rows)-rows-bytes"] = bytes
-    }
-    print("OPEN-BENCH " + String(decoding: try JSONSerialization.data(withJSONObject: record, options: .sortedKeys), as: UTF8.self))
-  }
-
   /// A color drag in the theme panel: 120 changes at 60 Hz through the owner, timed from
   /// each change to the page's style and to the next frame after it. Coalesced deliveries
   /// count from the earliest change they cover.
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_THEME"] == "1")) @MainActor
   func themeDragCost() async throws {
     _ = NSApplication.shared
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let repository = Fixtures.repository.path
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     var records: [[String: Any]] = []
@@ -143,7 +105,7 @@ private final class PublicationTimes: @unchecked Sendable {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_CAPTURE"] == "1")) @MainActor
   func previewCaptureCost() async throws {
     _ = NSApplication.shared
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let repository = Fixtures.repository.path
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     var records: [[String: Any]] = []
@@ -205,7 +167,7 @@ private final class PublicationTimes: @unchecked Sendable {
     let label = ProcessInfo.processInfo.environment["HITSLOP_BENCH_LABEL"] ?? ""
     let noDOM = ProcessInfo.processInfo.environment["HITSLOP_BENCH_NODOM"] == "1"
     func writeEvidence(failure: String? = nil) throws {
-      let root = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+      let root = Fixtures.repository.path
       let out = URL(fileURLWithPath: root + "/.hitslop/evidence")
       try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
       try JSONSerialization.data(
@@ -260,7 +222,7 @@ private final class PublicationTimes: @unchecked Sendable {
           do { try await window.session.waitUntilReady(timeout: .milliseconds(Int(readySeconds * 1000))) } catch {
             let message = "Benchmark \(rows) rows × \(count) windows: \(error.localizedDescription)"
             try writeEvidence(failure: message)
-            throw SlopError.invalid(message)
+            throw SlopFailure(message)
           }
           await window.waitForPresentation()
         }

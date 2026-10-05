@@ -44,7 +44,7 @@ by the shared shape parser. Swift decodes the validated manifest into its genera
 and decodes the window skin. Authoring keeps TypeBox manifest validation; the manifest
 validator dependency is excluded from WASM. Packing validates descriptors, initial values
 and theme defaults. Every open checks the file before reading a value: its application
-ID, storage version and exact tables, one `app` row, the markers, the sizes of
+ID, storage version and markers, then its exact tables, one `app` row, the sizes of
 every value and asset, and the asset paths. Then the app is checked once (manifest and
 window shape, descriptor and initial values, theme, `app.js` and skin), and the open keeps
 what it found. An owner's store open is its document's one check, adding SQLite's quick
@@ -65,7 +65,7 @@ retired sessions without page-carried identity. Shared limits and codes live in 
 |---|---|---|
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, publications, issues, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
 | File | `crates/hitslop-core/src/file.rs` (feature `storage`, native only) | The `.slop` file's layout and the checks every open runs; pack, create, copy; the app's assets and artwork |
-| Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved state, theme overrides and attachments on the platform SQLite (saved by the same jobs), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
+| Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved state and theme overrides on the platform SQLite (saved by the same jobs), attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
 | Engine | `crates/slop-engine` | The CLI's file tool on any platform: `pack`, `inspect`, `schema` |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `HitSlopDocument/DocumentOwner.swift` | Owner queue (core calls, save jobs), persistence queue (store calls), save scheduling, epochs, view tokens |
@@ -188,7 +188,7 @@ JSON snapshots or persistent undo records.
   page learns durability only through `flush`, which resolves once saved and rejects
   when the save fails.
 
-Storage is `document(theme)`, `checkpoint(descriptor, bytes)` (absent until
+Storage is `document(theme)`, `checkpoint(bytes)` (absent until
 the first save), and `updates(seq, bytes)`. Saved updates without a checkpoint are
 refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
 4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`).

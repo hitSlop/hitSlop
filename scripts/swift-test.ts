@@ -1,9 +1,10 @@
-import { prepareNativeFixtures } from "./native-fixtures";
-import { repository } from "./templates";
-import { useTestRegistry } from "./runtime-artifacts";
+import { prepareNativeFixtures, stageNativeFixtures } from "./native-fixtures";
+import { useTestRegistry, repository } from "./runtime-artifacts";
 useTestRegistry();
 if (process.platform !== "darwin") throw new Error("Native tests require macOS.");
 const fixtures = await prepareNativeFixtures();
+// Benchmarks change the trial template's build stage before packing it.
+if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();
 const child = Bun.spawn(
   [
     "swift",

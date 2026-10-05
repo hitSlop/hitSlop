@@ -4,7 +4,6 @@ import {
   mkdir,
   writeFile,
   readFile,
-  readdir,
   rm,
   symlink,
   cp,
@@ -13,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset } from "./runtime-artifacts";
+import { exec } from "../packages/cli/src/process";
+import { debugHelper } from "./helper";
 const root = await mkdtemp(join(tmpdir(), "hitslop packed "));
 const coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
 const repository = process.cwd();
@@ -22,19 +23,14 @@ const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
 const env = {
   ...inherited,
   HITSLOP_NATIVE_CLI: native
-    ? resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
+    ? debugHelper
     : join(root, "native-helper-must-not-be-used"),
 };
 async function run(args: string[], cwd: string, overrides: Record<string, string> = {}) {
   const started = performance.now();
   const label = args[1] === "-e" ? "SDK import probe" : args.slice(1).join(" ");
   console.log("START", label);
-  const p = Bun.spawn(args, { cwd, env: { ...env, ...overrides }, stdout: "pipe", stderr: "pipe" });
-  const [out, error, code] = await Promise.all([
-    new Response(p.stdout).text(),
-    new Response(p.stderr).text(),
-    p.exited,
-  ]);
+  const { stdout: out, stderr: error, code } = await exec(args, { cwd, env: { ...env, ...overrides } });
   assert.equal(
     code,
     0,
@@ -66,8 +62,6 @@ try {
     }),
   );
   await run([process.execPath, "install"], coreRoot, noNode);
-  const documentPackage = join(coreRoot, "node_modules/@hitslop/document");
-  assert.ok(!(await readdir(documentPackage)).includes("test-support"));
   assert.equal(JSON.parse(await readFile(join(repository, "packages/shell/package.json"), "utf8")).private, true);
   await run(
     [

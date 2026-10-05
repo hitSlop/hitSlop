@@ -5,7 +5,7 @@ import { pack } from "../src/engine";
 import { PackageFormat, RuntimeABI, type AppRow } from "@hitslop/schema";
 
 /** A minimal template file at `output`, packed by the file engine from a stage with preview
- * artwork: what tests of template handling need, without building an app. */
+ * artwork: what tests of template handling need, without building an app. Returns `output`. */
 export async function writeTemplate(output: string, slug = "quick-checklist") {
   const stage = output + ".stage";
   await mkdir(join(stage, "assets"), { recursive: true });
@@ -37,4 +37,5 @@ export async function writeTemplate(output: string, slug = "quick-checklist") {
   } finally {
     await rm(stage, { recursive: true, force: true });
   }
+  return output;
 }

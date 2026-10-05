@@ -9,7 +9,6 @@ let package = Package(
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
-    .library(name: "HitSlopFeatures", targets: ["HitSlopFeatures"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
     .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
@@ -57,7 +56,7 @@ let package = Package(
     .target(
       name: "HitSlopCatalog",
       dependencies: [
-        "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopFirebase",
+        "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       resources: [.process("Resources")],

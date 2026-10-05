@@ -31,7 +31,7 @@ function checkAppBundle(inputs: string[], script: string, css: string) {
       "Apps must not need remote stylesheets, fonts or scripts to start; copy them into assets/",
     );
 }
-export const entry = "/assets/app.js";
+const entry = "/assets/app.js";
 /** The module ID of the generated entry; dev invalidates it when components change. */
 export const virtualEntry = "\0hitslop-app";
 

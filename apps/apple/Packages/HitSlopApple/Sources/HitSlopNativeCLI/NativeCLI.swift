@@ -78,10 +78,9 @@ struct Request: AsyncParsableCommand {
 }
 
 struct Screenshot: AsyncParsableCommand {
-  enum Target: String, ExpressibleByArgument { case preview, icon }
   @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @Option(transform: URL.init(fileURLWithPath:)) var output: URL
-  @Option var target: Target = .preview
+  @Option var target: SlopArtwork.Name = .preview
   @Flag var ifPresent = false
   @MainActor func run() async throws {
     bootstrapApp()
@@ -132,3 +131,5 @@ struct Open: AsyncParsableCommand {
     print(file.path)
   }
 }
+
+extension SlopArtwork.Name: ExpressibleByArgument {}

@@ -1,5 +1,5 @@
 mod support;
-use support::{apply_patches, Edit, View};
+use support::{Edit, View, apply_patches, fixture, snapshot};
 // Failure: the core accepts a wrong edit or publishes part of a rejected batch.
 // Oracle: literal fixtures for identity and atomicity cases, with Unicode results
 // spelled out independently.
@@ -8,12 +8,6 @@ use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
 use hitslop_core::Origin;
 
-fn fixture() -> Value {
-    serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap()
-}
-fn snapshot(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
-}
 fn batch(case: &Value, version: &str) -> String {
     let mut intents = case["intents"].clone();
     for op in intents.as_array_mut().unwrap() {
@@ -110,7 +104,7 @@ fn atomic_rejection() {
 
 #[test]
 fn malformed_import_preserves_the_owner() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let before = snapshot(&d);
     assert_eq!(
@@ -162,7 +156,7 @@ fn merged_anomaly_is_preserved_flagged_and_not_repaired_on_read() {
 
 #[test]
 fn independent_replicas_merge_and_duplicate_delivery_is_idempotent() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut a = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let mut b = Document::open(&f["schema"].to_string(), &a.checkpoint().unwrap(), &[]).unwrap();
     let from = a.version();
@@ -183,7 +177,7 @@ fn independent_replicas_merge_and_duplicate_delivery_is_idempotent() {
 
 #[test]
 fn minted_ids_are_application_ids_and_survive_reopen() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut d = Document::create(&f["schema"].to_string(), r#"{"title":"abc","hits":0,"rows":[]}"#).unwrap();
     let applied = d.apply_batch(r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#, Origin::Page).unwrap();
     let id = applied.ids[0].as_str();
@@ -201,7 +195,7 @@ fn minted_ids_are_application_ids_and_survive_reopen() {
 // checks the state immediately after the rejection.
 #[test]
 fn owner_keeps_working_after_a_late_rejection() {
-    let f = fixture();
+    let f = fixture("checklist");
     let schema = f["schema"].to_string();
     let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
     let seed = d.checkpoint().unwrap();

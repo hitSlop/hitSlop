@@ -20,7 +20,6 @@ export const ThemeFileSchema = Strict({
   template: T.String({ ...ManifestText.slug }),
   values: ThemeValuesSchema,
 });
-export type ThemeFile = T.Static<typeof ThemeFileSchema>;
 export const OutcomeCodeSchema = T.Enum(OutcomeCodes, { title: "OutcomeCode" });
 export type OutcomeCode = T.Static<typeof OutcomeCodeSchema>;
 /** A palette as the core reports it: the template's colors, the overrides and the result. */

@@ -1,35 +1,61 @@
 import { access, constants } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 
-export type RunOptions = {
+type RunOptions = {
   cwd?: string;
   env?: Record<string, string | undefined>;
-  /** Pass the command's stdout through, as a worker's author logs; otherwise it is returned. */
-  inherit?: boolean;
+  /** The command's standard input; without it, the command reads none. */
+  stdin?: string | Uint8Array;
+  /** Streams the command shares with this process instead of returning: its input, an
+   * author's worker logs, a helper's own messages. */
+  inherit?: ("stdin" | "stdout" | "stderr")[];
+  /** Kills the command and fails after this many milliseconds. */
+  timeout?: number;
   /** The error when a failing command prints nothing on stderr. */
   failure?: string;
 };
+/** What a command printed, and how it exited. */
+type Output = { stdout: string; stderr: string; code: number };
+
+/** Starts `command`: `output` resolves once it exits, whatever its status; `kill` stops it. */
+export function spawn(command: string[], options: RunOptions = {}) {
+  const shared = (stream: "stdin" | "stdout" | "stderr") => options.inherit?.includes(stream) ?? false;
+  const child = Bun.spawn(command, {
+    cwd: options.cwd,
+    env: options.env,
+    stdin: shared("stdin") ? "inherit" : options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
+    stdout: shared("stdout") ? "inherit" : "pipe",
+    stderr: shared("stderr") ? "inherit" : "pipe",
+  });
+  let timedOut = false;
+  const timer = options.timeout === undefined ? undefined : setTimeout(() => ((timedOut = true), child.kill()), options.timeout);
+  const text = (stream: unknown) => (stream instanceof ReadableStream ? new Response(stream).text() : "");
+  const output = (async (): Promise<Output> => {
+    try {
+      const [stdout, stderr, code] = await Promise.all([text(child.stdout), text(child.stderr), child.exited]);
+      if (timedOut) throw new Error(`${basename(command[0]!)} did not finish within ${options.timeout! / 1000} s`);
+      return { stdout, stderr, code };
+    } finally {
+      clearTimeout(timer);
+    }
+  })();
+  return { output, kill: () => child.kill() };
+}
+
+/** Runs `command` to completion: what it printed and its exit status, whatever the status. */
+export function exec(command: string[], options: RunOptions = {}): Promise<Output> {
+  return spawn(command, options).output;
+}
 
 /** Starts `command`: `done` resolves to its stdout, or rejects with its stderr (or
  * `failure`); `kill` stops it. */
 export function start(command: string[], options: RunOptions = {}) {
-  const child = Bun.spawn(command, {
-    cwd: options.cwd,
-    env: options.env,
-    stdin: "ignore",
-    stdout: options.inherit ? "inherit" : "pipe",
-    stderr: "pipe",
-  });
-  const done = (async () => {
-    const [stdout, stderr, code] = await Promise.all([
-      options.inherit ? "" : new Response(child.stdout as ReadableStream).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
+  const { output, kill } = spawn(command, options);
+  const done = output.then(({ stdout, stderr, code }) => {
     if (code) throw new Error(stderr.trim() || options.failure || `${basename(command[0]!)} failed`);
     return stdout;
-  })();
-  return { done, kill: () => child.kill() };
+  });
+  return { done, kill };
 }
 
 /** Runs `command` to completion: its stdout, or its stderr (or `failure`) as the error. */
@@ -52,7 +78,7 @@ export async function findExecutable(variable: string, candidates: string[], mis
 }
 
 /** Whether `path` is an executable file. */
-export async function executable(path: string): Promise<boolean> {
+async function executable(path: string): Promise<boolean> {
   try {
     await access(path, constants.X_OK);
     return true;

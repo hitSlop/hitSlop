@@ -40,7 +40,7 @@ import HitSlopTestSupport
     func offerAndWait() async throws {
       reply = nil
       _ = try await engine.webView.evaluateJavaScript(offer)
-      for _ in 0..<100 where !engine.fileSaver.hasPendingSave { try await Task.sleep(for: .milliseconds(20)) }
+      await eventually(timeout: .seconds(2)) { engine.fileSaver.hasPendingSave }
     }
 
     // Cancelling the panel writes nothing.
@@ -59,7 +59,7 @@ import HitSlopTestSupport
     try Data("old".utf8).write(to: target)
     try await offerAndWait()
     reply?(target)
-    for _ in 0..<100 where saved.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+    await eventually(timeout: .seconds(2)) { !saved.isEmpty }
     #expect(saved == [target])
     #expect(try Data(contentsOf: target) == Data("hi!".utf8))
 
@@ -80,22 +80,17 @@ import HitSlopTestSupport
     // Filesystem failures reach the native issue handler and leave the old file intact.
     try await offerAndWait()
     reply?(target.appendingPathComponent("impossible.xlsx"))
-    for _ in 0..<100 where failures.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+    await eventually(timeout: .seconds(2)) { !failures.isEmpty }
     #expect(failures.count == 1)
     #expect(!engine.fileSaver.hasActiveTransfers)
     #expect(try Data(contentsOf: target) == Data("hi!".utf8))
 
-    // Capture and disabled selection never present a panel.
+    // A capture never presents a panel.
     try await engine.withCapture {
       _ = try await engine.webView.evaluateJavaScript(offer)
       try await Task.sleep(for: .milliseconds(300))
       #expect(!engine.fileSaver.hasPendingSave)
     }
-    engine.allowsFileSelection = false
-    _ = try await engine.webView.evaluateJavaScript(offer)
-    try await Task.sleep(for: .milliseconds(300))
-    #expect(!engine.fileSaver.hasPendingSave)
-    engine.allowsFileSelection = true
 
     // Closing dismisses a pending panel.
     try await offerAndWait()

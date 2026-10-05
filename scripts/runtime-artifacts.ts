@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { lstat, readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { brotliDecompressSync } from "node:zlib";
 
@@ -26,6 +26,20 @@ export function appAsset(file: string, path: string): string {
     return (row.encoding === "br" ? brotliDecompressSync(row.bytes) : Buffer.from(row.bytes)).toString("utf8");
   } finally {
     database.close();
+  }
+}
+/** Fills a new folder beside `destination`, then replaces `destination` with it: a failure
+ * leaves the previous folder, never a partial one. */
+export async function publishFolder(destination: string, fill: (stage: string) => Promise<void>) {
+  await mkdir(dirname(destination), { recursive: true });
+  const stage = `${destination}.building-${crypto.randomUUID()}`;
+  await mkdir(stage);
+  try {
+    await fill(stage);
+    await rm(destination, { recursive: true, force: true });
+    await rename(stage, destination);
+  } finally {
+    await rm(stage, { recursive: true, force: true });
   }
 }
 /** SHA-256 in hex. */

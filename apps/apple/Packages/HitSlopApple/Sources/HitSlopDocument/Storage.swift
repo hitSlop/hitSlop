@@ -2,17 +2,6 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 
-func failure(_ message: String) -> NSError {
-  NSError(domain: "hitSlop", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
-}
-
-/// `document` owns the file and persists writes. `snapshot` reads the saved document and
-/// theme without ownership, and writes nothing.
-public enum StorageMode: Sendable {
-  case document, snapshot
-  var store: StoreMode { self == .document ? .document : .snapshot }
-}
-
 /// Another process owns the document's writer lock.
 public struct DocumentLocked: LocalizedError, SlopDiagnosticProviding {
   public var diagnostic: SlopFailureContext { .init(.rejection, reason: .busy) }
@@ -49,7 +38,7 @@ func storeCall<T>(_ body: () throws -> T) throws -> T {
     case .Full: throw SaveFailure.full
     case .Moved: throw SaveFailure.moved
     case .Closed: throw OwnerError.closed
-    case .Failed(let message): throw failure(message)
+    case .Failed(let message): throw SlopFailure(message)
     case .Rejected where SlopRequiresUpdate.matches(error): throw SlopRequiresUpdate()
     case .Rejected, .Invalidated: throw error
     }

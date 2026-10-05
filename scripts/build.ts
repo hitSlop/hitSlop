@@ -1,9 +1,8 @@
+import { repository } from "./runtime-artifacts";
 import { buildCoreNative, buildCoreWasm, buildEngine } from "./core-build";
 import { buildSkills } from "../packages/cli/src/skills-build";
 import { generateContracts } from "./generate";
 import { buildShell } from "./runtime";
-import { resolve } from "node:path";
-const repository = resolve(import.meta.dir, "..");
 import { join } from "node:path";
 const started = performance.now();
 console.log("Building contracts, runtime, file engine, skills, and native helper");

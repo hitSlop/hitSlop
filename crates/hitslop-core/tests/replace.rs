@@ -6,28 +6,16 @@
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{json, Value};
-use support::{Edit, View};
+use support::{Edit, View, fixture, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";
 
-fn fixture(name: &str) -> Value {
-    let text = match name {
-        "checklist" => include_str!("../fixtures/checklist.json"),
-        "collections" => include_str!("../fixtures/collections.json"),
-        "scalars" => include_str!("../fixtures/scalars.json"),
-        _ => include_str!("../fixtures/nested.json"),
-    };
-    serde_json::from_str(text).unwrap()
-}
 fn open(name: &str) -> (Document, View) {
     let f = fixture(name);
     let d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let view = View::of(&d);
     (d, view)
-}
-fn value(d: &Document) -> Value {
-    serde_json::from_str::<Value>(&d.snapshot().unwrap()).unwrap()["value"].clone()
 }
 fn replace(path: Value, value: Value) -> String {
     json!({"intents":[{"type":"replace","path":path,"value":value}]}).to_string()

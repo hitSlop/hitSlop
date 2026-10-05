@@ -8,7 +8,6 @@ import HitSlopDocument
 import Testing
 import HitSlopTestSupport
 import HitSlopCoreBinding
-import SQLite3
 import SwiftUI
 @testable import HitSlopCatalog
 
@@ -52,28 +51,27 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
 }
 
 @MainActor private func expectPreview(in view: NSView, blue: Bool, minimumPixels: Int) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-    repeat {
+    // SwiftUI exposes no completion callback for display; wait for the rendered fixture color.
+    let shown = try await eventually(timeout: .seconds(5)) {
         view.layoutSubtreeIfNeeded()
-        if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
-            view.cacheDisplay(in: view.bounds, to: bitmap)
-            let png = try #require(bitmap.representation(using: .png, properties: [:]))
-            let pixelsImage = try #require(NSBitmapImageRep(data: png))
-            var pixels = 0
-            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 8) {
-                for x in stride(from: 0, to: bitmap.pixelsWide, by: 8) {
-                    guard let color = pixelsImage.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                    if color.greenComponent < 0.5,
-                       blue ? color.blueComponent > 0.7 && color.redComponent < 0.3
-                            : color.redComponent > 0.7 && color.blueComponent < 0.4 { pixels += 1 }
-                }
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        let pixelsImage = try #require(NSBitmapImageRep(data: png))
+        var pixels = 0
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: 8) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: 8) {
+                guard let color = pixelsImage.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                if color.greenComponent < 0.5,
+                   blue ? color.blueComponent > 0.7 && color.redComponent < 0.3
+                        : color.redComponent > 0.7 && color.blueComponent < 0.4 { pixels += 1 }
             }
-            if pixels > minimumPixels { return }
         }
-        // SwiftUI exposes no completion callback for display; wait for the rendered fixture color.
-        try await Task.sleep(for: .milliseconds(20))
-    } while ContinuousClock.now < deadline
-    Issue.record("Catalog did not display the \(blue ? "replacement blue" : "initial red") artwork")
+        return pixels > minimumPixels
+    }
+    if !shown {
+        Issue.record("Catalog did not display the \(blue ? "replacement blue" : "initial red") artwork")
+    }
 }
 
 @Test @MainActor func discoversAndCreatesFromInstalledTemplate() async throws {
@@ -84,12 +82,13 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
     let store = LocalTemplateStore(templatesURL: root)
     await store.refresh()
     #expect(store.templates.count == 1)
-    #expect(store.templates.first?.manifest.title == "Tiny Counter")
-    #expect(store.templates.first?.icon.name == .icon)
+    #expect(store.templates.first?.title == "Tiny Counter")
+    #expect(store.templates.first?.icons.first?.name == .icon)
     #expect(store.issues.isEmpty)
 
     let destination = root.appendingPathComponent("created.slop")
-    _ = try SlopFile.create(from: #require(store.templates.first).url, to: destination)
+    guard case .local(let template) = try #require(store.templates.first).source else { throw SlopFailure("Not a template entry") }
+    _ = try SlopFile.create(from: template, to: destination)
     #expect(try SlopFile(url: destination).manifest.categories == [.utilities, .other])
     #expect(SlopArtwork.png(destination, .preview) == png)
     #expect(SlopArtwork.png(destination, .icon) == iconPNG)
@@ -113,7 +112,7 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
 
     let store = LocalTemplateStore(templatesURL: root)
     await store.refresh()
-    #expect(store.templates.map(\.manifest.slug) == ["tiny-counter"])
+    #expect(store.templates.map(\.slug) == ["tiny-counter"])
     #expect(store.issues.isEmpty)
 }
 
@@ -149,10 +148,7 @@ private func writeTemplate(
     let file = try writeTemplate(named: "cached", in: root)
     let scanner = CatalogScanner()
     #expect(try await scanner.local(at: root).templates.count == 1)
-    var db: OpaquePointer?
-    #expect(sqlite3_open(file.path, &db) == SQLITE_OK)
-    #expect(sqlite3_exec(db, "UPDATE app SET manifest = substr(manifest, 2)", nil, nil, nil) == SQLITE_OK)
-    sqlite3_close(db)
+    try Fixtures.sql(file, "UPDATE app SET manifest = substr(manifest, 2)")
     try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
     let rescanned = try await scanner.local(at: root)
     #expect(rescanned.templates.isEmpty)
@@ -166,8 +162,8 @@ private func writeTemplate(
     let scanner = CatalogScanner()
     let builtIn = try await scanner.local(at: root.appendingPathComponent("built-in"))
     let local = try await scanner.local(at: root.appendingPathComponent("registered"))
-    let first = CatalogServices.localEntry(try #require(builtIn.templates.first))
-    let second = CatalogServices.localEntry(try #require(local.templates.first))
+    let first = try #require(builtIn.templates.first)
+    let second = try #require(local.templates.first)
     #expect(first.id != second.id)
 }
 
@@ -199,20 +195,18 @@ private func writeTemplate(
     let before = try Data(contentsOf: source)
     let scanner = CatalogScanner()
     let snapshot = try await scanner.local(at: templates)
-    let entry = CatalogServices.localEntry(try #require(snapshot.templates.first))
+    let entry = try #require(snapshot.templates.first)
     var events: [SlopTelemetryEvent] = []
-    var recent: URL?
     var destination: URL?
     let services = CatalogServices(templatesURL: templates, bundledRoot: nil,
         telemetry: SlopTelemetry { if case .breadcrumb = $0 { return }; events.append($0) },
-        chooseDestination: { _ in destination }, recordRecent: { recent = $0 })
+        chooseDestination: { _ in destination })
     #expect(try await services.client.chooseDestination(entry) == nil)
-    #expect(events.isEmpty && recent == nil)
+    #expect(events.isEmpty)
     destination = root.appendingPathComponent("created.slop")
     let chosen = try #require(try await services.client.chooseDestination(entry))
     #expect(try await services.client.create(entry, chosen) == destination?.standardizedFileURL.resolvingSymlinksInPath())
     #expect(events == [.created(.installed)])
-    #expect(recent == destination)
     #expect(try Data(contentsOf: source) == before)
     // Existing destinations fail without emitting another creation.
     await #expect(throws: (any Error).self) { _ = try await services.client.create(entry, chosen) }
@@ -228,18 +222,15 @@ private func writeTemplate(
     let store = LocalTemplateStore(templatesURL: root)
     defer { store.stop(); try? FileManager.default.removeItem(at: parent) }
     await store.refresh()
-    #expect(store.templates.map(\.manifest.slug) == ["before"])
+    #expect(store.templates.map(\.slug) == ["before"])
     try FileManager.default.moveItem(at: root, to: parent.appendingPathComponent("moved"))
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     // The move is seen: the folder now lists nothing.
-    for _ in 0..<100 where !store.templates.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+    await eventually(timeout: .seconds(2)) { store.templates.isEmpty }
     #expect(store.templates.isEmpty)
     _ = try writeTemplate(named: "after", in: root)
-    for _ in 0..<100 where store.templates.isEmpty {
-        await store.refresh(force: false)
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(store.templates.map(\.manifest.slug) == ["after"])
+    await eventually(timeout: .seconds(2)) { await store.refresh(force: false); return !store.templates.isEmpty }
+    #expect(store.templates.map(\.slug) == ["after"])
 }
 
 @Test @MainActor func templateFolderChangesRefreshTheExistingStore() async throws {
@@ -250,28 +241,9 @@ private func writeTemplate(
     #expect(store.templates.isEmpty)
     let file = try writeTemplate(named: "added", in: root)
     await store.refresh()
-    #expect(store.templates.map(\.manifest.slug) == ["added"])
+    #expect(store.templates.map(\.slug) == ["added"])
     try FileManager.default.removeItem(at: file)
     await store.refresh()
     #expect(store.templates.isEmpty)
     #expect(store.issues.isEmpty)
-}
-
-/// A cold catalog scan of 20 built Quick Checklist templates: every file checked, as at
-/// launch. Median of 10 scans, each by a new scanner (no version cache).
-@Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_OPEN"] == "1"))
-func catalogScanCost() async throws {
-  let built = Fixtures.repository.appendingPathComponent("generated/templates/quick-checklist.slop")
-  let root = try Fixtures.folder()
-  defer { try? FileManager.default.removeItem(at: root) }
-  for index in 0..<20 {
-    try FileManager.default.copyItem(at: built, to: root.appendingPathComponent("checklist-\(index).slop"))
-  }
-  var times: [Double] = []
-  for _ in 0..<10 {
-    let start = DispatchTime.now().uptimeNanoseconds
-    _ = try await CatalogScanner().local(at: root)
-    times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
-  }
-  print("SCAN-BENCH {\"templates\":20,\"median-ms\":\(times.sorted()[times.count / 2])}")
 }

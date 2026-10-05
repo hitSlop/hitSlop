@@ -1,28 +1,23 @@
+import { repository } from "./runtime-artifacts";
 import { releases } from "./compat";
 import { verifyCorpus } from "./compat-integrity";
 import { lstat, stat, realpath, readFile } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
+import { exec } from "../packages/cli/src/process";
 
-const root = resolve(import.meta.dir, "..");
 async function command(
   argv: string[],
-  cwd = root,
+  cwd = repository,
   quiet = false,
   extraEnv: Record<string, string> = {},
 ): Promise<string> {
   const label = argv.join(" ");
   process.stdout.write(`→ ${label}\n`);
-  const child = Bun.spawn(argv, {
+  const { code: exitCode, stdout, stderr } = await exec(argv, {
     cwd,
-    stdout: quiet ? "pipe" : "inherit",
-    stderr: quiet ? "pipe" : "inherit",
+    inherit: quiet ? [] : ["stdout", "stderr"],
     env: { ...process.env, ...extraEnv },
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    quiet ? new Response(child.stdout).text() : Promise.resolve(""),
-    quiet ? new Response(child.stderr).text() : Promise.resolve(""),
-  ]);
   if (exitCode !== 0) {
     if (stdout) process.stderr.write(stdout);
     if (stderr) process.stderr.write(stderr);
@@ -35,14 +30,14 @@ async function gitFiles(): Promise<string[]> {
   const candidates = (
     await command(
       ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      root,
+      repository,
       true,
     )
   )
     .split("\0")
     .filter(Boolean);
   const existing = await Promise.all(
-    candidates.map(async (path) => ((await pathExists(resolve(root, path))) ? path : null)),
+    candidates.map(async (path) => ((await pathExists(resolve(repository, path))) ? path : null)),
   );
   return existing.filter((path): path is string => path !== null);
 }
@@ -89,7 +84,7 @@ export function assertNoGeneratedSource(files: string[]): void {
 }
 
 async function checkIgnored(path: string, shouldIgnore: boolean): Promise<void> {
-  const child = Bun.spawn(["git", "check-ignore", "--no-index", "-q", path], { cwd: root });
+  const child = Bun.spawn(["git", "check-ignore", "--no-index", "-q", path], { cwd: repository });
   const ignored = (await child.exited) === 0;
   if (ignored !== shouldIgnore)
     throw new Error(`${path} should ${shouldIgnore ? "" : "not "}be ignored`);
@@ -121,8 +116,8 @@ async function assertTextHygiene(files: string[]): Promise<void> {
   for (const path of files) {
     if (!extensions.has(extname(path)) && ![".gitignore", "SLOPS.todo"].includes(basename(path)))
       continue;
-    if (!(await stat(resolve(root, path))).isFile()) continue;
-    const bytes = new Uint8Array(await Bun.file(resolve(root, path)).arrayBuffer());
+    if (!(await stat(resolve(repository, path))).isFile()) continue;
+    const bytes = new Uint8Array(await Bun.file(resolve(repository, path)).arrayBuffer());
     // A .slop file is SQLite: its text is stored as UTF-8 among binary pages, so it is
     // scanned byte for byte. Extensionless bundled executables are not release text.
     const slop = extname(path) === ".slop";
@@ -152,7 +147,7 @@ async function pathExists(path: string): Promise<boolean> {
 
 export async function assertSkill(
   path: string,
-  root = resolve(import.meta.dir, ".."),
+  root = repository,
 ): Promise<void> {
   const actual = await realpath(resolve(root, path));
   const boundary = await realpath(root);
@@ -183,7 +178,7 @@ async function packageVersions(root: string): Promise<Record<string, string>> {
  */
 export async function assertDocs(
   files: string[],
-  root = resolve(import.meta.dir, ".."),
+  root = repository,
   versions?: Record<string, string>,
 ): Promise<void> {
   const current = versions ?? (await packageVersions(root));
@@ -213,28 +208,28 @@ export async function assertDocs(
  * (`HITSLOP_COMPAT_BASE`): the pull request's target, or the commit a push replaced. */
 async function assertFrozenCorpus(): Promise<void> {
   const base = process.env.HITSLOP_COMPAT_BASE || "origin/master";
-  const resolved = Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", `${base}^{commit}`], { cwd: root });
+  const resolved = Bun.spawnSync(["git", "rev-parse", "--verify", "--quiet", `${base}^{commit}`], { cwd: repository });
   if (resolved.exitCode !== 0) {
     if (process.env.CI) throw new Error(`Cannot compare tests/compat with ${base}`);
     process.stdout.write(`! tests/compat not compared: ${base} is unavailable\n`);
     return;
   }
-  const mergeBase = (await command(["git", "merge-base", "HEAD", base], root, true)).trim();
-  const listing = Bun.spawnSync(["git", "ls-tree", "--name-only", `${mergeBase}:tests/compat`], { cwd: root, stderr: "ignore" });
+  const mergeBase = (await command(["git", "merge-base", "HEAD", base], repository, true)).trim();
+  const listing = Bun.spawnSync(["git", "ls-tree", "--name-only", `${mergeBase}:tests/compat`], { cwd: repository, stderr: "ignore" });
   const entries = listing.exitCode === 0 ? listing.stdout.toString().split("\n").filter(Boolean) : [];
   const changed: string[] = [];
   for (const entry of entries) {
-    const release = Bun.spawnSync(["git", "show", `${mergeBase}:tests/compat/${entry}/release.json`], { cwd: root });
+    const release = Bun.spawnSync(["git", "show", `${mergeBase}:tests/compat/${entry}/release.json`], { cwd: repository });
     if (release.exitCode !== 0 || JSON.parse(release.stdout.toString()).frozen !== true) continue;
     // Committed and uncommitted changes since the base; additions are the only allowed kind.
-    const diff = await command(["git", "diff", "--name-status", "--no-renames", mergeBase, "--", `tests/compat/${entry}`], root, true);
+    const diff = await command(["git", "diff", "--name-status", "--no-renames", mergeBase, "--", `tests/compat/${entry}`], repository, true);
     changed.push(...diff.split("\n").filter((line) => line && !line.startsWith("A\t")));
   }
   if (changed.length)
     throw new Error(`Frozen compatibility corpus entries changed:\n${changed.map((line) => `  - ${line}`).join("\n")}`);
 }
 
-export async function checkHygiene(): Promise<void> {
+async function checkHygiene(): Promise<void> {
   const files = await gitFiles();
   await assertFrozenCorpus();
   for (const entry of await releases()) await verifyCorpus(entry.root, entry.release);

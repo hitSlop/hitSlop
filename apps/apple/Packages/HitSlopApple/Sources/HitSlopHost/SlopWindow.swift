@@ -133,25 +133,17 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   weak var loadingWebView: NSView?
   let startupStarted: ContinuousClock.Instant
 
-  private static var preparingProgress: [URL: SlopOpeningProgress] = [:]
-
-  public static func focusOpeningDocument(at url: URL) {
-    preparingProgress[url.standardizedFileURL]?.focus()
-  }
-
+  /// Opens the document at `url`. With `progress`, the window is shown once ready, and the
+  /// progress panel (its caller's, shown if opening is slow) can cancel the open.
   public static func open(
-    url: URL, routing: SlopDocumentRouting, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
+    url: URL, routing: SlopDocumentRouting, progress: SlopOpeningProgress? = nil, telemetry: SlopTelemetry = .disabled
   ) async throws -> SlopDocumentWindowController {
     let started = ContinuousClock.now
-    let progress = presentsWindow ? SlopOpeningProgress(started: started) : nil
-    let key = url.standardizedFileURL
-    if let progress { preparingProgress[key] = progress }
-    defer { if preparingProgress[key] === progress { preparingProgress[key] = nil } }
     let preparation = Task { @MainActor in
       let session = try await DocumentSession.open(url: url)
       do {
         try Task.checkCancellation()
-        return try SlopDocumentWindowController(
+        return SlopDocumentWindowController(
           url: url, session: session, routing: routing, started: started, telemetry: telemetry)
       } catch {
         try await session.close()
@@ -167,7 +159,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         try await controller.finishClose()
         throw CancellationError()
       }
-      if presentsWindow {
+      if let progress {
         controller.openingProgress = progress
         controller.showWindow(nil)
       }
@@ -181,7 +173,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   private init(
     url: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
     telemetry: SlopTelemetry = .disabled
-  ) throws {
+  ) {
     self.routing = routing
     self.telemetry = telemetry
     startupStarted = started
@@ -190,7 +182,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
     session.load()
-    let windowMask = try SlopWindowMask(file: session.file)
+    let windowMask = SlopWindowMask(file: session.file)
     let spec = session.file.manifest.presentation
     let size = NSSize(width: spec.width, height: spec.height)
     let window = FramelessDocumentWindow(
@@ -220,7 +212,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     session.delegate = self
     // `slop export` of this open document exports its live view, as the window does.
     session.onExport = { [weak self] format, output, deadline in
-      guard let self else { throw SlopError.invalid("Document closed") }
+      guard let self else { throw SlopFailure("Document closed") }
       try await self.exportDocument(format: format, to: output, deadline: deadline)
     }
     container.changed = { [weak self] _ in self?.refreshToolbarHover() }
@@ -268,7 +260,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func pageSession(_ session: DocumentSession, resizeContentTo requested: CGSize)
     throws -> CGSize
   {
-    guard let window else { throw SlopError.invalid("document window is unavailable") }
+    guard let window else { throw SlopFailure("document window is unavailable") }
     var requested = requested
     let spec = session.file.manifest.presentation
     if spec.lockAspect == true {

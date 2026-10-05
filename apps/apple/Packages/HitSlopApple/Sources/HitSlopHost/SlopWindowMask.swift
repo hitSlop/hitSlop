@@ -50,7 +50,7 @@ import ImageIO
         return path
     }
 
-    init(file: SlopFile) throws {
+    init(file: SlopFile) {
         transparentBacking = file.usesTransparentBackground
         if let skin = file.skin {
             content = .image(skin)

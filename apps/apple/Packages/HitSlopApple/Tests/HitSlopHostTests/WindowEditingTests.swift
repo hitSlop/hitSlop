@@ -85,11 +85,8 @@ extension HostTests {
     for _ in 0..<3 {
       for (action, expected) in [("undo:", "AGENT"), ("undo:", "abc"), ("redo:", "AGENT"), ("redo:", "PERSON")] {
         #expect(window.firstResponder?.tryToPerform(Selector((action)), with: nil) == true)
-        var current = try await title()
-        for _ in 0..<200 where current != expected {
-          try await Task.sleep(for: .milliseconds(5))
-          current = try await title()
-        }
+        var current: String?
+        try await eventually(timeout: .seconds(1)) { current = try await title(); return current == expected }
         #expect(current == expected)
         #expect(try await webView.evaluateJavaScript("document.getElementById('draft').value") as? String == expected)
       }
@@ -121,32 +118,22 @@ extension HostTests {
     #expect(try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#]).ok)
     func saved() async throws -> [String: Any] { try await savedValue(root) as? [String: Any] ?? [:] }
     #expect(try await saved()["title"] as? String == "abcXYZ")
-    for _ in 0..<200 where window.undoManager?.canUndo != true { try await Task.sleep(for: .milliseconds(5)) }
+    await eventually(timeout: .seconds(1)) { window.undoManager?.canUndo == true }
     #expect(window.undoManager?.canUndo == true)
     #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
-    var state = try await saved()
-    for _ in 0..<200 where state["hits"] as? Int != 0 {
-      try await Task.sleep(for: .milliseconds(5))
-      state = try await saved()
-    }
+    var state: [String: Any] = [:]
+    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["hits"] as? Int == 0 }
     #expect(state["hits"] as? Int == 0, "the agent's edit goes first")
     #expect(state["title"] as? String == "abcXYZ")
     #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
-    for _ in 0..<200 where state["title"] as? String != "abc" {
-      try await Task.sleep(for: .milliseconds(5))
-      state = try await saved()
-    }
+    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["title"] as? String == "abc" }
     #expect(state["title"] as? String == "abc")
     #expect(try await webView.evaluateJavaScript("\(field).value") as? String == "abc")
-    for _ in 0..<200 where window.undoManager?.canUndo != false { try await Task.sleep(for: .milliseconds(5)) }
+    await eventually(timeout: .seconds(1)) { window.undoManager?.canUndo == false }
     #expect(window.undoManager?.canUndo == false)
     #expect(window.undoManager?.canRedo == true)
     #expect(window.firstResponder?.tryToPerform(Selector(("redo:")), with: nil) == true)
-    state = try await saved()
-    for _ in 0..<200 where state["title"] as? String != "abcXYZ" {
-      try await Task.sleep(for: .milliseconds(5))
-      state = try await saved()
-    }
+    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["title"] as? String == "abcXYZ" }
     #expect(state["title"] as? String == "abcXYZ")
     try await controller.finishClose()
   }

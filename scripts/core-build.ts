@@ -1,26 +1,26 @@
+import { repository } from "./runtime-artifacts";
 import { copyFile, mkdir, rm } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { join } from "node:path";
 import { existsSync } from "node:fs";
 
-const root = resolve(import.meta.dir, "..");
 const env = {
   ...process.env,
   PATH: `${process.env.HOME}/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH}`,
 };
 async function run(command: string[]) {
-  const child = Bun.spawn(command, { cwd: root, env, stdout: "inherit", stderr: "inherit" });
+  const child = Bun.spawn(command, { cwd: repository, env, stdout: "inherit", stderr: "inherit" });
   if (await child.exited) throw new Error(`Core build failed: ${command.join(" ")}`);
 }
 
 /** Browser/dev/test binding. This entry point works on Linux without Xcode. */
 export async function buildCoreWasm() {
-  const local = join(root, "generated/core-tools/bin/wasm-bindgen");
+  const local = join(repository, "generated/core-tools/bin/wasm-bindgen");
   const bindgen = process.env.HITSLOP_WASM_BINDGEN ?? (existsSync(local) ? local : "wasm-bindgen");
   const version = Bun.spawn([bindgen, "--version"], { env, stdout: "pipe", stderr: "inherit" });
   const actual = (await new Response(version.stdout).text()).trim();
   if ((await version.exited) || actual !== "wasm-bindgen 0.2.127") {
     throw new Error(
-      "Install matching tooling: cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools",
+      "Install matching tooling: cargo install wasm-bindgen-cli --version 0.2.127 --locked --repository generated/core-tools",
     );
   }
   await run([
@@ -55,7 +55,7 @@ export async function buildEngine() {
 /** Native bindings are generated from the same locked core as the WASM binding. */
 export async function buildCoreNative() {
   if (process.platform !== "darwin") throw new Error("Native core packaging requires macOS");
-  const generated = join(root, "apps/apple/Packages/HitSlopApple/Generated");
+  const generated = join(repository, "apps/apple/Packages/HitSlopApple/Generated");
   const binding = join(generated, "HitSlopCoreBinding");
   const headers = join(generated, "include");
   const framework = join(generated, "HitSlopCoreFFI.xcframework");
@@ -84,15 +84,15 @@ export async function buildCoreNative() {
   await mkdir(binding, { recursive: true });
   await mkdir(headers, { recursive: true });
   await copyFile(
-    join(root, "generated/core/swift/HitSlopCoreBinding.swift"),
+    join(repository, "generated/core/swift/HitSlopCoreBinding.swift"),
     join(binding, "HitSlopCoreBinding.swift"),
   );
   await copyFile(
-    join(root, "generated/core/swift/HitSlopCoreFFI.h"),
+    join(repository, "generated/core/swift/HitSlopCoreFFI.h"),
     join(headers, "HitSlopCoreFFI.h"),
   );
   await copyFile(
-    join(root, "generated/core/swift/HitSlopCoreFFI.modulemap"),
+    join(repository, "generated/core/swift/HitSlopCoreFFI.modulemap"),
     join(headers, "module.modulemap"),
   );
   // SwiftPM tests use the machine architecture, while release archives are arm64.
@@ -115,7 +115,7 @@ export async function buildCoreNative() {
   await run([
     "lipo",
     "-create",
-    ...targets.map((target) => join(root, "target", target, "release/libhitslop_core_ffi.a")),
+    ...targets.map((target) => join(repository, "target", target, "release/libhitslop_core_ffi.a")),
     "-output",
     library,
   ]);

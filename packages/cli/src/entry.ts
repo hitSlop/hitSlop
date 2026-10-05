@@ -2,6 +2,9 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { exists } from "./fs";
 
+/** The files whose presence decides the entry: adding or removing one changes it. */
+export const entryFiles = ["main.ts", "App.svelte", "schema.ts", "styles.css", "Export.svelte", "Icon.svelte"];
+
 /** Exact-case conventional components; an authored main.ts owns all registration. */
 export async function discoverEntry(source: string): Promise<{ code: string; files: string[] }> {
   const names = new Set(await readdir(source));

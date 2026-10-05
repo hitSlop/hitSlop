@@ -2,7 +2,8 @@ import Foundation
 import HitSlopCoreBinding
 import ImageIO
 
-public enum SlopError: LocalizedError {
+/// A file the core refused to open as it was asked to.
+public enum SlopError: LocalizedError, SlopDiagnosticProviding {
   case invalid(String)
   /// A template opened as a document: a document is created from it instead.
   case template
@@ -12,6 +13,15 @@ public enum SlopError: LocalizedError {
     case .template: "This is a template; create a document from it first"
     }
   }
+  public var diagnostic: SlopFailureContext { .init(.rejection, reason: .invalidFile) }
+}
+
+/// An operation that could not finish, said for the person. A file the core refused is a
+/// `SlopError` instead.
+public struct SlopFailure: LocalizedError, Sendable {
+  public let message: String
+  public init(_ message: String) { self.message = message }
+  public var errorDescription: String? { message }
 }
 
 /// A slop, its storage or its document needs a newer hitSlop. Nothing was read past the
@@ -31,10 +41,9 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
 /// (the app and its saved state). Swift decodes the manifest and the window skin; the core
 /// owns every other rule.
 public struct SlopFile: Sendable {
-  public enum Kind: Sendable { case template, document }
   /// The `.slop` file.
   public let url: URL
-  public let kind: Kind
+  public let kind: FileKind
   /// What the app expects of `ctx`; the page shell adapts to it.
   public let runtimeABI: Int
   /// The app's document descriptor (JSON), for the page and `slop schema`.
@@ -58,7 +67,7 @@ public struct SlopFile: Sendable {
   /// The file at `url` as the core opened and checked it.
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root
-    kind = opened.kind == .template ? .template : .document
+    kind = opened.kind
     runtimeABI = Int(opened.runtimeAbi)
     descriptor = opened.descriptorJson
     themeTokens = opened.themeTokens
@@ -85,8 +94,8 @@ public struct SlopFile: Sendable {
   }
 
   /// A file's kind from its header checks alone, for deciding how to open it.
-  public static func kind(of url: URL) throws -> Kind {
-    try opening { try fileKind(path: url.path) } == .template ? .template : .document
+  public static func kind(of url: URL) throws -> FileKind {
+    try opening { try fileKind(path: url.path) }
   }
 
   public var isSkinned: Bool { manifest.presentation.skin != nil }
@@ -110,6 +119,12 @@ public struct SlopFile: Sendable {
       throw SlopError.invalid("a slop must be a file")
     }
     return root
+  }
+
+  /// A document's canonical URL for its owner: `resolvedRoot`, on a local volume.
+  public static func documentRoot(_ url: URL) throws -> URL {
+    try SlopLocalDocument.requireLocal(url)
+    return try resolvedRoot(url)
   }
 
   /// The skin's pixels. The core checked it is an RGBA PNG of the window's size.

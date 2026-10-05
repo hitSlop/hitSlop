@@ -37,30 +37,8 @@ import HitSlopTestSupport
 
   /// Runs the helper with `args`, writing `input` to its standard input.
   func cli(_ args: [String], input: Data? = nil) async throws -> (Int32, String, String) {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    return try await Task.detached {
-      let process = Process()
-      process.executableURL = URL(
-        fileURLWithPath: repository
-          + "/apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
-      process.arguments = args
-      let stdout = Pipe()
-      let stderr = Pipe()
-      let stdin = Pipe()
-      process.standardOutput = stdout
-      process.standardError = stderr
-      process.standardInput = stdin
-      try process.run()
-      if let input { stdin.fileHandleForWriting.write(input) }
-      try stdin.fileHandleForWriting.close()
-      let output = stdout.fileHandleForReading.readDataToEndOfFile()
-      let error = stderr.fileHandleForReading.readDataToEndOfFile()
-      process.waitUntilExit()
-      return (
-        process.terminationStatus, String(decoding: output, as: UTF8.self),
-        String(decoding: error, as: UTF8.self)
-      )
-    }.value
+    let helper = Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
+    return try await Task.detached { try Fixtures.run(helper, args, input: input) }.value
   }
 }
 

@@ -9,6 +9,15 @@ import SQLite3
 public enum Fixtures {
   public static let repository = URL(fileURLWithPath: String(#filePath.components(separatedBy: "/apps/apple/")[0]))
 
+  /// JSON text (a document's state, a reply) as an object.
+  public static func object(_ json: String) throws -> [String: Any] {
+    try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+  }
+  /// A value as JSON text, its keys sorted.
+  public static func json(_ value: Any) throws -> String {
+    String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self)
+  }
+
   /// A fresh, empty temporary folder.
   public static func folder() throws -> URL {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-\(UUID().uuidString)")
@@ -29,6 +38,24 @@ public enum Fixtures {
     NSGraphicsContext.restoreGraphicsState()
     guard let png = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
     return png
+  }
+
+  /// A white RGBA PNG whose pixel `(x, y)` (from the top) has alpha `alpha(x, y)`, as a
+  /// window skin or mask.
+  public static func png(width: Int, height: Int, alpha: (Int, Int) -> UInt8) throws -> Data {
+    var pixels = [UInt8](repeating: 255, count: width * height * 4)
+    for y in 0..<height { for x in 0..<width { pixels[(y * width + x) * 4 + 3] = alpha(x, y) } }
+    let output = NSMutableData()
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+      let image = CGImage(
+        width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
+      let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil)
+    else { throw SlopFailure("Cannot create a test PNG") }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { throw SlopFailure("Cannot write a test PNG") }
+    return output as Data
   }
 
   /// A temporary copy of a stage in the repository, for a test to change before packing.
@@ -81,18 +108,28 @@ public enum Fixtures {
   /// packs one.
   public static func template(stage: URL, named name: String = "fixture") throws -> URL {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
-    let engine = Process()
-    engine.executableURL = repository.appendingPathComponent("target/release/slop-engine")
-    engine.arguments = ["pack", stage.path, template.path]
-    let errors = Pipe()
-    engine.standardError = errors
-    try engine.run()
-    engine.waitUntilExit()
-    guard engine.terminationStatus == 0 else {
-      let message = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-      throw SlopError.invalid(message.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
+    let (status, _, errors) = try run(repository.appendingPathComponent("target/release/slop-engine"), ["pack", stage.path, template.path])
+    guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
     return template
+  }
+
+  /// Runs `executable` with `arguments` to completion, writing `input` to its standard
+  /// input: its status, standard output and standard error.
+  public static func run(_ executable: URL, _ arguments: [String], input: Data? = nil) throws -> (Int32, String, String) {
+    let process = Process()
+    process.executableURL = executable
+    process.arguments = arguments
+    let (stdout, stderr, stdin) = (Pipe(), Pipe(), Pipe())
+    process.standardOutput = stdout
+    process.standardError = stderr
+    process.standardInput = stdin
+    try process.run()
+    if let input { stdin.fileHandleForWriting.write(input) }
+    try stdin.fileHandleForWriting.close()
+    let output = stdout.fileHandleForReading.readDataToEndOfFile()
+    let error = stderr.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    return (process.terminationStatus, String(decoding: output, as: UTF8.self), String(decoding: error, as: UTF8.self))
   }
 
   /// A new document from `stage`, a single temporary file unless `destination` names one;
@@ -114,6 +151,19 @@ public enum Fixtures {
     return document
   }
 
+  /// A document of the core's checklist fixture (`crates/hitslop-core/fixtures`), whose app
+  /// is `app` when given.
+  public static func checklistDocument(app: String? = nil) throws -> URL {
+    let stage = try stage()
+    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
+    try updateApp(stage) { app in
+      app["descriptor"] = spec["schema"]
+      app["initial"] = spec["initial"]
+    }
+    if let app { try Data(app.utf8).write(to: stage.appendingPathComponent("assets/app.js")) }
+    return try document(stage: stage)
+  }
+
   /// A copy of a stage the native build prepared (`generated/native-fixtures/<slug>`), the
   /// build of an example app before packing.
   public static func nativeStage(_ slug: String = "quick-checklist") throws -> URL {
@@ -128,7 +178,7 @@ public enum Fixtures {
     public init(_ document: URL, readable: Bool = false) throws {
       guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
         sqlite3_exec(connection, readable ? "BEGIN IMMEDIATE" : "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK
-      else { throw SlopError.invalid("Cannot hold \(document.lastPathComponent)") }
+      else { throw SlopFailure("Cannot hold \(document.lastPathComponent)") }
     }
     public func release() {
       sqlite3_exec(connection, "COMMIT", nil, nil, nil)
@@ -157,18 +207,26 @@ public enum Fixtures {
     let sql = "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
     guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
       sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW
-    else { throw SlopError.invalid("Cannot read \(document.lastPathComponent)") }
+    else { throw SlopFailure("Cannot read \(document.lastPathComponent)") }
     return Stored(checkpointBytes: UInt64(sqlite3_column_int64(statement, 0)), updateBytes: UInt64(sqlite3_column_int64(statement, 1)),
       rows: UInt64(sqlite3_column_int64(statement, 2)))
   }
 
-  /// The document file's size in bytes.
+  /// Runs one statement on `file` outside the core, as a damaged or foreign writer would.
+  public static func sql(_ file: URL, _ statement: String) throws {
+    var db: OpaquePointer?
+    defer { sqlite3_close(db) }
+    guard sqlite3_open(file.path, &db) == SQLITE_OK, sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK
+    else { throw SlopFailure(String(cString: sqlite3_errmsg(db))) }
+  }
+
   /// Whether Finder shows a custom icon for `file`: the flag in its Finder info.
   public static func hasCustomIcon(_ file: URL) -> Bool {
     var info = [UInt8](repeating: 0, count: 32)
     guard getxattr(file.path, "com.apple.FinderInfo", &info, info.count, 0, 0) == info.count else { return false }
     return (UInt16(info[8]) << 8 | UInt16(info[9])) & 0x0400 != 0
   }
+  /// The document file's size in bytes.
   public static func size(_ document: URL) throws -> UInt64 {
     (try FileManager.default.attributesOfItem(atPath: document.path)[.size] as? NSNumber)?.uint64Value ?? 0
   }

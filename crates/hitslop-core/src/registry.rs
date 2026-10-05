@@ -6,7 +6,7 @@
 //! files are never unlinked; only the lock holder removes a discovery file, and a dropped
 //! lease withdraws its own. `sweep` clears a crashed owner's discovery.
 
-use crate::store::{failed, invalid, Error, Result};
+use crate::error::{failed, invalid, Error, Result};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::Write;
@@ -102,7 +102,7 @@ impl Lease {
         (self.dev, self.ino)
     }
     /// `Moved` once the path names another file, or the file gained a hard link.
-    pub fn check(&self) -> Result<()> {
+    pub(crate) fn check(&self) -> Result<()> {
         match identity(&self.path)? {
             (dev, ino, 1) if (dev, ino) == (self.dev, self.ino) => Ok(()),
             _ => Err(Error::Moved),

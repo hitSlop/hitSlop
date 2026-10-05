@@ -62,11 +62,11 @@ a new document. Schema changes require new documents.
 
 The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges read from the file; nothing else in it is a resource, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell plus the WASM core from the CLI, with disposable memory storage. No executable code is downloaded.
 
-Every open checks the file before reading a value: the application ID, the storage version, the exact tables, one `app` row, the markers, the size of every value and asset, and asset paths. Opening a document to edit it, creating, packing and inspecting add SQLite's quick check; display-only opens (the catalog, Quick Look) leave it out. A template opened as a document is refused with `is_template`. A file a newer build wrote is refused with `requires_update` and left unchanged, as is a document whose layout is newer ([compatibility](../engineering-contract.md#compatibility)): connections never checkpoint when they close, and the writer is configured only after the checks pass, so a refused file keeps its bytes and its journal mode, including a newer build's WAL. The one write a read can cause is SQLite's own recovery: a crashed write's hot journal is rolled back first, restoring the last committed state. The CLI checks the helper's command protocol; the helper requires the live owner's exact core build.
+Every open checks the file before reading a value: the application ID, the storage version, the `packageFormat` and `runtimeABI` markers, the exact tables, one `app` row, the size of every value and asset, and asset paths. Opening a document to edit it, creating, packing and inspecting add SQLite's quick check; display-only opens (the catalog, Quick Look) leave it out. A template opened as a document is refused with `is_template`. A file a newer build wrote is refused with `requires_update` and left unchanged, as is a document whose layout is newer ([compatibility](../engineering-contract.md#compatibility)): connections never checkpoint when they close, and the writer is configured only after the checks pass, so a refused file keeps its bytes and its journal mode, including a newer build's WAL. The one write a read can cause is SQLite's own recovery: a crashed write's hot journal is rolled back first, restoring the last committed state. The CLI checks the helper's command protocol; the helper requires the live owner's exact core build.
 
 ## Persistence and ownership
 
-The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a document's saved state: the `document`, `checkpoint`, `updates` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque checkpoint/update bytes. Checkpoint replacement, covered-row deletion and freeing their pages are atomic. The exact canonical descriptor is the storage key. Nothing outside the core opens the file, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
+The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a document's saved state: the `document`, `checkpoint`, `updates` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque checkpoint/update bytes. Checkpoint replacement, covered-row deletion and freeing their pages are atomic. Nothing outside the core opens the file, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.hitslop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
@@ -136,11 +136,9 @@ Release validation requires actual Firebase delivery and symbolication; unit tes
 
 ## Schema identity
 
-Saved state belongs to the descriptor it was saved under. The store records the
-descriptor (the core's canonical serialization) with the checkpoint and compares it with
-the app's by meaning when it opens, parsing both: key order and number spelling never
-matter, any other difference refuses the saved state. The app declares the descriptor
-it was built for (`SlopApp.descriptor`; `svelteApp` sets it from its schema), and the
+Saved state belongs to the descriptor in the `app` row it is stored with. Packing
+writes that row once and a new document copies it from its template, so a document's
+state and its descriptor never part. The app declares the descriptor it was built for (`SlopApp.descriptor`; `svelteApp` sets it from its schema), and the
 shell refuses to mount an app on a document of another, as a custom `main.ts` could
 register: key order never matters. Schema evolution is deferred.
 

@@ -1,15 +1,14 @@
 /** Black-box template coverage: no template selectors, actions, or business logic. */
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { builtTemplates } from "./templates";
 import { digest, fileDigest, useTestRegistry } from "./runtime-artifacts";
-import { createDocument, documentFromStage, nativeRequest } from "./fixture-documents";
+import { assertExport, createDocument, documentFromStage, helperRequest } from "./helper";
 import { nativeFixtureSlugs, prepareNativeFixtures } from "./native-fixtures";
 useTestRegistry();
 
-const helper = resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
 const evidence = resolve(".hitslop/evidence/render");
 const parent = await mkdtemp(join(tmpdir(), "hitslop-native-smoke-"));
 // Everyday CI renders the native fixtures; releases render every bundled template.
@@ -38,13 +37,11 @@ type RenderResult = {
   passed: boolean;
   seconds: Partial<Record<Stage | "total", number>>;
 };
-/** One helper request, timed as `stage`. */
-async function run(body: Record<string, unknown>, result: RenderResult, stage: Stage) {
+/** `work`, timed as `stage`. */
+async function timed<T>(result: RenderResult, stage: Stage, work: Promise<T>): Promise<T> {
   const started = performance.now();
   try {
-    const reply = await nativeRequest(helper, body);
-    assert.ok(reply.ok, `${body.method} (${((performance.now() - started) / 1000).toFixed(1)}s): ${reply.error}`);
-    return reply;
+    return await work;
   } finally {
     result.seconds[stage] = (performance.now() - started) / 1000;
   }
@@ -53,6 +50,8 @@ const results: RenderResult[] = [];
 const sweepStarted = performance.now();
 let failure: string | undefined;
 try {
+  // This run's evidence only: exports never replace a file.
+  await rm(evidence, { recursive: true, force: true });
   await mkdir(evidence, { recursive: true });
   for (const { name, source } of packages) {
     const started = performance.now();
@@ -62,20 +61,15 @@ try {
     const result: RenderResult = { name, sha256: before, passed: false, seconds: {} };
     results.push(result);
     try {
-      if ((await stat(source)).isDirectory()) await documentFromStage(source, root, helper);
-      else await createDocument(helper, source, root);
-      const state = (await run({ method: "get", documentPath: root }, result, "initialRead")).state;
+      if ((await stat(source)).isDirectory()) await documentFromStage(source, root);
+      else await createDocument(source, root);
+      const state = (await timed(result, "initialRead", helperRequest({ method: "get", documentPath: root }))).state;
       for (const format of ["png", "pdf"] as const) {
         const output = join(evidence, `${name}.${format}`);
-        await run({ method: "export", documentPath: root, format, output }, result, format);
-        const bytes = await Bun.file(output).bytes();
-        assert(bytes.length > 100, `Empty ${format}: ${name}`);
-        assert.equal(
-          Buffer.from(bytes.subarray(0, format === "png" ? 8 : 4)).toString("hex"),
-          format === "png" ? "89504e470d0a1a0a" : "25504446",
-        );
+        await timed(result, format, helperRequest({ method: "export", documentPath: root, format, output }));
+        await assertExport(output, format);
       }
-      assert.deepEqual((await run({ method: "get", documentPath: root }, result, "finalRead")).state, state);
+      assert.deepEqual((await timed(result, "finalRead", helperRequest({ method: "get", documentPath: root }))).state, state);
       assert.equal(await checksum(source), before, `Master changed: ${name}`);
       result.passed = true;
       console.log(

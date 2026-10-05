@@ -1,7 +1,6 @@
 import { Strict } from "./strict";
 import { Type, type Static } from "typebox";
 import { BatchLimits, CoreErrorCodes, IssueCodes, RowIdRule } from "./constants";
-export { CoreErrorCodes, IssueCodes, RowIdRule };
 
 // Document core payloads. TypeBox is authoritative; Rust wire types are generated.
 // Field names and record keys are strings; rows are `{id}`; scalar-list elements `{index}`.
@@ -127,6 +126,8 @@ export const OwnerPublicationSchema = Strict({
 export const CoreErrorCodeSchema = Type.Enum(CoreErrorCodes, { title: "CoreErrorCode" });
 export type CoreErrorCode = Static<typeof CoreErrorCodeSchema>;
 export type Segment = Static<typeof SegmentSchema>;
+/** Where a row goes: before or after the row with this `$id`. */
+export type Anchor = Static<typeof AnchorSchema>;
 export type OwnerState = Static<typeof OwnerStateSchema>;
 export type OwnerPublication = Static<typeof OwnerPublicationSchema>;
 export type OwnerIntent = Static<typeof OwnerIntentSchema>;

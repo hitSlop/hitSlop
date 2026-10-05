@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { digest, fileDigest } from "./runtime-artifacts";
-import { repository } from "./templates";
+import { digest, fileDigest, repository } from "./runtime-artifacts";
 import type { Release } from "./compat";
 
 /** Fingerprint producing inputs, excluding the corpus-only commit and build outputs. */

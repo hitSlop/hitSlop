@@ -20,14 +20,13 @@ export async function prepareRenderer() {
  * the project supplies (`artwork/preview.png`, `artwork/icon.png`), packed by the file
  * engine. With a `render` command (from `prepareRenderer`), the app renders the artwork
  * the project does not supply, from a draft of the template. Without one, the build needs
- * no Mac. The engine publishes only a checked file and replaces only a template. `keep`
- * names a folder to stage into and keep; otherwise the stage is temporary. */
-export async function buildTemplate(source: string, render: string[] | undefined, destination?: string, keep?: string) {
+ * no Mac. The engine publishes only a checked file and replaces only a template. */
+export async function buildTemplate(source: string, render: string[] | undefined, destination?: string) {
   source = resolve(source);
   const output = resolve(destination ?? defaultOutput(source, projectSlug(source)));
   if (!output.endsWith(".slop")) throw new Error("Build output must be a .slop file");
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-build-"));
-  const stage = keep ?? join(temporary, "stage");
+  const stage = join(temporary, "stage");
   try {
     await stageProject(source, stage);
     const supplied = (name: string) => exists(join(stage, "artwork", name + ".png"), true);

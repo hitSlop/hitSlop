@@ -5,23 +5,11 @@ import HitSlopFeatures
 import HitSlopTestSupport
 import Testing
 
-/// What a Finder open asked the catalog to create from.
-private final class Chosen: @unchecked Sendable {
-  private let lock = NSLock()
-  private var entries: [CatalogEntry] = []
-  func append(_ entry: CatalogEntry) { lock.withLock { entries.append(entry) } }
-  var all: [CatalogEntry] { lock.withLock { entries } }
-}
 
-@MainActor private func coordinator(_ chosen: Chosen, templates: URL) -> SlopApplicationCoordinator {
+@MainActor private func coordinator(_ chosen: Locked<[CatalogEntry]>, templates: URL) -> SlopApplicationCoordinator {
   var client = CatalogClient.empty
-  client.chooseDestination = { entry in chosen.append(entry); return nil }
+  client.chooseDestination = { entry in chosen.modify { $0.append(entry) }; return nil }
   return SlopApplicationCoordinator(templatesURL: templates, presentsWindows: false, catalogClient: client)
-}
-
-@MainActor private func eventually(_ condition: () -> Bool) async throws {
-  for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(50)) }
-  #expect(condition())
 }
 
 /// A template opened from anywhere creates a document from itself; it never opens as one.
@@ -29,12 +17,12 @@ private final class Chosen: @unchecked Sendable {
   let stage = try Fixtures.stage()
   defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
   let template = try Fixtures.template(stage: stage, named: "received")
-  let chosen = Chosen()
+  let chosen = Locked<[CatalogEntry]>([])
   let app = coordinator(chosen, templates: stage.deletingLastPathComponent())
 
   app.openDocument(template)
-  try await eventually { !chosen.all.isEmpty }
-  let entry = try #require(chosen.all.first)
+  #expect(await eventually(timeout: .seconds(10)) { !chosen.value.isEmpty })
+  let entry = try #require(chosen.value.first)
   #expect(entry.source == .local(SlopPath.canonical(template)))
   #expect(entry.title == (try SlopFile(url: template)).manifest.title)
   #expect(app.store.documents.isEmpty)
@@ -47,11 +35,11 @@ private final class Chosen: @unchecked Sendable {
   defer { try? FileManager.default.removeItem(at: folder) }
   let file = folder.appendingPathComponent("damaged.slop")
   try Data("not a hitSlop file".utf8).write(to: file)
-  let chosen = Chosen()
+  let chosen = Locked<[CatalogEntry]>([])
   let app = coordinator(chosen, templates: folder)
 
   app.openDocument(file)
-  try await eventually { app.store.alert != nil }
-  #expect(chosen.all.isEmpty)
+  #expect(await eventually(timeout: .seconds(10)) { app.store.alert != nil })
+  #expect(chosen.value.isEmpty)
   #expect(app.store.documents.isEmpty)
 }

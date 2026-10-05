@@ -1,7 +1,7 @@
 import { isRejected } from "@hitslop/document";
 import { DocumentError } from "@hitslop/document/internal";
 import type { OwnerIntent, OwnerPath as Path, OwnerState } from "@hitslop/schema/core";
-import type { Handle, At } from "@hitslop/document/internal";
+import type { Handle } from "@hitslop/document/internal";
 import type { Definition, Node, ObjectNode, Value } from "@hitslop/document";
 import { unwrap } from "@hitslop/document/internal";
 import type { Segment } from "@hitslop/document";

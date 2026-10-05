@@ -10,7 +10,7 @@ import WebKit
     public static func previewPNGData(url: URL) async throws -> Data {
         try await withRenderSession(url: url) { try await capture(session: $0, output: .previewPNG) }
     }
-    public static func previewPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .previewPNG) }
+    static func previewPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .previewPNG) }
     public static func exportPNGData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .exportPNG) }
     public static func exportPDFData(session: DocumentSession) async throws -> Data { try await capture(session: session, output: .pdf) }
 
@@ -67,7 +67,7 @@ import WebKit
             guard rect.width > 0, abs(rect.width - rect.height) < 0.5,
                   rect.minX >= -0.5, rect.minY >= -0.5,
                   rect.maxX <= view.bounds.width + 0.5, rect.maxY <= view.bounds.height + 0.5 else {
-                throw SlopError.invalid("icon target must be a visible square inside the capture viewport")
+                throw SlopFailure("icon target must be a visible square inside the capture viewport")
             }
             WebViewBackground.set(false, on: view)
             let configuration = WKSnapshotConfiguration()
@@ -150,7 +150,7 @@ import WebKit
                     }
                     box = next
                 }
-                guard settled else { throw SlopError.invalid("Preview export layout keeps changing with viewport size; use normal flow in Export.svelte") }
+                guard settled else { throw SlopFailure("Preview export layout keeps changing with viewport size; use normal flow in Export.svelte") }
                 width = max(box.width, 1)
                 height = max(min(box.height, previewHeight(box)), 1)
                 rect = CGRect(x: box.minX, y: box.minY, width: width, height: height)
@@ -163,7 +163,7 @@ import WebKit
                     if abs(next - height) < 1 { settled = true; break }
                     height = next
                 }
-                guard settled else { throw SlopError.invalid("Export layout keeps changing with viewport height; use normal flow in Export.svelte") }
+                guard settled else { throw SlopFailure("Export layout keeps changing with viewport height; use normal flow in Export.svelte") }
                 rect = CGRect(x: 0, y: 0, width: width, height: height)
             }
             let scale: CGFloat = output == .exportPNG || (isPreview && dedicated) ? 2 : 1
@@ -196,7 +196,7 @@ import WebKit
     /// pages onto one continuous canvas without rasterizing text or artwork.
     private static func continuousPDF(_ data: Data, size: CGSize) throws -> Data {
         guard let provider = CGDataProvider(data: data as CFData), let source = CGPDFDocument(provider) else {
-            throw SlopError.invalid("Could not read captured PDF")
+            throw SlopFailure("Could not read captured PDF")
         }
         guard source.numberOfPages > 1 else { return data }
         let output = NSMutableData()
@@ -204,15 +204,15 @@ import WebKit
         // scaling preserves the complete document without an oversized MediaBox.
         let scale = min(1, 14_400 / max(size.width, size.height))
         var bounds = CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale)
-        guard bounds.width >= 3, bounds.height >= 3 else { throw SlopError.invalid("Document aspect ratio exceeds single-page PDF limits") }
+        guard bounds.width >= 3, bounds.height >= 3 else { throw SlopFailure("Document aspect ratio exceeds single-page PDF limits") }
         guard let consumer = CGDataConsumer(data: output), let context = CGContext(consumer: consumer, mediaBox: &bounds, nil) else {
-            throw SlopError.invalid("Could not create continuous PDF")
+            throw SlopFailure("Could not create continuous PDF")
         }
         context.beginPDFPage(nil)
         context.scaleBy(x: scale, y: scale)
         var top = size.height
         for number in 1...source.numberOfPages {
-            guard let page = source.page(at: number) else { throw SlopError.invalid("Missing captured PDF page") }
+            guard let page = source.page(at: number) else { throw SlopFailure("Missing captured PDF page") }
             let box = page.getBoxRect(.mediaBox)
             top -= box.height
             context.saveGState()
@@ -227,25 +227,25 @@ import WebKit
 
     private static func captureFailure(_ error: Error) -> Error {
         if let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String {
-            return SlopError.invalid("Capture failed: \(message)")
+            return SlopFailure("Capture failed: \(message)")
         }
         return error
     }
 
     private static func validateSize(width: CGFloat, height: CGFloat, output: CaptureOutput, scale: CGFloat) throws {
-        guard width.isFinite, height.isFinite, width > 0, height > 0 else { throw SlopError.invalid("Invalid capture dimensions") }
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { throw SlopFailure("Invalid capture dimensions") }
         // PDF is vector output: a raster pixel budget would reject valid long documents.
         guard output != .pdf else { return }
         guard width * scale <= CGFloat(Limits.imageSide), height * scale <= CGFloat(Limits.imageSide), width * height * scale * scale <= CGFloat(Limits.imagePixels) else {
-            throw SlopError.invalid("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
+            throw SlopFailure("PNG exceeds 16384 pixels per side or 24 megapixels at \(Int(scale))×; export as PDF for longer documents")
         }
     }
     private static func geometry(_ value: [String: Any]) throws -> CGRect {
-        guard let width = value["width"] as? NSNumber, let height = value["height"] as? NSNumber else { throw SlopError.invalid("Could not measure capture content") }
+        guard let width = value["width"] as? NSNumber, let height = value["height"] as? NSNumber else { throw SlopFailure("Could not measure capture content") }
         return CGRect(x: (value["x"] as? NSNumber)?.doubleValue ?? 0, y: (value["y"] as? NSNumber)?.doubleValue ?? 0, width: width.doubleValue, height: height.doubleValue)
     }
     private static func begin(_ view: WKWebView, token: String, mode: String) async throws -> [String: Any] {
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopError.invalid("Could not prepare capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.begin(token, mode)", arguments: ["token": token, "mode": mode], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopFailure("Could not prepare capture") }
         return value
     }
     /// `begin` has already settled at the current size; only a resize needs another settle,
@@ -253,7 +253,7 @@ import WebKit
     private static func resizeAndSettle(_ view: WKWebView, to size: CGSize, token: String, measurement: inout [String: Any]) async throws {
         guard view.frame.size != size else { return }
         view.frame.size = size
-        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopError.invalid("Could not measure capture") }
+        guard let value = try await view.callAsyncJavaScript("return await window.__slop.capture.settle(token)", arguments: ["token": token], in: nil, contentWorld: .page) as? [String: Any] else { throw SlopFailure("Could not measure capture") }
         measurement = value
     }
     /// A user can resize the native window while an asynchronous capture is running.

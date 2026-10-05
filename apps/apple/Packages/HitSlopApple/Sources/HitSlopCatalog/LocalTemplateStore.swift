@@ -1,31 +1,24 @@
-import Combine
 import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopFeatures
 import HitSlopDocument
 
-public struct LocalTemplate: Identifiable, Sendable {
-    public let url: URL
-    public let icon: CatalogArtwork
-    public let preview: CatalogArtwork
-    public let manifest: SlopManifest
-    public let fileBytes: Int64
-    public let createdAt: Date?
-    public let updatedAt: Date?
-    public var id: String { "local:\(manifest.slug)" }
-}
-
+/// A templates folder as last scanned: its templates' entries, and why any file was left out.
 public struct LocalTemplateSnapshot: Sendable {
-    public var templates: [LocalTemplate] = []
+    public var templates: [CatalogEntry] = []
     public var issues: [String] = []
     public var diagnostics: [SlopFailureContext] = []
 }
 
-@MainActor public final class LocalTemplateStore: ObservableObject {
-    @Published public private(set) var snapshot = LocalTemplateSnapshot()
-    public var templates: [LocalTemplate] { snapshot.templates }
-    public var issues: [String] { snapshot.issues }
+/// The installed templates folder, rescanned when it changes. `snapshots` yields the current
+/// scan first, then each new one.
+@MainActor public final class LocalTemplateStore {
+    private(set) var snapshot = LocalTemplateSnapshot() { didSet { continuation.yield(snapshot) } }
+    public let snapshots: AsyncStream<LocalTemplateSnapshot>
+    private let continuation: AsyncStream<LocalTemplateSnapshot>.Continuation
+    var templates: [CatalogEntry] { snapshot.templates }
+    var issues: [String] { snapshot.issues }
     public let templatesURL: URL
     private let scan: @Sendable (URL) async throws -> LocalTemplateSnapshot
     private var watcher: DispatchSourceFileSystemObject?
@@ -43,6 +36,8 @@ public struct LocalTemplateSnapshot: Sendable {
     init(templatesURL: URL, scan: @escaping @Sendable (URL) async throws -> LocalTemplateSnapshot) {
         self.templatesURL = templatesURL
         self.scan = scan
+        (snapshots, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+        continuation.yield(snapshot)
         startWatching()
         scheduleScan()
     }
@@ -66,6 +61,7 @@ public struct LocalTemplateSnapshot: Sendable {
 
     func stop() {
         stopped = true
+        continuation.finish()
         generation += 1
         pendingScan?.cancel()
         pendingScan = nil

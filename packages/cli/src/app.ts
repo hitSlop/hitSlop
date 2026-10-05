@@ -39,8 +39,6 @@ const retrySection = {
 /** Document commands run in the macOS helper, which reaches a live window or owns a
  * closed document. Authoring (init, check, dev, build) needs neither. */
 async function native(...argv: string[]) {
-  if (process.platform !== "darwin")
-    throw new Error("Document commands and export require macOS and hitSlop.app; init, check, dev and build run anywhere.");
   await (await import("./native")).runNative(argv);
 }
 /** Reads a template or a closed or open document with the file engine, on any platform:
@@ -189,18 +187,12 @@ export const app = new Crust("slop", {
       c.args(source).action(async ({ args }) => {
         const { createRequire } = await import("node:module");
         const require = createRequire(import.meta.url);
-        const child = Bun.spawn(
-          [
-            process.execPath,
-            require.resolve("svelte-check/bin/svelte-check"),
-            "--workspace",
-            args.source,
-          ],
-          { stdout: "inherit", stderr: "inherit" },
-        );
-        const failed = await child.exited;
+        const { exec } = await import("./process");
+        const svelte = await exec([process.execPath, require.resolve("svelte-check/bin/svelte-check"), "--workspace", args.source], {
+          inherit: ["stdout", "stderr"],
+        });
         await (await import("./build")).checkProject(args.source);
-        if (failed) throw new Error("Authoring checks failed");
+        if (svelte.code) throw new Error("Authoring checks failed");
       }),
     ),
   )
@@ -373,7 +365,7 @@ export const app = new Crust("slop", {
             {
               name: "format",
               type: "string",
-              choices: [...ExportFormats],
+              choices: ExportFormats,
               required: true,
               description: "Export format: png or pdf",
             },

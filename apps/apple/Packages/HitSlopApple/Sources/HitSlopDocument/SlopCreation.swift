@@ -11,7 +11,7 @@ extension SlopFile {
     let url = url.pathExtension == "slop" ? url : url.appendingPathExtension("slop")
     try SlopLocalDocument.requireLocal(url)
     guard !SlopTemplateLocation.isMaster(url) else {
-      throw failure("A document cannot be created among installed templates")
+      throw SlopFailure("A document cannot be created among installed templates")
     }
     return url
   }

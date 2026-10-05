@@ -28,8 +28,11 @@ checked before the reader is chosen. The build stamps `runtimeABI` from the proj
 SDK and refuses one this CLI cannot validate or preview. Raising one
 adds a reader and leaves every released one as it is: copy `validate_v1` (with the
 manifest schema it validates against), `createContextV1` or the protocol-1 command tree
-rather than editing it, and keep the old layout and storage arms. Saved state
-belongs to its descriptor by meaning (`same_schema`), never by spelling. Checks that run
+rather than editing it, and keep the old layout and storage arms. Every open reads
+the markers (application ID, storage version, then `package_format` and `runtime_abi`)
+before it compares the exact tables, so a newer file is refused with `requires_update`
+even when its tables differ. Saved state belongs to the descriptor in its file's `app`
+row, which is written once; no copy of it is stored with the state. Checks that run
 on open are versioned by `packageFormat`, so tightening an authoring rule never rejects a
 saved document; a security fix that must reject old documents needs an assessment and a
 recovery path for their data. Public boundaries grow additively: `ctx` and handle

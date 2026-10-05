@@ -3,8 +3,7 @@
 // built; documents saved through this build's CLI and helper; what they read as; edits to
 // replay on them; and the commands a CLI of this release runs, with what they print.
 // Usage: bun scripts/compat-capture.ts RELEASE [--frozen] [--templates slug,slug]
-// Pick templates that cover what the release changed; the defaults store rows and text,
-// records of objects with text, and records an effect creates from today's date.
+// The templates default to the shipped ones (`examples/slops/bundled.json`).
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
 // release candidate with a clean tree, then commit it before tagging.
 import { Database } from "bun:sqlite";
@@ -27,31 +26,29 @@ import {
   type Transcript,
 } from "./compat";
 import { prepareNativeFixtures } from "./native-fixtures";
-import { builtTemplates, repository } from "./templates";
+import { builtTemplates } from "./templates";
 import { archiveDigest, corpusFiles, sourceFingerprint, verifyCorpus } from "./compat-integrity";
-import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry } from "./runtime-artifacts";
+import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "./runtime-artifacts";
 import { engine, pack } from "../packages/cli/src/engine";
+import { coreBuildId } from "../packages/cli/src/core";
+import { exec } from "../packages/cli/src/process";
+import { createDocument, debugHelper } from "./helper";
 useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun scripts/compat-capture.ts RELEASE [--frozen]");
 const frozen = flags.includes("--frozen");
-if (helper !== join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native"))
+if (helper !== debugHelper)
   throw new Error("Capture uses the helper it builds; remove HITSLOP_NATIVE_CLI for capture");
 const chosen = flags.includes("--templates")
   ? flags[flags.indexOf("--templates") + 1]!.split(",")
-  : ["quick-checklist", "pocket-sheet", "morning-pages"];
+  : (JSON.parse(await readFile(join(repository, "examples/slops/bundled.json"), "utf8")) as string[]);
 const destination = join(corpus, name);
 const previous = await readJSON<Release>(join(destination, "release.json"));
 if (previous?.frozen) throw new Error(`tests/compat/${name} is frozen; it is never recaptured`);
 const run = async (command: string[], cwd = repository) => {
   if (command[0] === process.execPath) console.log(`Capture: ${command.slice(1).join(" ")}`);
-  const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+  const { stdout, stderr, code } = await exec(command, { cwd });
   if (code) throw new Error(`${command.join(" ")} failed: ${stdout.trim()}\n${stderr.trim()}`);
   return stdout.trim();
 };
@@ -61,9 +58,7 @@ if (frozen && dirty) throw new Error("Capture a frozen entry from a clean releas
 // Build the producing tools rather than trusting an existing helper or inventory.
 await run([process.execPath, "run", "build"]);
 await run([process.execPath, "run", "build:templates"]);
-const producingCore = await import(resolve("packages/cli/shell/core/hitslop_core_wasm.js"));
-producingCore.initSync({ module: await Bun.file(resolve("packages/cli/shell/core/hitslop_core_wasm_bg.wasm")).bytes() });
-if (producingCore.coreBuildId() !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
+if ((await coreBuildId()) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 const root = join(stage, name);
@@ -151,12 +146,10 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
   "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
   "quick-checklist": [{ selector: '[aria-label="Checklist title"]', value: "Checklist edited ✓" }],
-  "pocket-sheet": [{ selector: '[aria-label="Sheet title"]', value: "Sheet edited ✓" }],
-  "morning-pages": [{ selector: '[aria-label="Morning Pages writing area"]', value: "Morning pages edited ✓" }],
 };
 for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
-  await run([helper, "create", "--from", join(root, "templates", slug + ".slop"), "--output", document]);
+  await createDocument(join(root, "templates", slug + ".slop"), document, { helper });
   const schema = await schemaOf(document);
   for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
   const theme = await slopJSON(["theme", "get", document]);
@@ -180,7 +173,7 @@ for (const slug of ["conformance", "quick-checklist"]) {
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
 const anomalies = join(documents, "conformance-anomalies.slop");
-await run([helper, "create", "--from", join(root, "templates/conformance.slop"), "--output", anomalies]);
+await createDocument(join(root, "templates/conformance.slop"), anomalies, { helper });
 await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_anomalies", "--", anomalies]);
 
 // What each document reads as, and an edit to replay on it with its result.
@@ -316,11 +309,12 @@ const release: Release = {
 await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
 
 // The old apps' own edits: the native corpus test records what each page scenario saves.
-const swift = Bun.spawn(
-  [process.execPath, "scripts/swift-test.ts", "--filter", "CompatCorpusTests"],
-  { cwd: repository, stdout: "inherit", stderr: "inherit", env: { ...process.env, HITSLOP_COMPAT_RECORD: name, HITSLOP_COMPAT_ROOT: stage, TZ: "UTC" } },
-);
-if (await swift.exited) throw new Error("Recording page scenarios failed");
+const swift = await exec([process.execPath, "scripts/swift-test.ts", "--filter", "CompatCorpusTests"], {
+  cwd: repository,
+  inherit: ["stdout", "stderr"],
+  env: { ...process.env, HITSLOP_COMPAT_RECORD: name, HITSLOP_COMPAT_ROOT: stage, TZ: "UTC" },
+});
+if (swift.code) throw new Error("Recording page scenarios failed");
 for (const document of await readdir(join(root, "pages"))) {
   const page = JSON.parse(await readFile(join(root, "pages", document), "utf8")) as Page;
   if (page.value === null) throw new Error(`No page result recorded for ${document}`);

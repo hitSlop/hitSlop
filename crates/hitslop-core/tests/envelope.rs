@@ -1,4 +1,4 @@
-#![cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 //! The core evaluates each envelope kind against its TypeBox-generated contract. What
 //! each contract accepts is tested where it is written (`packages/schema/tests`); this
 //! proves every kind is wired to its contract, bounded and parsed as JSON.

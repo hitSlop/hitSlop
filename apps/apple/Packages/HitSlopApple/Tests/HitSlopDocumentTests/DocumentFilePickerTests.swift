@@ -66,10 +66,7 @@ import WebKit
     }
     #expect(try await select() == "Selected 🦊 bytes")
     #expect(try await engine.withCapture { try await select() } == nil, "no selection while a capture reads the page")
-    engine.allowsFileSelection = false
-    #expect(try await select() == nil)
     #expect(presentations == 1)
-    engine.allowsFileSelection = true
     try await engine.close()
   }
 

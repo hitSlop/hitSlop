@@ -1,9 +1,9 @@
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { localImports } from "../packages/cli/src/imports";
 import { engine } from "../packages/cli/src/engine";
-import { fileDigest, sha256 } from "./runtime-artifacts";
+import { fileDigest, publishFolder, sha256 } from "./runtime-artifacts";
 import { run } from "../packages/cli/src/process";
 
 const ignored = new Set([
@@ -21,7 +21,7 @@ const ignored = new Set([
 
 
 /** Named input hashes; retained in cache entries so misses can name their cause. */
-export type Inputs = Record<string, string>;
+type Inputs = Record<string, string>;
 
 /** Content and path based; timestamps and checkout locations never enter the key. */
 export async function inputs(root: string, paths: string[]): Promise<Inputs> {
@@ -115,7 +115,7 @@ export async function sharedTemplateInputs(repository: string, sources: string[]
 }
 
 /** Name what differs between two input sets, for cache miss reports. */
-export function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5) {
+function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5) {
   const changed = [...new Set([...Object.keys(previous), ...Object.keys(current)])]
     .filter((key) => previous[key] !== current[key])
     .sort();
@@ -125,15 +125,15 @@ export function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5)
 }
 
 /** Checks shared by cache reads and signed-app verification: a regular template file the
- * engine opens, built for `slug`, with preview artwork (the icon is optional: a build
- * without an icon view has none). Returns the file's checksum. */
-export async function validateTemplate(path: string, slug: string) {
+ * engine opens, built for `slug`, with preview artwork unless `artwork` is false (the icon
+ * is optional: a build without an icon view has none). Returns the file's checksum. */
+export async function validateTemplate(path: string, slug: string, artwork = true) {
   const info = await lstat(path);
   if (!info.isFile()) throw new Error(`Invalid template file: ${slug}`);
   const template = JSON.parse(await engine(["inspect", path]));
   if (template.kind !== "template") throw new Error(`Not a template: ${slug}`);
   if (template.manifest?.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
-  if (!template.artwork.some((artwork: { name: string }) => artwork.name === "preview"))
+  if (artwork && !template.artwork.some((image: { name: string }) => image.name === "preview"))
     throw new Error(`Template has no preview artwork: ${slug}`);
   return fileDigest(path);
 }
@@ -148,7 +148,8 @@ export class TemplateCache {
     readonly shared: Inputs,
   ) {}
 
-  async build(source: string, slug: string, destination: string, build: () => Promise<unknown>) {
+  /** `artwork` false caches a test fixture built without native artwork. */
+  async build(source: string, slug: string, destination: string, build: () => Promise<unknown>, artwork = true) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error(`Invalid cache slug: ${slug}`);
     const template = await inputs(source, ["."]);
     const key = sha256(JSON.stringify({ shared: this.shared, template }));
@@ -178,21 +179,11 @@ export class TemplateCache {
     }
     this.misses.set(slug, reason);
     await build();
-    const checksum = await validateTemplate(destination, slug);
-    await mkdir(this.directory, { recursive: true });
-    const stage = join(this.directory, `${slug}.building-${crypto.randomUUID()}`);
-    try {
-      await mkdir(stage);
+    const checksum = await validateTemplate(destination, slug, artwork);
+    await publishFolder(entry, async (stage) => {
       await copyFile(destination, join(stage, "template.slop"));
-      await writeFile(
-        join(stage, "entry.json"),
-        JSON.stringify({ key, checksum, shared: this.shared, template }),
-      );
-      await rm(entry, { recursive: true, force: true });
-      await rename(stage, entry);
-    } finally {
-      await rm(stage, { recursive: true, force: true });
-    }
+      await writeFile(join(stage, "entry.json"), JSON.stringify({ key, checksum, shared: this.shared, template }));
+    });
     return "built" as const;
   }
 

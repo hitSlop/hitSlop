@@ -11,17 +11,10 @@ import HitSlopTestSupport
   /// The checklist document with `app` as its app. By default the app throws: native editing
   /// must never evaluate authored JavaScript.
   func fixture(app: String = "throw new Error('authored code must not execute');") throws -> URL {
-    let stage = try Fixtures.stage()
-    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: Fixtures.repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
-    try Fixtures.updateApp(stage) { app in
-      app["descriptor"] = spec["schema"]
-      app["initial"] = spec["initial"]
-    }
-    try Data(app.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
-    return try Fixtures.document(stage: stage)
+    try Fixtures.checklistDocument(app: app)
   }
   func value(_ owner: DocumentOwner) async throws -> [String: Any] {
-    try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
+    try Fixtures.object(await owner.state())
   }
   func hits(_ owner: DocumentOwner) async throws -> Int? {
     (try await value(owner)["value"] as? [String: Any])?["hits"] as? Int
@@ -109,7 +102,7 @@ import HitSlopTestSupport
     let root = try Fixtures.document(from: template)
     defer { try? FileManager.default.removeItem(at: root) }
     let opened = try SlopFile(url: root)
-    for mode in [StorageMode.document, .snapshot] {
+    for mode in [StoreMode.document, .snapshot] {
       let owner = try DocumentOwner(url: root, mode: mode)
       #expect(owner.file.kind == .document)
       #expect(owner.file.descriptor == opened.descriptor)
@@ -154,6 +147,19 @@ import HitSlopTestSupport
       _ = try await reopened.apply(batch: self.increment, epoch: owner.epoch)
     }
     try await reopened.close()
+  }
+
+  // An owner that fails to open releases the file: its store and the asset reader opened
+  // with it close before the error reaches the caller.
+  @Test func anOwnerThatFailsToOpenReleasesTheLock() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(url: root)
+    _ = try await owner.apply(batch: increment)
+    try await owner.close()
+    try Fixtures.sql(root, "UPDATE checkpoint SET bytes = x'00'")
+    #expect(throws: (any Error).self) { _ = try DocumentOwner(url: root) }
+    #expect(!Fixtures.isLocked(root))
   }
 
   @Test func failedCloseRetainsLiveStateAndOwnershipUntilRetry() async throws {
@@ -374,7 +380,7 @@ import HitSlopTestSupport
   /// A page's `open`; the error it fails with, if any.
   func open(_ owner: DocumentOwner, view: String) async throws -> Error? {
     await withCheckedContinuation { continuation in
-      owner.enqueuePage(.open, view: view) { result in
+      owner.enqueuePage(.open(PageOpenRequest()), view: view) { result in
         if case .failure(let error) = result { continuation.resume(returning: error) } else { continuation.resume(returning: nil) }
       }
     }
@@ -442,9 +448,9 @@ extension DocumentOwnerTests {
         if values.count == 2 { continuation.resume(returning: values) }
       }
       admitPage(owner, ["method": "apply",
-        "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])], reply: receive)
+        "batch": try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])], reply: receive)
       admitPage(owner, ["method": "text",
-        "request": json(["base": base, "path": ["title"], "from": title, "to": title + "!",
+        "request": try! Fixtures.json(["base": base, "path": ["title"], "from": title, "to": title + "!",
           "selectionStart": title.utf16.count + 1, "selectionEnd": title.utf16.count + 1])], reply: receive)
     }
     #expect(sequences == [1, 2])
@@ -467,14 +473,14 @@ extension DocumentOwnerTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     owner.attach(view: "page")
-    let increment = json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
+    let increment = try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
     let requests: [([String: Any], String)] = [
       (["method": "apply"], "invalid_request"),
       (["method": "apply", "batch": increment, "extra": true], "invalid_request"),
       (["method": "flush", "batch": increment], "invalid_request"),
       (["view": "", "method": "apply", "batch": increment], "invalid_request"),
-      (["method": "apply", "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
-      (["method": "text", "request": json(["base": "x"])], "invalid_request"),
+      (["method": "apply", "batch": try! Fixtures.json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
+      (["method": "text", "request": try! Fixtures.json(["base": "x"])], "invalid_request"),
       (["method": "apply", "batch": ["intents": []]], "invalid_request"),
       // The core bounds opaque document payloads in UTF-8 bytes.
       (["method": "text", "request": String(repeating: "😀", count: 1_048_577)], "too_large"),
@@ -491,9 +497,6 @@ extension DocumentOwnerTests {
 }
 
 /// A page payload, as the page sends it: JSON text.
-private func json(_ value: Any) -> String {
-  String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self)
-}
 
 // Exercise the same validated envelope and owner admission used by DocumentSession.
 @MainActor private func admitPage(_ owner: DocumentOwner, _ args: [String: Any], view: String = "first",

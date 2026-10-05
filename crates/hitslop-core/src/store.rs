@@ -13,6 +13,8 @@
 //! other `Store` call on the other, so a slow write never blocks edits. A theme change is
 //! held in memory like an edit and saved by the next job, in the same transaction.
 
+pub use crate::error::{Error, Result};
+use crate::error::{failed, invalid, rejected, sqlite};
 use crate::file::{self, Kind, OpenedApp};
 use crate::registry::Lease;
 use crate::{theme, Document};
@@ -23,8 +25,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-const MAX_BYTES: i64 = crate::STORAGE_BYTES as i64;
-const MAX_ROWS: i64 = crate::STORAGE_ROWS as i64;
 /// A save checkpoints instead of appending once the log reaches either.
 const CHECKPOINT_ROWS: i64 = 256;
 const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
@@ -33,67 +33,12 @@ const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
 const TRIM_BYTES: i64 = 4 * 1024 * 1024;
 /// A checkpoint larger than this trims history while the session is still open.
 const SESSION_BYTES: usize = 16 * 1024 * 1024;
-const MAX_DESCRIPTOR_BYTES: i64 = 1024 * 1024;
 /// The overrides of a document that has none.
 const NO_OVERRIDES: &str = "{}";
 /// The saved checkpoint, and the updates saved since, in order.
-const CHECKPOINT: &str = "SELECT descriptor,bytes FROM checkpoint WHERE id=1";
+const CHECKPOINT: &str = "SELECT bytes FROM checkpoint WHERE id=1";
 const UPDATES: &str = "SELECT bytes FROM updates ORDER BY seq";
-const BOUNDS: &str = "SELECT (SELECT count(*) FROM updates),(SELECT COALESCE(sum(length(bytes)),0) FROM updates),COALESCE((SELECT length(bytes) FROM checkpoint),0),COALESCE((SELECT length(CAST(descriptor AS BLOB)) FROM checkpoint),0)";
 
-/// Why a storage call failed. Every save failure keeps ownership, the live state and all
-/// edits.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// Another process holds the writer lock.
-    #[error("document has a live writer")]
-    Locked,
-    /// Another connection held the database (for example a backup); retrying can succeed.
-    #[error("document database is busy")]
-    Busy,
-    /// The write would exceed the storage limits; saved state is intact.
-    #[error("document is full")]
-    Full,
-    /// The document file was moved or replaced while open.
-    #[error("document moved or replaced")]
-    Moved,
-    /// The store no longer owns the document.
-    #[error("document is closed")]
-    Closed,
-    /// The request breaks a document rule (a theme value, for example); nothing changed.
-    #[error("{0}")]
-    Rejected(crate::Error),
-    #[error("{0}")]
-    Failed(String),
-}
-pub type Result<T> = std::result::Result<T, Error>;
-pub(crate) fn failed(message: impl ToString) -> Error {
-    Error::Failed(message.to_string())
-}
-/// A refusal under a core error code; nothing changed.
-pub(crate) fn rejected(code: crate::Code, message: impl ToString) -> Error {
-    Error::Rejected(crate::err(code, message))
-}
-pub(crate) fn invalid(message: impl ToString) -> Error {
-    rejected(crate::Code::InvalidRequest, message)
-}
-pub(crate) fn requires_update(message: impl ToString) -> Error {
-    rejected(crate::Code::RequiresUpdate, message)
-}
-/// A SQLite failure as a storage outcome: full, busy, moved, or failed doing `action`.
-pub(crate) fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_ {
-    use rusqlite::ffi::ErrorCode;
-    move |e| match e.sqlite_error_code() {
-        Some(ErrorCode::DiskFull | ErrorCode::TooBig) => Error::Full,
-        // BUSY is a definite failure: nothing was written.
-        Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Error::Busy,
-        // Not a SQLite database at all: a file this app refuses, not a storage failure.
-        Some(ErrorCode::NotADatabase) => invalid("This is not a hitSlop document"),
-        // Apple's SQLite: the file was renamed, or gained and lost a hard link, while open.
-        _ if e.sqlite_error().is_some_and(|e| e.extended_code == rusqlite::ffi::SQLITE_IOERR_VNODE) => Error::Moved,
-        _ => failed(format!("{action}: {e}")),
-    }
-}
 /// A core failure while loading: a document this build is too old for is a refusal the
 /// host names; anything else is a storage failure.
 fn load_failure(e: crate::Error) -> Error {
@@ -114,34 +59,31 @@ impl Metadata {
         self.checkpoint_bytes + self.update_bytes
     }
 }
-/// The storage limits every size decision checks: at most `MAX_ROWS` saved updates and
-/// `MAX_BYTES` of checkpoint and updates.
+/// The storage limits every size decision checks: at most `STORAGE_ROWS` saved updates and
+/// `STORAGE_BYTES` of checkpoint and updates.
 fn within(rows: i64, bytes: i64) -> bool {
-    rows <= MAX_ROWS && bytes <= MAX_BYTES
+    rows <= crate::STORAGE_ROWS as i64 && bytes <= crate::STORAGE_BYTES as i64
 }
-/// A checkpoint row's size: SQLite bounds the whole row, its descriptor and header too.
-fn checkpoint_row(bytes: usize, descriptor: usize) -> i64 {
-    (bytes + descriptor) as i64 + 512
+/// A checkpoint row's size: SQLite bounds the whole row, its header too.
+fn checkpoint_row(bytes: usize) -> i64 {
+    bytes as i64 + 512
 }
-fn bounds(conn: &Connection) -> Result<(Metadata, i64)> {
-    conn.prepare_cached(BOUNDS)
-        .and_then(|mut s| {
-            s.query_row([], |r| {
-                Ok((Metadata { rows: r.get(0)?, update_bytes: r.get(1)?, checkpoint_bytes: r.get(2)? }, r.get(3)?))
-            })
-        })
+fn bounds(conn: &Connection) -> Result<Metadata> {
+    conn.prepare_cached(file::STATE_SIZES)
+        .and_then(|mut s| s.query_row([], |r| Ok(Metadata { rows: r.get(0)?, update_bytes: r.get(1)?, checkpoint_bytes: r.get(2)? })))
         .map_err(sqlite("read metadata"))
 }
 /// The stored sizes, checked against the limits. Read before any blob is.
 fn checked_bounds(conn: &Connection) -> Result<Metadata> {
-    let (meta, descriptor) = bounds(conn)?;
+    let meta = bounds(conn)?;
     if meta.rows > 0 && meta.checkpoint_bytes == 0 {
         return Err(failed("Saved updates have no checkpoint; keep the file for recovery"));
     }
-    if descriptor > MAX_DESCRIPTOR_BYTES || !within(meta.rows, meta.stored()) {
+    if !within(meta.rows, meta.stored()) {
         return Err(failed(format!(
-            "Document exceeds storage limits ({} MiB or {MAX_ROWS} updates); keep the file for recovery",
-            MAX_BYTES >> 20
+            "Document exceeds storage limits ({} MiB or {} updates); keep the file for recovery",
+            crate::STORAGE_BYTES >> 20,
+            crate::STORAGE_ROWS
         )));
     }
     Ok(meta)
@@ -223,8 +165,8 @@ fn append(doc: &Document, saved: &VersionVector, meta: Metadata) -> Result<Optio
 }
 /// A checkpoint that fits: the whole history while it is small, else the session's own
 /// history, else none. Compaction keeps no history.
-fn checkpoint(doc: &mut Document, opened: &Frontiers, descriptor: usize, compact: bool) -> Result<Option<Vec<u8>>> {
-    let fits = |bytes: &[u8]| within(0, checkpoint_row(bytes.len(), descriptor));
+fn checkpoint(doc: &mut Document, opened: &Frontiers, compact: bool) -> Result<Option<Vec<u8>>> {
+    let fits = |bytes: &[u8]| within(0, checkpoint_row(bytes.len()));
     let latest = doc.doc.oplog_frontiers();
     if compact {
         return trimmed(doc, &latest, fits);
@@ -249,9 +191,9 @@ fn trimmed(doc: &mut Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool
     Ok(Some(bytes))
 }
 
-/// Opens the saved document, or none before the first save. The checkpoint and every
-/// update are imported straight from SQLite's buffers, without copying them. The saved
-/// descriptor is compared by meaning, whatever its spelling.
+/// Opens the saved document under the descriptor of the app it is stored with, or none
+/// before the first save. The checkpoint and every update are imported straight from
+/// SQLite's buffers, without copying them.
 fn load(conn: &Connection, schema: &crate::Node) -> Result<Option<(Document, Metadata)>> {
     let meta = checked_bounds(conn)?;
     let mut saved = conn.prepare_cached(CHECKPOINT).map_err(sqlite("read"))?;
@@ -259,10 +201,7 @@ fn load(conn: &Connection, schema: &crate::Node) -> Result<Option<(Document, Met
     let Some(row) = saved.next().map_err(sqlite("read"))? else {
         return Ok(None);
     };
-    if !row.get_ref(0).ok().and_then(|key| key.as_str().ok()).is_some_and(|saved| crate::descriptor(saved).is_ok_and(|saved| saved == *schema)) {
-        return Err(failed("Document schema differs from saved state"));
-    }
-    let checkpoint = row.get_ref(1).ok().and_then(|bytes| bytes.as_blob().ok()).ok_or_else(|| failed("Invalid checkpoint bytes"))?;
+    let checkpoint = row.get_ref(0).ok().and_then(|bytes| bytes.as_blob().ok()).ok_or_else(|| failed("Invalid checkpoint bytes"))?;
     let mut rows = conn.prepare_cached(UPDATES).map_err(sqlite("read updates"))?;
     let mut rows = rows.query([]).map_err(sqlite("read updates"))?;
     let doc = Document::open_with(schema.clone(), checkpoint, load_failure, |import| loop {
@@ -280,23 +219,23 @@ impl Store {
     /// (`file::create_document` makes one from it). `Snapshot` mode reads a document's
     /// saved state, or a template's initial values, once.
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
-        let (lease, conn, kind) = match mode {
+        let (lease, conn, app) = match mode {
             Mode::Document => {
                 let lease = Lease::acquire(path)?;
                 let conn = file::writer(path, false)?;
                 // Checked before anything is configured: a file this build refuses is never
                 // written, not even its journal mode.
-                let kind = file::check(&conn, true)?;
-                if kind != Kind::Document {
+                let app = file::opened(&conn, path, true)?;
+                if app.kind != Kind::Document {
                     return Err(rejected(crate::Code::IsTemplate, "A template opens by creating a document from it"));
                 }
                 file::configure_writer(&conn)?;
-                (Some(lease), conn, kind)
+                (Some(lease), conn, app)
             }
             Mode::Snapshot => {
                 let conn = file::reader(path)?;
-                let kind = file::check(&conn, false)?;
-                (None, conn, kind)
+                let app = file::opened(&conn, path, false)?;
+                (None, conn, app)
             }
         };
         let inode = match &lease {
@@ -306,7 +245,7 @@ impl Store {
         Ok(Self {
             path: path.to_owned(),
             inode,
-            app: file::open_app(&conn, kind, path)?,
+            app,
             owned: AtomicBool::new(lease.is_some()),
             backing: Mutex::new(Backing { conn: Some(conn), lease }),
             account: Mutex::new(Account { meta: Metadata::default(), saved: VersionVector::default(), opened: Frontiers::default() }),
@@ -317,6 +256,14 @@ impl Store {
     /// The app this store's file holds, as its open checked it.
     pub fn app(&self) -> &OpenedApp {
         &self.app
+    }
+    /// A reader of the app's assets on its own connection, which pages read from while this
+    /// store saves. The file is the one this store's open checked, or the reader fails with
+    /// `Moved`.
+    pub fn asset_reader(&self) -> Result<file::AssetReader> {
+        let conn = file::reader(&self.path)?;
+        self.check(false)?;
+        Ok(file::AssetReader::new(conn))
     }
     /// Fails once the file was moved or replaced (or, for the writer, gained a hard link),
     /// or, with `writable`, once the store no longer owns it.
@@ -385,7 +332,7 @@ impl Store {
         let order: &[bool] = if force_checkpoint { &[true] } else if due { &[true, false] } else { &[false, true] };
         for &as_checkpoint in order {
             let bytes = if as_checkpoint {
-                checkpoint(doc, &opened, self.app.canonical_descriptor.len(), force_checkpoint)?
+                checkpoint(doc, &opened, force_checkpoint)?
             } else {
                 append(doc, &saved, meta)?
             };
@@ -412,8 +359,7 @@ impl Store {
         if latest == opened || stored <= TRIM_BYTES {
             return Ok(None);
         }
-        let descriptor = self.app.canonical_descriptor.len();
-        let smaller = |bytes: &[u8]| (bytes.len() as i64) < stored && within(0, checkpoint_row(bytes.len(), descriptor));
+        let smaller = |bytes: &[u8]| (bytes.len() as i64) < stored && within(0, checkpoint_row(bytes.len()));
         let version = doc.doc.oplog_vv();
         let bytes = trimmed(doc, &latest, smaller)?;
         Ok(bytes.map(|bytes| SaveJob { rows: Rows::Checkpoint(bytes), version, theme: None }))
@@ -427,7 +373,7 @@ impl Store {
         let meta = match self.connected(&mut backing.conn, |conn| self.transaction(conn, job)) {
             Ok(meta) => meta,
             Err(e) => {
-                if let Some(Ok((meta, _))) = backing.conn.as_ref().map(bounds) {
+                if let Some(Ok(meta)) = backing.conn.as_ref().map(bounds) {
                     lock(&self.account).meta = meta;
                 }
                 return Err(e);
@@ -464,16 +410,15 @@ impl Store {
     }
     /// Dropping the guard rolls back: on any error, after a failed COMMIT, or in a panic.
     fn transaction(&self, conn: &Connection, job: &SaveJob) -> Result<Metadata> {
-        let descriptor = &self.app.canonical_descriptor;
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("begin"))?;
         let meta = match &job.rows {
             Rows::None => lock(&self.account).meta,
             Rows::Checkpoint(bytes) => {
-                if !within(0, checkpoint_row(bytes.len(), descriptor.len())) || descriptor.len() as i64 > MAX_DESCRIPTOR_BYTES {
+                if !within(0, checkpoint_row(bytes.len())) {
                     return Err(Error::Full);
                 }
-                tx.prepare_cached("INSERT INTO checkpoint VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET descriptor=excluded.descriptor,bytes=excluded.bytes")
-                    .and_then(|mut s| s.execute(params![descriptor, bytes]))
+                tx.prepare_cached("INSERT INTO checkpoint VALUES(1,?) ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes")
+                    .and_then(|mut s| s.execute([bytes]))
                     .map_err(sqlite("checkpoint"))?;
                 tx.execute_batch("DELETE FROM updates").map_err(sqlite("checkpoint"))?;
                 Metadata { rows: 0, update_bytes: 0, checkpoint_bytes: bytes.len() as i64 }
@@ -554,14 +499,9 @@ impl Store {
     }
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
         let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("store attachment"))?;
-        let stored: Option<Vec<u8>> =
-            tx.query_row("SELECT bytes FROM attachments WHERE id=?", [&id], |r| r.get(0)).optional().map_err(sqlite("store attachment"))?;
         // The same bytes are already stored only if the stored copy is intact; damage is
         // refused, never repaired in passing, so a successful import is always readable.
-        if stored.as_deref().is_some_and(|stored| attachment_id(stored) != id) {
-            return Err(failed("Attachment checksum mismatch; keep the file for recovery"));
-        }
-        if stored.is_none() {
+        if stored_attachment(&tx, id)?.is_none() {
             let (count, total): (i64, i64) = tx
                 .query_row("SELECT count(*), coalesce(sum(length(bytes)),0) FROM attachments", [], |r| Ok((r.get(0)?, r.get(1)?)))
                 .map_err(sqlite("store attachment"))?;
@@ -581,26 +521,19 @@ impl Store {
         if !crate::wire::valid_attachment_id(id) {
             return Err(rejected(crate::Code::InvalidId, "Invalid attachment ID"));
         }
-        let bytes: Option<Vec<u8>> = self.read(|conn| {
-            conn.query_row("SELECT bytes FROM attachments WHERE id=?", [id], |r| r.get(0)).optional().map_err(sqlite("read attachment"))
-        })?;
-        let bytes = bytes.ok_or_else(|| rejected(crate::Code::PathNotFound, "Attachment not found"))?;
-        if attachment_id(&bytes) != id {
-            return Err(failed("Attachment checksum mismatch; keep the file for recovery"));
-        }
-        Ok(bytes)
+        self.read(|conn| stored_attachment(conn, id))?.ok_or_else(|| rejected(crate::Code::PathNotFound, "Attachment not found"))
     }
     /// One artwork image (`preview` or `icon`), through this store's own connection.
     pub fn artwork(&self, name: &str) -> Result<Option<Vec<u8>>> {
         self.check(false)?;
-        self.read(|conn| conn.query_row("SELECT png FROM artwork WHERE name=?", [name], |r| r.get(0)).optional().map_err(sqlite("read artwork")))
+        self.read(|conn| file::read_artwork(conn, name))
     }
     /// Writes the document's artwork (`preview`, `icon`) through the writer's connection: a
     /// window renders it from the open document as it closes. Checked as `pack` checks it.
     pub fn set_artwork(&self, artwork: &[(&str, &[u8])]) -> Result<()> {
         self.check(true)?;
         for (name, png) in artwork {
-            if !matches!(*name, "preview" | "icon") {
+            if !file::ARTWORK.contains(name) {
                 return Err(invalid(format!("Unknown artwork {name}")));
             }
             file::check_artwork(&format!("The {name} artwork"), png)?;
@@ -658,17 +591,15 @@ pub struct Attachment {
 fn attachment_id(bytes: &[u8]) -> String {
     crate::hex(Sha256::digest(bytes).as_slice())
 }
-/// The first of `preferred` artwork (`preview`, `icon`) the file holds, by name: one read,
-/// for a host displaying the file (Quick Look, the catalog, a window's icon). A file that
-/// cannot be read now (busy, or mid-recovery) is an error, never "no artwork".
-pub fn artwork(path: &Path, preferred: &[&str]) -> Result<Option<(String, Vec<u8>)>> {
-    let conn = file::reader(path)?;
-    file::check(&conn, false)?;
-    for name in preferred {
-        let png = conn.query_row("SELECT png FROM artwork WHERE name=?", [name], |r| r.get(0)).optional().map_err(sqlite("read artwork"))?;
-        if let Some(png) = png {
-            return Ok(Some((name.to_string(), png)));
-        }
+/// A stored attachment's bytes, verified against their identity: damage is an error, never
+/// served.
+fn stored_attachment(conn: &Connection, id: &str) -> Result<Option<Vec<u8>>> {
+    let bytes: Option<Vec<u8>> = conn
+        .prepare_cached("SELECT bytes FROM attachments WHERE id=?")
+        .and_then(|mut s| s.query_row([id], |r| r.get(0)).optional())
+        .map_err(sqlite("read attachment"))?;
+    if bytes.as_deref().is_some_and(|bytes| attachment_id(bytes) != id) {
+        return Err(failed("Attachment checksum mismatch; keep the file for recovery"));
     }
-    Ok(None)
+    Ok(bytes)
 }

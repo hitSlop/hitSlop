@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { appConfig, virtualEntry } from "./vite";
-import { discoverEntry } from "./entry";
+import { discoverEntry, entryFiles } from "./entry";
 import { previewFrame } from "./preview";
 import { cliRoot, shellDirectory } from "./paths";
 import { metadataFiles, stageWorker } from "./build";
@@ -98,11 +98,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
       "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:* https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'";
     const page =
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module" src="/@vite/client"></script></head><body><script type="module" src="/__shell__/boot.js"></script></body></html>';
-    const conventional = new Set(
-      ["main.ts", "App.svelte", "styles.css", "Export.svelte", "Icon.svelte"].map((file) =>
-        join(source, file),
-      ),
-    );
+    const conventional = new Set(entryFiles.map((file) => join(source, file)));
     const host: Plugin = {
       name: "hitslop-preview-host",
       configureServer(current) {

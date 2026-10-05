@@ -10,7 +10,7 @@ import Testing
     let alias = root.appendingPathComponent("alias")
     try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: cloud)
     for path in [cloud, cloud.appendingPathComponent("new/document.slop"), alias.appendingPathComponent("document.slop")] {
-        #expect(throws: SlopError.self) { try SlopLocalDocument.requireLocal(path, iCloudRoot: cloud) }
+        #expect(throws: SlopFailure.self) { try SlopLocalDocument.requireLocal(path, iCloudRoot: cloud) }
     }
     #expect(throws: Never.self) { try SlopLocalDocument.requireLocal(root.appendingPathComponent("cloud-backup/document.slop"), iCloudRoot: cloud) }
     #expect(!FileManager.default.fileExists(atPath: cloud.appendingPathComponent("new").path))

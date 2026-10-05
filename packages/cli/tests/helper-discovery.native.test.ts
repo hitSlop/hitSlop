@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
 
 test("native protocol selection defaults to 1 and refuses unknown versions before document access", async () => {
-  const helper = process.env.HITSLOP_NATIVE_CLI ?? "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native";
+  const helper = process.env.HITSLOP_NATIVE_CLI!;
   const run = async (args: string[]) => {
     const child = Bun.spawn([helper, ...args], { stdout: "pipe", stderr: "pipe" });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);

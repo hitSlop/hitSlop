@@ -7,13 +7,6 @@ import HitSlopDocument
 /// opening. Installed templates are validated once per version; recent documents are
 /// listed from their checked apps.
 actor CatalogScanner {
-    private static let queue = DispatchQueue(label: "hitslop.catalog", qos: .utility)
-    private static func run<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { continuation.resume(with: Result { try work() }) }
-        }
-    }
-
     /// A template file as last validated. Installs replace the whole file, so its identity,
     /// date or size changes with every new version.
     private struct Version: Equatable, Sendable {
@@ -28,7 +21,7 @@ actor CatalogScanner {
         }
     }
     private enum Outcome: Sendable {
-        case template(LocalTemplate)
+        case template(CatalogEntry)
         case issue(String, SlopFailureContext)
     }
     /// Per templates folder, each template file's last validation.
@@ -36,7 +29,7 @@ actor CatalogScanner {
 
     func local(at root: URL) async throws -> LocalTemplateSnapshot {
         try Task.checkCancellation()
-        let children = try await Self.run {
+        let children = try await SlopPreparation.run(on: SlopPreparation.catalog) {
             // The installed templates folder may not exist yet.
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             return try FileManager.default.contentsOfDirectory(
@@ -70,26 +63,19 @@ actor CatalogScanner {
 
     private func validate(_ child: URL) async throws -> Outcome {
         do {
-            let template = try await Self.run {
+            let template = try await SlopPreparation.run(on: SlopPreparation.catalog) {
                 let file = try SlopFile(url: child)
                 guard file.kind == .template else { throw SlopError.invalid("an installed template holds no document") }
                 guard child.deletingPathExtension().lastPathComponent == file.manifest.slug else {
                     throw SlopError.invalid("installed filename must match manifest slug")
                 }
-                let values = try? child.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
-                return LocalTemplate(
-                    url: child, icon: Self.artwork(child, .icon), preview: Self.artwork(child, .preview),
-                    manifest: file.manifest, fileBytes: file.byteCount,
-                    createdAt: values?.creationDate, updatedAt: values?.contentModificationDate
-                )
+                return Self.entry(template: file)
             }
             return .template(template)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            let diagnostic = error is SlopError
-                ? SlopFailureContext(.rejection, reason: .invalidFile) : .classify(error)
-            return .issue("\(child.lastPathComponent): \(error.localizedDescription)", diagnostic)
+            return .issue("\(child.lastPathComponent): \(error.localizedDescription)", .classify(error))
         }
     }
 
@@ -99,9 +85,7 @@ actor CatalogScanner {
         var entries: [CatalogEntry] = []
         for original in urls {
             try Task.checkCancellation()
-            guard (try? original.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
-            let url = SlopPath.canonical(original)
-            guard url.pathExtension == "slop", seen.insert(url).inserted,
+            guard let url = try? SlopFile.resolvedRoot(original), seen.insert(url).inserted,
                   let entry = try await recent(url) else { continue }
             entries.append(entry)
         }
@@ -110,28 +94,44 @@ actor CatalogScanner {
 
     /// A recent document's entry, or nil once it no longer exists.
     func recent(_ url: URL) async throws -> CatalogEntry? {
-        try await Self.run {
+        try await SlopPreparation.run(on: SlopPreparation.catalog) {
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            let summary = try? SlopFile(url: url)
-            var entry = CatalogEntry(
-                id: "recent:\(url.path)", source: .recent(url),
-                title: summary?.manifest.title ?? url.deletingPathExtension().lastPathComponent
-            )
-            if let summary {
-                CatalogServices.apply(summary.manifest, to: &entry)
-                let icon = Self.artwork(url, .icon), preview = Self.artwork(url, .preview)
-                entry.icons = [icon, preview]
-                entry.previews = [preview, icon]
-                entry.fileBytes = summary.byteCount
+            guard let file = try? SlopFile(url: url) else {
+                var entry = CatalogEntry(id: "recent:\(url.path)", source: .recent(url), title: url.deletingPathExtension().lastPathComponent)
+                Self.dates(url, &entry)
+                return entry
             }
-            let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
-            entry.createdAt = values?.creationDate
-            entry.updatedAt = values?.contentModificationDate
-            return entry
+            return Self.entry(file, source: .recent(url), id: "recent:\(url.path)")
         }
     }
 
-    private static func artwork(_ file: URL, _ name: CatalogArtwork.Name) -> CatalogArtwork {
+    /// A checked template's catalog entry, keyed by its path.
+    static func entry(template file: SlopFile) -> CatalogEntry {
+        entry(file, source: .local(file.url), id: "local:\(file.url.path)")
+    }
+    private static func entry(_ file: SlopFile, source: CatalogEntry.Source, id: String) -> CatalogEntry {
+        let manifest = file.manifest
+        var entry = CatalogEntry(id: id, source: source, title: manifest.title)
+        entry.slug = manifest.slug
+        entry.description = manifest.description
+        entry.categories = manifest.categories
+        entry.authorName = manifest.author.name
+        entry.authorURL = manifest.author.url.flatMap(URL.init(string:))
+        entry.initialSize = "\(manifest.presentation.width) × \(manifest.presentation.height)"
+        let icon = artwork(file.url, .icon), preview = artwork(file.url, .preview)
+        entry.icons = [icon, preview]
+        entry.previews = [preview, icon]
+        entry.fileBytes = file.byteCount
+        dates(file.url, &entry)
+        return entry
+    }
+    private static func dates(_ url: URL, _ entry: inout CatalogEntry) {
+        let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        entry.createdAt = values?.creationDate
+        entry.updatedAt = values?.contentModificationDate
+    }
+
+    private static func artwork(_ file: URL, _ name: SlopArtwork.Name) -> CatalogArtwork {
         let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         return CatalogArtwork(file: file, name: name, modifiedAt: values?.contentModificationDate, byteCount: values?.fileSize)
     }

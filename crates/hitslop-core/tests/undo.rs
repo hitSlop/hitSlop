@@ -6,22 +6,16 @@
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{json, Value};
-use support::View;
+use support::{View, fixture, value};
 
 const ROW: &str = "00000000000000000000000000000001";
-fn fixture() -> Value {
-    serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap()
-}
 fn schema() -> String {
-    fixture()["schema"].to_string()
+    fixture("checklist")["schema"].to_string()
 }
 fn setup() -> (Document, View) {
-    let d = Document::create(&schema(), &fixture()["initial"].to_string()).unwrap();
+    let d = Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap();
     let view = View::of(&d);
     (d, view)
-}
-fn value(d: &Document) -> Value {
-    serde_json::from_str::<Value>(&d.snapshot().unwrap()).unwrap()["value"].clone()
 }
 fn batch(intents: Value) -> String {
     json!({ "intents": intents }).to_string()
@@ -327,7 +321,7 @@ fn counter_batches_use_the_live_writer_for_both_origins() {
 
 #[test]
 fn undo_works_on_a_trimmed_document() {
-    let full = Document::create(&schema(), &fixture()["initial"].to_string()).unwrap().checkpoint().unwrap();
+    let full = Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap().checkpoint().unwrap();
     let loro = loro::LoroDoc::new();
     loro.import(&full).unwrap();
     let shallow = loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap();

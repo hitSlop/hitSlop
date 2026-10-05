@@ -11,7 +11,7 @@ extension SlopDocumentWindowController {
   ) async throws -> SlopDocumentWindowController {
     let commands = DirectCommands()
     let controller = try await open(
-      url: url, routing: commands.routing, presentsWindow: presentsWindow, telemetry: telemetry)
+      url: url, routing: commands.routing, progress: presentsWindow ? SlopOpeningProgress() : nil, telemetry: telemetry)
     commands.controller = controller
     return controller
   }

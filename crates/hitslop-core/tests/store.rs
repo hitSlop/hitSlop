@@ -2,6 +2,7 @@
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
 use hitslop_core::file;
+use hitslop_core::registry::Lease;
 use hitslop_core::store::{Error, Mode, Store};
 use hitslop_core::theme::Change;
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
@@ -12,13 +13,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use hitslop_core::Origin;
 mod support;
-use support::isolate_registry;
+use support::{isolate_registry, write_app, App};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
-const THEME: &str = r##"{"accent":"#335577"}"##;
 
-const MANIFEST: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
 /// A new document file, created from a packed template of `schema` and `initial`, alone
 /// in its folder.
 fn document_with(schema: &str, initial: &str) -> (tempfile::TempDir, PathBuf) {
@@ -27,12 +26,7 @@ fn document_with(schema: &str, initial: &str) -> (tempfile::TempDir, PathBuf) {
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
     std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
-    let app = format!(
-        r#"{{"packageFormat":{},"runtimeABI":{},"manifest":{MANIFEST},"descriptor":{schema},"initial":{initial},"theme":{THEME}}}"#,
-        hitslop_core::PACKAGE_FORMAT,
-        hitslop_core::RUNTIME_ABI
-    );
-    std::fs::write(stage.join("app.json"), app).unwrap();
+    write_app(&stage, App::new(schema, initial));
     let template = dir.path().join("Doc.template.slop");
     file::pack(&stage, &template).unwrap();
     let path = dir.path().join("Doc.slop");
@@ -163,12 +157,13 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
     let first = doc.version();
-    for i in 0..256 {
+    // Saves append, until a long log is replaced by a checkpoint well before the row limit.
+    let appended = (0..STORAGE_ROWS).take_while(|i| {
         set_title(&mut doc, &format!("Edit {i}"));
-        assert_eq!(save(&store, &mut doc), Some(false));
-    }
-    set_title(&mut doc, "Last");
-    assert_eq!(save(&store, &mut doc), Some(true), "256 rows checkpoint");
+        save(&store, &mut doc) == Some(false)
+    });
+    let appended = appended.count();
+    assert!(appended > 1 && appended < STORAGE_ROWS, "{appended} appends before a checkpoint");
     assert_eq!(stored(&path).rows, 0);
     store.close().unwrap();
     let (store, mut doc) = open(&path);
@@ -177,7 +172,7 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     assert!(job.is_checkpoint());
     store.write(&job).unwrap();
     store.close().unwrap();
-    assert_eq!(title(&open(&path).1), "Last");
+    assert_eq!(title(&open(&path).1), format!("Edit {appended}"));
 }
 
 fn stale(doc: &Document, version: &str) -> bool {
@@ -294,11 +289,12 @@ fn a_session_past_its_limit_trims_while_open() {
     let mut seed = 5;
     set_title(&mut doc, &noise(&mut seed, 1024 * 1024));
     let early = doc.version();
-    for _ in 0..24 {
+    // More than the storage limit's worth of edits keeps saving, and stays within it.
+    for _ in 0..(STORAGE_BYTES >> 20) + 8 {
         set_title(&mut doc, &noise(&mut seed, 1024 * 1024));
         save(&store, &mut doc);
         let now = stored(&path);
-        assert!(now.checkpoint_bytes + now.update_bytes <= 16 * 1024 * 1024 + 4 * 1024 * 1024 + 2 * 1024 * 1024);
+        assert!(now.checkpoint_bytes + now.update_bytes <= STORAGE_BYTES as i64);
     }
     store.close().unwrap();
     assert!(stale(&open(&path).1, &early), "the trimmed history stays trimmed");
@@ -450,37 +446,6 @@ fn snapshots_never_lock_or_modify_the_document() {
     drop(hitslop_core::registry::Lease::acquire(&path).expect("a snapshot holds no lock"));
 }
 
-// Failure: saved state recorded its descriptor as a string, and opening compared strings,
-// so a build that spelled the same descriptor differently (field order, `1` for `1.0`)
-// could no longer open any document. Saved state opens under any spelling of the same
-// descriptor, and a different descriptor is still refused.
-#[test]
-fn saved_state_opens_under_any_spelling_of_its_descriptor() {
-    const BOUNDED: &str = r#"{"kind":"object","properties":{"title":{"kind":"string","maxLength":40},"score":{"kind":"number","min":0,"max":10}}}"#;
-    const BOUNDED_INITIAL: &str = r#"{"title":"Saved","score":1}"#;
-    let (_dir, path) = document_with(BOUNDED, BOUNDED_INITIAL);
-    let store = Store::open(&path, Mode::Document).unwrap();
-    let mut doc = store.document().unwrap();
-    doc.apply_batch(r#"{"intents":[{"type":"set","path":["score"],"value":7}]}"#, Origin::Page).unwrap();
-    save(&store, &mut doc);
-    store.close().unwrap();
-    // Another build's spelling of the same descriptor, recorded with the saved state.
-    let respelled = r#"{"properties":{"score":{"max":10.0,"min":0.0,"kind":"number"},"title":{"maxLength":40,"kind":"string"}},"kind":"object"}"#;
-    sql(&path).execute("UPDATE checkpoint SET descriptor=?", [respelled]).unwrap();
-    for mode in [Mode::Document, Mode::Snapshot] {
-        let store = Store::open(&path, mode).unwrap();
-        let doc = store.document().unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["score"], 7);
-        store.close().unwrap();
-    }
-    // An app whose descriptor means something else does not open the saved state.
-    sql(&path).execute("UPDATE app SET descriptor=?", [BOUNDED.replace(r#""max":10"#, r#""max":11"#)]).unwrap();
-    for mode in [Mode::Document, Mode::Snapshot] {
-        let error = Store::open(&path, mode).unwrap().document().err().expect("refused");
-        assert!(error.to_string().contains("Document schema differs"), "{error}");
-    }
-}
-
 #[test]
 fn a_symlinked_document_is_refused() {
     let (dir, path) = document();
@@ -543,7 +508,7 @@ fn a_failed_write_never_advances_the_saved_version() {
 }
 
 #[test]
-fn a_moved_document_refuses_writes() {
+fn a_moved_or_linked_document_refuses_writes() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Unsaved");
@@ -552,6 +517,14 @@ fn a_moved_document_refuses_writes() {
     std::fs::write(&path, b"").unwrap();
     assert!(matches!(store.write(&job), Err(Error::Moved)));
     assert!(matches!(store.check(false), Err(Error::Moved)));
+    // A second hard link would split the journal's name: the writer stops, and no writer
+    // takes a linked file.
+    let (dir, path) = document();
+    let (store, _) = open(&path);
+    std::fs::hard_link(&path, dir.path().join("Link.slop")).unwrap();
+    assert!(matches!(store.check(false), Err(Error::Moved)));
+    store.close().unwrap();
+    assert!(matches!(Lease::acquire(&path), Err(Error::Rejected(e)) if e.code == hitslop_core::Code::InvalidRequest));
 }
 
 // Failure: the platform SQLite stops a connection for good once its file is renamed, and
@@ -570,8 +543,16 @@ fn a_document_moved_away_and_back_saves_and_reloads() {
     set_title(&mut doc, "Discarded");
     std::fs::rename(&path, &moved).unwrap();
     std::fs::rename(&moved, &path).unwrap();
-    assert_eq!(title(&store.document().unwrap()), "Kept");
+    let mut doc = store.document().unwrap();
+    assert_eq!(title(&doc), "Kept");
+    // A hard link added and removed again leaves the writer saving.
+    std::fs::hard_link(&path, &moved).unwrap();
+    std::fs::remove_file(&moved).unwrap();
+    set_title(&mut doc, "Unlinked");
+    save(&store, &mut doc);
+    store.put_attachment(b"after the link").unwrap();
     store.close().unwrap();
+    assert_eq!(title(&open(&path).1), "Unlinked");
 }
 
 #[test]

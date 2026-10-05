@@ -5,13 +5,19 @@ import HitSlopDocument
 /// Toolbar and menu commands: pin, theme, duplicate, export, reveal, open in editor, retry,
 /// close.
 extension SlopDocumentWindowController {
-  func request(_ command: SlopDocumentCommand) {
-    if !isContentReady {
-      switch command {
-      case .exportPNG, .exportPDF, .duplicate, .share, .theme(true), .importTheme, .exportTheme: return
-      default: break
-      }
+  /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
+  /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
+  /// else waits for the coordinator to accept commands and the page to show its content,
+  /// and changing the palette needs a document whose theme can change.
+  public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
+    switch command {
+    case .close, .retry, .retrySave, .discardUnsaved: true
+    case .theme(true), .importTheme: commandsEnabled && isContentReady && session.canEditTheme
+    default: commandsEnabled && isContentReady
     }
+  }
+  func request(_ command: SlopDocumentCommand) {
+    guard isAvailable(command) else { return }
     routing.command(command)
   }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
@@ -73,10 +79,9 @@ extension SlopDocumentWindowController {
     telemetry.send(.breadcrumb(.duplicate, .started))
     try await saveAccepted(for: .duplicate)
     do {
-      let destination = try SlopFile.newDocumentURL(target)
-      try await session.copy(to: destination)
+      let copied = try await session.copy(to: try SlopFile.newDocumentURL(target))
       telemetry.send(.breadcrumb(.duplicate, .completed))
-      return destination
+      return copied
     } catch { telemetry.failure(.duplicate, error: error); throw error }
   }
 
@@ -126,7 +131,7 @@ extension SlopDocumentWindowController {
     await waitForPresentation()
     do {
       guard isContentReady, session.isReady, presentedPageError == nil else {
-        throw SlopError.invalid("The document is not ready to export")
+        throw SlopFailure("The document is not ready to export")
       }
       try await SlopRenderer.exportDocument(session: session, format: format, output: output, deadline: deadline)
       telemetry.send(.breadcrumb(.export, .completed))

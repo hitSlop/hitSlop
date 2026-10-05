@@ -303,6 +303,11 @@ impl NativeStore {
     pub fn app(&self) -> OpenedFile {
         self.0.app().into()
     }
+    /// A reader of the app's assets for the document's pages, on its own connection to the
+    /// file this open checked.
+    pub fn asset_reader(&self) -> Result<Arc<AssetReader>, CoreError> {
+        Ok(Arc::new(AssetReader(Mutex::new(self.0.asset_reader()?))))
+    }
     /// The saved document, or the app's initial values saved as its first checkpoint, with
     /// its palette over the app's theme defaults. Also the reload after discarding unsaved
     /// edits.
@@ -451,7 +456,7 @@ pub struct ArtworkImage {
 #[uniffi::export]
 pub fn file_artwork(path: String, preferred: Vec<String>) -> Result<Option<ArtworkImage>, CoreError> {
     let preferred: Vec<&str> = preferred.iter().map(String::as_str).collect();
-    Ok(store::artwork(Path::new(&path), &preferred)?.map(|(name, png)| ArtworkImage { name, png }))
+    Ok(file::artwork(Path::new(&path), &preferred)?.map(|(name, png)| ArtworkImage { name, png }))
 }
 /// Uses `path` as this process's writer-lock registry: debug hosts only, for test runs
 /// (`HITSLOP_TEST_REGISTRY`). Every process sharing documents must use the same folder.
@@ -480,15 +485,11 @@ pub fn valid_asset_path(path: String) -> bool {
 pub fn content_type(path: String) -> String {
     file::content_type(&path).into()
 }
-/// Serves a document's app assets: whole, or a byte range.
+/// Serves a document's app assets: whole, or a byte range (`NativeStore::asset_reader`).
 #[derive(uniffi::Object)]
 pub struct AssetReader(Mutex<file::AssetReader>);
 #[uniffi::export]
 impl AssetReader {
-    #[uniffi::constructor]
-    pub fn open(path: String) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(Mutex::new(file::AssetReader::open(Path::new(&path))?))))
-    }
     pub fn size(&self, key: String) -> Result<Option<u64>, CoreError> {
         Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).size(&key)?)
     }

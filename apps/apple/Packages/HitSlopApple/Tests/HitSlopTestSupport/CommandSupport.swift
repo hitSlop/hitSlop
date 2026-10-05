@@ -13,7 +13,7 @@ import HitSlopDocument
 /// A successful request's state, as JSON data.
 @MainActor public func commandState(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> Data {
   let reply = try await command(method, url: url, fields)
-  guard reply.ok else { throw NSError(domain: "hitSlop", code: 1, userInfo: [NSLocalizedDescriptionKey: reply.error ?? "Request failed"]) }
+  guard reply.ok else { throw SlopFailure(reply.error ?? "Request failed") }
   return try JSONSerialization.data(withJSONObject: reply.state ?? [:], options: [.fragmentsAllowed, .sortedKeys])
 }
 

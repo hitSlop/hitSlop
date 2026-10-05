@@ -1,3 +1,4 @@
+import { repository } from "./runtime-artifacts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { quicktype, InputData, JSONSchemaInput, FetchingJSONSchemaStore } from "quicktype-core";
@@ -11,7 +12,6 @@ import {
   SocketReplySchema,
   SocketDiscoverySchema,
 } from "../packages/schema/src/socket";
-const root = resolve(import.meta.dir, "..");
 export async function generateContracts(check = false) {
   // A document stores the authored manifest; its package format and runtime ABI are
   // columns beside it, so Swift's model and the core's validator use the authored schema.
@@ -107,7 +107,7 @@ public enum Limits {
       ),
   };
   for (const [name, value] of Object.entries(outputs)) {
-    const path = resolve(root, name);
+    const path = resolve(repository, name);
     if (check) {
       if ((await readFile(path, "utf8")) !== value) throw new Error(`Generated drift: ${name}`);
     } else {

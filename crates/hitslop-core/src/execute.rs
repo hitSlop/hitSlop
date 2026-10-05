@@ -404,14 +404,11 @@ pub(super) fn execute(
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
-    // Replace resolves its own path, which may be empty (the whole document).
-    if let Intent::Replace { path, value } = op {
-        return replace::replace(doc, schema, path, value, issues, ids, rows);
-    }
-    let at = resolve(doc, schema, op.path(), rows)?;
     match op {
-        Intent::Replace { .. } => unreachable!("handled above"),
+        // Replace resolves its own path, which may be empty (the whole document).
+        Intent::Replace { path, value } => replace::replace(doc, schema, path, value, issues, ids, rows)?,
         Intent::Set { value, path } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             replace::refuse_anomalies(issues, path)?;
             let kind = unwrap_optional(&at.node);
             // One scalar-list element: last writer wins. An earlier insert in the batch may
@@ -473,6 +470,7 @@ pub(super) fn execute(
             put(&map, &key, kind, value, &writer(doc), at.shared, rows)?;
         }
         Intent::Clear { .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             if !matches!(at.node, Node::Optional { .. }) && !at.entry {
                 return Err(err(Code::TypeMismatch, "Only optional fields and record entries can be cleared"));
             }
@@ -490,6 +488,7 @@ pub(super) fn execute(
             index,
             ..
         } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (at.node, at.value)
             else {
@@ -528,6 +527,7 @@ pub(super) fn execute(
             ids.push(id);
         }
         Intent::Increment { by, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::Counter {}, ValueOrContainer::Container(Container::Map(counter))) =
                 (&at.node, &at.value)
             else {
@@ -549,6 +549,7 @@ pub(super) fn execute(
             counter.insert(&key, next).map_err(engine)?;
         }
         Intent::Remove { id, index, count, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (&at.node, at.value)
             else {
@@ -579,6 +580,7 @@ pub(super) fn execute(
             rows.changed(&list, Change::Removed(index));
         }
         Intent::Move { id, at: anchor, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (&at.node, at.value)
             else {

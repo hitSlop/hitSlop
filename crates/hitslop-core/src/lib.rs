@@ -20,7 +20,7 @@ mod execute;
 mod replace;
 mod project;
 mod issues;
-pub use descriptor::{canonical_descriptor, validate};
+pub use descriptor::validate;
 use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
 use execute::{fill, put, resolve, execute, Rows};
 use identity::stored_id;
@@ -31,7 +31,6 @@ use std::sync::Arc;
 pub use wire::{Code, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, IMAGE_PIXELS, IMAGE_SIDE, ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
 use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
 
-const MAX_BYTES: usize = wire::STORAGE_BYTES;
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize = if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
 
@@ -146,7 +145,6 @@ fn safe(n: i64) -> bool {
     (-MAX_SAFE..=MAX_SAFE).contains(&n)
 }
 fn application_id() -> String {
-    use identity::ALPHABET;
     let mut bytes = [0u8; 16];
     random(&mut bytes);
     let mut buffer = 0u32;
@@ -157,10 +155,10 @@ fn application_id() -> String {
         bits += 8;
         while bits >= 5 {
             bits -= 5;
-            out.push(ALPHABET[((buffer >> bits) & 31) as usize] as char);
+            out.push(wire::ID_ALPHABET[((buffer >> bits) & 31) as usize] as char);
         }
     }
-    out.push(ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
+    out.push(wire::ID_ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
     out
 }
 
@@ -309,7 +307,7 @@ impl Document {
             .iter()
             .try_fold(checkpoint.len(), |n, b| n.checked_add(b.len()))
             .ok_or_else(|| err(Code::TooLarge, "Input bytes"))?;
-        if total > MAX_BYTES {
+        if total > STORAGE_BYTES {
             return Err(err(Code::TooLarge, "Input bytes"));
         }
         Self::open_with(descriptor(schema)?, checkpoint, |e| e, |import| updates.iter().try_for_each(|bytes| import(bytes)))
@@ -482,7 +480,7 @@ impl Document {
     }
     /// Merges another replica's updates; `None` when they changed nothing here.
     pub fn import(&mut self, bytes: &[u8]) -> Result<Option<String>> {
-        if bytes.len() > MAX_BYTES {
+        if bytes.len() > STORAGE_BYTES {
             return Err(err(Code::TooLarge, "Import bytes"));
         }
         // Refuse a batch with missing dependencies before Loro buffers any of it.
@@ -750,13 +748,15 @@ fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod envelope;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+mod error;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod store;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod file;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod registry;
-#[cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod manifest;

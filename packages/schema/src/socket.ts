@@ -75,7 +75,13 @@ export const SocketResults = {
   "attachments.list": T.Object({ state: T.Array(AttachmentInfoSchema) }),
   "attachments.read": T.Object({ state: Strict({ bytes: AttachmentBytesSchema }) }),
   "attachments.put": T.Object({ state: AttachmentInfoSchema }),
-} as const;
+} as const satisfies Record<Exclude<SocketMethod, "hello">, T.TObject>;
+/** Methods whose requests carry the owner's epoch: a failure leaves an outcome to report. */
+export const EpochMethods: ReadonlySet<SocketMethod> = new Set(
+  SocketRequestSchema.anyOf.flatMap((member) =>
+    "epoch" in member.properties && "const" in member.properties.method ? [member.properties.method.const as SocketMethod] : [],
+  ),
+);
 /** A live owner's discovery, in the registry (`~/.hitslop/live`): where it listens. Clients
  * learn the epoch from `hello`. */
 export const SocketDiscoverySchema = Strict({
@@ -84,5 +90,15 @@ export const SocketDiscoverySchema = Strict({
 });
 
 export type SocketRequest = T.Static<typeof SocketRequestSchema>;
+export type SocketMethod = SocketRequest["method"];
+/** A request as a client hands it to the helper, which adds the owner's epoch. */
+export type HelperRequest = SocketRequest extends infer R ? (R extends unknown ? Omit<R, "epoch"> : never) : never;
+/** The helper request for `M`, whose method is exactly `M`. */
+export type HelperRequestFor<M extends SocketMethod> = HelperRequest extends infer R
+  ? R extends { method: infer K }
+    ? M extends K
+      ? Omit<R, "method"> & { method: M }
+      : never
+    : never
+  : never;
 export type SocketReply = T.Static<typeof SocketReplySchema>;
-export type SocketDiscovery = T.Static<typeof SocketDiscoverySchema>;

@@ -1,6 +1,8 @@
-import { chmod, copyFile, mkdir, mkdtemp, readdir, rename, rm, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { builtTemplates, repository, type TemplateInventory } from "./templates";
+import { publishFolder, repository } from "./runtime-artifacts";
+import { chmod, copyFile, readdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { exists } from "../packages/cli/src/fs";
+import { builtTemplates, type TemplateInventory } from "./templates";
 import { validateTemplate } from "./template-cache";
 
 /** Starter templates ship read-only: the folder and each template file in it. */
@@ -15,9 +17,9 @@ export async function embedTemplates(
   destination: string,
   inventory: TemplateInventory,
 ) {
-  await mkdir(dirname(destination), { recursive: true });
-  const stage = await mkdtemp(join(dirname(destination), ".starter-"));
-  try {
+  // The previous starters are read-only; replacing them needs write access first.
+  if (await exists(destination)) await setWritable(destination, true);
+  await publishFolder(destination, async (stage) => {
     for (const { slug, bundled } of inventory.templates) {
       if (!bundled) continue;
       const template = join(source, slug + ".slop");
@@ -25,23 +27,8 @@ export async function embedTemplates(
       await validateTemplate(template, slug);
       await copyFile(template, join(stage, slug + ".slop"));
     }
-    if (
-      await stat(destination).then(
-        () => true,
-        (error) => {
-          if (error.code === "ENOENT") return false;
-          throw error;
-        },
-      )
-    ) {
-      await setWritable(destination, true);
-      await rm(destination, { recursive: true });
-    }
-    await rename(stage, destination);
-    await setWritable(destination, false);
-  } finally {
-    await rm(stage, { recursive: true, force: true });
-  }
+  });
+  await setWritable(destination, false);
 }
 
 if (import.meta.main) {

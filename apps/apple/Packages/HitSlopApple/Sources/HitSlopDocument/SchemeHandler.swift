@@ -25,14 +25,13 @@ import WebKit
     "default-src 'none'; script-src slop: 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
   private static let reads = DispatchQueue(label: "hitslop.scheme", qos: .userInitiated, attributes: .concurrent)
   let shell: URL
-  /// The document's assets, through the session's long-lived connection; nil when the file
-  /// could not be read, and every asset request then fails.
-  private let assets: AssetReader?
+  /// The document's assets, through its owner's long-lived connection.
+  private let assets: AssetReader
   /// Tasks WebKit started and has not stopped. A token tells a stopped task's late read
   /// from a newer task at the same address.
   private var tasks: [ObjectIdentifier: (token: Int, task: any WKURLSchemeTask)] = [:]
   private var nextToken = 0
-  init(assets: AssetReader?, shell: URL) {
+  init(assets: AssetReader, shell: URL) {
     self.shell = shell
     self.assets = assets
   }
@@ -71,28 +70,27 @@ import WebKit
   }
   /// The response for a request. WebKit's media loader asks for byte ranges and fails
   /// without a 206 answer; an asset's range is read from the file without loading the rest.
-  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: AssetReader?) throws -> Response {
-    guard let url, url.host == "app" else { throw failure("Unknown resource origin") }
+  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: AssetReader) throws -> Response {
+    guard let url, url.host == "app" else { throw SlopFailure("Unknown resource origin") }
     let isShell = url.path.hasPrefix("/__shell__/")
     if !isShell && url.path == "/" { return whole(visiblePage, type: "text/html; charset=utf-8") }
     let prefix = isShell ? "/__shell__/" : "/assets/"
-    guard url.path.hasPrefix(prefix) else { throw failure("Resource not exposed") }
+    guard url.path.hasPrefix(prefix) else { throw SlopFailure("Resource not exposed") }
     // URL.path decodes escaped separators and dots; the core's asset-path rule refuses
     // them before anything else.
     let key = String(url.path.dropFirst(prefix.count))
-    guard validAssetPath(path: key) else { throw failure("Unsafe resource path") }
+    guard validAssetPath(path: key) else { throw SlopFailure("Unsafe resource path") }
     let type = contentType(path: key)
     if isShell {
       let base = shell.standardizedFileURL
       let file = base.appendingPathComponent(key).standardizedFileURL
-      guard file.path.hasPrefix(base.path + "/") else { throw failure("Resource outside the shell") }
+      guard file.path.hasPrefix(base.path + "/") else { throw SlopFailure("Resource outside the shell") }
       return try ranged(range, type: type, length: shellFile(file).count) { try shellFile(file).subdata(in: $0) }
     }
-    guard let assets else { throw failure("Cannot read the document's app") }
-    guard let size = try assets.size(key: key) else { throw failure("Resource not found") }
+    guard let size = try assets.size(key: key) else { throw SlopFailure("Resource not found") }
     return try ranged(range, type: type, length: Int(size)) { bounds in
       guard let bytes = try assets.readRange(key: key, offset: UInt64(bounds.lowerBound), length: UInt64(bounds.count))
-      else { throw failure("Resource not found") }
+      else { throw SlopFailure("Resource not found") }
       return bytes
     }
   }

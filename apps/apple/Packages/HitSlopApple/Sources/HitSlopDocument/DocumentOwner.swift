@@ -10,8 +10,11 @@ import HitSlopCoreBinding
 /// writer lock.
 public final class DocumentOwner: @unchecked Sendable {
   public let file: SlopFile
-  let mode: StorageMode
+  let mode: StoreMode
   let store: NativeStore
+  /// The app's assets, on their own connection to the file this owner checked; pages read
+  /// them while saves run.
+  let assets: AssetReader
   let queue = DispatchQueue(label: "hitslop.owner")
   let storageQueue = DispatchQueue(label: "hitslop.persistence")
   private var core: NativeDocument
@@ -30,8 +33,8 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Signals an accepted theme change; sessions read the latest effective values.
   var onTheme: (@Sendable () -> Void)?
   /// Whether Edit ▸ Undo and Redo have anything to do, sent when that changes.
-  var onUndoState: (@Sendable (UndoAvailability) -> Void)?
-  private var undoAvailability = UndoAvailability()
+  var onUndoState: (@Sendable (UndoState) -> Void)?
+  private var undoAvailability = UndoState(canUndo: false, canRedo: false)
   /// The core's publication sequence, the last one the durable state covers, and the one
   /// this owner opened at.
   private var sequence = 0
@@ -72,13 +75,15 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Opens the document at `url` (a canonical `.slop`, `SlopFile.resolvedRoot`): as its
   /// writer, or as a snapshot of its saved state. The store's open checks the file and its
   /// app once, and `file` comes from that check.
-  public init(url: URL, mode: StorageMode = .document) throws {
+  public init(url: URL, mode: StoreMode = .document) throws {
     self.mode = mode
     // Taking the writer lock also removes a crashed session's discovery: a command that
     // finds the lock busy waits for this owner's address, never a dead one.
-    store = try storeCall { try SlopFile.opening { try NativeStore.open(path: url.path, mode: mode.store) } }
+    let store = try storeCall { try SlopFile.opening { try NativeStore.open(path: url.path, mode: mode) } }
+    self.store = store
     do {
       file = try SlopFile(url: url, opened: store.app())
+      assets = try storeCall { try store.assetReader() }
       core = try Self.saved(store)
       sequence = Int(try core.sequence())
       savedSequence = sequence
@@ -179,11 +184,9 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Sends the current undo state: a document can open with an agent's edits to undo.
   func publishUndoState() { queue.async { self.refreshUndo() } }
   private func refreshUndo() {
-    guard let state = try? core.undoState() else { return }
-    let next = UndoAvailability(canUndo: state.canUndo, canRedo: state.canRedo)
-    guard next != undoAvailability else { return }
-    undoAvailability = next
-    onUndoState?(next)
+    guard let state = try? core.undoState(), state != undoAvailability else { return }
+    undoAvailability = state
+    onUndoState?(state)
   }
   private func textOnQueue(_ request: String, view: String?) throws -> PageTextResult {
     try admitMutation(epoch: nil, view: view)
@@ -196,22 +199,23 @@ public final class DocumentOwner: @unchecked Sendable {
 
   /// Enqueues admission synchronously in bridge arrival order. Flush retains its
   /// completion without blocking subsequent edits behind the persistence queue.
-  func enqueuePage(_ command: PageCommand, view: String,
+  func enqueuePage(_ request: PageRequest, view: String,
     reply: @escaping @Sendable (sending Result<PageResult, Error>) -> Void
   ) {
     queue.async {
       do {
         try self.admit()
         try self.requireCurrent(epoch: nil, view: view)
-        switch command {
+        switch request {
         case .open: reply(.success(.open(.init(state: try self.core.state()))))
-        case .apply(let batch):
-          let applied = try self.applyOnQueue(batch: batch, epoch: nil, view: view, origin: .page)
+        case .apply(let r):
+          let applied = try self.applyOnQueue(batch: r.batch, epoch: nil, view: view, origin: .page)
           reply(.success(.apply(.init(sequence: applied.sequence, ids: applied.ids))))
-        case .text(let request): reply(.success(.text(try self.textOnQueue(request, view: view))))
+        case .text(let r): reply(.success(.text(try self.textOnQueue(r.request, view: view))))
         case .undo: reply(.success(.undo(.init(sequence: try self.historyOnQueue(redo: false, view: view)))))
         case .redo: reply(.success(.redo(.init(sequence: try self.historyOnQueue(redo: true, view: view)))))
         case .flush: self.addWaiter(checkpoint: false) { reply($0.map { .flush }) }
+        default: throw OwnerError.rejected("Not a document request")
         }
       } catch {
         self.checkPoisoned(error)
@@ -350,7 +354,7 @@ public final class DocumentOwner: @unchecked Sendable {
     try await write(checkpoint: true)
   }
 
-  /// After the final write, a session that edited a large document keeps only its own
+  /// After the final write, a session that edited a document larger than 4 MiB leaves no
   /// history (`Store::close_job`). Housekeeping: on failure the saved state is unchanged
   /// and closing continues.
   private func trimHistory() async {
@@ -436,10 +440,10 @@ public final class DocumentOwner: @unchecked Sendable {
     let store = store
     return try await persist { try storeCall { try store.artwork(name: name.rawValue) } }
   }
-  func listAttachments() async throws -> [AttachmentRef] {
+  func listAttachments() async throws -> [PageAttachmentsPutResult] {
     let store = store
     return try await persist {
-      try storeCall { try store.attachments() }.map { AttachmentRef(id: $0.id, byteLength: Int($0.byteLength)) }
+      try storeCall { try store.attachments() }.map { PageAttachmentsPutResult(id: $0.id, byteLength: Int($0.byteLength)) }
     }
   }
   /// Attachment bytes cross the page bridge and the socket as base64, encoded here, off
@@ -450,13 +454,13 @@ public final class DocumentOwner: @unchecked Sendable {
   }
   /// Stores an attachment once admitted like an edit; snapshot renders own nothing, so
   /// they can never add one.
-  func putAttachment(base64 encoded: String, epoch: String? = nil, view: String? = nil) async throws -> AttachmentRef {
+  func putAttachment(base64 encoded: String, epoch: String? = nil, view: String? = nil) async throws -> PageAttachmentsPutResult {
     try await enqueue { try self.admitMutation(epoch: epoch, view: view) }
     let store = store
     return try await persist {
       guard let bytes = Data(base64Encoded: encoded) else { throw OwnerError.rejected("Invalid attachment bytes") }
       let stored = try storeCall { try store.putAttachment(bytes: bytes) }
-      return AttachmentRef(id: stored.id, byteLength: Int(stored.byteLength))
+      return PageAttachmentsPutResult(id: stored.id, byteLength: Int(stored.byteLength))
     }
   }
   /// A palette and the owner's theme revision when it was read or changed.

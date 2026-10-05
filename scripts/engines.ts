@@ -1,7 +1,8 @@
-import { chmod, copyFile, mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../packages/cli/src/process";
+import { publishFolder } from "./runtime-artifacts";
 
 
 /** Stages the file engines the CLI carries at `engines`, where `findEngine` looks: `fresh`,
@@ -12,8 +13,7 @@ import { run } from "../packages/cli/src/process";
  * nothing a later build could pick up. */
 export async function stageEngines(engines: string, prebuilt: string, fresh: string, commit: string) {
   const expected = { commit, buildId: (await run([fresh, "--build-id"])).trim() };
-  const staging = `${engines}.staging-${crypto.randomUUID()}`;
-  try {
+  await publishFolder(engines, async (staging) => {
     const stage = async (platform: string, binary: string) => {
       await mkdir(join(staging, platform), { recursive: true });
       await copyFile(binary, join(staging, platform, "slop-engine"));
@@ -32,9 +32,5 @@ export async function stageEngines(engines: string, prebuilt: string, fresh: str
         );
       await stage(platform, binary);
     }
-    await rm(engines, { recursive: true, force: true });
-    await rename(staging, engines);
-  } finally {
-    await rm(staging, { recursive: true, force: true });
-  }
+  });
 }

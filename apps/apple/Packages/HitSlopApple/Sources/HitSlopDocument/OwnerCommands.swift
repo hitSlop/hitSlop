@@ -6,17 +6,7 @@ extension DocumentOwner {
   /// A document request from the page `view`. Batches and text edits arrive as JSON text
   /// that only the core parses, and the opened state returns as the core's JSON text.
   @MainActor func admitPage(_ request: PageRequest, view: String, reply: @escaping @MainActor @Sendable ([String: Any]) -> Void) {
-    let command: PageCommand
-    switch request {
-    case .apply(let r): command = .apply(r.batch)
-    case .text(let r): command = .text(r.request)
-    case .open: command = .open
-    case .flush: command = .flush
-    case .undo: command = .undo
-    case .redo: command = .redo
-    default: return reply(RequestOutcome.page(OwnerError.rejected("Not a document request")))
-    }
-    enqueuePage(command, view: view) { outcome in
+    enqueuePage(request, view: view) { outcome in
       DispatchQueue.main.async {
         switch outcome {
         case .failure(let error): reply(RequestOutcome.page(error))
@@ -63,18 +53,18 @@ extension DocumentOwner {
         let file = String(decoding: try JSONEncoder().encode(["file": try await exportTheme()]), as: UTF8.self)
         return SocketReply(ok: true, epoch: epoch).encoded(state: file)
       case .attachmentsList:
-        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await listAttachments()))
+        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await listAttachments().map(\.json)))
       case .attachmentsRead(let r):
         return SocketReply(ok: true, epoch: epoch).encoded(state: try json(["bytes": try await readAttachment(r.attachmentID)]))
       case .attachmentsPut(let r):
-        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await putAttachment(base64: r.bytes, epoch: r.epoch)))
+        return SocketReply(ok: true, epoch: epoch).encoded(state: try json(try await putAttachment(base64: r.bytes, epoch: r.epoch).json))
       case .export:
         return RequestOutcome.socket(OwnerError.rejected("Unsupported owner command"), epoch: epoch).encoded()
       }
     } catch {
       // OwnerReplaced says "not applied", which only describes admission: a command already
       // accepted may even be durable when discard rejects its flush.
-      let failure = accepted && !(error is SaveFailure) ? failure("Command was accepted, but its final state could not be confirmed.") : error
+      let failure = accepted && !(error is SaveFailure) ? SlopFailure("Command was accepted, but its final state could not be confirmed.") : error
       return RequestOutcome.socket(failure, epoch: epoch).encoded()
     }
   }
@@ -86,8 +76,8 @@ extension DocumentOwner {
     return SocketReply(ok: true, epoch: self.epoch).encoded(
       state: #"{"defaults":"# + theme.defaults + #","overrides":"# + theme.overrides + #","effective":"# + theme.effective + "}")
   }
-  private func json<T: Encodable>(_ value: T) throws -> String {
-    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+  private func json(_ object: Any) throws -> String {
+    String(decoding: try JSONSerialization.data(withJSONObject: object, options: .withoutEscapingSlashes), as: UTF8.self)
   }
 }
 
@@ -106,9 +96,4 @@ extension SocketReply {
   }
 }
 
-enum PageCommand: Sendable { case open, apply(String), text(String), flush, undo, redo }
-/// Whether Edit ▸ Undo and Redo have anything to do.
-public struct UndoAvailability: Sendable, Equatable {
-  public var canUndo = false
-  public var canRedo = false
-}
+

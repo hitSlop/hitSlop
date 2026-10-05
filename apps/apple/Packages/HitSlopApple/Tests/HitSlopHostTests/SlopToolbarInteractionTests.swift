@@ -1,5 +1,6 @@
 import AppKit
 import HitSlopDocument
+import HitSlopTestSupport
 import PDFKit
 @testable import HitSlopHost
 import Testing
@@ -171,10 +172,7 @@ extension HostTests {
       let pid = try #require(view.value(forKey: "_webProcessIdentifier") as? Int32)
       try #require(pid > 0)
       try #require(Darwin.kill(pid, SIGKILL) == 0)
-      let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-      while !controller.session.rendererDead && ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(25))
-      }
+      await eventually(timeout: .seconds(5)) { controller.session.rendererDead }
       try #require(controller.session.rendererDead)
       try await controller.session.reopenSavedDocument()
       // The replacement page reloads like any recovery; interact once it is presented.

@@ -8,7 +8,7 @@ import metadata from "../package.json";
 import { cliRoot } from "./paths";
 import { projectSlug } from "./build";
 
-export interface InitOptions {
+interface InitOptions {
   brief?: string;
   title?: string;
   category?: SlopCategory[];

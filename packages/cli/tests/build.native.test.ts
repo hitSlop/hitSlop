@@ -3,6 +3,10 @@ import { Database } from "bun:sqlite";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { buildTemplate } from "../src/template";
+import { request } from "../src/native";
+
+/** The helper `scripts/test.ts` names, which renders native artwork. */
+const renderer = process.env.HITSLOP_NATIVE_CLI!;
 import { compileAppWithVite } from "../src/vite";
 import { mkdir } from "node:fs/promises";
 import { overrideSlop } from "./source-fixture";
@@ -55,10 +59,6 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
     const inputs = await compileAppWithVite(source, stage);
     expect(inputs.some((input) => input.endsWith("main.ts"))).toBe(true);
     for (const input of inputs) expect(input).not.toMatch(/svelte|loro-crdt|document\/src\//);
-    const renderer = join(
-      process.cwd(),
-      "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
-    );
     const output = await buildTemplate(source, [renderer], join(root, "plain.slop"));
     const png = artwork(output, "preview");
     expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -70,10 +70,6 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
 test("discovered capture components share the document and receive preview/export mode", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "source");
-  const renderer = join(
-    process.cwd(),
-    "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
-  );
   try {
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     await writeFile(
@@ -114,12 +110,7 @@ test("discovered capture components share the document and receive preview/expor
       if (mode !== "export") throw new Error("Expected export mode, got " + mode);
     </script><Child />`);
     const exported = await buildTemplate(source, undefined, join(root, "export.slop"));
-    const child = Bun.spawn([renderer, "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-    child.stdin.write(JSON.stringify({ method: "export", documentPath: exported, format: "png", output: join(root, "export.png") }));
-    await child.stdin.end();
-    const [reply, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code) throw new Error(error);
-    expect(JSON.parse(reply)).toMatchObject({ ok: true });
+    expect(await request({ method: "export", documentPath: exported, format: "png", output: join(root, "export.png") })).toMatchObject({ ok: true });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -127,10 +118,6 @@ test("discovered capture components share the document and receive preview/expor
 
 test("native artwork is complete before a rebuild replaces a registered template", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
-  const renderer = join(
-    process.cwd(),
-    "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
-  );
   try {
     // Registering builds into the template folder, replacing an earlier build.
     const templates = join(root, "templates");

@@ -98,7 +98,7 @@ pub struct ThemeState {
 /// A document's palette: its template's declared colors and the owner's overrides. The
 /// template's slug names it in theme files.
 #[derive(Clone, Debug)]
-pub struct Theme {
+pub(crate) struct Theme {
     template: String,
     defaults: Values,
     overrides: Values,

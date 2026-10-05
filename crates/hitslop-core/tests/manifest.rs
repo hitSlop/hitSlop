@@ -1,4 +1,4 @@
-#![cfg(all(feature = "schema-validation", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 //! The stored manifest: the authored contract at the document's package format. The
 //! package format and runtime ABI are the document's own columns (`tests/file.rs`).
 use hitslop_core::{shape::Silhouette, Code, PACKAGE_FORMAT};

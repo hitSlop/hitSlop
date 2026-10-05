@@ -13,8 +13,7 @@ extension SlopDocumentWindowController {
       let diagnostic = (error as? any SlopDiagnosticProviding)?.diagnostic
         ?? SlopFailureContext(reason: session.failureReason ?? .presentation)
       telemetry.send(.breadcrumb(.renderer, .failed))
-      let context = diagnostic
-      if !reportedSaveFailure || context.reason == .webContentTerminated { telemetry.send(.failed(.renderer, context)) }
+      if !reportedSaveFailure || diagnostic.reason == .webContentTerminated { telemetry.send(.failed(.renderer, diagnostic)) }
     }
     updatePageFailure(error.localizedDescription)
   }
@@ -30,9 +29,8 @@ extension SlopDocumentWindowController {
     refreshIssueBadge()
   }
   public func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
-    let context = storageFailure
     telemetry.send(.breadcrumb(.save, .failed))
-    telemetry.send(.failed(.save, context))
+    telemetry.send(.failed(.save, storageFailure))
   }
 
   public func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {

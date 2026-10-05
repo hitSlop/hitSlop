@@ -25,7 +25,7 @@ export const metadataFiles = ["slop.ts", "schema.ts"] as const;
 /** Runs the stage worker (`stage-worker.ts`) in a fresh process, which evaluates the
  * project's modules once; author logs pass through. */
 export function stageWorker(args: string[], failure: string) {
-  return start([process.execPath, join(cliRoot, "src/stage-worker.ts"), ...args], { cwd: cliRoot, inherit: true, failure });
+  return start([process.execPath, join(cliRoot, "src/stage-worker.ts"), ...args], { cwd: cliRoot, inherit: ["stdout"], failure });
 }
 /** A project's stage at `stage`, with its compiled app. */
 export async function stageProject(source: string, stage: string) {
@@ -46,7 +46,7 @@ export function projectSlug(source: string): string {
   return slug;
 }
 /** A project's `slop.ts` and `schema.ts` default exports. Loading runs author code. */
-export type LoadedProject = { slop: unknown; schema: unknown };
+type LoadedProject = { slop: unknown; schema: unknown };
 export async function loadProject(source: string): Promise<LoadedProject> {
   // slop.ts and its imports run in Bun when building: plain modules only, refused before
   // any of them runs.

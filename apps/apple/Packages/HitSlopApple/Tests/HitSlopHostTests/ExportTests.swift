@@ -98,10 +98,27 @@ extension HostTests {
     try previous.write(to: output)
     #expect(throws: (any Error).self) {
       try SlopRenderer.publishExport(
-        Data("late capture".utf8), to: output, source: root,
+        Data("late capture".utf8), to: output,
         deadline: NativeCommandDeadline(timeout: .zero))
     }
     #expect(try Data(contentsOf: output) == previous)
+  }
+
+  // An export never replaces a file, under any spelling of its path: on a case-insensitive
+  // volume another case of the document's name is the document.
+  @Test @MainActor func exportNeverReplacesTheDocumentUnderAnotherCase() throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.deletingLastPathComponent()
+    guard try folder.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames == false
+    else { return }
+    let alias = folder.appendingPathComponent(root.lastPathComponent.lowercased())
+    #expect(alias.lastPathComponent != root.lastPathComponent)
+    let before = try Data(contentsOf: root)
+    #expect(throws: (any Error).self) {
+      try SlopRenderer.publishExport(Data("export".utf8), to: alias, deadline: NativeCommandDeadline())
+    }
+    #expect(try Data(contentsOf: root) == before)
   }
 
   @Test @MainActor func captureComponentsAreLazyAndUseCurrentDocumentAndSelectedView() async throws {

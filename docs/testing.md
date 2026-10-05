@@ -58,7 +58,6 @@ bun run test:native
 bun run test:native-helper
 bun scripts/crash-matrix.ts           # add --host for host death (test:native-crash)
 bun run test:render --fixtures
-bun run test:restored                    # every active template in `slop dev` under Playwright WebKit
 ```
 
 `build` generates contracts, builds the Rust bindings and the page shell, and compiles
@@ -90,8 +89,9 @@ Performance diagnostics are opt-in and not CI gates:
 `scripts/bench-webkit.ts` (Playwright WebKit) and `scripts/bench-wkwebview.swift`
 (plain system WebKit). `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
 `HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
-`row_text_split_ms` field separates style from layout. Record results under
-`docs/evidence/`.
+`row_text_split_ms` field separates style from layout. Record a result under
+`docs/evidence/` when a doc cites it; a run the code has since superseded moves to
+`archive/docs/evidence/`.
 
 `bun run bench:growth` (it needs Doodle Board, Pixel Art and Morning Pages back in
 `examples/slops`) simulates up to 365 days of heavy use of those three through the native owner, with normal checkpoint thresholds
@@ -115,8 +115,9 @@ expected state, CLI transcripts and explicit page interactions. A small sample i
 the conformance app, three type fixtures and selected real templates. It is regression
 evidence, not proof of all possible authored apps.
 
-`bun run compat:capture VERSION --frozen` builds the producing tools and templates,
-records their source fingerprint and identities, and captures into a temporary directory.
+`bun run compat:capture VERSION --frozen` builds the producing tools and templates (the
+shipped ones in `examples/slops/bundled.json`, or `--templates slug,slug`), records their
+source fingerprint and identities, and captures into a temporary directory.
 It records template/archive content digests, per-file hashes, dependency installation lock,
 and required case inventory. Only a completed capture is published and frozen. Recording
 an existing frozen entry is refused. Before launch `dev` may be recaptured.

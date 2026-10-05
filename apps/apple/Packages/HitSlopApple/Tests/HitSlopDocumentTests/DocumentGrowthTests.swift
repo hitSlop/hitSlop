@@ -7,15 +7,12 @@ import HitSlopTestSupport
 
 /// A measurement, not a CI performance assertion. Every edit and save uses the production owner.
 @Suite(.serialized) struct DocumentGrowthTests {
-  private func json(_ value: Any) throws -> String {
-    String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self)
-  }
   private func frame(_ owner: DocumentOwner) async throws -> [String: Any] {
-    try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
+    try Fixtures.object(await owner.state())
   }
   private func text(_ owner: DocumentOwner, request: String) async throws -> PageTextResult {
     try await withCheckedThrowingContinuation { continuation in
-      owner.enqueuePage(.text(request), view: "growth") { result in
+      owner.enqueuePage(.text(PageTextRequest(request: request)), view: "growth") { result in
         do {
           guard case .text(let edit) = try result.get() else { throw OwnerError.rejected("Missing text reply") }
           continuation.resume(returning: edit)
@@ -29,7 +26,7 @@ import HitSlopTestSupport
     let env = ProcessInfo.processInfo.environment
     let input = URL(fileURLWithPath: env["HITSLOP_GROWTH_INPUT"]!)
     let days = Int(env["HITSLOP_GROWTH_DAYS"] ?? "365")!
-    let repo = #filePath.components(separatedBy: "/apps/apple/")[0]
+    let repo = Fixtures.repository.path
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     // `bun run bench:growth` names a dated evidence file.
@@ -65,10 +62,10 @@ import HitSlopTestSupport
       var isClosed = false
       var finalMeta = initialMeta
       var progress = 0.0
-      var lastSavedValue = try json(try await frame(owner)["value"]!)
+      var lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
       let started = Date()
       func apply(_ operations: [[String: Any]]) async throws -> DocumentOwner.Applied {
-        let reply = try await owner.apply(batch: json(["intents": operations]))
+        let reply = try await owner.apply(batch: Fixtures.json(["intents": operations]))
         commits += 1; intents += operations.count
         return reply
       }
@@ -113,13 +110,13 @@ import HitSlopTestSupport
                 let offset = (edit - 251) * 20
                 to = String(from.prefix(offset)) + String(from.dropFirst(offset).prefix(20)).uppercased() + String(from.dropFirst(offset + 20))
               }
-              let reply = try await text(owner, request: json(["base": base, "path": ["entries", key, "text"], "from": from, "to": to, "selectionStart": min(edit * 20, 5000), "selectionEnd": min(edit * 20, 5000)]))
+              let reply = try await text(owner, request: Fixtures.json(["base": base, "path": ["entries", key, "text"], "from": from, "to": to, "selectionStart": min(edit * 20, 5000), "selectionEnd": min(edit * 20, 5000)]))
               base = reply.authored; from = to; commits += 1; intents += 1
               if edit % 10 == 0 { try await flush() }
             }
           }
           try await flush()
-          lastSavedValue = try json(try await frame(owner)["value"]!)
+          lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
           let meta = try Fixtures.stored(root)
           finalMeta = meta
           let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.path)[.size] as! NSNumber).int64Value
@@ -133,7 +130,7 @@ import HitSlopTestSupport
           owner.attach(view: "growth")
           let closed = try Fixtures.stored(root)
           samples[samples.count - 1]["closedBytes"] = closed.checkpointBytes + closed.updateBytes
-          #expect(try await json(frame(owner)["value"]!) == lastSavedValue)
+          #expect(try await Fixtures.json(frame(owner)["value"]!) == lastSavedValue)
           samples[samples.count - 1]["reopenMS"] = reopenMS
           samples[samples.count - 1]["reopenVerified"] = true
           completedDays = day
@@ -142,7 +139,7 @@ import HitSlopTestSupport
           fullAt = progress
           // Retain the saved document; discard only the unsaved tail of this disposable workload.
           try await owner.discardPending()
-          lastSavedValue = try json(try await frame(owner)["value"]!)
+          lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
           finalMeta = try Fixtures.stored(root)
           print("Growth \(slug): FULL at day \(progress)")
           break
@@ -156,7 +153,7 @@ import HitSlopTestSupport
       if stoppedError == nil {
         try await owner.close()
         let reopened = try DocumentOwner(url: root)
-        #expect(try await json(frame(reopened)["value"]!) == lastSavedValue)
+        #expect(try await Fixtures.json(frame(reopened)["value"]!) == lastSavedValue)
         finalMeta = try Fixtures.stored(root)
         try await reopened.close()
       }

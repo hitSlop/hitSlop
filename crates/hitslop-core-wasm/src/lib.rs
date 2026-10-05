@@ -19,7 +19,7 @@ fn error(e: hitslop_core::Error) -> JsValue {
 
 #[wasm_bindgen]
 pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
-    hitslop_core::validate(schema_json, initial_json).map(|_| ()).map_err(error)
+    hitslop_core::validate(schema_json, initial_json).map_err(error)
 }
 #[wasm_bindgen(js_name = validateThemeDefaults)]
 pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
