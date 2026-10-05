@@ -28,11 +28,16 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      # The release flags every build of the core uses: no machine paths in the binary.
+      - run: echo "RUSTFLAGS=$(bun scripts/build/core.ts --rustflags)" >> "$GITHUB_ENV"
       # The engine's own tests run on the binary this runner built.
       - run: cargo test --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
       - run: cargo build --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
       # engine.json records what the binary was built from; packing refuses an engine
-      # from another commit or core (scripts/packages.ts).
+      # from another commit or core (scripts/build/packages.ts).
       - run: |
           mkdir -p engines/${{ matrix.platform }}
           cp target/${{ matrix.target }}/release/slop-engine engines/${{ matrix.platform }}/

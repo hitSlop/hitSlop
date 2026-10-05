@@ -50,7 +50,7 @@ targets:
     postCompileScripts:
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
-        script: '"${SRCROOT}/../../scripts/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
+        script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed hitslop-native
         basedOnDependencyAnalysis: false
         script: |
@@ -60,7 +60,7 @@ targets:
             *) exit 0 ;;
           esac
           export HITSLOP_NATIVE_ARCHS="${ARCHS:-}"
-          "${SRCROOT}/../../scripts/embed-hitslop-native.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
+          "${SRCROOT}/../../scripts/build/embed-hitslop-native.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
     postBuildScripts:
       - name: Upload Crashlytics symbols
         basedOnDependencyAnalysis: false

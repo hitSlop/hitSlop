@@ -4,6 +4,7 @@ import { loadProject, normalizeApp } from "../src/build";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import metadata from "../package.json";
+import { writeTemplate } from "./template-fixture";
 
 async function run(
   args: string[],
@@ -22,6 +23,24 @@ async function run(
   ]);
   return { stdout, stderr, code };
 }
+
+// What the author builds is read back with the engine that built it: never an installed
+// app's (which may be older) nor a helper's, so inspect and schema need neither.
+test("inspect and schema read a built template with the CLI's own engine, whatever helper is named", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-inspect-"));
+  try {
+    const template = await writeTemplate(join(root, "fixture.slop"));
+    const env = { HITSLOP_NATIVE_CLI: join(root, "missing-helper") };
+    const inspected = await run(["inspect", template], env);
+    expect(inspected.stderr).toBe("");
+    expect(JSON.parse(inspected.stdout).kind).toBe("template");
+    const schema = await run(["schema", template], env);
+    expect(schema.stderr).toBe("");
+    expect(JSON.parse(schema.stdout).kind).toBe("object");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 /** The manifest a build would store for `project`, from its slop.ts. */
 async function manifestOf(project: string) {

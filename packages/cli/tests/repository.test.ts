@@ -3,12 +3,12 @@ import { Database } from "bun:sqlite";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverTemplates, templateInventory } from "../../../scripts/templates";
-import { embedTemplates } from "../../../scripts/embed-templates";
+import { discoverTemplates, templateInventory } from "../../../scripts/templates/discover";
+import { embedTemplates } from "../../../scripts/templates/embed";
 import { assertDocs, assertNoGeneratedSource, assertSkill } from "../../../scripts/hygiene";
 import { loadProject, normalizeApp } from "../src/build";
 import { writeTemplate } from "./template-fixture";
-import { stageEngines } from "../../../scripts/engines";
+import { stageEngines } from "../../../scripts/build/engines";
 
 test("discovery builds an inventory independently of bundled selection and rejects invalid input", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-discovery-"));

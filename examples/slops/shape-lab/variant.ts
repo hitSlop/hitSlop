@@ -1,4 +1,4 @@
-// Fixture generation (scripts/shape-lab.ts) replaces this source metadata, never document
+// Fixture generation (scripts/lib/native-fixtures.ts) replaces this source metadata, never document
 // state or host geometry.
 export default {
   kind: "rounded",

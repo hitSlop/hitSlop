@@ -41,7 +41,7 @@ envelopes and manifests against those schemas and parses payloads strictly. WebK
 correlates page replies; Swift checks the sender and supplies its native view token.
 Keep native view fences and the command protocol check when changing the page or socket protocol. Released
 documents stay openable: follow AGENTS.md's Compatibility rules, and keep
-`tests/compat` passing (`CompatCorpusTests`, `bun run test:compat`).
+`tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
 is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated
@@ -51,8 +51,8 @@ that copy; rendering can continue after the editor closes. Without `Export.svelt
 uses a fresh `App.svelte` with its default transient view state. Theme overrides live in
 Loro and use the same publication, undo and saving path as data edits.
 
-**Checks.** `bun run build` builds runtime resources and the native helper;
-`bun run swift:test` covers WKWebView, live and closed CLI, save failure, close and
-export; `bun run test:native` runs the CLI against the helper;
-`bun run bench:windows` measures window scaling. Templates: `bun run build:templates`,
-then `bun run test:render`.
+**Checks.** `bun run verify --native` runs what a change touches, building first.
+`bun run verify swift` covers WKWebView, live and closed CLI, save failure, close and
+export; `bun run verify native` runs the CLI against the helper, the relocated helper,
+renders, crashes and the corpus replay; `bun run bench:windows` measures window scaling.
+Templates: `bun run build:templates`, then `HITSLOP_RENDER=all bun run verify native render`.

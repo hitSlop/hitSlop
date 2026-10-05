@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod generate;
 use hitslop_core::{AppSpec, Document, Error};
 use serde_json::{json, Value};
 use hitslop_core::Origin;

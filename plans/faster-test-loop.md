@@ -1,5 +1,10 @@
 # Faster test loop: macOS-first, nextest, one dependency graph, test less often
 
+> **Done, superseded (2026-10-05).** Implemented with `bun run verify`; results and what
+> was measured and not adopted (the single integration binary, incremental release builds)
+> are in [the evidence](../docs/evidence/test-loop-2026-10-05.md), and the runner in
+> [testing](../docs/testing.md#running-tests). Kept for its measurements.
+
 ## Context
 
 Test runs make refactors slow. Session transcripts for the last 20 sessions show agents

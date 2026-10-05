@@ -303,9 +303,7 @@ Use the Bun version pinned in `package.json`, Xcode, and XcodeGen on macOS:
 bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
 bun run build
-bun run check
-bun run test
-bun run swift:test
+bun run verify --all --native
 bun slop dev examples/slops/quick-checklist
 ```
 

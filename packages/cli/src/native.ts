@@ -40,9 +40,3 @@ export async function request(body: HelperRequest): Promise<SocketReply> {
   return checked;
 }
 
-/** Saved metadata uses the selected document engine without loading an authored app. */
-export async function readDocument(command: "schema" | "inspect", path: string): Promise<string> {
-  const { stdout, code } = await exec([...negotiate(await findDocumentEngine()), command, path], { inherit: ["stderr"] });
-  if (code) throw new ExitStatus(code);
-  return stdout;
-}

@@ -74,6 +74,11 @@ import WebKit
     if Self.recording != nil {
       page["value"] = saved
       try JSONSerialization.data(withJSONObject: page, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: pageURL)
+      // The bytes the page path saved (text splices against older versions, page-minted
+      // IDs), kept beside the CLI-written documents so later builds replay them too.
+      let pageSaved = entry.appendingPathComponent("documents/\(parts[1]).page.slop")
+      try? FileManager.default.removeItem(at: pageSaved)
+      try FileManager.default.copyItem(at: root, to: pageSaved)
     } else {
       #expect(Self.canonical(saved) == Self.canonical(page["value"] as Any), "\(name): the saved result differs from its release's")
     }

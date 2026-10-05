@@ -15,96 +15,84 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+env:
+  # What a pull request or push changed: the pull request's target, or the commit a push
+  # replaced. Manual runs compare with nothing and check everything.
+  CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
+  # Every tier but the native ones (docs/testing.md): hygiene, contracts, types, Rust, Bun,
+  # the packed npm packages and the site. macOS, because the app links its SQLite.
   fast:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
-      # The workspace tests unify features, so the core's own builds are checked here:
-      # without file storage (as WASM builds it) and with it.
-      - run: cargo check --locked -p hitslop-core --tests
-      - run: cargo check --locked -p hitslop-core --features storage --tests
-      - run: bun run hygiene
+      - run: bun install --cwd apps/landing --frozen-lockfile
+      - run: bun run verify --all --ci --keep-going
         env:
           # Frozen tests/compat entries are compared with what this change builds on.
           HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
-      - run: bun run check
-      - run: bun run test
-      # Published tarballs installed outside the checkout: exports, types, init and preview.
-      - run: bun run packages:pack
-      - run: bun run test:packed
-      - run: bun install --cwd apps/landing --frozen-lockfile
-      - run: bun run landing:check
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: fast-evidence
           path: .hitslop/evidence
           include-hidden-files: true
+  # The Swift suite and the native tests (helper, render, crash, corpus replay), when the
+  # change touches what they cover. Always reports, so branch protection can require it.
   native:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: paths
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          filters: |
-            native:
-              - 'apps/apple/**'
-              - 'crates/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'packages/document/src/**'
-              - 'packages/shell/**'
-              - 'packages/schema/src/**'
-              - 'packages/cli/src/**'
-              - 'packages/cli/templates/**'
-              - 'packages/cli/skills/hitslop-document/**'
-              - 'packages/cli/tests/fixtures/**'
-              - 'packages/*/tests/**/*.native.test.ts'
-              - 'packages/*/package.json'
-              - 'scripts/**'
-              - 'tests/**'
-              - 'examples/slops/**'
-              - '.github/workflows/ci.yml'
-              - '.github/actions/**'
-              - 'bun.lock'
-              - 'package.json'
-              - 'tsconfig*.json'
+          bun-version: "1.4.2"
+      - name: Select native tiers
+        id: select
+        run: |
+          bun install --frozen-lockfile
+          bun scripts/verify.ts --list ${CHANGE_BASE:+--base "$CHANGE_BASE"} swift,native | tee selection.txt
+          echo "run=$(grep -qE '^(swift|native) ' selection.txt && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/prepare-checks
-        if: steps.paths.outputs.native == 'true'
+        if: steps.select.outputs.run == 'true'
       - uses: ./.github/actions/native-cache
-        if: steps.paths.outputs.native == 'true'
+        if: steps.select.outputs.run == 'true'
         with:
           templates: fixtures
-      # Fixtures only; the full template corpus, check:built and the app build run on release.
-      - name: Validate native boundaries
-        if: steps.paths.outputs.native == 'true'
+      - name: Native tiers
+        if: steps.select.outputs.run == 'true'
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-        run: |
-          bun run build
-          bun run swift:test
-          bun run test:native
-          bun run test:render --fixtures
-          bun run test:compat
-          bun run test:native-helper
-          bun scripts/crash-matrix.ts
-      - name: Native unaffected
-        if: steps.paths.outputs.native == 'false'
-        run: echo 'No native inputs changed'
+        run: bun run verify --ci --keep-going ${CHANGE_BASE:+--base "$CHANGE_BASE"} swift,native
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.paths.outputs.native == 'true'
+        if: always() && steps.select.outputs.run == 'true'
         with:
           name: native-evidence
           path: .hitslop/evidence
           include-hidden-files: true
+  # The core as WASM builds it (no storage), and the CLI's file engine with bundled SQLite:
+  # what the published CLI runs on Linux.
+  linux-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**') }}
+          restore-keys: rust-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: cargo-nextest@0.9.146
+      - run: cargo check --locked -p hitslop-core --no-default-features --tests
+      - run: cargo nextest run --locked --profile ci -p slop-engine --features bundled-sqlite
   # Tag runs can only restore caches saved on the default branch, so master keeps the
   # full template corpus warm for the next release. Manual runs can also profile
   # the complete render corpus without signing or publishing. Not a required check.
@@ -129,11 +117,12 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.render_corpus
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          HITSLOP_RENDER: all
         run: |
           cp .hitslop/evidence/template-cache-templates.json .hitslop/evidence/template-cache-first-build.json
           bun run build:templates
           bun -e 'import { strict as assert } from "node:assert"; const report = await Bun.file(".hitslop/evidence/template-cache-templates.json").json(); const inventory = await Bun.file("generated/templates/inventory.json").json(); assert.equal(report.built, 0); assert.equal(report.hits, inventory.templates.length);'
-          bun run test:render
+          bun run verify native render
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

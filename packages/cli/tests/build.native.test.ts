@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { buildTemplate } from "../src/template";
 import { request } from "../src/native";
 
-/** The helper `scripts/test.ts` names, which renders native artwork. */
+/** The helper `bun run verify native` names, which renders native artwork. */
 const renderer = process.env.HITSLOP_NATIVE_CLI!;
 import { overrideSlop } from "./source-fixture";
 

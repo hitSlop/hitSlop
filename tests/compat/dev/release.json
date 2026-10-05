@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "aa82b5486c527e2262750e13c47642e45eccc933-dirty",
-  "captured": "2026-10-05T16:28:40.954Z",
+  "commit": "d01497eb43cdb55451a15f2e6294cdd4b5ef906d-dirty",
+  "captured": "2026-10-05T20:55:35.546Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,38 +10,52 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "561bef394146328a3563c01ce20b18821039436077ac9e84ad9edbab119ebfe8",
+  "inputs": "e0bba9198ca18c09bb04622608849da89f0f90213d236b2e2cbc0e5510d98172",
   "producer": {
-    "coreBuildID": "3e0464dc5743b746",
+    "coreBuildID": "e1ab804a0798bcd9",
     "shell": "286eab82c67f9d8a12c471a88d3c5224e471b18bbf6b096bb94825e78940c15d"
   },
   "files": {
     "cli/attachment.txt": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
-    "cli/hitslop-cli-4.0.0.tgz": "c5a5dd8a2b9bee02e5ba6bb64d70a535baa338264a298caadcf492e2e34d88eb",
+    "cli/hitslop-cli-4.0.0.tgz": "5b8f25a25b93b9b5997f688325d5c063b68f109e57952f67a10de1f78f17cf46",
     "cli/hitslop-document-4.0.0.tgz": "7135cbd1edee6f1937564d607b85cda203803575e2262ca1b58e70e4ab9452d7",
-    "cli/hitslop-schema-4.0.0.tgz": "f664094495d68e81846191f46c91fa1c628a08dcf6f7336c171cce7a59e11479",
-    "cli/install/bun.lock": "b798b815bdd732b5d95b2fad363e76bb9aea520d6f1898776640fc9fe0bd6449",
+    "cli/hitslop-schema-4.0.0.tgz": "5ce323e96b885b353ccf30e5cd9d27355ce1629e15cf857dd8bc245f344550c5",
+    "cli/install/bun.lock": "7e6c1351434375f86dd12f11a0ce321d572f7613c9c3af5770ea074fcbee0b2a",
     "cli/install/package.json": "99ea8a9d5a9ddeed375d7e873fbf0d845f45734fae29d5571cfa881156c2b280",
     "cli/transcript.json": "03ce15d334e40f343bea92fbe78d04af0e268357c3046be91e1b4d2683d95c0a",
-    "documents/conformance-compacted.slop": "cf2bb0028ba8e940d97c60dd140f1510ca2db83c1ce5dd31f832f2847abbfcf2",
-    "documents/conformance.slop": "b6b7cd9b0aa7b6780f4993b02666fae9c4d274efb502af04e48ae5fefdccebae",
-    "documents/fixture-checklist.slop": "8adc9b5608e67e05096b73edccb404592a80cf3ff43a356e0619f888747929a7",
-    "documents/fixture-collections.slop": "3143a40338ca9c5a1ba2b1b9ca17cc74689d61644ef805e94ffd15845d4bbcf0",
-    "documents/fixture-scalars.slop": "4f43cc1724c0035ea2810d3db6ffeba3b50ca2e3a575c255cffb6234cfeac7d8",
-    "documents/quick-checklist-compacted.slop": "4cc383aa74efac556521e8f0461afef49d43ac17141af37048c5a2c67103051c",
-    "documents/quick-checklist.slop": "f4f7324b917374c4a2dea564b0457a15906dffee8ce0f061504784a959aa511e",
+    "documents/conformance-compacted.page.slop": "cb685352926e94feaea59453e580b87eba064c3336eb7165a5ac9ec6ba04e319",
+    "documents/conformance-compacted.slop": "fe4c625967a2ba551dbcf67123274c6c7a5581cf1962eb9002106f8139823490",
+    "documents/conformance.page.slop": "2940cb18ac323eeb09ef1da31da576e60a03b620319bed8027283a28f20992fb",
+    "documents/conformance.slop": "fee5739f6adb7e6d72d11efe05d3da5f3356b5db89d1028f06267c25ba38dba4",
+    "documents/fixture-checklist.page.slop": "c1f267e57f30f722fe646759371b66b3e4d96ef583263b8aac3e29f8b62e5082",
+    "documents/fixture-checklist.slop": "17d5e3b5d50e0580b280ed2fca45b66e154dc4bcc772f18d09e0bb89b98c1b83",
+    "documents/fixture-collections.page.slop": "c9cdb420ef812104183b39d1c9788f6fee8598d3ad820526ecd3a8b3d0aad6d5",
+    "documents/fixture-collections.slop": "b0222adaf2b034ab2304facbf76457a707cbb6c606a9e2041f730f02d927abce",
+    "documents/fixture-scalars.page.slop": "a2ebc58bb075e9ee9c629d2a27e5b296800eae088389b580ecfa7c16b563246c",
+    "documents/fixture-scalars.slop": "c6f3d32290256f40b618089ce1e9e3f1ef734ddec0de43246b5b8dad26ff3779",
+    "documents/quick-checklist-compacted.page.slop": "9a93cdfe91a9c22151b0a1c4657ab038e1f69d9bbf8a5b1c31980ef1d563195d",
+    "documents/quick-checklist-compacted.slop": "e48e93f5f1a3435628f6442beb4c111eb81fda580682931b92c82c8dd0b78ab0",
+    "documents/quick-checklist.page.slop": "5e4b9a97e03f9b480a9076fdce4c6106b3759320c4d3130a5f8c5d60f2c85372",
+    "documents/quick-checklist.slop": "2c0e6969654207b821a8a89b0485d97ac0a8ebfd36bef820b1b8d2616d2ecf19",
     "expected/conformance-compacted.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
+    "expected/conformance-compacted.page.json": "cf0f05f2fb408161f4f56dbbbabfbcdef36e1eb3a5bf9b9fe7b2077b9c281038",
     "expected/conformance.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
+    "expected/conformance.page.json": "cf0f05f2fb408161f4f56dbbbabfbcdef36e1eb3a5bf9b9fe7b2077b9c281038",
     "expected/fixture-checklist.json": "1964ae032a49ac9bda10e0b58a06fd1e42153493ed340662c33270370cfe7835",
+    "expected/fixture-checklist.page.json": "141e3912f3234773cc8783e6c48f3c1e0b9cc06007e35ec7f405096700e436d4",
     "expected/fixture-collections.json": "f05a595feae9b29ef978fa080607f11cca3254fead7414f9f51389abf2b271d7",
+    "expected/fixture-collections.page.json": "b5d58886a917089f109fecd5c1b9980d43c0cb49a1f104e03a4478c683b33a6f",
     "expected/fixture-scalars.json": "6da2a9e454850d27ee20281e2896a79b9dee3311981575e3f856a4568c832c3f",
+    "expected/fixture-scalars.page.json": "de1edb2ec3e49d92524bec2a2e8deb3af676f763d55c4d6b555486254b6f3deb",
     "expected/new-conformance.json": "3bbfd996e4d43581e419a0fcf14c2c31a039c18f7c72f9f9a74ac6a2061d6b0b",
     "expected/new-fixture-checklist.json": "095af5baa71998048de7a4c829200093690396fba33931929dd8288a91dd3f51",
     "expected/new-fixture-collections.json": "52d06bdca3663c8c7dcfd01300880263e13c1490eb516f8a52b3d735281a2e47",
     "expected/new-fixture-scalars.json": "fe5f8bff2bd4f77d82a165d57138b2c6a2353a61663109f1829af88cef3380f5",
     "expected/new-quick-checklist.json": "36366b5f1644834e50e2f44b2c53106f03e0f6a1c348171549ed9e518fe2a7c1",
     "expected/quick-checklist-compacted.json": "b557a25a527c8c694e916f751f5a2a72da12f8c06462395e91d6c22434010c0f",
+    "expected/quick-checklist-compacted.page.json": "fd5cc5336b3268ffa1ae50bdae8d6df76ee30920b5bdb58cc1f2012a83e817a2",
     "expected/quick-checklist.json": "b557a25a527c8c694e916f751f5a2a72da12f8c06462395e91d6c22434010c0f",
+    "expected/quick-checklist.page.json": "fd5cc5336b3268ffa1ae50bdae8d6df76ee30920b5bdb58cc1f2012a83e817a2",
     "pages/conformance-compacted.json": "7fddb940cc9ac3938e4558a21bb13c9c3bd63293560ac842885c4a98ce506f40",
     "pages/conformance.json": "7fddb940cc9ac3938e4558a21bb13c9c3bd63293560ac842885c4a98ce506f40",
     "pages/fixture-checklist.json": "fc51229a46d7810f6531fa8370612580b0d401cc7ae5cf8ab2fd976dc8e449a7",
@@ -50,12 +64,19 @@
     "pages/quick-checklist-compacted.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
     "pages/quick-checklist.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
     "scenarios/conformance-compacted.json": "a76a35e76abc7e70e1101d3bb311d57512c0b8f247a652774f27d38db5272b78",
+    "scenarios/conformance-compacted.page.json": "9f44f860ebdf50a66025620ceaec327a616d5fa034b9479657fa3dcdaad6d5d2",
     "scenarios/conformance.json": "a76a35e76abc7e70e1101d3bb311d57512c0b8f247a652774f27d38db5272b78",
+    "scenarios/conformance.page.json": "9f44f860ebdf50a66025620ceaec327a616d5fa034b9479657fa3dcdaad6d5d2",
     "scenarios/fixture-checklist.json": "b8c2c8ff399cc678335a81152bcee742a4f19e0ccdf9ad54445bae9c8640cabf",
+    "scenarios/fixture-checklist.page.json": "b8c2c8ff399cc678335a81152bcee742a4f19e0ccdf9ad54445bae9c8640cabf",
     "scenarios/fixture-collections.json": "9deee34464609cd4a529681e2c6fec696869f151d30d7e1ee160098021649d72",
+    "scenarios/fixture-collections.page.json": "9deee34464609cd4a529681e2c6fec696869f151d30d7e1ee160098021649d72",
     "scenarios/fixture-scalars.json": "3ac9e8586ae6717fb3722ddb57f811e79de97431e9b8c8402026616bc681d91a",
+    "scenarios/fixture-scalars.page.json": "3ac9e8586ae6717fb3722ddb57f811e79de97431e9b8c8402026616bc681d91a",
     "scenarios/quick-checklist-compacted.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
+    "scenarios/quick-checklist-compacted.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
+    "scenarios/quick-checklist.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "templates/conformance.slop": "ea9f84f47272c2083b3fdaa285a6c4b0501cba8feb5cc3fcf8cb3ab9900f6951",
     "templates/fixture-checklist.slop": "1d87e97d7381e5aeb0c12c4944fe0c0821f9910f986d457b6c5816fc4367f06f",
     "templates/fixture-collections.slop": "3d7218e57df9f53d60cad88bf00ae3e9b8a44a4cc40ab482d98e9c495ac880a4",
@@ -70,9 +91,9 @@
     "conformance": "ea9f84f47272c2083b3fdaa285a6c4b0501cba8feb5cc3fcf8cb3ab9900f6951"
   },
   "archives": {
-    "hitslop-schema-4.0.0.tgz": "d233bb0bab3f88ab76323ca1b8fe3fe8dae5c38ae3571a185c2a90901a86b664",
+    "hitslop-schema-4.0.0.tgz": "16e8c8cafbabe1ebd8a71cc10bf74aadd30a705378c8d1a5ac82a65698aa2e73",
     "hitslop-document-4.0.0.tgz": "e27b65b2f7528b4fa7eba3660cbd2d4d67aba28e97377a16f741e0be45fc2d60",
-    "hitslop-cli-4.0.0.tgz": "41eb9efa9ce9127c635f92df76186c1805de23b46449df7822233fba74f70ba3"
+    "hitslop-cli-4.0.0.tgz": "d1ea96df3e719d174f70454e4293b2e5bb3d241c65e08580674e54170fada5a1"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -89,7 +110,7 @@
       "updates": 4
     },
     "conformance-compacted": {
-      "checkpointBytes": 1672,
+      "checkpointBytes": 1659,
       "updates": 0
     },
     "fixture-checklist": {
@@ -109,8 +130,36 @@
       "updates": 3
     },
     "quick-checklist-compacted": {
-      "checkpointBytes": 1223,
+      "checkpointBytes": 1237,
       "updates": 0
+    },
+    "conformance.page": {
+      "checkpointBytes": 833,
+      "updates": 10
+    },
+    "conformance-compacted.page": {
+      "checkpointBytes": 1659,
+      "updates": 6
+    },
+    "fixture-checklist.page": {
+      "checkpointBytes": 700,
+      "updates": 5
+    },
+    "fixture-collections.page": {
+      "checkpointBytes": 1053,
+      "updates": 4
+    },
+    "fixture-scalars.page": {
+      "checkpointBytes": 718,
+      "updates": 5
+    },
+    "quick-checklist.page": {
+      "checkpointBytes": 1137,
+      "updates": 4
+    },
+    "quick-checklist-compacted.page": {
+      "checkpointBytes": 1237,
+      "updates": 1
     }
   }
 }

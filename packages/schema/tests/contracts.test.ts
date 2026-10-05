@@ -2,7 +2,7 @@
 // one name must stop generation, never silently share the first one's cases.
 import { expect, test } from "bun:test";
 import { Type as T } from "typebox";
-import { swiftContracts } from "../../../scripts/swift-contracts";
+import { swiftContracts } from "../../../scripts/build/swift-contracts";
 import { HostCaptureResultSchema, HostRequestSchema, PageFailureSchema, PageRequestSchema, PageResults } from "../src/page";
 import { SocketDiscoverySchema, SocketReplySchema, SocketRequestSchema, SocketSuccessSchema } from "../src/socket";
 

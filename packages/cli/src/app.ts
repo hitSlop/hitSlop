@@ -40,10 +40,10 @@ const retrySection = {
 async function native(...argv: string[]) {
   await (await import("./native")).runEngine(argv);
 }
-/** Reads a template or a closed or open document with the file engine, on any platform:
- * saved state, never an open window's unsaved edits. */
+/** Reads a template or a closed or open document with the CLI's own file engine, on any
+ * platform, as `build` and `check` do: saved state, never an open window's unsaved edits. */
 async function readSlop(command: "schema" | "inspect", path: string) {
-  return (await import("./native")).readDocument(command, path);
+  return (await import("./engine")).engine([command, path]);
 }
 const documents = () => import("./documents");
 

@@ -1,0 +1,74 @@
+{
+  "ops": [
+    {
+      "type": "insert",
+      "path": [
+        "tasks"
+      ],
+      "id": "compat-3",
+      "value": {
+        "text": "Compat 3 ✓ café 🦊",
+        "done": true,
+        "archived": true
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "tasks"
+      ],
+      "id": "x-6yyyw505f331nsw29bjpvh38",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "title"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    }
+  ],
+  "value": {
+    "tasks": [
+      {
+        "$id": "x-03yyw505d331nca39bjpvj38",
+        "archived": false,
+        "done": true,
+        "text": "Send the first draft"
+      },
+      {
+        "$id": "compat-1",
+        "archived": true,
+        "done": true,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "x-kgyyw505e3315k339bjpbj38",
+        "archived": false,
+        "done": false,
+        "text": "Take a walk without my phone"
+      },
+      {
+        "$id": "compat-2",
+        "archived": false,
+        "done": false,
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "x-6yyyw505f331nsw29bjpvh38",
+        "archived": false,
+        "done": false,
+        "text": "Make a little room for the weekend"
+      },
+      {
+        "$id": "compat-3",
+        "archived": true,
+        "done": true,
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    ],
+    "title": "Compat 3 ✓ café 🦊"
+  }
+}

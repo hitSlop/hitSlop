@@ -8,12 +8,10 @@ Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGe
 bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
 bun run build
-bun run check
-bun run test
-bun run swift:test
+bun run verify --all --native
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine is copied beside the Debug helper so an explicit `HITSLOP_NATIVE_CLI` selects a matching deployment. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine is copied beside the Debug helper so an explicit `HITSLOP_NATIVE_CLI` selects a matching deployment. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 
@@ -50,14 +48,17 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 
 ## Focused checks
 
-- `bun run hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
-- `bun run check`: generated contract drift (change TypeBox source and regenerate rather than editing generated files), skills, package types, and discovered template types.
-- `bun run test`: SDK, schema, and CLI tests over the WASM core, including the shared fixture replay.
-- `bun run swift:test`: native tests with two cached black-box apps and three presentation fixtures.
-- `bun run test:native`: native CLI owners. `bun run test:render` checks every bundled template and the fixtures; `--fixtures` limits it to the native fixtures and contract specimens.
-- `bun run test:native-crash`: the crash matrix with host death (`crash-matrix.ts --host`).
-- `bun run packages:pack` and `bun run test:packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. Add `--native` to the packed check for the complete build/register/theme/export workflow.
-- `bun run landing:check` and `bun run landing:build`: public documentation and site validation.
+`bun run verify` runs the tiers a change touches; `bun run verify TIER [args]` runs one.
+[Testing](../testing.md#running-tests) lists every tier.
+
+- `hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
+- `contracts` and `types` (`bun run check`): generated contract drift (change TypeBox source and regenerate rather than editing generated files), skills, package types, and discovered template types.
+- `bun` (`bun run test`): SDK, schema, and CLI tests over the WASM core, including the shared fixture replay.
+- `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
+- `swift` (`bun run swift:test`): native tests with two cached black-box apps and three presentation fixtures.
+- `native` (`bun run test:native`): native CLI owners, the relocated helper, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
+- `packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
+- `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
 
 `bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 

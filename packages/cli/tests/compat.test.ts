@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { stable, assertOutput } from "../../../scripts/compat";
-import { sourceFingerprint } from "../../../scripts/compat-integrity";
+import { stable, assertOutput } from "../../../scripts/compat/corpus";
+import { sourceFingerprint } from "../../../scripts/compat/integrity";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

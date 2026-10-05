@@ -53,7 +53,7 @@ jobs:
           templates: release
       - name: Check release identity
         if: github.event_name == 'push'
-        run: bun scripts/release-bundle.ts --preflight
+        run: bun scripts/release/bundle.ts --preflight
       - run: bun install --cwd apps/landing --frozen-lockfile
       - run: brew install xcodegen
       # Tags accept the signed Release app during packaging instead of building a Debug app.
@@ -90,7 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .hitslop/evidence
-          scripts/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
+          scripts/release/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
       - name: Verify Gatekeeper
         if: github.event_name == 'push'
         run: |
@@ -108,7 +108,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"
-          bun scripts/release-artifact.ts "$APP"
+          bun scripts/release/artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
           ditto -x -k "dist/macos/hitSlop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
@@ -117,7 +117,7 @@ jobs:
       - name: Retain tested npm packages
         if: github.event_name == 'push'
         run: |
-          bun scripts/release-bundle.ts
+          bun scripts/release/bundle.ts
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
       - name: Publish GitHub Release
         if: github.event_name == 'push'

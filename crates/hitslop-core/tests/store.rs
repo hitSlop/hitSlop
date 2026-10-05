@@ -768,7 +768,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
 // Crash outcomes at each kind of save, with real processes: what a save commits survives
 // the death of the process that wrote it, and its lock dies with it. The rollback of a
 // write interrupted mid-commit is SQLite's journal (`a_crash_mid_commit_is_recovered_by_the_next_writer`
-// in `file.rs`); the timed helper kills in `scripts/crash-matrix.ts` are stress coverage.
+// in `file.rs`); the timed helper kills in `tests/native/crash.native.test.ts` are stress coverage.
 const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 
 /// Runs only as the child of `a_committed_save_survives_its_process_being_killed`: makes

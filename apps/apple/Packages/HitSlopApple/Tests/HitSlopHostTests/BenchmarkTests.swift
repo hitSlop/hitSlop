@@ -239,7 +239,7 @@ private final class PublicationTimes: @unchecked Sendable {
             await nextFrame();
             rowTextFrame.push(performance.now() - f);
           }
-          // Same split as scripts/bench-webkit.ts: click → DOM mutation (JS), forced layout, rest.
+          // Same split as scripts/dev/bench-webkit.ts: click → DOM mutation (JS), forced layout, rest.
           const split = { js: [], layout: [], rest: [] };
           for (let i = 0; i < 20; i++) {
             await new Promise(r => setTimeout(r, 100));

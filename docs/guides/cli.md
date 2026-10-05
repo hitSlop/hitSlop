@@ -70,8 +70,10 @@ export again, remove the old file first.
 and authoring. Without it, macOS document commands first use the app's engine in
 `/Applications/hitSlop.app`, then `~/Applications/hitSlop.app`, then the CLI's platform
 engine or the checkout's `target/release/slop-engine`. Linux uses the CLI or checkout
-engine. Authoring validation and packing always select the CLI engine, independently of
-an installed app, unless `HITSLOP_ENGINE` is set.
+engine. A newer CLI therefore never migrates a document past what the installed app can
+open. What the author builds is read with the engine that built it: validation, packing,
+`inspect` and `schema` always select the CLI engine, independently of an installed app or
+`HITSLOP_NATIVE_CLI`, unless `HITSLOP_ENGINE` is set.
 
 The CLI runs only the document engine. What needs AppKit or WebKit (`open`, `export`,
 `build --artwork native` and `register`) the engine passes, unchanged, to the app's
@@ -134,5 +136,5 @@ out:
 - To dogfood unreleased skills, run `bun run packages:pack` and install
   `generated/npm/hitslop-cli-VERSION.tgz` with `bun install -g`. While the matching
   `@hitslop/document` and `@hitslop/schema` are unpublished, first list their tarballs as
-  `overrides` in `$BUN_INSTALL/install/global/package.json`, as `scripts/packed-test.ts`
+  `overrides` in `$BUN_INSTALL/install/global/package.json`, as `tests/packed/packed.test.ts`
   does.

@@ -1,0 +1,112 @@
+{
+  "ops": [
+    {
+      "type": "set",
+      "path": [
+        "currency"
+      ],
+      "value": "CAD"
+    },
+    {
+      "type": "set",
+      "path": [
+        "label"
+      ],
+      "value": "comp"
+    },
+    {
+      "type": "set",
+      "path": [
+        "limit"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
+        "memo"
+      ],
+      "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
+        "rating"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
+        "ratio"
+      ],
+      "value": 0.75
+    },
+    {
+      "type": "insert",
+      "path": [
+        "rows"
+      ],
+      "id": "compat-3",
+      "value": {
+        "text": "Compat 3 ✓ café 🦊",
+        "amount": 0.75
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "rows"
+      ],
+      "id": "compat-1",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "title"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    }
+  ],
+  "value": {
+    "box": {
+      "items": []
+    },
+    "currency": "CAD",
+    "label": "comp",
+    "limit": 3,
+    "memo": "compat 3",
+    "photo": {
+      "id": "compat 1",
+      "name": "compat 1"
+    },
+    "rating": 3,
+    "ratio": 0.75,
+    "rows": [
+      {
+        "$id": "r1",
+        "amount": 475,
+        "text": "Coffee"
+      },
+      {
+        "$id": "compat-2",
+        "amount": 0.5,
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "compat-1",
+        "amount": 0.25,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-3",
+        "amount": 0.75,
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    ],
+    "title": "Compat 3 ✓ café 🦊"
+  }
+}

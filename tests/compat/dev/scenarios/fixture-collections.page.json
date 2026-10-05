@@ -1,0 +1,181 @@
+{
+  "ops": [
+    {
+      "type": "set",
+      "path": [
+        "cells",
+        "compat-3"
+      ],
+      "value": {
+        "input": "compat 3"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "done",
+        "compat-3"
+      ],
+      "value": true
+    },
+    {
+      "type": "insert",
+      "path": [
+        "habits"
+      ],
+      "id": "compat-3",
+      "value": {
+        "name": "Compat 3 ✓ café 🦊",
+        "checkins": {}
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "habits"
+      ],
+      "id": "compat-1",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "notes"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    },
+    {
+      "type": "set",
+      "path": [
+        "pages",
+        "compat-3"
+      ],
+      "value": {
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    },
+    {
+      "type": "insert",
+      "path": [
+        "pixels"
+      ],
+      "value": "compat 3",
+      "index": 0
+    },
+    {
+      "type": "insert",
+      "path": [
+        "presets"
+      ],
+      "value": 40,
+      "index": 0
+    },
+    {
+      "type": "insert",
+      "path": [
+        "stats",
+        "guesses"
+      ],
+      "value": "compat 3",
+      "index": 0
+    },
+    {
+      "type": "set",
+      "path": [
+        "title"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    },
+    {
+      "type": "set",
+      "path": [
+        "widths",
+        "compat-3"
+      ],
+      "value": 56
+    }
+  ],
+  "value": {
+    "cells": {
+      "compat-1": {
+        "input": "compat 1"
+      },
+      "compat-2": {
+        "input": "compat 2"
+      },
+      "compat-3": {
+        "input": "compat 3"
+      }
+    },
+    "done": {
+      "compat-1": true,
+      "compat-2": false,
+      "compat-3": true
+    },
+    "habits": [
+      {
+        "$id": "h1",
+        "checkins": {},
+        "name": "Walk"
+      },
+      {
+        "$id": "compat-2",
+        "checkins": {},
+        "name": "Replay 2 é 中文"
+      },
+      {
+        "$id": "compat-1",
+        "checkins": {},
+        "name": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-3",
+        "checkins": {},
+        "name": "Compat 3 ✓ café 🦊"
+      }
+    ],
+    "notes": "Compat 3 ✓ café 🦊",
+    "pages": {
+      "compat-1": {
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      "compat-2": {
+        "text": "Replay 2 é 中文"
+      },
+      "compat-3": {
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    },
+    "pixels": [
+      "compat 3",
+      "compat 2",
+      "compat 1",
+      "#fff",
+      "#fff",
+      "#fff"
+    ],
+    "presets": [
+      40,
+      40,
+      40,
+      60,
+      90
+    ],
+    "stats": {
+      "guesses": [
+        "compat 3",
+        "compat 2",
+        "compat 1"
+      ]
+    },
+    "title": "Compat 3 ✓ café 🦊",
+    "widths": {
+      "A": 100,
+      "compat-1": 56,
+      "compat-2": 56,
+      "compat-3": 56
+    }
+  }
+}

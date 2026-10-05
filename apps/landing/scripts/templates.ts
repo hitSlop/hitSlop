@@ -8,8 +8,8 @@ import { Database } from "bun:sqlite";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { repository } from "../../../scripts/runtime-artifacts";
-import { builtTemplates } from "../../../scripts/templates";
+import { repository } from "../../../scripts/lib/artifacts";
+import { builtTemplates } from "../../../scripts/templates/discover";
 
 const landing = fileURLToPath(new URL("..", import.meta.url));
 /** What the wall shows of a built template, read from its file's app row and artwork. */

@@ -1,5 +1,5 @@
 name: Prepare checks
-description: Install pinned tools
+description: Install pinned tools; checks run through `bun run verify`
 runs:
   using: composite
   steps:
@@ -19,15 +19,18 @@ runs:
           ~/.cargo/git
           target
           generated/core-tools
-        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/core-build.ts') }}
+        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
         restore-keys: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+    - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+      with:
+        tool: cargo-nextest@0.9.146
+    # The core's bindings generators, pinned to the library versions in Cargo.lock.
     - name: Prepare shared Rust core toolchain
       shell: bash
       run: |
         rustup show active-toolchain
         rustup target add wasm32-unknown-unknown
         cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools
-    - run: bun run core:build:wasm
-      shell: bash
-    - run: bun run core:test
-      shell: bash
+        if [ "$RUNNER_OS" = macOS ]; then
+          cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen
+        fi

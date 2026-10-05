@@ -11,7 +11,11 @@ serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 getrandom = "0.2"
 
+[lib]
+doctest = false
+
 [features]
+default = ["storage"]
 # Durable storage for native hosts: the document file (SQLite), the writer lock and the
 # save policy. Links the platform's SQLite, the one library every other in-process user
 # (Firebase) loads. Opening checks the app, so it also needs the manifest validator.
@@ -46,6 +50,10 @@ required-features = ["storage"]
 
 [[test]]
 name = "compat"
+required-features = ["storage"]
+
+[[test]]
+name = "compat_writers"
 required-features = ["storage"]
 
 [[test]]

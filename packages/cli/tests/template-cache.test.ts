@@ -7,7 +7,7 @@ import {
   inputs,
   TemplateCache,
   validateTemplate,
-} from "../../../scripts/template-cache";
+} from "../../../scripts/templates/cache";
 
 import { writeTemplate } from "./template-fixture";
 
@@ -201,7 +201,7 @@ test("templates are keyed on the compiler and the file engine, not CLI routing o
     "packages/cli/src/app.ts",
     "packages/cli/skills",
     "scripts/hygiene.ts",
-    "scripts/release-check.ts",
+    "scripts/verify.ts",
     "examples/slops/PRODUCT.md",
   ])
     expect(paths.some((path) => path === unrelated || path.startsWith(unrelated + "/"))).toBe(

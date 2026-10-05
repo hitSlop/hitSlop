@@ -1,0 +1,125 @@
+/** The shared document core, as each host consumes it: the WASM binding (`slop dev` and Bun
+ * tests), the CLI's file engine, and the app's Swift binding and library. Every host build
+ * shares one Cargo graph, and an output whose bytes did not change is not rewritten, so
+ * nothing downstream rebuilds. */
+import { publishFolder, repository, writeIfChanged } from "../lib/artifacts";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { existsSync } from "node:fs";
+import { exec } from "../../packages/cli/src/process";
+
+/** Release binaries name dependency sources by a fixed prefix instead of this machine's
+ * Cargo home, so none carries a local path, and builds of the same sources on different
+ * machines match. Workspace crates are already named relative to the checkout. Every
+ * release build passes the same flags, so all share one Cargo graph; the Xcode embed and
+ * the Engines workflow get them from `bun scripts/build/core.ts --rustflags`. */
+export function releaseRustflags(): string[] {
+  const cargoHome = process.env.CARGO_HOME ?? join(homedir(), ".cargo");
+  return [
+    `--remap-path-prefix=${cargoHome}/registry/src=/cargo/registry/src`,
+    `--remap-path-prefix=${cargoHome}/git/checkouts=/cargo/git/checkouts`,
+  ];
+}
+const env = {
+  ...process.env,
+  PATH: `${process.env.HOME}/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH}`,
+  // Encoded, so a Cargo home with spaces stays one argument.
+  CARGO_ENCODED_RUSTFLAGS: releaseRustflags().join("\x1f"),
+};
+async function run(command: string[]) {
+  const { code } = await exec(command, { cwd: repository, env, inherit: ["stdout", "stderr"] });
+  if (code) throw new Error(`Core build failed: ${command.join(" ")}`);
+}
+/** A pinned generator: `generated/core-tools/bin/<name>` (or `variable`), refused at any
+ * other version. */
+async function generator(name: string, version: string, variable: string, install: string) {
+  const local = join(repository, "generated/core-tools/bin", name);
+  const binary = process.env[variable] ?? (existsSync(local) ? local : name);
+  const { stdout, code } = await exec([binary, "--version"], { env }).catch(() => ({ stdout: "", code: 1 }));
+  if (code || stdout.trim() !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
+  return binary;
+}
+
+/** Browser/dev/test binding. This entry point works on Linux without Xcode. */
+export async function buildCoreWasm() {
+  const bindgen = await generator(
+    "wasm-bindgen",
+    "0.2.127",
+    "HITSLOP_WASM_BINDGEN",
+    "cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools",
+  );
+  await run(["cargo", "build", "--locked", "--release", "--target", "wasm32-unknown-unknown", "-p", "hitslop-core-wasm"]);
+  // Bindings are a pure function of the module: an unchanged one keeps the folder as is.
+  await publishFolder(join(repository, "generated/core/wasm"), (stage) =>
+    run([bindgen, "--target", "web", "--out-dir", stage, "target/wasm32-unknown-unknown/release/hitslop_core_wasm.wasm"]),
+  );
+}
+
+/** Every platform a published CLI carries a file engine for, built by the engines workflow
+ * (`.github/workflows/engines.yml`); a local build covers only this machine. */
+export const enginePlatforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] as const;
+
+/** The CLI's file engine (`target/release/slop-engine`), from the same locked core. On a Mac
+ * it builds with the app's core library: alone, the engine's graph would differ (the
+ * library's build dependencies add features), and each build would undo the other. */
+export async function buildEngine() {
+  await run(["cargo", "build", "--locked", "--release", "-p", "slop-engine", ...(process.platform === "darwin" ? ["-p", "hitslop-core-ffi"] : [])]);
+}
+
+/** The app's core: the Swift binding and an arm64 XCFramework (the app ships for Apple
+ * silicon only), built in the same Cargo graph as the engine. */
+export async function buildCoreNative() {
+  if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("The native core builds on an Apple silicon Mac");
+  const bindgen = await generator(
+    "uniffi-bindgen",
+    "0.32.2",
+    "HITSLOP_UNIFFI_BINDGEN",
+    "cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen",
+  );
+  await buildEngine();
+  const generated = join(repository, "apps/apple/Packages/HitSlopApple/Generated");
+  const headers = join(generated, "include");
+  const bindings = await mkdtemp(join(tmpdir(), "hitslop-bindings-"));
+  let changed = false;
+  try {
+    await run([
+      bindgen,
+      "generate",
+      "--library",
+      "target/release/libhitslop_core_ffi.dylib",
+      "--language",
+      "swift",
+      "--out-dir",
+      bindings,
+    ]);
+    // SwiftPM recompiles everything that imports a touched file, so only changes are written.
+    for (const [from, to] of [
+      ["HitSlopCoreBinding.swift", join(generated, "HitSlopCoreBinding/HitSlopCoreBinding.swift")],
+      ["HitSlopCoreFFI.h", join(headers, "HitSlopCoreFFI.h")],
+      ["HitSlopCoreFFI.modulemap", join(headers, "module.modulemap")],
+    ] as const)
+      changed = (await writeIfChanged(to, await readFile(join(bindings, from)))) || changed;
+  } finally {
+    await rm(bindings, { recursive: true, force: true });
+  }
+  const library = join(generated, "libhitslop_core_ffi.a");
+  changed = (await writeIfChanged(library, await readFile(join(repository, "target/release/libhitslop_core_ffi.a")))) || changed;
+  // Replace disposable artifacts only; immutable runtime releases are never outputs.
+  const framework = join(generated, "HitSlopCoreFFI.xcframework");
+  if (!changed && existsSync(framework)) return;
+  await rm(framework, { recursive: true, force: true });
+  await run(["xcodebuild", "-create-xcframework", "-library", library, "-headers", headers, "-output", framework]);
+}
+
+if (import.meta.main) {
+  if (process.argv.includes("--rustflags")) console.log(releaseRustflags().join(" "));
+  else if (process.argv.includes("--wasm")) await buildCoreWasm();
+  else if (process.argv.includes("--native")) await buildCoreNative();
+  else if (process.argv.includes("--engine")) await buildEngine();
+  else {
+    await buildCoreWasm();
+    await buildEngine();
+    await buildCoreNative();
+  }
+}

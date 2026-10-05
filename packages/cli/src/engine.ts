@@ -24,8 +24,11 @@ export async function pack(stage: string, file: string): Promise<void> {
   await engine(["pack", stage, file]);
 }
 
-/** Document commands use the installed app's owner build on macOS, or the CLI's engine
- * on other platforms. An explicit helper selects its sibling engine as one deployment. */
+/** Document commands (create, open, get, edits, export) use the installed app's owner build
+ * on macOS, or the CLI's engine on other platforms: a newer CLI never migrates a document
+ * past what the installed app opens. What the author builds (validation, packing, inspect,
+ * schema) always uses the CLI's own engine (`findEngine`). An explicit helper selects its
+ * sibling engine as one deployment. */
 export async function findDocumentEngine(): Promise<string> {
   if (process.env.HITSLOP_ENGINE !== undefined || process.platform !== "darwin") return findEngine();
   if (process.env.HITSLOP_NATIVE_CLI !== undefined) {

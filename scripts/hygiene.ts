@@ -1,6 +1,6 @@
-import { repository } from "./runtime-artifacts";
-import { releases } from "./compat";
-import { verifyCorpus } from "./compat-integrity";
+import { repository } from "./lib/artifacts";
+import { releases } from "./compat/corpus";
+import { verifyCorpus } from "./compat/integrity";
 import { lstat, stat, realpath, readFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 import { exec } from "../packages/cli/src/process";

@@ -74,9 +74,10 @@ for visual changes. `_vibe` is inspiration only.
   integration. Delete tests together with the code they protect. No tests of private
   call sequences, CSS strings or version numbers.
 - A bug regression test must fail before the fix for the intended reason.
-- Everyday: `bun run check && bun run test` and `cargo test --locked --workspace`.
-  Native: `bun run build && bun run swift:test && bun run test:native`.
-  Release: `bun run release:check`.
+- One runner, `bun run verify` ([testing](docs/testing.md)): it runs the tiers whose
+  inputs changed since they last passed. Iterate with one tier (`bun run verify rust
+  store::`); run `bun run verify` before calling a step done, and `bun run verify --native`
+  once at the end when Swift, the FFI or the helper changed. Release: `bun run release:check`.
 
 ## Deferred
 
