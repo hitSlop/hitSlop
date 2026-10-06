@@ -5,9 +5,10 @@
 //! until the document next opens or the app's launch sweep); `schema <file>` prints its app's
 //! document descriptor. `request` routes through the live owner or acquires the writer
 //! lock and runs the same owner in-process; its classified result is printed as JSON.
-//! What needs AppKit or WebKit (exporting, `screenshot` artwork, `open` in a window) runs
-//! in the app's helper, which the engine passes it to unchanged, so the CLI talks to one
-//! binary. Other refusals print a message on stderr and exit 1; a usage error exits 2.
+//! What needs AppKit or WebKit runs in the app's helper: the engine passes it an export
+//! request unchanged (`hitslop-native export`), `screenshot` artwork and `open` in a window,
+//! so the CLI talks to one binary. The helper serves no other document request. Other
+//! refusals print a message on stderr and exit 1; a usage error exits 2.
 //! `HITSLOP_TEST_REGISTRY` selects an isolated registry for tests.
 use hitslop_core::{command, file, registry};
 use std::io::{Read, Write};
@@ -103,7 +104,7 @@ fn main() -> ExitCode {
         return match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
             Ok(_) => {
                 if command::is_export(&input) {
-                    return native(protocol, &["request"], Some(&input));
+                    return native(protocol, &["export"], Some(&input));
                 }
                 println!("{}", command::request(&input, protocol, None));
                 ExitCode::SUCCESS
@@ -129,21 +130,14 @@ fn main() -> ExitCode {
     let result = match args.as_slice() {
         ["create", "--from", template, "--output", document] => {
             let destination = Path::new(document);
-            let parent = destination.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-            match std::fs::create_dir_all(parent) {
-                Ok(()) => file::create_document(Path::new(template), destination).map(|()| {
-                    Some(
-                        std::fs::canonicalize(destination)
-                            .unwrap_or_else(|_| destination.to_owned())
-                            .to_string_lossy()
-                            .into_owned(),
-                    )
-                }),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return ExitCode::FAILURE;
-                }
-            }
+            file::create_document(Path::new(template), destination).map(|()| {
+                Some(
+                    std::fs::canonicalize(destination)
+                        .unwrap_or_else(|_| destination.to_owned())
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            })
         }
         ["pack", stage, file] => file::pack(Path::new(stage), Path::new(file)).map(|()| None),
         ["inspect", file] => file::inspect(Path::new(file)).and_then(|mut value| {

@@ -61,7 +61,7 @@ fn request(engine: &Path, body: Value) -> Value {
 fn released_value(engine: &Path, document: &Path) -> Value {
     let reply = request(engine, json!({"method":"get","documentPath":document}));
     assert_eq!(reply["ok"], true, "the released engine cannot read its own document: {reply}");
-    reply["state"]["state"]["value"].clone()
+    reply["state"]["value"].clone()
 }
 /// The saved value as this core reads it.
 fn value_here(document: &Path) -> Value {

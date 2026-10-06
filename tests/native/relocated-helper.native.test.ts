@@ -1,17 +1,17 @@
-// The native tools relocated into an app bundle, run with a bare environment: closed edits
-// through the bundled engine, exports through the helper, and no fallback to this checkout's
-// page shell or to Bun.
+// The native tools relocated into an app bundle, run with a bare environment: every request
+// through the bundled engine, which passes exports to the helper beside it, and no fallback
+// to this checkout's page shell or to Bun.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { copyFile, cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { prepareNativeFixtures } from "../../scripts/lib/native-fixtures";
-import { assertExport, createDocument, helperReply, helperRequest, type Helper } from "../../scripts/lib/helper";
+import { assertExport, createDocument, engineReply, engineRequest, type Placement } from "../../scripts/lib/native";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
 useTestRegistry();
 
 let folder: string, document: string, helpers: string;
-let placement: Helper, ownerPlacement: Helper;
+let placement: Placement;
 type Task = { $id: string; text: string; done: boolean; archived: boolean };
 
 beforeAll(async () => {
@@ -23,28 +23,27 @@ beforeAll(async () => {
   for (const name of ["hitslop-native", "slop-engine", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
   placement = {
-    helper: join(helpers, "hitslop-native"),
+    engine: join(helpers, "slop-engine"),
     cwd: folder,
     env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
   };
-  ownerPlacement = { ...placement, helper: join(helpers, "slop-engine") };
   document = join(folder, "List.slop");
-  await createDocument(resolve("generated/native-fixtures/quick-checklist.slop"), document, ownerPlacement);
+  await createDocument(resolve("generated/native-fixtures/quick-checklist.slop"), document, placement);
 }, 120_000);
 afterAll(() => rm(folder, { recursive: true, force: true }));
 
-/** A request the helper must refuse, saying `why`. */
-async function refused(body: Parameters<typeof helperReply>[0], why: string) {
-  const reply = await helperReply(body, body.method === "export" ? placement : ownerPlacement);
+/** A request the relocated tools must refuse, saying `why`. */
+async function refused(body: Parameters<typeof engineReply>[0], why: string) {
+  const reply = await engineReply(body, placement);
   expect(reply.ok).toBe(false);
   expect(`${!reply.ok && reply.reason} ${!reply.ok && reply.error}`).toContain(why);
 }
 const value = async () =>
-  (await helperRequest({ method: "get", documentPath: document }, ownerPlacement)).state.state.value as { title: string; tasks: Task[] };
+  (await engineRequest({ method: "get", documentPath: document }, placement)).state.value as { title: string; tasks: Task[] };
 async function batch(path: string, ops: unknown[], refusal?: string) {
   const body = { method: "batch" as const, documentPath: path, ops: JSON.stringify(ops) };
   if (refusal) await refused(body, refusal);
-  else await helperRequest(body, ownerPlacement);
+  else await engineRequest(body, placement);
 }
 
 test("a bundled master is never edited", async () => {
@@ -75,7 +74,7 @@ test("closed edits and imports go through the relocated engine, keeping row IDs"
 test("the relocated helper exports PNG and PDF", async () => {
   for (const format of ["png", "pdf"] as const) {
     const output = join(folder, "export." + format);
-    await helperRequest({ method: "export", documentPath: document, format, output }, placement);
+    await engineRequest({ method: "export", documentPath: document, format, output }, placement);
     await assertExport(output, format);
   }
 }, 120_000);

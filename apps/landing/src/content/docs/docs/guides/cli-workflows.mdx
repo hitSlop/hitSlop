@@ -93,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
@@ -194,4 +194,5 @@ are not part of this contract; each request receives its reply on its own exchan
 
 `apply` submits one operation through the same batch path as `batch`. Both read modes
 use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
-schema, the app's declared palette, and the sequence, version, value and effective theme.
+schema, the template's colors (`defaults`), the version, the value and the effective
+colors (`theme`).

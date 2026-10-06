@@ -5,7 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { run } from "../../packages/cli/src/process";
-import { createDocument } from "../lib/helper";
+import { createDocument } from "../lib/native";
 import { buildPresentationFixtures, buildShapeLabVariant, shapeLabVariants, type ShapeLabVariant } from "../lib/native-fixtures";
 
 if (import.meta.main) {
@@ -38,8 +38,8 @@ if (import.meta.main) {
         `${name}-${crypto.randomUUID()}.slop`,
       );
       await mkdir(dirname(copy), { recursive: true });
-      // A copy of a template is a template; the app's helper creates a document from it.
-      await createDocument(master, copy, { helper: join(app, "Contents/Helpers/hitslop-native") });
+      // A copy of a template is a template; the app's engine creates a document from it.
+      await createDocument(master, copy, { engine: join(app, "Contents/Helpers/slop-engine") });
       await run(["/usr/bin/open", "-a", app, copy], { failure: "Could not open Shape Lab" });
       console.log(`Editable copy: ${copy}`);
     }

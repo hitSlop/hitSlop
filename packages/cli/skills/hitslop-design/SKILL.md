@@ -80,6 +80,12 @@ and PDF behavior.
   reflow to simply hiding features.
 - Keep focus visible, labels concise, numbers tabular, contrast accessible, and
   motion respectful of `prefers-reduced-motion`.
+- The host disables ordinary text selection in every editor, including `slop dev`.
+  Inputs, textareas (including readonly fields), and `contenteditable` regions retain
+  normal selection and editing; captures and PDF text are unaffected. Enable copying
+  for useful content with `-webkit-user-select: text; user-select: text` on its class,
+  or on `body` for the whole slop. Ordinary CSS overrides the host default without
+  `!important`; this is an authoring choice, not a theme setting.
 - Prefer direct editing and progressive disclosure. When interactive controls are
   needed (dialogs, dropdowns, selects, sliders, segmented tabs, checkboxes, calendars,
   popovers, tooltips), always use Bits UI headless primitives (`bits-ui`). Never home-make
@@ -153,8 +159,10 @@ quiet unless ongoing motion communicates a real function.
   `tween.set(target, { duration: 0, delay: 0 })`).
 - Keep skinned controls inside the painted, hit-test-safe silhouette. Stop
   transient animation work and clean up timers, audio, and registrations on
-  unmount. Celebrations should finish and should not fire just because a saved
-  document opens in a completed state.
+  unmount. Pause clocks and loops while `document.visibilityState` is `hidden`
+  (minimized or hidden window) and derive elapsed time from `Date.now()`.
+  Celebrations should finish and should not fire just because a saved document
+  opens in a completed state.
 - Export/icon views render final data, not interpolated values. Capture's CSS
   overrides do not stop JavaScript springs, tweens, or animation loops. When
   capturing an animated editor, settle it through `capture.onPrepare`, await

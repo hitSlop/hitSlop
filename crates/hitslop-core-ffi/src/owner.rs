@@ -52,6 +52,8 @@ uniffi::custom_type!(PathBuf, String, {
 #[uniffi::remote(Enum)]
 pub enum Request {
     State,
+    /// An agent's read, which the core's command path sends; the host reads `State`.
+    Read,
     Apply {
         batch_json: String,
         origin: Origin,

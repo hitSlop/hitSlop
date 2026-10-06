@@ -1,9 +1,17 @@
-// Document commands. Each is one `SocketRequest` the macOS helper sends to the document's
-// live owner, or to an owner it opens; files the command names are read and written here.
+// Document commands. Each is one `SocketRequest` the document engine sends to the
+// document's live owner, or to an owner it opens; files the command names are read and
+// written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "@hitslop/schema/constants";
-import { MutationMethods, type HelperRequestFor, type SocketMethod, type SocketReply, type SocketSuccessFor } from "@hitslop/schema/socket";
+import {
+  MutationMethods,
+  type HelperRequestFor,
+  type SocketFailure,
+  type SocketMethod,
+  type SocketReply,
+  type SocketSuccessFor,
+} from "@hitslop/schema/socket";
 import type { OutcomeCode } from "@hitslop/schema/values";
 import type { PaletteIntent } from "@hitslop/schema/core";
 
@@ -18,6 +26,12 @@ const outcomes: Record<OutcomeCode, string> = {
   unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
 };
 
+/** A refusal in the core's words, with the operation it refused (`ops[N]`, an index into
+ * the batch) and its reason code, so an agent knows what to fix. */
+function refusal({ error, reason, opIndex }: SocketFailure) {
+  const code = reason ? ` (${reason})` : "";
+  return opIndex === undefined ? `${error}${code}` : `Refused ops[${opIndex}]${code}: ${error}`;
+}
 /** One request, and its successful reply's result as the method's contract requires it.
  * A failed edit says what it means for the next one. */
 async function send<M extends SocketMethod>(request: HelperRequestFor<M> & { method: M }): Promise<SocketSuccessFor<M>> {
@@ -26,7 +40,7 @@ async function send<M extends SocketMethod>(request: HelperRequestFor<M> & { met
   const reply: SocketReply = await helper<M>(request).catch((error) => {
     throw error instanceof ExitStatus ? new ExitStatus(error.code, outcome("unknown_outcome")) : error;
   });
-  if (!reply.ok) throw new Error([reply.error, outcome(reply.code)].filter(Boolean).join("\n"));
+  if (!reply.ok) throw new Error([refusal(reply), outcome(reply.code)].filter(Boolean).join("\n"));
   return reply as SocketSuccessFor<M>;
 }
 /** The document a request names. */
@@ -63,8 +77,8 @@ const json = (value: string): unknown => {
 };
 
 export async function get(document: string, snapshot: boolean) {
-  const { schema, theme, state: frame } = (await send({ method: "get", ...at(document) })).state;
-  print(snapshot ? { schema, theme, state: frame } : frame.value);
+  const { state } = await send({ method: "get", ...at(document) });
+  print(snapshot ? state : state.value);
 }
 /** An atomic batch. `ops` stays the text given, so numbers keep their spelling. Its text
  * sets merge from `base` when given. The `attach` files are stored in the same request,
@@ -74,14 +88,14 @@ export async function batch(document: string, ops: string, base?: string, attach
   const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
   if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
     throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
-  const { ids, sequence, version } = await send({
+  const { ids } = await send({
     method: "batch",
     ...at(document),
     ops,
     ...(base === undefined ? {} : { base }),
     ...(attachments.length ? { attachments } : {}),
   });
-  print({ ids, sequence, version });
+  print({ ids });
 }
 export async function apply(document: string, op: string, base?: string, attach: string[] = []) {
   const value = json(op);
@@ -102,8 +116,7 @@ export async function exportDocument(document: string, format: ExportFormat, out
 
 /** The palette: the template's colors, the document's overrides and the result. */
 async function palette(document: string) {
-  const { theme: defaults, state } = (await send({ method: "get", ...at(document) })).state;
-  const effective = state.theme;
+  const { defaults, theme: effective } = (await send({ method: "get", ...at(document) })).state;
   // A write drops an override equal to its default, so the overrides are the colors that differ.
   const overrides = Object.fromEntries(Object.entries(effective).filter(([token, color]) => defaults[token] !== color));
   return { defaults, overrides, effective };

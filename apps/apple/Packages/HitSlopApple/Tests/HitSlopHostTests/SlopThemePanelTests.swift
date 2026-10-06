@@ -133,3 +133,40 @@ private func themeWindowFixture() throws -> URL {
   #expect(model.finishTyping(accent, text: "ABC", edited: true) == "#aabbcc")
   #expect(sent == [.set(["accent": "#aabbcc"])])
 }
+
+@Test func pickerColorsRoundTripThePalettesSpelling() throws {
+  for color in ["#000000", "#ffffff", "#335577", "#c4dc332e", "#00000000", "#ff0000", "#00ff80", "#7f00ff", "#ff6b3d"] {
+    #expect(try #require(SlopPickerColor(hex: color)).hex == color)
+  }
+  #expect(SlopPickerColor(hue: 0.6, saturation: 0, brightness: 0.5).hex == "#808080")
+  // The end of the hue strip is red again.
+  #expect(SlopPickerColor(hue: 1, saturation: 1, brightness: 1).hex == "#ff0000")
+  #expect(SlopPickerColor(hex: "red") == nil)
+}
+
+@Test func aPickerKeepsItsHandlesThroughGrays() throws {
+  let gray = SlopPickerColor(hue: 0.6, saturation: 0, brightness: 0.5)
+  #expect(gray.adopting(gray.hex) == gray, "its own color, delivered back, moves nothing")
+  #expect(gray.adopting("#404040").hue == 0.6)
+  let blue = SlopPickerColor(hue: 0.6, saturation: 0.8, brightness: 0.7)
+  let black = blue.adopting("#000000")
+  #expect(black.hue == 0.6 && black.saturation == 0.8 && black.brightness == 0)
+  let red = blue.adopting("#ff0000")
+  #expect(red.hue == 0 && red.saturation == 1 && red.brightness == 1)
+}
+
+@Test @MainActor func aClosedEditorNeverWrites() {
+  var sent: [SlopThemeChange] = []
+  let model = SlopThemeEditorModel(tokens: [(name: "accent", value: "#335577")]) { change, _ in sent.append(change) }
+  model.close()
+  model.set(model.rows[0], "#111111")
+  #expect(sent.isEmpty && model.value(model.rows[0]) == "#335577")
+}
+
+@Test @MainActor func pickerSwatchesOfferTheTemplatesColorThenThePalette() {
+  let model = SlopThemeEditorModel(
+    tokens: [(name: "paper", value: "#ffffff"), (name: "ink", value: "#111111"), (name: "rule", value: "#111111")]
+  ) { _, _ in }
+  model.apply(SlopThemeState(overrides: ["paper": "#eeeeee"], effective: ["paper": "#eeeeee"], revision: 1))
+  #expect(model.swatches(for: model.rows[0]) == ["#ffffff", "#eeeeee", "#111111"])
+}

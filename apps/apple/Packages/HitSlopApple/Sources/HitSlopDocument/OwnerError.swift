@@ -17,7 +17,7 @@ enum OwnerError: LocalizedError, Sendable {
   }
 }
 
-/// What a failed page or socket request means for its caller. Every error is classified
+/// What a failed page request or native export means for its caller. Every error is classified
 /// here once; nothing else inspects error types or messages.
 enum RequestOutcome: Equatable {
   /// Refused before applying: `reason` is a core error code, `opIndex` the refused intent.
@@ -72,16 +72,7 @@ enum RequestOutcome: Equatable {
       opIndex: outcome.refusal.opIndex
     ).json
   }
-  /// The socket's failure reply for `error`.
-  static func socket(_ error: Error) -> SocketReply {
-    let outcome = RequestOutcome(error)
-    return .failure(
-      SocketFailure(
-        error: error.localizedDescription, code: outcome.code,
-        reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex))
-  }
-
-  /// Native rendering reports the same outcome categories as page and socket requests.
+  /// Native rendering reports the same outcome categories as page requests.
   static func native(_ error: Error) -> OwnerFailure {
     let outcome = RequestOutcome(error)
     let kind: OwnerFailureKind

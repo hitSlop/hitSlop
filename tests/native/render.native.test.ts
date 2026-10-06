@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { builtTemplates } from "../../scripts/templates/discover";
 import { digest, fileDigest, useTestRegistry } from "../../scripts/lib/artifacts";
-import { assertExport, createDocument, documentFromStage, helperRequest } from "../../scripts/lib/helper";
+import { assertExport, createDocument, documentFromStage, engineRequest } from "../../scripts/lib/native";
 import { nativeFixtureSlugs, prepareNativeFixtures } from "../../scripts/lib/native-fixtures";
 useTestRegistry();
 
@@ -64,13 +64,13 @@ for (const { name, source } of packages)
     try {
       if ((await stat(source)).isDirectory()) await documentFromStage(source, root);
       else await createDocument(source, root);
-      const state = (await timed(result, "initialRead", helperRequest({ method: "get", documentPath: root }))).state;
+      const state = (await timed(result, "initialRead", engineRequest({ method: "get", documentPath: root }))).state;
       for (const format of ["png", "pdf"] as const) {
         const output = join(evidence, `${name}.${format}`);
-        await timed(result, format, helperRequest({ method: "export", documentPath: root, format, output }));
+        await timed(result, format, engineRequest({ method: "export", documentPath: root, format, output }));
         await assertExport(output, format);
       }
-      expect((await timed(result, "finalRead", helperRequest({ method: "get", documentPath: root }))).state).toEqual(state);
+      expect((await timed(result, "finalRead", engineRequest({ method: "get", documentPath: root }))).state).toEqual(state);
       expect(await checksum(source), `Master changed: ${name}`).toBe(before);
       result.passed = true;
     } finally {

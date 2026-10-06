@@ -1013,7 +1013,7 @@ public struct SocketFailure: Sendable {
 /// A complete reply. A success cannot be constructed without its method's result.
 public enum SocketReply: Sendable {
   case `get`(`stateJSON`: String)
-  case `batch`(`ids`: [String], `sequence`: Int, `version`: String)
+  case `batch`(`ids`: [String])
   case `export`(`output`: String)
   case `themeExport`(`stateJSON`: String)
   case `attachmentsList`(`stateJSON`: String)
@@ -1024,8 +1024,8 @@ public enum SocketReply: Sendable {
     switch self {
     case .`get`(_):
       return ["ok": true, "method": "get"]
-    case .`batch`(let `ids`, let `sequence`, let `version`):
-      return ["ok": true, "method": "batch", "ids": `ids`, "sequence": `sequence`, "version": `version`]
+    case .`batch`(let `ids`):
+      return ["ok": true, "method": "batch", "ids": `ids`]
     case .`export`(let `output`):
       return ["ok": true, "method": "export", "output": `output`]
     case .`themeExport`(_):

@@ -95,10 +95,4 @@ impl NativeOwner {
     pub fn page(&self, json: String, view: String, completion: Box<dyn PageCompletion>) {
         core::page(&self.0, view, &json, move |reply| completion.complete(reply.json, reply.failure));
     }
-    pub fn request(&self, json: String, completion: Box<dyn NativeCommandCompletion>) {
-        let owner = self.0.clone();
-        std::thread::spawn(move || {
-            completion.complete(core::serve(&owner, &json, None, std::time::Instant::now() + core::COMMAND_TIMEOUT))
-        });
-    }
 }

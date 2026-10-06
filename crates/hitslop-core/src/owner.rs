@@ -66,7 +66,10 @@ impl From<store::Error> for Failure {
 }
 type Result<T> = std::result::Result<T, Failure>;
 pub enum Request {
+    /// The page's state, publication sequence included.
     State,
+    /// What an agent reads: the state without the sequence (`Document::reading`).
+    Read,
     Apply {
         batch_json: String,
         origin: Origin,
@@ -111,11 +114,10 @@ pub enum Reply {
     State {
         json: String,
     },
-    /// `version` is the document's after the change; `text` answers the page's text edit.
+    /// `text` answers the page's text edit.
     Applied {
         sequence: u64,
         ids: Vec<String>,
-        version: String,
         text: Option<crate::TextEdit>,
     },
     Theme {
@@ -571,22 +573,18 @@ impl Actor {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
         let reply = match request {
             Request::State => Reply::State { json: self.core.state()? },
+            Request::Read => Reply::State { json: self.core.reading()? },
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;
                 let result = self.core.apply_batch(&batch_json, origin)?;
                 self.accepted(result.sequence, result.publication, result.theme_changed);
-                Reply::Applied {
-                    sequence: result.sequence,
-                    ids: result.ids,
-                    version: self.core.version(),
-                    text: result.text,
-                }
+                Reply::Applied { sequence: result.sequence, ids: result.ids, text: result.text }
             }
             Request::Undo { redo } => {
                 self.mutation()?;
                 let result = if redo { self.core.redo()? } else { self.core.undo()? };
                 self.accepted(result.sequence, result.publication, result.theme_changed);
-                Reply::Applied { sequence: result.sequence, ids: result.ids, version: self.core.version(), text: None }
+                Reply::Applied { sequence: result.sequence, ids: result.ids, text: None }
             }
             Request::Theme => Reply::Theme { state: self.core.theme_state()?, sequence: self.core.sequence() },
             Request::Flush => {

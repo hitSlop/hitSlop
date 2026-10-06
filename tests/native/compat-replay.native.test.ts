@@ -11,11 +11,12 @@ import { copyFile, cp, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { exec } from "../../packages/cli/src/process";
-import { assertExport, createDocument } from "../../scripts/lib/helper";
+import { assertExport, createDocument } from "../../scripts/lib/native";
 import {
   assertOutput,
   documents,
   helper,
+  documentEngine,
   readJSON,
   releases,
   savedState,
@@ -118,7 +119,7 @@ for (const { name, root, release, documents: saved, templates, transcript } of e
         if (scenario) {
           await fresh();
           await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
-          expect((await slopJSON(["get", copy, "--snapshot"])).state.value).toEqual(scenario.value);
+          expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(scenario.value);
         }
       }, 120_000);
 
@@ -126,9 +127,9 @@ for (const { name, root, release, documents: saved, templates, transcript } of e
       test(`template ${file} creates the document its release did`, async () => {
         const output = join(scratch, `${name}-created-${file}`);
         await rm(output, { force: true });
-        await createDocument(join(root, "templates", file), output, { helper });
+        await createDocument(join(root, "templates", file), output, { engine: documentEngine });
         const initial = await readJSON(join(root, "expected", `new-${file.slice(0, -".slop".length)}.json`));
-        expect((await slopJSON(["get", output, "--snapshot"])).state.value).toEqual(initial);
+        expect((await slopJSON(["get", output, "--snapshot"])).value).toEqual(initial);
       }, 120_000);
 
     if (transcript)

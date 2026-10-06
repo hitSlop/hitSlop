@@ -154,11 +154,12 @@ neither side's typing is lost.
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
   binding sends its unsent text first.
-- **`text.set(value)`** replaces the whole field as it is when the owner applies it. It
-  uses a minimal edit script, so concurrent typing outside the changed span survives.
+- **`text.set(value)`** replaces the whole field as the owner holds it when it applies
+  the set. It uses a minimal edit script, so typing still on its way from a binding
+  merges with it; typing the owner already accepted is replaced unless `value` keeps it.
 - **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `--base VERSION`
-  (the version you read), the set changes the field from its text at that version, so
-  typing done since is kept.
+  (the `version` of the `get --snapshot` you read the text with), the set changes the
+  field from its text at that version, so typing done since is kept.
 
 ## Scalars
 

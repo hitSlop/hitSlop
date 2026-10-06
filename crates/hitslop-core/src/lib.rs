@@ -435,6 +435,21 @@ impl Document {
             theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))?,
         }))
     }
+    /// `{version, value, theme}` for an agent, computed like `state`: the page's state
+    /// without the publication sequence that orders its stream.
+    pub fn reading(&self) -> Result<String> {
+        #[derive(Serialize)]
+        struct Reading {
+            version: String,
+            value: Value,
+            theme: BTreeMap<String, String>,
+        }
+        Ok(encode(&Reading {
+            version: self.version(),
+            value: self.projected(),
+            theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))?,
+        }))
+    }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
     /// references survive replay, including redo; rejected operations were never exported.

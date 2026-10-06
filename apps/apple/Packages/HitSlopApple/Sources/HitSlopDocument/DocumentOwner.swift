@@ -177,14 +177,6 @@ public final class DocumentOwner: Sendable {
   func startServer(exporter: any NativeExportHandler) throws -> NativeSocketServer {
     try storeCall { try NativeSocketServer.start(owner: native, exporter: exporter) }
   }
-  func request(_ request: SocketRequest) async -> Data {
-    guard let bytes = try? JSONSerialization.data(withJSONObject: request.json, options: .withoutEscapingSlashes)
-    else { return RequestOutcome.socket(OwnerError.rejected("Invalid document request")).encoded() }
-    return await withCheckedContinuation { done in
-      native.request(
-        json: String(decoding: bytes, as: UTF8.self), completion: CommandCompletion { done.resume(returning: $0) })
-    }
-  }
   /// The saved document at `destination` as a document of its own: its current state
   /// without history, the attachments that state references, and `artwork` (none when
   /// nil) in place of the original's.

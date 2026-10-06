@@ -46,7 +46,7 @@ hitSlop is built for tools with one clear job and a little character. It comes w
 Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows, register templates and export PNG/PDF.
 
 ```sh
-bunx @hitslop/cli@4.0.0 init weekend-kit
+bunx @hitslop/cli@3.0.0 init weekend-kit
 cd weekend-kit
 bun install
 ```
@@ -69,7 +69,7 @@ Open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Exi
 
 ## Use the CLI
 
-Run commands with `bunx @hitslop/cli@4.0.0`, or install it with `bun install -g @hitslop/cli@4.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
+Run commands with `bunx @hitslop/cli@3.0.0`, or install it with `bun install -g @hitslop/cli@3.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
 
 | Task | Commands |
 | --- | --- |
@@ -109,7 +109,7 @@ Svelte is our supported authoring integration. The document engine is framework 
 With the same Bun and Mac app setup above, create a fresh starter:
 
 ```sh
-bunx @hitslop/cli@4.0.0 init tiny-wins
+bunx @hitslop/cli@3.0.0 init tiny-wins
 cd tiny-wins
 bun install
 ```

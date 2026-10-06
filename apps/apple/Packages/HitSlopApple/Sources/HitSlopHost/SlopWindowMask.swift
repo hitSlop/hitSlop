@@ -38,7 +38,7 @@ import ImageIO
   }
 
   private let content: Content
-  private let transparentBacking: Bool
+  let backdrop: SlopBackdrop
   private lazy var alphaMap: AlphaMap? = {
     guard case .image(let image) = content else { return nil }
     return AlphaMap(image: image)
@@ -55,7 +55,7 @@ import ImageIO
   }
 
   init(file: SlopFile) {
-    transparentBacking = file.usesTransparentBackground
+    backdrop = file.backdrop
     if let skin = file.skin {
       content = .image(skin)
     } else {
@@ -75,7 +75,7 @@ import ImageIO
     guard let layer else { return }
     switch content {
     case .vector:
-      layer.backgroundColor = transparentBacking ? NSColor.clear.cgColor : NSColor.windowBackgroundColor.cgColor
+      layer.backgroundColor = backdrop == .window ? NSColor.windowBackgroundColor.cgColor : NSColor.clear.cgColor
     case .image(let image):
       Self.show(image, on: layer)
     }
@@ -97,6 +97,24 @@ import ImageIO
     guard case .vector(let silhouette) = content, let shapeLayer = layer as? CAShapeLayer else { return }
     shapeLayer.fillRule = silhouette.fillRule == .evenOdd ? .evenOdd : .nonZero
     shapeLayer.path = path(silhouette, in: bounds)
+  }
+
+  /// The window's shape as an image the size of `bounds`, for a view that a layer mask
+  /// does not clip: the glass material's blur behind the window.
+  func image(in bounds: CGRect) -> NSImage {
+    switch content {
+    case .vector(let silhouette):
+      let shape = path(silhouette, in: bounds)
+      let rule = silhouette.fillRule
+      return NSImage(size: bounds.size, flipped: false) { _ in
+        guard let context = NSGraphicsContext.current?.cgContext else { return false }
+        context.addPath(shape)
+        context.fillPath(using: rule)
+        return true
+      }
+    case .image(let image):
+      return NSImage(cgImage: image, size: bounds.size)
+    }
   }
 
   func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {

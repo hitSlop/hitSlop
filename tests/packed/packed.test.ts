@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
 import { exec } from "../../packages/cli/src/process";
-import { debugHelper } from "../../scripts/lib/helper";
+import { debugHelper } from "../../scripts/lib/native";
 
 const native = process.env.HITSLOP_PACKED_NATIVE === "1";
 const minutes = (n: number) => n * 60_000;

@@ -304,7 +304,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     let view = WKWebView(
       frame: CGRect(x: 0, y: 0, width: spec.width, height: spec.height),
       configuration: configuration)
-    WebViewBackground.set(!file.usesTransparentBackground, on: view)
+    WebViewBackground.set(file.backdrop == .window, on: view)
     view.navigationDelegate = self
     view.uiDelegate = self
     liveWebView = view

@@ -9,7 +9,8 @@ The document semantics every host uses: the Swift app and helper natively, and
 - `hitslop-core-ffi`: UniFFI adapter used by the Apple host, its Quick Look extensions and
   the native helper.
 - `hitslop-core-wasm`: wasm-bindgen adapter for browser development and Bun tests.
-- `slop-engine`: the CLI's file tool (`pack`, `inspect`, `schema`) on any platform.
+- `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
+  `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
 main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2

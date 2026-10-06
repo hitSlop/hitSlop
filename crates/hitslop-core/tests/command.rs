@@ -79,9 +79,8 @@ impl ExportHandler for NoExport {
 #[test]
 fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     let (_dir, path) = document();
-    let applied = run(batch(&path));
-    assert_eq!(applied["method"], "batch");
-    assert_eq!(applied["sequence"], 1);
+    // An agent's edit reports the rows it inserted; it reads state with `get`.
+    assert_eq!(run(batch(&path)), json!({"ok":true,"method":"batch","ids":[]}));
     let mut theme = request(&path, "batch");
     theme["ops"] = r##"[{"type":"setTheme","values":{"accent":"#123456"}}]"##.into();
     assert_eq!(run(theme)["method"], "batch");
@@ -114,10 +113,16 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     let before = std::fs::read(&path).unwrap();
     assert_eq!(run(request(&path, "get"))["method"], "get");
     assert_eq!(std::fs::read(&path).unwrap(), before);
-    let state = run(request(&path, "get"));
-    assert_eq!(state["state"]["state"]["value"]["hits"], 1);
-    assert_eq!(state["state"]["state"]["theme"]["accent"], "#123456");
-    assert_eq!(state["state"]["theme"]["accent"], "#335577", "the app's declared palette");
+    // `get` is what an agent reads: no publication sequence, which only orders the page's
+    // stream, and the declared colors apart from the effective ones.
+    let state = &run(request(&path, "get"))["state"];
+    let mut keys: Vec<_> = state.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["defaults", "schema", "theme", "value", "version"]);
+    assert_eq!(state["schema"]["properties"]["hits"]["kind"], "counter");
+    assert_eq!(state["value"]["hits"], 1);
+    assert_eq!(state["theme"]["accent"], "#123456");
+    assert_eq!(state["defaults"]["accent"], "#335577", "the app's declared palette");
     assert!(registry::Lease::acquire(&path).is_ok(), "closed commands release ownership");
 }
 
@@ -127,8 +132,8 @@ fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     assert!(registry::discovery(&path).unwrap().is_some());
-    assert_eq!(run(batch(&path))["sequence"], 1);
-    assert_eq!(run(request(&path, "get"))["state"]["state"]["value"]["hits"], 1);
+    assert_eq!(run(batch(&path))["ok"], true);
+    assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 1);
     server.withdraw();
     assert!(registry::discovery(&path).unwrap().is_none());
     server.publish().unwrap();
@@ -160,7 +165,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         checked(command::serve(&owner, &batch(&path).to_string(), None, Instant::now() - Duration::from_millis(1)))["code"],
         "closing"
     );
-    assert_eq!(run(request(&path, "get"))["state"]["state"]["value"]["hits"], 0);
+    assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 0);
     close(&owner);
     server.stop();
 }
@@ -381,8 +386,9 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
 }
-// Failure: an agent's batch replaced text written after its `get`. Oracle: the literal
-// merged text, with the reply's version serving as the next base.
+// Failure: an agent's batch replaced text written after its `get`; then a batch's merged
+// version, reused as the next base, deleted it. Oracle: the literal merged text, with each
+// base read by `get` before the rewrite it serves.
 #[test]
 fn a_based_batch_keeps_text_written_since_the_agents_read() {
     let (_dir, path) = document();
@@ -394,15 +400,17 @@ fn a_based_batch_keeps_text_written_since_the_agents_read() {
         }
         run(batch)
     };
-    let title = || run(request(&path, "get"))["state"]["state"]["value"]["title"].clone();
-    let read = run(request(&path, "get"))["state"]["state"]["version"].clone();
+    let read = || run(request(&path, "get"))["state"].clone();
+    let before = read();
+    // The person types after the agent's read.
     set("Initial typed", None);
-    let reply = set("First", Some(&read));
-    assert_eq!(title(), "First typed");
-    // The reply's version holds the merged text, so the agent rewrites what it saw.
+    set("First", Some(&before["version"]));
+    assert_eq!(read()["value"]["title"], "First typed");
+    // The agent reads again before its next rewrite, and the person keeps typing.
+    let again = read();
     set("First typed!", None);
-    set("Second typed", Some(&reply["version"]));
-    assert_eq!(title(), "Second typed!");
+    set("Second typed", Some(&again["version"]));
+    assert_eq!(read()["value"]["title"], "Second typed!");
 }
 struct Delayed(Mutex<mpsc::Sender<Arc<ExportCompletion>>>);
 impl ExportHandler for Delayed {

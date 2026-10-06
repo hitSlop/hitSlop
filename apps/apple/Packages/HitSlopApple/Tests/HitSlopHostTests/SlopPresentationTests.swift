@@ -71,7 +71,7 @@ extension HostTests {
 
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func captureLeavesTheEditorOperable() async throws {
-    for kind in ["standard", "ellipse", "washer"] {
+    for kind in ["standard", "ellipse", "glass", "washer"] {
       try await withPresentationSession(kind) { (session: DocumentSession) async throws in
         let view = session.webView
         let data = try await SlopRenderer.exportPNGData(session: session)

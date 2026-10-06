@@ -2,10 +2,12 @@ import AppKit
 import CoreGraphics
 import Foundation
 import HitSlopCore
+import HitSlopDocument
 import HitSlopTestSupport
 import ImageIO
 import QuartzCore
 import Testing
+import WebKit
 
 @testable import HitSlopHost
 
@@ -86,4 +88,32 @@ private func maskedFixture(alpha: (Int, Int) -> UInt8 = { _, y in y < 90 ? 255 :
   let file = try SlopFile(url: root)
   #expect(!file.isResizable)
   #expect(!slopDocumentWindowStyleMask(resizable: file.isResizable).contains(.resizable))
+}
+
+extension HostTests {
+  @Test @MainActor func glassWindowsFrostBehindThePage() async throws {
+    let stage = try Fixtures.minimalStage(
+      slug: "glass", manifest: ["presentation": ["width": 240, "height": 180, "background": "glass"]])
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    let container = try #require(window.contentView as? ShapedView)
+    container.layoutSubtreeIfNeeded()
+    let glass = try #require(container.glass)
+    #expect(window.hasShadow, "the frosted surface casts the window's shadow")
+    #expect(glass.blendingMode == .behindWindow && glass.state == .active && glass.maskImage != nil)
+    #expect(glass.appearance?.name == .aqua, "the frost stays light, like the palette, in dark mode")
+    #expect(container.layer?.backgroundColor?.alpha == 0)
+    #expect(!WebViewBackground.get(controller.session.webView), "the page draws over the glass")
+    #expect(container.subviews.first === glass)
+    // A replaced page goes above the glass, not below every view.
+    let replacement = WKWebView(frame: .zero)
+    controller.pageSession(controller.session, didReplace: replacement)
+    let order = container.subviews
+    #expect(order.firstIndex(of: replacement) == (order.firstIndex(of: glass) ?? -1) + 1)
+    try await controller.closeDocument()
+  }
 }

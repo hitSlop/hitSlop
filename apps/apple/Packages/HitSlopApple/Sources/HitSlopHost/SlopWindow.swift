@@ -60,18 +60,35 @@ class HoverView: NSView {
 final class ShapedView: HoverView {
   let windowMask: SlopWindowMask
   private let maskLayer: CALayer
+  /// A glass window's frosted material, below the page. It stays frosted while the
+  /// window is inactive, as a widget on the desktop does, and light in dark mode: the
+  /// page's palette has no dark variant, so the template's tint alone sets the glass's color.
+  let glass: NSVisualEffectView?
   init(frame: NSRect, windowMask: SlopWindowMask) {
     self.windowMask = windowMask
     maskLayer = windowMask.makeLayer()
+    if windowMask.backdrop == .glass {
+      let glass = NSVisualEffectView(frame: NSRect(origin: .zero, size: frame.size))
+      glass.autoresizingMask = [.width, .height]
+      glass.material = .underWindowBackground
+      glass.blendingMode = .behindWindow
+      glass.state = .active
+      glass.appearance = NSAppearance(named: .aqua)
+      self.glass = glass
+    } else {
+      glass = nil
+    }
     super.init(frame: frame)
     wantsLayer = true
     windowMask.installBacking(on: layer)
     layer?.mask = maskLayer
+    if let glass { addSubview(glass) }
   }
   required init?(coder: NSCoder) { nil }
   override func layout() {
     super.layout()
     windowMask.update(maskLayer, bounds: bounds)
+    glass?.maskImage = windowMask.image(in: bounds)
   }
   override func hitTest(_ point: NSPoint) -> NSView? {
     windowMask.contains(point, in: bounds) ? super.hitTest(point) : nil
@@ -192,7 +209,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     window.minSize = NSSize(width: WindowBounds.minWidth, height: WindowBounds.minHeight)
     window.isOpaque = false
     window.backgroundColor = .clear
-    window.hasShadow = !session.file.usesTransparentBackground || session.file.isSkinned
+    window.hasShadow = session.file.backdrop != .clear
     window.isReleasedWhenClosed = false
     window.tabbingMode = .disallowed
     window.representedURL = self.url
@@ -233,7 +250,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard let content = window?.contentView else { return }
     view.frame = content.bounds
     view.autoresizingMask = [.width, .height]
-    content.addSubview(view, positioned: .below, relativeTo: failedOverlay)
+    // Above the glass, and below a failure overlay.
+    if let glass = (content as? ShapedView)?.glass {
+      content.addSubview(view, positioned: .above, relativeTo: glass)
+    } else {
+      content.addSubview(view, positioned: .below, relativeTo: failedOverlay)
+    }
     updatePageFailure(nil)
     startLoading()
   }

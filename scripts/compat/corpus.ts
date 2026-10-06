@@ -3,8 +3,8 @@
 // regenerated or deleted; see docs/testing.md#compatibility-corpus.
 import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { debugHelper } from "../lib/helper";
+import { dirname, join, resolve } from "node:path";
+import { debugHelper } from "../lib/native";
 import { exec } from "../../packages/cli/src/process";
 import { strict as assert } from "node:assert";
 import { validate } from "../../packages/schema/src/validation";
@@ -13,6 +13,8 @@ import { Type, type Static } from "typebox";
 
 export const corpus = join(repository, "tests/compat");
 export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
+/** The document engine beside `helper`, the one the CLI selects for it. */
+export const documentEngine = join(dirname(helper), "slop-engine");
 
 /** `release.json`: what captured the entry, and whether it is permanent. */
 export type Release = {
@@ -92,25 +94,19 @@ export async function slopJSON(args: string[]): Promise<any> {
   return JSON.parse(stdout);
 }
 
-/** What a later build must reproduce: the value, not the version or sequence. */
+/** What a later build must reproduce: the value, not the version. */
 export async function savedState(document: string): Promise<Expected> {
-  const { state } = await slopJSON(["get", document, "--snapshot"]);
+  const state = await slopJSON(["get", document, "--snapshot"]);
   const theme = validate(ThemeStateSchema, await slopJSON(["theme", "get", document]), "slop theme get");
   const attachments = validate(Type.Array(AttachmentInfoSchema), await slopJSON(["attachments", "list", document]), "slop attachments list");
   return { value: state.value, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
 }
 
-/** Normalizes the parts of CLI output that name a session rather than a document. */
+/** Normalizes the parts of CLI output that name a session rather than a document: a
+ * snapshot's `version`. */
 export function stable(output: unknown, args: readonly string[]): unknown {
-  const omitSession = (value: any) => Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !["version", "sequence"].includes(key)));
-  if (output && typeof output === "object" && !Array.isArray(output)) {
-    if (args[0] === "get" && args.includes("--snapshot")) {
-      const frame = output as any;
-      return { ...frame, ...(frame.state ? { state: omitSession(frame.state) } : {}) };
-    }
-    if (["apply", "batch", "import"].includes(args[0]!)) return omitSession(output);
-  }
+  if (output && typeof output === "object" && !Array.isArray(output) && args[0] === "get" && args.includes("--snapshot"))
+    return Object.fromEntries(Object.entries(output).filter(([key]) => key !== "version"));
   return output;
 }
 
@@ -125,13 +121,8 @@ export function assertOutput(actual: unknown, expected: unknown, args: readonly 
     }
   };
   if (e && typeof e === "object" && !Array.isArray(e)) {
-    if (args[0] === "get" && args.includes("--snapshot")) {
-      const { state, ...rest } = e;
-      envelope(a, rest);
-      envelope(a.state, state);
-      return;
-    }
-    if (["apply", "batch", "import", "theme"].includes(args[0]!)) return envelope(a, e);
+    const snapshot = args[0] === "get" && args.includes("--snapshot");
+    if (snapshot || ["apply", "batch", "import", "theme"].includes(args[0]!)) return envelope(a, e);
   }
   assert.deepEqual(a, e, label);
 }

@@ -24,8 +24,8 @@ test("socket envelopes constrain routing while leaving operations to the documen
 test("socket successes require their complete method result", () => {
   const id = "a".repeat(64);
   const replies = [
-    { ok: true, method: "get", state: { schema: {}, theme: { accent: "#123456" }, state: { sequence: 0, version: "v", value: {}, theme: { accent: "#123456" } } } },
-    { ok: true, method: "batch", ids: [], sequence: 3, version: "00" },
+    { ok: true, method: "get", state: { schema: {}, defaults: { accent: "#335577" }, version: "v", value: {}, theme: { accent: "#123456" } } },
+    { ok: true, method: "batch", ids: [] },
     { ok: true, method: "export", output: "/tmp/doc.pdf" },
     { ok: true, method: "theme.export", state: { file: "{}" } },
     { ok: true, method: "attachments.list", state: [{ id, byteLength: 3 }] },
@@ -41,5 +41,9 @@ test("socket successes require their complete method result", () => {
     expect(Check(SocketReplySchema, { ...reply, error: "contradictory success" })).toBe(false);
   }
   expect(Check(SocketReplySchema, { ok: false, code: "unknown_outcome", error: "Disconnected" })).toBe(true);
-  expect(Check(SocketReplySchema, { ok: true, method: "batch", state: {}, sequence: 3 })).toBe(false);
+  // The page's publication sequence and a batch's version are not part of an agent's reply.
+  expect(Check(SocketReplySchema, { ok: true, method: "batch", ids: [], sequence: 3 })).toBe(false);
+  expect(Check(SocketReplySchema, { ok: true, method: "batch", ids: [], version: "00" })).toBe(false);
+  const get = replies[0] as { state: Record<string, unknown> };
+  expect(Check(SocketReplySchema, { ...get, state: { ...get.state, sequence: 0 } })).toBe(false);
 });

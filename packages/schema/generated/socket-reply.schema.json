@@ -20,8 +20,10 @@
           "type": "object",
           "required": [
             "schema",
-            "theme",
-            "state"
+            "defaults",
+            "version",
+            "value",
+            "theme"
           ],
           "properties": {
             "schema": {
@@ -29,7 +31,7 @@
               "properties": {},
               "additionalProperties": true
             },
-            "theme": {
+            "defaults": {
               "type": "object",
               "patternProperties": {
                 "^.*$": {
@@ -40,37 +42,20 @@
               "additionalProperties": false,
               "maxProperties": 256
             },
-            "state": {
+            "version": {
+              "type": "string"
+            },
+            "value": {},
+            "theme": {
               "type": "object",
-              "required": [
-                "sequence",
-                "version",
-                "value",
-                "theme"
-              ],
-              "properties": {
-                "sequence": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "version": {
-                  "type": "string"
-                },
-                "value": {},
-                "theme": {
-                  "type": "object",
-                  "patternProperties": {
-                    "^.*$": {
-                      "type": "string",
-                      "maxLength": 9
-                    }
-                  },
-                  "additionalProperties": false,
-                  "maxProperties": 256
+              "patternProperties": {
+                "^.*$": {
+                  "type": "string",
+                  "maxLength": 9
                 }
               },
-              "additionalProperties": false
+              "additionalProperties": false,
+              "maxProperties": 256
             }
           },
           "additionalProperties": false
@@ -83,9 +68,7 @@
       "required": [
         "ok",
         "method",
-        "ids",
-        "sequence",
-        "version"
+        "ids"
       ],
       "properties": {
         "ok": {
@@ -101,13 +84,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "sequence": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "version": {
-          "type": "string"
         }
       },
       "additionalProperties": false

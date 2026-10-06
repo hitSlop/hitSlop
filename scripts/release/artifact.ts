@@ -6,7 +6,7 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { coreBuildId } from "../../packages/cli/src/core";
 import { run } from "../../packages/cli/src/process";
-import { createDocument, helperRequest } from "../lib/helper";
+import { createDocument, engineRequest } from "../lib/native";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
 const documentEngine = join(app, "Contents/Helpers/slop-engine");
@@ -22,10 +22,9 @@ assert.deepEqual([...new Bun.Glob("**/*.wasm").scanSync({ cwd: app, onlyFiles: t
 const folder = await mkdtemp(join(tmpdir(), "hitslop-release-verify-"));
 try {
   // Installed, without Bun or Node on the path.
-  const placement = { helper, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
   const installed = (args: string[], executable = helper) => run([executable, ...args], placement);
-  const ownerPlacement = { ...placement, helper: documentEngine };
-  const value = async (document: string) => (await helperRequest({ method: "get", documentPath: document }, ownerPlacement)).state.state.value;
+  const value = async (document: string) => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
   const appCore = (await installed(["--core-build"], join(app, "Contents/MacOS/hitSlop"))).trim();
   const helperCore = (await installed(["--core-build"])).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
@@ -76,24 +75,24 @@ try {
     if (!exhaustive && !fixtures.includes(slug)) continue;
     console.log(`Exercising installed create/reopen/export: ${slug}`);
     const document = join(folder, slug + ".slop");
-    await createDocument(source, document, ownerPlacement);
+    await createDocument(source, document, placement);
     const initial = await value(document);
     assert.ok(initial && typeof initial === "object");
     assert.ok(JSON.parse(await installed(["schema", document], documentEngine)));
     assert.deepEqual(await value(document), initial);
     for (const format of ["png", "pdf"] as const) {
       const output = join(folder, slug + "." + format);
-      await helperRequest({ method: "export", documentPath: document, format, output }, placement);
+      await engineRequest({ method: "export", documentPath: document, format, output }, placement);
       assert.ok((await readFile(output)).length > 100);
     }
   }
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  await createDocument(resolve("generated/templates/quick-checklist.slop"), mutation, ownerPlacement);
-  const ops = JSON.stringify([{ type: "set", path: ["title"], value: "Installed helper verified" }]);
-  await helperRequest({ method: "batch", documentPath: mutation, ops }, ownerPlacement);
-  assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed helper verified"));
+  await createDocument(resolve("generated/templates/quick-checklist.slop"), mutation, placement);
+  const ops = JSON.stringify([{ type: "set", path: ["title"], value: "Installed engine verified" }]);
+  await engineRequest({ method: "batch", documentPath: mutation, ops }, placement);
+  assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));
   console.log(
     "PASS packaged starters, matching page shells, installed editing and export without Bun/Node",
   );

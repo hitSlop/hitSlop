@@ -147,8 +147,9 @@ version it read (`--base`); its set has no `from`, so the core reads the field's
   `authored`.
 - During IME composition nothing is sent. Close and export commit a composition.
   Retargeting or unmounting a binding sends its unsent text first.
-- Every token is checked against the document's history before Loro sees it, so a
-  malformed or foreign base returns `stale_base`, never a panic.
+- Every token is checked against the document's history before Loro sees it: a
+  malformed one is `invalid_version` and a foreign or trimmed one `stale_base`, never a
+  panic.
 
 A text set without a base (a text handle's `set(value)`, or the CLI without `--base`)
 replaces the whole field as it is when the owner applies it, through the same script.
@@ -183,7 +184,7 @@ snapshots or persistent undo records.
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
   are one step, so one undo reverts what the agent just did. Consecutive window changes
-  to one palette color (a color panel drag) are one step. Any other change, a
+  to one palette color (a picker drag) are one step. Any other change, a
   concurrent page text merge or undo/redo itself ends a run. The concurrent text edit
   is its own step, even though the text implementation imports a temporary branch.
 - **Refusals.** A batch or JSON replacement refused after a partial mutation rebuilds
@@ -246,7 +247,11 @@ loads, and the core is the only code that opens a `.slop` file.
 
 A template holds an app; a document holds an app and its saved state. Creating a
 document copies a template and adds its identity and initial Loro checkpoint in one
-transaction; nothing is ever unpacked. The writer
+transaction; nothing is ever unpacked. The core decides where a document may live, for
+the app and the engine alike: opening one for writing needs a `.slop` name outside iCloud
+Drive, and creating or copying one also refuses the installed and bundled templates
+(`file::document_location`, `file::document_destination`). Swift adds only what
+Foundation alone can tell, a folder iCloud syncs such as Desktop and Documents. The writer
 lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
 SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
@@ -291,8 +296,11 @@ refuses, leaves the blob unreferenced until the document closes.
 
 `slop` sends document requests to `slop-engine request` as one generated request on
 standard input and reads its method-specific `SocketReply`. `create`, `schema` and
-`inspect` also use that engine. `hitslop-native` handles opening windows, native artwork
-and PNG/PDF export. Both executables use the shared Rust command router.
+`inspect` also use that engine. It passes what needs AppKit or WebKit to `hitslop-native`:
+opening a window, native artwork, and each PNG/PDF export request unchanged
+(`hitslop-native export`). The helper refuses every other document request. An export runs
+through the same Rust command router there, so an open document's owner renders it and a
+closed document's saved state renders in the helper.
 
 An open document routes through its owner's socket, which lives as long as the owner,
 not the page. Commands never blur a field being typed in; a live `get` returns
@@ -301,11 +309,13 @@ the same owner in-process, without WebKit or authored code. Closed exports use a
 read-only saved-state renderer. Socket work runs off the main actor; edit payloads
 remain JSON text until the core parses them.
 
-Edits print `{ids, sequence}` after saving and are never replayed automatically. The
-socket has one edit method, `batch`, for data and palette alike; CLI `apply` wraps one
-operation. Socket `get` returns `{schema, theme, state}` after flushing: the app's
-descriptor and declared palette, and the document's state. The CLI prints `state.value` by default and
-the complete payload with `get --snapshot`. Engine selection and protocol negotiation
+Edits print `{ids}` after saving and are never replayed automatically. The socket has
+one edit method, `batch`, for data and palette alike; CLI `apply` wraps one operation.
+Socket `get` returns `{schema, defaults, version, value, theme}` after flushing: the app's
+descriptor and declared colors, and the document's version, value and effective colors.
+The page's state adds the publication `sequence`, which orders its stream and means
+nothing to an agent. The CLI prints `value` by default and the whole object with
+`get --snapshot`. Engine selection and protocol negotiation
 are detailed in the [CLI reference](guides/cli.md#helper-discovery-and-identity).
 
 ## Themes and attachments
@@ -324,7 +334,7 @@ one) and `importTheme {file}` replaces the palette with a theme file. The window
 panel and agents send them; the page cannot. They advance the same sequence, publish
 effective values when changed, enter the undo history and are saved by the same jobs as
 data, and a batch may change data and palette together. The window's consecutive
-changes to one color are one undo step, so a color panel drag undoes at once.
+changes to one color are one undo step, so a picker drag undoes at once.
 
 A theme file is `{template, values}`: the manifest slug and full effective palette.
 Import checks the whole file, refuses another template or undeclared color, and replaces

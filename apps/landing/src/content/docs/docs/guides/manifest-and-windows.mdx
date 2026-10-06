@@ -68,7 +68,7 @@ Standard windows support these options:
 | `resizable` | `true` or `false` | Whether the user can resize the window. The host defaults to `true`. |
 | `shape` | CSS radius string or SVG path object | Defines the native silhouette; defaults to `"22px"`. |
 | `lockAspect` | Boolean, default false | Preserves the initial width/height ratio when resizing. |
-| `background` | `transparent` | Makes the WebView background transparent for a custom HTML surface. |
+| `background` | `transparent` or `glass` | `transparent` shows the desktop behind a custom HTML surface; `glass` frosts it. |
 
 ## Choose a window shape
 
@@ -123,11 +123,21 @@ For a transparent window, draw the visible surface inside your app: the host
 overrides ordinary `html`/`body` backgrounds with transparency, and a more specific or
 `!important` page background defeats it.
 
+A glass window puts the system's frosted material behind the page and keeps your page
+background. Give it a translucent theme color, such as `paper: "#f6f3ee99"` used as
+`body { background: var(--slop-paper) }`: the desktop shows through blurred, and
+anyone can make the window clearer or more solid from the theme panel. An opaque
+background hides the glass. The frost stays light in dark mode, as your palette does;
+a dark tint makes smoked glass. With Reduce Transparency on, macOS draws the frost as a
+solid light surface, so keep text readable over it as well. Exports and icons can't
+capture the blur, so a translucent area stays translucent there; paint a solid surface
+in `Export.svelte` when the export should look finished.
+
 The native host exposes the presentation to your CSS:
 
 | Host value | Meaning |
 | --- | --- |
-| `data-slop-presentation` | `standard`, `transparent`, or `skin` |
+| `data-slop-presentation` | `standard`, `transparent`, `glass`, or `skin` |
 | `--slop-window-radius` | The radius shape; `0` for paths, absent for PNG skins |
 | `data-slop-resizable` | Present when the person can resize the window |
 | `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements |

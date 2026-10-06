@@ -129,20 +129,21 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
   return build(source, `shape-lab-${key}`, join(shapeLabRoot, key + ".slop"));
 }
 
-/** Every presentation fixture, by name: the standard, ellipse and washer controls, and each
- * Shape Lab variant with a dedicated and a fallback export. */
+const presentationFixtures = {
+  standard: { width: 320, height: 320 },
+  ellipse: { width: 320, height: 320, shape: "50%", lockAspect: true, background: "transparent" },
+  glass: { width: 320, height: 320, background: "glass" },
+  washer: { width: 320, height: 320, skin: "assets/washer.png" },
+};
+
+/** Every presentation fixture, by name: the standard, ellipse, glass and washer controls, and
+ * each Shape Lab variant with a dedicated and a fallback export. */
 export async function buildPresentationFixtures(build = direct) {
   const parent = join(repository, "generated/presentation");
   const paths: Record<string, string> = {};
-  for (const kind of ["standard", "ellipse", "washer"]) {
+  for (const [kind, presentation] of Object.entries(presentationFixtures)) {
     const source = join(parent, "sources", `presentation-${kind}`);
-    await withVariant(join(repository, "tests/presentation"), source, {
-      title: `Presentation ${kind}`,
-      presentation:
-        kind === "washer"
-          ? { width: 320, height: 320, skin: "assets/washer.png" }
-          : { width: 320, height: 320, ...(kind === "ellipse" ? { shape: "50%", lockAspect: true, background: "transparent" } : {}) },
-    });
+    await withVariant(join(repository, "tests/presentation"), source, { title: `Presentation ${kind}`, presentation });
     paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".slop"));
   }
   for (const kind of Object.keys(shapeLabVariants) as ShapeLabVariant[])

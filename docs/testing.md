@@ -14,7 +14,7 @@ openable, so its frozen entries never change.
 | Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
-| Native tools | `tests/native`, `packages/cli/tests/*.native.test.ts`, `bun run verify native` | The CLI against the helper, the helper relocated into an app bundle, every template's native render, a helper or host killed mid-edit, and the corpus replay |
+| Native tools | `tests/native`, `packages/cli/tests/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
 | Examples | `tests/examples`, run with the package tests (`verify bun`, or `verify native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
@@ -98,9 +98,9 @@ bun run verify swift --filter Compat    # one process, Swift's own filter
 
 `bun run build` generates contracts, builds the Rust bindings and the page shell, and
 compiles the helper. `tests/native/crash.native.test.ts` is stress coverage beside the
-deterministic Rust storage cases: it kills a real helper at points spread across an edit's
-open, apply, save and close, and checks that the document reopens as it was or as edited,
-never torn, and that an acknowledged edit is never lost. With `HITSLOP_APP_BINARY` (a
+deterministic Rust storage cases: it kills a real document engine at points spread across
+an edit's open, apply, save and close, and checks that the document reopens as it was or
+as edited, never torn, and that an acknowledged edit is never lost. With `HITSLOP_APP_BINARY` (a
 release builds one) it also kills a running app after an acknowledged CLI edit.
 `tests/native/render.native.test.ts` renders the native fixtures; `HITSLOP_RENDER=all`
 renders every bundled template (release).

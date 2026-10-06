@@ -210,6 +210,7 @@ impl Store {
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
         let (lease, conn, app) = match mode {
             Mode::Document => {
+                file::document_location(path)?;
                 let lease = Lease::acquire(path)?;
                 let conn = file::writer(path, false)?;
                 // Checked before anything is configured: a file this build refuses is never
@@ -545,6 +546,7 @@ impl Store {
     /// the original's, which can show what was since deleted. Duplicate and Share a Copy
     /// use it after flushing; the original and its session are untouched.
     pub fn copy_clean(&self, dest: &Path, artwork: &[(Artwork, &[u8])]) -> Result<()> {
+        file::document_destination(dest)?;
         self.check(true)?;
         let artwork = optimized_artwork(artwork)?;
         let app = &self.app.spec;

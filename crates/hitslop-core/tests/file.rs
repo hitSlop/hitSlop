@@ -936,3 +936,26 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     assert!(!journal.exists(), "the writer rolled it back");
     assert_eq!(store.attachment(&attachment.id).unwrap(), vec![7u8; 4 << 20], "the committed attachment is intact");
 }
+
+// Failure: the engine created and edited documents the app refuses to open (a name without
+// `.slop`), so where a document may live was the app's rule alone. Oracle: each refusal's
+// code, and nothing written in the refused place.
+#[test]
+fn documents_open_and_go_only_where_the_app_opens_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes");
+    assert_eq!(code(file::create_document(&template(dir.path()), &notes).unwrap_err()), Code::InvalidRequest);
+    assert!(!notes.exists());
+    let doc = document(dir.path());
+    let renamed = dir.path().join("Doc.txt");
+    fs::rename(&doc, &renamed).unwrap();
+    assert_eq!(code(Store::open(&renamed, Mode::Document).err().unwrap()), Code::InvalidRequest);
+    // Reading takes no lock and writes nothing, so a snapshot reads any name.
+    Store::open(&renamed, Mode::Snapshot).unwrap().close().unwrap();
+    fs::rename(&renamed, &doc).unwrap();
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    let copy = dir.path().join("Copy");
+    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::InvalidRequest);
+    assert!(!copy.exists());
+    store.close().unwrap();
+}

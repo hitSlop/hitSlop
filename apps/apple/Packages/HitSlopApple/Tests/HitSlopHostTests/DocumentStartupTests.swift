@@ -61,17 +61,18 @@ extension HostTests {
         ? [["type": "increment", "path": ["count"], "by": 7]]
         : [["type": "set", "path": ["title"], "value": "Saved opening benchmark"]]
       if name == "large-checklist" {
-        operations += (0..<1000).map { index in
+        // The title and 999 rows fill one batch: the core takes at most 1000 operations.
+        operations += (0..<999).map { index in
           [
             "type": "insert", "path": ["tasks"],
             "value": ["text": "Saved task \(index)", "done": false, "archived": false],
           ]
         }
       }
-      // Seed in a separate helper process so preparing saved bytes cannot warm this WebKit.
+      // Seed in a separate engine process so preparing saved bytes cannot warm this WebKit.
       let json = String(decoding: try JSONSerialization.data(withJSONObject: operations), as: UTF8.self)
-      let seeded = try await cli(["batch", root.path, "--ops", json])
-      try #require(seeded.0 == 0, "\(seeded.2)")
+      let seeded = try await request(["method": "batch", "documentPath": root.path, "ops": json])
+      try #require(seeded["ok"] as? Bool == true, "\(seeded)")
       for sample in 0..<samples {
         let start = ContinuousClock.now
         let controller = try await SlopDocumentWindowController.open(url: root, presentsWindow: true)

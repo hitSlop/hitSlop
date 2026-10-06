@@ -8,8 +8,8 @@ import { join } from "node:path";
 test("compatibility normalization preserves document fields named version and epoch", () => {
   const value = { version: "authored version", epoch: 42, nested: { version: "kept" } };
   expect(stable(value, ["get", "document.slop"])).toEqual(value);
-  expect(stable({ state: { value, version: "session", sequence: 3 } }, ["get", "document.slop", "--snapshot"]))
-    .toEqual({ state: { value } });
+  expect(stable({ schema: {}, value, version: "session" }, ["get", "document.slop", "--snapshot"]))
+    .toEqual({ schema: {}, value });
 });
 
 test("capture provenance changes with producing inputs but not the corpus commit", async () => {
@@ -29,8 +29,8 @@ test("capture provenance changes with producing inputs but not the corpus commit
 
 test("compatibility accepts added envelope metadata but detects changed document data", () => {
   const args = ["get", "document.slop", "--snapshot"];
-  const expected = { schema: { kind: "object" }, state: { value: { version: "v1", epoch: 7 } } };
-  expect(() => assertOutput({ ...expected, diagnostic: true, state: { ...expected.state, sequence: 9, extra: true } }, expected, args)).not.toThrow();
-  expect(() => assertOutput({ ...expected, state: { ...expected.state, value: { version: "v2", epoch: 7 } } }, expected, args)).toThrow();
-  expect(() => assertOutput({ state: expected.state }, expected, args)).toThrow();
+  const expected = { schema: { kind: "object" }, value: { version: "v1", epoch: 7 } };
+  expect(() => assertOutput({ ...expected, version: "session", diagnostic: true }, expected, args)).not.toThrow();
+  expect(() => assertOutput({ ...expected, value: { version: "v2", epoch: 7 } }, expected, args)).toThrow();
+  expect(() => assertOutput({ value: expected.value }, expected, args)).toThrow();
 });

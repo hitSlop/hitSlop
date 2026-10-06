@@ -33,13 +33,13 @@ import Testing
   /// The document's value, as `slop get` prints it.
   @MainActor func savedValue(_ root: URL) async throws -> NSDictionary? {
     let state = try JSONSerialization.jsonObject(with: await commandState("get", url: root)) as? [String: Any]
-    return (state?["state"] as? [String: Any])?["value"] as? NSDictionary
+    return state?["value"] as? NSDictionary
   }
 
-  /// Runs the helper with `args`, writing `input` to its standard input.
-  func cli(_ args: [String], input: Data? = nil) async throws -> (Int32, String, String) {
-    let helper = Fixtures.repository.appendingPathComponent(
-      "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
-    return try await Task.detached { try Fixtures.run(helper, args, input: input) }.value
+  /// Runs a native tool of the debug build with `args`, writing `input` to its standard input:
+  /// the document engine `slop` runs unless `tool` names the rendering helper.
+  func cli(_ args: [String], input: Data? = nil, tool: String = "slop-engine") async throws -> (Int32, String, String) {
+    let binary = Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/\(tool)")
+    return try await Task.detached { try Fixtures.run(binary, args, input: input) }.value
   }
 }

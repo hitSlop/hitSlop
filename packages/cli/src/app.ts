@@ -36,7 +36,7 @@ const baseFlag = {
   name: "base",
   type: "string",
   description:
-    "The version you read (state.version from get --snapshot) or last wrote (a batch's version). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
+    "The version you read the text at (version from get --snapshot; read again before each rewrite). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
 } as const;
 const attachFlag = {
   name: "attach",
@@ -267,10 +267,13 @@ export const app = new Crust("slop", {
               name: "output",
               type: "string",
               required: true,
-              description: "Path for the new writable document",
+              description: "Path for the new writable document; .slop is added if it is missing",
             },
           )
-          .action(({ flags }) => native("create", "--from", flags.from, "--output", flags.output)),
+          // As the app's save panel does: a document's name ends in .slop.
+          .action(({ flags }) =>
+            native("create", "--from", flags.from, "--output", flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop`),
+          ),
     ),
   )
   .add(
@@ -297,7 +300,7 @@ export const app = new Crust("slop", {
         .flags({
           name: "snapshot",
           type: "boolean",
-          description: "Print the schema with the current state ({schema, state})",
+          description: "Print the schema, version, value and colors ({schema, defaults, version, value, theme})",
         })
         .action(async ({ args, flags }) => (await documents()).get(args.document, flags.snapshot === true)),
     ),

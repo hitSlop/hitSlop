@@ -8,10 +8,10 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 | Entry point | Use |
 | --- | --- |
-| `bunx @hitslop/cli@4.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
-| `slop COMMAND` | Run after `bun install -g @hitslop/cli@4.0.0`, with Bun's bin directory on PATH. |
+| `bunx @hitslop/cli@3.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
+| `slop COMMAND` | Run after `bun install -g @hitslop/cli@3.0.0`, with Bun's bin directory on PATH. |
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
-| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` | Send one document request directly, without Node or Bun ([helper requests](#helper-requests)). |
+| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` | Send one document request directly, without Node or Bun ([engine requests](#engine-requests)). |
 
 `slop-engine` ships with the CLI for macOS and Linux, and beside `hitslop-native` in
 `hitSlop.app/Contents/Helpers`. It creates, reads and edits documents without Bun,
@@ -24,9 +24,9 @@ metadata, not npm availability; see [releasing](releasing.md).
 
 ## Operations
 
-`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids, sequence, version}`: `ids` lists inserted row IDs, `version` is the document's version after the edit, and `slop get` prints the value.
+`apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids}`, the inserted row IDs; `slop get` prints the value. A refused batch exits 1 and prints `Refused ops[N] (reason): message` on stderr, naming the zero-based index of the operation to fix, then whether anything was applied.
 
-Both take `--base VERSION`, the version you read (`state.version` from `slop get --snapshot`) or last wrote (a batch's `version`). Text `set`s in the batch then change each field from its text at that version and merge with edits made since, such as typing in an open window, instead of replacing them. Pass it whenever you rewrite text you read. Without it, a text `set` replaces the field as it is when the owner applies it. Other operations are unaffected.
+Both take `--base VERSION`, the `version` of the `slop get --snapshot` you read the text with. Text `set`s in the batch then change each field from its text at that version and merge with edits made since, such as typing in an open window, instead of replacing them. Pass it whenever you rewrite text you read, and read again before each rewrite. Without it, a text `set` replaces the field as it is when the owner applies it; `replace` and `slop import` take no base. Other operations are unaffected. A version older than the document's kept history is refused as `stale_base`: read again and redo the rewrite.
 
 | Operation | Shape | Targets |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ An OS lock on the document's file in the account's registry (`~/.hitslop/live`) 
 
 Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
-## Helper requests
+## Engine requests
 
 `slop-engine request` reads one `HelperRequest` (`@hitslop/schema/socket`) from standard
 input, at most 1 MiB (16 MiB for a batch carrying attachments), and prints one `SocketReply` line.

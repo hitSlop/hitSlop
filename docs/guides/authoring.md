@@ -7,7 +7,7 @@ rules and standards for templates in this repository.
 | --- | --- |
 | First slop, end to end | [Create your first slop](../../apps/landing/src/content/docs/docs/getting-started.mdx) |
 | Fields, handles, changes and previews | [Data and schemas](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx) |
-| Attachments, HTTPS and YouTube | [Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx) |
+| Saved state, lifecycle, attachments, HTTPS and YouTube | [Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx) |
 | Manifest, window shapes and hover controls | [Manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx), [PNG window skins](../../apps/landing/src/content/docs/docs/guides/png-window-skins.mdx) |
 | Plain CSS and the theme palette | [Style a slop](../../apps/landing/src/content/docs/docs/guides/styling.mdx) |
 | Export views, icons and capture | [Icons, previews, and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) |
@@ -48,8 +48,19 @@ at the manifest size; remove competing elements before shrinking labels. Aim for
 12px supporting text, 14px control labels and 44px action targets. Provide keyboard access,
 visible focus, sufficient contrast and reduced-motion behavior.
 
+The host disables ordinary text selection in the editor by default; inputs, textareas
+(including readonly fields), and editable content retain normal selection. Enable
+`-webkit-user-select: text; user-select: text` on useful copyable content such as notes,
+addresses, or code, or on `body` for the whole slop. The default also applies in
+`slop dev` and leaves captures alone. See the
+[styling guide](../../apps/landing/src/content/docs/docs/guides/styling.mdx#text-selection)
+for CSS overrides.
+
 Motion should explain change and settle before capture. Persist target values
-immediately, stop transient work on unmount, and honor reduced motion.
+immediately and honor reduced motion. Stop transient work on unmount and pause it while
+the window is hidden, as
+[Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#opening-hiding-and-closing)
+describes.
 
 ## Review a complete object
 

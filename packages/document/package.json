@@ -1,6 +1,6 @@
 {
   "name": "@hitslop/document",
-  "version": "4.0.0",
+  "version": "3.0.0",
   "type": "module",
   "exports": {
     ".": "./src/schema.ts",
@@ -10,7 +10,7 @@
     "./internal": "./src/internal.ts"
   },
   "dependencies": {
-    "@hitslop/schema": "4.0.0"
+    "@hitslop/schema": "3.0.0"
   },
   "peerDependencies": {
     "svelte": "5.57.1"

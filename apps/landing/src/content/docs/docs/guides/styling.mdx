@@ -48,6 +48,28 @@ Use readable app-prefixed classes in markup. Group descendants and interaction s
 
 Bits UI menus can render in portals. Give the portal content its own class and target attributes directly, such as `.my-slop-menu [data-highlighted]`; a selector below the editor root cannot reach a portal outside that root. Svelte `<style>` blocks remain available for component-local rules, but plain CSS is the starter convention.
 
+## Text selection
+
+The host disables ordinary text selection in every slop's editor, including `slop dev`, so dragging across labels and controls feels like using an app. Inputs, textareas (including readonly fields), and `contenteditable` regions keep normal text selection and editing. Captures and PDF text are unaffected.
+
+Enable selection for content people may want to copy, such as notes, addresses, or code. Add an ordinary rule to `styles.css`; the host default has zero specificity and needs no `!important` override:
+
+```css
+/* Allow selection in a content region, including its descendants. */
+.my-slop-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Or allow selection throughout the slop, including portals. */
+body {
+  -webkit-user-select: text;
+  user-select: text;
+}
+```
+
+Choose the region rule or the whole-slop rule to suit your app. Put the region's class on portal content too when it should be copyable. This is an authoring CSS choice, not a theme setting.
+
 ## Let people change the colors
 
 In the Mac app, the palette button in a document's toolbar, or **Window ▸ Theme**, opens the theme panel beside the window. It shows a color picker and hex field for every declared color. Changes restyle the slop as you make them and save with the document like any edit. **Reset to Original** returns every color to the template's. **Edit ▸ Undo** restores the previous colors; a color-picker drag is one undo step.

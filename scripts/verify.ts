@@ -17,7 +17,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, run } from "../packages/cli/src/process";
 import { repository, sha256, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
-import { debugHelper } from "./lib/helper";
+import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftFormat } from "./lib/swift-format";
 import { swiftTests } from "./lib/swift-tests";

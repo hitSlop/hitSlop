@@ -28,7 +28,7 @@ skin windows override ordinary `html`/`body` backgrounds with transparency;
 draw the visible surface in your app, and avoid more-specific or `!important`
 page backgrounds that would defeat that transparency.
 
-The native host sets `data-slop-presentation` (`standard`, `transparent`, `skin`),
+The native host sets `data-slop-presentation` (`standard`, `transparent`, `glass`, `skin`),
 `--slop-window-radius` for radius strings (`0` for paths), `data-slop-resizable` when enabled, and
 `--slop-window-width`/`--slop-window-height` for initial dimensions. Use fluid CSS for live size.
 The zero-specificity sizing rules are disabled during capture, so exports use normal flow.
@@ -36,6 +36,17 @@ The zero-specificity sizing rules are disabled during capture, so exports use no
 Transparency alone does not create input holes. Keep focus rings and controls
 inside the native silhouette. Move windows using the native toolbar handle;
 there is no guest drag API or drag-attribute contract.
+
+## Glass backgrounds
+
+`background: "glass"` puts the system's frosted material behind the page and keeps the
+page's own background. Paint `body` with a translucent theme color (`paper:
+"#f6f3ee99"`) so the blurred desktop shows through, and people can tune it from the
+theme panel. An opaque page background hides the glass. The frost stays light in dark
+mode; a dark tint makes smoked glass. With Reduce Transparency on, macOS draws the frost
+as a solid light surface. Keep text on a surface with
+enough contrast over any desktop. Exports and icons can't capture the blur, so give
+`Export.svelte` a solid surface.
 
 ## PNG skins
 

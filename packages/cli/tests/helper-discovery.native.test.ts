@@ -14,7 +14,7 @@ test("native protocol selection defaults to 1 and refuses unknown versions befor
   const direct = await run(["--protocol"]);
   expect(direct.code).toBe(0);
   expect(await run(["--client-protocol", "1", "--protocol"])).toEqual(direct);
-  const rejected = await run(["--client-protocol", "2", "request"]);
+  const rejected = await run(["--client-protocol", "2", "export"]);
   expect(rejected.code).not.toBe(0);
   expect(rejected.stderr).toContain("Unsupported command protocol 2");
   expect(rejected.stderr).not.toContain("Missing");
@@ -52,7 +52,7 @@ console.log(JSON.stringify({ ok: true, method: "export", output: "capture.pdf" }
     expect(await Bun.file(touched).exists()).toBe(!refusal);
     if (!refusal)
       expect(await Bun.file(touched).json()).toEqual({
-        args: ["--client-protocol", String(HelperProtocol.version), "request"],
+        args: ["--client-protocol", String(HelperProtocol.version), "export"],
         request: { method: "export", documentPath: resolve("example.slop"), format: "pdf", output: resolve("capture.pdf") },
       });
   } finally { await rm(root, { recursive: true, force: true }); }

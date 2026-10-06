@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildTemplate } from "../src/template";
 import { request } from "../src/native";
 
@@ -137,7 +137,7 @@ test("native artwork is complete before a rebuild replaces a registered template
     expect(await readFile(master)).toEqual(before);
     // A build never replaces a document.
     const document = join(root, "Document.slop");
-    const created = Bun.spawn([renderer, "create", "--from", master, "--output", document], { stdout: "ignore", stderr: "pipe" });
+    const created = Bun.spawn([join(dirname(renderer), "slop-engine"), "create", "--from", master, "--output", document], { stdout: "ignore", stderr: "pipe" });
     expect(await created.exited).toBe(0);
     const saved = await readFile(document);
     await expect(buildTemplate("examples/slops/quick-checklist", undefined, document)).rejects.toThrow("Refusing to replace a document");

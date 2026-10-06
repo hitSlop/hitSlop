@@ -50,7 +50,7 @@ import Testing
     #expect(file.kind == kind)
     #expect(file.manifest.categories == [.productivity, .other])
     #expect(file.silhouette.path(in: CGRect(x: 0, y: 0, width: 320, height: 240)).contains(CGPoint(x: 160, y: 120)))
-    #expect(!file.usesTransparentBackground && file.isResizable && !file.isSkinned)
+    #expect(file.backdrop == .window && file.isResizable && !file.isSkinned)
     // The panel lists colors in the order the author declared them.
     #expect(file.themeTokens.map(\.name) == ["paper", "accent"])
     #expect(file.runtimeABI == RuntimeABI.level)
@@ -63,8 +63,18 @@ import Testing
   let document = try Fixtures.document(stage: source)
   defer { try? FileManager.default.removeItem(at: document) }
   let file = try SlopFile(url: document)
-  #expect(file.isSkinned && file.usesTransparentBackground && !file.isResizable)
+  #expect(file.isSkinned && file.backdrop == .skin && !file.isResizable)
   #expect(file.skin?.width == 320 && file.skin?.height == 240)
+}
+
+@Test func theBackdropFollowsThePresentationsBackground() throws {
+  for (background, backdrop) in [("transparent", SlopBackdrop.clear), ("glass", .glass)] {
+    let stage = try Fixtures.minimalStage(
+      slug: background, manifest: ["presentation": ["width": 240, "height": 180, "background": background]])
+    let document = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: document) }
+    #expect(try SlopFile(url: document).backdrop == backdrop)
+  }
 }
 
 // A file a newer hitSlop wrote asks for an update and is never reported as damaged.

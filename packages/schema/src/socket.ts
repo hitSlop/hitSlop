@@ -7,7 +7,7 @@ import {
   AttachmentInfoSchema,
   OutcomeCodeSchema,
 } from "./values";
-import { CoreErrorCodeSchema, OwnerStateSchema } from "./core";
+import { CoreErrorCodeSchema } from "./core";
 import { ExportFormats, SocketLimits } from "./constants";
 
 const path = T.String({ minLength: 1, maxLength: 4096 });
@@ -24,8 +24,8 @@ export const SocketRequestSchema = T.Union([
   Strict({ ...base, method: T.Literal("attachments.read"), attachmentID: AttachmentIDSchema }),
   Strict({ ...base, method: T.Literal("theme.export") }),
   Strict({ ...base, method: T.Literal("get") }),
-  // `base`: the version the agent read (`get`) or last wrote (a batch's `version`); its
-  // text sets merge with edits made since instead of replacing them. `attachments` are
+  // `base`: the version the agent read the text at (`state.version` from `get`); its text
+  // sets merge with edits made since instead of replacing them. `attachments` are
   // stored before the operations, which reference them by ID, so a blob and its reference
   // arrive in one request: a document's attachments no reference names are reclaimed when
   // it closes.
@@ -45,11 +45,18 @@ export const SocketRequestSchema = T.Union([
 ]);
 /** Every successful result names its method and carries all fields that method promises. */
 export const SocketSuccessSchema = T.Union([
-  // The app's descriptor and declared palette, and the document's state.
+  // What an agent reads: the app's descriptor and declared colors (`defaults`), and the
+  // document's version, value and effective colors (`theme`).
   Strict({ ok: T.Literal(true), method: T.Literal("get"),
-    state: Strict({ schema: T.Object({}, { additionalProperties: true }), theme: ThemeValuesSchema, state: OwnerStateSchema }) }),
-  Strict({ ok: T.Literal(true), method: T.Literal("batch"),
-    ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }), version: T.String() }),
+    state: Strict({
+      schema: T.Object({}, { additionalProperties: true }),
+      defaults: ThemeValuesSchema,
+      version: T.String(),
+      value: T.Unknown(),
+      theme: ThemeValuesSchema,
+    }) }),
+  // The rows the batch inserted; `get` reads the result.
+  Strict({ ok: T.Literal(true), method: T.Literal("batch"), ids: T.Array(T.String()) }),
   Strict({ ok: T.Literal(true), method: T.Literal("export"), output: path }),
   Strict({ ok: T.Literal(true), method: T.Literal("theme.export"), state: Strict({ file: T.String() }) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.list"), state: T.Array(AttachmentInfoSchema) }),

@@ -10,14 +10,28 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  /// One request through the helper binary (`hitslop-native request`), and its reply.
+  /// One request as `slop` sends it (`slop-engine request`), and its reply.
   func request(_ body: [String: Any]) async throws -> [String: Any] {
     let result = try await cli(["request"], input: try JSONSerialization.data(withJSONObject: body))
     try #require(result.0 == 0, "\(body["method"] ?? ""): \(result.2)")
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
   }
 
-  @Test(arguments: [false, true]) @MainActor func helperRequestsReadAndEditLiveAndClosedDocuments(live: Bool)
+  // The helper renders; documents are read and edited through slop-engine alone, so the
+  // helper is not a second way in. Oracle: the refusal's code and reason.
+  @Test func theHelperRefusesEveryRequestButExport() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let body = try JSONSerialization.data(withJSONObject: ["method": "get", "documentPath": root.path])
+    let (status, output, errors) = try await cli(["export"], input: body, tool: "hitslop-native")
+    try #require(status == 0, "\(errors)")
+    let reply = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+    #expect(reply["ok"] as? Bool == false)
+    #expect(reply["code"] as? String == "rejected")
+    #expect(reply["reason"] as? String == "invalid_request")
+  }
+
+  @Test(arguments: [false, true]) @MainActor func engineRequestsReadAndEditLiveAndClosedDocuments(live: Bool)
     async throws
   {
     _ = NSApplication.shared
@@ -32,13 +46,11 @@ extension HostTests {
       ])
       #expect(edit["ok"] as? Bool == true)
       #expect(edit["ids"] as? [String] == [])
-      #expect(edit["sequence"] as? Int != nil)
-      #expect(edit["state"] == nil, "an edit replies with its IDs and sequence only")
+      #expect(Set(edit.keys) == ["ok", "method", "ids"], "an edit replies with its inserted IDs only")
       let get = try await request(["method": "get", "documentPath": root.path])
       let snapshot = try #require(get["state"] as? [String: Any])
-      let state = try #require(snapshot["state"] as? [String: Any])
-      #expect((state["value"] as? [String: Any])?["title"] as? String == "Batch edit")
-      #expect(state["version"] is String)
+      #expect((snapshot["value"] as? [String: Any])?["title"] as? String == "Batch edit")
+      #expect(snapshot["version"] is String)
       let schema = try JSONSerialization.jsonObject(with: Data(SlopFile(url: root).descriptor.utf8)) as! [String: Any]
       #expect(
         NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema)
@@ -85,7 +97,7 @@ extension HostTests {
     #expect(after?["title"] as? String == "User is still typing")
   }
 
-  @Test @MainActor func helperExportsSavedDefaultViewFromLiveAndClosedDocuments() async throws {
+  @Test @MainActor func engineExportsSavedDefaultViewFromLiveAndClosedDocuments() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       let app = stage.appendingPathComponent("assets/app.js")

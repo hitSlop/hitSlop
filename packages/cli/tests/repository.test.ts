@@ -88,7 +88,7 @@ test("hygiene allows authored JS and rejects broken skill links", async () => {
 
 test("docs must link to files that exist and pin the versions the tree is at", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-docs-"));
-  const versions = { cli: "4.0.0", document: "4.0.0", schema: "4.0.0" };
+  const versions = { cli: "3.0.0", document: "3.0.0", schema: "3.0.0" };
   try {
     await mkdir(join(root, "docs/guides"), { recursive: true });
     await writeFile(join(root, "docs/guides/cli.md"), "# CLI\n");
@@ -98,8 +98,8 @@ test("docs must link to files that exist and pin the versions the tree is at", a
     await page("[gone](../plans/old.md)\n");
     await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("broken link (../plans/old.md)");
     await page("Run `bunx @hitslop/cli@1.2.0 init`.\n");
-    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("pins @hitslop/cli@1.2.0, but the tree is at 4.0.0");
-    await page("Run `bunx @hitslop/cli@4.0.0 init`.\n");
+    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("pins @hitslop/cli@1.2.0, but the tree is at 3.0.0");
+    await page("Run `bunx @hitslop/cli@3.0.0 init`.\n");
     await assertDocs(["docs/page.md"], root, versions);
     // A Starlight page links with trailing-slash URLs, which are not files.
     await writeFile(join(root, "docs/site.mdx"), "[next](./getting-started/)\n");

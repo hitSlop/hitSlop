@@ -200,12 +200,13 @@ fn dispatch(
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
-                let Reply::State { json } = call(owner, Request::State, deadline)? else {
+                let Reply::State { json } = call(owner, Request::Read, deadline)? else {
                     return Err(unexpected());
                 };
+                // The reading is one object; the app's descriptor and declared colors lead it.
                 let app = &owner.app().app;
                 SocketSuccess::Get {
-                    state: raw(format!("{{\"schema\":{},\"theme\":{},\"state\":{json}}}", app.descriptor, app.theme))?,
+                    state: raw(format!("{{\"schema\":{},\"defaults\":{},{}", app.descriptor, app.theme, &json[1..]))?,
                 }
             }
             SocketRequest::Batch { ops, base, attachments, .. } => {
@@ -225,7 +226,7 @@ fn dispatch(
                     Some(base) => format!("{{\"base\":{},\"intents\":{ops}}}", json!(base)),
                     None => format!("{{\"intents\":{ops}}}"),
                 };
-                let Reply::Applied { sequence, ids, version, .. } =
+                let Reply::Applied { ids, .. } =
                     call(owner, Request::Apply { batch_json, origin: crate::Origin::Agent }, deadline)?
                 else {
                     return Err(unexpected());
@@ -234,7 +235,7 @@ fn dispatch(
                 saving = true;
                 call_after(owner, Request::Flush, deadline)?;
                 saving = false;
-                SocketSuccess::Batch { ids, sequence, version }
+                SocketSuccess::Batch { ids }
             }
             SocketRequest::ThemeExport { .. } => {
                 saving = true;

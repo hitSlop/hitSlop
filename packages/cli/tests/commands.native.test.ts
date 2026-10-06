@@ -29,13 +29,13 @@ test("document commands send one request and print its reply", async () => {
     // Records the request it reads and answers like an owner that accepted a batch.
     await writeFile(
       helper,
-      `#!${process.execPath}\n{ await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", ids: ["r1"], sequence: 3, version: "v3" })); }\n`,
+      `#!${process.execPath}\n{ await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", ids: ["r1"] })); }\n`,
       { mode: 0o755 },
     );
     const op = '{ "type": "set", "path": ["title"], "value": "hello \\"world\\"" }';
     const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(applied.code).toBe(0);
-    expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"], sequence: 3, version: "v3" });
+    expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"] });
     const { args, body } = JSON.parse(await Bun.file(sent).text());
     expect(args).toEqual([...selection, "request"]);
     // The operation reaches the core as written, inside the batch.
@@ -54,26 +54,28 @@ test("document commands send one request and print its reply", async () => {
   }
 });
 
-test("a refused edit says whether it was applied", async () => {
+// Failure: a refused batch printed only the core's message ("No such row"), so an agent
+// could not tell which of its operations to fix. Oracle: stderr names the operation and
+// the reason, then whether anything was applied.
+test("a refused edit names its operation and says whether it was applied", async () => {
   if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-refused-"));
   try {
     const helper = join(root, "helper");
     await writeFile(
       helper,
-      `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: false, error: "No such row", code: "rejected", reason: "path_not_found" }));\n`,
+      `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: false, error: "No such row", code: "rejected", reason: "path_not_found", opIndex: 2 }));\n`,
       { mode: 0o755 },
     );
     const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(refused.code).not.toBe(0);
-    expect(refused.stderr).toContain("No such row");
-    expect(refused.stderr).toContain("Not applied.");
+    expect(refused.stderr).toContain("Refused ops[2] (path_not_found): No such row\nNot applied.");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-// Failure: a reply of {ok: true} printed {ids: [], sequence: 0} for a batch whose result
+// Failure: a reply of {ok: true} printed {ids: []} for a batch whose result
 // never arrived. Oracle: the exit status and stderr; nothing is printed as the result.
 test("a success missing its method's result is an unknown outcome", async () => {
   if (process.platform !== "darwin") return;

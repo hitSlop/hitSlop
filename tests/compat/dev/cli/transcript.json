@@ -215,67 +215,65 @@
             }
           }
         },
-        "theme": {
+        "defaults": {
           "accent": "#335577"
         },
-        "state": {
-          "value": {
-            "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-            "cells": {
-              "compat-1": {
-                "input": "Compat 1 ✓ café 🦊"
-              },
-              "compat-2": {
-                "input": "Replay 2 é 中文"
-              }
+        "value": {
+          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+          "cells": {
+            "compat-1": {
+              "input": "Compat 1 ✓ café 🦊"
             },
-            "checkins": {
-              "compat-1": 1,
-              "compat-2": 2
-            },
-            "colors": [
-              "compat 2",
-              "compat 1"
-            ],
-            "count": 2,
-            "done": false,
-            "epoch": 2,
-            "hits": 5,
-            "label": "compat 2",
-            "lane": "done",
-            "memo": "Replay 2 é 中文",
-            "note": "compat 2",
-            "place": {
-              "name": "compat 1",
-              "visits": 1
-            },
-            "ratio": 0.5,
-            "rows": [
-              {
-                "$id": "compat-1",
-                "done": true,
-                "notes": {},
-                "tags": [],
-                "text": "Compat 1 ✓ café 🦊"
-              },
-              {
-                "$id": "compat-2",
-                "done": false,
-                "notes": {},
-                "tags": [],
-                "text": "Replay 2 é 中文"
-              }
-            ],
-            "settings": {
-              "muted": false,
-              "volume": 2
-            },
-            "title": "Replay 2 é 中文",
-            "version": "compat 2"
+            "compat-2": {
+              "input": "Replay 2 é 中文"
+            }
           },
-          "theme": {
-            "accent": "#123456"
-          }
+          "checkins": {
+            "compat-1": 1,
+            "compat-2": 2
+          },
+          "colors": [
+            "compat 2",
+            "compat 1"
+          ],
+          "count": 2,
+          "done": false,
+          "epoch": 2,
+          "hits": 5,
+          "label": "compat 2",
+          "lane": "done",
+          "memo": "Replay 2 é 中文",
+          "note": "compat 2",
+          "place": {
+            "name": "compat 1",
+            "visits": 1
+          },
+          "ratio": 0.5,
+          "rows": [
+            {
+              "$id": "compat-1",
+              "done": true,
+              "notes": {},
+              "tags": [],
+              "text": "Compat 1 ✓ café 🦊"
+            },
+            {
+              "$id": "compat-2",
+              "done": false,
+              "notes": {},
+              "tags": [],
+              "text": "Replay 2 é 中文"
+            }
+          ],
+          "settings": {
+            "muted": false,
+            "volume": 2
+          },
+          "title": "Replay 2 é 中文",
+          "version": "compat 2"
+        },
+        "theme": {
+          "accent": "#123456"
         }
       }
     },

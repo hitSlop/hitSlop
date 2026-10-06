@@ -28,13 +28,17 @@ fn folder() -> Result<PathBuf> {
     if let Some(folder) = FOLDER.get() {
         return Ok(folder.clone());
     }
-    static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
-    let home = HOME.get_or_init(home).as_ref().ok_or_else(|| failed("Cannot find this account's home folder"))?;
+    let home = home().ok_or_else(|| failed("Cannot find this account's home folder"))?;
     Ok(home.join(".hitslop/live"))
+}
+/// This account's home folder, not `$HOME`, so every process of the account agrees.
+pub(crate) fn home() -> Option<&'static Path> {
+    static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
+    HOME.get_or_init(lookup_home).as_deref()
 }
 /// This account's home folder from the password database. `getpwuid_r`, because
 /// `getpwuid`'s result lives in storage every other thread's lookup may overwrite.
-fn home() -> Option<PathBuf> {
+fn lookup_home() -> Option<PathBuf> {
     let mut buffer = vec![0 as libc::c_char; 4096];
     loop {
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();

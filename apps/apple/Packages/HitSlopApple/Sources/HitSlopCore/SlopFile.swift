@@ -99,8 +99,14 @@ public struct SlopFile: Sendable {
   }
 
   public var isSkinned: Bool { manifest.presentation.skin != nil }
-  public var usesTransparentBackground: Bool {
-    isSkinned || manifest.presentation.background == .transparent
+  /// What the window shows behind the page.
+  public var backdrop: SlopBackdrop {
+    if isSkinned { return .skin }
+    switch manifest.presentation.background {
+    case nil: return .window
+    case .transparent: return .clear
+    case .glass: return .glass
+    }
   }
   public var isResizable: Bool { isSkinned ? false : manifest.presentation.resizable ?? true }
   /// The window skin, decoded when the file was opened.
@@ -134,6 +140,18 @@ public struct SlopFile: Sendable {
     else { throw SlopError.invalid("window skin must be a valid PNG") }
     return image
   }
+}
+
+/// What a window shows behind its page, from the presentation.
+public enum SlopBackdrop: Sendable {
+  /// The system window color, under a page that draws its own background.
+  case window
+  /// Nothing: the desktop shows wherever the page is transparent.
+  case clear
+  /// A frosted material: the blurred desktop shows through a translucent page.
+  case glass
+  /// The template's PNG skin.
+  case skin
 }
 
 /// A slop's preview or icon artwork, read through the core.

@@ -14,6 +14,7 @@ import { HelperProtocol, PackageFormat, RuntimeABI } from "../../packages/schema
 import {
   corpus,
   helper,
+  documentEngine,
   slop,
   slopJSON,
   readJSON,
@@ -32,7 +33,7 @@ import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, us
 import { engine, pack } from "../../packages/cli/src/engine";
 import { coreBuildId } from "../../packages/cli/src/core";
 import { exec } from "../../packages/cli/src/process";
-import { createDocument, debugHelper } from "../lib/helper";
+import { createDocument, debugHelper } from "../lib/native";
 useTestRegistry();
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
@@ -152,7 +153,7 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
 };
 for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
-  await createDocument(join(root, "templates", slug + ".slop"), document, { helper });
+  await createDocument(join(root, "templates", slug + ".slop"), document, { engine: documentEngine });
   // What a new document of this release's template holds: its initial checkpoint.
   await writeFile(join(root, "expected", `new-${slug}.json`), JSON.stringify(await valueOf(document), null, 2) + "\n");
   const schema = await schemaOf(document);
@@ -189,8 +190,8 @@ async function record(document: string) {
   await rm(scratch, { recursive: true, force: true });
   await copyFile(path, scratch);
   await batch(scratch, ops);
-  const { state } = await slopJSON(["get", scratch, "--snapshot"]);
-  const scenario: Scenario = { ops, value: state.value };
+  const { value } = await slopJSON(["get", scratch, "--snapshot"]);
+  const scenario: Scenario = { ops, value };
   await writeFile(join(root, "scenarios", document + ".json"), JSON.stringify(scenario, null, 2) + "\n");
   // The old app must render its saved document.
   for (const format of ["png", "pdf"]) {

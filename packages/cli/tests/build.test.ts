@@ -14,7 +14,7 @@ async function initialValue(template: string) {
   await engine(["create", "--from", template, "--output", document]);
   try {
     const { stdout } = await exec([await findEngine(), "request"], { stdin: JSON.stringify({ method: "get", documentPath: document }) });
-    return JSON.parse(stdout).state.state.value;
+    return JSON.parse(stdout).state.value;
   } finally {
     await rm(template + ".created", { recursive: true, force: true });
   }

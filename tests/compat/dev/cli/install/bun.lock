@@ -4,14 +4,14 @@
   "workspaces": {
     "": {
       "dependencies": {
-        "@hitslop/cli": "../hitslop-cli-4.0.0.tgz",
+        "@hitslop/cli": "../hitslop-cli-3.0.0.tgz",
       },
     },
   },
   "overrides": {
-    "@hitslop/cli": "../hitslop-cli-4.0.0.tgz",
-    "@hitslop/document": "../hitslop-document-4.0.0.tgz",
-    "@hitslop/schema": "../hitslop-schema-4.0.0.tgz",
+    "@hitslop/cli": "../hitslop-cli-3.0.0.tgz",
+    "@hitslop/document": "../hitslop-document-3.0.0.tgz",
+    "@hitslop/schema": "../hitslop-schema-3.0.0.tgz",
   },
   "packages": {
     "@crustjs/core": ["@crustjs/core@0.5.4", "", { "dependencies": { "@crustjs/utils": "^0.2.2" }, "peerDependencies": { "typescript": "^7.0.0" }, "optionalPeers": ["typescript"] }, "sha512-/+z5abfCYVlfWlyqAy2aAilOaxwL//sFAvPpgwEnLbrN12USKT/ElBXmtjg9/K8SKmOnLvrouzA6J3rdDOlyMA=="],
@@ -30,11 +30,11 @@
 
     "@crustjs/utils": ["@crustjs/utils@0.2.2", "", {}, "sha512-hPDqqHpdekLi8nU/eqQf0fsAbkjsBzGntTcQdypElinREA+tC2iC8JnXPsf8iKYWNogmJJ2tyqGzTXZrk431Kg=="],
 
-    "@hitslop/cli": ["@hitslop/cli@../hitslop-cli-4.0.0.tgz", { "dependencies": { "@crustjs/core": "0.5.4", "@crustjs/extensions": "0.5.4", "@crustjs/prompts": "0.2.6", "@crustjs/skills": "0.5.4", "@hitslop/document": "4.0.0", "@hitslop/schema": "4.0.0", "@sveltejs/vite-plugin-svelte": "7.3.1", "svelte": "5.57.1", "svelte-check": "4.7.6", "typescript": "5.9.2", "vite": "8.3.1" }, "bin": { "slop": "src/cli.ts" } }, "sha512-mVRWLMYS20dbzlCqpAGvuDgdCeMLWm7fjVgtDAOdz7xBDkTncfKYWNuRa48TX3Z/IHl1mHTPHaSq9m6CgAS3RQ=="],
+    "@hitslop/cli": ["@hitslop/cli@../hitslop-cli-3.0.0.tgz", { "dependencies": { "@crustjs/core": "0.5.4", "@crustjs/extensions": "0.5.4", "@crustjs/prompts": "0.2.6", "@crustjs/skills": "0.5.4", "@hitslop/document": "3.0.0", "@hitslop/schema": "3.0.0", "@sveltejs/vite-plugin-svelte": "7.3.1", "svelte": "5.57.1", "svelte-check": "4.7.6", "typescript": "5.9.2", "vite": "8.3.1" }, "bin": { "slop": "src/cli.ts" } }, "sha512-A9SSY1R0FFiyu7x2210nQlR0Gbldt9xTEgfW/EmwmR2ZFM4oW7Zh/Ve7OlIpn3fbvccHPWiSwH1jXANbZyB7jQ=="],
 
-    "@hitslop/document": ["@hitslop/document@../hitslop-document-4.0.0.tgz", { "dependencies": { "@hitslop/schema": "4.0.0" }, "peerDependencies": { "svelte": "5.57.1" }, "optionalPeers": ["svelte"] }, "sha512-wUlVNvp3a+SZvxrTlxINbgw6FzdWGJr509oRJNKP33sYOPXRIFXaMjyDOGAsZx/4Buy1tz99wCorQaFK9T9zIA=="],
+    "@hitslop/document": ["@hitslop/document@../hitslop-document-3.0.0.tgz", { "dependencies": { "@hitslop/schema": "3.0.0" }, "peerDependencies": { "svelte": "5.57.1" }, "optionalPeers": ["svelte"] }, "sha512-Q0ZuFq9tPfDGF3ZPlZSHge9PTkeGkfFQXUH18t88GM47TgClFvIjI4lfo6ej+fYfA7uZxOG3rUVD+qrMcTrBmw=="],
 
-    "@hitslop/schema": ["@hitslop/schema@../hitslop-schema-4.0.0.tgz", { "dependencies": { "typebox": "1.3.32" } }, "sha512-ro9eVnZqGGog27/1PMHukTzgoUOvyUiI214iBeVtn1VFN0CACaktHYKr/68+jho1mDZGY7+OjY6hgd6XeyNioQ=="],
+    "@hitslop/schema": ["@hitslop/schema@../hitslop-schema-3.0.0.tgz", { "dependencies": { "typebox": "1.3.32" } }, "sha512-+n2KplG7j7NhW0DYpUzhYxRCXzmPTGcTdlAKBt4kSlSHb7z47JF1A6XbU5jd/2yIkDZQggR7McvSti46tQspyA=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

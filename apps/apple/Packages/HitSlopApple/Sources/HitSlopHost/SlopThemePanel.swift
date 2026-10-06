@@ -57,10 +57,9 @@ extension SlopDocumentWindowController {
   func closeThemePanel() {
     guard let panel = themePanel else { return }
     themePanel = nil
+    themeEditor?.close()
     themeEditor = nil
-    // A color picker left open must never write into a document whose panel is gone.
     panel.contentView = nil
-    if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.orderOut(nil) }
     panel.parent?.removeChildWindow(panel)
     panel.close()
     toolbar.update()

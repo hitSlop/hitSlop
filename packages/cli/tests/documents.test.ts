@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,11 +10,11 @@ const engine = await findEngine();
 /** A small template file in `folder`. */
 const template = (folder: string) => writeTemplate(join(folder, "Template.slop"));
 
-const cli = async (command: string, file: string, ...args: string[]) => {
-  const p = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", command, file, ...args], {
+const run = async (args: string[], env: Record<string, string> = {}) => {
+  const p = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, HITSLOP_ENGINE: engine },
+    env: { ...process.env, HITSLOP_ENGINE: engine, ...env },
   });
   const [out, error, code] = await Promise.all([
     new Response(p.stdout).text(),
@@ -22,6 +23,7 @@ const cli = async (command: string, file: string, ...args: string[]) => {
   ]);
   return { out, error, code };
 };
+const cli = (command: string, file: string, ...args: string[]) => run([command, file, ...args]);
 
 // A template is never edited: a command refuses it before it can create document state.
 test("document CLI refuses a template before mutation", async () => {
@@ -95,5 +97,24 @@ test("create makes parent folders and reports the new document path", async () =
     expect(created.code).toBe(0);
     expect(created.out.trim()).toBe(await realpath(output));
     expect((await cli("get", output)).code).toBe(0);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+}, 60000);
+
+// Failure: the engine created a document named `notes`, which the app refuses to open, and
+// documents inside the template catalog. Oracle: the name the app opens, and for the
+// catalog the refusal with no file or folder made.
+test("create names documents as the app does and refuses the template catalog", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "hsl-create-place-"));
+  try {
+    const source = await template(folder);
+    const created = await cli("create", "--from", source, "--output", join(folder, "notes"));
+    expect(created.code).toBe(0);
+    expect(created.out.trim()).toBe(join(await realpath(folder), "notes.slop"));
+    expect(await Bun.file(join(folder, "notes")).exists()).toBe(false);
+    const templates = join(folder, "templates");
+    const refused = await run(["create", "--from", source, "--output", join(templates, "Copy.slop")], { HITSLOP_TEMPLATES_ROOT: templates });
+    expect(refused.code).not.toBe(0);
+    expect(refused.error).toContain("among installed templates");
+    expect(existsSync(templates)).toBe(false);
   } finally { await rm(folder, { recursive: true, force: true }); }
 }, 60000);

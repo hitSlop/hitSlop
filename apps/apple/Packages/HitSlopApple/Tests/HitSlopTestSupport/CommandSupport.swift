@@ -42,8 +42,7 @@ import HitSlopDocument
 /// The effective palette, as `get` reports it.
 @MainActor public func effectiveTheme(url: URL) async throws -> [String: String] {
   let reply = try await command("get", url: url)
-  guard reply.ok, let frame = reply.state as? [String: Any], let state = frame["state"] as? [String: Any],
-    let theme = state["theme"] as? [String: String]
+  guard reply.ok, let state = reply.state as? [String: Any], let theme = state["theme"] as? [String: String]
   else { throw SlopFailure(reply.error ?? "Request failed") }
   return theme
 }
@@ -62,7 +61,6 @@ public struct DecodedReply {
   public let header: SocketReplyHeader
   public let state: Any?
   public let ids: [String]?
-  public let sequence: Int?
   public let output: String?
   public var ok: Bool { header.ok }
   public var error: String? { header.error }
@@ -74,6 +72,5 @@ public func decodeReply(_ data: Data) throws -> DecodedReply {
   let header = try JSONDecoder().decode(SocketReplyHeader.self, from: data)
   let value = try JSONSerialization.jsonObject(with: data) as! [String: Any]
   return DecodedReply(
-    header: header, state: value["state"], ids: value["ids"] as? [String],
-    sequence: value["sequence"] as? Int, output: value["output"] as? String)
+    header: header, state: value["state"], ids: value["ids"] as? [String], output: value["output"] as? String)
 }

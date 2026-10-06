@@ -53,6 +53,6 @@ Loro and use the same publication, undo and saving path as data edits.
 
 **Checks.** `bun run verify --native` runs what a change touches, building first.
 `bun run verify swift` covers WKWebView, live and closed CLI, save failure, close and
-export; `bun run verify native` runs the CLI against the helper, the relocated helper,
+export; `bun run verify native` runs the CLI against the engine and helper, both relocated,
 renders, crashes and the corpus replay; `bun run bench:windows` measures window scaling.
 Templates: `bun run build:templates`, then `HITSLOP_RENDER=all bun run verify native render`.

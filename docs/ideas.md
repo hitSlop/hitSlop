@@ -69,6 +69,20 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Builds on:** the owner socket and its TypeBox envelopes in `packages/schema`. The
   socket takes one request per connection today, so streaming needs a new envelope.
 
+### Gradient theme tokens
+
+- **What:** a template declares gradients beside its colors, and the theme panel's picker
+  gains a gradient mode: a few color stops and an angle.
+- **Why:** a background carries much of a slop's look, and one color can't give it the
+  soft, layered backgrounds people know from Arc.
+- **Builds on:** the palette and the panel's picker. A gradient can't be the value of a
+  color token: templates use `--slop-*` colors in `color`, `border-color` and
+  `color-mix()`, where a gradient isn't valid CSS. It needs its own declared kind, usable
+  only in `background-image`. That kind is checked in `theme.rs`, typed in `defineTheme`,
+  carried in theme files and covered by a fixture.
+- **Open questions:** whether a stop can name a palette color, so the gradient follows a
+  changed accent, and how the window shape, icon and export use a gradient.
+
 ## Change the app, keep the data
 
 ### Remix

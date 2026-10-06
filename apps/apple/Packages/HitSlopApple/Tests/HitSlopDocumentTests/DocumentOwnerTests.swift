@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
@@ -49,8 +48,7 @@ import Testing
     try await owner.close()
     let closed = try await commandState("get", url: root)
     func value(_ state: Data) throws -> NSDictionary? {
-      ((try JSONSerialization.jsonObject(with: state) as? [String: Any])?["state"] as? [String: Any])?["value"]
-        as? NSDictionary
+      (try JSONSerialization.jsonObject(with: state) as? [String: Any])?["value"] as? NSDictionary
     }
     #expect(try value(live) == value(closed))
     #expect(try value(closed)?["hits"] as? Int == batches, "each batch applied once")
@@ -207,7 +205,7 @@ import Testing
       ])
     let ids = try #require(inserted.ids)
     let saved = try JSONSerialization.jsonObject(with: await commandState("get", url: root)) as! [String: Any]
-    let state = (saved["state"] as? [String: Any])?["value"] as? [String: Any] ?? [:]
+    let state = saved["value"] as? [String: Any] ?? [:]
     #expect(state["hits"] as? Int == 9)
     #expect(ids.count == 1 && (state["rows"] as? [[String: Any]] ?? []).contains { $0["$id"] as? String == ids[0] })
   }
@@ -246,13 +244,11 @@ import Testing
     try await session.close()
     let owner = try DocumentOwner(url: root)
     let current = try await value(owner)["value"] as! [String: Any]
+    try await owner.close()
     let id = try #require(current["title"] as? String)
     #expect(id.count == 64)
-    let read = try decodeReply(
-      await owner.request(
-        .attachmentsRead(.init(protocol: HelperProtocol.version, documentPath: resolved(owner), attachmentID: id))))
+    let read = try await command("attachments.read", url: root, ["attachmentID": id])
     #expect((read.state as? [String: Any])?["bytes"] as? String == Data("native attachment".utf8).base64EncodedString())
-    try await owner.close()
   }
 
   /// A theme panel change; the sequence it was accepted at.
@@ -326,12 +322,6 @@ import Testing
     #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second") is OwnerReplaced)
     #expect(try await hits(owner) == 0)
     try await owner.close()
-  }
-  /// The owner's document path as the core resolved it, which a socket request names.
-  func resolved(_ owner: DocumentOwner) -> String {
-    guard let path = realpath(owner.file.url.path, nil) else { return owner.file.url.path }
-    defer { free(path) }
-    return String(cString: path)
   }
   /// A page request from `view`; the owner's refusal, if any.
   func page(_ owner: DocumentOwner, _ json: String, view: String) async -> Error? {

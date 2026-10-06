@@ -59,14 +59,8 @@ import Testing
   @Test @MainActor func missingAttachmentIsARefusalNotAnUnknownOutcome() async throws {
     let root = try Fixtures.native()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    let request = try SocketRequest(json: [
-      "protocol": HelperProtocol.version, "method": "attachments.read", "documentPath": root.path,
-      "attachmentID": String(repeating: "a", count: 64),
-    ])
-    let reply = try decodeReply(await owner.request(request))
+    let reply = try await command("attachments.read", url: root, ["attachmentID": String(repeating: "a", count: 64)])
     #expect(!reply.ok)
     #expect(reply.code == .rejected)
-    try await owner.close()
   }
 }

@@ -4,7 +4,7 @@ import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { discoverTemplates, templateInventory } from "./discover";
 import { sharedTemplateInputs, TemplateCache } from "./cache";
-import { debugHelper } from "../lib/helper";
+import { debugHelper } from "../lib/native";
 import { publishFolder } from "../lib/artifacts";
 
 /** The template cache (`HITSLOP_TEMPLATE_CACHE_DIR`, or `.hitslop/template-cache`), keyed by

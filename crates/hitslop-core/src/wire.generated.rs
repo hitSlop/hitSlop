@@ -262,7 +262,7 @@ pub(crate) enum SocketSuccess {
     #[serde(rename = "get")]
     Get { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "batch")]
-    Batch { ids: Vec<String>, sequence: u64, version: String },
+    Batch { ids: Vec<String> },
     #[serde(rename = "export")]
     Export { output: String },
     #[serde(rename = "theme.export")]
