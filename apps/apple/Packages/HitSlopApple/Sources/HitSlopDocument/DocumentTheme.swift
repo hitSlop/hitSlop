@@ -16,7 +16,8 @@ public struct SlopThemeState: Sendable, Equatable {
     func colors(_ json: String) throws -> [String: String] {
       try JSONDecoder().decode([String: String].self, from: Data(json.utf8))
     }
-    self.init(overrides: try colors(read.state.overrides), effective: try colors(read.state.effective), revision: read.revision)
+    self.init(
+      overrides: try colors(read.state.overrides), effective: try colors(read.state.effective), revision: read.revision)
   }
 }
 

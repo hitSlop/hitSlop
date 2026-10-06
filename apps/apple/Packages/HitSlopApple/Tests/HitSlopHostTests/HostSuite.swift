@@ -1,12 +1,12 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
 
-@testable import HitSlopHost
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 // One parent suite keeps shared AppKit/WebView integration tests serialized.
 @Suite(.serialized) struct HostTests {
@@ -38,8 +38,8 @@ import HitSlopTestSupport
 
   /// Runs the helper with `args`, writing `input` to its standard input.
   func cli(_ args: [String], input: Data? = nil) async throws -> (Int32, String, String) {
-    let helper = Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
+    let helper = Fixtures.repository.appendingPathComponent(
+      "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native")
     return try await Task.detached { try Fixtures.run(helper, args, input: input) }.value
   }
 }
-

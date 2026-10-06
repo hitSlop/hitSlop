@@ -1,6 +1,7 @@
 import Foundation
 import HitSlopCore
 import Testing
+
 @testable import HitSlopFeatures
 
 /// A started catalog fed by `local`, with its first listings in.
@@ -13,7 +14,8 @@ import Testing
 }
 
 @Test @MainActor func catalogSelectionFollowsSnapshotRemoval() async {
-  let catalog = Catalog(), local = AsyncStream<CatalogSnapshot>.makeStream()
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
   let model = await started(catalog, local: local.stream)
   local.continuation.yield(CatalogSnapshot(entries: [entry("a")]))
   await until { !model.local.isEmpty }
@@ -24,7 +26,8 @@ import Testing
 }
 
 @Test @MainActor func cancelledCreationIsNotAnError() async {
-  let catalog = Catalog(), gate = Gate()
+  let catalog = Catalog()
+  let gate = Gate()
   let template = entry("a")
   catalog.chooseDestination = { _ in
     await gate.wait()
@@ -69,7 +72,8 @@ import Testing
 
 // A listing that finished after a newer one began can never replace it.
 @Test @MainActor func aRecentsListingOvertakenByANewerOneIsDropped() async {
-  let catalog = Catalog(), gate = Gate()
+  let catalog = Catalog()
+  let gate = Gate()
   let old = entry("old", source: .recent(documentURL))
   catalog.recents = {
     guard catalog.calls.filter({ $0 == .recents }).count == 1 else { return [] }
@@ -87,7 +91,8 @@ import Testing
 }
 
 @Test @MainActor func refreshingSourcesRetainsTheLocalSubscription() async {
-  let catalog = Catalog(), local = AsyncStream<CatalogSnapshot>.makeStream()
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
   let model = await started(catalog, local: local.stream)
   model.start()
   model.refreshSources()
@@ -122,7 +127,8 @@ import Testing
   bundled.categories = [.personal, .productivity]
   var installed = entry("installed", "Installed")
   installed.categories = [.finance, .personal]
-  let catalog = Catalog(), local = AsyncStream<CatalogSnapshot>.makeStream()
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
   let model = await started(catalog, local: local.stream)
   local.continuation.yield(CatalogSnapshot(entries: [bundled, installed]))
   await until { model.local.count == 2 }
@@ -142,7 +148,8 @@ import Testing
   checklist.categories = [.personal, .productivity]
   var expenses = entry("expenses", "Small Expenses")
   expenses.categories = [.productivity]
-  let catalog = Catalog(), local = AsyncStream<CatalogSnapshot>.makeStream()
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
   let model = await started(catalog, local: local.stream)
   local.continuation.yield(CatalogSnapshot(entries: [checklist, expenses]))
   await until { model.local.count == 2 }

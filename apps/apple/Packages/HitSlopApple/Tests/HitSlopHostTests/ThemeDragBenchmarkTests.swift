@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import HitSlopTestSupport
 import Testing
+
 @testable import HitSlopDocument
 @testable import HitSlopHost
 
@@ -13,7 +14,8 @@ import Testing
     var measurements: [[String: Any]] = []
     for rows in [10, 1000] { measurements.append(try await measure(rows: rows)) }
     let output = Fixtures.repository.appendingPathComponent("docs/evidence/theme-drag-2026-10-04.json")
-    try JSONSerialization.data(withJSONObject: ["measurements": measurements], options: [.prettyPrinted, .sortedKeys]).write(to: output)
+    try JSONSerialization.data(withJSONObject: ["measurements": measurements], options: [.prettyPrinted, .sortedKeys])
+      .write(to: output)
     print("Theme drag evidence: \(output.path)")
   }
 
@@ -23,9 +25,12 @@ import Testing
     let stage = try Fixtures.nativeStage()
     let updates = 60
     try Fixtures.updateApp(stage) {
-      $0["initial"] = ["title": "Theme gesture measurement", "tasks": (0..<rows).map {
-        ["text": "Task \($0)", "done": false, "archived": false] as [String: Any]
-      }]
+      $0["initial"] = [
+        "title": "Theme gesture measurement",
+        "tasks": (0..<rows).map {
+          ["text": "Task \($0)", "done": false, "archived": false] as [String: Any]
+        },
+      ]
     }
     let document = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("theme.slop"))
     let controller = try await SlopDocumentWindowController.open(url: document)
@@ -34,21 +39,25 @@ import Testing
     let session = controller.session
     do {
       try await session.waitUntilReady()
-      let startColor = try #require(try await session.webView.callAsyncJavaScript("""
-        globalThis.__themeDrag = [];
-        const root = document.documentElement;
-        new MutationObserver(() => {
-          const value = getComputedStyle(root).getPropertyValue('--slop-accent').trim();
-          if (globalThis.__themeDrag.at(-1)?.value !== value)
-            globalThis.__themeDrag.push({ value, epochMS: performance.timeOrigin + performance.now() });
-        }).observe(root, { attributes: true, attributeFilter: ['style'] });
-        return getComputedStyle(root).getPropertyValue('--slop-accent').trim();
-        """, arguments: [:], in: nil, contentWorld: .page) as? String)
+      let startColor = try #require(
+        try await session.webView.callAsyncJavaScript(
+          """
+          globalThis.__themeDrag = [];
+          const root = document.documentElement;
+          new MutationObserver(() => {
+            const value = getComputedStyle(root).getPropertyValue('--slop-accent').trim();
+            if (globalThis.__themeDrag.at(-1)?.value !== value)
+              globalThis.__themeDrag.push({ value, epochMS: performance.timeOrigin + performance.now() });
+          }).observe(root, { attributes: true, attributeFilter: ['style'] });
+          return getComputedStyle(root).getPropertyValue('--slop-accent').trim();
+          """, arguments: [:], in: nil, contentWorld: .page) as? String)
       #expect(!startColor.isEmpty)
 
       var sent: [(color: String, epochMS: Double, uptime: TimeInterval)] = []
-      var accepted: [[String: Any]] = [], failures: [String] = []
-      let clock = ContinuousClock(), start = clock.now
+      var accepted: [[String: Any]] = []
+      var failures: [String] = []
+      let clock = ContinuousClock()
+      let start = clock.now
       for index in 0..<updates {
         try await clock.sleep(until: start.advanced(by: .milliseconds(index * 16)))
         let color = String(format: "#%02x%02x%02x", index * 4, 255 - index * 4, 128)
@@ -57,8 +66,10 @@ import Testing
         session.changeTheme(.set(["accent": color])) { result in
           switch result {
           case .success(let sequence):
-            accepted.append(["index": index, "sequence": sequence,
-              "latencyMS": (ProcessInfo.processInfo.systemUptime - uptime) * 1000])
+            accepted.append([
+              "index": index, "sequence": sequence,
+              "latencyMS": (ProcessInfo.processInfo.systemUptime - uptime) * 1000,
+            ])
           case .failure(let error): failures.append(error.localizedDescription)
           }
         }
@@ -70,17 +81,21 @@ import Testing
       }
       let finalColor = try #require(sent.last?.color)
       try await waitForColor(finalColor, session: session)
-      let observed = try #require(try await session.webView.callAsyncJavaScript(
-        "return globalThis.__themeDrag", arguments: [:], in: nil, contentWorld: .page) as? [[String: Any]])
+      let observed = try #require(
+        try await session.webView.callAsyncJavaScript(
+          "return globalThis.__themeDrag", arguments: [:], in: nil, contentWorld: .page) as? [[String: Any]])
       var samples: [[String: Any]] = []
       var next = 0
       for entry in observed {
         guard let color = entry["value"] as? String,
           let index = sent.firstIndex(where: { $0.color == color }), index >= next,
-          let epochMS = (entry["epochMS"] as? NSNumber)?.doubleValue else { continue }
-        samples.append(["index": index, "value": color, "coversUpdates": index - next + 1,
+          let epochMS = (entry["epochMS"] as? NSNumber)?.doubleValue
+        else { continue }
+        samples.append([
+          "index": index, "value": color, "coversUpdates": index - next + 1,
           "matchingUpdateMS": epochMS - sent[index].epochMS,
-          "earliestCoveredUpdateMS": epochMS - sent[next].epochMS])
+          "earliestCoveredUpdateMS": epochMS - sent[next].epochMS,
+        ])
         next = index + 1
       }
       #expect(failures.isEmpty)
@@ -98,7 +113,8 @@ import Testing
       let evidence: [String: Any] = [
         "date": "2026-10-04", "build": "Debug native test bundle", "coreBuild": DocumentOwner.coreBuildID,
         "platform": ProcessInfo.processInfo.operatingSystemVersionString,
-        "method": "Synthetic palette drag through DocumentSession.changeTheme (one owner undo step per run of changes to one color), shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
+        "method":
+          "Synthetic palette drag through DocumentSession.changeTheme (one owner undo step per run of changes to one color), shared Rust owner, ordered publications, and a shown Checklist WebKit page. 60 unique accent colors scheduled at 16 ms intervals with ContinuousClock; no await of acceptance between submissions. Native latency uses monotonic uptime through the main-actor acceptance callback. Page latency matches computed CSS values from a MutationObserver using JavaScript performance epoch timestamps and native Date submission timestamps; this cross-clock measurement has approximately millisecond precision and includes observer/test overhead. Coalesced samples also report the earliest covered submission. Flush, final computed CSS, and one native Undo are verified. This is not a physical color-picker, IME, frame-presentation, or release-build measurement.",
         "rows": rows, "requestedUpdates": updates, "cadenceMS": 16,
         "acceptedUpdates": accepted.count, "observedColors": samples.count, "failures": failures,
         "submissionOffsetsMS": sent.map { ($0.uptime - sent[0].uptime) * 1000 },
@@ -106,7 +122,8 @@ import Testing
         "pageMatchingUpdateMS": summary(samples.compactMap { $0["matchingUpdateMS"] as? Double }),
         "pageEarliestCoveredUpdateMS": summary(samples.compactMap { $0["earliestCoveredUpdateMS"] as? Double }),
         "acceptanceSamples": accepted, "pageSamples": samples,
-        "startColor": startColor, "finalColor": finalColor, "singleUndoRestoredStart": effective["accent"] == startColor,
+        "startColor": startColor, "finalColor": finalColor,
+        "singleUndoRestoredStart": effective["accent"] == startColor,
       ]
       try await controller.closeDocument()
       return evidence
@@ -117,12 +134,14 @@ import Testing
   }
 
   @MainActor private func waitForColor(_ expected: String, session: DocumentSession) async throws {
-    let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    let clock = ContinuousClock()
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
     var value: String?
     repeat {
-      value = try await session.webView.callAsyncJavaScript(
-        "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
-        arguments: [:], in: nil, contentWorld: .page) as? String
+      value =
+        try await session.webView.callAsyncJavaScript(
+          "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
+          arguments: [:], in: nil, contentWorld: .page) as? String
       if value == expected { return }
       try await Task.sleep(for: .milliseconds(5))
     } while clock.now < deadline
@@ -132,8 +151,10 @@ import Testing
   private func summary(_ samples: [Double]) -> [String: Double] {
     let values = samples.sorted()
     guard !values.isEmpty else { return [:] }
-    return ["p50": values[(values.count - 1) / 2],
+    return [
+      "p50": values[(values.count - 1) / 2],
       "p95": values[min(values.count - 1, Int(ceil(Double(values.count) * 0.95)) - 1)],
-      "max": values.last!]
+      "max": values.last!,
+    ]
   }
 }

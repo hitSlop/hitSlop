@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
 import HitSlopCore
-import Testing
 import HitSlopTestSupport
+import Testing
 import WebKit
+
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentFilePickerTests {
@@ -14,9 +15,13 @@ import WebKit
     let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = engine.webView
-    defer { window.contentView = nil; window.orderOut(nil) }
+    defer {
+      window.contentView = nil
+      window.orderOut(nil)
+    }
     var completions = 0
     engine.filePicker = DocumentFilePicker { _, _, _, reply in { reply(nil) } }
     for closing in [false, true] {
@@ -37,14 +42,21 @@ import WebKit
     let root = try Fixtures.document()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
     try Data("Selected 🦊 bytes".utf8).write(to: file)
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: file) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: file)
+    }
     let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = engine.webView
     window.orderFront(nil)
-    defer { window.contentView = nil; window.orderOut(nil) }
+    defer {
+      window.contentView = nil
+      window.orderOut(nil)
+    }
     var presentations = 0
     engine.filePicker = DocumentFilePicker { parent, multiple, directories, reply in
       #expect(parent === window && !multiple && !directories)
@@ -53,7 +65,8 @@ import WebKit
       return {}
     }
     let select = {
-      try await engine.webView.callAsyncJavaScript("""
+      try await engine.webView.callAsyncJavaScript(
+        """
         const input = document.createElement('input'); input.type = 'file'; document.body.append(input);
         try {
           return await new Promise(resolve => {
@@ -72,23 +85,31 @@ import WebKit
 
   @Test @MainActor func pickerCompletesCancellationOnceAndRejectsConcurrentRequests() async throws {
     _ = NSApplication.shared
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
     window.orderFront(nil)
     defer { window.orderOut(nil) }
-    var completions = 0, rejected = 0, dismissals = 0
+    var completions = 0
+    var rejected = 0
+    var dismissals = 0
     var selected: (([URL]?) -> Void)?
     let picker = DocumentFilePicker { parent, multiple, directories, reply in
       #expect(parent === window)
       #expect(multiple && !directories)
       selected = reply
-      return { dismissals += 1; reply(nil) }
+      return {
+        dismissals += 1
+        reply(nil)
+      }
     }
     picker.present(in: window, multiple: true, directories: false) { urls in
-      #expect(urls == nil); completions += 1
+      #expect(urls == nil)
+      completions += 1
     }
     #expect(picker.hasPendingSelection)
     picker.present(in: window, multiple: false, directories: false) { urls in
-      #expect(urls == nil); rejected += 1
+      #expect(urls == nil)
+      rejected += 1
     }
     #expect(rejected == 1)
     picker.cancel()

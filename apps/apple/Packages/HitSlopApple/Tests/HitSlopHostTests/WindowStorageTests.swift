@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
 
-@testable import HitSlopHost
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 extension HostTests {
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
@@ -41,7 +41,8 @@ extension HostTests {
     #expect(try await accent() == "#654321")
     #expect(try await setTheme(["unknown": "red"], url: root).code == .rejected)
     // A shared theme file round-trips through the live owner and restyles the page.
-    let exported = try JSONSerialization.jsonObject(with: await commandState("theme.export", url: root)) as? [String: String]
+    let exported =
+      try JSONSerialization.jsonObject(with: await commandState("theme.export", url: root)) as? [String: String]
     let shared = try #require(exported?["file"])
     #expect(try await setTheme([:], url: root, replace: true).ok)
     #expect(try await themeCommand(["type": "importTheme", "file": shared], url: root).ok)
@@ -149,12 +150,14 @@ extension HostTests {
     #expect(try await command("batch", url: root, setTitle("Unsaved while held")).code == .saveFailed)
     await #expect(throws: (any Error).self) { try await session.close() }
     hold.release()
-    let edited = try await session.webView.callAsyncJavaScript("""
-      const edit = document.getElementById('edit');
-      if (!edit) return false;
-      edit.click();
-      return true
-      """, arguments: [:], in: nil, contentWorld: .page) as? Bool
+    let edited =
+      try await session.webView.callAsyncJavaScript(
+        """
+        const edit = document.getElementById('edit');
+        if (!edit) return false;
+        edit.click();
+        return true
+        """, arguments: [:], in: nil, contentWorld: .page) as? Bool
     #expect(edited == true)
     try await session.flush()
     #expect((try await savedValue(root)?["title"] as? String)?.hasPrefix("Edited") == true)
@@ -287,8 +290,10 @@ extension HostTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
-    controller.pageSession(controller.session, didReport: SlopPageIssue(
-      message: "DocumentError: out_of_range", isOperation: true))
+    controller.pageSession(
+      controller.session,
+      didReport: SlopPageIssue(
+        message: "DocumentError: out_of_range", isOperation: true))
     #expect(controller.issueBadge != nil)
     #expect(controller.window?.attachedSheet == nil)
     controller.pageSession(controller.session, saveStatus: .failed(.busy))
@@ -306,12 +311,16 @@ extension HostTests {
     let controller = try await SlopDocumentWindowController.open(
       url: root, telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { failures.append(context) } })
     await controller.waitForPresentation()
-    controller.pageSession(controller.session, didReport: SlopPageIssue(
-      message: "secret document /private/example/document.slop", isOperation: false))
+    controller.pageSession(
+      controller.session,
+      didReport: SlopPageIssue(
+        message: "secret document /private/example/document.slop", isOperation: false))
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
-    #expect(failures.first?.fields(for: .renderer).values.contains(where: { $0.contains("private") || $0.contains("secret") }) == false)
+    #expect(
+      failures.first?.fields(for: .renderer).values.contains(where: { $0.contains("private") || $0.contains("secret") })
+        == false)
     try await controller.session.close()
   }
 
@@ -343,7 +352,8 @@ extension HostTests {
     defer { try? FileManager.default.removeItem(at: root) }
     var failures: [SlopFailureContext] = []
     let controller = try await SlopDocumentWindowController.open(
-      url: root, telemetry: SlopTelemetry { if case .failed(.duplicate, let context) = $0 { failures.append(context) } })
+      url: root, telemetry: SlopTelemetry { if case .failed(.duplicate, let context) = $0 { failures.append(context) } }
+    )
     await controller.waitForPresentation()
     #expect(try await controller.duplicateDocument(to: nil) == nil)
     #expect(failures.isEmpty)

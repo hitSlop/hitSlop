@@ -57,7 +57,10 @@ extension SlopDocumentWindowController {
           try await session.reopenSavedDocument()
         }
         telemetry.send(.breadcrumb(.recovery, .completed))
-      } catch { reportLifecycleFailure(.recovery, error: error); throw error }
+      } catch {
+        reportLifecycleFailure(.recovery, error: error)
+        throw error
+      }
     case .close: try await closeDocument()
     case .retrySave: try await session.retrySave()
     case .discardUnsaved:
@@ -74,14 +77,20 @@ extension SlopDocumentWindowController {
   }
 
   func duplicateDocument(to target: URL?) async throws -> URL? {
-    guard let target else { telemetry.send(.breadcrumb(.duplicate, .cancelled)); return nil }
+    guard let target else {
+      telemetry.send(.breadcrumb(.duplicate, .cancelled))
+      return nil
+    }
     telemetry.send(.breadcrumb(.duplicate, .started))
     try await saveAccepted(for: .duplicate)
     do {
       let copied = try await session.copy(to: try SlopFile.newDocumentURL(target), artwork: await copyArtwork())
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return copied
-    } catch { telemetry.failure(.duplicate, error: error); throw error }
+    } catch {
+      telemetry.failure(.duplicate, error: error)
+      throw error
+    }
   }
 
   /// Shares a copy of the document as a new logical document: everything the page has
@@ -94,7 +103,10 @@ extension SlopDocumentWindowController {
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       try await session.copy(to: copy, artwork: await copyArtwork())
-    } catch { telemetry.failure(.share, error: error); throw error }
+    } catch {
+      telemetry.failure(.share, error: error)
+      throw error
+    }
     guard let view = window?.contentView else { return }
     NSSharingServicePicker(items: [copy]).show(relativeTo: .zero, of: view, preferredEdge: .minY)
     telemetry.send(.breadcrumb(.share, .completed))
@@ -110,14 +122,25 @@ extension SlopDocumentWindowController {
   /// Saves what the document accepted before it is copied: a live page sends unsent text
   /// first; without one, the owner saves what it accepted.
   private func saveAccepted(for operation: SlopTelemetryEvent.Failure) async throws {
-    do { try await session.saveAccepted() } catch { reportLifecycleFailure(operation, error: error); throw error }
+    do { try await session.saveAccepted() } catch {
+      reportLifecycleFailure(operation, error: error)
+      throw error
+    }
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.
-  func reportLifecycleFailure(_ operation: SlopTelemetryEvent.Failure, error: Error,
-                                      format: ExportFormat? = nil) {
-    if SlopFailureContext.isCancellation(error) { telemetry.send(.breadcrumb(operation, .cancelled)); return }
-    if reportedSaveFailure || reportedRendererFailure { telemetry.send(.breadcrumb(operation, .failed)); return }
+  func reportLifecycleFailure(
+    _ operation: SlopTelemetryEvent.Failure, error: Error,
+    format: ExportFormat? = nil
+  ) {
+    if SlopFailureContext.isCancellation(error) {
+      telemetry.send(.breadcrumb(operation, .cancelled))
+      return
+    }
+    if reportedSaveFailure || reportedRendererFailure {
+      telemetry.send(.breadcrumb(operation, .failed))
+      return
+    }
     telemetry.failure(operation, error: error, format: format)
   }
 
@@ -130,8 +153,13 @@ extension SlopDocumentWindowController {
 
   /// The one export path, for the menu and for `slop export` of this open document. A
   /// cancelled picker has no output and emits no success event.
-  func exportDocument(format: ExportFormat, to output: URL?, deadline: NativeCommandDeadline = NativeCommandDeadline()) async throws {
-    guard let output else { telemetry.send(.breadcrumb(.export, .cancelled)); return }
+  func exportDocument(format: ExportFormat, to output: URL?, deadline: NativeCommandDeadline = NativeCommandDeadline())
+    async throws
+  {
+    guard let output else {
+      telemetry.send(.breadcrumb(.export, .cancelled))
+      return
+    }
     telemetry.send(.breadcrumb(.export, .started))
     await waitForPresentation()
     do {
@@ -161,9 +189,13 @@ extension SlopDocumentFailure {
   /// How the coordinator treats a failed window command. Flush and close report a failed
   /// save as the owner's `SaveFailure`, which the save-failure sheet already shows.
   public init(command error: Error) {
-    if error is SaveFailure { self = .save }
-    else if SlopFailureContext.isCancellation(error) { self = .cancelled }
-    else { self.init(error) }
+    if error is SaveFailure {
+      self = .save
+    } else if SlopFailureContext.isCancellation(error) {
+      self = .cancelled
+    } else {
+      self.init(error)
+    }
   }
 }
 

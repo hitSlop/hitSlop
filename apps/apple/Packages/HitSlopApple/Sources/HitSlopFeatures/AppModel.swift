@@ -35,10 +35,16 @@ public struct AppClient {
     commandsEnabled: @escaping @MainActor (UUID, Bool) -> Void,
     noDocumentsOpen: @escaping @MainActor () -> Void
   ) {
-    self.open = open; self.focus = focus; self.perform = perform
-    self.prepareToQuit = prepareToQuit; self.finishQuit = finishQuit; self.cancelQuit = cancelQuit
-    self.replyToQuit = replyToQuit; self.alert = alert
-    self.commandsEnabled = commandsEnabled; self.noDocumentsOpen = noDocumentsOpen
+    self.open = open
+    self.focus = focus
+    self.perform = perform
+    self.prepareToQuit = prepareToQuit
+    self.finishQuit = finishQuit
+    self.cancelQuit = cancelQuit
+    self.replyToQuit = replyToQuit
+    self.alert = alert
+    self.commandsEnabled = commandsEnabled
+    self.noDocumentsOpen = noDocumentsOpen
   }
 }
 
@@ -155,8 +161,9 @@ public struct AppClient {
     var next: SlopDocumentCommand? = first
     while let command = next {
       let result: Result<URL?, SlopDocumentFailure>
-      do { result = .success(try await client.perform(id, command)) }
-      catch { result = .failure(SlopDocumentFailure(error)) }
+      do { result = .success(try await client.perform(id, command)) } catch {
+        result = .failure(SlopDocumentFailure(error))
+      }
       next = finished(command, of: id, result)
     }
     advanceQuit()

@@ -32,7 +32,7 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
   public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
   /// Whether the core refused for this reason.
   public static func matches(_ error: Error) -> Bool {
-    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requiresUpdate.rawValue }
+    if case CoreError.Rejected(let code, _, _) = error { return code == CoreErrorCode.requiresUpdate.rawValue }
     return false
   }
 }
@@ -86,9 +86,9 @@ public struct SlopFile: Sendable {
   /// as `SlopError.invalid`. Storage failures, such as a busy writer lock or a missing
   /// file, pass through with their own message.
   public static func opening<T>(_ open: () throws -> T) throws -> T {
-    do { return try open() }
-    catch let error where SlopRequiresUpdate.matches(error) { throw SlopRequiresUpdate() }
-    catch let CoreError.Rejected(code, message, _) {
+    do { return try open() } catch let error where SlopRequiresUpdate.matches(error) {
+      throw SlopRequiresUpdate()
+    } catch let CoreError.Rejected(code, message, _) {
       throw code == CoreErrorCode.isTemplate.rawValue ? SlopError.template : SlopError.invalid(message)
     }
   }

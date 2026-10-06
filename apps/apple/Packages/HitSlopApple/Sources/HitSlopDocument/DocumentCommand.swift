@@ -7,10 +7,14 @@ import HitSlopCoreBinding
 @MainActor public enum DocumentCommand {
   public typealias Export = @MainActor @Sendable (URL, ExportFormat, URL, NativeCommandDeadline) async throws -> Void
   /// One request written in command `protocol`.
-  public static func run(json: Data, protocol version: Int = HelperProtocol.version, export: Export? = nil) async -> Data {
+  public static func run(json: Data, protocol version: Int = HelperProtocol.version, export: Export? = nil) async
+    -> Data
+  {
     _ = SlopRegistry.prepared
     return await withCheckedContinuation { done in
-      commandRequest(json: String(decoding: json, as: UTF8.self), protocol: UInt64(version), exporter: export.map(NativeExports.init),
+      commandRequest(
+        json: String(decoding: json, as: UTF8.self), protocol: UInt64(version),
+        exporter: export.map(NativeExports.init),
         completion: CommandCompletion { done.resume(returning: $0) })
     }
   }

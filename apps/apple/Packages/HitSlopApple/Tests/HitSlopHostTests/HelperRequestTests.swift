@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
 
-@testable import HitSlopHost
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 extension HostTests {
   /// One request through the helper binary (`hitslop-native request`), and its reply.
@@ -17,15 +17,19 @@ extension HostTests {
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
   }
 
-  @Test(arguments: [false, true]) @MainActor func helperRequestsReadAndEditLiveAndClosedDocuments(live: Bool) async throws {
+  @Test(arguments: [false, true]) @MainActor func helperRequestsReadAndEditLiveAndClosedDocuments(live: Bool)
+    async throws
+  {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = live ? try await SlopDocumentWindowController.open(url: root) : nil
     try await controller?.session.waitUntilReady()
     do {
-      let edit = try await request(["method": "batch", "documentPath": root.path,
-        "ops": #"[{"type":"set","path":["title"],"value":"Batch edit"}]"#])
+      let edit = try await request([
+        "method": "batch", "documentPath": root.path,
+        "ops": #"[{"type":"set","path":["title"],"value":"Batch edit"}]"#,
+      ])
       #expect(edit["ok"] as? Bool == true)
       #expect(edit["ids"] as? [String] == [])
       #expect(edit["sequence"] as? Int != nil)
@@ -36,12 +40,17 @@ extension HostTests {
       #expect((state["value"] as? [String: Any])?["title"] as? String == "Batch edit")
       #expect(state["version"] is String)
       let schema = try JSONSerialization.jsonObject(with: Data(SlopFile(url: root).descriptor.utf8)) as! [String: Any]
-      #expect(NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema))
+      #expect(
+        NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema)
+      )
       // A malformed batch is refused before anything is sent: not applied.
       let malformed = try await request(["method": "batch", "documentPath": root.path, "ops": "{}"])
       #expect(malformed["ok"] as? Bool == false && malformed["code"] as? String == "rejected")
       try await controller?.session.close()
-    } catch { try? await controller?.session.close(); throw error }
+    } catch {
+      try? await controller?.session.close()
+      throw error
+    }
   }
 
   @Test @MainActor func rejectedEditsPreserveSavedStateAndComposingDraft() async throws {
@@ -52,19 +61,23 @@ extension HostTests {
     let before = try await savedValue(root)
     let saved = try Data(contentsOf: root)
     let view = controller.session.webView
-    _ = try await view.callAsyncJavaScript("""
+    _ = try await view.callAsyncJavaScript(
+      """
       const input = document.querySelector('#draft');
       input.dispatchEvent(new CompositionEvent('compositionstart'));
       input.value = 'User is still typing';
       input.dispatchEvent(new InputEvent('input', {bubbles:true, isComposing:true}));
       return true;
       """, arguments: [:], in: nil, contentWorld: .page)
-    let rejected = try await request(["method": "batch", "documentPath": root.path,
-      "ops": #"[{"type":"set","path":["missing"],"value":true}]"#])
+    let rejected = try await request([
+      "method": "batch", "documentPath": root.path,
+      "ops": #"[{"type":"set","path":["missing"],"value":true}]"#,
+    ])
     #expect(rejected["ok"] as? Bool == false)
     #expect(rejected["code"] as? String == "rejected" && rejected["reason"] as? String == "path_not_found")
     #expect(try Data(contentsOf: root) == saved)
-    #expect(try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "User is still typing")
+    #expect(
+      try await view.evaluateJavaScript("document.querySelector('#draft').value") as? String == "User is still typing")
     // Close commits a composition in progress instead of refusing to close.
     try await controller.session.close()
     let after = try await savedValue(root)
@@ -78,7 +91,9 @@ extension HostTests {
       let app = stage.appendingPathComponent("assets/app.js")
       let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
         of: "const doc = ctx.document;",
-        with: "const doc = ctx.document; ctx.capture.onPrepare(() => { if (doc.current.title === 'Capture fails') throw new Error('intentional capture failure'); });")
+        with:
+          "const doc = ctx.document; ctx.capture.onPrepare(() => { if (doc.current.title === 'Capture fails') throw new Error('intentional capture failure'); });"
+      )
       try Data(script.utf8).write(to: app)
     }
     let folder = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)

@@ -36,12 +36,15 @@ enum SlopThemeColor {
   }
   /// `graphiteDeep` or `graphite-deep` as "Graphite Deep".
   static func label(_ token: String) -> String {
-    var words: [String] = [], word = ""
+    var words: [String] = []
+    var word = ""
     for character in token {
       if character == "-" || (character.isUppercase && !word.isEmpty) {
         if !word.isEmpty { words.append(word) }
         word = character == "-" ? "" : String(character)
-      } else { word.append(character) }
+      } else {
+        word.append(character)
+      }
     }
     if !word.isEmpty { words.append(word) }
     return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
@@ -164,7 +167,8 @@ struct SlopThemeEditor: View {
       .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
       Divider()
       if model.rows.isEmpty {
-        ContentUnavailableView("No Colors", systemImage: "paintpalette",
+        ContentUnavailableView(
+          "No Colors", systemImage: "paintpalette",
           description: Text("This template has no theme colors."))
       } else {
         ScrollView {
@@ -199,27 +203,41 @@ private struct SlopThemeRow: View {
   @FocusState private var editing: Bool
 
   var body: some View {
-    let value = model.value(row), changed = model.isChanged(row)
+    let value = model.value(row)
+    let changed = model.isChanged(row)
     VStack(alignment: .leading, spacing: 2) {
       HStack(spacing: 8) {
-        ColorPicker(row.label, selection: Binding(
-          get: { SlopThemeColor.color(value) ?? CGColor(gray: 0, alpha: 1) },
-          set: { color in if let hex = SlopThemeColor.hex(color) { model.set(row, hex) } }),
-          supportsOpacity: true)
-          .labelsHidden()
+        ColorPicker(
+          row.label,
+          selection: Binding(
+            get: { SlopThemeColor.color(value) ?? CGColor(gray: 0, alpha: 1) },
+            set: { color in if let hex = SlopThemeColor.hex(color) { model.set(row, hex) } }),
+          supportsOpacity: true
+        )
+        .labelsHidden()
         Circle().fill(Color.accentColor).frame(width: 5, height: 5).opacity(changed ? 1 : 0)
           .accessibilityHidden(true)
         // Middle truncation keeps the words that tell similar colors apart ("Done … Deep").
         Text(row.label).lineLimit(1).truncationMode(.middle).help(row.id).layoutPriority(1)
         Spacer(minLength: 4)
-        TextField(row.label, text: Binding(get: { text }, set: { text = $0; edited = true }))
-          .labelsHidden()
-          .font(.system(.caption, design: .monospaced))
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 80)
-          .focused($editing)
-          .onSubmit(finish)
-        Button { model.reset(row) } label: {
+        TextField(
+          row.label,
+          text: Binding(
+            get: { text },
+            set: {
+              text = $0
+              edited = true
+            })
+        )
+        .labelsHidden()
+        .font(.system(.caption, design: .monospaced))
+        .textFieldStyle(.roundedBorder)
+        .frame(width: 80)
+        .focused($editing)
+        .onSubmit(finish)
+        Button {
+          model.reset(row)
+        } label: {
           Image(systemName: "arrow.uturn.backward").frame(width: 18, height: 18).contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)

@@ -1,8 +1,8 @@
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
-import Testing
 import HitSlopTestSupport
+import Testing
 import WebKit
 
 @testable import HitSlopDocument
@@ -13,18 +13,26 @@ import WebKit
     let root = try Fixtures.document()
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
-    session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
-      globalThis.cspViolations = [];
-      addEventListener('securitypolicyviolation', event => cspViolations.push(event.violatedDirective));
-      """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    session.webView.configuration.userContentController.addUserScript(
+      WKUserScript(
+        source: """
+          globalThis.cspViolations = [];
+          addEventListener('securitypolicyviolation', event => cspViolations.push(event.violatedDirective));
+          """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     session.load()
     do {
       try await session.waitUntilReady()
-      _ = try await session.webView.callAsyncJavaScript("await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
-      let violations = try await session.webView.callAsyncJavaScript("return cspViolations", arguments: [:], in: nil, contentWorld: .page) as? [String]
+      _ = try await session.webView.callAsyncJavaScript(
+        "await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
+      let violations =
+        try await session.webView.callAsyncJavaScript(
+          "return cspViolations", arguments: [:], in: nil, contentWorld: .page) as? [String]
       #expect(violations == [])
       try await session.close()
-    } catch { try? await session.close(); throw error }
+    } catch {
+      try? await session.close()
+      throw error
+    }
   }
 
   // The native dispatch boundary must reject an oversized or unknown-field request
@@ -42,7 +50,8 @@ import WebKit
   // A theme can change after config is read but before the app finishes mounting.
   @Test @MainActor func themeChangesDuringMountReachTheReadyPage() async throws {
     let stage = try Fixtures.stage()
-    try Fixtures.writeApp("""
+    try Fixtures.writeApp(
+      """
       export default { async mount() {
         globalThis.mountStarted = true;
         await new Promise(resolve => globalThis.finishMount = resolve);
@@ -54,14 +63,19 @@ import WebKit
     let session = try await DocumentSession.open(url: root)
     session.load()
     do {
-      #expect(await eventually(timeout: .seconds(5)) {
-        (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
-      })
+      #expect(
+        await eventually(timeout: .seconds(5)) {
+          (try? await session.webView.callAsyncJavaScript(
+            "return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
+        })
       _ = try await session.owner.apply(batch: ##"{"intents":[{"type":"setTheme","values":{"accent":"#123456"}}]}"##)
-      _ = try await session.webView.callAsyncJavaScript("finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
+      _ = try await session.webView.callAsyncJavaScript(
+        "finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
       try await session.waitUntilReady()
       func accent() async throws -> String? {
-        try await session.webView.callAsyncJavaScript("return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil, contentWorld: .page) as? String
+        try await session.webView.callAsyncJavaScript(
+          "return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil,
+          contentWorld: .page) as? String
       }
       for _ in 0..<100 {
         if try await accent() == "#123456" { break }
@@ -69,14 +83,18 @@ import WebKit
       }
       #expect(try await accent() == "#123456")
       _ = try await session.owner.apply(batch: #"{"intents":[{"type":"setTheme","values":{"accent":null}}]}"#)
-      let expected = try JSONDecoder().decode([String: String].self, from: Data(try await session.owner.loadTheme().state.effective.utf8))["accent"]
+      let expected = try JSONDecoder().decode(
+        [String: String].self, from: Data(try await session.owner.loadTheme().state.effective.utf8))["accent"]
       for _ in 0..<100 {
         if try await accent() == expected { break }
         try await Task.sleep(for: .milliseconds(10))
       }
       #expect(try await accent() == expected)
       try await session.close()
-    } catch { try? await session.close(); throw error }
+    } catch {
+      try? await session.close()
+      throw error
+    }
   }
 
   // The theme panel's changes are edits: applied in the order made, settled on the page
@@ -101,7 +119,8 @@ import WebKit
     func saved() async throws -> String? {
       let snapshot = try DocumentOwner(url: root, mode: .snapshot)
       defer { Task { try? await snapshot.close() } }
-      return try JSONDecoder().decode([String: String].self, from: Data(try await snapshot.loadTheme().state.effective.utf8))["accent"]
+      return try JSONDecoder().decode(
+        [String: String].self, from: Data(try await snapshot.loadTheme().state.effective.utf8))["accent"]
     }
     do {
       try await session.waitUntilReady()
@@ -124,7 +143,8 @@ import WebKit
         try await session.flush()
         #expect(try await accent() == "#abcabc", "the editor remains live during snapshot rendering")
         let snapshot = try DocumentOwner(url: source, mode: .snapshot)
-        let effective = try JSONDecoder().decode([String: String].self,
+        let effective = try JSONDecoder().decode(
+          [String: String].self,
           from: Data(try await snapshot.loadTheme().state.effective.utf8))
         #expect(effective["accent"] == "#335577")
         try await snapshot.close()
@@ -133,7 +153,10 @@ import WebKit
       session.changeTheme(.set(["accent": "#fedcba"]))
       try await session.close()
       #expect(try await saved() == "#fedcba")
-    } catch { try? await session.close(); throw error }
+    } catch {
+      try? await session.close()
+      throw error
+    }
   }
 
   // Decoding and normalization must never turn a request into anything but an app asset
@@ -143,9 +166,14 @@ import WebKit
     try Data("assets/test.js".utf8).write(to: stage.appendingPathComponent("assets/test.js"))
     let root = try Fixtures.document(stage: stage)
     let shell = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: shell) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: shell)
+    }
     try FileManager.default.createDirectory(at: shell.appendingPathComponent("loro"), withIntermediateDirectories: true)
-    for path in ["loro/test.js", "secret.js"] { try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path)) }
+    for path in ["loro/test.js", "secret.js"] {
+      try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path))
+    }
     let snapshot = try DocumentOwner(url: root, mode: .snapshot)
     let handler = SchemeHandler(assets: snapshot.assets, shell: shell)
     let view = WKWebView()
@@ -160,7 +188,9 @@ import WebKit
       #expect(task.error != nil, "Accepted unsafe resource: \(path)")
       #expect(task.data.isEmpty)
     }
-    for (path, expected) in [("assets/test.js?v=1", "assets/test.js"), ("__shell__/loro/test.js", "shell/loro/test.js")] {
+    for (path, expected) in [
+      ("assets/test.js?v=1", "assets/test.js"), ("__shell__/loro/test.js", "shell/loro/test.js"),
+    ] {
       let task = SchemeTask(URL(string: "slop://app/" + path)!)
       handler.webView(view, start: task)
       await task.completion()
@@ -189,7 +219,10 @@ import WebKit
     let session = try await DocumentSession.open(url: root)
     var resized = false
     let events = SessionEvents()
-    events.resize = { size in resized = true; return size }
+    events.resize = { size in
+      resized = true
+      return size
+    }
     session.delegate = events
     session.load()
     do {
@@ -230,7 +263,10 @@ import WebKit
     let session = try await DocumentSession.open(url: root)
     var resizes = 0
     let events = SessionEvents()
-    events.resize = { size in resizes += 1; return size }
+    events.resize = { size in
+      resizes += 1
+      return size
+    }
     session.delegate = events
     session.load()
     do {
@@ -276,9 +312,19 @@ import WebKit
   private var waiter: CheckedContinuation<Void, Never>?
   init(_ url: URL) { request = URLRequest(url: url) }
   func didReceive(_ response: URLResponse) { calls += 1 }
-  func didReceive(_ data: Data) { calls += 1; self.data.append(data) }
-  func didFinish() { calls += 1; end() }
-  func didFailWithError(_ error: Error) { calls += 1; self.error = error; end() }
+  func didReceive(_ data: Data) {
+    calls += 1
+    self.data.append(data)
+  }
+  func didFinish() {
+    calls += 1
+    end()
+  }
+  func didFailWithError(_ error: Error) {
+    calls += 1
+    self.error = error
+    end()
+  }
   private func end() {
     finished = true
     waiter?.resume()

@@ -1,6 +1,7 @@
 import Foundation
 import HitSlopCore
 import Testing
+
 @testable import HitSlopFeatures
 
 // MARK: Opening
@@ -22,7 +23,9 @@ import Testing
 }
 
 @Test @MainActor func repeatedOpenDuringPreparationUsesOneOperation() async {
-  let native = Native(), catalog = Catalog(), gate = Gate()
+  let native = Native()
+  let catalog = Catalog()
+  let gate = Gate()
   let model = await app(native, catalog: catalog, ids: [documentID])
   native.open = { _, _ in await gate.wait() }
   model.open(documentURL)
@@ -59,7 +62,8 @@ import Testing
 // MARK: Operations
 
 @Test @MainActor func closeWaitsForExportAndRunsOnlyOnce() async {
-  let native = Native(), gate = Gate()
+  let native = Native()
+  let gate = Gate()
   let model = await app(native, open: [documentID])
   native.perform = { _, command in
     if command == .exportPNG { await gate.wait() }
@@ -134,7 +138,8 @@ import Testing
 // Failure: the save-failure sheet ran its own recovery beside the command in progress.
 // Oracle: a recovery chosen during an export runs after it, before a queued close.
 @Test @MainActor func aSaveRecoveryChosenDuringAnotherCommandRunsNext() async {
-  let native = Native(), gate = Gate()
+  let native = Native()
+  let gate = Gate()
   let model = await app(native, open: [documentID])
   native.perform = { _, command in
     if command == .exportPNG { await gate.wait() }
@@ -199,13 +204,17 @@ import Testing
   await model.settled()
   #expect(model.quitPhase == .running && !model.catalog.isQuitting)
   #expect(native.enabled[documentID] == true)
-  #expect(native.calls == [.prepare(documentID), .cancel(documentID), .alert(.failure("Save failed"), nil), .reply(false)])
+  #expect(
+    native.calls == [.prepare(documentID), .cancel(documentID), .alert(.failure("Save failed"), nil), .reply(false)])
   #expect(model.documents.count == 1)
 }
 
 @Test @MainActor func quitWaitsForCreationAndOpeningBeforePreparingTheNewDocument() async {
-  let native = Native(), catalog = Catalog()
-  let creation = Gate(), opening = Gate(), preparation = Gate()
+  let native = Native()
+  let catalog = Catalog()
+  let creation = Gate()
+  let opening = Gate()
+  let preparation = Gate()
   let template = entry("a")
   catalog.chooseDestination = { _ in documentURL }
   catalog.create = { _, url in
@@ -240,7 +249,8 @@ import Testing
 }
 
 @Test @MainActor func quitWaitsForAnExportAndPreparesBeforeReplying() async {
-  let native = Native(), gate = Gate()
+  let native = Native()
+  let gate = Gate()
   let model = await app(native, open: [documentID])
   native.perform = { _, _ in
     await gate.wait()
@@ -259,7 +269,8 @@ import Testing
 }
 
 @Test @MainActor func aFailedPendingCloseCancelsQuitWithOneError() async {
-  let native = Native(), gate = Gate()
+  let native = Native()
+  let gate = Gate()
   let model = await app(native, open: [documentID])
   native.perform = { _, _ in
     await gate.wait()
@@ -279,7 +290,8 @@ import Testing
 // while quit waited dismissed the sheet and did nothing. Oracle: the recovery runs after
 // the operation quit waits for, and quit prepares only after it.
 @Test @MainActor func aSaveRecoveryChosenDuringQuitRunsBeforeQuitPrepares() async {
-  let native = Native(), gate = Gate()
+  let native = Native()
+  let gate = Gate()
   let model = await app(native, open: [documentID])
   native.perform = { _, command in
     if command == .exportPNG { await gate.wait() }
@@ -294,10 +306,11 @@ import Testing
   #expect(model[id: documentID]?.queue.pendingRecovery == .retrySave)
   gate.open()
   await model.settled()
-  #expect(native.calls == [
-    .perform(documentID, .exportPNG), .perform(documentID, .retrySave), .prepare(documentID), .finish(documentID),
-    .reply(true),
-  ])
+  #expect(
+    native.calls == [
+      .perform(documentID, .exportPNG), .perform(documentID, .retrySave), .prepare(documentID), .finish(documentID),
+      .reply(true),
+    ])
 }
 
 @Test @MainActor func aSaveFailureDuringQuitHasNoSecondAlert() async {
@@ -312,7 +325,10 @@ import Testing
 
 @Test @MainActor func quitIncludesADuplicateBeforePreparingDocuments() async {
   let duplicateURL = URL(fileURLWithPath: "/tmp/duplicate.slop")
-  let native = Native(), duplicate = Gate(), opening = Gate(), preparation = Gate()
+  let native = Native()
+  let duplicate = Gate()
+  let opening = Gate()
+  let preparation = Gate()
   let model = await app(native, open: [documentID], ids: [otherID])
   native.perform = { id, command in
     #expect(id == documentID && command == .duplicate)
@@ -337,7 +353,8 @@ import Testing
   #expect(native.replies.isEmpty)
   preparation.open()
   await model.settled()
-  #expect(native.calls.filter { if case .prepare = $0 { true } else { false } } == [.prepare(documentID), .prepare(otherID)])
+  #expect(
+    native.calls.filter { if case .prepare = $0 { true } else { false } } == [.prepare(documentID), .prepare(otherID)])
   #expect(native.replies == [true])
   #expect(model.documents.isEmpty)
 }
@@ -348,8 +365,9 @@ import Testing
   native.prepareToQuit = { id in if id == otherID { throw Failure() } }
   model.requestQuit()
   await model.settled()
-  #expect(native.calls == [
-    .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID),
-    .alert(.failure("Save failed"), nil), .reply(false),
-  ])
+  #expect(
+    native.calls == [
+      .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID),
+      .alert(.failure("Save failed"), nil), .reply(false),
+    ])
 }

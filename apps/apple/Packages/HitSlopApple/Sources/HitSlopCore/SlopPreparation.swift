@@ -9,7 +9,9 @@ public enum SlopPreparation {
   public static let catalog = DispatchQueue(label: "hitslop.catalog", qos: .utility)
 
   /// Runs `work` on `queue`, off the main actor.
-  public static func run<T: Sendable>(on queue: DispatchQueue = documents, _ work: @escaping @Sendable () throws -> T) async throws -> T {
+  public static func run<T: Sendable>(on queue: DispatchQueue = documents, _ work: @escaping @Sendable () throws -> T)
+    async throws -> T
+  {
     try Task.checkCancellation()
     // Always deliver resources produced by work, even after cancellation. The
     // caller owns disposing them before propagating cancellation.

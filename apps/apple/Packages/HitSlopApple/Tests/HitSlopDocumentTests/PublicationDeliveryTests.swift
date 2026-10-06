@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import HitSlopDocument
 
 struct PublicationDeliveryTests {
@@ -12,7 +13,6 @@ struct PublicationDeliveryTests {
     #expect(batch?.items.first?.contains("resync") == true)
   }
 }
-
 
 extension PublicationDeliveryTests {
   @Test func oldDeliveryCannotAcknowledgeAnOverflowResync() throws {

@@ -1,7 +1,8 @@
 import Foundation
 import HitSlopCore
-import Testing
 import HitSlopTestSupport
+import Testing
+
 @testable import HitSlopDocument
 
 /// A measurement, not a CI timing assertion. The active conformance schema stores
@@ -13,19 +14,23 @@ import HitSlopTestSupport
     let days = Int(env["HITSLOP_GROWTH_DAYS"] ?? "30")!
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
-    let output = URL(fileURLWithPath: env["HITSLOP_GROWTH_OUTPUT"] ?? Fixtures.repository.path + "/docs/evidence/document-growth.json")
+    let output = URL(
+      fileURLWithPath: env["HITSLOP_GROWTH_OUTPUT"] ?? Fixtures.repository.path + "/docs/evidence/document-growth.json")
     var records: [[String: Any]] = []
     func report() throws {
       try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try JSONSerialization.data(withJSONObject: [
-        "coreBuild": DocumentOwner.coreBuildID,
-        "baseCommit": env["HITSLOP_GROWTH_COMMIT"] ?? "unknown",
-        "measuredAt": ISO8601DateFormatter().string(from: Date()),
-        "candidate": "Working tree; Debug Swift harness with production Rust owner",
-        "requestedDays": days, "complete": records.count == 2,
-        "method": "Active checklist conformance fixture. Seed120029; 100 strokes per simulated day, 2048 points per stroke serialized as SVG path text, flush each insert, remove each group of25 and flush. Equal workloads compare daily close/reopen against one continuously open owner. Normal automatic checkpoint and retention policy unchanged; no forced compaction. Read-only saved snapshots verify exact values before close; no UI. State JSON is transient verification only. No extrapolated lifetime claim.",
-        "results": records,
-      ], options: [.prettyPrinted, .sortedKeys]).write(to: output, options: .atomic)
+      try JSONSerialization.data(
+        withJSONObject: [
+          "coreBuild": DocumentOwner.coreBuildID,
+          "baseCommit": env["HITSLOP_GROWTH_COMMIT"] ?? "unknown",
+          "measuredAt": ISO8601DateFormatter().string(from: Date()),
+          "candidate": "Working tree; Debug Swift harness with production Rust owner",
+          "requestedDays": days, "complete": records.count == 2,
+          "method":
+            "Active checklist conformance fixture. Seed120029; 100 strokes per simulated day, 2048 points per stroke serialized as SVG path text, flush each insert, remove each group of25 and flush. Equal workloads compare daily close/reopen against one continuously open owner. Normal automatic checkpoint and retention policy unchanged; no forced compaction. Read-only saved snapshots verify exact values before close; no UI. State JSON is transient verification only. No extrapolated lifetime claim.",
+          "results": records,
+        ], options: [.prettyPrinted, .sortedKeys]
+      ).write(to: output, options: .atomic)
     }
     for dailyClose in [true, false] {
       let name = dailyClose ? "daily-close" : "single-open"
@@ -33,11 +38,14 @@ import HitSlopTestSupport
       var owner = try DocumentOwner(url: root)
       var seed: UInt32 = 120029
       func coordinate() -> String {
-        seed = 1664525 &* seed &+ 1013904223
+        seed = 1_664_525 &* seed &+ 1_013_904_223
         return String(format: "%.2f", Double(seed % 100000) / 100)
       }
       var samples: [[String: Any]] = []
-      var commits = 0, flushes = 0, saveMS = 0.0, generatedBytes = 0
+      var commits = 0
+      var flushes = 0
+      var saveMS = 0.0
+      var generatedBytes = 0
       let started = Date()
       func flush() async throws {
         let start = Date()
@@ -52,16 +60,26 @@ import HitSlopTestSupport
           for _ in 0..<100 {
             let stroke = "M" + (0..<2048).map { _ in coordinate() + "," + coordinate() }.joined(separator: "L")
             generatedBytes += stroke.utf8.count
-            let reply = try await owner.apply(batch: Fixtures.json(["intents": [[
-              "type": "insert", "path": ["rows"], "value": ["text": stroke, "done": false]
-            ]]]))
-            commits += 1; ids.append(try #require(reply.ids.first))
+            let reply = try await owner.apply(
+              batch: Fixtures.json([
+                "intents": [
+                  [
+                    "type": "insert", "path": ["rows"], "value": ["text": stroke, "done": false],
+                  ]
+                ]
+              ]))
+            commits += 1
+            ids.append(try #require(reply.ids.first))
             try await flush()
             if ids.count == 25 {
-              _ = try await owner.apply(batch: Fixtures.json(["intents": ids.map {
-                ["type": "remove", "path": ["rows"], "id": $0] as [String: Any]
-              }]))
-              commits += 1; ids.removeAll()
+              _ = try await owner.apply(
+                batch: Fixtures.json([
+                  "intents": ids.map {
+                    ["type": "remove", "path": ["rows"], "id": $0] as [String: Any]
+                  }
+                ]))
+              commits += 1
+              ids.removeAll()
               try await flush()
             }
           }
@@ -87,7 +105,9 @@ import HitSlopTestSupport
             sample["closedBytes"] = closed.checkpointBytes + closed.updateBytes
           }
           samples.append(sample)
-          print("Growth \(name): day \(day), \(meta.checkpointBytes + meta.updateBytes) saved bytes, \(generatedBytes) geometry bytes, \(commits) commits")
+          print(
+            "Growth \(name): day \(day), \(meta.checkpointBytes + meta.updateBytes) saved bytes, \(generatedBytes) geometry bytes, \(commits) commits"
+          )
         }
       } catch {
         failure = error.localizedDescription

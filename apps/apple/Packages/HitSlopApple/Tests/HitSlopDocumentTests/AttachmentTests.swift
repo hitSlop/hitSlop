@@ -1,10 +1,11 @@
 import AppKit
-import Foundation
 import CryptoKit
+import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
-import Testing
 import HitSlopTestSupport
+import Testing
+
 @testable import HitSlopDocument
 
 // The core owns attachment storage (crates/hitslop-core/tests/file.rs); these prove the
@@ -14,7 +15,10 @@ import HitSlopTestSupport
     _ = NSApplication.shared
     let root = try Fixtures.native()
     let copy = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: copy) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: copy)
+    }
     let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
@@ -38,7 +42,10 @@ import HitSlopTestSupport
     try await expectListed()
     #expect(try await bytes(root) == data)
     // A copy of the open document carries the attachment.
-    let preview = try Fixtures.png(width: 64, height: 64) { NSColor.systemRed.setFill(); $0.fill() }
+    let preview = try Fixtures.png(width: 64, height: 64) {
+      NSColor.systemRed.setFill()
+      $0.fill()
+    }
     try await engine.copy(to: copy, artwork: SlopRenderedArtwork(preview: preview, icon: nil))
     #expect(try await bytes(copy) == data)
     #expect(Fixtures.hasCustomIcon(copy), "a copy gets its own Finder icon")

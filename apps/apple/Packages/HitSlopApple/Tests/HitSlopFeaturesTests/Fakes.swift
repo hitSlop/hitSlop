@@ -1,6 +1,7 @@
 import Foundation
 import HitSlopCore
 import Testing
+
 @testable import HitSlopFeatures
 
 let documentID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
@@ -15,9 +16,15 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
 /// operation does; one it did not set records an issue.
 @MainActor final class Native {
   enum Call: Equatable {
-    case open(UUID), focus(UUID), perform(UUID, SlopDocumentCommand)
-    case prepare(UUID), finish(UUID), cancel(UUID), reply(Bool)
-    case alert(AppAlert, UUID?), noDocuments
+    case open(UUID)
+    case focus(UUID)
+    case perform(UUID, SlopDocumentCommand)
+    case prepare(UUID)
+    case finish(UUID)
+    case cancel(UUID)
+    case reply(Bool)
+    case alert(AppAlert, UUID?)
+    case noDocuments
   }
   var calls: [Call] = []
   /// Whether each window takes commands, as last told.
@@ -30,17 +37,31 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
   var prepareToQuit: @MainActor (UUID) async throws -> Void = { _ in Issue.record("unexpected prepareToQuit") }
   var finishQuit: @MainActor (UUID) async throws -> Void = { _ in Issue.record("unexpected finishQuit") }
 
-  var performed: [SlopDocumentCommand] { calls.compactMap { if case .perform(_, let command) = $0 { command } else { nil } } }
+  var performed: [SlopDocumentCommand] {
+    calls.compactMap { if case .perform(_, let command) = $0 { command } else { nil } }
+  }
   var alerts: [Call] { calls.filter { if case .alert = $0 { true } else { false } } }
   var replies: [Bool] { calls.compactMap { if case .reply(let allowed) = $0 { allowed } else { nil } } }
 
   var client: AppClient {
     AppClient(
-      open: { id, url in self.calls.append(.open(id)); try await self.open(id, url) },
+      open: { id, url in
+        self.calls.append(.open(id))
+        try await self.open(id, url)
+      },
       focus: { self.calls.append(.focus($0)) },
-      perform: { id, command in self.calls.append(.perform(id, command)); return try await self.perform(id, command) },
-      prepareToQuit: { self.calls.append(.prepare($0)); try await self.prepareToQuit($0) },
-      finishQuit: { self.calls.append(.finish($0)); try await self.finishQuit($0) },
+      perform: { id, command in
+        self.calls.append(.perform(id, command))
+        return try await self.perform(id, command)
+      },
+      prepareToQuit: {
+        self.calls.append(.prepare($0))
+        try await self.prepareToQuit($0)
+      },
+      finishQuit: {
+        self.calls.append(.finish($0))
+        try await self.finishQuit($0)
+      },
       cancelQuit: { self.calls.append(.cancel($0)) },
       replyToQuit: { self.calls.append(.reply($0)) },
       alert: { self.calls.append(.alert($0, $1)) },
@@ -51,7 +72,14 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
 
 /// The catalog's side: listings it is given, and the calls it receives.
 @MainActor final class Catalog {
-  enum Call: Equatable { case local, refreshLocal(Bool), recents, recent(URL), choose(String), create(String) }
+  enum Call: Equatable {
+    case local
+    case refreshLocal(Bool)
+    case recents
+    case recent(URL)
+    case choose(String)
+    case create(String)
+  }
   var calls: [Call] = []
   var local: @MainActor () async -> AsyncStream<CatalogSnapshot> = { AsyncStream { $0.finish() } }
   var refreshLocal: @MainActor (Bool) async -> Void = { _ in }
@@ -71,12 +99,30 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
 
   var client: CatalogClient {
     CatalogClient(
-      local: { self.calls.append(.local); return await self.local() },
-      refreshLocal: { self.calls.append(.refreshLocal($0)); await self.refreshLocal($0) },
-      recents: { self.calls.append(.recents); return await self.recents() },
-      recent: { self.calls.append(.recent($0)); return await self.recent($0) },
-      chooseDestination: { self.calls.append(.choose($0.id)); return try await self.chooseDestination($0) },
-      create: { entry, url in self.calls.append(.create(entry.id)); return try await self.create(entry, url) })
+      local: {
+        self.calls.append(.local)
+        return await self.local()
+      },
+      refreshLocal: {
+        self.calls.append(.refreshLocal($0))
+        await self.refreshLocal($0)
+      },
+      recents: {
+        self.calls.append(.recents)
+        return await self.recents()
+      },
+      recent: {
+        self.calls.append(.recent($0))
+        return await self.recent($0)
+      },
+      chooseDestination: {
+        self.calls.append(.choose($0.id))
+        return try await self.chooseDestination($0)
+      },
+      create: { entry, url in
+        self.calls.append(.create(entry.id))
+        return try await self.create(entry, url)
+      })
   }
 }
 
@@ -124,6 +170,7 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
   return model
 }
 
-func entry(_ id: String, _ title: String = "Counter", source: CatalogEntry.Source = .local(documentURL)) -> CatalogEntry {
+func entry(_ id: String, _ title: String = "Counter", source: CatalogEntry.Source = .local(documentURL)) -> CatalogEntry
+{
   CatalogEntry(id: id, source: source, title: title)
 }

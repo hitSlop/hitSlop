@@ -1,16 +1,19 @@
 import Foundation
-@testable import HitSlopCatalog
 import HitSlopCore
 import HitSlopFeatures
 import HitSlopTestSupport
 import Testing
 
+@testable import HitSlopCatalog
 
 @MainActor private func coordinator(
   _ chosen: Locked<[CatalogEntry]>, alerts: Locked<[AppAlert]> = Locked([]), templates: URL
 ) -> SlopApplicationCoordinator {
   var client = CatalogClient.empty
-  client.chooseDestination = { entry in chosen.modify { $0.append(entry) }; return nil }
+  client.chooseDestination = { entry in
+    chosen.modify { $0.append(entry) }
+    return nil
+  }
   return SlopApplicationCoordinator(
     templatesURL: templates, presentsWindows: false, catalogClient: client,
     alert: { alert, _ in alerts.modify { $0.append(alert) } })
@@ -39,7 +42,8 @@ import Testing
   defer { try? FileManager.default.removeItem(at: folder) }
   let file = folder.appendingPathComponent("damaged.slop")
   try Data("not a hitSlop file".utf8).write(to: file)
-  let chosen = Locked<[CatalogEntry]>([]), alerts = Locked<[AppAlert]>([])
+  let chosen = Locked<[CatalogEntry]>([])
+  let alerts = Locked<[AppAlert]>([])
   let app = coordinator(chosen, alerts: alerts, templates: folder)
 
   app.openDocument(file)

@@ -2,8 +2,9 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopDocument
-import Testing
 import HitSlopTestSupport
+import Testing
+
 @testable import HitSlopHost
 
 @Test func themeColorsUseThePalettesOneSpelling() throws {
@@ -59,7 +60,8 @@ import HitSlopTestSupport
   #expect(!panel.frame.intersects(window.frame))
   // The panel keeps the slop's height and scrolls its colors; its content never sizes it.
   try await Task.sleep(for: .milliseconds(200))
-  #expect(panel.frame.height == window.frame.height && panel.frame.maxY == window.frame.maxY,
+  #expect(
+    panel.frame.height == window.frame.height && panel.frame.maxY == window.frame.maxY,
     "panel \(panel.frame) beside window \(window.frame)")
   let editor = try #require(controller.themeEditor)
   #expect(Array(editor.rows.map(\.id).prefix(2)) == ["paper", "accent"], "authored order")
@@ -67,9 +69,10 @@ import HitSlopTestSupport
   let accent = try #require(editor.rows.first { $0.id == "accent" })
   editor.set(accent, "#123456")
   try await controller.session.flush()
-  let painted = try await controller.session.webView.callAsyncJavaScript(
-    "return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil,
-    contentWorld: .page) as? String
+  let painted =
+    try await controller.session.webView.callAsyncJavaScript(
+      "return document.documentElement.style.getPropertyValue('--slop-accent')", arguments: [:], in: nil,
+      contentWorld: .page) as? String
   #expect(painted == "#123456")
   #expect(editor.isChanged(accent) && editor.hasChanges)
 
@@ -84,7 +87,8 @@ import HitSlopTestSupport
 private func themeWindowFixture() throws -> URL {
   // More colors than fit beside the window, so the list must scroll.
   let extra = (0..<30).map { ",\"color\($0)\":\"#000000\"" }.joined()
-  let stage = try Fixtures.minimalStage(slug: "theme-fixture", theme: ##"{"paper":"#ffffff","accent":"#335577""## + extra + "}")
+  let stage = try Fixtures.minimalStage(
+    slug: "theme-fixture", theme: ##"{"paper":"#ffffff","accent":"#335577""## + extra + "}")
   return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("theme.slop"))
 }
 

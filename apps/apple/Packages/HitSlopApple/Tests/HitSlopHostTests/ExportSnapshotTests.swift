@@ -2,6 +2,7 @@ import Foundation
 import HitSlopCore
 import HitSlopTestSupport
 import Testing
+
 @testable import HitSlopDocument
 @testable import HitSlopHost
 
@@ -11,7 +12,10 @@ extension HostTests {
   @Test @MainActor func acquiredExportSnapshotMayFinishAfterDiscardAndClose() async throws {
     let root = try contractFixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: output) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: output)
+    }
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()

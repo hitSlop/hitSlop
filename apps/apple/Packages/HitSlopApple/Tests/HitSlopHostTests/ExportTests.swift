@@ -3,12 +3,12 @@ import Darwin
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
 
-@testable import HitSlopHost
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 extension HostTests {
   @Test @MainActor func captureDoesNotTouchTheEditorDuringResize() async throws {
@@ -17,7 +17,8 @@ extension HostTests {
     let controller = try await SlopDocumentWindowController.open(url: root)
     try await controller.session.waitUntilReady()
     let view = controller.session.webView
-    _ = try await view.evaluateJavaScript("""
+    _ = try await view.evaluateJavaScript(
+      """
       globalThis.editorCaptureCalls = 0;
       __slop.capture.onPrepare(() => { globalThis.editorCaptureCalls++; }); true
       """)
@@ -46,9 +47,11 @@ extension HostTests {
         #expect(pdf.string?.contains("PDF color") == true)
         let page = try #require(pdf.page(at: 0)?.pageRef)
         let bounds = page.getBoxRect(.mediaBox)
-        let context = try #require(CGContext(data: nil, width: Int(bounds.width), height: Int(bounds.height),
-          bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let context = try #require(
+          CGContext(
+            data: nil, width: Int(bounds.width), height: Int(bounds.height),
+            bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         context.setFillColor(NSColor.white.cgColor)
         context.fill(bounds)
         context.drawPDFPage(page)
@@ -65,12 +68,14 @@ extension HostTests {
         #expect(abs(pdfColor.redComponent - pngColor.redComponent) < 0.03)
         #expect(abs(pdfColor.greenComponent - pngColor.greenComponent) < 0.03)
         #expect(abs(pdfColor.blueComponent - pngColor.blueComponent) < 0.03)
-        #expect(try await session.webView.evaluateJavaScript(
-          "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
+        #expect(
+          try await session.webView.evaluateJavaScript(
+            "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
       }
       // Capture must restore the editor's decorative background.
-      let editorBackground = try await session.webView.evaluateJavaScript(
-        "getComputedStyle(document.querySelector('.checklist-shell')).backgroundImage") as? String
+      let editorBackground =
+        try await session.webView.evaluateJavaScript(
+          "getComputedStyle(document.querySelector('.checklist-shell')).backgroundImage") as? String
       #expect(editorBackground?.contains("gradient") == true)
     } catch {
       try await session.close()
@@ -102,7 +107,9 @@ extension HostTests {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let folder = root.deletingLastPathComponent()
-    guard try folder.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames == false
+    guard
+      try folder.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]).volumeSupportsCaseSensitiveNames
+        == false
     else { return }
     let alias = folder.appendingPathComponent(root.lastPathComponent.lowercased())
     #expect(alias.lastPathComponent != root.lastPathComponent)
@@ -134,7 +141,9 @@ extension HostTests {
     #expect(try await savedValue(root) == initial)
     let rows = try #require(initial?["tasks"] as? [[String: Any]])
     func batch(_ field: String) async throws {
-      let ops = rows.map { ["type": "set", "path": ["tasks", ["id": $0["$id"]!], field], "value": true] as [String: Any] }
+      let ops = rows.map {
+        ["type": "set", "path": ["tasks", ["id": $0["$id"]!], field], "value": true] as [String: Any]
+      }
       let text = String(decoding: try JSONSerialization.data(withJSONObject: ops), as: UTF8.self)
       #expect(try await command("batch", url: root, ["ops": text]).ok)
     }
@@ -150,11 +159,14 @@ extension HostTests {
     let pdf = try await SlopRenderer.exportPDFData(session: session)
     #expect(PDFDocument(data: pdf)?.pageCount ?? 0 > 0)
     #expect(PDFDocument(data: pdf)?.string?.contains("A little breathing room.") == true)
-    _ = try await view.evaluateJavaScript("[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
+    _ = try await view.evaluateJavaScript(
+      "[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
     let filedPDF = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
     #expect(filedPDF.string?.contains("A little breathing room.") == true)
     #expect(filedPDF.string?.contains("Filed tasks") == false)
-    #expect(try await view.evaluateJavaScript("document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
+    #expect(
+      try await view.evaluateJavaScript(
+        "document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
     #expect(try await savedValue(root) == filed)
     try await session.close()
@@ -193,7 +205,11 @@ extension HostTests {
     try await closeWindow(root)
     #expect(SlopArtwork.png(root, .preview) == first, "an unchanged document keeps its artwork")
     #expect(!Fixtures.hasCustomIcon(root))
-    try await closeWindow(root, edits: #"[{"type":"insert","path":["tasks"],"value":{"text":"Written as the window closed","done":false,"archived":false}}]"#)
+    try await closeWindow(
+      root,
+      edits:
+        #"[{"type":"insert","path":["tasks"],"value":{"text":"Written as the window closed","done":false,"archived":false}}]"#
+    )
     #expect(SlopArtwork.png(root, .preview) != first)
     #expect(Fixtures.hasCustomIcon(root), "Finder shows the new artwork as the file's icon")
   }
@@ -203,16 +219,21 @@ extension HostTests {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let tasks = (0..<300).map { index -> [String: Any] in
-      ["type": "insert", "path": ["tasks"], "id": String(format: "%026d", index + 1), "value": ["text": "Long task \(index)", "done": false, "archived": false]]
+      [
+        "type": "insert", "path": ["tasks"], "id": String(format: "%026d", index + 1),
+        "value": ["text": "Long task \(index)", "done": false, "archived": false],
+      ]
     }
     let ops = String(decoding: try JSONSerialization.data(withJSONObject: tasks), as: UTF8.self)
     #expect(try await command("batch", url: root, ["ops": ops]).ok)
     // Full length at 2x exceeds the PNG raster limit; the preview must not.
     let preview = try #require(NSBitmapImageRep(data: try await SlopRenderer.previewPNGData(url: root)))
     #expect(preview.pixelsWide == 960 && preview.pixelsHigh == 960 * 3)  // 480pt wide at 2x, capped at 3:1
-    let pdf = try #require(PDFDocument(data: try await SlopRenderer.withRenderSession(url: root) {
-      try await SlopRenderer.exportPDFData(session: $0)
-    }))
+    let pdf = try #require(
+      PDFDocument(
+        data: try await SlopRenderer.withRenderSession(url: root) {
+          try await SlopRenderer.exportPDFData(session: $0)
+        }))
     let page = try #require(pdf.page(at: 0))
     #expect(page.bounds(for: .mediaBox).height > 5000)
   }
@@ -226,7 +247,9 @@ extension HostTests {
       let app = stage.appendingPathComponent("assets/app.js")
       let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
         of: "const doc = ctx.document;",
-        with: "const doc = ctx.document; ctx.capture.onPrepare(() => { if (ctx.capture.isRenderer()) throw new Error('capture test failure'); });")
+        with:
+          "const doc = ctx.document; ctx.capture.onPrepare(() => { if (ctx.capture.isRenderer()) throw new Error('capture test failure'); });"
+      )
       try Data(script.utf8).write(to: app)
     }
     defer { try? FileManager.default.removeItem(at: root) }
@@ -240,8 +263,9 @@ extension HostTests {
     let artwork = await SlopRenderer.artwork(session: session, telemetry: SlopTelemetry { _ in })
     #expect(artwork.preview == nil && artwork.icon == nil)
     #expect(session.capturing == false)
-    #expect(try await session.webView.evaluateJavaScript(
-      "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
+    #expect(
+      try await session.webView.evaluateJavaScript(
+        "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
     try await session.close(artwork: artwork)
     #expect(SlopArtwork.png(root, .preview) == oldPreview)
   }
@@ -256,7 +280,8 @@ extension HostTests {
     // blob, though nothing references it once the draft is saved.
     let blob = try Fixtures.png()
     let id = try await attach(blob, at: ["title"], url: root)
-    _ = try await session.webView.evaluateJavaScript("""
+    _ = try await session.webView.evaluateJavaScript(
+      """
       const input = document.querySelector('#draft'); input.value = 'Snapshot draft';
       input.dispatchEvent(new Event('input', {bubbles:true})); true
       """)
@@ -268,9 +293,11 @@ extension HostTests {
       try await session.close()
       let read = try await command("attachments.read", url: source, ["attachmentID": id])
       #expect((read.state as? [String: Any])?["bytes"] as? String == blob.base64EncodedString())
-      let pdf = try #require(PDFDocument(data: try await SlopRenderer.withRenderSession(url: source) {
-        try await SlopRenderer.exportPDFData(session: $0)
-      }))
+      let pdf = try #require(
+        PDFDocument(
+          data: try await SlopRenderer.withRenderSession(url: source) {
+            try await SlopRenderer.exportPDFData(session: $0)
+          }))
       #expect(pdf.string?.contains("Snapshot draft") == true)
       #expect(pdf.string?.contains("Later edit") == false)
       #expect(try await SlopRenderer.iconPNGData(url: source) == nil)
@@ -286,9 +313,14 @@ extension HostTests {
     session.load()
     try await session.waitUntilReady()
     let hold = try Fixtures.DatabaseHold(root)
-    _ = try await session.owner.apply(batch: Fixtures.json(["intents": [[
-      "type": "set", "path": ["title"], "value": "Unsaved edit"
-    ]]]))
+    _ = try await session.owner.apply(
+      batch: Fixtures.json([
+        "intents": [
+          [
+            "type": "set", "path": ["title"], "value": "Unsaved edit",
+          ]
+        ]
+      ]))
     var rendered = false
     await #expect(throws: (any Error).self) {
       try await session.withCaptureSnapshot { _ in rendered = true }
@@ -302,12 +334,12 @@ extension HostTests {
   @Test @MainActor func missingExportUsesFreshReadOnlyApp() async throws {
     let root = try contractFixture { stage in
       let script = """
-      export default { mount(ctx, target) {
-        const root = document.createElement('main'); root.dataset.hitslopRoot = '';
-        root.textContent = 'Fallback: ' + ctx.document.current.title;
-        target.append(root); return { unmount() { root.remove(); } };
-      } };
-      """
+        export default { mount(ctx, target) {
+          const root = document.createElement('main'); root.dataset.hitslopRoot = '';
+          root.textContent = 'Fallback: ' + ctx.document.current.title;
+          target.append(root); return { unmount() { root.remove(); } };
+        } };
+        """
       try Data(script.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
@@ -326,10 +358,17 @@ extension HostTests {
   @Test @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws {
     let root = try contractFixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: output) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: output)
+    }
     var events: [SlopTelemetryEvent] = []
     let controller = try await SlopDocumentWindowController.open(
-      url: root, telemetry: SlopTelemetry { if case .breadcrumb = $0 { return }; events.append($0) })
+      url: root,
+      telemetry: SlopTelemetry {
+        if case .breadcrumb = $0 { return }
+        events.append($0)
+      })
     try await controller.session.waitUntilReady()
     try await controller.exportDocument(format: .pdf, to: nil)
     #expect(events.isEmpty)

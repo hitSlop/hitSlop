@@ -2,8 +2,8 @@ import AppKit
 import ArgumentParser
 import Foundation
 import HitSlopCore
-import HitSlopHost
 import HitSlopDocument
+import HitSlopHost
 
 @main struct NativeCLI: AsyncParsableCommand {
   /// Select the public adapter before ArgumentParser can execute any document command.
@@ -73,10 +73,13 @@ struct Request: AsyncParsableCommand {
     let method = (try? JSONSerialization.jsonObject(with: input) as? [String: Any])?["method"] as? String
     let export = method == SocketRequest.Method.export.rawValue
     if export { bootstrapApp() }
-    let reply = await DocumentCommand.run(json: input, protocol: clientProtocol, export: export ? Self.exportClosed : nil)
+    let reply = await DocumentCommand.run(
+      json: input, protocol: clientProtocol, export: export ? Self.exportClosed : nil)
     FileHandle.standardOutput.write(reply + [10])
   }
-  @MainActor private static func exportClosed(_ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline) async throws {
+  @MainActor private static func exportClosed(
+    _ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline
+  ) async throws {
     _ = try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
   }
 }

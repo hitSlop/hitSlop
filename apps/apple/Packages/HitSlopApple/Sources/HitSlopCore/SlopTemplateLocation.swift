@@ -31,16 +31,18 @@ public enum SlopTemplateLocation {
       let helpers = executable.deletingLastPathComponent()
       let contents = helpers.deletingLastPathComponent()
       if helpers.lastPathComponent.caseInsensitiveCompare("Helpers") == .orderedSame,
-         contents.lastPathComponent.caseInsensitiveCompare("Contents") == .orderedSame,
-         contents.deletingLastPathComponent().pathExtension.caseInsensitiveCompare("app") == .orderedSame {
+        contents.lastPathComponent.caseInsensitiveCompare("Contents") == .orderedSame,
+        contents.deletingLastPathComponent().pathExtension.caseInsensitiveCompare("app") == .orderedSame
+      {
         roots.append(contents.appendingPathComponent("Resources/StarterTemplates"))
       }
     }
     return roots.contains { url in
       let root = SlopPath.canonical(url).pathComponents
-      return candidate.count > root.count && zip(root, candidate).allSatisfy {
-        $0.caseInsensitiveCompare($1) == .orderedSame
-      }
+      return candidate.count > root.count
+        && zip(root, candidate).allSatisfy {
+          $0.caseInsensitiveCompare($1) == .orderedSame
+        }
     }
   }
 }

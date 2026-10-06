@@ -85,14 +85,16 @@ public struct SlopDocumentRouting {
   public var command: @MainActor (SlopDocumentCommand) -> Void
   /// The page is ready for the first time, or again after a recovery.
   public var pageReady: @MainActor () -> Void
-  public init(command: @escaping @MainActor (SlopDocumentCommand) -> Void, pageReady: @escaping @MainActor () -> Void = {}) {
-    self.command = command; self.pageReady = pageReady
+  public init(
+    command: @escaping @MainActor (SlopDocumentCommand) -> Void, pageReady: @escaping @MainActor () -> Void = {}
+  ) {
+    self.command = command
+    self.pageReady = pageReady
   }
 }
 
 @MainActor
-public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate
-{
+public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate {
   public let url: URL
   public let session: DocumentSession
   let routing: SlopDocumentRouting
@@ -149,7 +151,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     do {
       let controller = try await withTaskCancellationHandler {
         try await preparation.value
-      } onCancel: { preparation.cancel() }
+      } onCancel: {
+        preparation.cancel()
+      }
       if Task.isCancelled || preparation.isCancelled {
         try await controller.finishClose()
         throw CancellationError()
@@ -246,7 +250,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       openingProgress?.finish()
       openingProgress = nil
       revealReadyWindow()
-    } else { showOpeningProgress() }
+    } else {
+      showOpeningProgress()
+    }
   }
 
   public func pageSession(_ session: DocumentSession, resizeContentTo requested: CGSize)
@@ -260,8 +266,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       requested.width = max(CGFloat(WindowBounds.minWidth), CGFloat(WindowBounds.minHeight) * ratio, requested.width)
       requested.height = requested.width / ratio
       let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
-      let factor = min(1, (visible?.width ?? requested.width) / requested.width, (visible?.height ?? requested.height) / requested.height)
-      requested.width *= factor; requested.height *= factor
+      let factor = min(
+        1, (visible?.width ?? requested.width) / requested.width,
+        (visible?.height ?? requested.height) / requested.height)
+      requested.width *= factor
+      requested.height *= factor
     }
     let frame = dynamicSlopWindowFrame(
       current: window.frame, requested: requested,

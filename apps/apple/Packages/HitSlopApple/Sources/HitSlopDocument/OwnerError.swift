@@ -36,7 +36,7 @@ enum RequestOutcome: Equatable {
   init(_ error: Error) {
     switch error {
     case is OwnerReplaced: self = .replaced
-    case let CoreError.Rejected(code, _, opIndex):
+    case CoreError.Rejected(let code, _, let opIndex):
       self = .rejected(reason: CoreErrorCode(rawValue: code) ?? .engineError, opIndex: opIndex.map(Int.init))
     case CoreError.Invalidated: self = .invalidated
     case let error as OwnerError:
@@ -60,21 +60,25 @@ enum RequestOutcome: Equatable {
     }
   }
   private var refusal: (reason: CoreErrorCode?, opIndex: Int?) {
-    if case let .rejected(reason, opIndex) = self { return (reason, opIndex) }
+    if case .rejected(let reason, let opIndex) = self { return (reason, opIndex) }
     return (nil, nil)
   }
 
   /// The page's failure reply for `error`.
   static func page(_ error: Error) -> [String: Any] {
     let outcome = RequestOutcome(error)
-    return PageFailure(code: outcome.code, error: error.localizedDescription, reason: outcome.refusal.reason,
-      opIndex: outcome.refusal.opIndex).json
+    return PageFailure(
+      code: outcome.code, error: error.localizedDescription, reason: outcome.refusal.reason,
+      opIndex: outcome.refusal.opIndex
+    ).json
   }
   /// The socket's failure reply for `error`.
   static func socket(_ error: Error) -> SocketReply {
     let outcome = RequestOutcome(error)
-    return .failure(SocketFailure(error: error.localizedDescription, code: outcome.code,
-      reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex))
+    return .failure(
+      SocketFailure(
+        error: error.localizedDescription, code: outcome.code,
+        reason: outcome.refusal.reason, opIndex: outcome.refusal.opIndex))
   }
 
   /// Native rendering reports the same outcome categories as page and socket requests.
@@ -89,7 +93,8 @@ enum RequestOutcome: Equatable {
     case .saveFailed: kind = .saveFailed
     case .unknown: kind = .failed
     }
-    return OwnerFailure(kind: kind, message: error.localizedDescription,
+    return OwnerFailure(
+      kind: kind, message: error.localizedDescription,
       reason: outcome.refusal.reason?.rawValue, opIndex: outcome.refusal.opIndex.map(UInt32.init))
   }
 }

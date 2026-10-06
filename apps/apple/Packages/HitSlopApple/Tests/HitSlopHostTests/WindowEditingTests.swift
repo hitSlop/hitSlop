@@ -2,12 +2,12 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
 
-@testable import HitSlopHost
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 extension HostTests {
   @Test @MainActor func nativeWindowExportsLiveEditsAndReleasesOwnership() async throws {
@@ -30,7 +30,9 @@ extension HostTests {
         NSApp.windows.first { $0 !== controller.window && controller.owns($0) })
       #expect(panel.isVisible)
       panel.orderOut(nil)
-      #expect(try await controller.session.webView.evaluateJavaScript("document.body.innerText.trim().length > 0") as? Bool == true)
+      #expect(
+        try await controller.session.webView.evaluateJavaScript("document.body.innerText.trim().length > 0") as? Bool
+          == true)
       #expect(try await command("batch", url: root, setTitle("abcXYZ")).ok)
       #expect(try await savedValue(root)?["title"] as? String == "abcXYZ")
       #expect(try await command("batch", url: root, setTitle("Native socket edit")).ok)
@@ -86,7 +88,10 @@ extension HostTests {
       for (action, expected) in [("undo:", "AGENT"), ("undo:", "abc"), ("redo:", "AGENT"), ("redo:", "PERSON")] {
         #expect(window.firstResponder?.tryToPerform(Selector((action)), with: nil) == true)
         var current: String?
-        try await eventually(timeout: .seconds(1)) { current = try await title(); return current == expected }
+        try await eventually(timeout: .seconds(1)) {
+          current = try await title()
+          return current == expected
+        }
         #expect(current == expected)
         #expect(try await webView.evaluateJavaScript("document.getElementById('draft').value") as? String == expected)
       }
@@ -122,18 +127,27 @@ extension HostTests {
     #expect(window.undoManager?.canUndo == true)
     #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
     var state: [String: Any] = [:]
-    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["hits"] as? Int == 0 }
+    try await eventually(timeout: .seconds(1)) {
+      state = try await saved()
+      return state["hits"] as? Int == 0
+    }
     #expect(state["hits"] as? Int == 0, "the agent's edit goes first")
     #expect(state["title"] as? String == "abcXYZ")
     #expect(window.firstResponder?.tryToPerform(Selector(("undo:")), with: nil) == true)
-    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["title"] as? String == "abc" }
+    try await eventually(timeout: .seconds(1)) {
+      state = try await saved()
+      return state["title"] as? String == "abc"
+    }
     #expect(state["title"] as? String == "abc")
     #expect(try await webView.evaluateJavaScript("\(field).value") as? String == "abc")
     await eventually(timeout: .seconds(1)) { window.undoManager?.canUndo == false }
     #expect(window.undoManager?.canUndo == false)
     #expect(window.undoManager?.canRedo == true)
     #expect(window.firstResponder?.tryToPerform(Selector(("redo:")), with: nil) == true)
-    try await eventually(timeout: .seconds(1)) { state = try await saved(); return state["title"] as? String == "abcXYZ" }
+    try await eventually(timeout: .seconds(1)) {
+      state = try await saved()
+      return state["title"] as? String == "abcXYZ"
+    }
     #expect(state["title"] as? String == "abcXYZ")
     try await controller.finishClose()
   }

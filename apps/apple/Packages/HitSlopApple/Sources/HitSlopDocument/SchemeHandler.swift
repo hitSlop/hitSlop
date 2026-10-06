@@ -18,7 +18,8 @@ import WebKit
   }
   /// The page shell owns every page; a document supplies only its app's assets.
   nonisolated private static let visiblePage = Data(
-    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title><link rel=\"stylesheet\" href=\"/assets/app.css\"></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>".utf8)
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title><link rel=\"stylesheet\" href=\"/assets/app.css\"></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>"
+      .utf8)
   /// Scripts only from the document and the shell; WebAssembly may compile (MilkDrop presets
   /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.
   nonisolated private static let contentSecurityPolicy = AppResourcePolicy.contentSecurityPolicy
@@ -36,9 +37,12 @@ import WebKit
   }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     nextToken += 1
-    let id = ObjectIdentifier(task), token = nextToken
+    let id = ObjectIdentifier(task)
+    let token = nextToken
     tasks[id] = (token, task)
-    let url = task.request.url, shell = shell, assets = assets
+    let url = task.request.url
+    let shell = shell
+    let assets = assets
     let range = task.request.value(forHTTPHeaderField: "Range")
     Self.reads.async { [weak self] in
       let result = Result { try Self.response(url, range: range, shell: shell, assets: assets) }
@@ -59,7 +63,8 @@ import WebKit
     switch result {
     case .success(let response):
       entry.task.didReceive(
-        HTTPURLResponse(url: url!, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: response.headers)!)
+        HTTPURLResponse(
+          url: url!, statusCode: response.status, httpVersion: "HTTP/1.1", headerFields: response.headers)!)
       entry.task.didReceive(response.body)
       entry.task.didFinish()
     case .failure(let error):
@@ -69,7 +74,9 @@ import WebKit
   }
   /// The response for a request. WebKit's media loader asks for byte ranges and fails
   /// without a 206 answer; an asset's range is read from the file without loading the rest.
-  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: AssetReader) throws -> Response {
+  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: AssetReader) throws
+    -> Response
+  {
     guard let url, url.host == "app" else { throw SlopFailure("Unknown resource origin") }
     let isShell = url.path.hasPrefix("/__shell__/")
     if !isShell && url.path == "/" { return whole(visiblePage, type: "text/html; charset=utf-8") }
@@ -94,13 +101,17 @@ import WebKit
     }
   }
   nonisolated private static func headers(_ type: String, length: Int) -> [String: String] {
-    ["Content-Type": type, "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy,
-     "Accept-Ranges": "bytes", "Content-Length": String(length)]
+    [
+      "Content-Type": type, "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy,
+      "Accept-Ranges": "bytes", "Content-Length": String(length),
+    ]
   }
   nonisolated private static func whole(_ data: Data, type: String) -> Response {
     Response(body: data, headers: headers(type, length: data.count))
   }
-  nonisolated private static func ranged(_ range: String?, type: String, length: Int, read: (Range<Int>) throws -> Data) throws -> Response {
+  nonisolated private static func ranged(_ range: String?, type: String, length: Int, read: (Range<Int>) throws -> Data)
+    throws -> Response
+  {
     switch range.map({ ByteRange($0, length: length) }) ?? .whole {
     case .whole:
       return whole(try read(0..<length), type: type)
@@ -121,20 +132,31 @@ import WebKit
 /// this does not parse, or one naming several ranges, gets the whole resource, which HTTP
 /// allows; a range that names nothing that exists is unsatisfiable (416).
 enum ByteRange: Equatable {
-  case whole, part(Range<Int>), unsatisfiable
+  case whole
+  case part(Range<Int>)
+  case unsatisfiable
 
   init(_ header: String, length: Int) {
     let spec = header.trimmingCharacters(in: .whitespaces)
-    guard spec.hasPrefix("bytes="), !spec.contains(",") else { self = .whole; return }
+    guard spec.hasPrefix("bytes="), !spec.contains(",") else {
+      self = .whole
+      return
+    }
     let parts = spec.dropFirst(6).split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
       .map { $0.trimmingCharacters(in: .whitespaces) }
-    guard parts.count == 2 else { self = .whole; return }
+    guard parts.count == 2 else {
+      self = .whole
+      return
+    }
     switch (Int(parts[0]), Int(parts[1])) {
-    case let (first?, last) where first >= 0 && (parts[1].isEmpty || last != nil):
-      if first >= length || (last.map { $0 < first } ?? false) { self = .unsatisfiable; return }
+    case (let first?, let last) where first >= 0 && (parts[1].isEmpty || last != nil):
+      if first >= length || (last.map { $0 < first } ?? false) {
+        self = .unsatisfiable
+        return
+      }
       // Clamped before the inclusive end becomes exclusive, so no endpoint overflows.
       self = .part(first..<(last.map { min($0, length - 1) + 1 } ?? length))
-    case let (nil, suffix?) where parts[0].isEmpty && suffix >= 0:
+    case (nil, let suffix?) where parts[0].isEmpty && suffix >= 0:
       self = suffix == 0 || length == 0 ? .unsatisfiable : .part(max(0, length - suffix)..<length)
     default:
       self = .whole

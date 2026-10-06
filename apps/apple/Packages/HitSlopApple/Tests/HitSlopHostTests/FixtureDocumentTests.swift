@@ -1,11 +1,12 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopTestSupport
 import PDFKit
 import Testing
-import HitSlopTestSupport
-@testable import HitSlopHost
+
 @testable import HitSlopDocument
+@testable import HitSlopHost
 
 extension HostTests {
   @Test @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
@@ -17,8 +18,12 @@ extension HostTests {
     for fixture in entries {
       let root = try Fixtures.document("tests/fixtures/\(fixture.lastPathComponent)/document")
       defer { try? FileManager.default.removeItem(at: root) }
-      let record = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("fixture.json"))) as? [String: Any])
-      let expected = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("expected.json"))) as? NSDictionary)
+      let record = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("fixture.json")))
+          as? [String: Any])
+      let expected = try #require(
+        try JSONSerialization.jsonObject(with: Data(contentsOf: fixture.appendingPathComponent("expected.json")))
+          as? NSDictionary)
       #expect(try await savedValue(root) == expected)
       // Frozen apps check the ABI while mounting; a failed check never becomes ready.
       let controller = try await SlopDocumentWindowController.open(url: root)

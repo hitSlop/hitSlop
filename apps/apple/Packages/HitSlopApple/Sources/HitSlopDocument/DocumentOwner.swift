@@ -48,7 +48,9 @@ public final class DocumentOwner: Sendable {
   public init(url: URL, mode: StoreMode = .document) throws {
     self.mode = mode
     let events = Events()
-    let owner = try storeCall { try SlopFile.opening { try NativeOwner.open(path: url.path, mode: mode, listener: events) } }
+    let owner = try storeCall {
+      try SlopFile.opening { try NativeOwner.open(path: url.path, mode: mode, listener: events) }
+    }
     native = owner
     self.events = events
     file = try SlopFile(url: url, opened: owner.app())
@@ -108,7 +110,8 @@ public final class DocumentOwner: Sendable {
     case .full: return SaveFailure.full
     case .moved: return SaveFailure.moved
     case .rejected:
-      return CoreError.Rejected(code: failure.reason ?? "invalid_request", message: failure.message, opIndex: failure.opIndex)
+      return CoreError.Rejected(
+        code: failure.reason ?? "invalid_request", message: failure.message, opIndex: failure.opIndex)
     case .saveFailed: return SaveFailure.io(failure.message)
     case .failed: return SlopFailure(failure.message)
     }
@@ -118,13 +121,15 @@ public final class DocumentOwner: Sendable {
   }
   /// `submit` admits synchronously, preserving bridge and panel arrival order. The callback
   /// runs after the Rust worker completes; no Swift task is involved in admission.
-  private func submit(_ request: OwnerRequest, view: String? = nil,
+  private func submit(
+    _ request: OwnerRequest, view: String? = nil,
     reply: @escaping @Sendable (Result<OwnerReply, Error>) -> Void
   ) {
-    native.submit(request: request, view: view, completion: Completion { result in
-      if case .failed(let failure) = result { reply(.failure(Self.error(failure))) }
-      else { reply(.success(result)) }
-    })
+    native.submit(
+      request: request, view: view,
+      completion: Completion { result in
+        if case .failed(let failure) = result { reply(.failure(Self.error(failure))) } else { reply(.success(result)) }
+      })
   }
   private func call(_ request: OwnerRequest, view: String? = nil) async throws -> OwnerReply {
     try await withCheckedThrowingContinuation { done in
@@ -138,21 +143,27 @@ public final class DocumentOwner: Sendable {
     guard case .state(let json) = try await call(.state) else { throw SlopFailure("Invalid state response") }
     return json
   }
-  public struct Applied: Sendable { public let sequence: Int; public let ids: [String] }
+  public struct Applied: Sendable {
+    public let sequence: Int
+    public let ids: [String]
+  }
   public func apply(batch: String, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
     guard case .applied(let sequence, let ids) = try await call(.apply(batchJson: batch, origin: origin), view: view)
     else { throw SlopFailure("Invalid apply response") }
     return Applied(sequence: Int(sequence), ids: ids)
   }
   public func undo(redo: Bool = false) async throws -> Int {
-    guard case .applied(let sequence, _) = try await call(.undo(redo: redo)) else { throw SlopFailure("Invalid undo response") }
+    guard case .applied(let sequence, _) = try await call(.undo(redo: redo)) else {
+      throw SlopFailure("Invalid undo response")
+    }
     return Int(sequence)
   }
   func attach(view: String) { native.attach(view: view) }
   /// One document request from the page `view`, as JSON. The owner checks and answers it;
   /// `reply` gets the page's reply, and the owner's refusal when it refused.
   func page(json: String, view: String, reply: @escaping @Sendable (String, Error?) -> Void) {
-    native.page(json: json, view: view, completion: PageAnswer { answer, failure in reply(answer, failure.map(Self.error)) })
+    native.page(
+      json: json, view: view, completion: PageAnswer { answer, failure in reply(answer, failure.map(Self.error)) })
   }
   private final class PageAnswer: PageCompletion {
     let reply: @Sendable (String, OwnerFailure?) -> Void
@@ -170,7 +181,8 @@ public final class DocumentOwner: Sendable {
     guard let bytes = try? JSONSerialization.data(withJSONObject: request.json, options: .withoutEscapingSlashes)
     else { return RequestOutcome.socket(OwnerError.rejected("Invalid document request")).encoded() }
     return await withCheckedContinuation { done in
-      native.request(json: String(decoding: bytes, as: UTF8.self), completion: CommandCompletion { done.resume(returning: $0) })
+      native.request(
+        json: String(decoding: bytes, as: UTF8.self), completion: CommandCompletion { done.resume(returning: $0) })
     }
   }
   /// The saved document at `destination` as a document of its own: its current state
@@ -185,10 +197,15 @@ public final class DocumentOwner: Sendable {
     try await unit(.captureSource(destination: destination.path))
   }
   func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
-    guard case .bytes(let bytes) = try await call(.artwork(name: name)) else { throw SlopFailure("Invalid artwork response") }
+    guard case .bytes(let bytes) = try await call(.artwork(name: name)) else {
+      throw SlopFailure("Invalid artwork response")
+    }
     return bytes
   }
-  struct ThemeRead: Sendable { let state: ThemeState; let revision: Int }
+  struct ThemeRead: Sendable {
+    let state: ThemeState
+    let revision: Int
+  }
   private static func themeRead(_ reply: OwnerReply) throws -> ThemeRead {
     guard case .theme(let state, let sequence) = reply else { throw SlopFailure("Invalid theme response") }
     return ThemeRead(state: state, revision: Int(sequence))
@@ -198,17 +215,19 @@ public final class DocumentOwner: Sendable {
   /// accepted at.
   func enqueueTheme(_ change: SlopThemeChange, reply: @escaping @Sendable (Result<Int, Error>) -> Void) {
     do {
-      let intent: [String: Any] = switch change {
-      case .set(let values): ["type": "setTheme", "values": values]
-      case .resetAll: ["type": "setTheme", "values": [String: String](), "replace": true]
-      case .importFile(let file): ["type": "importTheme", "file": file]
-      }
+      let intent: [String: Any] =
+        switch change {
+        case .set(let values): ["type": "setTheme", "values": values]
+        case .resetAll: ["type": "setTheme", "values": [String: String](), "replace": true]
+        case .importFile(let file): ["type": "importTheme", "file": file]
+        }
       let batch = String(decoding: try JSONSerialization.data(withJSONObject: ["intents": [intent]]), as: UTF8.self)
       submit(.apply(batchJson: batch, origin: .window)) { result in
-        reply(result.flatMap { value in
-          guard case .applied(let sequence, _) = value else { return .failure(SlopFailure("Invalid theme response")) }
-          return .success(Int(sequence))
-        })
+        reply(
+          result.flatMap { value in
+            guard case .applied(let sequence, _) = value else { return .failure(SlopFailure("Invalid theme response")) }
+            return .success(Int(sequence))
+          })
       }
     } catch { reply(.failure(error)) }
   }
@@ -217,8 +236,9 @@ public final class DocumentOwner: Sendable {
     return json
   }
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {
-    do { try await unit(.close(preview: artwork?.preview, icon: artwork?.icon)) }
-    catch let error as SlopFailure { throw SaveFailure(error) }
+    do { try await unit(.close(preview: artwork?.preview, icon: artwork?.icon)) } catch let error as SlopFailure {
+      throw SaveFailure(error)
+    }
   }
   public static var coreBuildID: String { coreBuildId() }
 }
@@ -227,7 +247,10 @@ public final class DocumentOwner: Sendable {
 public struct SlopRenderedArtwork: Sendable {
   public let preview: Data?
   public let icon: Data?
-  public init(preview: Data?, icon: Data?) { self.preview = preview; self.icon = icon }
+  public init(preview: Data?, icon: Data?) {
+    self.preview = preview
+    self.icon = icon
+  }
 }
 public struct OwnerReplaced: LocalizedError {
   public var errorDescription: String? { "owner_replaced: the document was reloaded; this edit was not applied" }

@@ -143,7 +143,8 @@ struct SlopToolbar: View {
   enum Action {
     /// A document operation, which the app runs like the menu bar's.
     case document(SlopDocumentCommand)
-    case close, minimize, togglePin, toggleTheme, reveal, copyPath, openEditor(URL)
+    case close, minimize, togglePin, toggleTheme, reveal, copyPath
+    case openEditor(URL)
   }
   /// What the controls show and whether each is available.
   struct Controls {
@@ -202,7 +203,9 @@ struct SlopToolbar: View {
       menuTrackingChanged(false)
     }
   }
-  private func windowControl(_ symbol: String, _ label: String, _ color: Color, _ action: @escaping () -> Void) -> some View {
+  private func windowControl(_ symbol: String, _ label: String, _ color: Color, _ action: @escaping () -> Void)
+    -> some View
+  {
     Button(action: action) {
       Image(systemName: symbol).font(.system(size: 8, weight: .bold))
         .foregroundStyle(.black.opacity(0.65))

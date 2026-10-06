@@ -16,10 +16,14 @@ import AppKit
     self.presenter = presenter
   }
 
-  func present(in window: NSWindow, multiple: Bool, directories: Bool,
+  func present(
+    in window: NSWindow, multiple: Bool, directories: Bool,
     completion: @escaping ([URL]?) -> Void
   ) {
-    guard pending == nil, window.attachedSheet == nil else { completion(nil); return }
+    guard pending == nil, window.attachedSheet == nil else {
+      completion(nil)
+      return
+    }
     let request = Request(completion)
     pending = request
     request.dismiss = presenter(window, multiple, directories) { [weak self, weak request] urls in
@@ -36,7 +40,8 @@ import AppKit
     request.completion(nil)
   }
 
-  private static func presentSheet(in window: NSWindow, multiple: Bool, directories: Bool,
+  private static func presentSheet(
+    in window: NSWindow, multiple: Bool, directories: Bool,
     completion: @escaping ([URL]?) -> Void
   ) -> (() -> Void) {
     let panel = NSOpenPanel()

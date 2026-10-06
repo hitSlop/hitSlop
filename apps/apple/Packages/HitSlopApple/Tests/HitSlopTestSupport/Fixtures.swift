@@ -28,9 +28,10 @@ public enum Fixtures {
   /// A PNG of the given size, transparent unless `draw` paints it (in a context the size
   /// of the image).
   public static func png(width: Int = 8, height: Int = 8, draw: (NSRect) -> Void = { _ in }) throws -> Data {
-    guard let bitmap = NSBitmapImageRep(
-      bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
-      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
     else { throw CocoaError(.fileWriteUnknown) }
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
@@ -49,7 +50,8 @@ public enum Fixtures {
     guard let provider = CGDataProvider(data: Data(pixels) as CFData),
       let image = CGImage(
         width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
       let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil)
     else { throw SlopFailure("Cannot create a test PNG") }
@@ -86,7 +88,8 @@ public enum Fixtures {
   public static func writeApp(_ source: String, to stage: URL) throws {
     var source = source
     if source.range(of: #"export\s+default\s*\{\s*descriptor\s*:"#, options: .regularExpression) == nil,
-      let entry = source.range(of: #"export\s+default\s*\{"#, options: .regularExpression) {
+      let entry = source.range(of: #"export\s+default\s*\{"#, options: .regularExpression)
+    {
       let row = try object(String(contentsOf: stage.appendingPathComponent("app.json"), encoding: .utf8))
       let descriptor = try json(row["descriptor"]!)
       source.replaceSubrange(entry, with: "export default { descriptor: \(descriptor),")
@@ -102,14 +105,16 @@ public enum Fixtures {
     theme: String = ##"{"accent":"#335577"}"##
   ) throws -> URL {
     let stage = try folder().appendingPathComponent("stage")
-    try FileManager.default.createDirectory(at: stage.appendingPathComponent("assets"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: stage.appendingPathComponent("assets"), withIntermediateDirectories: true)
     var manifest: [String: Any] = [
       "author": ["name": "Fixture Author", "url": "https://example.com"], "slug": slug, "title": "Fixture",
       "description": "A test app.", "categories": ["utilities"], "presentation": ["width": 320, "height": 240],
     ]
     manifest.merge(overrides) { $1 }
     let manifestJSON = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
-    let app = #"{"packageFormat":\#(PackageFormat.level),"runtimeABI":\#(RuntimeABI.level),"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
+    let app =
+      #"{"packageFormat":\#(PackageFormat.level),"runtimeABI":\#(RuntimeABI.level),"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
     try Data(app.utf8).write(to: stage.appendingPathComponent("app.json"))
     try writeApp("export default { mount() { return {}; } };", to: stage)
     return stage
@@ -137,14 +142,16 @@ public enum Fixtures {
   /// packs one.
   public static func template(stage: URL, named name: String = "fixture") throws -> URL {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
-    let (status, _, errors) = try run(repository.appendingPathComponent("target/release/slop-engine"), ["pack", stage.path, template.path])
+    let (status, _, errors) = try run(
+      repository.appendingPathComponent("target/release/slop-engine"), ["pack", stage.path, template.path])
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
     return template
   }
 
   /// Runs `executable` with `arguments` to completion, writing `input` to its standard
   /// input: its status, standard output and standard error.
-  public static func run(_ executable: URL, _ arguments: [String], input: Data? = nil) throws -> (Int32, String, String) {
+  public static func run(_ executable: URL, _ arguments: [String], input: Data? = nil) throws -> (Int32, String, String)
+  {
     let process = Process()
     process.executableURL = executable
     process.arguments = arguments
@@ -169,13 +176,16 @@ public enum Fixtures {
   }
 
   /// A new document from the repository stage `source`, unchanged.
-  public static func document(_ source: String = "tests/fixtures/checklist/document", at destination: URL? = nil) throws -> URL {
+  public static func document(_ source: String = "tests/fixtures/checklist/document", at destination: URL? = nil) throws
+    -> URL
+  {
     try document(stage: stage(source), at: destination)
   }
 
   /// A new document from a built template, such as `generated/native-fixtures/<slug>.slop`.
   public static func document(from template: URL, at destination: URL? = nil) throws -> URL {
-    let document = destination ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+    let document =
+      destination ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
     try createDocument(template: template.path, destination: document.path)
     return document
   }
@@ -184,12 +194,19 @@ public enum Fixtures {
   /// is `app` when given.
   public static func checklistDocument(app: String? = nil) throws -> URL {
     let stage = try stage()
-    let spec = try JSONSerialization.jsonObject(with: Data(contentsOf: repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json"))) as! [String: Any]
+    let spec =
+      try JSONSerialization.jsonObject(
+        with: Data(contentsOf: repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json")))
+      as! [String: Any]
     try updateApp(stage) { app in
       app["descriptor"] = spec["schema"]
       app["initial"] = spec["initial"]
     }
-    let source = try app ?? String(contentsOf: repository.appendingPathComponent("tests/fixtures/checklist/document/assets/app.js"), encoding: .utf8)
+    let source =
+      try app
+      ?? String(
+        contentsOf: repository.appendingPathComponent("tests/fixtures/checklist/document/assets/app.js"),
+        encoding: .utf8)
     try writeApp(source, to: stage)
     return try document(stage: stage)
   }
@@ -229,13 +246,20 @@ public enum Fixtures {
     public let checkpointBytes: UInt64, updateBytes: UInt64, rows: UInt64
   }
   public static func stored(_ document: URL) throws -> Stored {
-    var connection: OpaquePointer?, statement: OpaquePointer?
-    defer { sqlite3_finalize(statement); sqlite3_close(connection) }
-    let sql = "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
+    var connection: OpaquePointer?
+    var statement: OpaquePointer?
+    defer {
+      sqlite3_finalize(statement)
+      sqlite3_close(connection)
+    }
+    let sql =
+      "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
     guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
       sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW
     else { throw SlopFailure("Cannot read \(document.lastPathComponent)") }
-    return Stored(checkpointBytes: UInt64(sqlite3_column_int64(statement, 0)), updateBytes: UInt64(sqlite3_column_int64(statement, 1)),
+    return Stored(
+      checkpointBytes: UInt64(sqlite3_column_int64(statement, 0)),
+      updateBytes: UInt64(sqlite3_column_int64(statement, 1)),
       rows: UInt64(sqlite3_column_int64(statement, 2)))
   }
 

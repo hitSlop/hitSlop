@@ -79,8 +79,10 @@ import WebKit
 
   /// Decides whether the toolbar shows for the pointer at `point`, `front` being the window
   /// the window server reports there and `below` the one under this document.
-  func refresh(point: NSPoint = NSEvent.mouseLocation, front: Int? = nil, below: Int? = nil,
-               now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+  func refresh(
+    point: NSPoint = NSEvent.mouseLocation, front: Int? = nil, below: Int? = nil,
+    now: TimeInterval = ProcessInfo.processInfo.systemUptime
+  ) {
     guard let window else { return }
     guard window.isVisible, !window.isMiniaturized, window.isOnActiveSpace, !NSApp.isHidden, !isLoading() else {
       visibility = SlopToolbarVisibility()
@@ -92,19 +94,23 @@ import WebKit
     // Clicks pass through transparent pixels, where the window server reports the window
     // behind; the shape decides unless another window covers this one at the point.
     if window.frame.contains(point), let shaped = window.contentView as? ShapedView,
-       front == window.windowNumber
-        || front == (below ?? NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: window.windowNumber)) {
+      front == window.windowNumber
+        || front == (below ?? NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: window.windowNumber))
+    {
       let local = shaped.convert(window.convertPoint(fromScreen: point), from: nil)
       overDocument = shaped.windowMask.contains(local, in: shaped.bounds)
-    } else { overDocument = false }
+    } else {
+      overDocument = false
+    }
     let toolbarFrame = panel?.frame ?? .zero
     let overToolbar = isVisible && front == panel?.windowNumber
-    let gap = NSRect(x: max(window.frame.minX, toolbarFrame.minX), y: window.frame.maxY,
-                     width: max(0, min(window.frame.maxX, toolbarFrame.maxX) - max(window.frame.minX, toolbarFrame.minX)),
-                     height: max(0, toolbarFrame.minY - window.frame.maxY))
-    let nearToolbar = isVisible &&
-      (toolbarFrame.insetBy(dx: -4, dy: -4).contains(point) || gap.contains(point)) &&
-      (front == 0 || front == window.windowNumber || front == panel?.windowNumber)
+    let gap = NSRect(
+      x: max(window.frame.minX, toolbarFrame.minX), y: window.frame.maxY,
+      width: max(0, min(window.frame.maxX, toolbarFrame.maxX) - max(window.frame.minX, toolbarFrame.minX)),
+      height: max(0, toolbarFrame.minY - window.frame.maxY))
+    let nearToolbar =
+      isVisible && (toolbarFrame.insetBy(dx: -4, dy: -4).contains(point) || gap.contains(point))
+      && (front == 0 || front == window.windowNumber || front == panel?.windowNumber)
     // A visible panel is not proof it is on top: a pointer returning during the grace
     // period orders it front again.
     let returning = visibility.outsideSince != nil
@@ -113,13 +119,16 @@ import WebKit
       visible: isVisible, now: now)
     if show {
       if !isVisible || (returning && visibility.outsideSince == nil) { self.show() }
-    } else { hide() }
+    } else {
+      hide()
+    }
     publishControls(isVisible)
   }
 
   private func makePanel() -> SlopToolbarPanel {
     let frame = slopToolbarFrame(document: window?.frame ?? .zero, visible: window?.screen?.visibleFrame)
-    let panel = SlopToolbarPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    let panel = SlopToolbarPanel(
+      contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = true
@@ -157,7 +166,9 @@ import WebKit
         if case .minimize = action {
           hide()
           window?.miniaturize(nil)
-        } else { act(action) }
+        } else {
+          act(action)
+        }
       },
       editors: SlopEditors.installed)
   }
@@ -184,7 +195,8 @@ import WebKit
       // A failed delivery can be retried by the next sample, without an old
       // renderer's completion invalidating the replacement view's state.
       if case .failure = result, let self, self.controlsWebView === view,
-         self.publishedControlsVisible == visible {
+        self.publishedControlsVisible == visible
+      {
         self.publishedControlsVisible = nil
       }
     }

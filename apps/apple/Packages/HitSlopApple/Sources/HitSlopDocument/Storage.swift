@@ -15,10 +15,10 @@ public enum SlopRegistry {
   /// share one registry.
   public static let prepared: Void = {
     #if DEBUG
-    if let folder = ProcessInfo.processInfo.environment["HITSLOP_TEST_REGISTRY"], !folder.isEmpty {
-      try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-      try? useRegistryFolder(path: folder)
-    }
+      if let folder = ProcessInfo.processInfo.environment["HITSLOP_TEST_REGISTRY"], !folder.isEmpty {
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try? useRegistryFolder(path: folder)
+      }
     #endif
   }()
   /// Removes discovery files a crashed owner left behind. Run at launch.
@@ -59,7 +59,8 @@ public enum SaveFailure: Error, LocalizedError, Equatable {
   init(_ error: Error) { self = error as? SaveFailure ?? .io(error.localizedDescription) }
   public var errorDescription: String? {
     switch self {
-    case .full: "Document is full (\(Limits.storageBytes >> 20) MiB limit); saved state is intact. Retry saving or explicitly discard unsaved edits."
+    case .full:
+      "Document is full (\(Limits.storageBytes >> 20) MiB limit); saved state is intact. Retry saving or explicitly discard unsaved edits."
     case .busy: "The document is busy in another process; retry saving."
     case .moved: "Document moved or replaced; close before moving a document"
     case .invalidated: "The document engine stopped; reload saved state. Unsaved edits may be lost."

@@ -12,12 +12,12 @@ extension SlopDocumentWindowController {
     reportedRendererFailure = false
     recordStartup("page-ready")
     #if DEBUG
-    if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-      // Page-relative milliseconds for the hitslop:* marks recorded by the runtime's boot.js.
-      session.webView.evaluateJavaScript(
-        "JSON.stringify(performance.getEntriesByType('mark').map(e => [e.name, Math.round(e.startTime)]))"
-      ) { result, _ in print("[hitSlop startup] page \(result ?? "")") }
-    }
+      if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
+        // Page-relative milliseconds for the hitslop:* marks recorded by the runtime's boot.js.
+        session.webView.evaluateJavaScript(
+          "JSON.stringify(performance.getEntriesByType('mark').map(e => [e.name, Math.round(e.startTime)]))"
+        ) { result, _ in print("[hitSlop startup] page \(result ?? "")") }
+      }
     #endif
     // The bridge is ready before WebKit has necessarily painted. The loading
     // task owns the visual handoff and the coordinator's ready notification.
@@ -25,9 +25,9 @@ extension SlopDocumentWindowController {
 
   func recordStartup(_ stage: String) {
     #if DEBUG
-    if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-      print("[hitSlop startup] \(stage) \(startupStarted.duration(to: .now))")
-    }
+      if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
+        print("[hitSlop startup] \(stage) \(startupStarted.duration(to: .now))")
+      }
     #endif
   }
 
