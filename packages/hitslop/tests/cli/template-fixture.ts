@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineDocument, s } from "../../src/sdk/schema";
-import { pack } from "../../src/cli/engine";
+import { execute } from "../../src/cli/engine";
 import { PackageFormat, RuntimeABI, type AppRow } from "../../src/schema/index";
 
 /** A minimal template file at `output`, packed by the file engine from a stage with preview
@@ -33,7 +33,7 @@ export async function writeTemplate(output: string, slug = "quick-checklist") {
   );
   await writeFile(join(stage, "artwork/preview.png"), png);
   try {
-    await pack(stage, output);
+    await execute({ method: "pack", stage, file: output });
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

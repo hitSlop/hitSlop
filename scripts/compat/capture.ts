@@ -28,7 +28,7 @@ import { prepareNativeFixtures } from "../lib/native-fixtures";
 import { builtTemplates } from "../templates/discover";
 import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
 import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
-import { engine, pack } from "../../packages/hitslop/src/cli/engine";
+import { execute } from "../../packages/hitslop/src/cli/engine";
 import { coreBuildId } from "../../packages/hitslop/src/cli/core";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { createDocument, debugHelper } from "../lib/native";
@@ -86,7 +86,7 @@ templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
 for (const [slug, source] of Object.entries(templates)) {
   const template = join(root, "templates", slug + ".slop");
   if (source.endsWith(".slop")) await copyFile(source, template);
-  else await pack(source, template);
+  else await execute({ method: "pack", stage: source, file: template });
 }
 
 // Generic edits derived from a descriptor: one valid write of every kind it declares.
@@ -134,7 +134,7 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
   }
   return ops;
 }
-const schemaOf = async (document: string) => JSON.parse(await engine(["schema", document])) as Node;
+const schemaOf = async (document: string) => (await execute({ method: "schema", file: document })).schema as Node;
 /** The app's module, read from the file outside the core. */
 const appOf = (document: string) => appAsset(document, "app.js");
 const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;

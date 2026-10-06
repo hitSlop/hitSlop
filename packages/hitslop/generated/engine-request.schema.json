@@ -1,0 +1,382 @@
+{
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "attachments.list"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method",
+        "attachmentID"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "attachments.read"
+        },
+        "attachmentID": {
+          "type": "string",
+          "pattern": "^[0123456789abcdef]{64}$",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "theme.export"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "get"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method",
+        "ops"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "batch"
+        },
+        "ifVersion": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][a-zA-Z0-9]*$"
+        },
+        "ops": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1048576
+        },
+        "base": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 13981016
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method",
+        "format",
+        "output"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "export"
+        },
+        "format": {
+          "enum": [
+            "png",
+            "pdf"
+          ]
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "templates"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "from",
+        "output"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "create"
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "file"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "inspect"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "file"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "schema"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "stage",
+        "file"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "pack"
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "app"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "validateApp"
+        },
+        "app": {}
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "describe"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath",
+        "command",
+        "args"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "call"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-z][a-zA-Z0-9]{0,79}$"
+        },
+        "args": {}
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "open"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath",
+        "output",
+        "target",
+        "ifPresent"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "screenshot"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "target": {
+          "enum": [
+            "preview",
+            "icon"
+          ]
+        },
+        "ifPresent": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

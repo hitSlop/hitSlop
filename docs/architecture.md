@@ -48,7 +48,10 @@ documents.
 
 Manifest acceptance is native-only Rust validation of the TypeBox-generated manifest
 schema (newer `packageFormat` or `runtimeABI` requirements are refused first), followed
-by the shared shape parser. Swift decodes the validated manifest into its generated model
+by the shared shape parser. SVG syntax uses `svgtypes::PathParser`; `kurbo` expands arcs
+through a lazy iterator, with source-command and output-segment limits enforced by the
+core. The authored path/viewBox/fillRule and the normalized native silhouette representation
+stay the same. Swift decodes the validated manifest into its generated model
 and decodes the window skin. The native engine validates the complete authoring app;
 the manifest validator dependency is excluded from WASM. Packing validates descriptors, initial values
 and theme defaults. Every open checks the file before reading a value: its application
@@ -293,13 +296,23 @@ refuses, leaves the blob unreferenced until the document closes.
 
 ## CLI
 
-`slop` sends document requests to `slop-engine request` as one generated request on
-standard input and reads its method-specific `SocketReply`. `create`, `schema` and
-`inspect` also use that engine. It passes what needs AppKit or WebKit to `hitslop-native`:
-opening a window, native artwork, and each PNG/PDF export request unchanged
-(`hitslop-native export`). The helper refuses every other document request. An export runs
-through the same Rust command router there, so an open document's owner renders it and a
-closed document's saved state renders in the helper.
+`slop` is the user-facing CLI. Its private engine accepts one TypeBox `EngineRequest`
+on bounded standard input and returns one method-specific `EngineReply`. Authoring,
+catalog, inspection, named commands and owner operations share this JSON boundary.
+`packages/hitslop/src/schema/engine.ts` generates the Rust dispatch types and validators.
+The engine forwards open, screenshot and export JSON to `hitslop-native`; its generated
+`NativeRequest` subset rejects document edits before starting AppKit. Exports still use
+the Rust command router, so the live owner or a closed document's renderer handles them.
+
+Both executables check the frozen first-position `--client-protocol N` before other
+arguments or stdin: mismatches exit 2 with one stderr line. Identity queries remain
+flags, and the engine's exact standalone `--evaluate-command` starts its restricted
+child. All handled requests return JSON and exit 0, including classified failures.
+Missing, malformed and wrong-method replies leave an unknown outcome; clients never
+retry them automatically. App payloads stay opaque until the core checks their format
+requirements. The evaluator's Linux syscall allowlist uses `seccompiler`: an architecture
+mismatch kills the process, denied calls return `EPERM`, and installation sets
+`PR_SET_NO_NEW_PRIVS`.
 
 An open document routes through its owner's socket, which lives as long as the owner,
 not the page. Commands never blur a field being typed in; a live `get` returns

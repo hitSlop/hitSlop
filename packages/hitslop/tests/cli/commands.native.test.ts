@@ -37,7 +37,7 @@ test("document commands send one request and print its reply", async () => {
     expect(applied.code).toBe(0);
     expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"] });
     const { args, body } = JSON.parse(await Bun.file(sent).text());
-    expect(args).toEqual([...selection, "request"]);
+    expect(args).toEqual(selection);
     // The operation reaches the core as written, inside the batch.
     expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), ops: `[${op}]` });
     // `--base` names the version the agent read; its text sets merge from there.
@@ -91,7 +91,7 @@ test("a success missing its method's result is an unknown outcome", async () => 
       const reply = await run(args, { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
       expect(reply.code).not.toBe(0);
       expect(reply.stdout).toBe("");
-      expect(reply.stderr).toContain("outcome unknown");
+      expect(reply.stderr).toContain("Outcome unknown");
     }
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -106,7 +106,7 @@ test("create and open name this CLI's protocol to the selected engine or native 
       const path = join(root, `helper-${name}`);
       await writeFile(
         path,
-        `#!${process.execPath}\nif (!${serves}) { console.error("Unsupported client protocol"); process.exit(2); }\nconsole.log(JSON.stringify(process.argv.slice(2)));\n`,
+        `#!${process.execPath}\nif (!${serves}) { console.error("Unsupported client protocol"); process.exit(2); }\nconst body = await Bun.stdin.json(); await Bun.write(${JSON.stringify(join(root, "sent"))}, JSON.stringify({args:process.argv.slice(2),body})); console.log(JSON.stringify({ok:true,method:body.method,documentPath:body.output ?? body.documentPath}));\n`,
         { mode: 0o755 },
       );
       return path;
@@ -115,10 +115,12 @@ test("create and open name this CLI's protocol to the selected engine or native 
     const create = ["create", "--from", "a template.slop", "--output", "my doc.slop"];
     const created = await run(create, { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
     expect(created.code).toBe(0);
-    expect(JSON.parse(created.stdout)).toEqual([...selection, ...create]);
+    expect(created.stdout.trim()).toBe("my doc.slop");
+    expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"create",from:"a template.slop",output:"my doc.slop"}});
     const opened = await run(["open", "my doc.slop"], { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
     expect(opened.code).toBe(0);
-    expect(JSON.parse(opened.stdout)).toEqual([...selection, "open", "my doc.slop"]);
+    expect(opened.stdout.trim()).toBe("my doc.slop");
+    expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"open",documentPath:"my doc.slop"}});
     const refused = await run(create, { HITSLOP_ENGINE: await helper("newer", false) });
     expect(refused.code).not.toBe(0);
     expect(refused.stdout).toBe("");

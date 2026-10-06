@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findEngine } from "../../src/cli/engine";
-import { negotiate } from "../../src/cli/native";
+import { findEngine, execute } from "../../src/cli/engine";
+import { negotiate } from "../../src/cli/engine";
 import { exec } from "../../src/cli/process";
 import { writeTemplate } from "./template-fixture";
 
@@ -49,7 +49,7 @@ test("document CLI exports never replace a file", async () => {
     const [root, other] = [join(parent, "Document.slop"), join(parent, "Other.slop")];
     // A document's first open saves its initial values; after that, reads write nothing.
     for (const output of [root, other]) {
-      expect(await Bun.spawn([...negotiate(engine), "create", "--from", source, "--output", output], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+      await execute({ method: "create", from: source, output }, { binary: engine });
       expect((await cli("get", output)).code).toBe(0);
     }
     for (const output of [root, other]) {
@@ -77,8 +77,7 @@ test("document CLI rejects invalid files and malformed commands before mutation"
     expect(refused.error).toContain("not a hitSlop document");
     expect(await readFile(root, "utf8")).toBe(JSON.stringify({ slug: "not-a-slop" }));
     await rm(root);
-    const created = Bun.spawn([...negotiate(engine), "create", "--from", await template(parent), "--output", root], { stdout: "ignore", stderr: "pipe" });
-    expect(await created.exited).toBe(0);
+    await execute({ method: "create", from: await template(parent), output: root }, { binary: engine });
     expect((await cli("get", root)).code).toBe(0);
     const before = await readFile(root);
     expect((await cli("apply", root, "--op", "null")).code).not.toBe(0);
@@ -96,19 +95,19 @@ test("engine document commands that name no protocol are refused before document
   const parent = await mkdtemp(join(tmpdir(), "hsl-protocol-"));
   const document = join(parent, "Document.slop");
   try {
-    const create = ["create", "--from", await template(parent), "--output", document];
-    const unnamed = await exec([engine, ...create]);
+    const create = JSON.stringify({ method: "create", from: await template(parent), output: document });
+    const unnamed = await exec([engine], { stdin: create });
     expect(unnamed.code).toBe(2);
-    expect(unnamed.stderr).toContain("Name the command protocol");
+    expect(unnamed.stderr).toContain("Use --client-protocol N");
     expect(existsSync(document)).toBe(false);
-    expect((await exec([...negotiate(engine), ...create])).code).toBe(0);
+    expect((await exec(negotiate(engine), { stdin: create })).code).toBe(0);
     const before = await readFile(document);
     const get = JSON.stringify({ method: "get", documentPath: document });
-    const refused = await exec([engine, "request"], { stdin: get });
+    const refused = await exec([engine], { stdin: get });
     expect(refused.code).toBe(2);
-    expect(refused.stderr).toContain("Name the command protocol");
+    expect(refused.stderr).toContain("Use --client-protocol N");
     expect(await readFile(document)).toEqual(before);
-    const named = await exec([...negotiate(engine), "request"], { stdin: get });
+    const named = await exec(negotiate(engine), { stdin: get });
     expect(named.code).toBe(0);
     expect(JSON.parse(named.stdout).ok).toBe(true);
   } finally {

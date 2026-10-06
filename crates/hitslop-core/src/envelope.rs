@@ -46,6 +46,10 @@ pub enum Envelope {
     SocketReply,
     SocketDiscovery,
     PageRequest,
+    NativeReply,
+    NativeRequest,
+    EngineReply,
+    EngineRequest,
 }
 
 /// Whether `json` is a well-formed envelope of `kind`. The largest is an attachment upload
@@ -62,6 +66,10 @@ pub fn is_valid(kind: Envelope, json: &[u8]) -> bool {
         Envelope::SocketReply => SocketReply::is_valid(&value),
         Envelope::SocketDiscovery => SocketDiscovery::is_valid(&value),
         Envelope::PageRequest => PageRequest::is_valid(&value),
+        Envelope::NativeReply => NativeReply::is_valid(&value),
+        Envelope::NativeRequest => NativeRequest::is_valid(&value),
+        Envelope::EngineReply => EngineReply::is_valid(&value),
+        Envelope::EngineRequest => EngineRequest::is_valid(&value),
     }
 }
 
@@ -71,3 +79,15 @@ pub(crate) fn hello(value: &serde_json::Value) -> bool {
 pub(crate) fn hello_success(input: &str) -> bool {
     serde_json::from_str(input).is_ok_and(|value| SocketHelloSuccess::is_valid(&value))
 }
+
+#[jsonschema::validator(path = "../../packages/hitslop/generated/engine-request.schema.json", draft = Draft7, methods = { is_valid = true, validate = false, iter_errors = false })]
+struct EngineRequest;
+
+#[jsonschema::validator(path = "../../packages/hitslop/generated/engine-reply.schema.json", draft = Draft7, methods = { is_valid = true, validate = false, iter_errors = false })]
+struct EngineReply;
+
+#[jsonschema::validator(path = "../../packages/hitslop/generated/native-request.schema.json", draft = Draft7, methods = { is_valid = true, validate = false, iter_errors = false })]
+struct NativeRequest;
+
+#[jsonschema::validator(path = "../../packages/hitslop/generated/native-reply.schema.json", draft = Draft7, methods = { is_valid = true, validate = false, iter_errors = false })]
+struct NativeReply;

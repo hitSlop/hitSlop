@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { localImports } from "../../packages/hitslop/src/cli/imports";
-import { engine } from "../../packages/hitslop/src/cli/engine";
+import { execute } from "../../packages/hitslop/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
 import { run } from "../../packages/hitslop/src/cli/process";
 
@@ -127,7 +127,7 @@ function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5) {
 export async function validateTemplate(path: string, slug: string, artwork = true) {
   const info = await lstat(path);
   if (!info.isFile()) throw new Error(`Invalid template file: ${slug}`);
-  const template = JSON.parse(await engine(["inspect", path]));
+  const template = (await execute({ method: "inspect", file: path })).info;
   if (template.kind !== "template") throw new Error(`Not a template: ${slug}`);
   if (template.manifest?.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
   if (artwork && !template.artwork.some((image: { name: string }) => image.name === "preview"))

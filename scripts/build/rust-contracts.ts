@@ -1,5 +1,6 @@
 import { AppLimits, AttachmentIdRule, CoreErrorCodes, OutcomeCodes, HelperProtocol, RowIdRule, AttachmentLimits, BatchLimits, DefaultWindowRadius, PackageFormat, PagePayloadLimit, AssetLimits, RuntimeABI, ShapeLimits, SocketLimits, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../../packages/hitslop/src/schema/constants";
 import { SocketRequestSchema, SocketSuccessSchema, SocketFailureSchema } from "../../packages/hitslop/src/schema/socket";
+import { EngineRequestSchema, EngineSuccessSchema } from "../../packages/hitslop/src/schema/engine";
 import { PageRequestSchema } from "../../packages/hitslop/src/schema/page";
 import { ThemeChangesSchema, ThemeFileSchema } from "../../packages/hitslop/src/schema/values";
 import { AppRowSchema } from "../../packages/hitslop/src/schema/manifest";
@@ -57,16 +58,22 @@ const requests = (union: { anyOf: any[] }) => union.anyOf.flatMap((schema) => {
   return (method.enum ?? [method.const!]).map((method) => ({ method, fields: socketFields(schema) }));
 });
 const socketRequests = requests(SocketRequestSchema);
-const socketEnum = (name: string, members: { method: string; fields: [string, unknown][] }[], derives: string) => `
+const socketEnum = (name: string, members: { method: string; fields: [string, unknown][] }[], derives: string, engine = false) => `
 #[cfg(feature = "storage")]
 #[derive(${derives})]
 #[serde(tag = "method", deny_unknown_fields)]
 #[allow(non_snake_case)]
-pub(crate) enum ${name} {
+pub${engine ? "" : "(crate)"} enum ${name} {
 ${members.map(({ method, fields }) => `    #[serde(rename = "${method}")]
-    ${socketName(method)} { ${fields.map(([key, schema]) => `${optional(schema as object) ? '#[serde(skip_serializing_if = "Option::is_none")] ' : ""}${key}: ${socketRust(key, schema)}`).join(", ")} },`).join("\n")}
+    ${socketName(method)} { ${fields.map(([key, schema]) => `${optional(schema as object) ? '#[serde(skip_serializing_if = "Option::is_none")] ' : ""}${key}: ${engine ? engineRust(schema) : socketRust(key, schema)}`).join(", ")} },`).join("\n")}
 }
 `;
+const engineRust = (schema: any): string => {
+  const value = schema.type === "string" || schema.enum?.every((value: unknown) => typeof value === "string") ? "String" : schema.type === "boolean" ? "bool"
+    : schema.type === "integer" ? "u64" : schema.type === "array" && schema.items.type === "string" ? "Vec<String>"
+    : "Box<serde_json::value::RawValue>";
+  return optional(schema) ? `Option<${value}>` : value;
+};
 export function rustOwnerWire(accepted: { app: AppAcceptance; storage: StorageAcceptance }) {
 const { AppLimits, AssetLimits, DefaultWindowRadius, ShapeLimits, ThemeLimit, ThemeFileLimit, ThemeTokenRule } = accepted.app.limits;
 const { StorageLimits, AttachmentLimits } = accepted.storage;
@@ -206,6 +213,30 @@ pub struct AppRow { ${Object.entries(AppRowSchema.properties)
   .map(([key, schema]) => `pub ${key}: ${(schema as any).type === "integer" ? "u64" : "Box<serde_json::value::RawValue>"}`)
   .join(", ")} }
 
+${socketEnum("EngineRequest", requests(EngineRequestSchema), "Debug, Serialize", true)}
+#[cfg(feature = "storage")]
+impl EngineRequest {
+    /// Parse each member directly from JSON so opaque payloads retain their bytes.
+    pub fn parse(input: &str) -> serde_json::Result<Self> {
+        #[derive(Deserialize)] struct Header { method: String }
+        let header: Header = serde_json::from_str(input)?;
+        match header.method.as_str() {
+${requests(EngineRequestSchema).map(({ method, fields }) => `            "${method}" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, ${fields.map(([key, schema]) => `${key}: ${engineRust(schema)}`).join(", ")} }
+                let ${fields.length ? "body" : "_body"}: Body = serde_json::from_str(input)?;
+                Ok(Self::${socketName(method)} { ${fields.map(([key]) => `${key}: body.${key}`).join(", ")} })
+            },`).join("\n")}
+            _ => Err(<serde_json::Error as serde::de::Error>::custom("Unknown engine method")),
+        }
+    }
+    pub fn method(&self) -> &'static str { match self {
+${requests(EngineRequestSchema).map(({ method }) => `        Self::${socketName(method)} { .. } => "${method}",`).join("\n")}
+    } }
+}
+${socketEnum("EngineSuccess", requests(EngineSuccessSchema), "Debug, Serialize", true)}
 ${socketEnum("SocketRequest", socketRequests, "Clone, Debug, Serialize, Deserialize")}
 #[cfg(feature = "storage")]
 impl SocketRequest {

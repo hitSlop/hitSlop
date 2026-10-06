@@ -89,8 +89,10 @@ shape: "48px 8px 72px 0 / 24px 32px 18px 0",
 and y-down. `viewBox` defaults to the window's `width` and `height`, so the path scales when
 the window resizes, and `fillRule` defaults to `nonzero`. All SVG path commands are
 supported. Paths are limited to 4,096 ASCII characters, 512 commands (implicit
-repetitions count) and 2,048 expanded segments; each `viewBox` side is 1–16,384. A
-concave notch on the right edge:
+repetitions count) and 2,048 expanded segments; each `viewBox` side is 1–16,384.
+Arcs target 0.1 logical-point accuracy at the declared window size and must fit the
+expanded-segment limit. Numerically unstable arcs are refused; nonzero arc radii must
+exceed 0.00001 `viewBox` units. A concave notch on the right edge:
 
 ```ts
 shape: {

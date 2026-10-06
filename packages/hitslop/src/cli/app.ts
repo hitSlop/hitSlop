@@ -50,15 +50,8 @@ const retrySection = {
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
 };
 
-/** Document commands use the Rust owner; windows and rendering use the macOS helper. Authoring (init, check, dev, build) needs neither. */
-async function native(...argv: string[]) {
-  await (await import("./native")).runEngine(argv);
-}
-/** Reads a template or a closed or open document with the CLI's own file engine, on any
- * platform, as `build` and `check` do: saved state, never an open window's unsaved edits. */
-async function readSlop(command: "schema" | "inspect", path: string) {
-  return (await import("./engine")).engine([command, path]);
-}
+const engine = () => import("./engine");
+const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 const documents = () => import("./documents");
 
 const theme = {
@@ -254,7 +247,7 @@ export const app = new Crust("slop", {
     defineCommand(
       "templates",
       { description: "List the templates the app's catalog shows, bundled and installed, as JSON" },
-      (c) => c.action(() => native("templates")),
+      (c) => c.action(async () => print((await (await engine()).execute({ method: "templates" })).catalog)),
     ),
   )
   .add(
@@ -278,14 +271,14 @@ export const app = new Crust("slop", {
             },
           )
           // As the app's save panel does: a document's name ends in .slop.
-          .action(({ flags }) =>
-            native("create", "--from", flags.from, "--output", flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop`),
+          .action(async ({ flags }) =>
+            console.log((await (await engine()).execute({ method: "create", from: flags.from, output: flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop` })).documentPath),
           ),
     ),
   )
   .add(
     defineCommand("open", { description: "Open a document in the hitSlop app" }, (c) =>
-      c.args(document).action(({ args }) => native("open", args.document)),
+      c.args(document).action(async ({ args }) => console.log((await (await engine()).execute({ method: "open", documentPath: args.document })).documentPath)),
     ),
   )
   .add(
@@ -303,14 +296,14 @@ export const app = new Crust("slop", {
   )
   .add(
     defineCommand("schema", { description: "Print the document schema descriptor" }, (c) =>
-      c.args(document).action(async ({ args }) => process.stdout.write(await readSlop("schema", args.document))),
+      c.args(document).action(async ({ args }) => print((await (await engine()).execute({ method: "schema", file: args.document })).schema)),
     ),
   )
   .add(
     defineCommand(
       "inspect",
       { description: "Print what a .slop file holds: its kind, app, artwork, attachments and saved state sizes" },
-      (c) => c.args(slopFile).action(async ({ args }) => process.stdout.write(await readSlop("inspect", args.file))),
+      (c) => c.args(slopFile).action(async ({ args }) => print((await (await engine()).execute({ method: "inspect", file: args.file })).info)),
     ),
   )
   .add(

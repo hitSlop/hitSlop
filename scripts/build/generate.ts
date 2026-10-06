@@ -1,3 +1,4 @@
+import { EngineRequestSchema, EngineReplySchema, NativeRequestSchema, NativeReplySchema } from "../../packages/hitslop/src/schema/engine";
 import { repository, writeIfChanged } from "../lib/artifacts";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -32,6 +33,7 @@ export async function generateContracts(check = false) {
     rendererOptions: { "access-level": "public", sendable: "true" },
   });
   const outputs = {
+    ...Object.fromEntries(Object.entries({ "engine-request": EngineRequestSchema, "engine-reply": EngineReplySchema, "native-request": NativeRequestSchema, "native-reply": NativeReplySchema }).map(([name, schema]) => [`packages/hitslop/generated/${name}.schema.json`, JSON.stringify(schema, null, 2) + "\n"])),
     "packages/hitslop/generated/commands.schema.json": JSON.stringify(CommandMetadata, null, 2) + "\n",
     "packages/hitslop/generated/command-call.schema.json": JSON.stringify(CommandCall, null, 2) + "\n",
     ...accepted.outputs,
@@ -118,6 +120,7 @@ public enum Limits {
         PageResults,
         HostRequestSchema,
         HostCaptureResultSchema,
+        NativeRequestSchema, NativeReplySchema,
       ),
   };
   for (const [name, value] of Object.entries(outputs)) {

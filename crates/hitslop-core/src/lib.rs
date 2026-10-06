@@ -10,6 +10,8 @@ use loro::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+#[cfg(feature = "storage")]
+pub use wire::{EngineRequest, EngineSuccess};
 mod check;
 mod descriptor;
 mod execute;

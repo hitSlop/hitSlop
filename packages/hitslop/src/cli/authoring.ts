@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { shellDirectory } from "./paths";
-import { run } from "./process";
+import { execute, type EngineOptions } from "./engine";
 import { buildTemplate, prepareRenderer } from "./template";
 import { projectSlug } from "./build";
 
@@ -13,8 +13,8 @@ export async function build(source: string, artwork?: string) {
 
 /** The installed templates folder, as the app's engine lists it: `HITSLOP_TEMPLATES_ROOT`,
  * or `~/.hitslop/templates` in the account's home folder. */
-async function installedTemplates(engine: string[]) {
-  const { folders } = JSON.parse(await run([...engine, "templates"])) as { folders?: { source: unknown; path: unknown }[] };
+async function installedTemplates(engine: EngineOptions) {
+  const { folders } = (await execute({ method: "templates" }, engine)).catalog;
   const installed = folders?.find((folder) => folder.source === "installed")?.path;
   if (typeof installed !== "string") throw new Error("Cannot find this account's home folder");
   return installed;

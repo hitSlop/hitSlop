@@ -69,7 +69,7 @@ test("init names a project by its folder and refuses a folder that is not a slug
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, subprocessSequenceTimeout);
 
 test("init flags and defaults produce validated metadata without prompts or partial projects", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));

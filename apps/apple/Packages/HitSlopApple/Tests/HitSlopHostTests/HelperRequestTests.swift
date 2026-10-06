@@ -10,20 +10,20 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  /// One request as `slop` sends it (`slop-engine request`), and its reply.
+  /// One request as `slop` sends it (`slop-engine`), and its reply.
   func request(_ body: [String: Any]) async throws -> [String: Any] {
-    let result = try await cli(["request"], input: try JSONSerialization.data(withJSONObject: body))
+    let result = try await cli(input: try JSONSerialization.data(withJSONObject: body))
     try #require(result.0 == 0, "\(body["method"] ?? ""): \(result.2)")
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
   }
 
   // The helper renders; documents are read and edited through slop-engine alone, so the
   // helper is not a second way in. Oracle: the refusal's code and reason.
-  @Test func theHelperRefusesEveryRequestButExport() async throws {
+  @Test func theHelperRefusesDocumentEdits() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let body = try JSONSerialization.data(withJSONObject: ["method": "get", "documentPath": root.path])
-    let (status, output, errors) = try await cli(["export"], input: body, tool: "hitslop-native")
+    let (status, output, errors) = try await cli(input: body, tool: "hitslop-native")
     try #require(status == 0, "\(errors)")
     let reply = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
     #expect(reply["ok"] as? Bool == false)

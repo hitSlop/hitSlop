@@ -56,20 +56,8 @@ fn platform() -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn platform() -> Result<(), String> {
     use libc::*;
-    // seccomp_data: syscall number at 0, audit architecture at 4. Verify architecture
-    // before interpreting numbers; alternate ABIs cannot bypass the allowlist.
-    #[cfg(target_arch = "x86_64")]
-    const ARCH: u32 = 0xc000003e;
-    #[cfg(target_arch = "aarch64")]
-    const ARCH: u32 = 0xc00000b7;
-    let instruction = |code, jt, jf, k| sock_filter { code, jt, jf, k };
-    let mut filter = vec![
-        instruction(0x20, 0, 0, 4),
-        instruction(0x15, 1, 0, ARCH),
-        instruction(0x06, 0, 0, SECCOMP_RET_KILL_PROCESS),
-        instruction(0x20, 0, 0, 0),
-    ];
-    for call in [
+    use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
+    let rules = [
         SYS_read,
         SYS_write,
         SYS_close,
@@ -94,20 +82,24 @@ fn platform() -> Result<(), String> {
         SYS_sched_yield,
         SYS_exit,
         SYS_exit_group,
-    ] {
-        filter.push(instruction(0x15, 0, 1, call as u32));
-        filter.push(instruction(0x06, 0, 0, SECCOMP_RET_ALLOW));
-    }
-    filter.push(instruction(0x06, 0, 0, SECCOMP_RET_ERRNO | EPERM as u32));
-    let program = sock_fprog { len: filter.len() as u16, filter: filter.as_mut_ptr() };
-    // SAFETY: the BPF program points into filter for both calls. The kernel copies it;
-    // no_new_privs prevents privilege acquisition, and failure refuses evaluation.
-    unsafe {
-        if prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 || prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0 {
-            return Err("Cannot sandbox command".into());
-        }
-    }
-    Ok(())
+    ]
+    .into_iter()
+    .map(|call| (call, vec![]))
+    .collect();
+    // seccompiler kills on an audit-architecture mismatch before checking syscall
+    // numbers. Empty rule lists allow these syscalls regardless of their arguments.
+    let filter: BpfProgram = SeccompFilter::new(
+        rules,
+        SeccompAction::Errno(EPERM as u32),
+        SeccompAction::Allow,
+        std::env::consts::ARCH.try_into().map_err(|e: seccompiler::BackendError| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?
+    .try_into()
+    .map_err(|e: seccompiler::BackendError| e.to_string())?;
+    // apply_filter sets PR_SET_NO_NEW_PRIVS before installing the filter. Either
+    // failure refuses evaluation; the child never runs authored code unconfined.
+    seccompiler::apply_filter(&filter).map_err(|e| format!("Cannot sandbox command: {e}"))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]

@@ -2,7 +2,7 @@
 // the app opens files with; and the starter project `slop init` creates.
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { engine } from "../../src/cli/engine";
+import { execute } from "../../src/cli/engine";
 import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { overrideSlop } from "./source-fixture";
@@ -10,7 +10,7 @@ import { parseManifest, PackageFormat, RuntimeABI } from "../../src/schema/index
 import { buildTemplate } from "../../src/cli/template";
 
 /** What the engine reads in a built file. */
-const inspect = async (file: string) => JSON.parse(await engine(["inspect", file]));
+const inspect = async (file: string) => (await execute({ method: "inspect", file })).info;
 /** One value from a built file, read outside the engine. */
 function read<T>(file: string, sql: string): T {
   const database = new Database(file, { readonly: true });

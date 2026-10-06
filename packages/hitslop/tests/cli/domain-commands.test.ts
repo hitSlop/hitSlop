@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { cp, mkdtemp, readFile, rm, writeFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { buildTemplate } from "../../src/cli/template";
-import { engine } from "../../src/cli/engine";
+import { execute, request } from "../../src/cli/engine";
 import { HelperProtocol } from "../../src/schema/constants";
 import { exec } from "../../src/cli/process";
 import { findEngine } from "../../src/cli/engine";
@@ -35,13 +35,9 @@ export const ambient = doc.command({ description: "No host APIs", args: Type.Obj
 `);
     const template = await buildTemplate(source, undefined, join(root, "master.slop"));
     const document = join(root, "Working.slop");
-    await engine([...named, "create", "--from", template, "--output", document]);
-    const run = async (name: string, args: unknown) => {
-      const result = await exec([await findEngine(), ...named, "call"], { stdin: JSON.stringify({ documentPath: document, command: name, args }) });
-      expect(result.code, result.stderr).toBe(0);
-      return JSON.parse(result.stdout);
-    };
-    const describe = async () => JSON.parse(await engine([...named, "describe", document])).state;
+    await execute({ method: "create", from: template, output: document });
+    const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });
+    const describe = async () => (await execute({ method: "describe", documentPath: document })).state;
     const first = await describe();
     expect(first.commands.addTask.args.properties.text.type).toBe("string");
     expect(first.fields.find((field: any) => field.path[0] === "title").description).toBeTruthy();

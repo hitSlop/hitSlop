@@ -27,7 +27,7 @@ test("the helper reports its protocol and refuses unknown or unnamed protocols b
   // A document command that names no protocol is a usage error, refused before its request is read.
   const unnamed = await run(["export"]);
   expect(unnamed.code).not.toBe(0);
-  expect(unnamed.stderr).toContain("Name the command protocol");
+  expect(unnamed.stderr).toContain("Use --client-protocol N");
 });
 
 // The CLI runs the document engine, which passes an export to the selected helper.
@@ -57,13 +57,13 @@ console.log(JSON.stringify({ ok: true, method: "export", output: "capture.pdf" }
     });
     const code = await child.exited;
     if (refusal) {
-      expect(code).toBe(2);
+      expect(code).toBe(1);
       expect(await new Response(child.stderr).text()).toContain(shown!);
     } else expect(code).toBe(0);
     expect(await Bun.file(touched).exists()).toBe(!refusal);
     if (!refusal)
       expect(await Bun.file(touched).json()).toEqual({
-        args: ["--client-protocol", String(HelperProtocol.version), "export"],
+        args: ["--client-protocol", String(HelperProtocol.version)],
         request: { method: "export", documentPath: resolve("example.slop"), format: "pdf", output: resolve("capture.pdf") },
       });
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -89,8 +89,8 @@ test("explicit native helper overrides fail without falling back or retrying", a
       mode: 0o755,
     });
     const selected = await run(helper);
-    expect(selected.code).toBe(23);
-    expect(selected.error).toContain("selected helper failed");
+    expect(selected.code).toBe(1);
+    expect(selected.error).toContain("Native helper stopped without a valid reply");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

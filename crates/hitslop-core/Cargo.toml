@@ -13,6 +13,8 @@ serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 getrandom = "0.2"
+svgtypes = "=0.16.1"
+kurbo = "=0.13.1"
 
 [lib]
 doctest = false

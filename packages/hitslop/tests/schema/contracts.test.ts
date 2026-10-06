@@ -1,3 +1,4 @@
+import { NativeRequestSchema, NativeReplySchema } from "../../src/schema/engine";
 // The Swift contract generator emits each titled enumeration once; two definitions under
 // one name must stop generation, never silently share the first one's cases.
 import { expect, test } from "bun:test";
@@ -8,7 +9,7 @@ import { SocketReplySchema, SocketRequestSchema, SocketSuccessSchema } from "../
 
 test("one enumeration name with two definitions fails generation", () => {
   const generate = (reply: T.TSchema) =>
-    swiftContracts(SocketRequestSchema, reply, PageRequestSchema, PageFailureSchema, PageResults, HostRequestSchema, HostCaptureResultSchema);
+    swiftContracts(SocketRequestSchema, reply, PageRequestSchema, PageFailureSchema, PageResults, HostRequestSchema, HostCaptureResultSchema, NativeRequestSchema, NativeReplySchema);
   expect(() => generate(SocketReplySchema)).not.toThrow();
   // The page failure's `OutcomeCode` and this one differ.
   const conflicting = T.Union([...SocketSuccessSchema.anyOf,

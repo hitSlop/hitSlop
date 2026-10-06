@@ -23,6 +23,8 @@ const base = {
 };
 // Operations are an array of intents encoded as JSON text that only the core parses.
 const operations = T.String({ minLength: 2, maxLength: SocketLimits.request });
+export const SocketExportRequestSchema = Strict({ ...base, method: T.Literal("export"), format: T.Enum(ExportFormats), output: path });
+export const SocketExportSuccessSchema = Strict({ ok: T.Literal(true), method: T.Literal("export"), output: path });
 export const SocketRequestSchema = T.Union([
   Strict({ ...base, method: T.Literal("attachments.list") }),
   Strict({ ...base, method: T.Literal("attachments.read"), attachmentID: AttachmentIDSchema }),
@@ -42,12 +44,7 @@ export const SocketRequestSchema = T.Union([
     base: T.Optional(T.String()),
     attachments: T.Optional(T.Array(AttachmentBytesSchema, { minItems: 1 })),
   }),
-  Strict({
-    ...base,
-    method: T.Literal("export"),
-    format: T.Enum(ExportFormats),
-    output: path,
-  }),
+  SocketExportRequestSchema,
 ]);
 /** Every successful result names its method and carries all fields that method promises. */
 export const SocketSuccessSchema = T.Union([
@@ -63,7 +60,7 @@ export const SocketSuccessSchema = T.Union([
     }) }),
   // The rows the batch inserted; `get` reads the result.
   Strict({ ok: T.Literal(true), method: T.Literal("batch"), ids: T.Array(T.String()) }),
-  Strict({ ok: T.Literal(true), method: T.Literal("export"), output: path }),
+  SocketExportSuccessSchema,
   Strict({ ok: T.Literal(true), method: T.Literal("theme.export"), state: Strict({ file: T.String() }) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.list"), state: T.Array(AttachmentInfoSchema) }),
   Strict({ ok: T.Literal(true), method: T.Literal("attachments.read"), state: Strict({ bytes: AttachmentBytesSchema }) }),
@@ -77,8 +74,6 @@ export const SocketFailureSchema = Strict({
   opIndex: T.Optional(T.Integer({ minimum: 0 })),
 });
 export const SocketReplySchema = T.Union([...SocketSuccessSchema.anyOf, SocketFailureSchema]);
-/** Methods that change the document: a failure leaves an outcome to report. */
-export const MutationMethods: ReadonlySet<SocketMethod> = new Set(["batch"]);
 /** A live owner's discovery, in the registry (`~/.hitslop/live`): where it listens. */
 /** A live owner's discovery record. Its two fields never change, and a reader ignores any
  * other, so a client of any age reaches the owner and hears its refusal. */
@@ -89,19 +84,7 @@ export const SocketDiscoverySchema = T.Object({
 
 export type SocketRequest = T.Static<typeof SocketRequestSchema>;
 export type SocketMethod = SocketRequest["method"];
-/** A request as a client hands the engine, which adds the protocol it was called with. */
-export type HelperRequest = SocketRequest extends infer R ? (R extends unknown ? Omit<R, "protocol"> : never) : never;
-/** The helper request for `M`, whose method is exactly `M`. */
-export type HelperRequestFor<M extends SocketMethod> = HelperRequest extends infer R
-  ? R extends { method: infer K }
-    ? M extends K
-      ? Omit<R, "method"> & { method: M }
-      : never
-    : never
-  : never;
 export type SocketReply = T.Static<typeof SocketReplySchema>;
 
 export type SocketSuccess = T.Static<typeof SocketSuccessSchema>;
 export type SocketFailure = T.Static<typeof SocketFailureSchema>;
-export type SocketSuccessFor<M extends SocketMethod> = Extract<SocketSuccess, { method: M }>;
-export type SocketReplyFor<M extends SocketMethod> = SocketSuccessFor<M> | SocketFailure;

@@ -1,0 +1,91 @@
+{
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "open"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "method",
+        "documentPath",
+        "output",
+        "target",
+        "ifPresent"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "screenshot"
+        },
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "target": {
+          "enum": [
+            "preview",
+            "icon"
+          ]
+        },
+        "ifPresent": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "documentPath",
+        "method",
+        "format",
+        "output"
+      ],
+      "properties": {
+        "documentPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "method": {
+          "type": "string",
+          "const": "export"
+        },
+        "format": {
+          "enum": [
+            "png",
+            "pdf"
+          ]
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

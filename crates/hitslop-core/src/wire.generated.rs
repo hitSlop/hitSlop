@@ -178,6 +178,243 @@ pub struct AppRow { pub packageFormat: u64, pub runtimeABI: u64, pub manifest: B
 
 
 #[cfg(feature = "storage")]
+#[derive(Debug, Serialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub enum EngineRequest {
+    #[serde(rename = "attachments.list")]
+    AttachmentsList { documentPath: String },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { documentPath: String, attachmentID: String },
+    #[serde(rename = "theme.export")]
+    ThemeExport { documentPath: String },
+    #[serde(rename = "get")]
+    Get { documentPath: String },
+    #[serde(rename = "batch")]
+    Batch { documentPath: String, #[serde(skip_serializing_if = "Option::is_none")] ifVersion: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] command: Option<String>, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] attachments: Option<Vec<String>> },
+    #[serde(rename = "export")]
+    Export { documentPath: String, format: String, output: String },
+    #[serde(rename = "templates")]
+    Templates {  },
+    #[serde(rename = "create")]
+    Create { from: String, output: String },
+    #[serde(rename = "inspect")]
+    Inspect { file: String },
+    #[serde(rename = "schema")]
+    Schema { file: String },
+    #[serde(rename = "pack")]
+    Pack { stage: String, file: String },
+    #[serde(rename = "validateApp")]
+    ValidateApp { app: Box<serde_json::value::RawValue> },
+    #[serde(rename = "describe")]
+    Describe { documentPath: String },
+    #[serde(rename = "call")]
+    Call { documentPath: String, command: String, args: Box<serde_json::value::RawValue> },
+    #[serde(rename = "open")]
+    Open { documentPath: String },
+    #[serde(rename = "screenshot")]
+    Screenshot { documentPath: String, output: String, target: String, ifPresent: bool },
+}
+
+#[cfg(feature = "storage")]
+impl EngineRequest {
+    /// Parse each member directly from JSON so opaque payloads retain their bytes.
+    pub fn parse(input: &str) -> serde_json::Result<Self> {
+        #[derive(Deserialize)] struct Header { method: String }
+        let header: Header = serde_json::from_str(input)?;
+        match header.method.as_str() {
+            "attachments.list" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::AttachmentsList { documentPath: body.documentPath })
+            },
+            "attachments.read" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String, attachmentID: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::AttachmentsRead { documentPath: body.documentPath, attachmentID: body.attachmentID })
+            },
+            "theme.export" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::ThemeExport { documentPath: body.documentPath })
+            },
+            "get" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Get { documentPath: body.documentPath })
+            },
+            "batch" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String, ifVersion: Option<String>, command: Option<String>, ops: String, base: Option<String>, attachments: Option<Vec<String>> }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Batch { documentPath: body.documentPath, ifVersion: body.ifVersion, command: body.command, ops: body.ops, base: body.base, attachments: body.attachments })
+            },
+            "export" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String, format: String, output: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Export { documentPath: body.documentPath, format: body.format, output: body.output })
+            },
+            "templates" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String,  }
+                let _body: Body = serde_json::from_str(input)?;
+                Ok(Self::Templates {  })
+            },
+            "create" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, from: String, output: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Create { from: body.from, output: body.output })
+            },
+            "inspect" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, file: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Inspect { file: body.file })
+            },
+            "schema" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, file: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Schema { file: body.file })
+            },
+            "pack" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, stage: String, file: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Pack { stage: body.stage, file: body.file })
+            },
+            "validateApp" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, app: Box<serde_json::value::RawValue> }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::ValidateApp { app: body.app })
+            },
+            "describe" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Describe { documentPath: body.documentPath })
+            },
+            "call" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String, command: String, args: Box<serde_json::value::RawValue> }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Call { documentPath: body.documentPath, command: body.command, args: body.args })
+            },
+            "open" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Open { documentPath: body.documentPath })
+            },
+            "screenshot" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                #[allow(non_snake_case, dead_code)]
+                struct Body { method: String, documentPath: String, output: String, target: String, ifPresent: bool }
+                let body: Body = serde_json::from_str(input)?;
+                Ok(Self::Screenshot { documentPath: body.documentPath, output: body.output, target: body.target, ifPresent: body.ifPresent })
+            },
+            _ => Err(<serde_json::Error as serde::de::Error>::custom("Unknown engine method")),
+        }
+    }
+    pub fn method(&self) -> &'static str { match self {
+        Self::AttachmentsList { .. } => "attachments.list",
+        Self::AttachmentsRead { .. } => "attachments.read",
+        Self::ThemeExport { .. } => "theme.export",
+        Self::Get { .. } => "get",
+        Self::Batch { .. } => "batch",
+        Self::Export { .. } => "export",
+        Self::Templates { .. } => "templates",
+        Self::Create { .. } => "create",
+        Self::Inspect { .. } => "inspect",
+        Self::Schema { .. } => "schema",
+        Self::Pack { .. } => "pack",
+        Self::ValidateApp { .. } => "validateApp",
+        Self::Describe { .. } => "describe",
+        Self::Call { .. } => "call",
+        Self::Open { .. } => "open",
+        Self::Screenshot { .. } => "screenshot",
+    } }
+}
+
+#[cfg(feature = "storage")]
+#[derive(Debug, Serialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub enum EngineSuccess {
+    #[serde(rename = "get")]
+    Get { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "batch")]
+    Batch { ids: Vec<String> },
+    #[serde(rename = "export")]
+    Export { output: String },
+    #[serde(rename = "theme.export")]
+    ThemeExport { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "attachments.list")]
+    AttachmentsList { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "call")]
+    Call { result: Box<serde_json::value::RawValue>, ids: Vec<String> },
+    #[serde(rename = "templates")]
+    Templates { catalog: Box<serde_json::value::RawValue> },
+    #[serde(rename = "create")]
+    Create { documentPath: String },
+    #[serde(rename = "inspect")]
+    Inspect { info: Box<serde_json::value::RawValue> },
+    #[serde(rename = "schema")]
+    Schema { schema: Box<serde_json::value::RawValue> },
+    #[serde(rename = "pack")]
+    Pack {  },
+    #[serde(rename = "validateApp")]
+    ValidateApp {  },
+    #[serde(rename = "describe")]
+    Describe { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "open")]
+    Open { documentPath: String },
+    #[serde(rename = "screenshot")]
+    Screenshot { output: Box<serde_json::value::RawValue> },
+}
+
+
+#[cfg(feature = "storage")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]
 #[allow(non_snake_case)]

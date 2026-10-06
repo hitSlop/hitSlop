@@ -1104,6 +1104,189 @@ public struct SocketReplyHeader: Decodable, Sendable {
   }
 }
 
+public struct NativeOpenInput: Sendable {
+  public var `documentPath`: String
+
+  public init(`documentPath`: String) {
+    self.`documentPath` = `documentPath`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("NativeOpenInput.documentPath") }
+    self.`documentPath` = `documentPath`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "open"
+    result["documentPath"] = `documentPath`
+    return result
+  }
+}
+
+public enum NativeScreenshotInputTarget: String, CaseIterable, Sendable {
+  case `preview` = "preview"
+  case `icon` = "icon"
+}
+
+public struct NativeScreenshotInput: Sendable {
+  public var `documentPath`: String
+  public var `output`: String
+  public var `target`: NativeScreenshotInputTarget
+  public var `ifPresent`: Bool
+
+  public init(`documentPath`: String, `output`: String, `target`: NativeScreenshotInputTarget, `ifPresent`: Bool) {
+    self.`documentPath` = `documentPath`
+    self.`output` = `output`
+    self.`target` = `target`
+    self.`ifPresent` = `ifPresent`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("NativeScreenshotInput.documentPath") }
+    self.`documentPath` = `documentPath`
+    guard let `output` = json["output"] as? String else { throw ContractMappingError.field("NativeScreenshotInput.output") }
+    self.`output` = `output`
+    guard let `target` = (json["target"] as? String).flatMap(NativeScreenshotInputTarget.init(rawValue:)) else { throw ContractMappingError.field("NativeScreenshotInput.target") }
+    self.`target` = `target`
+    guard let `ifPresent` = json["ifPresent"] as? Bool else { throw ContractMappingError.field("NativeScreenshotInput.ifPresent") }
+    self.`ifPresent` = `ifPresent`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "screenshot"
+    result["documentPath"] = `documentPath`
+    result["output"] = `output`
+    result["target"] = `target`.rawValue
+    result["ifPresent"] = `ifPresent`
+    return result
+  }
+}
+
+public enum NativeExportInputFormat: String, CaseIterable, Sendable {
+  case `png` = "png"
+  case `pdf` = "pdf"
+}
+
+public struct NativeExportInput: Sendable {
+  public var `documentPath`: String
+  public var `format`: NativeExportInputFormat
+  public var `output`: String
+
+  public init(`documentPath`: String, `format`: NativeExportInputFormat, `output`: String) {
+    self.`documentPath` = `documentPath`
+    self.`format` = `format`
+    self.`output` = `output`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("NativeExportInput.documentPath") }
+    self.`documentPath` = `documentPath`
+    guard let `format` = (json["format"] as? String).flatMap(NativeExportInputFormat.init(rawValue:)) else { throw ContractMappingError.field("NativeExportInput.format") }
+    self.`format` = `format`
+    guard let `output` = json["output"] as? String else { throw ContractMappingError.field("NativeExportInput.output") }
+    self.`output` = `output`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "export"
+    result["documentPath"] = `documentPath`
+    result["format"] = `format`.rawValue
+    result["output"] = `output`
+    return result
+  }
+}
+
+public enum NativeRequest: Sendable {
+  case `open`(NativeOpenInput)
+  case `screenshot`(NativeScreenshotInput)
+  case `export`(NativeExportInput)
+
+  public enum Method: String, CaseIterable, Sendable {
+    case `open` = "open"
+    case `screenshot` = "screenshot"
+    case `export` = "export"
+  }
+
+  public var method: Method {
+    switch self {
+    case .`open`: return .`open`
+    case .`screenshot`: return .`screenshot`
+    case .`export`: return .`export`
+    }
+  }
+  public var documentPath: String {
+    switch self {
+    case .`open`(let value): return value.documentPath
+    case .`screenshot`(let value): return value.documentPath
+    case .`export`(let value): return value.documentPath
+    }
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let raw = json["method"] as? String, let method = Method(rawValue: raw) else { throw ContractMappingError.field("NativeRequest.method") }
+    switch method {
+    case .`open`: self = .`open`(try NativeOpenInput(json: json))
+    case .`screenshot`: self = .`screenshot`(try NativeScreenshotInput(json: json))
+    case .`export`: self = .`export`(try NativeExportInput(json: json))
+    }
+  }
+
+  public var json: [String: Any] {
+    switch self {
+    case .`open`(let value): return value.json
+    case .`screenshot`(let value): return value.json
+    case .`export`(let value): return value.json
+    }
+  }
+}
+
+/// A complete reply. A success cannot be constructed without its method's result.
+public enum NativeReply: Sendable {
+  case `open`(`documentPath`: String)
+  case `screenshot`(`output`: String?)
+  case `export`(`output`: String)
+  case failure(SocketFailure)
+
+  private var header: [String: Any] {
+    switch self {
+    case .`open`(let `documentPath`):
+      return ["ok": true, "method": "open", "documentPath": `documentPath`]
+    case .`screenshot`(let `output`):
+      return ["ok": true, "method": "screenshot", "output": (`output` as Any?) ?? NSNull()]
+    case .`export`(let `output`):
+      return ["ok": true, "method": "export", "output": `output`]
+    case .failure(let failure): return failure.json
+    }
+  }
+
+  private var stateJSON: String? {
+    switch self {
+    default: return nil
+    }
+  }
+
+  /// Encodes routing fields and splices the core's state without interpreting it.
+  public func encoded() -> Data {
+    guard var bytes = try? JSONSerialization.data(withJSONObject: header, options: .withoutEscapingSlashes) else {
+      return Data(#"{"ok":false,"code":"unknown_outcome","error":"Invalid response. Outcome unknown; run slop get before another edit."}"#.utf8)
+    }
+    if let stateJSON {
+      bytes.removeLast()
+      bytes.append(contentsOf: #","state":"#.utf8)
+      bytes.append(contentsOf: stateJSON.utf8)
+      bytes.append(UInt8(ascii: "}"))
+    }
+    return bytes
+  }
+}
+
 public struct PageOpenResult: Sendable {
   public var `state`: String
 

@@ -24,7 +24,7 @@ Generated masters are never edited. To preview a generated variant:
 
 ```sh
 bun run shape:lab build washer
-bun run slop dev generated/shape-lab/sources/washer
+bun run slop dev generated/shape-lab/sources/shape-lab-washer
 ```
 
 The launcher builds all six cases: rounded, radii, concave, hole, locked and washer.

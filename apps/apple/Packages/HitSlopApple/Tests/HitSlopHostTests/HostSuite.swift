@@ -36,15 +36,15 @@ import Testing
     return state?["value"] as? NSDictionary
   }
 
-  /// Runs a native tool of the debug build with `args` in this build's command protocol,
+  /// Runs a native tool of the debug build in this build's command protocol,
   /// writing `input` to its standard input: the document engine `slop` runs unless `tool`
   /// names the rendering helper.
-  func cli(_ args: [String], input: Data? = nil, tool: String = "slop-engine") async throws -> (Int32, String, String) {
+  func cli(input: Data, tool: String = "slop-engine") async throws -> (Int32, String, String) {
     let binary =
       tool == "slop-engine"
       ? Fixtures.engine
       : Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/\(tool)")
-    let named = ["--client-protocol", String(HelperProtocol.version)] + args
+    let named = ["--client-protocol", String(HelperProtocol.version)]
     return try await Task.detached { try Fixtures.run(binary, named, input: input) }.value
   }
 }

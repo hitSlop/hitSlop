@@ -149,9 +149,16 @@ public enum Fixtures {
   /// packs one.
   public static func template(stage: URL, named name: String = "fixture") throws -> URL {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
-    let (status, _, errors) = try run(
-      engine, ["pack", stage.path, template.path])
+    let input = try JSONSerialization.data(withJSONObject: [
+      "method": "pack", "stage": stage.path, "file": template.path,
+    ])
+    let (status, output, errors) = try run(engine, ["--client-protocol", String(HelperProtocol.version)], input: input)
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    guard let reply = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
+      reply["ok"] as? Bool == true
+    else {
+      throw SlopFailure(output)
+    }
     return template
   }
 

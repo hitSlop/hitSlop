@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "3d34df8dd92346781f47815186e418733f2c4fb3-dirty",
-  "captured": "2026-10-06T18:44:17.839Z",
+  "commit": "40aab95b9dc81ec7f0dbb8faf59dd8cd43fed108-dirty",
+  "captured": "2026-10-06T20:49:56.589Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,31 +10,31 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "130f9f0df80941e2fa55e5d3884681727e587d755d5e0959027ce5e17cf47bc9",
+  "inputs": "c64162a0ae009ed0428c5061950ee480d1577c29b821ab88c32788d116e8fdd1",
   "producer": {
-    "coreBuildID": "da020e7f0f049181",
+    "coreBuildID": "7fd47aa321a66a39",
     "shell": "49a2512f46ea7e89a4c22b2774d31b853e7a7a77b740be55a76a802c679ffd39"
   },
   "files": {
     "commands/hourglass.json": "0d4834f3e95a4aa53f8e10c7529fb600396b468e5cc657100f7f3dcb24787d2b",
     "commands/quick-checklist.json": "4e402be0c685ca74714fc15480d8e01dc38ea18094d6ef47bc61650182ec1c2e",
-    "documents/conformance-compacted.page.slop": "f4a7981e2b5cd1467109833f5ff441e4e2c5be180b7c7be223718aa3043b81ba",
-    "documents/conformance-compacted.slop": "fb29eaf16031ceb3246d925f6c3bfc59d845212eb5ea41863337b75cdf197879",
-    "documents/conformance.page.slop": "599fe0e32ce8334f9d9be9b7f5d943bcc638247980a858d302eebc5aad7c7b44",
-    "documents/conformance.slop": "a511994bb7455c14f62fed2954947f57eb5b11fa808ec5f92a19bc498fb6d549",
-    "documents/fixture-checklist.page.slop": "3460939d4f5df02174f27f07955e988d375cbab0c27f026717d4c2238594d357",
-    "documents/fixture-checklist.slop": "a0d63b07952b7a4f71a883772d4ff242b3fb6636bb85b6079fcc84b3d0b11e87",
-    "documents/fixture-collections.page.slop": "a40add488922f285a2c8d1c5034ea9c2fb94b538cceaa88dc63fab722dc94730",
-    "documents/fixture-collections.slop": "659f80af558b978d024eda4ba249a3ef2cf9fadc6d1524319cf382a659ceea5f",
-    "documents/fixture-scalars.page.slop": "cece1d5a149616eabcd7c9409b0c69cc215a32612ab98c21938622f62c501457",
-    "documents/fixture-scalars.slop": "ad0a7e899e326bef1cd71eee4b55701efb5cd1c8d12757327856ae8cdf529ad8",
-    "documents/hourglass.page.slop": "0a9d1f40024e8a8c519406755840b675c11168cfe6c44277d711530639ef4008",
-    "documents/hourglass.slop": "e3fc441f894b6957fabe0771dc859f16d68f64a0a7d0444f5837a5d55fe143fa",
-    "documents/quick-checklist-compacted.page.slop": "e616fd9ca81dd792c440b9655b359c65c628f210677b4f2646ae2668b7591bf2",
-    "documents/quick-checklist-compacted.slop": "12665d36e1b1f184a84f250d16368126d472e0d1a16218e4f83236cc1299e71a",
-    "documents/quick-checklist.page.slop": "4f41e4755369019328ec7670cf1aa9b6f521c4be334fdd9e75c059d1b8ef4273",
-    "documents/quick-checklist.slop": "cf352194c5fcb9b5b4bfb8144088c308622fb37cbb121a79599d1f4a1efd267d",
-    "engine/darwin-arm64/slop-engine": "a4988318432a62e46ca0ed48f64bc72a6dc1ce0f143927dac8ed021a01615103",
+    "documents/conformance-compacted.page.slop": "7626b5d74b35effc98ffa74066ad5c4db89d0b796c0cbc1c2dfd6515595e8aca",
+    "documents/conformance-compacted.slop": "2fd13d0a68fe2d1252fdc1986f37975be3eaa65eb8275338bd372f57f9a27af2",
+    "documents/conformance.page.slop": "8f8c4755fe8d12e4a62d70876d9490321819b202994a1c4b7656da5fafda9a4f",
+    "documents/conformance.slop": "d7cd6ac0a8685153156f175e4aa4c4ca1793995b7da8aaf40cbc0cbb72edc319",
+    "documents/fixture-checklist.page.slop": "5c7a86c3cd70b36fb449c2f4b34b238d7166f52b9d51197485f62a36f9267ff8",
+    "documents/fixture-checklist.slop": "2a195e5f6c62149e70f247b62559195e0534c3ed4f5dc8ffc6da337168fd7baa",
+    "documents/fixture-collections.page.slop": "a66d0d5c8a130708760e5226b0144142a405b18ea90f1b06545566698d9a2ae6",
+    "documents/fixture-collections.slop": "58c9c36eb7200a8205cef767fef3da027132483357109577c34757abf7ef7a08",
+    "documents/fixture-scalars.page.slop": "a120841c2a6271144bdec7fa96098e10270f6d5d69a93d0b4ba8578e4071937f",
+    "documents/fixture-scalars.slop": "b8f154799fcbcc89c549a23b40b19fd1734fba7c12fb7a4516519c8d969d10f2",
+    "documents/hourglass.page.slop": "8ed8763e17c45c5315598cbd57bad4ef0f3c09541792ea2a931a4ef7bfa25538",
+    "documents/hourglass.slop": "75189ffb6c522eae5401cbb85a4439d2c66b4d948a0536ee0e5d988153059c04",
+    "documents/quick-checklist-compacted.page.slop": "bd8358eaee7834fc700bc322c701b0553414db5a9a8d7bef6fb8b7eef3a12c23",
+    "documents/quick-checklist-compacted.slop": "4abf7908e124d76ca6c54dcf9af09354495dd5c556f2824fa074362260c87274",
+    "documents/quick-checklist.page.slop": "a8dfdae2b93ed1b335986bf9888c69f016131177b8fd42265287eb6484b74ecb",
+    "documents/quick-checklist.slop": "5238245e1a0017e930e19a416b1fced1d09a913d4e83d4913a920588e4e40578",
+    "engine/darwin-arm64/slop-engine": "fef873bc4894729dc597f66ef6282d8934551e6c0d8dddcfd04409518c00a396",
     "expected/conformance-compacted.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
     "expected/conformance-compacted.page.json": "4ef292b10799bf5347845a32ec1ff80e79e3ab0b53a60cfa940fd0b05f716cc6",
     "expected/conformance.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
@@ -81,30 +81,30 @@
     "scenarios/quick-checklist-compacted.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
-    "templates/conformance.slop": "e29b5aad727e5b1a4e32af13d99bb4ca6c2c945fe27a6e1a2d9cbeb715b451ee",
+    "templates/conformance.slop": "4ad8e5de79a0bd39e4dff61752361c83d6adcb2eecd43fcf7c30c5e731381e1f",
     "templates/fixture-checklist.slop": "2017094bf0a768b4561482f199e47cddbce0d309cdaa60a1e189702600f68a47",
     "templates/fixture-collections.slop": "f330b7d3a47c4010300c54a766785f96d4cd4cc5ca3c5bd72b415dd170ed7555",
     "templates/fixture-scalars.slop": "859344c4630b4bd90b034077edd62a54ea29a43681376c79e4c265da0b503657",
-    "templates/hourglass.slop": "b4ae3308aea7bd03a1d29a54609e6ec179b225996a53e6026d449c4b27698dec",
-    "templates/quick-checklist.slop": "15d66247cb9d3705619d576ed080bb794789bede62015726b09f748f27c584cc"
+    "templates/hourglass.slop": "ca3cbd46c7f06cf493e5d452ef09450e9f66c5ee3f1a5a4af78759c51ce6c4f2",
+    "templates/quick-checklist.slop": "656ea15ad3561719d33c8b09cd12c99a92f5710f64002bac88455fd419e0563c"
   },
   "acceptance": {
-    "packages/hitslop/acceptance/packageFormat-1.json": "1da56e252be6ffda0fb31738cee3ac4243fbcee18e7454f5c74700bd8cc8626c",
+    "packages/hitslop/acceptance/packageFormat-1.json": "30d76d8f810673ad65efb2057317940325b20d2ba6f6447967897cc8c34c1349",
     "packages/hitslop/acceptance/storage-1.json": "487eb6b86ab8cb9e0d6a4d5d13426af490249a7e34cb697abfc78860db1ff1ac",
     "crates/hitslop-core/src/file/storage-1.sql": "fb1abb8781c71de6f3968764f5c7834010892a50be62b3270397fce098520bd4"
   },
   "templates": {
-    "quick-checklist": "15d66247cb9d3705619d576ed080bb794789bede62015726b09f748f27c584cc",
-    "hourglass": "b4ae3308aea7bd03a1d29a54609e6ec179b225996a53e6026d449c4b27698dec",
+    "quick-checklist": "656ea15ad3561719d33c8b09cd12c99a92f5710f64002bac88455fd419e0563c",
+    "hourglass": "ca3cbd46c7f06cf493e5d452ef09450e9f66c5ee3f1a5a4af78759c51ce6c4f2",
     "fixture-scalars": "859344c4630b4bd90b034077edd62a54ea29a43681376c79e4c265da0b503657",
     "fixture-collections": "f330b7d3a47c4010300c54a766785f96d4cd4cc5ca3c5bd72b415dd170ed7555",
     "fixture-checklist": "2017094bf0a768b4561482f199e47cddbce0d309cdaa60a1e189702600f68a47",
-    "conformance": "e29b5aad727e5b1a4e32af13d99bb4ca6c2c945fe27a6e1a2d9cbeb715b451ee"
+    "conformance": "4ad8e5de79a0bd39e4dff61752361c83d6adcb2eecd43fcf7c30c5e731381e1f"
   },
   "writer": {
-    "buildId": "da020e7f0f049181",
-    "commit": "3d34df8dd92346781f47815186e418733f2c4fb3-dirty",
-    "sha256": "a4988318432a62e46ca0ed48f64bc72a6dc1ce0f143927dac8ed021a01615103"
+    "buildId": "7fd47aa321a66a39",
+    "commit": "40aab95b9dc81ec7f0dbb8faf59dd8cd43fed108-dirty",
+    "sha256": "fef873bc4894729dc597f66ef6282d8934551e6c0d8dddcfd04409518c00a396"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -121,7 +121,7 @@
       "updates": 4
     },
     "conformance-compacted": {
-      "checkpointBytes": 1586,
+      "checkpointBytes": 1579,
       "updates": 0
     },
     "fixture-checklist": {
@@ -145,7 +145,7 @@
       "updates": 3
     },
     "quick-checklist-compacted": {
-      "checkpointBytes": 1178,
+      "checkpointBytes": 1173,
       "updates": 0
     },
     "conformance.page": {
@@ -153,7 +153,7 @@
       "updates": 10
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 1586,
+      "checkpointBytes": 1579,
       "updates": 6
     },
     "fixture-checklist.page": {
@@ -177,7 +177,7 @@
       "updates": 4
     },
     "quick-checklist-compacted.page": {
-      "checkpointBytes": 1178,
+      "checkpointBytes": 1173,
       "updates": 1
     }
   }

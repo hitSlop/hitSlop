@@ -2,7 +2,7 @@ import { cp, mkdir, realpath, writeFile, rm, rename } from "node:fs/promises";
 import { basename, relative, resolve, join } from "node:path";
 import { PackageFormat, RuntimeABI, SlopManifestSchema, type AppRow } from "../schema/index";
 import { validate } from "../schema/validation";
-import { findEngine } from "./engine";
+import { execute } from "./engine";
 import { exists } from "./fs";
 import { localImports } from "./imports";
 import { cliRoot } from "./paths";
@@ -91,16 +91,13 @@ export async function normalizeApp(source: string, { slop, schema }: LoadedProje
     initial,
     theme,
   };
-  await run([await findEngine(), "validate-app"], {
-    stdin: JSON.stringify(app),
-    failure: "slop.ts validation failed",
-  }).catch((error: Error) => { throw new Error(`slop.ts: ${error.message}`, { cause: error }); });
+  await execute({ method: "validateApp", app }).catch((error: Error) => { throw new Error(`slop.ts: ${error.message}`, { cause: error }); });
   return app as AppRow;
 }
 /** Artwork a project supplies, packed as the file's preview and icon. */
 const artwork = ["preview.png", "icon.png"];
 /** Writes a build's stage at `stage`, replacing one there: `app.json` and, with
- * `compileApp`, the compiled app, its assets and the project's artwork. `slop-engine pack`
+ * `compileApp`, the compiled app, its assets and the project's artwork. The engine's `pack` JSON request
  * makes a `.slop` file of a stage. Without `compileApp`, `app.json` only: the dev server
  * serves the app from source. */
 export async function stageProjectInBun(source: string, stage: string, compileApp?: AppCompiler) {

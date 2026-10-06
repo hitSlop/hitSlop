@@ -1,93 +1,111 @@
 import AppKit
-import ArgumentParser
 import Foundation
 import HitSlopCore
 import HitSlopDocument
 import HitSlopHost
 
-@main struct NativeCLI: AsyncParsableCommand {
-  /// Every command names its caller's protocol first (`--client-protocol N`), checked
-  /// before ArgumentParser runs it; only the helper's own flags need none.
-  static func main() async {
-    do {
-      var arguments = Array(CommandLine.arguments.dropFirst())
-      if arguments.first == "--client-protocol" {
-        guard arguments.count >= 2, let version = Int(arguments[1]) else {
-          throw ValidationError("--client-protocol requires an integer")
-        }
-        // The permanent refusal path: one line on stderr naming the older side, status 2.
-        if version != HelperProtocol.version {
-          FileHandle.standardError.write(
-            Data(
-              (version > HelperProtocol.version
-                ? "This command needs a newer hitSlop app; update hitSlop\n"
-                : "This hitSlop app needs a newer command line; update the hitSlop CLI\n").utf8))
-          Foundation.exit(2)
-        }
-        clientProtocol = version
-        arguments.removeFirst(2)
+/// The renderer's private JSON boundary. Protocol refusal precedes stdin and AppKit.
+@main struct NativeCLI {
+  @MainActor static func main() async {
+    var arguments = Array(CommandLine.arguments.dropFirst())
+    var protocolVersion: Int?
+    if arguments.first == "--client-protocol" {
+      guard arguments.count >= 2, let version = Int(arguments[1]) else {
+        return bootstrapFailure("--client-protocol requires an integer")
       }
-      var command = try parseAsRoot(arguments)
-      guard command is NativeCLI || clientProtocol != nil else {
-        throw ValidationError("Name the command protocol with --client-protocol N")
+      if version != HelperProtocol.version {
+        return bootstrapFailure(
+          version > HelperProtocol.version
+            ? "This command needs a newer hitSlop app; update hitSlop"
+            : "This hitSlop app needs a newer command line; update the hitSlop CLI")
       }
-      if var asynchronous = command as? AsyncParsableCommand {
-        try await asynchronous.run()
-      } else {
-        try command.run()
-      }
-    } catch { exit(withError: error) }
-  }
-
-  static let configuration = CommandConfiguration(
-    commandName: "hitslop-native", abstract: "Open windows and render exports and artwork for slop-engine.",
-    subcommands: [Export.self, Screenshot.self, Open.self])
-
-  @Flag(name: .customLong("core-build"), help: "Print the embedded document core build ID.")
-  var coreBuild = false
-  @Flag(name: .customLong("protocol"), help: "Print the command protocols this helper serves.")
-  var commandProtocol = false
-
-  func run() async throws {
-    if commandProtocol {
-      // The one protocol this helper serves.
+      protocolVersion = version
+      arguments.removeFirst(2)
+    }
+    if arguments == ["--protocol"] {
       print(#"{"version":\#(HelperProtocol.version)}"#)
       return
     }
-    guard coreBuild else { throw CleanExit.helpRequest(self) }
-    print(DocumentOwner.coreBuildID)
-  }
-}
-
-/// The command protocol the caller named, set once before any command runs.
-nonisolated(unsafe) var clientProtocol: Int?
-
-/// One export from slop-engine: its `SocketRequest` (JSON) on standard input, and its
-/// `SocketReply` on standard output. An open document's owner renders it; a closed one's
-/// saved state renders here. Documents are read and edited through slop-engine alone, so
-/// any other request is refused.
-struct Export: AsyncParsableCommand {
-  @MainActor func run() async throws {
-    var input = Data()
-    while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
-      input.append(chunk)
-      guard input.count <= Limits.socketRequest else {
-        throw ValidationError("The request exceeds \(Limits.socketRequest) bytes")
+    if arguments == ["--core-build"] {
+      print(DocumentOwner.coreBuildID)
+      return
+    }
+    guard let version = protocolVersion, arguments.isEmpty else {
+      return bootstrapFailure("Use --client-protocol N and one JSON request on stdin")
+    }
+    let reply: Data
+    do {
+      var input = Data()
+      while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
+        input.append(chunk)
+        guard input.count <= Limits.socketRequest else {
+          return write(
+            .failure(SocketFailure(error: "Native request is too large", code: .rejected, reason: .tooLarge)))
+        }
       }
+      guard Envelope.valid(.nativeRequest, input),
+        let json = try JSONSerialization.jsonObject(with: input) as? [String: Any]
+      else {
+        return write(
+          .failure(
+            SocketFailure(
+              error: "Invalid native request; send document edits to slop-engine", code: .rejected,
+              reason: .invalidRequest)))
+      }
+      let request = try NativeRequest(json: json)
+      switch request {
+      case .export:
+        bootstrapApp()
+        reply = await DocumentCommand.run(json: input, protocol: version, export: exportClosed)
+      case .screenshot(let request):
+        bootstrapApp()
+        let file = URL(fileURLWithPath: request.documentPath)
+        let output = URL(fileURLWithPath: request.output)
+        let data: Data?
+        switch request.target {
+        case .preview: data = try await SlopRenderer.previewPNGData(url: file)
+        case .icon: data = try await SlopRenderer.iconPNGData(url: file)
+        }
+        guard let data else {
+          if request.ifPresent { return write(.screenshot(output: nil)) }
+          return write(
+            .failure(
+              SocketFailure(
+                error: "The slop does not define a \(request.target.rawValue) render target.", code: .rejected,
+                reason: .invalidRequest)))
+        }
+        try data.write(to: output, options: .atomic)
+        reply = NativeReply.screenshot(output: output.path).encoded()
+      case .open(let request):
+        let file = URL(fileURLWithPath: request.documentPath)
+        guard try SlopFile.kind(of: file) == .document else { throw SlopError.template }
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app") else {
+          return write(
+            .failure(
+              SocketFailure(error: "Install hitSlop.app to open documents", code: .rejected, reason: .invalidRequest)))
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        try await NSWorkspace.shared.open([file], withApplicationAt: app, configuration: configuration)
+        reply = NativeReply.open(documentPath: file.path).encoded()
+      }
+    } catch is SlopRequiresUpdate {
+      return write(
+        .failure(
+          SocketFailure(error: SlopRequiresUpdate().localizedDescription, code: .rejected, reason: .requiresUpdate)))
+    } catch let error as SlopError {
+      return write(.failure(SocketFailure(error: error.localizedDescription, code: .rejected, reason: .invalidRequest)))
+    } catch {
+      return write(.failure(SocketFailure(error: error.localizedDescription, code: .unknownOutcome)))
     }
-    let method = (try? JSONSerialization.jsonObject(with: input) as? [String: Any])?["method"] as? String
-    guard method == SocketRequest.Method.export.rawValue else {
-      let refusal = SocketFailure(
-        error: "hitslop-native renders exports; send document requests to slop-engine", code: .rejected,
-        reason: .invalidRequest)
-      return FileHandle.standardOutput.write(SocketReply.failure(refusal).encoded() + [10])
-    }
-    bootstrapApp()
-    guard let version = clientProtocol else {
-      throw ValidationError("Name the command protocol with --client-protocol N")
-    }
-    let reply = await DocumentCommand.run(json: input, protocol: version, export: Self.exportClosed)
     FileHandle.standardOutput.write(reply + [10])
+  }
+  private static func bootstrapFailure(_ message: String) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+    Foundation.exit(2)
+  }
+  private static func write(_ reply: NativeReply) {
+    FileHandle.standardOutput.write(reply.encoded() + [10])
   }
   @MainActor private static func exportClosed(
     _ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline
@@ -95,49 +113,8 @@ struct Export: AsyncParsableCommand {
     _ = try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
   }
 }
-
-struct Screenshot: AsyncParsableCommand {
-  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
-  @Option(transform: URL.init(fileURLWithPath:)) var output: URL
-  @Option var target: SlopArtwork.Name = .preview
-  @Flag var ifPresent = false
-  @MainActor func run() async throws {
-    bootstrapApp()
-    let data: Data?
-    switch target {
-    case .preview: data = try await SlopRenderer.previewPNGData(url: file)
-    case .icon: data = try await SlopRenderer.iconPNGData(url: file)
-    }
-    guard let data else {
-      if ifPresent { return }
-      throw ValidationError("The slop does not define a \(target.rawValue) render target.")
-    }
-    try data.write(to: output, options: .atomic)
-    print(output.path)
-  }
-}
 /// A windowless app for WebKit rendering.
-@MainActor func bootstrapApp() {
+@MainActor private func bootstrapApp() {
   _ = NSApplication.shared
   NSApp.setActivationPolicy(.prohibited)
 }
-struct Open: AsyncParsableCommand {
-  @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
-  @MainActor func run() async throws {
-    // The header decides; the app checks the whole file when it opens it.
-    guard try SlopFile.kind(of: file) == .document else {
-      throw ValidationError(SlopError.template.localizedDescription)
-    }
-    guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app")
-    else {
-      throw ValidationError("Install hitSlop.app to open documents")
-    }
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = true
-    try await NSWorkspace.shared.open(
-      [file], withApplicationAt: app, configuration: configuration)
-    print(file.path)
-  }
-}
-
-extension SlopArtwork.Name: ExpressibleByArgument {}

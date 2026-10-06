@@ -59,3 +59,48 @@ test("a renderer never selects the document engine", async () => {
     if (old === undefined) delete process.env.HITSLOP_NATIVE_CLI; else process.env.HITSLOP_NATIVE_CLI = old;
   }
 });
+
+test("one JSON transport validates results and never retries ambiguous invocations", async () => {
+  const { request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-wire-")); roots.push(root);
+  const binary = join(root, "engine"), sent = join(root, "sent");
+  for (const reply of [
+    { ok: true, method: "call" },
+    { ok: true, method: "templates", catalog: { folders: [], templates: [], issues: [] } },
+    { ok: true, method: "call", result: null, ids: [], unexpected: true },
+  ]) {
+    await writeFile(binary, `#!${process.execPath}
+const body = await Bun.stdin.json();
+await Bun.write(${JSON.stringify(sent)}, JSON.stringify({args:process.argv.slice(2),body}));
+console.log(${JSON.stringify(JSON.stringify(reply))});
+`, { mode: 0o755 });
+    const body = { method: "call" as const, documentPath: "-My doc.slop", command: "addTask", args: {} };
+    await expect(request(body, { binary })).rejects.toThrow("Outcome unknown");
+    const observed = await Bun.file(sent).json();
+    expect(observed.body).toEqual(body);
+    expect(observed.args).toEqual(["--client-protocol", String((await import("../../src/schema/constants")).HelperProtocol.version)]);
+  }
+  await writeFile(binary, `#!${process.execPath}
+await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"screenshot",output:null}));
+`, { mode: 0o755 });
+  expect(await request({ method: "screenshot", documentPath: "a.slop", output: "a.png", target: "icon", ifPresent: true }, { binary })).toEqual({ ok: true, method: "screenshot", output: null });
+});
+
+test("only protocol refusals suggest updating the CLI", async () => {
+  const { execute, ExitStatus, request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-refusal-")); roots.push(root);
+  const binary = join(root, "engine");
+  for (const reason of ["requires_update", "invalid_request"] as const) {
+    await writeFile(binary, `#!${process.execPath}
+await Bun.stdin.json(); console.log(JSON.stringify({ok:false,code:"rejected",reason:${JSON.stringify(reason)},error:"update the hitSlop CLI"}));
+`, { mode: 0o755 });
+    try { await execute({ method: "templates" }, { binary }); throw new Error("unexpected success"); }
+    catch (error) {
+      expect((error as Error).message.includes("bunx")).toBe(reason === "requires_update");
+    }
+  }
+  await writeFile(binary, '#!/bin/sh\necho "update the hitSlop CLI" >&2\nexit 2\n', { mode: 0o755 });
+  await expect(request({ method: "templates" }, { binary })).rejects.toBeInstanceOf(ExitStatus);
+  await writeFile(binary, '#!/bin/sh\nexit 19\n', { mode: 0o755 });
+  await expect(request({ method: "templates" }, { binary })).rejects.toThrow("Outcome unknown");
+});

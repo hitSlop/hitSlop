@@ -1,17 +1,11 @@
+import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../schema/engine";
 // Document commands. Each is one `SocketRequest` the document engine sends to the
 // document's live owner, or to an owner it opens; files the command names are read and
 // written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "../schema/constants";
-import {
-  MutationMethods,
-  type HelperRequestFor,
-  type SocketFailure,
-  type SocketMethod,
-  type SocketReply,
-  type SocketSuccessFor,
-} from "../schema/socket";
+import type { SocketFailure } from "../schema/socket";
 import type { OutcomeCode } from "../schema/values";
 import type { PaletteIntent } from "../schema/core";
 
@@ -30,21 +24,15 @@ const outcomes: Record<OutcomeCode, string> = {
  * the batch) and its reason code, so an agent knows what to fix. */
 function refusal({ error, reason, opIndex }: SocketFailure, remedy: (message: string) => string) {
   const code = reason ? ` (${reason})` : "";
-  return opIndex === undefined ? `${remedy(error)}${code}` : `Refused ops[${opIndex}]${code}: ${remedy(error)}`;
+  return opIndex === undefined ? `${(reason === "requires_update" ? remedy(error) : error)}${code}` : `Refused ops[${opIndex}]${code}: ${(reason === "requires_update" ? remedy(error) : error)}`;
 }
 /** One request, and its successful reply's result as the method's contract requires it.
  * A failed edit says what it means for the next one. */
-async function send<M extends SocketMethod>(request: HelperRequestFor<M> & { method: M }): Promise<SocketSuccessFor<M>> {
-  const { ExitStatus, request: helper, withRemedy } = await import("./native");
-  const outcome = (code: OutcomeCode) => (MutationMethods.has(request.method) ? outcomes[code] : undefined);
-  const reply: SocketReply = await helper<M>(request).catch((error) => {
-    if (!(error instanceof ExitStatus)) throw error;
-    // Status 2 is a protocol refusal, before anything was written; any other is unknown.
-    const after = error.code === 2 ? undefined : outcome("unknown_outcome");
-    throw new ExitStatus(error.code, [error.message, after].filter(Boolean).join("\n"));
-  });
-  if (!reply.ok) throw new Error([refusal(reply, withRemedy), outcome(reply.code)].filter(Boolean).join("\n"));
-  return reply as SocketSuccessFor<M>;
+async function send<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }): Promise<Extract<EngineSuccess, { method: M }>> {
+  const { request, withRemedy } = await import("./engine");
+  const reply = await request<M>(body);
+  if (!reply.ok) throw new Error([refusal(reply, withRemedy), body.method === "batch" || body.method === "call" ? outcomes[reply.code] : undefined].filter(Boolean).join("\n"));
+  return reply as Extract<EngineSuccess, { method: M }>;
 }
 /** The document a request names. */
 const at = (document: string) => ({ documentPath: resolve(document) });
@@ -84,29 +72,17 @@ export async function get(document: string, snapshot: boolean) {
   print(snapshot ? state : state.value);
 }
 
-/** Engine-only commands: the evaluator never runs in the document owner or renderer. */
-async function engineCommand(args: string[], input?: unknown) {
-  const { findDocumentEngine } = await import("./engine");
-  const { negotiate, ExitStatus, withRemedy } = await import("./native");
-  const { exec } = await import("./process");
-  const { stdout, stderr, code } = await exec([...negotiate(await findDocumentEngine()), ...args], input === undefined ? {} : { stdin: JSON.stringify(input) });
-  if (code) throw new ExitStatus(code, withRemedy(stderr.trim()) + (args[0] === "call" && code !== 2 ? "\nOutcome unknown; run slop get before another edit." : ""));
-  let reply;
-  try { reply = JSON.parse(stdout); } catch { throw new Error("Invalid engine reply; outcome unknown, run slop get before another edit"); }
-  if (!reply.ok) throw new Error([refusal(reply, withRemedy), outcomes[reply.code as OutcomeCode]].filter(Boolean).join("\n"));
-  return reply;
-}
 export async function call(document: string, command: string, args: string) {
-  const { CommandCall, CommandSuccess } = await import("../schema/commands");
+  const { CommandCall } = await import("../schema/commands");
   const { validate } = await import("../schema/validation");
   const parsed = json(args);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("--args must be a JSON object");
   const input = validate(CommandCall, { ...at(document), command, args: parsed });
-  const reply = validate(CommandSuccess, await engineCommand(["call"], input), "Invalid command reply; outcome unknown, run slop get before another edit");
+  const reply = await send({ method: "call", ...input });
   print({ result: reply.result, ids: reply.ids });
 }
 export async function describe(document: string, machine = false) {
-  const { state } = await engineCommand(["describe", resolve(document)]);
+  const { state } = await send({ method: "describe", ...at(document) });
   if (machine) return print(state);
   const lines = [`${state.manifest.title}: ${state.manifest.description}`, `Version: ${state.version}`, "", "Fields"];
   for (const field of state.fields)

@@ -8,8 +8,8 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { debugHelper, documentFromStage, engineRequest } from "../../scripts/lib/native";
-import { engine } from "../../packages/hitslop/src/cli/engine";
-import { negotiate } from "../../packages/hitslop/src/cli/native";
+import { execute } from "../../packages/hitslop/src/cli/engine";
+import { negotiate } from "../../packages/hitslop/src/cli/engine";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
 useTestRegistry();
@@ -28,7 +28,7 @@ afterAll(() => rm(folder, { recursive: true, force: true }));
 
 /** One engine request, killed after `killAfter` milliseconds unless it has answered. */
 async function request(body: Record<string, unknown>, killAfter: number) {
-  const child = Bun.spawn([...negotiate(documentEngine), "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(negotiate(documentEngine), { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   child.stdin.write(JSON.stringify(body));
   await child.stdin.end();
   setTimeout(() => child.kill("SIGKILL"), killAfter);
@@ -78,7 +78,7 @@ test.if(!!app)("an acknowledged edit survives the death of the host that acknowl
   try {
     const deadline = Date.now() + 15000;
     // The host is ready once it names its socket for commands.
-    while (!JSON.parse(await engine(["inspect", root])).live) {
+    while (!(await execute({ method: "inspect", file: root })) .info.live) {
       if (Date.now() > deadline || host.exitCode !== null) throw new Error("Native host startup failed");
       await Bun.sleep(30);
     }

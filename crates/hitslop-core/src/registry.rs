@@ -7,10 +7,9 @@
 //! lease withdraws its own. `sweep` clears a crashed owner's discovery.
 
 use crate::error::{Error, Result, failed, invalid};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fs;
 use std::io::Write;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -80,7 +79,7 @@ fn name(dev: u64, ino: u64) -> String {
 
 /// The one writer of a document file. Released when dropped.
 pub struct Lease {
-    _lock: OwnedFd,
+    _lock: fs::File,
     path: PathBuf,
     dev: u64,
     ino: u64,
@@ -105,26 +104,19 @@ impl Lease {
         fs::create_dir_all(&folder).map_err(|e| failed(format!("Cannot create {}: {e}", folder.display())))?;
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).map_err(failed)?;
         let key = name(dev, ino);
-        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes())
-            .map_err(|_| failed("Invalid path"))?;
-        // SAFETY: a valid C string; the descriptor is owned from here on.
-        let fd = unsafe {
-            libc::open(lock.as_ptr(), libc::O_RDWR | libc::O_CREAT | libc::O_NOFOLLOW | libc::O_CLOEXEC, 0o600)
-        };
-        if fd < 0 {
-            return Err(failed("Cannot open the writer lock"));
-        }
-        // SAFETY: `fd` is an open descriptor nothing else owns.
-        let lock = unsafe { OwnedFd::from_raw_fd(fd) };
-        // SAFETY: `lock` is an open descriptor for the whole call.
-        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            let code = std::io::Error::last_os_error().raw_os_error();
-            return Err(if code == Some(libc::EWOULDBLOCK) {
-                Error::Locked
-            } else {
-                failed("Cannot acquire the writer lock")
-            });
-        }
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(folder.join(format!("{key}.lock")))
+            .map_err(|_| failed("Cannot open the writer lock"))?;
+        lock.try_lock().map_err(|error| match error {
+            fs::TryLockError::WouldBlock => Error::Locked,
+            fs::TryLockError::Error(_) => failed("Cannot acquire the writer lock"),
+        })?;
         let lease =
             Self { _lock: lock, path: path.to_owned(), dev, ino, discovery: folder.join(format!("{key}.json")) };
         // The path must still name the file this lock is for.
@@ -184,21 +176,17 @@ pub fn sweep() -> Result<usize> {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let Some(key) = name.strip_suffix(".json.tmp").or_else(|| name.strip_suffix(".json")) else { continue };
-        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes())
-            .map_err(|_| failed("Invalid path"))?;
-        // SAFETY: a valid C string; the descriptor is owned from here on.
-        let fd = unsafe { libc::open(lock.as_ptr(), libc::O_RDWR | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
-        // No lock file: no owner ever held this key.
-        let missing = fd < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT);
         // Held across the removal, and released when it drops at the end of this turn.
-        // SAFETY: a nonnegative `fd` is an open descriptor nothing else owns.
-        let held = (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd) });
-        let free = missing
-            || held.as_ref().is_some_and(|lock| {
-                // SAFETY: `lock` is an open descriptor for the whole call.
-                let status = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-                status == 0
-            });
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(folder.join(format!("{key}.lock")));
+        let free = match &held {
+            Ok(lock) => lock.try_lock().is_ok(),
+            // No lock file: no owner ever held this key.
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
         if free && fs::remove_file(entry.path()).is_ok() {
             removed += 1;
         }

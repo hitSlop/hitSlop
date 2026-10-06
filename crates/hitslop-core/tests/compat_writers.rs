@@ -37,13 +37,6 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
     std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
     copy
 }
-/// `engine` run with `args`: its standard output, which must report success.
-fn run(engine: &Path, args: &[&str]) -> String {
-    let output =
-        Command::new(engine).args(args).env("HITSLOP_TEST_REGISTRY", support::registry_folder()).output().unwrap();
-    assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
-    String::from_utf8(output.stdout).unwrap()
-}
 /// The command protocol the entry's release speaks, as it recorded it.
 fn released_protocol(entry: &Path) -> String {
     let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
@@ -55,7 +48,7 @@ fn released_protocol(entry: &Path) -> String {
 /// One request in the released engine's protocol, and its reply.
 fn request(engine: &Path, protocol: &str, body: Value) -> Value {
     let mut child = Command::new(engine)
-        .args(["--client-protocol", protocol, "request"])
+        .args(["--client-protocol", protocol])
         .env("HITSLOP_TEST_REGISTRY", support::registry_folder())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -93,9 +86,12 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                 let label = format!("{}/{slug}, seed {seed}", entry.file_name().unwrap().to_string_lossy());
                 let document = dir.path().join(format!("{slug}-{seed}.slop"));
                 let (template, output) = (template.to_str().unwrap(), document.to_str().unwrap());
-                run(&engine, &["--client-protocol", &protocol, "create", "--from", template, "--output", output]);
-                let descriptor: Value =
-                    serde_json::from_str(&run(&engine, &["schema", document.to_str().unwrap()])).unwrap();
+                assert_eq!(
+                    request(&engine, &protocol, json!({"method":"create","from":template,"output":output}))["ok"],
+                    true
+                );
+                let descriptor =
+                    request(&engine, &protocol, json!({"method":"schema","file":document}))["schema"].clone();
                 let (mut rng, mut serial) = (seed as u64 * 0x9e3779b1 + 11, 0);
                 for _ in 0..steps {
                     let current = released_value(&engine, &protocol, &document);

@@ -32,9 +32,17 @@ impl Staged {
         // SAFETY: valid C strings.
         let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
         #[cfg(target_os = "linux")]
-        // SAFETY: valid C strings.
+        // Rust's self-contained musl may not export the renameat2 libc wrapper.
+        // SAFETY: the Linux syscall receives valid C strings and directory descriptors.
         let status = unsafe {
-            libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+            libc::syscall(
+                libc::SYS_renameat2,
+                libc::AT_FDCWD,
+                from.as_ptr(),
+                libc::AT_FDCWD,
+                to.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
         };
         if status != 0 {
             let error = std::io::Error::last_os_error();

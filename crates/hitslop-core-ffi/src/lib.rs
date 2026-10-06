@@ -58,6 +58,10 @@ pub enum Envelope {
     SocketReply,
     SocketDiscovery,
     PageRequest,
+    NativeRequest,
+    NativeReply,
+    EngineRequest,
+    EngineReply,
 }
 /// Whether `json` is a well-formed envelope of this kind.
 #[uniffi::export]

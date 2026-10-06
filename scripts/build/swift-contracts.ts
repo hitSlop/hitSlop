@@ -32,6 +32,8 @@ export function swiftContracts(
   pageResults: Record<string, TSchema>,
   hostRequest: TSchema,
   hostCaptureResult: TSchema,
+  nativeRequest: TSchema,
+  nativeReply: TSchema,
 ) {
   const declarations: string[] = [];
   /** Each emitted enumeration's cases, by type name. */
@@ -85,6 +87,7 @@ export function swiftContracts(
     // A union of closed objects (the manifest presentation) crosses as JSON; its owner
     // validates the members.
     if (schema.anyOf) {
+      if (schema.anyOf.length === 2 && schema.anyOf[0]?.type === "string" && schema.anyOf[1]?.type === "null") return { type: "String?", enum: false };
       if (!schema.anyOf.every((member) => member.type === "object")) unsupported(path);
       return { type: "[String: Any]", enum: false };
     }
@@ -217,7 +220,7 @@ export function swiftContracts(
       return methods.map((value) => {
         if (typeof value !== "string" || !/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(value)) unsupported(methodPath);
         const method = value as string;
-        const type = prefix + title(method) + "Request";
+        const type = prefix + title(method) + (name === "NativeRequest" ? "Input" : "Request");
         const sendable = structure(type, schema, method);
         return { method, name: type, sendable };
       });
@@ -250,12 +253,12 @@ export function swiftContracts(
   }
   /** Complete socket successes, and one classified failure. Core-owned state remains
    * JSON text until the encoder splices it into the envelope. */
-  function socketReplies(schema: TSchema) {
+  function socketReplies(schema: TSchema, name = "SocketReply") {
     const union = schema as Schema;
     if (!union.anyOf) unsupported("SocketReply");
     const failure = union.anyOf.find((member) => member.properties?.ok?.const === false);
     if (!failure) unsupported("SocketReply.failure");
-    structure("SocketFailure", failure, undefined, false);
+    if (name === "SocketReply") structure("SocketFailure", failure, undefined, false);
     const variants = union.anyOf.filter((member) => member !== failure).map((member) => {
       checkKeys(member, "SocketReply");
       const method = member.properties?.method?.const;
@@ -268,7 +271,7 @@ export function swiftContracts(
       })).sort((a, b) => Number(a.optional) - Number(b.optional));
       return { method, fields };
     });
-    const lines = ["/// A complete reply. A success cannot be constructed without its method's result.", "public enum SocketReply: Sendable {"];
+    const lines = ["/// A complete reply. A success cannot be constructed without its method's result.", `public enum ${name}: Sendable {`];
     for (const variant of variants) {
       lines.push(`  case ${identifier(variant.method)}(${variant.fields.map((f) => `${f.name}: ${f.type}${f.optional ? "?" : ""}`).join(", ")})`);
     }
@@ -276,7 +279,7 @@ export function swiftContracts(
     for (const variant of variants) {
       const pattern = variant.fields.map((f) => f.key === "state" ? "_" : `let ${f.name}`).join(", ");
       lines.push(`    case .${identifier(variant.method)}(${pattern}):`);
-      const header = [`"ok": true`, `"method": ${quote(variant.method)}`, ...variant.fields.filter((f) => f.key !== "state" && !f.optional).map((f) => `${quote(f.key)}: ${f.name}`)];
+      const header = [`"ok": true`, `"method": ${quote(variant.method)}`, ...variant.fields.filter((f) => f.key !== "state" && !f.optional).map((f) => `${quote(f.key)}: ${f.type === "String?" ? `(${f.name} as Any?) ?? NSNull()` : f.name}`)];
       const optional = variant.fields.filter((f) => f.optional);
       if (optional.length) {
         lines.push(`      var result: [String: Any] = [${header.join(", ")}]`);
@@ -292,6 +295,7 @@ export function swiftContracts(
       '      return Data(#"{"ok":false,"code":"unknown_outcome","error":"Invalid response. Outcome unknown; run slop get before another edit."}"#.utf8)',
       "    }", "    if let stateJSON {", "      bytes.removeLast()", '      bytes.append(contentsOf: #",\"state\":"#.utf8)', "      bytes.append(contentsOf: stateJSON.utf8)", '      bytes.append(UInt8(ascii: "}"))', "    }", "    return bytes", "  }", "}");
     declarations.push(lines.join("\n"));
+    if (name !== "SocketReply") return;
     // Helpers only inspect this header; the state projection is skipped by JSONDecoder.
     declarations.push(`/// Routing and outcome metadata read beside the original reply bytes; never a result.
 public struct SocketReplyHeader: Decodable, Sendable {
@@ -322,6 +326,8 @@ public struct SocketReplyHeader: Decodable, Sendable {
   structure("HostCaptureResult", hostCaptureResult as Schema);
   structure("PageFailure", pageFailure as Schema, undefined, false);
   socketReplies(reply);
+  requests("NativeRequest", nativeRequest);
+  socketReplies(nativeReply, "NativeReply");
   // One case per page method; a result with fields carries its generated structure.
   const results = Object.entries(pageResults).map(([method, schema]) => {
     const name = "Page" + title(method) + "Result";

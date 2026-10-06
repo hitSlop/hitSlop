@@ -19,7 +19,7 @@ const browser = await webkit.launch();
 try {
   for (const kind of Object.keys(shapeLabVariants) as ShapeLabVariant[]) {
     await buildShapeLabVariant(kind);
-    const dev = await startDev(resolve("generated/shape-lab/sources", kind), 5198);
+    const dev = await startDev(resolve("generated/shape-lab/sources", `shape-lab-${kind}`), 5198);
     try {
       const page = await browser.newPage({ viewport: { width: 800, height: 650 } });
       await page.goto(dev.url);

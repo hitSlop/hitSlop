@@ -13,8 +13,7 @@ let package = Package(
     .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2"),
-    .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2")
   ],
   targets: [
     .binaryTarget(name: "HitSlopCoreFFI", path: "Generated/HitSlopCoreFFI.xcframework"),
@@ -67,7 +66,6 @@ let package = Package(
         "HitSlopCore",
         "HitSlopHost",
         "HitSlopDocument",
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],
       linkerSettings: [.linkedFramework("AppKit")]
     ),

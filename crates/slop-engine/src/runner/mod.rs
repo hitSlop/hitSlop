@@ -43,26 +43,16 @@ pub fn run(bundle: String, request: String) -> Result<String, String> {
         let _ = sender.send((result, output));
     });
     let deadline = Instant::now() + TIME;
-    let result = loop {
-        match receiver.try_recv() {
-            Ok((result, bytes)) => {
-                break result.map_err(|e| e.to_string()).and_then(|_| {
-                    if bytes.len() > OUTPUT {
-                        Err("Command output is too large".into())
-                    } else {
-                        String::from_utf8(bytes).map_err(|e| e.to_string())
-                    }
-                });
+    let result = match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok((result, bytes)) => result.map_err(|e| e.to_string()).and_then(|_| {
+            if bytes.len() > OUTPUT {
+                Err("Command output is too large".into())
+            } else {
+                String::from_utf8(bytes).map_err(|e| e.to_string())
             }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                break Err("Command runner stopped without a reply".into());
-            }
-            Err(_) => {}
-        }
-        if Instant::now() >= deadline {
-            break Err("Command execution timed out".into());
-        }
-        std::thread::sleep(Duration::from_millis(5));
+        }),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err("Command runner stopped without a reply".into()),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err("Command execution timed out".into()),
     };
     // Even an evaluator that wrote a valid reply cannot stay running.
     let _ = child.kill();
