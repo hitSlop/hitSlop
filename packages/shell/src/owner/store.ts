@@ -113,7 +113,7 @@ const utf8 = new TextEncoder();
 
 /** Sequence-ordered state, fed by `open` and the push stream. */
 export class Store {
-  state: OwnerState = { sequence: 0, version: "", value: undefined, issues: [] };
+  state: OwnerState = { sequence: 0, version: "", value: undefined, theme: {} };
   failure: Error | undefined;
   private opened = false;
   private buffered: PagePush[] = [];
@@ -130,7 +130,7 @@ export class Store {
 
   private install(state: OwnerState) {
     deepFreeze(state.value);
-    deepFreeze(state.issues);
+    deepFreeze(state.theme);
     this.state = state;
     this.opened = true;
   }
@@ -188,10 +188,9 @@ export class Store {
       let value;
       try { value = applyOps(this.state.value, p.ops); }
       catch { return finish(false, pushes.slice(i)); }
-      // Issues arrive only when they change.
-      const issues = p.issues ?? this.state.issues;
-      deepFreeze(issues);
-      this.state = { sequence: p.sequence, version: p.version, value, issues };
+      const theme = p.theme ?? this.state.theme;
+      deepFreeze(theme);
+      this.state = { sequence: p.sequence, version: p.version, value, theme };
       for (const op of p.ops) {
         const path = op.type === "deleteRow" ? [...op.path, { id: op.id }] : op.path;
         if (op.type === "deleteRow" || op.type === "remove") removed.push(path);

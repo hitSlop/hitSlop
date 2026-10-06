@@ -1,5 +1,6 @@
 import { rename, writeFile } from "node:fs/promises";
 import { exists } from "../src/fs";
+import { stageProject } from "../src/build";
 import { join } from "node:path";
 
 /** Replaces fields of a copied project's `slop.ts` with TypeScript expressions, which may
@@ -12,4 +13,11 @@ export async function overrideSlop(source: string, fields: Record<string, string
     join(source, "slop.ts"),
     `import slop from "./authored";\n${statements}\nexport default { ...slop, ${overrides} };\n`,
   );
+}
+
+/** A project's stage at `output`: what the build compiles and evaluates, before the engine
+ * packs it. */
+export async function stage(source: string, output: string) {
+  await stageProject(source, output);
+  return output;
 }

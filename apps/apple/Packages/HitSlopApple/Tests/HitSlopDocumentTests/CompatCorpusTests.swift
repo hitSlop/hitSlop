@@ -1,7 +1,7 @@
 import Foundation
 import HitSlopCore
-import Testing
 import HitSlopTestSupport
+import Testing
 import WebKit
 
 @testable import HitSlopDocument
@@ -11,14 +11,17 @@ import WebKit
 /// result that release recorded. `HITSLOP_COMPAT_RECORD=<entry>` records that entry's
 /// results instead (`bun run compat:capture`); a frozen entry is never recorded again.
 @Suite(.serialized) struct CompatCorpusTests {
-  static let corpus = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ROOT"] ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
+  static let corpus = URL(
+    fileURLWithPath: ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ROOT"]
+      ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
     let entries = (try? FileManager.default.contentsOfDirectory(atPath: corpus.path)) ?? []
     return entries.sorted().filter { recording == nil || $0 == recording }.flatMap { entry in
-      ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path)) ?? [])
+      ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path))
+        ?? [])
         .filter { $0.hasSuffix(".json") }.sorted().map { "\(entry)/\(($0 as NSString).deletingPathExtension)" }
     }
   }
@@ -32,8 +35,12 @@ import WebKit
     let entry = Self.corpus.appendingPathComponent(parts[0])
     let pageURL = entry.appendingPathComponent("pages/\(parts[1]).json")
     var page = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: pageURL)) as? [String: Any])
-    let release = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: entry.appendingPathComponent("release.json"))) as? [String: Any])
-    if Self.recording != nil && release["frozen"] as? Bool == true { throw SlopFailure("Cannot record a frozen compatibility entry") }
+    let release = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: entry.appendingPathComponent("release.json")))
+        as? [String: Any])
+    if Self.recording != nil && release["frozen"] as? Bool == true {
+      throw SlopFailure("Cannot record a frozen compatibility entry")
+    }
     if Self.recording == nil { #expect(!(page["value"] is NSNull), "No recorded result for \(name)") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
     try FileManager.default.copyItem(at: entry.appendingPathComponent("documents/\(parts[1]).slop"), to: root)
@@ -41,41 +48,57 @@ import WebKit
     let before = try await value(root)
 
     let session = try await DocumentSession.open(url: root)
-    session.webView.configuration.userContentController.addUserScript(WKUserScript(
-      source: Self.pinned(clock: release["clock"] as? Double ?? 0), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    session.webView.configuration.userContentController.addUserScript(
+      WKUserScript(
+        source: Self.pinned(clock: release["clock"] as? Double ?? 0), injectionTime: .atDocumentStart,
+        forMainFrameOnly: true))
     session.load()
     do {
       try await session.waitUntilReady()
       switch page["script"] as? String {
       case "contractTest":
-        let passed = try await session.webView.callAsyncJavaScript(
-          "return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
+        let passed =
+          try await session.webView.callAsyncJavaScript(
+            "return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
         #expect(passed == true, "\(name): the old app's contract test failed")
         // An agent's edit to the open document reaches the old app's page.
         _ = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["title"],"value":"Live ✓"}]"#])
         let shown = try await eventually(timeout: .seconds(2)) {
           try await session.webView.callAsyncJavaScript(
-            "return document.body.textContent.includes('Live ✓')", arguments: [:], in: nil, contentWorld: .page) as? Bool == true
+            "return document.body.textContent.includes('Live ✓')", arguments: [:], in: nil, contentWorld: .page)
+            as? Bool == true
         }
         #expect(shown, "\(name): a live CLI edit did not reach the page")
       case "actions":
         let actions = try #require(page["actions"] as? [[String: Any]])
         #expect(!actions.isEmpty, "No actions for \(name)")
-        _ = try await session.webView.callAsyncJavaScript(Self.actions, arguments: ["actions": actions], in: nil, contentWorld: .page)
+        _ = try await session.webView.callAsyncJavaScript(
+          Self.actions, arguments: ["actions": actions], in: nil, contentWorld: .page)
       default: throw SlopFailure("Unknown page scenario for \(name)")
       }
       _ = try await session.webView.callAsyncJavaScript(
         "await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
       try await session.close()
-    } catch { try? await session.close(); throw error }
+    } catch {
+      try? await session.close()
+      throw error
+    }
 
     let saved = Self.normalized(try await value(root), keeping: Self.ids(in: before))
     #expect(Self.canonical(saved) != Self.canonical(before), "\(name): the page scenario made no saved edit")
     if Self.recording != nil {
       page["value"] = saved
-      try JSONSerialization.data(withJSONObject: page, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: pageURL)
+      try JSONSerialization.data(withJSONObject: page, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        .write(to: pageURL)
+      // The bytes the page path saved (text splices against older versions, page-minted
+      // IDs), kept beside the CLI-written documents so later builds replay them too.
+      let pageSaved = entry.appendingPathComponent("documents/\(parts[1]).page.slop")
+      try? FileManager.default.removeItem(at: pageSaved)
+      try FileManager.default.copyItem(at: root, to: pageSaved)
     } else {
-      #expect(Self.canonical(saved) == Self.canonical(page["value"] as Any), "\(name): the saved result differs from its release's")
+      #expect(
+        Self.canonical(saved) == Self.canonical(page["value"] as Any),
+        "\(name): the saved result differs from its release's")
     }
   }
 
@@ -152,7 +175,12 @@ import WebKit
         var result: [String: Any] = [:]
         for key in object.keys.sorted() {
           if key == "$id", let id = object[key] as? String, !known.contains(id) {
-            result[key] = minted[id] ?? { minted[id] = "minted-\(minted.count + 1)"; return minted[id]! }()
+            result[key] =
+              minted[id]
+              ?? {
+                minted[id] = "minted-\(minted.count + 1)"
+                return minted[id]!
+              }()
           } else {
             result[key] = walk(object[key]!)
           }

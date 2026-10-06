@@ -1,7 +1,8 @@
 #![allow(dead_code)]
-use hitslop_core::{Document, Error};
-use serde_json::{json, Value};
+pub mod generate;
 use hitslop_core::Origin;
+use hitslop_core::{AppSpec, Applied, Document, Error};
+use serde_json::{Value, json};
 /// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
 pub fn registry_folder() -> std::path::PathBuf {
     std::env::temp_dir().join("hitslop-test-registry")
@@ -40,17 +41,30 @@ pub struct App<'a> {
 impl<'a> App<'a> {
     /// The fixture app with this descriptor and initial values, for this build's markers.
     pub const fn new(descriptor: &'a str, initial: &'a str) -> Self {
-        App { format: hitslop_core::PACKAGE_FORMAT, abi: hitslop_core::RUNTIME_ABI, manifest: MANIFEST, descriptor, initial, theme: THEME }
+        App {
+            format: hitslop_core::PACKAGE_FORMAT,
+            abi: hitslop_core::RUNTIME_ABI,
+            manifest: MANIFEST,
+            descriptor,
+            initial,
+            theme: THEME,
+        }
     }
 }
 /// Writes `app` as the stage's `app.json`.
 pub fn write_app(stage: &std::path::Path, app: App) {
     let App { format, abi, manifest, descriptor, initial, theme } = app;
-    let json = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#);
+    let json = format!(
+        r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#
+    );
     std::fs::write(stage.join("app.json"), json).unwrap();
 }
 /// A shared fixture (`fixtures/<name>.json`): a descriptor, its initial values and, for
 /// some, conformance cases.
+/// An app of this descriptor (JSON) that declares no colors.
+pub fn app(schema: impl AsRef<str>) -> AppSpec {
+    AppSpec::data(schema.as_ref()).unwrap()
+}
 pub fn fixture(name: &str) -> Value {
     serde_json::from_str(match name {
         "checklist" => include_str!("../../fixtures/checklist.json"),
@@ -61,27 +75,48 @@ pub fn fixture(name: &str) -> Value {
     })
     .unwrap()
 }
-/// A document's snapshot (value, issues and version), parsed.
+/// A document's snapshot (value, theme and version), parsed.
 pub fn snapshot(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
+    serde_json::from_str(&d.state().unwrap()).unwrap()
 }
 /// A document's value.
 pub fn value(d: &Document) -> Value {
     snapshot(d)["value"].clone()
 }
-/// Two replicas of a fixture's document that edit concurrently, then `exchange` updates,
-/// and the version they share.
-pub fn pair(f: &Value) -> (Document, Document, String) {
-    let a = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
-    let b = Document::open(&f["schema"].to_string(), &a.checkpoint().unwrap(), &[]).unwrap();
-    let base = a.version();
-    (a, b, base)
+/// The updates `d`'s history holds beyond `seed`, as a save appends them.
+pub fn updates_since(seed: &[u8], d: &Document) -> Vec<u8> {
+    let (base, full) = (loro::LoroDoc::new(), loro::LoroDoc::new());
+    base.import(seed).unwrap();
+    full.import(&d.checkpoint().unwrap()).unwrap();
+    full.export(loro::ExportMode::updates(&base.oplog_vv())).unwrap()
 }
-/// Each replica imports what the other wrote since `base`.
-pub fn exchange(a: &mut Document, b: &mut Document, base: &str) {
-    let (left, right) = (a.export_since(base).unwrap(), b.export_since(base).unwrap());
-    a.import(&right).unwrap();
-    b.import(&left).unwrap();
+/// The page's text edit as a batch: `path` went from `from`, its text at `base`, to `to`,
+/// with the caret at a UTF-16 offset of `to`.
+pub fn typed(base: &str, path: Value, from: &str, to: &str, caret: usize) -> String {
+    json!({"base":base,"intents":[{"type":"set","path":path,"value":to,"from":from,"selection":{"start":caret,"end":caret}}]})
+        .to_string()
+}
+/// Applies the page's text edit (`typed`).
+pub fn type_text(
+    d: &mut Document,
+    base: &str,
+    path: Value,
+    from: &str,
+    to: &str,
+    caret: usize,
+) -> Result<Applied, Error> {
+    d.apply_batch(&typed(base, path, from, to, caret), Origin::Page)
+}
+/// Whether `d` still accepts `version` as a text base: a no-change edit of `["title"]`
+/// (holding `text`) from it is refused as stale or invalid otherwise.
+pub fn knows(d: &mut Document, version: &str, text: &str) -> bool {
+    match type_text(d, version, json!(["title"]), text, text, 0) {
+        Ok(_) => true,
+        Err(e) => {
+            assert!(["stale_base", "invalid_version"].contains(&e.code.as_str()), "{}", e.code.as_str());
+            false
+        }
+    }
 }
 /// A checkpoint saved again without its history, as trimming does.
 pub fn trimmed(checkpoint: &[u8]) -> Vec<u8> {
@@ -103,7 +138,6 @@ pub fn workload(name: &str, default: usize) -> usize {
 /// Publications as JSON text; a change that altered nothing reads as `{"ops": []}`.
 pub trait Edit {
     fn apply(&mut self, batch: &str) -> Result<String, Error>;
-    fn merge(&mut self, bytes: &[u8]) -> Result<String, Error>;
 }
 fn unchanged(publication: Option<String>) -> String {
     publication.unwrap_or_else(|| json!({ "ops": [] }).to_string())
@@ -112,33 +146,30 @@ impl Edit for Document {
     fn apply(&mut self, batch: &str) -> Result<String, Error> {
         self.apply_batch(batch, Origin::Page).map(|applied| unchanged(applied.publication))
     }
-    fn merge(&mut self, bytes: &[u8]) -> Result<String, Error> {
-        self.import(bytes).map(unchanged)
-    }
 }
-/// The page's view of a document: publications apply their ops, and replace the issues
-/// when they carry them.
+/// The page's view of a document: publications apply their ops, and replace the palette
+/// when they carry it.
 pub struct View {
     pub value: Value,
-    pub issues: Value,
+    pub theme: Value,
 }
 impl View {
     pub fn of(doc: &Document) -> Self {
-        let state: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
-        Self { value: state["value"].clone(), issues: state["issues"].clone() }
+        let state: Value = serde_json::from_str(&doc.state().unwrap()).unwrap();
+        Self { value: state["value"].clone(), theme: state["theme"].clone() }
     }
     pub fn publish(&mut self, publication: &str) {
         let publication: Value = serde_json::from_str(publication).unwrap();
         apply_patches(&mut self.value, &publication["ops"]);
-        if let Some(issues) = publication.get("issues") {
-            self.issues = issues.clone();
+        if let Some(theme) = publication.get("theme") {
+            self.theme = theme.clone();
         }
     }
-    /// Equal to a fresh snapshot, value and issues.
+    /// Equal to a fresh snapshot, value and palette.
     pub fn check(&self, doc: &Document, context: &str) {
-        let fresh: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
+        let fresh: Value = serde_json::from_str(&doc.state().unwrap()).unwrap();
         assert_eq!(self.value, fresh["value"], "{context}: projection diverged");
-        assert_eq!(self.issues, fresh["issues"], "{context}: issues diverged");
+        assert_eq!(self.theme, fresh["theme"], "{context}: theme diverged");
     }
 }
 // Independent test consumer, not the publisher implementation.
@@ -153,12 +184,7 @@ pub fn apply_patches(value: &mut Value, ops: &Value) {
             } else if let Some(index) = segment.get("index") {
                 target = &mut target[index.as_u64().unwrap() as usize];
             } else {
-                target = target
-                    .as_array_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|v| v["$id"] == segment["id"])
-                    .unwrap();
+                target = target.as_array_mut().unwrap().iter_mut().find(|v| v["$id"] == segment["id"]).unwrap();
             }
         }
         match op["type"].as_str().unwrap() {
@@ -181,15 +207,11 @@ pub fn apply_patches(value: &mut Value, ops: &Value) {
                 *target = Value::String(next);
             }
             "remove" => {
-                target
-                    .as_object_mut()
-                    .unwrap()
-                    .remove(path.last().unwrap().as_str().unwrap());
+                target.as_object_mut().unwrap().remove(path.last().unwrap().as_str().unwrap());
             }
-            "insertRow" => target
-                .as_array_mut()
-                .unwrap()
-                .insert(op["index"].as_u64().unwrap() as usize, op["value"].clone()),
+            "insertRow" => {
+                target.as_array_mut().unwrap().insert(op["index"].as_u64().unwrap() as usize, op["value"].clone())
+            }
             kind => {
                 let rows = target.as_array_mut().unwrap();
                 let i = rows.iter().position(|v| v["$id"] == op["id"]).unwrap();

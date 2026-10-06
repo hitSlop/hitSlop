@@ -1,5 +1,6 @@
 //! wasm-bindgen adapter for the shared document core.
-use hitslop_core::{Applied, Document as Core, Origin};
+#![cfg(target_arch = "wasm32")]
+use hitslop_core::{AppSpec, Applied, Document as Core, Origin};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = coreBuildId)]
@@ -31,28 +32,30 @@ pub fn validate_window_shape(shape_json: Option<String>, width: f64, height: f64
     hitslop_core::shape::validate(shape_json.as_deref(), width, height).map_err(error)
 }
 
-/// Mirrors the native `ApplyResult` record.
+/// A committed batch, as the page's `apply` reply carries it, with its publication. A text
+/// edit (a set carrying `selection`) also has `authored` and its merged selection.
 #[wasm_bindgen(getter_with_clone)]
 pub struct ApplyResult {
     pub sequence: f64,
     pub ids: Vec<String>,
     pub publication: Option<String>,
-}
-
-/// Mirrors the native `TextResult` record.
-#[wasm_bindgen(getter_with_clone)]
-pub struct TextResult {
-    pub sequence: f64,
-    pub authored: String,
+    pub authored: Option<String>,
     #[wasm_bindgen(js_name = selectionStart)]
-    pub selection_start: u32,
+    pub selection_start: Option<u32>,
     #[wasm_bindgen(js_name = selectionEnd)]
-    pub selection_end: u32,
-    pub publication: Option<String>,
+    pub selection_end: Option<u32>,
 }
 
 fn applied(applied: Applied) -> ApplyResult {
-    ApplyResult { sequence: applied.sequence as f64, ids: applied.ids, publication: applied.publication }
+    let selection = applied.text.as_ref().map(|text| text.selection.map(|offset| offset as u32));
+    ApplyResult {
+        sequence: applied.sequence as f64,
+        ids: applied.ids,
+        publication: applied.publication,
+        authored: applied.text.map(|text| text.authored),
+        selection_start: selection.map(|s| s[0]),
+        selection_end: selection.map(|s| s[1]),
+    }
 }
 
 #[wasm_bindgen]
@@ -61,18 +64,27 @@ pub struct WasmDocument {
 }
 #[wasm_bindgen]
 impl WasmDocument {
-    pub fn create(schema_json: &str, initial_json: &str) -> Result<WasmDocument, JsValue> {
-        Ok(Self {
-            inner: Core::create(schema_json, initial_json).map_err(error)?,
-        })
+    /// A new document of an app: its descriptor, its initial values, and optionally its
+    /// template's slug and declared colors.
+    pub fn create(
+        schema_json: &str,
+        initial_json: &str,
+        template: Option<String>,
+        theme_json: Option<String>,
+    ) -> Result<WasmDocument, JsValue> {
+        let app = AppSpec::new(schema_json, template.as_deref().unwrap_or(""), theme_json.as_deref().unwrap_or("{}"))
+            .map_err(error)?;
+        Ok(Self { inner: Core::create(&app, initial_json).map_err(error)? })
     }
-    /// The owner's current state, as a page opens it.
+    /// A palette change, as the window's theme panel makes it.
+    #[wasm_bindgen(js_name = themeSet)]
+    pub fn theme_set(&mut self, values_json: &str) -> Result<ApplyResult, JsValue> {
+        let batch = format!(r#"{{"intents":[{{"type":"setTheme","values":{values_json}}}]}}"#);
+        self.inner.apply_batch(&batch, Origin::Window).map(applied).map_err(error)
+    }
+    /// The owner's current state, as a page opens it, computed from the full stored value.
     pub fn state(&self) -> Result<String, JsValue> {
         self.inner.state().map_err(error)
-    }
-    /// The full recomputation that `state` is tested against.
-    pub fn snapshot(&self) -> Result<String, JsValue> {
-        self.inner.snapshot().map_err(error)
     }
     /// A page's batch, part of the person's undo.
     #[wasm_bindgen(js_name = applyBatch)]
@@ -84,16 +96,5 @@ impl WasmDocument {
     }
     pub fn redo(&mut self) -> Result<ApplyResult, JsValue> {
         self.inner.redo().map(applied).map_err(error)
-    }
-    #[wasm_bindgen(js_name = editText)]
-    pub fn edit_text(&mut self, request_json: &str) -> Result<TextResult, JsValue> {
-        let edit = self.inner.edit_text(request_json).map_err(error)?;
-        Ok(TextResult {
-            sequence: edit.sequence as f64,
-            authored: edit.authored,
-            selection_start: edit.selection_start as u32,
-            selection_end: edit.selection_end as u32,
-            publication: edit.publication,
-        })
     }
 }

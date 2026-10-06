@@ -1,19 +1,18 @@
 //! Durable storage: identity, limits, crash outcomes and the writer lock, over one
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
+use hitslop_core::Document;
+use hitslop_core::Origin;
 use hitslop_core::file;
 use hitslop_core::registry::Lease;
 use hitslop_core::store::{Error, Mode, Store};
-use hitslop_core::theme::Change;
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
-use hitslop_core::Document;
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use hitslop_core::Origin;
 mod support;
-use support::{isolate_registry, write_app, App};
+use support::{App, app, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -70,11 +69,12 @@ fn hold(path: &Path) -> Connection {
     other
 }
 fn title(doc: &Document) -> String {
-    let value: Value = serde_json::from_str(&doc.value().unwrap()).unwrap();
+    let value: Value = serde_json::from_str(&doc.value()).unwrap();
     value["title"].as_str().unwrap().into()
 }
 fn set_title(doc: &mut Document, title: &str) {
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page)
+        .unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     let job = store.job(doc, false).unwrap()?;
@@ -82,63 +82,56 @@ fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     Some(job.is_checkpoint())
 }
 
-fn saved_updates(path: &Path) -> Vec<(i64, Vec<u8>)> {
-    let conn = sql(path);
-    let mut statement = conn.prepare("SELECT seq,bytes FROM updates ORDER BY seq").unwrap();
-    statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .unwrap().collect::<rusqlite::Result<_>>().unwrap()
-}
-
 // Failure: an absent checkpoint was treated as initial state even with saved updates,
-// and opening then deleted those updates. Every reader must preserve the damaged file.
-fn missing_checkpoint_is_preserved(access: impl FnOnce(&Path) -> Result<(), Error>) {
+// and opening then deleted those updates. Every open refuses the file and preserves it.
+fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
     let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    for title in ["First", "Second", "Third"] {
-        set_title(&mut doc, title);
-        save(&store, &mut doc);
+    if saved_edits {
+        let (store, mut doc) = open(&path);
+        for title in ["First", "Second", "Third"] {
+            set_title(&mut doc, title);
+            save(&store, &mut doc);
+        }
+        store.close().unwrap();
     }
+    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    let error = Store::open(&path, mode).err().expect("a document without saved state is refused");
+    assert!(error.to_string().contains("keep it for recovery"), "{error}");
+    assert_eq!(std::fs::read(&path).unwrap(), before, "nothing is written");
+}
+
+#[test]
+fn opening_refuses_saved_updates_without_a_checkpoint() {
+    missing_checkpoint_is_refused(Mode::Document, true);
+    missing_checkpoint_is_refused(Mode::Snapshot, true);
+}
+
+#[test]
+fn opening_refuses_a_document_with_no_checkpoint_or_updates() {
+    missing_checkpoint_is_refused(Mode::Document, false);
+    missing_checkpoint_is_refused(Mode::Snapshot, false);
+}
+
+#[test]
+fn newly_created_document_snapshots_share_initial_row_ids_and_history() {
+    let (_dir, path) = document_with(SCHEMA, r#"{"title":"Saved","rows":[{"text":"One"},{"text":"Two"}]}"#);
+    let bytes = std::fs::read(&path).unwrap();
+    let read = || Store::open(&path, Mode::Snapshot).unwrap().document().unwrap();
+    let first = read();
+    let second = read();
+    assert_eq!(first.state().unwrap(), second.state().unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "initial snapshots never write");
+    let (store, doc) = open(&path);
+    assert_eq!(doc.state().unwrap(), first.state().unwrap());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "opening never initializes document state");
     store.close().unwrap();
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
-    let before = saved_updates(&path);
-    assert_eq!(before.len(), 3);
-    let result = access(&path);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
-    assert_eq!(saved_updates(&path), before);
-    let checkpoints: i64 = sql(&path).query_row("SELECT count(*) FROM checkpoint", [], |row| row.get(0)).unwrap();
-    assert_eq!(checkpoints, 0, "initial state must not be written");
-}
-
-#[test]
-fn writable_open_refuses_saved_updates_without_a_checkpoint() {
-    missing_checkpoint_is_preserved(|path| Store::open(path, Mode::Document)?.document().map(|_| ()));
-}
-
-#[test]
-fn snapshot_refuses_saved_updates_without_a_checkpoint() {
-    missing_checkpoint_is_preserved(|path| Store::open(path, Mode::Snapshot)?.document().map(|_| ()));
-}
-
-#[test]
-fn append_refuses_saved_updates_without_a_checkpoint() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Saved edit");
-    save(&store, &mut doc);
-    set_title(&mut doc, "Pending edit");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    assert!(!job.is_checkpoint());
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
-    let before = saved_updates(&path);
-    let result = store.write(&job);
-    assert!(matches!(result, Err(Error::Failed(ref message)) if message.contains("keep the file for recovery")), "{result:?}");
-    assert_eq!(saved_updates(&path), before);
-    assert_eq!(title(&doc), "Pending edit");
 }
 
 #[test]
 fn a_new_document_saves_its_first_checkpoint_and_reopens_with_its_edits() {
     let (_dir, path) = document();
+    assert!(stored(&path).checkpoint_bytes > 0, "creation publishes the initial checkpoint before any open");
     let (store, mut doc) = open(&path);
     assert_eq!(stored(&path).rows, 0);
     assert!(stored(&path).checkpoint_bytes > 0);
@@ -175,11 +168,10 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     assert_eq!(title(&open(&path).1), format!("Edit {appended}"));
 }
 
+/// Whether `doc` refuses `version` as a text base, as history before its retained start.
 fn stale(doc: &Document, version: &str) -> bool {
-    match doc.export_since(version) {
-        Ok(_) => false,
-        Err(e) => e.code.as_str() == "stale_base",
-    }
+    let mut scratch = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
+    matches!(type_text(&mut scratch, version, json!(["title"]), "", "", 0), Err(e) if e.code.as_str() == "stale_base")
 }
 
 /// Incompressible text of `len` letters.
@@ -255,7 +247,11 @@ fn a_session_too_large_to_keep_closes_with_no_history() {
         opened = doc.version();
         for _ in 0..160 {
             let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
-            doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(), Origin::Page).unwrap();
+            doc.apply_batch(
+                &json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(),
+                Origin::Page,
+            )
+            .unwrap();
             save(&store, &mut doc);
         }
         close(store, &mut doc);
@@ -324,19 +320,29 @@ fn undo_survives_compaction() {
 fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(
+        &json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(),
+        Origin::Page,
+    )
+    .unwrap();
     save(&store, &mut doc);
-    let with_row = doc.value().unwrap();
-    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page).unwrap();
+    let with_row = doc.value();
+    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
+        .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(snapshot.document().unwrap().value().unwrap(), with_row);
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]}).to_string(), Origin::Page).unwrap();
-    let expected = doc.value().unwrap();
+    assert_eq!(snapshot.document().unwrap().value(), with_row);
+    doc.apply_batch(
+        &json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]})
+            .to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    let expected = doc.value();
     close(store, &mut doc);
-    assert_eq!(open(&path).1.value().unwrap(), expected);
+    assert_eq!(open(&path).1.value(), expected);
 }
 
 // A redo restores a version from before the compaction; the live document still holds
@@ -385,16 +391,16 @@ fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let store = Store::open(&path, Mode::Document).unwrap();
     let mut doc = store.document().unwrap();
     let base = doc.version();
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
+        .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
-    let request = json!({"base":base,"path":["title"],"from":"abc","to":"abcX","selectionStart":4,"selectionEnd":4});
-    let result = doc.edit_text(&request.to_string()).map(|_| ());
+    let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
     save(&store, &mut doc);
     store.close().unwrap();
     let store = Store::open(&path, Mode::Document).unwrap();
     let reopened = store.document().expect("the document opens");
     assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
-    let value: Value = serde_json::from_str(&reopened.value().unwrap()).unwrap();
+    let value: Value = serde_json::from_str(&reopened.value()).unwrap();
     assert_eq!(value["title"], "Rabc");
 }
 
@@ -414,34 +420,38 @@ fn doodle_like_use_stays_bounded() {
             doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
             if stroke % 25 == 24 {
-                let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["rows"]
-                    .as_array().unwrap().iter().map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]})).collect();
+                let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value()).unwrap()["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]}))
+                    .collect();
                 doc.apply_batch(&json!({"intents":ids}).to_string(), Origin::Page).unwrap();
             }
         }
-        let value = doc.value().unwrap();
+        let value = doc.value();
         close(store, &mut doc);
         let after = stored(&path);
         let bytes = after.checkpoint_bytes + after.update_bytes;
         assert!(bytes <= bound, "day {day}: {bytes} bytes stored");
-        assert_eq!(open(&path).1.value().unwrap(), value);
+        assert_eq!(open(&path).1.value(), value);
     }
 }
 
 #[test]
 fn snapshots_never_lock_or_modify_the_document() {
     let (_dir, path) = document();
-    // Never opened by a writer: no saved state yet, so a snapshot starts from the app's
-    // initial values in memory.
+    // A snapshot reads the initial checkpoint without taking ownership.
     let before = std::fs::read(&path).unwrap();
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     let mut doc = snapshot.document().unwrap();
     assert_eq!(title(&doc), "Saved");
-    assert_eq!(std::fs::read(&path).unwrap(), before, "a render of an unsaved document writes nothing");
+    assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
     let job = snapshot.job(&mut doc, false).unwrap().unwrap();
     assert!(matches!(snapshot.write(&job), Err(Error::Closed)), "snapshots own nothing");
-    assert!(matches!(snapshot.theme(Change::Reset(None)), Err(Error::Closed)));
+    set_accent(&mut doc, "#123456");
+    assert!(matches!(snapshot.write(&snapshot.job(&mut doc, false).unwrap().unwrap()), Err(Error::Closed)));
     assert_eq!(std::fs::read(&path).unwrap(), before);
     drop(hitslop_core::registry::Lease::acquire(&path).expect("a snapshot holds no lock"));
 }
@@ -585,7 +595,11 @@ fn checkpoints_reclaim_free_pages() {
     }
     assert!(std::fs::metadata(&path).unwrap().len() > 3 * 1024 * 1024);
     for _ in 0..48 {
-        doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(), Origin::Page).unwrap();
+        doc.apply_batch(
+            &json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(),
+            Origin::Page,
+        )
+        .unwrap();
         save(&store, &mut doc);
     }
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
@@ -595,49 +609,94 @@ fn checkpoints_reclaim_free_pages() {
 }
 
 #[test]
-fn a_copy_has_the_same_history_and_theme() {
+fn a_copy_has_the_same_state_version_and_theme() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Copied");
-    set_accent(&store, "#123456");
+    set_accent(&mut doc, "#123456");
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     // The source stays open: the copy is an online backup through its writer.
-    store.copy_to(&copy).unwrap();
-    let (copied_store, copied) = open(&copy);
+    store.copy_clean(&copy, &[]).unwrap();
+    let (_copied_store, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
-    assert_eq!(accent(&copied_store), "#123456");
+    assert_eq!(accent(&copied), "#123456");
     assert_eq!(copied.version(), doc.version());
 }
 
-fn accent(store: &Store) -> String {
-    let (theme, _) = store.theme(Change::Get).unwrap();
+/// A copy is a document of its own: the current state without history (a title replaced
+/// before the copy is nowhere in its bytes), the attachments that state references, in a
+/// field or inside text, and the artwork it was given. The original and its session's
+/// undo are untouched.
+#[test]
+fn a_copy_keeps_the_current_state_and_only_what_it_references() {
+    const NOTES: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"cover":{"kind":"string"},"notes":{"kind":"text"}}}"#;
+    let (dir, path) = document_with(NOTES, r#"{"title":"Saved","cover":"","notes":""}"#);
+    let (store, mut doc) = open(&path);
+    let [cover, inline, _removed] =
+        [&b"cover"[..], b"inline", b"removed"].map(|bytes| store.put_attachment(bytes).unwrap().id);
+    let replaced = "replaced-before-the-copy-4b1d";
+    set_title(&mut doc, replaced);
+    set_title(&mut doc, "Kept");
+    let reference = json!({"intents":[
+        {"type":"set","path":["cover"],"value":cover},
+        {"type":"set","path":["notes"],"value":format!("![photo](attachment/{inline}) and more")},
+    ]});
+    doc.apply_batch(&reference.to_string(), Origin::Page).unwrap();
+    save(&store, &mut doc);
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let holds =
+        |path: &Path, text: &str| std::fs::read(path).unwrap().windows(text.len()).any(|w| w == text.as_bytes());
+    assert!(holds(&path, replaced), "the original keeps its history");
+    assert!(!holds(&copy, replaced), "the copy keeps none");
+    assert_eq!(stored(&copy).rows, 0);
+    let copied = Store::open(&copy, Mode::Document).unwrap();
+    let mut kept: Vec<String> = copied.attachments().unwrap().into_iter().map(|a| a.id).collect();
+    kept.sort();
+    let mut referenced = vec![cover, inline];
+    referenced.sort();
+    assert_eq!(kept, referenced);
+    assert_eq!(copied.artwork(file::Artwork::Preview).unwrap(), None, "no artwork given, none copied");
+    assert_eq!(title(&copied.document().unwrap()), "Kept");
+    assert_eq!(store.attachments().unwrap().len(), 3, "the original keeps every blob");
+    assert!(doc.undo().unwrap().publication.is_some(), "the session's undo is untouched");
+    assert!(doc.undo().unwrap().publication.is_some());
+    assert_eq!(title(&doc), replaced);
+}
+
+fn accent(doc: &Document) -> String {
+    let theme = doc.theme_state().unwrap();
     serde_json::from_str::<Value>(&theme.effective).unwrap()["accent"].as_str().unwrap().into()
 }
 fn saved_accent(path: &Path) -> String {
     let snapshot = Store::open(path, Mode::Snapshot).unwrap();
-    snapshot.document().unwrap();
-    accent(&snapshot)
+    accent(&snapshot.document().unwrap())
 }
-fn set_accent(store: &Store, color: &str) -> bool {
-    store.theme(Change::Set(&json!({ "accent": color }).to_string())).unwrap().1
+/// Applies one palette intent from the window; whether it changed the document.
+fn palette(doc: &mut Document, intent: Value) -> Result<bool, hitslop_core::Error> {
+    doc.apply_batch(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window)
+        .map(|a| a.publication.is_some())
+}
+fn set_accent(doc: &mut Document, color: &str) -> bool {
+    palette(doc, json!({"type":"setTheme","values":{ "accent": color }})).unwrap()
 }
 
 #[test]
 fn a_theme_change_is_saved_by_the_next_job() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    assert_eq!(accent(&store), "#335577");
-    assert!(set_accent(&store, "#111111"));
+    assert_eq!(accent(&doc), "#335577");
+    assert!(set_accent(&mut doc, "#111111"));
     // Accepted in memory like an edit; durable once a job writes it.
-    assert_eq!(accent(&store), "#111111");
+    assert_eq!(accent(&doc), "#111111");
     assert_eq!(saved_accent(&path), "#335577");
     let before = stored(&path);
     assert_eq!(save(&store, &mut doc), Some(false));
-    assert_eq!(stored(&path), before, "a theme-only job writes no document bytes");
+    assert_eq!(stored(&path).rows, before.rows + 1, "theme changes share the Loro update log");
     assert_eq!(saved_accent(&path), "#111111");
     // A theme change and an edit are saved in one transaction.
-    set_accent(&store, "#222222");
+    set_accent(&mut doc, "#222222");
     set_title(&mut doc, "Both");
     let job = store.job(&mut doc, false).unwrap().unwrap();
     let other = hold(&path);
@@ -648,9 +707,9 @@ fn a_theme_change_is_saved_by_the_next_job() {
     assert_eq!(saved_accent(&path), "#222222");
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     assert_eq!(title(&snapshot.document().unwrap()), "Both");
-    assert!(matches!(store.theme(Change::Set(r##"{"unknown":"#000000"}"##)), Err(Error::Rejected(_))));
+    assert!(palette(&mut doc, json!({"type":"setTheme","values":{"unknown":"#000000"}})).is_err());
     store.close().unwrap();
-    assert_eq!(accent(&open(&path).0), "#222222");
+    assert_eq!(accent(&open(&path).1), "#222222");
 }
 
 // Failure: a theme change checked ownership under the mutex a save holds for its whole
@@ -658,8 +717,7 @@ fn a_theme_change_is_saved_by_the_next_job() {
 // on the owner's edit queue.
 #[test]
 fn a_theme_change_never_waits_for_a_save_in_progress() {
-    use std::sync::mpsc::channel;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
     let store = Arc::new(store);
@@ -667,19 +725,17 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     let job = store.job(&mut doc, false).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
-    let writer = { let store = store.clone(); std::thread::spawn(move || store.write(&job)) };
-    std::thread::sleep(Duration::from_millis(200));
-    let (done, changed) = channel();
-    let theme = {
+    let writer = {
         let store = store.clone();
-        std::thread::spawn(move || done.send(store.theme(Change::Set(r##"{"accent":"#808080"}"##)).map(|(_, changed)| changed)))
+        std::thread::spawn(move || store.write(&job))
     };
-    let accepted = changed.recv_timeout(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(200));
+    let began = Instant::now();
+    assert!(set_accent(&mut doc, "#808080"));
+    assert!(began.elapsed() < Duration::from_secs(1), "the theme change waited for the save");
     assert!(!writer.is_finished(), "the save was still in progress");
     other.execute_batch("COMMIT").unwrap();
     writer.join().unwrap().unwrap();
-    theme.join().unwrap().ok();
-    assert!(accepted.expect("the theme change waited for the save").unwrap());
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
 }
@@ -688,12 +744,12 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
 fn a_failed_theme_save_keeps_the_change_for_a_retry() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    set_accent(&store, "#303030");
+    set_accent(&mut doc, "#303030");
     let other = hold(&path);
     let job = store.job(&mut doc, false).unwrap().expect("a theme-only job");
     assert!(matches!(store.write(&job), Err(Error::Busy)));
     other.execute_batch("COMMIT").unwrap();
-    assert_eq!(accent(&store), "#303030");
+    assert_eq!(accent(&doc), "#303030");
     assert_eq!(saved_accent(&path), "#335577");
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#303030");
@@ -705,8 +761,8 @@ fn a_failed_theme_save_keeps_the_change_for_a_retry() {
 fn an_unchanged_theme_is_not_written() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    assert!(!store.theme(Change::Reset(None)).unwrap().1);
-    assert!(!set_accent(&store, "#335577"), "setting the default changes nothing");
+    assert!(!palette(&mut doc, json!({"type":"setTheme","values":{},"replace":true})).unwrap());
+    assert!(!set_accent(&mut doc, "#335577"), "setting the default changes nothing");
     assert_eq!(save(&store, &mut doc), None);
 }
 
@@ -714,28 +770,33 @@ fn an_unchanged_theme_is_not_written() {
 fn reloading_after_a_discard_drops_unsaved_theme_changes() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    set_accent(&store, "#404040");
+    set_accent(&mut doc, "#404040");
     save(&store, &mut doc);
-    set_accent(&store, "#505050");
+    set_accent(&mut doc, "#505050");
     let mut reloaded = store.document().unwrap();
-    assert_eq!(accent(&store), "#404040");
+    assert_eq!(accent(&reloaded), "#404040");
     assert_eq!(save(&store, &mut reloaded), None, "nothing is left to save");
 }
 
 #[test]
 fn a_theme_file_imports_only_into_its_template() {
     let (_dir, path) = document();
-    let (store, _) = open(&path);
-    set_accent(&store, "#606060");
+    let (_store, mut doc) = open(&path);
+    set_accent(&mut doc, "#606060");
     let other = json!({"template":"habit-heatmap","values":{"accent":"#000000"}}).to_string();
-    assert!(matches!(store.theme(Change::Import(&other)), Err(Error::Rejected(_))));
-    assert!(matches!(store.theme(Change::Import(r##"{"template":"checklist","values":{"missing":"#000000"}}"##)), Err(Error::Rejected(_))));
-    assert_eq!(accent(&store), "#606060");
-    let file = store.export_theme().unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&file).unwrap()["template"], "checklist", "named by the document's template");
-    set_accent(&store, "#707070");
-    assert!(store.theme(Change::Import(&file)).unwrap().1);
-    assert_eq!(accent(&store), "#606060");
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":other})).is_err());
+    let missing = r##"{"template":"checklist","values":{"missing":"#000000"}}"##;
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":missing})).is_err());
+    assert_eq!(accent(&doc), "#606060");
+    let file = doc.export_theme().unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&file).unwrap()["template"],
+        "checklist",
+        "named by the document's template"
+    );
+    set_accent(&mut doc, "#707070");
+    assert!(palette(&mut doc, json!({"type":"importTheme","file":file})).unwrap());
+    assert_eq!(accent(&doc), "#606060");
 }
 
 // Failure: a read-only connection beside the writer in the same process (a copy of an
@@ -778,7 +839,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
 // Crash outcomes at each kind of save, with real processes: what a save commits survives
 // the death of the process that wrote it, and its lock dies with it. The rollback of a
 // write interrupted mid-commit is SQLite's journal (`a_crash_mid_commit_is_recovered_by_the_next_writer`
-// in `file.rs`); the timed helper kills in `scripts/crash-matrix.ts` are stress coverage.
+// in `file.rs`); the timed helper kills in `tests/native/crash.native.test.ts` are stress coverage.
 const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 
 /// Runs only as the child of `a_committed_save_survives_its_process_being_killed`: makes
@@ -786,12 +847,14 @@ const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 #[test]
 #[ignore]
 fn save_then_die() {
-    let (Ok(path), Ok(save)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_SAVE")) else { return };
+    let (Ok(path), Ok(save)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_SAVE")) else {
+        return;
+    };
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     let job = match save.as_str() {
         "theme" => {
-            assert!(set_accent(&store, "#123456"));
+            assert!(set_accent(&mut doc, "#123456"));
             store.job(&mut doc, false).unwrap().unwrap()
         }
         kind => {
@@ -811,15 +874,18 @@ fn a_committed_save_survives_its_process_being_killed() {
         let (_dir, path) = document();
         let (store, _) = open(&path);
         store.close().unwrap();
-        let status = support::child("save_then_die", &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)])
-            .status()
-            .unwrap();
+        let status = support::child(
+            "save_then_die",
+            &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)],
+        )
+        .status()
+        .unwrap();
         // A signal, not a failed assertion: the child reached its save.
         assert_eq!(std::os::unix::process::ExitStatusExt::signal(&status), Some(6), "{save}: {status:?}");
         // Opening as the writer proves the lock died with the child.
         let (store, doc) = open(&path);
         match save {
-            "theme" => assert_eq!(accent(&store), "#123456"),
+            "theme" => assert_eq!(accent(&doc), "#123456"),
             kind => assert_eq!(title(&doc), format!("Saved by {kind}")),
         }
         store.close().unwrap();
@@ -831,7 +897,10 @@ fn a_committed_save_survives_its_process_being_killed() {
 #[test]
 #[ignore]
 fn save_while_held() {
-    let (Ok(path), Ok(marker)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_MARKER")) else { return };
+    let (Ok(path), Ok(marker)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_MARKER"))
+    else {
+        return;
+    };
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     set_title(&mut doc, "Never saved");
@@ -849,12 +918,18 @@ fn a_save_killed_before_its_commit_leaves_the_saved_state() {
     let held = sql(&path);
     held.execute_batch("BEGIN IMMEDIATE").unwrap();
     let marker = dir.path().join("saving");
-    let mut child = support::child("save_while_held", &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())])
-        .spawn()
-        .unwrap();
+    let mut child = support::child(
+        "save_while_held",
+        &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())],
+    )
+    .spawn()
+    .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while !marker.exists() {
-        assert!(std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none(), "the child never started its save");
+        assert!(
+            std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none(),
+            "the child never started its save"
+        );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     // Its write now waits for the database (the busy timeout is 2 s).
@@ -887,7 +962,7 @@ fn a_save_retried_after_a_lost_reply_counts_once() {
         }
         store.close().unwrap();
         let (store, doc) = open(&path);
-        let value: Value = serde_json::from_str(&doc.value().unwrap()).unwrap();
+        let value: Value = serde_json::from_str(&doc.value()).unwrap();
         assert_eq!(value["hits"], expected, "checkpoint: {checkpoint}");
         store.close().unwrap();
     }

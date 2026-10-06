@@ -1,12 +1,12 @@
 import { cp, mkdir, realpath, writeFile, rm, rename } from "node:fs/promises";
 import { basename, relative, resolve, join } from "node:path";
-import { parseManifest, PackageFormat, RuntimeABI, SlopManifestSchema, type AppRow } from "@hitslop/schema";
+import { PackageFormat, RuntimeABI, SlopManifestSchema, type AppRow } from "@hitslop/schema";
 import { validate } from "@hitslop/schema/validation";
-import { validateDocument, validateTheme, validateWindowShape } from "./core";
+import { findEngine } from "./engine";
 import { exists } from "./fs";
 import { localImports } from "./imports";
 import { cliRoot } from "./paths";
-import { start } from "./process";
+import { start, run } from "./process";
 import type { AppCompiler } from "./vite";
 /** The runtime ABI comes from the project SDK, independently of the builder format. */
 async function runtimeABI(source: string): Promise<number> {
@@ -87,24 +87,20 @@ export async function normalizeApp(source: string, { slop, schema }: LoadedProje
   if ("slug" in fields) throw new Error("slop.ts: remove slug; the project folder's name is the slug");
   for (const [key, value] of [["initial", initial], ["theme", theme]] as const)
     if (value === undefined) throw new Error(`slop.ts: ${key} is required`);
-  let manifest;
-  try {
-    manifest = parseManifest({ ...fields, slug: projectSlug(source) });
-  } catch (error) {
-    throw new Error(`slop.ts: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-  }
   const runtime = await runtimeABI(source);
-  if (!("skin" in manifest.presentation)) await validateWindowShape(manifest.presentation);
-  await validateDocument(descriptor, initial);
-  await validateTheme(theme);
-  return {
+  const app = {
     packageFormat: PackageFormat,
     runtimeABI: runtime,
-    manifest,
+    manifest: { ...fields, slug: projectSlug(source) },
     descriptor,
     initial,
-    theme: theme as AppRow["theme"],
+    theme,
   };
+  await run([await findEngine(), "validate-app"], {
+    stdin: JSON.stringify(app),
+    failure: "slop.ts validation failed",
+  }).catch((error: Error) => { throw new Error(`slop.ts: ${error.message}`, { cause: error }); });
+  return app as AppRow;
 }
 /** Artwork a project supplies, packed as the file's preview and icon. */
 const artwork = ["preview.png", "icon.png"];

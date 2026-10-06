@@ -7,17 +7,17 @@ import WebKit
 /// Opening a document window: waiting for the page, progress, and the first reveal.
 extension SlopDocumentWindowController {
   public func pageSessionDidBecomeReady(_ session: DocumentSession) {
-    publishControlsVisibility(toolbar?.isVisible == true, force: true)
+    toolbar.republishControls()
     if reportedRendererFailure { telemetry.send(.breadcrumb(.renderer, .recovered)) }
     reportedRendererFailure = false
     recordStartup("page-ready")
     #if DEBUG
-    if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-      // Page-relative milliseconds for the hitslop:* marks recorded by the runtime's boot.js.
-      session.webView.evaluateJavaScript(
-        "JSON.stringify(performance.getEntriesByType('mark').map(e => [e.name, Math.round(e.startTime)]))"
-      ) { result, _ in print("[hitSlop startup] page \(result ?? "")") }
-    }
+      if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
+        // Page-relative milliseconds for the hitslop:* marks recorded by the runtime's boot.js.
+        session.webView.evaluateJavaScript(
+          "JSON.stringify(performance.getEntriesByType('mark').map(e => [e.name, Math.round(e.startTime)]))"
+        ) { result, _ in print("[hitSlop startup] page \(result ?? "")") }
+      }
     #endif
     // The bridge is ready before WebKit has necessarily painted. The loading
     // task owns the visual handoff and the coordinator's ready notification.
@@ -25,9 +25,9 @@ extension SlopDocumentWindowController {
 
   func recordStartup(_ stage: String) {
     #if DEBUG
-    if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-      print("[hitSlop startup] \(stage) \(startupStarted.duration(to: .now))")
-    }
+      if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
+        print("[hitSlop startup] \(stage) \(startupStarted.duration(to: .now))")
+      }
     #endif
   }
 
@@ -38,10 +38,10 @@ extension SlopDocumentWindowController {
     // A replaced page starts without the panel; it reopens once the new page is ready.
     closeThemePanel()
     window?.orderOut(nil)
-    hideToolbar()
+    toolbar.hide()
     loadingWebView = session.webView
     session.webView.setAccessibilityHidden(true)
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
     if presentationRequested { showOpeningProgress() }
     loadingTask = Task { @MainActor [weak self, session, weak view = session.webView] in
       do {
@@ -71,7 +71,7 @@ extension SlopDocumentWindowController {
     openingProgress = nil
     if let view = loadingWebView { view.setAccessibilityHidden(false) }
     loadingWebView = nil
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
   }
 
   func stopLoading() {

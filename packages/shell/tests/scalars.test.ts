@@ -32,7 +32,7 @@ async function open() {
     errors.push(error);
     reported();
   });
-  const saved = () => JSON.parse(core.snapshot()).value;
+  const saved = () => JSON.parse(core.state()).value;
   return { core, doc, errors, nextReport, saved, transport };
 }
 

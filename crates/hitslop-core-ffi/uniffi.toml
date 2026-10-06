@@ -1,3 +1,20 @@
 [bindings.swift]
 module_name = "HitSlopCoreBinding"
 ffi_module_name = "HitSlopCoreFFI"
+
+# Core types cross as UniFFI remote types under their core names; Swift keeps these.
+[bindings.swift.rename]
+FailureKind = "OwnerFailureKind"
+Failure = "OwnerFailure"
+SaveStatus = "OwnerSaveStatus"
+Event = "OwnerEvent"
+Request = "OwnerRequest"
+Origin = "EditOrigin"
+Mode = "StoreMode"
+Kind = "FileKind"
+Envelope = "EnvelopeKind"
+Attachment = "AttachmentRecord"
+"Attachment.bytes" = "byteLength"
+Silhouette = "WindowSilhouette"
+Segment = "SilhouetteSegment"
+Length = "SilhouetteLength"

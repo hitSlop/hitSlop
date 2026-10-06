@@ -52,7 +52,7 @@ const SlopStandardPresentationSchema = Strict(
     resizable: Type.Optional(Type.Boolean()),
     shape: Type.Optional(SlopShapeSchema),
     lockAspect: Type.Optional(Type.Boolean()),
-    background: Type.Optional(Type.Literal("transparent")),
+    background: Type.Optional(Type.Enum(["transparent", "glass"])),
   },
   { title: "SlopStandardPresentation" },
 );

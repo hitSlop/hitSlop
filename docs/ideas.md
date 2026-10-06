@@ -69,6 +69,20 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Builds on:** the owner socket and its TypeBox envelopes in `packages/schema`. The
   socket takes one request per connection today, so streaming needs a new envelope.
 
+### Gradient theme tokens
+
+- **What:** a template declares gradients beside its colors, and the theme panel's picker
+  gains a gradient mode: a few color stops and an angle.
+- **Why:** a background carries much of a slop's look, and one color can't give it the
+  soft, layered backgrounds people know from Arc.
+- **Builds on:** the palette and the panel's picker. A gradient can't be the value of a
+  color token: templates use `--slop-*` colors in `color`, `border-color` and
+  `color-mix()`, where a gradient isn't valid CSS. It needs its own declared kind, usable
+  only in `background-image`. That kind is checked in `theme.rs`, typed in `defineTheme`,
+  carried in theme files and covered by a fixture.
+- **Open questions:** whether a stop can name a palette color, so the gradient follows a
+  changed accent, and how the window shape, icon and export use a gradient.
+
 ## Change the app, keep the data
 
 ### Remix
@@ -82,6 +96,10 @@ a person and their agent edit the same live document. What's missing is the slop
   `packages/cli/src/build.ts`.
 - **Contract change:** templates contain no source today. Shipping source also raises
   questions about licenses and private notes in briefs.
+- **Constraints:** compressed and optional, with a size limit and provenance; source
+  files and dependency metadata only, never dependencies, build caches, credentials or
+  chat history; extracted without executing code and never served to the page.
+  Rebuilding produces a new app.
 
 ### Additive app upgrades
 
@@ -170,9 +188,9 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Builds on:** the single file (the app travels with the data) and the owner's Loro
   update import and export. Row-syncing SQLite services (Turso, SQLite Sync) were
   considered and rejected: they replicate rows, while the document's merges live in Loro.
-- **Contract change:** theme overrides are a row outside Loro and need merge semantics
-  (last writer per color, or a move into Loro) before they sync. Attachments travel
-  separately, by hash, so "edits synced" and "file complete" are different states.
+- **Remaining work:** theme overrides already merge in Loro, last writer per color.
+  Attachments travel separately, by hash, so "edits synced" and "file complete" are
+  different states. Sync also needs retention and undo policies for offline replicas.
 
 ### Realtime collaboration on Durable Objects
 
@@ -191,8 +209,9 @@ a person and their agent edit the same live document. What's missing is the slop
   - Check Loro's own sync tooling before writing new framing.
 - **Placement:**
   - The Rust core owns the sync messages and the acknowledged version (a `sync` feature).
-  - Swift owns the socket, authentication and scheduling, and carries frames as opaque
-    bytes.
+  - A future Swift sync adapter could handle remote networking and authentication,
+    carrying frames as opaque bytes. The Rust owner would schedule imports and saving;
+    this is separate from the local command socket it already owns.
   - Remote frames enter the owner queue as `import`. The page sees them as publications,
     exactly like a CLI edit, and text bindings already merge concurrent edits from the
     history they saw.

@@ -3,16 +3,13 @@ import HitSlopCore
 import HitSlopCoreBinding
 
 /// New documents: created from a template here, or copied by an open document's owner
-/// (`DocumentOwner.copy(to:)`), so saves wait behind the copy.
+/// (`DocumentOwner.copy(to:artwork:)`), so saves wait behind the copy.
 extension SlopFile {
-  /// Where a new document goes: `url` with the `.slop` extension, on a local volume, and
-  /// outside the installed and bundled templates.
+  /// Where a new document goes: `url` with the `.slop` extension, outside a folder iCloud
+  /// syncs. The core refuses the other places documents may not go.
   public static func newDocumentURL(_ url: URL) throws -> URL {
     let url = url.pathExtension == "slop" ? url : url.appendingPathExtension("slop")
     try SlopLocalDocument.requireLocal(url)
-    guard !SlopTemplateLocation.isMaster(url) else {
-      throw SlopFailure("A document cannot be created among installed templates")
-    }
     return url
   }
 

@@ -4,19 +4,18 @@ version = "0.0.0"
 edition.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 crate-type = ["cdylib", "staticlib"]
-
-[[bin]]
-name = "uniffi-bindgen"
-path = "src/bindgen.rs"
-required-features = ["cli"]
-
-[features]
-cli = ["uniffi/cli"]
+doctest = false
 
 [dependencies]
 hitslop-core = { path = "../hitslop-core", features = ["storage"] }
-uniffi = "=0.31.1"
+# Without its default `cargo-metadata`, which only the bindings generator uses: every host
+# build then shares one dependency graph. The generator is installed on its own
+# (crates/README.md).
+uniffi = { version = "=0.32.2", default-features = false }
 thiserror.workspace = true
 

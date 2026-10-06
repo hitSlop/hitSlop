@@ -21,11 +21,12 @@ import "../styles/motion.css";
 const count = templates.length;
 const burst = templates.map((template) => template.emoji);
 const faqs = [
-  { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single file. Open it, move it, share it, keep it. The interface and your data travel together." },
-  { question: "What comes with the app?", answer: `A whole collection: ${count} tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond. Pick one from Templates and hitSlop makes you your own copy.` },
-  { question: "Where does my data live?", answer: "In the document on your Mac. No account, no server, and every included template works offline." },
+  { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single SQLite file. Open it, move it, share it, keep it. The interface and your data travel together." },
+  { question: "Can I open a .slop without hitSlop?", answer: "You can look inside it: a .slop is a standard SQLite database, so any SQLite tool opens it and shows its tables. To use or edit it, open it in hitSlop or change it through the CLI. hitSlop is MIT-licensed, so the format is all in the open." },
+  { question: "What comes with the app?", answer: `A whole collection: ${count} tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates and hitSlop makes you your own copy.` },
+  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account, no server, and every included template works offline." },
   { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a slop from scratch, and it can change the tasks, notes and numbers in a document through the hitSlop CLI. It edits the same live document you have open." },
-  { question: "Can I change how a slop looks?", answer: "Yes. Ask your agent or use the theme commands to change a document’s colors; they stay with that document. Authors change layout and structure in source and build a new version." },
+  { question: "Can I change how a slop looks?", answer: "Yes. Open the theme panel in any slop’s window to pick your own colors, and import or export a palette to share it. Your agent can do the same with the theme commands. Colors stay with that document. Authors change layout and structure in source and build a new version." },
   { question: "Will my slops update on their own?", answer: "No. A document keeps the app version it was made with. A new build is available for new copies and never rewrites the ones you already use." },
   { question: "Can I share the result without sharing the app?", answer: "Yes. Export a crisp PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything that needs to leave your desktop." },
   { question: "Can we edit together?", answer: "Live collaboration is coming soon. Today your documents stay on your Mac, and you can send copies or PNG and PDF exports." },
@@ -36,7 +37,7 @@ const faqs = [
 <!doctype html>
 <html lang="en">
   <head>
-    <SiteHead title="hitSlop · Tiny apps. Big personality." description={`Tiny apps and living documents for your Mac. ${count} included templates, each one a single file you keep. Make your own with your AI agent.`} preloadHeadline />
+    <SiteHead title="hitSlop · Tiny apps. Big personality." description={`Tiny apps and living documents for your Mac. ${count} included templates, each one a single SQLite file you keep. Make your own with your AI agent.`} preloadHeadline />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
@@ -51,7 +52,6 @@ const faqs = [
           <h2 class="headline" id="templates-title">There’s a slop <em>for that.</em></h2>
           <p class="lede">Every one of these comes with hitSlop. Pick one, make a copy, and it’s yours to use, change, or send to a friend.</p>
         </div>
-        <p class="annotation surprise-note" aria-hidden="true" style="--tilt: 4deg">can’t decide? let fate pick<svg viewBox="0 0 70 50"><path d="M6 10c20-8 40 2 50 26m-14-6 15 8 2-16" /></svg></p>
         <div class="wall-wrap"><TemplateWall client:visible templates={templates} /></div>
       </section>
 
@@ -60,7 +60,7 @@ const faqs = [
           <div>
             <p class="kicker">Make your own</p>
             <h2 class="headline" id="make-title">Describe it. <em>Your agent</em> builds it.</h2>
-            <p class="lede">Start a project, tell your coding agent what you wish existed, and watch it take shape in your browser. When it feels right, build a <code>.slop</code> and put it on your desktop. You keep the source and the finished app.</p>
+            <p class="lede">Run one command, say what your slop should do, and pick your agent. It builds the app while you watch it take shape in your browser. When it feels right, build a <code>.slop</code> and put it on your desktop. You keep the source and the finished app.</p>
             <div class="make-actions">
               <button class="button button-primary" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Get the agent prompt</button>
               <a class="text-link" href={SITE_LINKS.authoring}>Read the guide <span aria-hidden="true">→</span></a>
@@ -84,9 +84,9 @@ const faqs = [
 
       <section class="section panel file" id="file" aria-labelledby="file-title">
         <div class="section-head">
-          <p class="kicker">A file, not an account</p>
+          <p class="kicker">A SQLite file, not an account</p>
           <h2 class="headline" id="file-title">I’m literally <em>just a file.</em></h2>
-          <p class="lede">The app and everything you save live together in one package on your Mac. Close it before you move or copy it, the way you would any document.</p>
+          <p class="lede">Every slop is one SQLite database on your Mac: the app and everything you save live together. Close it before you move or copy it, the way you would any document. Any SQLite tool can open it to look inside.</p>
           <ul class="verbs" aria-label="Things you can do with a slop">
             <li class="sticker" data-tone="sun" style="--tilt: -5deg">Open</li>
             <li class="sticker" data-tone="pink" style="--tilt: 4deg">Move</li>
@@ -211,8 +211,6 @@ const faqs = [
   .small-print a { text-decoration: underline; text-underline-offset: 3px; }
 
   .templates { padding-top: clamp(88px, 11vw, 150px); }
-  .templates .surprise-note { position: absolute; right: clamp(24px, 8vw, 120px); top: clamp(120px, 12vw, 190px); }
-  .templates .surprise-note svg { rotate: 60deg; translate: 0 22px; }
   .wall-wrap { margin-top: 40px; }
 
   .make-actions { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
@@ -229,7 +227,6 @@ const faqs = [
   .themes { background: #fbe8f7; border-radius: var(--radius); }
   .themes .theme-note { margin-top: 30px; }
   .themes .theme-note svg { rotate: -10deg; }
-  @media (max-width: 899px) { .templates .surprise-note { display: none; } }
 
   .checks { margin: 26px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; font-weight: 700; }
   .checks li { display: flex; align-items: center; gap: 10px; }

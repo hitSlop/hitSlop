@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  // The real file layout (docs/reference/runtime.md): the app's tables, then your document's.
+  // The real SQLite tables (docs/reference/runtime.md): the app's, then your document's.
   const app = [
     { name: "app", note: "its name, shape and starting values", emoji: "🏷️" },
     { name: "assets", note: "the little app itself", emoji: "🧩" },
@@ -26,7 +26,7 @@
   const face = $derived(open === false ? (hover ? "(o w o)" : "(u w u)") : "\\(O w O)/");
   const art = $derived([
     "." + "-".repeat(W) + ".",
-    row("~ .slop ~"),
+    row("~ SQLite ~"),
     row(),
     row(face),
     row(open === false ? "<3" : "!!"),
@@ -56,11 +56,11 @@
   </button>
   <div class="parts" id="slop-parts">
     <section class="group">
-      <h3>The app <small>stays exactly as it was built</small></h3>
+      <h3>The app's tables <small>stay exactly as built</small></h3>
       <ul>{#each app as part, i}<li style:--i={i}><span aria-hidden="true">{part.emoji}</span><code>{part.name}</code><small>{part.note}</small></li>{/each}</ul>
     </section>
     <section class="group yours">
-      <h3>Your stuff <small>changes as you use it</small></h3>
+      <h3>Your tables <small>change as you use it</small></h3>
       <ul>{#each yours as part, i}<li style:--i={i + app.length}><span aria-hidden="true">{part.emoji}</span><code>{part.name}</code><small>{part.note}</small></li>{/each}</ul>
     </section>
   </div>

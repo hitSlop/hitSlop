@@ -36,7 +36,9 @@ public struct SlopSilhouette: @unchecked Sendable {
 
   /// SVG and CSS use y-down coordinates; AppKit uses y-up. Convert in one place.
   public func path(in bounds: CGRect) -> CGPath {
-    guard bounds.width > 0, bounds.height > 0, bounds.width.isFinite, bounds.height.isFinite else { return CGMutablePath() }
+    guard bounds.width > 0, bounds.height > 0, bounds.width.isFinite, bounds.height.isFinite else {
+      return CGMutablePath()
+    }
     let source: CGPath
     var transform: CGAffineTransform
     switch geometry {
@@ -45,31 +47,48 @@ public struct SlopSilhouette: @unchecked Sendable {
       transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: bounds.minX, ty: bounds.maxY)
     case .path(let path, let box):
       source = path
-      transform = CGAffineTransform(a: bounds.width / box.width, b: 0, c: 0, d: -bounds.height / box.height, tx: bounds.minX, ty: bounds.maxY)
+      transform = CGAffineTransform(
+        a: bounds.width / box.width, b: 0, c: 0, d: -bounds.height / box.height, tx: bounds.minX, ty: bounds.maxY)
     }
     return source.copy(using: &transform)!
   }
 
   /// CSS `border-radius` geometry: percentages resolve against the bounds and all radii
   /// shrink by the overlap factor (CSS Backgrounds 3, "Overlapping Curves").
-  private static func rounded(horizontal: [SilhouetteLength], vertical: [SilhouetteLength], width w: CGFloat, height h: CGFloat) -> CGPath {
-    func resolve(_ length: SilhouetteLength, _ extent: CGFloat) -> CGFloat { length.percent ? extent * (length.value / 100) : length.value }
-    var x = horizontal.map { resolve($0, w) }, y = vertical.map { resolve($0, h) }
+  private static func rounded(
+    horizontal: [SilhouetteLength], vertical: [SilhouetteLength], width w: CGFloat, height h: CGFloat
+  ) -> CGPath {
+    func resolve(_ length: SilhouetteLength, _ extent: CGFloat) -> CGFloat {
+      length.percent ? extent * (length.value / 100) : length.value
+    }
+    var x = horizontal.map { resolve($0, w) }
+    var y = vertical.map { resolve($0, h) }
     var factor: CGFloat = 1
-    for (length, total) in [(w, x[0]+x[1]), (w, x[3]+x[2]), (h, y[0]+y[3]), (h, y[1]+y[2])] {
+    for (length, total) in [(w, x[0] + x[1]), (w, x[3] + x[2]), (h, y[0] + y[3]), (h, y[1] + y[2])] {
       if total > 0 { factor = min(factor, length / total) }
     }
-    x = x.map { $0 * factor }; y = y.map { $0 * factor }
-    let p = CGMutablePath(), k: CGFloat = 0.5522847498307936
+    x = x.map { $0 * factor }
+    y = y.map { $0 * factor }
+    let p = CGMutablePath()
+    let k: CGFloat = 0.5522847498307936
     p.move(to: CGPoint(x: x[0], y: 0))
-    p.addLine(to: CGPoint(x: w-x[1], y: 0))
-    p.addCurve(to: CGPoint(x: w, y: y[1]), control1: CGPoint(x: w-x[1]+k*x[1], y: 0), control2: CGPoint(x: w, y: y[1]-k*y[1]))
-    p.addLine(to: CGPoint(x: w, y: h-y[2]))
-    p.addCurve(to: CGPoint(x: w-x[2], y: h), control1: CGPoint(x: w, y: h-y[2]+k*y[2]), control2: CGPoint(x: w-x[2]+k*x[2], y: h))
+    p.addLine(to: CGPoint(x: w - x[1], y: 0))
+    p.addCurve(
+      to: CGPoint(x: w, y: y[1]), control1: CGPoint(x: w - x[1] + k * x[1], y: 0),
+      control2: CGPoint(x: w, y: y[1] - k * y[1]))
+    p.addLine(to: CGPoint(x: w, y: h - y[2]))
+    p.addCurve(
+      to: CGPoint(x: w - x[2], y: h), control1: CGPoint(x: w, y: h - y[2] + k * y[2]),
+      control2: CGPoint(x: w - x[2] + k * x[2], y: h))
     p.addLine(to: CGPoint(x: x[3], y: h))
-    p.addCurve(to: CGPoint(x: 0, y: h-y[3]), control1: CGPoint(x: x[3]-k*x[3], y: h), control2: CGPoint(x: 0, y: h-y[3]+k*y[3]))
+    p.addCurve(
+      to: CGPoint(x: 0, y: h - y[3]), control1: CGPoint(x: x[3] - k * x[3], y: h),
+      control2: CGPoint(x: 0, y: h - y[3] + k * y[3]))
     p.addLine(to: CGPoint(x: 0, y: y[0]))
-    p.addCurve(to: CGPoint(x: x[0], y: 0), control1: CGPoint(x: 0, y: y[0]-k*y[0]), control2: CGPoint(x: x[0]-k*x[0], y: 0))
-    p.closeSubpath(); return p
+    p.addCurve(
+      to: CGPoint(x: x[0], y: 0), control1: CGPoint(x: 0, y: y[0] - k * y[0]),
+      control2: CGPoint(x: x[0] - k * x[0], y: 0))
+    p.closeSubpath()
+    return p
   }
 }

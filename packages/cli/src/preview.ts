@@ -21,8 +21,16 @@ export function previewFrame(manifest: Pick<SlopManifest, "title" | "presentatio
     const { shape = DefaultWindowRadius, background, resizable = true, lockAspect = false } = presentation;
     resize = resizable;
     ratio = lockAspect ? width / height : 0;
-    shadow = background !== "transparent";
+    // The stage's drop shadow is a filter, which would hide the page from a backdrop filter,
+    // so glass frosts the checkerboard without it.
+    shadow = background === undefined;
     if (shadow) surface.push("background:Canvas");
+    if (background === "glass")
+      surface.push(
+        "background:color-mix(in srgb,Canvas 30%,transparent)",
+        "-webkit-backdrop-filter:blur(24px) saturate(1.8)",
+        "backdrop-filter:blur(24px) saturate(1.8)",
+      );
     if (typeof shape === "string")
       surface.push(`border-radius:${shape}`, `clip-path:inset(0 round ${shape})`);
     else {

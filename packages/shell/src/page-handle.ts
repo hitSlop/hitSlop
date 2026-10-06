@@ -2,8 +2,6 @@
 export interface SlopPageHandle {
   publish(pushes: unknown): void;
   capture: ReturnType<typeof import("./capture").createCaptureController>;
-  /** Applies effective theme values the native owner already validated and saved. */
-  applyTheme(values: Record<string, string>): void;
   flush(): Promise<void>;
   /** Edit ▸ Undo and Redo: the page sends what the person sees first. */
   undo(): Promise<void>;
@@ -15,5 +13,7 @@ export interface SlopPageHandle {
 }
 
 declare global {
-  var __slop: Pick<SlopPageHandle, "publish"> & Partial<Omit<SlopPageHandle, "publish">> | undefined;
+  var __slop: (Pick<SlopPageHandle, "publish"> & Partial<Omit<SlopPageHandle, "publish">> & {
+    dispatch: ReturnType<typeof import("./host-dispatch").hostDispatcher>;
+  }) | undefined;
 }

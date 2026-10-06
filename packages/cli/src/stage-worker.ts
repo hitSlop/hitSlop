@@ -7,10 +7,14 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadProject, metadataFiles, normalizeApp, stageProjectInBun } from "./build";
 import { localImports } from "./imports";
+import { discoverEntry } from "./entry";
 
 const [source, ...args] = process.argv.slice(2) as [string, ...string[]];
 const option = (name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
-if (args.includes("--check")) await normalizeApp(source, await loadProject(source));
+if (args.includes("--check")) {
+  await discoverEntry(source);
+  await normalizeApp(source, await loadProject(source));
+}
 else {
   const compile = args.includes("--compile") ? (await import("./vite")).compileAppWithVite : undefined;
   await stageProjectInBun(source, args[0]!, compile);

@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import Testing
 import HitSlopTestSupport
+import Testing
 import WebKit
 
 @testable import HitSlopDocument
@@ -13,7 +13,6 @@ import WebKit
     let stage = try Fixtures.stage()
     let assets = stage.appendingPathComponent("assets")
     let files: [String: Data] = [
-      "app.js": Data("export default { mount() { return {}; } };".utf8),
       "worker.js": Data("postMessage('worker');".utf8),
       "module.js": Data("export {}; postMessage('module');".utf8),
       "module.mjs": Data("export {}; postMessage('mjs');".utf8),
@@ -29,28 +28,39 @@ import WebKit
       "tone.wav": Self.wav(seconds: 3),
     ]
     for (name, data) in files { try data.write(to: assets.appendingPathComponent(name)) }
+    try Fixtures.writeApp("export default { mount() { return {}; } };", to: stage)
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
 
     let session = try await DocumentSession.open(url: root)
-    session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
-      globalThis.policyViolations = [];
-      addEventListener('securitypolicyviolation', event => policyViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
-      """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    session.webView.configuration.userContentController.addUserScript(
+      WKUserScript(
+        source: """
+          globalThis.policyViolations = [];
+          addEventListener('securitypolicyviolation', event => policyViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
+          """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     // WebKit starts media only in a page that is in a window.
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = session.webView
     window.orderFront(nil)
-    defer { window.contentView = nil; window.orderOut(nil) }
+    defer {
+      window.contentView = nil
+      window.orderOut(nil)
+    }
     session.load()
     let results: [String: String]
     do {
       try await session.waitUntilReady()
-      let json = try await session.webView.callAsyncJavaScript(
-        Self.probe, arguments: ["workletSource": Self.workletSource], in: nil, contentWorld: .page) as? String
+      let json =
+        try await session.webView.callAsyncJavaScript(
+          Self.probe, arguments: ["workletSource": Self.workletSource], in: nil, contentWorld: .page) as? String
       results = try JSONDecoder().decode([String: String].self, from: Data((json ?? "{}").utf8))
       try await session.close()
-    } catch { try? await session.close(); throw error }
+    } catch {
+      try? await session.close()
+      throw error
+    }
 
     // Evidence capture: every outcome, including the ones not asserted below.
     if let output = ProcessInfo.processInfo.environment["HITSLOP_PROBE_OUT"] {
@@ -72,7 +82,8 @@ import WebKit
     #expect(results["wasm.module"] == "5", "wasm.module: \(results["wasm.module"] ?? "missing")")
     #expect(results["wasm.streaming"] == "5", "wasm.streaming: \(results["wasm.streaming"] ?? "missing")")
     // Media assets play and seek: WebKit's media loader needs byte ranges, read from the file.
-    #expect(results["media.asset"]?.hasSuffix("seekedTo=1.50") == true, "media.asset: \(results["media.asset"] ?? "missing")")
+    #expect(
+      results["media.asset"]?.hasSuffix("seekedTo=1.50") == true, "media.asset: \(results["media.asset"] ?? "missing")")
   }
 
   // The range forms WebKit's media loader doesn't exercise above.
@@ -168,11 +179,21 @@ import WebKit
     let rate = 8_000
     let samples = rate * seconds
     var data = Data()
-    func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
-    data.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + samples * 2))
-    data.append(contentsOf: Array("WAVEfmt ".utf8)); append(UInt32(16)); append(UInt16(1)); append(UInt16(1))
-    append(UInt32(rate)); append(UInt32(rate * 2)); append(UInt16(2)); append(UInt16(16))
-    data.append(contentsOf: Array("data".utf8)); append(UInt32(samples * 2))
+    func append<T: FixedWidthInteger>(_ value: T) {
+      withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+    }
+    data.append(contentsOf: Array("RIFF".utf8))
+    append(UInt32(36 + samples * 2))
+    data.append(contentsOf: Array("WAVEfmt ".utf8))
+    append(UInt32(16))
+    append(UInt16(1))
+    append(UInt16(1))
+    append(UInt32(rate))
+    append(UInt32(rate * 2))
+    append(UInt16(2))
+    append(UInt16(16))
+    data.append(contentsOf: Array("data".utf8))
+    append(UInt32(samples * 2))
     for index in 0..<samples {
       append(Int16(sin(Double(index) * 2 * .pi * 440 / Double(rate)) * 8_000))
     }

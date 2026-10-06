@@ -15,10 +15,10 @@ public enum SlopRegistry {
   /// share one registry.
   public static let prepared: Void = {
     #if DEBUG
-    if let folder = ProcessInfo.processInfo.environment["HITSLOP_TEST_REGISTRY"], !folder.isEmpty {
-      try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-      try? useRegistryFolder(path: folder)
-    }
+      if let folder = ProcessInfo.processInfo.environment["HITSLOP_TEST_REGISTRY"], !folder.isEmpty {
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try? useRegistryFolder(path: folder)
+      }
     #endif
   }()
   /// Removes discovery files a crashed owner left behind. Run at launch.
@@ -28,19 +28,13 @@ public enum SlopRegistry {
   }
 }
 
-/// Runs a call into the Rust store, rethrowing its storage failures as host errors.
+/// Runs a call into the Rust store, rethrowing its failure in the host's terms.
 func storeCall<T>(_ body: () throws -> T) throws -> T {
   _ = SlopRegistry.prepared
-  do { return try body() } catch let error as CoreError {
+  do { return try body() } catch {
     switch error {
-    case .Locked: throw DocumentLocked()
-    case .Busy: throw SaveFailure.busy
-    case .Full: throw SaveFailure.full
-    case .Moved: throw SaveFailure.moved
-    case .Closed: throw OwnerError.closed
-    case .Failed(let message): throw SlopFailure(message)
-    case .Rejected where SlopRequiresUpdate.matches(error): throw SlopRequiresUpdate()
-    case .Rejected, .Invalidated: throw error
+    case CoreError.Failure(let failure), let failure as OwnerFailure: throw failure.hostError
+    default: throw error
     }
   }
 }
@@ -59,7 +53,8 @@ public enum SaveFailure: Error, LocalizedError, Equatable {
   init(_ error: Error) { self = error as? SaveFailure ?? .io(error.localizedDescription) }
   public var errorDescription: String? {
     switch self {
-    case .full: "Document is full (\(Limits.storageBytes >> 20) MiB limit); saved state is intact. Retry saving or explicitly discard unsaved edits."
+    case .full:
+      "Document is full (\(Limits.storageBytes >> 20) MiB limit); saved state is intact. Retry saving or explicitly discard unsaved edits."
     case .busy: "The document is busy in another process; retry saving."
     case .moved: "Document moved or replaced; close before moving a document"
     case .invalidated: "The document engine stopped; reload saved state. Unsaved edits may be lost."

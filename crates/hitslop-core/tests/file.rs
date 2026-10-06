@@ -1,14 +1,14 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
-use hitslop_core::file::{self, Kind};
+use hitslop_core::file::{self, Artwork, Kind};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
 use hitslop_core::{Code, Origin};
-use rusqlite::Connection;
+use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 mod support;
-use support::{isolate_registry, registry_folder, write_app, App, MANIFEST, THEME};
+use support::{App, MANIFEST, THEME, isolate_registry, registry_folder, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
@@ -21,7 +21,9 @@ fn crashed_owner(doc: &Path, json: &str) {
         .unwrap()
         .flatten()
         .map(|entry| entry.path())
-        .find(|path| path.extension().is_some_and(|e| e == "json") && fs::read_to_string(path).is_ok_and(|text| text == json))
+        .find(|path| {
+            path.extension().is_some_and(|e| e == "json") && fs::read_to_string(path).is_ok_and(|text| text == json)
+        })
         .unwrap();
     drop(lease);
     fs::write(file, json).unwrap();
@@ -57,7 +59,12 @@ fn code(error: Error) -> Code {
     }
 }
 fn temporaries(dir: &Path) -> Vec<String> {
-    fs::read_dir(dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.ends_with(".tmp")).collect()
+    fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect()
 }
 /// Each marker raised one past what this build writes.
 fn raised(doc: &Path) -> [String; 3] {
@@ -91,10 +98,11 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert_eq!(opened.kind, Kind::Template);
     assert_eq!((opened.app.package_format, opened.app.runtime_abi), (APP.format, APP.abi));
     assert_eq!(opened.app.descriptor, SCHEMA);
-    assert_eq!(opened.theme_tokens, vec![("accent".to_string(), "#335577".to_string())]);
+    assert_eq!(opened.spec.theme_tokens(), [("accent".to_string(), "#335577".to_string())]);
     let manifest: serde_json::Value = serde_json::from_str(&opened.app.manifest).unwrap();
     assert!(manifest.get("packageFormat").is_none() && manifest.get("runtimeABI").is_none(), "the markers are columns");
-    assert_eq!(file::artwork(&a, &["preview"]).unwrap().map(|(_, png)| png), Some(png(640, 480, 6)));
+    // A header alone is no image oxipng can read, so it is stored as it is.
+    assert_eq!(file::artwork(&a, &[Artwork::Preview]).unwrap().map(|(_, png)| png), Some(png(640, 480, 6)));
     let summary = file::inspect(&a).unwrap();
     assert_eq!(summary["kind"], "template");
     let assets: Vec<&str> = summary["assets"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
@@ -112,8 +120,63 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert!(temporaries(dir.path()).is_empty());
 }
 
+/// A real PNG of 8-bit RGBA `pixels`, stored uncompressed.
+fn encoded(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![];
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::NoCompression);
+    encoder.write_header().unwrap().write_image_data(pixels).unwrap();
+    bytes
+}
+/// A PNG's pixels as 8-bit RGBA, whatever colour type it stores.
+fn decoded(png: &[u8]) -> Vec<u8> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().unwrap();
+    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buffer).unwrap();
+    let pixels = &buffer[..info.buffer_size()];
+    match info.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => pixels.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::GrayscaleAlpha => pixels.chunks(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => unreachable!("normalizing expands a palette"),
+    }
+}
+
+/// Packing stores artwork losslessly smaller: every pixel decodes the same, fully
+/// transparent ones keep their colour, and packing stays reproducible.
+#[test]
+fn packed_artwork_is_losslessly_smaller() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let bands = [[0x33, 0x55, 0x77, 255], [0xee, 0xee, 0xe0, 255], [0x10, 0x20, 0x30, 255], [0xff, 0x80, 0, 255]];
+    let preview: Vec<u8> = (0..320 * 200usize).flat_map(|i| bands[i % 320 / 80]).collect();
+    let icon: Vec<u8> = (0..64 * 64usize)
+        .flat_map(|i| if i % 2 == 0 { [(i % 251) as u8, (i * 7 % 256) as u8, 9, 0] } else { bands[0] })
+        .collect();
+    let inputs =
+        [(Artwork::Preview, encoded(320, 200, &preview), preview), (Artwork::Icon, encoded(64, 64, &icon), icon)];
+    fs::create_dir(stage.join("artwork")).unwrap();
+    for (name, input, _) in &inputs {
+        fs::write(stage.join(format!("artwork/{name}.png")), input).unwrap();
+    }
+    let (a, b) = (dir.path().join("A.slop"), dir.path().join("B.slop"));
+    file::pack(&stage, &a).unwrap();
+    file::pack(&stage, &b).unwrap();
+    assert_eq!(fs::read(&a).unwrap(), fs::read(&b).unwrap(), "packing is reproducible");
+    for (name, input, pixels) in &inputs {
+        let (_, stored) = file::artwork(&a, &[*name]).unwrap().unwrap();
+        assert!(stored.len() < input.len(), "the {name} is stored smaller");
+        assert_eq!(&decoded(&stored), pixels, "the {name} decodes to the same pixels");
+    }
+}
+
 /// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
-/// as stored; text inside strings is kept exactly.
+/// as stored; text inside strings is kept exactly, in the descriptor and the initial state.
 #[test]
 fn pack_stores_the_app_as_compact_json() {
     let dir = tempfile::tempdir().unwrap();
@@ -125,7 +188,11 @@ fn pack_stores_the_app_as_compact_json() {
     file::pack(&stage, &out).unwrap();
     let opened = file::open(&out, true).unwrap();
     assert_eq!(opened.app.descriptor, SCHEMA);
-    assert_eq!(opened.app.initial, r#"{"title":"Spaced \"and\" \\ quoted"}"#);
+    let initial = Store::open(&out, Mode::Snapshot).unwrap().document().unwrap().value();
+    assert_eq!(
+        initial, r#"{"title":"Spaced \"and\" \\ quoted"}"#,
+        "the template's checkpoint holds its initial values"
+    );
 }
 
 #[test]
@@ -137,10 +204,34 @@ fn pack_checks_the_whole_build_before_publishing_anything() {
         ("descriptor", |s| write_app(s, App { descriptor: r#"{"kind":"nope"}"#, ..APP })),
         ("initial values", |s| write_app(s, App { initial: r#"{"title":7}"#, ..APP })),
         ("theme", |s| write_app(s, App { theme: r#"{"accent":"blue"}"#, ..APP })),
-        ("manifest", |s| write_app(s, App { manifest: r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#, ..APP })),
-        ("markers in the manifest", |s| write_app(s, App { manifest: r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240},"runtimeABI":1}"#, ..APP })),
-        ("missing markers", |s| fs::write(s.join("app.json"), format!(r#"{{"manifest":{MANIFEST},"descriptor":{SCHEMA},"initial":{INITIAL},"theme":{THEME}}}"#)).unwrap()),
-        ("unknown field", |s| fs::write(s.join("app.json"), format!(r#"{{"packageFormat":1,"runtimeABI":1,"manifest":{MANIFEST},"descriptor":{SCHEMA},"initial":{INITIAL},"theme":{THEME},"extra":1}}"#)).unwrap()),
+        ("manifest", |s| {
+            write_app(
+                s,
+                App {
+                    manifest: r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#,
+                    ..APP
+                },
+            )
+        }),
+        ("markers in the manifest", |s| {
+            write_app(
+                s,
+                App {
+                    manifest: r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240},"runtimeABI":1}"#,
+                    ..APP
+                },
+            )
+        }),
+        ("missing markers", |s| {
+            fs::write(
+                s.join("app.json"),
+                format!(r#"{{"manifest":{MANIFEST},"descriptor":{SCHEMA},"initial":{INITIAL},"theme":{THEME}}}"#),
+            )
+            .unwrap()
+        }),
+        ("unknown field", |s| {
+            fs::write(s.join("app.json"), format!(r#"{{"packageFormat":1,"runtimeABI":1,"manifest":{MANIFEST},"descriptor":{SCHEMA},"initial":{INITIAL},"theme":{THEME},"extra":1}}"#)).unwrap()
+        }),
         ("symbolic link", |s| std::os::unix::fs::symlink("/etc/hosts", s.join("assets/hosts")).unwrap()),
         ("artwork", |s| {
             fs::create_dir(s.join("artwork")).unwrap();
@@ -169,7 +260,10 @@ fn pack_checks_the_whole_build_before_publishing_anything() {
 fn a_skin_must_be_an_rgba_asset_the_size_of_the_window() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
-    let skinned = MANIFEST.replace(r#""presentation":{"width":320,"height":240}"#, r#""presentation":{"width":320,"height":240,"skin":"assets/skin.png"}"#);
+    let skinned = MANIFEST.replace(
+        r#""presentation":{"width":320,"height":240}"#,
+        r#""presentation":{"width":320,"height":240,"skin":"assets/skin.png"}"#,
+    );
     write_app(&stage, App { manifest: &skinned, ..APP });
     assert!(file::pack(&stage, &dir.path().join("Missing.slop")).is_err(), "missing skin");
     fs::write(stage.join("assets/skin.png"), png(320, 240, 2)).unwrap();
@@ -191,7 +285,6 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         "CREATE TRIGGER extra_trigger AFTER INSERT ON updates BEGIN DELETE FROM attachments; END",
         "INSERT INTO assets VALUES('../escape.js', 'identity', 1, x'00')",
         "INSERT INTO assets VALUES('short.js', 'identity', 2, x'00')",
-        "INSERT INTO assets VALUES('unnumbered.js', 'identity', 'one', x'00')",
         "INSERT INTO assets VALUES('expanded.js', 'br', 2, x'789c')",
         "INSERT INTO updates(bytes) VALUES(x'00')",
         "DELETE FROM app",
@@ -204,20 +297,48 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         assert!(file::open(&damaged, true).is_err(), "{ddl}");
         assert!(Store::open(&damaged, Mode::Snapshot).is_err(), "{ddl}");
     }
+    // STRICT refuses a mistyped size, but a file written without STRICT and then given it
+    // back holds one all the same; opens that skip the quick check still refuse it.
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
-    raw(&doc).execute("INSERT INTO assets VALUES('big.bin', 'identity', ?1, zeroblob(?1))", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
+    let strict: String =
+        raw(&doc).query_row("SELECT sql FROM sqlite_schema WHERE name='assets'", [], |r| r.get(0)).unwrap();
+    let rewrite = |sql: &str| {
+        let conn = raw(&doc);
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, false).unwrap();
+        conn.set_db_config(DbConfig::SQLITE_DBCONFIG_WRITABLE_SCHEMA, true).unwrap();
+        conn.execute("UPDATE sqlite_schema SET sql=? WHERE name='assets'", [sql]).unwrap();
+    };
+    rewrite(&strict.replace(" STRICT", ""));
+    raw(&doc).execute_batch("INSERT INTO assets VALUES('unnumbered.js', 'identity', 'one', x'00')").unwrap();
+    rewrite(&strict);
+    assert!(file::open(&doc, false).is_err() && file::open(&doc, true).is_err());
+    assert!(Store::open(&doc, Mode::Snapshot).is_err());
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    raw(&doc)
+        .execute(
+            "INSERT INTO assets VALUES('big.bin', 'identity', ?1, zeroblob(?1))",
+            [hitslop_core::ASSET_FILE_BYTES as i64 + 1],
+        )
+        .unwrap();
     let started = std::time::Instant::now();
     assert_eq!(code(file::open(&doc, true).err().unwrap()), Code::InvalidRequest);
     assert!(started.elapsed() < std::time::Duration::from_millis(500), "sizes come from length(), not the bytes");
     // A compressed asset is bounded by what it decodes to, before anything is decoded.
     let doc = document(tempfile::tempdir().unwrap().keep().as_path());
-    raw(&doc).execute("INSERT INTO assets VALUES('bomb.js', 'br', ?, x'789c')", [hitslop_core::ASSET_FILE_BYTES as i64 + 1]).unwrap();
+    raw(&doc)
+        .execute("INSERT INTO assets VALUES('bomb.js', 'br', ?, x'789c')", [hitslop_core::ASSET_FILE_BYTES as i64 + 1])
+        .unwrap();
     assert_eq!(code(file::open(&doc, true).err().unwrap()), Code::InvalidRequest);
     // SQLite's own primary-key indexes are part of the expected layout, not refused.
     let fresh = document(tempfile::tempdir().unwrap().keep().as_path());
     let indexes: i64 = raw(&fresh)
-        .query_row("SELECT count(*) FROM sqlite_master WHERE type='index' AND name LIKE 'sqlite_autoindex_%'", [], |r| r.get(0))
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='index' AND name LIKE 'sqlite_autoindex_%'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert!(indexes > 0);
     file::open(&fresh, true).unwrap();
@@ -252,15 +373,18 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
 /// row in a one-row table.
 #[test]
 fn stored_values_are_bounded_as_writes_bound_them() {
-    let many_tokens = format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
-    let long_override = format!(r#"{{"accent":"{}"}}"#, "a".repeat(1 << 20));
-    let cases: [(&str, &str, Option<Vec<u8>>); 7] = [
+    let many_tokens =
+        format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
+    let cases: [(&str, &str, Option<Vec<u8>>); 6] = [
         ("oversized artwork", "INSERT INTO artwork VALUES('preview', ?)", Some(png(100_000, 100_000, 6))),
         ("artwork that is not a PNG", "INSERT INTO artwork VALUES('icon', ?)", Some(b"not a png".to_vec())),
         ("theme defaults over budget", "UPDATE app SET theme=CAST(? AS TEXT)", Some(many_tokens.into_bytes())),
-        ("theme overrides over budget", "UPDATE document SET theme=CAST(? AS TEXT)", Some(long_override.into_bytes())),
-        ("a misnumbered checkpoint", "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')", None),
-        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2,'{}')", None),
+        (
+            "a misnumbered checkpoint",
+            "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')",
+            None,
+        ),
+        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2)", None),
         ("a misnumbered app row", "PRAGMA ignore_check_constraints=ON; UPDATE app SET id=2", None),
     ];
     let mut accepted = vec![];
@@ -276,7 +400,10 @@ fn stored_values_are_bounded_as_writes_bound_them() {
         let started = std::time::Instant::now();
         let refused = file::open(&doc, false).is_err();
         // Refused from sizes, never by reading the value.
-        if !refused || started.elapsed() > std::time::Duration::from_millis(500) || Store::open(&doc, Mode::Snapshot).is_ok() {
+        if !refused
+            || started.elapsed() > std::time::Duration::from_millis(500)
+            || Store::open(&doc, Mode::Snapshot).is_ok()
+        {
             accepted.push(name);
         }
     }
@@ -291,7 +418,11 @@ fn newer_markers_ask_for_an_update_and_foreign_files_are_refused() {
         let change = &raised(&doc)[index];
         raw(&doc).execute_batch(change).unwrap();
         let before = fs::read(&doc).unwrap();
-        for refusal in [file::open(&doc, true).err(), Store::open(&doc, Mode::Document).err(), Store::open(&doc, Mode::Snapshot).err()] {
+        for refusal in [
+            file::open(&doc, true).err(),
+            Store::open(&doc, Mode::Document).err(),
+            Store::open(&doc, Mode::Snapshot).err(),
+        ] {
             assert_eq!(code(refusal.expect("refused")), Code::RequiresUpdate, "{change}");
         }
         assert_eq!(fs::read(&doc).unwrap(), before, "{change}: nothing written");
@@ -308,7 +439,7 @@ fn templates_create_documents_and_never_open_as_one() {
     let template = template(dir.path());
     assert_eq!(code(Store::open(&template, Mode::Document).err().unwrap()), Code::IsTemplate);
     let snapshot = Store::open(&template, Mode::Snapshot).unwrap();
-    assert!(snapshot.document().unwrap().value().unwrap().contains("Initial"), "a template renders its initial values");
+    assert!(snapshot.document().unwrap().value().contains("Initial"), "a template renders its initial values");
     let (a, b) = (dir.path().join("A.slop"), dir.path().join("B.slop"));
     file::create_document(&template, &a).unwrap();
     file::create_document(&template, &b).unwrap();
@@ -328,8 +459,11 @@ fn a_store_keeps_the_app_its_open_checked() {
         let app = store.app();
         assert_eq!(app.kind, Kind::Document);
         assert_eq!(app.silhouette, read.silhouette);
-        assert_eq!((&app.theme_tokens, &app.skin), (&read.theme_tokens, &read.skin));
-        assert_eq!((&app.app.manifest, &app.app.descriptor, &app.app.theme), (&read.app.manifest, &read.app.descriptor, &read.app.theme));
+        assert_eq!((app.spec.theme_tokens(), &app.skin), (read.spec.theme_tokens(), &read.skin));
+        assert_eq!(
+            (&app.app.manifest, &app.app.descriptor, &app.app.theme),
+            (&read.app.manifest, &read.app.descriptor, &read.app.theme)
+        );
         store.close().unwrap();
     }
     assert_eq!(file::kind(&doc).unwrap(), Kind::Document);
@@ -357,7 +491,7 @@ fn create_and_copy_never_overwrite() {
     fs::write(&taken, "keep me").unwrap();
     assert_eq!(code(file::create_document(&dir.path().join("Template.slop"), &taken).unwrap_err()), Code::Exists);
     let store = Store::open(&doc, Mode::Document).unwrap();
-    assert_eq!(code(store.copy_to(&taken).unwrap_err()), Code::Exists);
+    assert_eq!(code(store.copy_clean(&taken, &[]).unwrap_err()), Code::Exists);
     store.close().unwrap();
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep me");
     assert!(temporaries(dir.path()).is_empty());
@@ -409,7 +543,10 @@ fn attachments_are_content_addressed_bounded_and_verified() {
     assert_eq!(store.put_attachment(b"hello").unwrap(), first, "storing the same bytes again is a no-op");
     assert_eq!(store.attachment(&first.id).unwrap(), b"hello");
     assert_eq!(store.attachments().unwrap(), vec![first.clone()]);
-    assert_eq!(code(store.put_attachment(&vec![0; hitslop_core::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()), Code::TooLarge);
+    assert_eq!(
+        code(store.put_attachment(&vec![0; hitslop_core::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()),
+        Code::TooLarge
+    );
     assert_eq!(code(store.attachment(&"0".repeat(64)).unwrap_err()), Code::PathNotFound);
     assert_eq!(code(store.attachment("../x").unwrap_err()), Code::InvalidId);
     // A document holds a bounded number of attachments; bytes it already holds still store.
@@ -440,7 +577,10 @@ fn reimporting_over_damaged_bytes_is_refused() {
     raw(&doc).execute("UPDATE attachments SET bytes=x'00'", []).unwrap();
     let store = Store::open(&doc, Mode::Document).unwrap();
     assert!(store.put_attachment(b"hello").unwrap_err().to_string().contains("checksum"));
-    assert!(store.attachment(&stored.id).unwrap_err().to_string().contains("checksum"), "the damage is kept for recovery");
+    assert!(
+        store.attachment(&stored.id).unwrap_err().to_string().contains("checksum"),
+        "the damage is kept for recovery"
+    );
     store.close().unwrap();
 }
 
@@ -455,12 +595,16 @@ fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
     let (template, doc) = (dir.path().join("T.slop"), dir.path().join("D.slop"));
     file::pack(&stage, &template).unwrap();
     file::create_document(&template, &doc).unwrap();
-    let (name, preview) = file::artwork(&doc, &["icon", "preview"]).unwrap().unwrap();
-    assert_eq!((name.as_str(), preview), ("preview", png(640, 480, 6)), "a build without an icon falls back to its preview");
-    assert_eq!(file::artwork(&doc, &["icon"]).unwrap(), None);
+    let (name, preview) = file::artwork(&doc, &[Artwork::Icon, Artwork::Preview]).unwrap().unwrap();
+    assert_eq!(
+        (name, preview),
+        (Artwork::Preview, png(640, 480, 6)),
+        "a build without an icon falls back to its preview"
+    );
+    assert_eq!(file::artwork(&doc, &[Artwork::Icon]).unwrap(), None);
     let holder = raw(&doc);
     holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    assert!(matches!(file::artwork(&doc, &["preview"]), Err(Error::Busy)));
+    assert!(matches!(file::artwork(&doc, &[Artwork::Preview]), Err(Error::Busy)));
     holder.execute_batch("ROLLBACK").unwrap();
 }
 
@@ -472,12 +616,31 @@ fn artwork_is_written_by_the_writer() {
     let doc = document(dir.path());
     let (preview, icon) = (png(640, 480, 6), png(512, 512, 6));
     let snapshot = Store::open(&doc, Mode::Snapshot).unwrap();
-    assert!(matches!(snapshot.set_artwork(&[("preview", &preview)]), Err(Error::Closed)));
+    assert!(matches!(snapshot.set_artwork(&[(Artwork::Preview, &preview)]), Err(Error::Closed)));
     let store = Store::open(&doc, Mode::Document).unwrap();
-    store.set_artwork(&[("preview", &preview), ("icon", &icon)]).unwrap();
-    assert_eq!(store.artwork("icon").unwrap(), Some(icon));
+    store.set_artwork(&[(Artwork::Preview, &preview), (Artwork::Icon, &icon)]).unwrap();
+    assert_eq!(store.artwork(Artwork::Icon).unwrap(), Some(icon));
     store.close().unwrap();
-    assert_eq!(file::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
+    assert_eq!(file::artwork(&doc, &[Artwork::Preview]).unwrap().map(|(_, png)| png), Some(preview));
+}
+
+/// A closing window's capture is stored losslessly smaller; one oxipng cannot read (a
+/// header alone) is stored as it is.
+#[test]
+fn written_artwork_is_losslessly_smaller() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let pixels: Vec<u8> = (0..240 * 160usize)
+        .flat_map(|i| if i % 240 < 120 { [0x33, 0x55, 0x77, 255] } else { [0xee, 0xee, 0xe0, 255] })
+        .collect();
+    let (preview, icon) = (encoded(240, 160, &pixels), png(512, 512, 6));
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &preview), (Artwork::Icon, &icon)]).unwrap();
+    let stored = store.artwork(Artwork::Preview).unwrap().unwrap();
+    assert!(stored.len() < preview.len());
+    assert_eq!(decoded(&stored), pixels);
+    assert_eq!(store.artwork(Artwork::Icon).unwrap(), Some(icon));
+    store.close().unwrap();
 }
 
 /// Each close replaces the artwork; the pages the old images held leave the file.
@@ -491,11 +654,28 @@ fn replaced_artwork_leaves_no_free_pages() {
         png
     };
     let store = Store::open(&doc, Mode::Document).unwrap();
-    store.set_artwork(&[("preview", &sized(96 * 1024)), ("icon", &sized(24 * 1024))]).unwrap();
-    store.set_artwork(&[("preview", &sized(16 * 1024)), ("icon", &sized(4 * 1024))]).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &sized(96 * 1024)), (Artwork::Icon, &sized(24 * 1024))]).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &sized(16 * 1024)), (Artwork::Icon, &sized(4 * 1024))]).unwrap();
     store.close().unwrap();
     let free: i64 = raw(&doc).query_row("PRAGMA freelist_count", [], |r| r.get(0)).unwrap();
     assert_eq!(free, 0);
+}
+
+/// Replaced values leave no trace in the file on any SQLite, whatever its default: here,
+/// artwork small enough to stay in its page.
+#[test]
+fn replaced_values_leave_no_bytes_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let marker = b"replaced-artwork-7f3a9c1e5b2d";
+    let mut first = png(64, 64, 6);
+    first.extend_from_slice(marker);
+    first.resize(1024, b'.');
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &first)]).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &png(64, 64, 6))]).unwrap();
+    store.close().unwrap();
+    assert!(!fs::read(&doc).unwrap().windows(marker.len()).any(|w| w == marker));
 }
 
 #[test]
@@ -506,16 +686,26 @@ fn an_open_document_copies_through_its_owner() {
     let mut state = store.document().unwrap();
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
-    store.put_attachment(b"photo").unwrap();
+    let photo = store.put_attachment(b"photo").unwrap().id;
+    let reference = format!(r#"{{"intents":[{{"type":"set","path":["title"],"value":"Shared {photo}"}}]}}"#);
+    state.apply_batch(&reference, Origin::Page).unwrap();
+    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
-    store.copy_to(&copy).unwrap();
-    assert_eq!(code(store.copy_to(&copy).unwrap_err()), Code::Exists);
+    store.copy_clean(&copy, &[(Artwork::Preview, &png(640, 480, 6))]).unwrap();
+    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
     state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
-    assert!(copied.document().unwrap().value().unwrap().contains("Shared"));
+    assert!(copied.document().unwrap().value().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
+    assert_eq!(copied.artwork(Artwork::Preview).unwrap(), Some(png(640, 480, 6)));
+    // A capture's disposable source skips the syncs and reads the same.
+    let source = dir.path().join("Capture.slop");
+    store.capture_source(&source).unwrap();
+    let captured = Store::open(&source, Mode::Snapshot).unwrap();
+    assert!(captured.document().unwrap().value().contains("Owner"));
+    assert_eq!(captured.attachments().unwrap().len(), 1);
 }
 
 /// A page's asset reader opens the file its store checked: a file put in its place is
@@ -545,7 +735,9 @@ fn assets_are_served_whole_or_in_ranges() {
     let reader = Store::open(&doc, Mode::Snapshot).unwrap().asset_reader().unwrap();
     // Text is stored compressed and served as written; media is stored as it is.
     let stored = |path: &str| -> (i64, i64) {
-        raw(&doc).query_row("SELECT length(bytes), size FROM assets WHERE path=?", [path], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+        raw(&doc)
+            .query_row("SELECT length(bytes), size FROM assets WHERE path=?", [path], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
     };
     let (compressed, size) = stored("app.js");
     assert!(compressed < size, "app.js is stored compressed");
@@ -554,13 +746,20 @@ fn assets_are_served_whole_or_in_ranges() {
     assert_eq!(reader.size("app.js").unwrap(), Some(script.len() as u64));
     assert_eq!(reader.read_range("app.js", 0, u64::MAX).unwrap(), Some(script.clone()));
     assert_eq!(reader.read_range("app.js", 100, 50).unwrap(), Some(script[100..150].to_vec()));
-    assert_eq!(reader.read_range("app.js", script.len() as u64 - 10, 500).unwrap(), Some(script[script.len() - 10..].to_vec()));
+    assert_eq!(
+        reader.read_range("app.js", script.len() as u64 - 10, 500).unwrap(),
+        Some(script[script.len() - 10..].to_vec())
+    );
     assert_eq!(reader.read_range("app.js", u64::MAX, 10).unwrap(), Some(vec![]));
     let font: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
     assert_eq!(reader.size("fonts/face.woff2").unwrap(), Some(4096));
     assert_eq!(reader.read_range("fonts/face.woff2", 0, u64::MAX).unwrap(), Some(font.clone()));
     assert_eq!(reader.read_range("fonts/face.woff2", 100, 50).unwrap(), Some(font[100..150].to_vec()));
-    assert_eq!(reader.read_range("fonts/face.woff2", 4000, 500).unwrap(), Some(font[4000..].to_vec()), "clamped to the asset");
+    assert_eq!(
+        reader.read_range("fonts/face.woff2", 4000, 500).unwrap(),
+        Some(font[4000..].to_vec()),
+        "clamped to the asset"
+    );
     assert_eq!(reader.read_range("missing.js", 0, u64::MAX).unwrap(), None);
     assert_eq!(file::content_type("fonts/face.woff2"), "font/woff2");
     assert_eq!(file::content_type("worklet.mjs"), "text/javascript");
@@ -568,7 +767,9 @@ fn assets_are_served_whole_or_in_ranges() {
     assert_eq!(file::content_type("data.unknown"), "application/octet-stream");
     assert_eq!(file::descriptor(&doc).unwrap(), SCHEMA);
     // Damaged compressed text is an error, never served.
-    raw(&doc).execute("UPDATE assets SET bytes=x'00' || substr(bytes, 2) WHERE path='app.js'", []).unwrap();
+    raw(&doc)
+        .execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes, 2) AS BLOB) WHERE path='app.js'", [])
+        .unwrap();
     assert!(reader.read_range("app.js", 0, u64::MAX).is_err());
     assert!(file::open(&doc, false).is_err(), "the app's checks read app.js");
 }
@@ -579,24 +780,23 @@ fn artwork_is_checked_as_every_open_checks_it() {
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();
     let preview = png(640, 480, 6);
-    store.set_artwork(&[("preview", &preview)]).unwrap();
+    store.set_artwork(&[(Artwork::Preview, &preview)]).unwrap();
     let mut oversized = png(640, 480, 6);
     oversized.resize(hitslop_core::ASSET_FILE_BYTES + 1, 0);
     let huge = png(100_000, 100_000, 6);
     for (name, bytes) in [
-        ("preview", oversized.as_slice()),
-        ("icon", b"not a png".as_slice()),
-        ("icon", png(0, 0, 6).as_slice()),
-        ("icon", huge.as_slice()),
-        ("splash", preview.as_slice()),
+        (Artwork::Preview, oversized.as_slice()),
+        (Artwork::Icon, b"not a png".as_slice()),
+        (Artwork::Icon, png(0, 0, 6).as_slice()),
+        (Artwork::Icon, huge.as_slice()),
     ] {
         assert!(store.set_artwork(&[(name, bytes)]).is_err(), "{name}: refused");
     }
     store.close().unwrap();
     // The document still opens, with the artwork it had.
     file::open(&doc, true).unwrap();
-    assert_eq!(file::artwork(&doc, &["preview"]).unwrap().map(|(_, png)| png), Some(preview));
-    assert_eq!(file::artwork(&doc, &["icon"]).unwrap().map(|(_, png)| png), None);
+    assert_eq!(file::artwork(&doc, &[Artwork::Preview]).unwrap().map(|(_, png)| png), Some(preview));
+    assert_eq!(file::artwork(&doc, &[Artwork::Icon]).unwrap().map(|(_, png)| png), None);
 }
 
 /// A file a newer build wrote, as that build might have left it: one of its markers raised
@@ -631,7 +831,11 @@ fn refusing_a_newer_file_writes_nothing_in_any_journal_mode() {
             let dir = tempfile::tempdir().unwrap();
             let (doc, change) = newer(dir.path(), index, wal);
             let (before, sidecars_before) = (fs::read(&doc).unwrap(), sidecars(&doc));
-            assert_eq!(sidecars_before.iter().any(|(s, _)| s == "-wal"), wal, "{change}: the newer build's WAL is in place");
+            assert_eq!(
+                sidecars_before.iter().any(|(s, _)| s == "-wal"),
+                wal,
+                "{change}: the newer build's WAL is in place"
+            );
             let refusals = [
                 Store::open(&doc, Mode::Document).err().map(code),
                 Store::open(&doc, Mode::Snapshot).err().map(code),
@@ -658,7 +862,8 @@ fn a_newer_file_with_a_crashed_write_is_restored_then_refused() {
     store.close().unwrap();
     raw(&doc).execute_batch(&raised(&doc)[0]).unwrap();
     let committed = fs::read(&doc).unwrap();
-    let status = support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status =
+        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the file");
@@ -695,7 +900,9 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);
@@ -720,11 +927,35 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let attachment = store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    let status = support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status =
+        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the document");
     let store = Store::open(&doc, Mode::Document).unwrap();
     assert!(!journal.exists(), "the writer rolled it back");
     assert_eq!(store.attachment(&attachment.id).unwrap(), vec![7u8; 4 << 20], "the committed attachment is intact");
+}
+
+// Failure: the engine created and edited documents the app refuses to open (a name without
+// `.slop`), so where a document may live was the app's rule alone. Oracle: each refusal's
+// code, and nothing written in the refused place.
+#[test]
+fn documents_open_and_go_only_where_the_app_opens_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes");
+    assert_eq!(code(file::create_document(&template(dir.path()), &notes).unwrap_err()), Code::InvalidRequest);
+    assert!(!notes.exists());
+    let doc = document(dir.path());
+    let renamed = dir.path().join("Doc.txt");
+    fs::rename(&doc, &renamed).unwrap();
+    assert_eq!(code(Store::open(&renamed, Mode::Document).err().unwrap()), Code::InvalidRequest);
+    // Reading takes no lock and writes nothing, so a snapshot reads any name.
+    Store::open(&renamed, Mode::Snapshot).unwrap().close().unwrap();
+    fs::rename(&renamed, &doc).unwrap();
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    let copy = dir.path().join("Copy");
+    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::InvalidRequest);
+    assert!(!copy.exists());
+    store.close().unwrap();
 }

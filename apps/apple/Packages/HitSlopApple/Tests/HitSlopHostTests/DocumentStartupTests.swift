@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
-import HitSlopDocument
 import HitSlopCore
 import HitSlopCoreBinding
-import Testing
+import HitSlopDocument
 import HitSlopTestSupport
+import Testing
+
 @testable import HitSlopHost
 
 extension HostTests {
@@ -36,7 +37,7 @@ extension HostTests {
     _ = NSApplication.shared
     let environment = ProcessInfo.processInfo.environment
     if environment["HITSLOP_STARTUP_FOREGROUND"] == "1" {
-      NSApp.activate(ignoringOtherApps: true)
+      NSApp.activate()
     }
     let samples = max(1, Int(environment["HITSLOP_STARTUP_SAMPLES"] ?? "10") ?? 10)
     var names = ["quick-checklist", "large-checklist"]
@@ -51,21 +52,27 @@ extension HostTests {
       let root: URL
       if name == "washer", let skinSource {
         root = try Fixtures.document(from: URL(fileURLWithPath: skinSource))
-      } else { root = try fixture(name == "large-checklist" ? "quick-checklist" : name) }
+      } else {
+        root = try fixture(name == "large-checklist" ? "quick-checklist" : name)
+      }
       defer { try? FileManager.default.removeItem(at: root) }
-      var operations: [[String: Any]] = name == "washer"
+      var operations: [[String: Any]] =
+        name == "washer"
         ? [["type": "increment", "path": ["count"], "by": 7]]
         : [["type": "set", "path": ["title"], "value": "Saved opening benchmark"]]
       if name == "large-checklist" {
-        operations += (0..<1000).map { index in
-          ["type": "insert", "path": ["tasks"],
-           "value": ["text": "Saved task \(index)", "done": false, "archived": false]]
+        // The title and 999 rows fill one batch: the core takes at most 1000 operations.
+        operations += (0..<999).map { index in
+          [
+            "type": "insert", "path": ["tasks"],
+            "value": ["text": "Saved task \(index)", "done": false, "archived": false],
+          ]
         }
       }
-      // Seed in a separate helper process so preparing saved bytes cannot warm this WebKit.
+      // Seed in a separate engine process so preparing saved bytes cannot warm this WebKit.
       let json = String(decoding: try JSONSerialization.data(withJSONObject: operations), as: UTF8.self)
-      let seeded = try await cli(["batch", root.path, "--ops", json])
-      try #require(seeded.0 == 0, "\(seeded.2)")
+      let seeded = try await request(["method": "batch", "documentPath": root.path, "ops": json])
+      try #require(seeded["ok"] as? Bool == true, "\(seeded)")
       for sample in 0..<samples {
         let start = ContinuousClock.now
         let controller = try await SlopDocumentWindowController.open(url: root, presentsWindow: true)
@@ -76,7 +83,9 @@ extension HostTests {
         await controller.waitForPresentation()
         let visible = start.duration(to: .now)
         #expect(controller.isContentReady)
-        print("[saved startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)")
+        print(
+          "[saved startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)"
+        )
         try await controller.session.close()
         _ = try await controller.perform(.close)
       }
@@ -87,10 +96,13 @@ extension HostTests {
     _ = NSApplication.shared
     let before = try Fixtures.png()
     let root = try contractFixture { stage in
-      try FileManager.default.createDirectory(at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
+      try FileManager.default.createDirectory(
+        at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
       try before.write(to: stage.appendingPathComponent("artwork/preview.png"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
+    let stored = try #require(SlopArtwork.png(root, .preview))
+    #expect(Fixtures.pixels(stored) == Fixtures.pixels(before))
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
     #expect(controller.isLoading)
@@ -102,7 +114,7 @@ extension HostTests {
     #expect(controller.openingProgress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(controller.isContentReady)
-    #expect(SlopArtwork.png(root, .preview) == before, "opening never rewrites artwork")
+    #expect(SlopArtwork.png(root, .preview) == stored, "opening never rewrites artwork")
     try await controller.session.close()
     controller.close()
   }
@@ -134,8 +146,10 @@ extension HostTests {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       let assets = stage.appendingPathComponent("assets")
-      try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-      try Data("""
+      try FileManager.default.moveItem(
+        at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
+      try Data(
+        """
         import probe from "./probe.js";
         export default { async mount(ctx, target) {
           if (ctx.document.current.title !== "Recovered") {
@@ -144,7 +158,8 @@ extension HostTests {
           }
           return probe.mount(ctx, target);
         } };
-        """.utf8).write(to: assets.appendingPathComponent("app.js"))
+        """.utf8
+      ).write(to: assets.appendingPathComponent("app.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
@@ -250,13 +265,20 @@ private actor OpeningDelay {
   private var continuation: CheckedContinuation<Void, Never>?
   private var entered: CheckedContinuation<Void, Never>?
   func wait() async {
-    await withCheckedContinuation { continuation = $0; entered?.resume(); entered = nil }
+    await withCheckedContinuation {
+      continuation = $0
+      entered?.resume()
+      entered = nil
+    }
   }
   func started() async {
     if continuation != nil { return }
     await withCheckedContinuation { entered = $0 }
   }
-  func release() { continuation?.resume(); continuation = nil }
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
 }
 
 extension HostTests {
@@ -264,16 +286,21 @@ extension HostTests {
   // settled blocked closing and render-session exports after the document was released.
   @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
     let root = try contractFixture { stage in
-      try Data(#"""
+      try Data(
+        #"""
         export default { mount() { return { unmount: () => new Promise(r => setTimeout(r, 3_600_000)) }; } };
-        """#.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+        """#.utf8
+      ).write(to: stage.appendingPathComponent("assets/app.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     // The timer keeps the promise reachable: WebKit rejects calls on unreachable ones.
     // Polls instead of awaiting, so a regression fails at the deadline rather than hanging.
     func finishes(within limit: Duration, _ work: @escaping @MainActor () async throws -> Void) async throws -> Bool {
       let finished = Locked(false)
-      let task = Task { @MainActor in try await work(); finished.modify { $0 = true } }
+      let task = Task { @MainActor in
+        try await work()
+        finished.modify { $0 = true }
+      }
       guard await eventually(timeout: limit, { finished.value }) else { return false }
       try await task.value
       return true
@@ -286,15 +313,17 @@ extension HostTests {
     // An abandoned page is released with its view, ending its scripts.
     #expect(await eventually(timeout: .seconds(3)) { page == nil })
     #expect(try await command("get", url: root).ok)
-    #expect(try await finishes(within: .seconds(10)) {
-      _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }
-    })
+    #expect(
+      try await finishes(within: .seconds(10)) {
+        _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }
+      })
   }
 
   // A subscriber failure must reach native reporting without interrupting the accepted edit.
   @Test @MainActor func observerFailureIsReportedWithoutPreventingDurability() async throws {
     let root = try contractFixture { stage in
-      try Data(#"""
+      try Data(
+        #"""
         export default { mount(ctx) {
           ctx.document.subscribe(() => { throw new Error('observer failure'); });
           globalThis.observerProbe = async () => {
@@ -304,12 +333,14 @@ extension HostTests {
           };
           return {};
         } };
-        """#.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+        """#.utf8
+      ).write(to: stage.appendingPathComponent("assets/app.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let (incidents, continuation) = AsyncStream<SlopFailureContext>.makeStream()
     defer { continuation.finish() }
-    let controller = try await SlopDocumentWindowController.open(url: root,
+    let controller = try await SlopDocumentWindowController.open(
+      url: root,
       telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { continuation.yield(context) } })
     try await controller.session.waitUntilReady()
     let flushed = try await controller.session.webView.callAsyncJavaScript(
@@ -328,11 +359,13 @@ extension HostTests {
   // A disposable fixture throws before mounting; expect one sanitized authored incident.
   @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
     let root = try contractFixture { stage in
-      try Data("throw new Error('private startup contents');".utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+      try Data("throw new Error('private startup contents');".utf8).write(
+        to: stage.appendingPathComponent("assets/app.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     var failures: [SlopFailureContext] = []
-    let controller = try await SlopDocumentWindowController.open(url: root,
+    let controller = try await SlopDocumentWindowController.open(
+      url: root,
       telemetry: SlopTelemetry { if case .failed(_, let context) = $0 { failures.append(context) } })
     await controller.waitForPresentation()
     #expect(!controller.isContentReady)
@@ -347,5 +380,8 @@ extension HostTests {
 private func neverLoadFonts(_ stage: URL) throws {
   let script = stage.appendingPathComponent("assets/app.js")
   let original = try String(contentsOf: script, encoding: .utf8)
-  try Data(("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n" + original).utf8).write(to: script)
+  try Data(
+    ("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n"
+      + original).utf8
+  ).write(to: script)
 }

@@ -53,6 +53,10 @@ Readable labels, keyboard operation, visible focus, sufficient contrast, and
 reduced-motion behavior are the baseline. Compact windows must not force tiny
 essential text or controls.
 
+The host disables text selection on ordinary UI by default. Keep editing and selection
+familiar in text fields, and opt useful copyable content into selection with authored
+CSS. A whole slop may opt in when reading and copying are central to its purpose.
+
 ## Evidence on Hand
 
 Quick Checklist and Shape Lab are the current examples, and more return as they move

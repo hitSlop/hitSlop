@@ -13,11 +13,11 @@ Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx
 | --- | --- |
 | `bunx @hitslop/cli COMMAND` | Run the authoring CLI without a global install. |
 | `slop COMMAND` | After `bun install -g @hitslop/cli`, with Bun's bin directory on your PATH. |
-| `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" COMMAND` | Run native document commands directly, without Node or Bun. |
+| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" COMMAND` | Run document commands directly, without Node or Bun. |
 
-Use `bunx` or `slop` for the examples below. Build, register, and document commands use the installed Mac app, which can be closed. Browser preview works without it.
+Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
 
-For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` in the native commands.
+For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/slop-engine"` in the native commands.
 
 Append `--help` to any command to see its arguments.
 
@@ -93,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints nothing; ordinary edits never need it. You can edit a document while it is open or closed. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
@@ -123,16 +123,18 @@ bunx @hitslop/cli theme import Other.slop Purple.json
 ## Work with attachments
 
 ```sh
-bunx @hitslop/cli attachments import My.slop ./photo.png
+bunx @hitslop/cli attachments ref ./photo.png
+# Store the printed reference where the app expects it, attaching the file in the same edit.
+bunx @hitslop/cli apply My.slop --attach ./photo.png \
+  --op '{"type":"set","path":["photo"],"value":{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}}'
 bunx @hitslop/cli attachments list My.slop
-# Replace ATTACHMENT_ID with an ID returned by import or list.
 bunx @hitslop/cli attachments export My.slop ATTACHMENT_ID \
   --output ./photo-copy.png
 ```
 
-Import saves the file and returns its ID, name, type, and size. Ask your agent to store that reference in the appropriate document field so the app can use it. List shows saved attachment IDs and sizes.
+`attachments ref` prints a file's reference (its ID, size, name and type) without reading the document. `--attach` on `apply` or `batch` saves the file in the same edit that stores the reference, so both succeed or neither does; repeat it for more files. Ask your agent to store the reference where the app expects it. A file nothing references any more is removed when the document closes, and a duplicate or shared copy carries only the files its document references. List shows saved attachment IDs and sizes.
 
-Attachment export refuses existing output files and the document itself. After an uncertain import, inspect the attachment list before another command.
+Attachment export refuses existing output files and the document itself. After an uncertain edit, run `get` before another command.
 
 ## Export PNG or PDF
 
@@ -187,9 +189,10 @@ Update the global CLI with `bun install -g @hitslop/cli@VERSION`, replacing `VER
 Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
 
 The CLI and native owner use the same generated socket contract. Socket requests
-carry the document path and, for mutations, the owner's epoch. Correlation IDs are
-not part of this contract; each request receives its reply on its own exchange.
+carry the document path and the command protocol they are written in. Correlation IDs
+are not part of this contract; each request receives its reply on its own exchange.
 
 `apply` submits one operation through the same batch path as `batch`. Both read modes
 use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
-schema, sequence, version, value, and issues.
+schema, the template's colors (`defaults`), the version, the value and the effective
+colors (`theme`).

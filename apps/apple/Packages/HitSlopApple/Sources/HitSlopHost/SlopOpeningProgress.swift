@@ -9,9 +9,12 @@ import HitSlopDocument
   private var finished = false
   var onCancel: (() -> Void)?
 
-  public init(started: ContinuousClock.Instant = .now, wait: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = { deadline in
-    try await Task.sleep(until: deadline, clock: .continuous)
-  }) {
+  public init(
+    started: ContinuousClock.Instant = .now,
+    wait: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = { deadline in
+      try await Task.sleep(until: deadline, clock: .continuous)
+    }
+  ) {
     super.init()
     let deadline = started.advanced(by: Timeouts.progressDelay)
     timer = Task { @MainActor [weak self] in
@@ -24,7 +27,8 @@ import HitSlopDocument
 
   private func show() {
     guard !finished else { return }
-    let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 100),
+    let panel = NSPanel(
+      contentRect: NSRect(x: 0, y: 0, width: 280, height: 100),
       styleMask: [.titled], backing: .buffered, defer: false)
     panel.title = "Opening document"
     panel.isReleasedWhenClosed = false

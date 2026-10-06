@@ -1,0 +1,44 @@
+{
+  "value": {
+    "box": {
+      "items": []
+    },
+    "currency": "CAD",
+    "label": "comp",
+    "limit": 2,
+    "memo": "compat 2",
+    "photo": {
+      "id": "compat 1",
+      "name": "compat 1"
+    },
+    "rating": 2,
+    "ratio": 0.8,
+    "rows": [
+      {
+        "$id": "compat-1",
+        "amount": 0.25,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "r1",
+        "amount": 475,
+        "text": "Coffee"
+      },
+      {
+        "$id": "compat-2",
+        "amount": 0.5,
+        "text": "Replay 2 é 中文"
+      }
+    ],
+    "title": "Replay 2 é 中文"
+  },
+  "theme": {
+    "overrides": {
+      "accent": "#123456"
+    },
+    "effective": {
+      "accent": "#123456"
+    }
+  },
+  "attachments": []
+}

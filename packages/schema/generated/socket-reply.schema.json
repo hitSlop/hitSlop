@@ -1,80 +1,278 @@
 {
-  "type": "object",
-  "required": [
-    "ok"
-  ],
-  "properties": {
-    "ok": {
-      "type": "boolean"
-    },
-    "epoch": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128
-    },
-    "coreBuildId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128
-    },
-    "state": {},
-    "ids": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "sequence": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "output": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "error": {
-      "type": "string"
-    },
-    "code": {
-      "enum": [
-        "rejected",
-        "owner_replaced",
-        "closing",
-        "save_failed",
-        "owner_invalidated",
-        "unknown_outcome"
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "state"
       ],
-      "title": "OutcomeCode"
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "get"
+        },
+        "state": {
+          "type": "object",
+          "required": [
+            "schema",
+            "defaults",
+            "version",
+            "value",
+            "theme"
+          ],
+          "properties": {
+            "schema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true
+            },
+            "defaults": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "type": "string",
+                  "maxLength": 9
+                }
+              },
+              "additionalProperties": false,
+              "maxProperties": 256
+            },
+            "version": {
+              "type": "string"
+            },
+            "value": {},
+            "theme": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "type": "string",
+                  "maxLength": 9
+                }
+              },
+              "additionalProperties": false,
+              "maxProperties": 256
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
-    "reason": {
-      "enum": [
-        "type_mismatch",
-        "out_of_range",
-        "path_not_found",
-        "invalid_key",
-        "exists",
-        "duplicate_id",
-        "invalid_request",
-        "invalid_id",
-        "invalid_path",
-        "invalid_schema",
-        "too_large",
-        "stale_base",
-        "invalid_version",
-        "invalid_bytes",
-        "missing_dependencies",
-        "engine_error",
-        "invalid_shape",
-        "requires_update",
-        "is_template"
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "ids"
       ],
-      "title": "CoreErrorCode"
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "batch"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     },
-    "opIndex": {
-      "type": "integer",
-      "minimum": 0
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "output"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "export"
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "state"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "theme.export"
+        },
+        "state": {
+          "type": "object",
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "state"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "attachments.list"
+        },
+        "state": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "byteLength"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0123456789abcdef]{64}$",
+                "minLength": 64,
+                "maxLength": 64
+              },
+              "byteLength": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "method",
+        "state"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "method": {
+          "type": "string",
+          "const": "attachments.read"
+        },
+        "state": {
+          "type": "object",
+          "required": [
+            "bytes"
+          ],
+          "properties": {
+            "bytes": {
+              "type": "string",
+              "maxLength": 13981016
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "ok",
+        "error",
+        "code"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "rejected",
+            "owner_replaced",
+            "closing",
+            "save_failed",
+            "owner_invalidated",
+            "unknown_outcome"
+          ],
+          "title": "OutcomeCode"
+        },
+        "reason": {
+          "enum": [
+            "type_mismatch",
+            "out_of_range",
+            "path_not_found",
+            "invalid_key",
+            "exists",
+            "duplicate_id",
+            "invalid_request",
+            "invalid_id",
+            "invalid_path",
+            "invalid_schema",
+            "too_large",
+            "stale_base",
+            "invalid_version",
+            "invalid_bytes",
+            "missing_dependencies",
+            "engine_error",
+            "invalid_shape",
+            "requires_update",
+            "is_template"
+          ],
+          "title": "CoreErrorCode"
+        },
+        "opIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  ]
 }

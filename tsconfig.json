@@ -16,6 +16,8 @@
     "packages/cli/src/**/*.ts",
     "packages/schema/src/**/*.ts",
     "scripts/**/*.ts",
+    "tests/native/**/*.ts",
+    "tests/packed/**/*.ts",
     "packages/shell/**/*.ts"
   ],
   "exclude": [

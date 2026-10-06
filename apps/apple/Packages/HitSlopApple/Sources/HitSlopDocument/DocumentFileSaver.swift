@@ -41,7 +41,8 @@ import UniformTypeIdentifiers
       guard progress.completedUnitCount > Self.maximumBytes else { return }
       Task { @MainActor in
         guard let self, let download,
-          self.transfers[ObjectIdentifier(download)] != nil else { return }
+          self.transfers[ObjectIdentifier(download)] != nil
+        else { return }
         self.stop(download)
         self.onFailed?("Download exceeds the 100 MiB limit.")
       }
@@ -71,7 +72,11 @@ import UniformTypeIdentifiers
   ) {
     guard let transfer = transfers[ObjectIdentifier(download)], !hasPendingSave,
       let window = window(), window.isVisible, window.attachedSheet == nil
-    else { completionHandler(nil); stop(download); return }
+    else {
+      completionHandler(nil)
+      stop(download)
+      return
+    }
     guard response.expectedContentLength <= Self.maximumBytes else {
       completionHandler(nil)
       stop(download)
@@ -82,10 +87,15 @@ import UniformTypeIdentifiers
     let dismiss = presenter(window, Self.filename(suggestedFilename)) { [weak self, weak transfer] target in
       guard let self, let transfer,
         self.transfers[ObjectIdentifier(download)] === transfer,
-        let completion = transfer.completion else { return }
+        let completion = transfer.completion
+      else { return }
       transfer.completion = nil
       transfer.dismiss = nil
-      guard let target else { completion(nil); stop(download); return }
+      guard let target else {
+        completion(nil)
+        stop(download)
+        return
+      }
       let staging = FileManager.default.temporaryDirectory
         .appendingPathComponent("hitslop-download-" + UUID().uuidString)
       transfer.staging = staging
@@ -98,7 +108,8 @@ import UniformTypeIdentifiers
 
   func downloadDidFinish(_ download: WKDownload) {
     guard let transfer = transfers.removeValue(forKey: ObjectIdentifier(download)),
-      let staging = transfer.staging, let destination = transfer.destination else { return }
+      let staging = transfer.staging, let destination = transfer.destination
+    else { return }
     transfer.observation = nil
     // A download can be 100 MiB; copying it never blocks the main thread.
     installing += 1
@@ -116,16 +127,19 @@ import UniformTypeIdentifiers
   }
 
   /// Copy to the destination volume before the final atomic replacement.
-  nonisolated static func install(_ staging: URL, at destination: URL, limit: Int64 = maximumBytes,
+  nonisolated static func install(
+    _ staging: URL, at destination: URL, limit: Int64 = maximumBytes,
     quarantine: (URL) throws -> Void = applyQuarantine
   ) throws {
     let manager = FileManager.default
     let attributes = try manager.attributesOfItem(atPath: staging.path)
     guard let size = attributes[.size] as? NSNumber, size.int64Value <= limit else {
-      throw NSError(domain: "hitSlop.Download", code: 1,
+      throw NSError(
+        domain: "hitSlop.Download", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Download exceeds the 100 MiB limit."])
     }
-    let replacement = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask,
+    let replacement = try manager.url(
+      for: .itemReplacementDirectory, in: .userDomainMask,
       appropriateFor: destination, create: true)
     defer { try? manager.removeItem(at: replacement) }
     let ready = replacement.appendingPathComponent("download")
@@ -168,7 +182,8 @@ import UniformTypeIdentifiers
     return name.isEmpty ? "Download" : String(name.prefix(200))
   }
 
-  private static func presentSheet(in window: NSWindow, filename: String,
+  private static func presentSheet(
+    in window: NSWindow, filename: String,
     completion: @escaping (URL?) -> Void
   ) -> (() -> Void) {
     let panel = NSSavePanel()

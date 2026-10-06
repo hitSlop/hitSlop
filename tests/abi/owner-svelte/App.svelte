@@ -113,7 +113,7 @@
       await refused(doc.fields.cells.put("A1", { input: "replace" }), "exists");
       check(doc.current.checkins["2026-10-02"] === 2 && doc.current.cells.A1?.input === "43", "Record edits were lost");
       // Counters add up; a change applies all of its writes or none.
-      const hits = doc.current.hits ?? 0;
+      const hits = doc.current.hits;
       await doc.fields.hits.increment(5);
       await doc.fields.hits.increment(-2);
       check(doc.current.hits === hits + 3, "Counter lost an increment");
@@ -135,7 +135,7 @@
       check(doc.current.label === "Before undo", "Undo did not revert");
       await doc.redo();
       check(doc.current.label === "Undo me", "Redo did not reapply");
-      check(Array.isArray(doc.current.rows) && Array.isArray(doc.issues), "Snapshot or issues missing");
+      check(Array.isArray(doc.current.rows), "Snapshot missing");
       // Host services: attachments, capture and the window.
       const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),

@@ -227,6 +227,7 @@ public extension SlopPresentation {
 }
 
 public enum Background: String, Codable, Sendable {
+    case glass = "glass"
     case transparent = "transparent"
 }
 

@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopTestSupport
 import Testing
 import WebKit
-import HitSlopTestSupport
+
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentFileSaverTests {
@@ -18,12 +19,20 @@ import HitSlopTestSupport
     _ = NSApplication.shared
     let root = try Fixtures.native()
     let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: folder) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
     let engine = try await DocumentSession.open(url: root)
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 500), styleMask: [.borderless], backing: .buffered,
+      defer: false)
     window.contentView = engine.webView
     window.orderFront(nil)
-    defer { window.orderOut(nil); window.contentView = nil }
+    defer {
+      window.orderOut(nil)
+      window.contentView = nil
+    }
     engine.load()
     try await engine.waitUntilReady()
 
@@ -120,9 +129,11 @@ import HitSlopTestSupport
     // A quarantine write failure must happen before any destination is replaced.
     for destination in [target, folder.appendingPathComponent("unpublished")] {
       #expect(throws: CocoaError.self) {
-        try DocumentFileSaver.install(staging, at: destination, quarantine: { _ in
-          throw CocoaError(.fileWriteNoPermission)
-        })
+        try DocumentFileSaver.install(
+          staging, at: destination,
+          quarantine: { _ in
+            throw CocoaError(.fileWriteNoPermission)
+          })
       }
     }
     #expect(try Data(contentsOf: target) == Data("old".utf8))

@@ -11,6 +11,37 @@ document's history for no benefit. Store files as attachments, never as base64 i
 fields. A document's saved data is capped at 32 MiB; a failed save keeps every edit and
 leaves the last saved version intact.
 
+## Opening, hiding and closing
+
+Your app mounts once the document is open, and again after Reload Interface. Start
+timers, observers and animation loops in `$effect` or `onMount` and return a cleanup.
+Closing the window unmounts the app, which runs every cleanup. By then the document has
+saved and closed, so a write made during teardown is refused; save values as they
+change instead.
+
+A minimized window, or one hidden with the app, reports `document.visibilityState` as
+`"hidden"`, and its timers all but stop. Pause work while hidden and catch up when the
+window shows again. Timers don't run while the Mac sleeps either, so derive elapsed time
+from the clock rather than counting ticks.
+
+```svelte
+<script lang="ts">
+  let visible = $state(document.visibilityState === "visible");
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!visible) return;
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+  function visibilityChanged() {
+    visible = document.visibilityState === "visible";
+    if (visible) now = Date.now();
+  }
+</script>
+
+<svelte:document onvisibilitychange={visibilityChanged} />
+```
+
 ## Attachments
 
 In a native window, an ordinary `<input type="file">` opens a file picker attached to the
@@ -38,10 +69,12 @@ const url = URL.createObjectURL(blob); // revoke it when you're done
 ```
 
 Files are immutable and deduplicated by content: up to 10 MiB each, 100 MiB and 256 files
-per document. Removing a reference doesn't delete the file yet. Close, export and duplicate
-wait for imports in progress. Templates never contain imported files, and browser preview
-keeps them in memory with the same limits. From the terminal, use
-[`attachments import/list/export`](/docs/guides/cli-workflows/#work-with-attachments).
+per document. Store the reference's `id` as it is, in a field or inside text: when the
+document closes, files whose ID appears nowhere in it are removed, and a duplicate or shared
+copy carries only the files it references. Close, export and duplicate wait for imports in
+progress. Templates never contain imported files, and browser preview keeps them in memory
+with the same limits. From the terminal, use
+[`attachments ref` and `--attach`](/docs/guides/cli-workflows/#work-with-attachments).
 
 ## HTTPS data, media and frames
 

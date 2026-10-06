@@ -36,12 +36,15 @@ enum SlopThemeColor {
   }
   /// `graphiteDeep` or `graphite-deep` as "Graphite Deep".
   static func label(_ token: String) -> String {
-    var words: [String] = [], word = ""
+    var words: [String] = []
+    var word = ""
     for character in token {
       if character == "-" || (character.isUppercase && !word.isEmpty) {
         if !word.isEmpty { words.append(word) }
         word = character == "-" ? "" : String(character)
-      } else { word.append(character) }
+      } else {
+        word.append(character)
+      }
     }
     if !word.isEmpty { words.append(word) }
     return words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
@@ -71,6 +74,7 @@ enum SlopThemeColor {
   @ObservationIgnored private var nextDraft = 0
   private(set) var errors: [String: String] = [:]
   @ObservationIgnored private let send: Send
+  @ObservationIgnored private var closed = false
 
   init(tokens: [(name: String, value: String)], send: @escaping Send) {
     rows = tokens.map { Row(id: $0.name, label: SlopThemeColor.label($0.name), original: $0.value) }
@@ -79,8 +83,17 @@ enum SlopThemeColor {
   func value(_ row: Row) -> String { drafts[row.id]?.value ?? effective[row.id] ?? row.original }
   func isChanged(_ row: Row) -> Bool { value(row) != row.original }
   var hasChanges: Bool { rows.contains(where: isChanged) }
+  /// The colors the picker offers for a row: the template's color for it, then the
+  /// palette's current colors, each once.
+  func swatches(for row: Row) -> [String] {
+    var seen = Set<String>()
+    return ([row.original] + rows.map(value)).filter { seen.insert($0).inserted }
+  }
 
+  /// A color from the picker or the hex field. The owner makes consecutive changes to one
+  /// color a single undo step, so a picker drag undoes at once.
   func set(_ row: Row, _ color: String) {
+    guard !closed else { return }
     errors[row.id] = nil
     guard value(row) != color else { return }
     let draft = draft(row, color)
@@ -109,6 +122,9 @@ enum SlopThemeColor {
     return value(row)
   }
   func reset(_ row: Row) { set(row, row.original) }
+  /// The panel closed. A color that arrives later, such as an eyedropper pick, never
+  /// writes into the document.
+  func close() { closed = true }
   func resetAll() {
     errors = [:]
     var pending: [String: Int] = [:]
@@ -147,6 +163,8 @@ struct SlopThemeEditor: View {
   let close: () -> Void
   let importTheme: () -> Void
   let exportTheme: () -> Void
+  /// The color whose picker is open below its row; one at a time.
+  @State private var picking: String?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -162,14 +180,26 @@ struct SlopThemeEditor: View {
       .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
       Divider()
       if model.rows.isEmpty {
-        ContentUnavailableView("No Colors", systemImage: "paintpalette",
+        ContentUnavailableView(
+          "No Colors", systemImage: "paintpalette",
           description: Text("This template has no theme colors."))
       } else {
-        ScrollView {
-          LazyVStack(spacing: 0) {
-            ForEach(model.rows) { row in SlopThemeRow(model: model, row: row) }
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(spacing: 0) {
+              ForEach(model.rows) { row in
+                SlopThemeRow(model: model, row: row, isPicking: picking == row.id) {
+                  withAnimation(.snappy(duration: 0.2)) { picking = picking == row.id ? nil : row.id }
+                }
+              }
+            }
+            .padding(.vertical, 6)
           }
-          .padding(.vertical, 6)
+          // A row opened near the bottom scrolls its picker into view.
+          .onChange(of: picking) { _, id in
+            guard let id else { return }
+            withAnimation(.snappy(duration: 0.2)) { proxy.scrollTo(id) }
+          }
         }
       }
       Divider()
@@ -178,7 +208,7 @@ struct SlopThemeEditor: View {
         Button("Export…", action: exportTheme)
         Spacer()
         Button("Reset to Original", action: model.resetAll).disabled(!model.hasChanges)
-          .help("Returns every color to the template's. Theme changes aren't undoable.")
+          .help("Returns every color to the template's. Use Undo to restore your colors.")
       }
       .controlSize(.small)
       .padding(.horizontal, 14).padding(.vertical, 10)
@@ -191,33 +221,47 @@ struct SlopThemeEditor: View {
 private struct SlopThemeRow: View {
   let model: SlopThemeEditorModel
   let row: SlopThemeEditorModel.Row
+  let isPicking: Bool
+  let togglePicking: () -> Void
   @State private var text = ""
   /// Whether the person typed since the field last showed a color.
   @State private var edited = false
   @FocusState private var editing: Bool
 
   var body: some View {
-    let value = model.value(row), changed = model.isChanged(row)
+    let value = model.value(row)
+    let changed = model.isChanged(row)
     VStack(alignment: .leading, spacing: 2) {
       HStack(spacing: 8) {
-        ColorPicker(row.label, selection: Binding(
-          get: { SlopThemeColor.color(value) ?? CGColor(gray: 0, alpha: 1) },
-          set: { color in if let hex = SlopThemeColor.hex(color) { model.set(row, hex) } }),
-          supportsOpacity: true)
-          .labelsHidden()
+        Button(action: togglePicking) {
+          SlopSwatch(hex: value, selected: isPicking).frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isPicking ? "Close the color picker" : "Change this color")
+        .accessibilityLabel("\(row.label) color").accessibilityValue(value)
         Circle().fill(Color.accentColor).frame(width: 5, height: 5).opacity(changed ? 1 : 0)
           .accessibilityHidden(true)
         // Middle truncation keeps the words that tell similar colors apart ("Done … Deep").
         Text(row.label).lineLimit(1).truncationMode(.middle).help(row.id).layoutPriority(1)
         Spacer(minLength: 4)
-        TextField(row.label, text: Binding(get: { text }, set: { text = $0; edited = true }))
-          .labelsHidden()
-          .font(.system(.caption, design: .monospaced))
-          .textFieldStyle(.roundedBorder)
-          .frame(width: 80)
-          .focused($editing)
-          .onSubmit(finish)
-        Button { model.reset(row) } label: {
+        TextField(
+          row.label,
+          text: Binding(
+            get: { text },
+            set: {
+              text = $0
+              edited = true
+            })
+        )
+        .labelsHidden()
+        .font(.system(.caption, design: .monospaced))
+        .textFieldStyle(.roundedBorder)
+        .frame(width: 80)
+        .focused($editing)
+        .onSubmit(finish)
+        Button {
+          model.reset(row)
+        } label: {
           Image(systemName: "arrow.uturn.backward").frame(width: 18, height: 18).contentShape(Rectangle())
         }
         .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -225,7 +269,12 @@ private struct SlopThemeRow: View {
         .opacity(changed ? 1 : 0).disabled(!changed)
       }
       if let error = model.errors[row.id] {
-        Text(error).font(.caption2).foregroundStyle(.red).padding(.leading, 30)
+        Text(error).font(.caption2).foregroundStyle(.red).padding(.leading, 28)
+      }
+      if isPicking {
+        SlopColorPicker(hex: value, swatches: model.swatches(for: row)) { model.set(row, $0) }
+          .padding(.top, 8).padding(.bottom, 6)
+          .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
       }
     }
     .controlSize(.small)

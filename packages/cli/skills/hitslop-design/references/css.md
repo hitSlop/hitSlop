@@ -32,5 +32,22 @@ explicit class and anchor descendant rules there, not under the editor wrapper.
 Use data attributes for primitive states. Group narrow-window and capture rules
 with the relevant surface. Respect reduced motion and visible keyboard focus.
 
+The host disables ordinary text selection in every editor, both natively and in
+`slop dev`. Inputs, textareas (including readonly fields), and `contenteditable` regions
+retain normal selection and editing; captures and PDF text are unaffected. Enable
+selection for useful output such as notes, addresses, or code:
+
+```css
+.my-slop-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+```
+
+Use `body` instead of the class to make the whole slop selectable, including portals.
+For a region override, give any copyable portal content its own class too. These
+ordinary rules override the host's zero-specificity default without `!important`.
+Selection is an authoring CSS choice, not a theme setting.
+
 Preserve editor, export, and icon appearance during styling changes. Check both
 examples at normal and narrow widths, plus open menus and PNG/PDF captures.

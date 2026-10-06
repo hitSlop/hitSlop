@@ -16,7 +16,8 @@ import { isDocumentError } from "@hitslop/document";
 import type { PageResult } from "@hitslop/schema/page";
 import type { AppRow } from "@hitslop/schema";
 import type {} from "./page-handle";
-import { ErrorTextLimit } from "@hitslop/schema/constants";
+import { hostDispatcher } from "./host-dispatch";
+import { ErrorTextLimit, RuntimeABI } from "@hitslop/schema/constants";
 
 const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.hitslop);
 /** Reports a page error to the host, or to the console in the browser preview. */
@@ -32,12 +33,14 @@ const fetchJSON = async (path: string, missing: string) => {
 
 /** The browser preview's document: the build's `app.json`, the row a `.slop` stores, in
  * disposable memory storage. */
-async function previewApp(): Promise<{ config: PageResult<"config">; initial: unknown }> {
+async function previewApp(): Promise<{ config: PageResult<"config">; initial: unknown; template: string; theme: Record<string, string> }> {
   const app: AppRow = await fetchJSON("/app.json", "Missing app.json");
-  const { runtimeABI, theme, manifest, descriptor, initial } = app;
+  const { theme, manifest, descriptor, initial } = app;
   return {
-    config: { readOnly: false, runtimeABI, theme, presentation: manifest.presentation, descriptor: descriptor as object },
+    config: { readOnly: false, presentation: manifest.presentation, descriptor: descriptor as object },
     initial,
+    template: manifest.slug,
+    theme,
   };
 }
 
@@ -45,27 +48,40 @@ async function previewApp(): Promise<{ config: PageResult<"config">; initial: un
  * saved state and sends the descriptor with the config; only the preview reads the
  * initial values. */
 async function openDocument(native: boolean) {
-  const { config, initial } = native ? { config: await call({ method: "config" }), initial: undefined } : await previewApp();
+  const { config, initial, template, theme } = native
+    ? { config: await call({ method: "config" }), initial: undefined, template: "", theme: {} }
+    : await previewApp();
   // The core checked the descriptor when the file opened, or the build evaluated it.
   const descriptor = config.descriptor as ObjectNode;
-  applyTheme(config.theme);
   const host = native ? nativeTransport(config.readOnly) : undefined;
-  const transport = host ?? (await browserTransport(descriptor, initial));
+  const transport = host ?? (await browserTransport(descriptor, initial, template, theme));
   // Boot owns the host entry point. Register it before opening the document; open
   // installs the receiver synchronously before requesting its initial snapshot.
-  globalThis.__slop = { publish: host?.publish ?? (() => {}) };
+  const page = { publish: host?.publish ?? (() => {}) };
+  globalThis.__slop = Object.assign(page, { dispatch: hostDispatcher(page) });
   const doc = await Document.open(
     fromDescriptor(descriptor),
     transport,
     (error, kind = "operation") => report(native, kind, error),
   );
+  let palette = doc.theme;
+  applyTheme(palette);
+  doc.subscribe(() => {
+    if (doc.theme === palette) return;
+    palette = doc.theme;
+    applyTheme(palette);
+  });
   const attachments = ownerAttachments(doc, native);
   return { config, doc, attachments };
 }
 
-/** The app-facing interface over this page's document and host services. */
+// Every app ABI the core admits gets this one context. Raising RuntimeABI fails here: keep
+// this context for the released ABI and dispatch on the app's (docs/engineering-contract.md).
+RuntimeABI satisfies 1;
+
+/** The app-facing interface over this page's document and host services. The core refused
+ * an app needing a newer runtime ABI before this page opened. */
 function createContext(
-  runtimeABI: number,
   doc: Document<ObjectNode>,
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
@@ -74,20 +90,10 @@ function createContext(
     reportError(error: unknown): void;
   },
 ): SlopContext {
-  switch (runtimeABI) {
-    case 1: return createContextV1(doc, options);
-    default: throw new Error("This slop needs a newer version of hitSlop");
-  }
-}
-
-function createContextV1(doc: Document<ObjectNode>, options: Parameters<typeof createContext>[2]): SlopContext {
   const { attachments, capture } = options;
   const document = Object.freeze({
     get current() {
       return doc.current;
-    },
-    get issues() {
-      return doc.issues;
     },
     fields: doc.fields,
     at: ((value: any) => doc.at(value)) as SlopContext["document"]["at"],
@@ -153,7 +159,7 @@ export async function boot() {
     globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
     report(native, "application", error);
   };
-  const ctx = createContext(config.runtimeABI, doc as Document<ObjectNode>, {
+  const ctx = createContext(doc as Document<ObjectNode>, {
     attachments,
     capture,
     resize: async (size) => {
@@ -170,7 +176,6 @@ export async function boot() {
       return { rendered: () => mounted?.rendered?.(), unmount: () => mounted?.unmount?.() };
     },
     document: doc,
-    applyTheme,
     target,
     recovered: native ? () => call({ method: "pageRecovered" }) : undefined,
   });

@@ -3,19 +3,7 @@
 //! container keep their identity, so open text fields, row handles and concurrent edits
 //! survive. An unchanged value writes nothing.
 use super::*;
-use execute::{insert_row, release, remove, rewrite_list, Change};
-
-/// The one rule for writes over merged anomalies (`set` and `replace`): a stored anomaly at
-/// or under the target is preserved and flagged, never repaired, so it refuses the write.
-/// An out-of-range value has the right type and may be overwritten. A write inside an
-/// anomalous value leaves the anomaly as stored, and one through a wrong-typed value does
-/// not resolve.
-pub(super) fn refuse_anomalies(issues: &[Issue], path: &[Segment]) -> Result<()> {
-    if issues.iter().any(|issue| issue.path.starts_with(path) && issue.code != IssueCode::OutOfRange) {
-        return Err(err(Code::TypeMismatch, "Cannot overwrite a value that holds a stored anomaly"));
-    }
-    Ok(())
-}
+use execute::{Change, insert_row, put, rewrite_list};
 
 /// Validates `value` completely before the first mutation.
 pub(super) fn replace(
@@ -23,19 +11,16 @@ pub(super) fn replace(
     schema: &Node,
     path: &[Segment],
     value: &Value,
-    issues: &[Issue],
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
     if path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
-    refuse_anomalies(issues, path)?;
-    let writer = writer(doc);
-    let mut to = Reconcile { doc, writer: &writer, ids, rows };
+    let mut to = Reconcile { doc, ids, rows };
     if path.is_empty() {
         schema.validate(value, false)?;
-        return to.object(&doc.get_map("data"), schema, value, false);
+        return to.object(&doc.get_map("data"), schema, value);
     }
     let at = resolve(doc, schema, path, to.rows)?;
     let kind = unwrap_optional(at.node);
@@ -49,7 +34,7 @@ pub(super) fn replace(
     match &at.parent {
         Some((map, key)) => {
             at.node.validate(value, false)?;
-            to.field(map, key, at.node, value, at.shared)
+            to.field(map, key, at.node, value)
         }
         // A row: its ID stays.
         None => {
@@ -61,9 +46,9 @@ pub(super) fn replace(
                 return Err(err(Code::InvalidId, "A row keeps its ID"));
             }
             let ValueOrContainer::Container(Container::Map(row)) = &at.value else {
-                return Err(err(Code::TypeMismatch, "Cannot replace an anomalous row"));
+                return Err(unexpected());
             };
-            to.object(row, kind, value, at.shared)
+            to.object(row, kind, value)
         }
     }
 }
@@ -75,12 +60,10 @@ pub(super) fn object(
     map: &LoroMap,
     node: &Node,
     value: &Value,
-    shared: bool,
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
-    let writer = writer(doc);
-    Reconcile { doc, writer: &writer, ids, rows }.object(map, node, value, shared)
+    Reconcile { doc, ids, rows }.object(map, node, value)
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
@@ -93,26 +76,28 @@ fn stored(kind: &Node, value: &ValueOrContainer) -> Option<Value> {
 
 struct Reconcile<'a, 'b> {
     doc: &'a LoroDoc,
-    writer: &'a str,
     ids: &'a mut Vec<String>,
     rows: &'a mut Rows<'b>,
 }
 impl Reconcile<'_, '_> {
-    /// `map[key]` becomes `value`; an absent field or entry is created. `shared` as in
-    /// `put`, for the place `map` is.
-    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value, shared: bool) -> Result<()> {
-        let shared = shared || matches!(node, Node::Optional { .. });
+    /// `map[key]` becomes `value`; an absent field or entry is created.
+    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
         let kind = unwrap_optional(node);
         let Some(current) = map.get(key) else {
-            return put(map, key, kind, value, self.writer, shared, self.rows);
+            return put(map, key, kind, value, self.rows);
         };
         match (kind, current) {
-            (scalar, current) if is_scalar(scalar) => {
+            (scalar, current) if is_scalar(scalar) || matches!(scalar, Node::Counter {}) => {
                 if stored(scalar, &current) != Some(project(Some(scalar), value.clone())) {
-                    if matches!(current, ValueOrContainer::Container(_)) {
-                        return Err(anomalous());
-                    }
-                    map.insert(key, loro_scalar(scalar, value)).map_err(engine)?;
+                    map.insert(
+                        key,
+                        if is_scalar(scalar) {
+                            loro_scalar(scalar, value)
+                        } else {
+                            value.as_i64().expect("validated counter").into()
+                        },
+                    )
+                    .map_err(engine)?;
                 }
             }
             (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) => {
@@ -122,10 +107,9 @@ impl Reconcile<'_, '_> {
                     text.apply_delta(&delta).map_err(engine)?;
                 }
             }
-            (Node::Counter {}, ValueOrContainer::Container(Container::Map(counter))) => {
-                self.counter(&counter, value.as_i64().expect("validated counter"))?;
+            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => {
+                self.object(&child, kind, value)?
             }
-            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => self.object(&child, kind, value, shared)?,
             (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(record))) => {
                 self.record(&record, entry, value)?;
             }
@@ -135,19 +119,19 @@ impl Reconcile<'_, '_> {
             (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) => {
                 self.list(&list, item, value.as_array().expect("validated list"))?;
             }
-            _ => return Err(anomalous()),
+            _ => return Err(unexpected()),
         }
         Ok(())
     }
     /// Each declared field; an optional the value leaves out is removed.
-    fn object(&mut self, map: &LoroMap, node: &Node, value: &Value, shared: bool) -> Result<()> {
+    fn object(&mut self, map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
         let Node::Object { properties } = node else {
-            return Err(anomalous());
+            return Err(unexpected());
         };
         for (key, child) in properties {
             match value.get(key) {
-                Some(value) => self.field(map, key, child, value, shared)?,
-                None if map.get(key).is_some() => remove(map, key, self.rows)?,
+                Some(value) => self.field(map, key, child, value)?,
+                None if map.get(key).is_some() => map.delete(key).map_err(engine)?,
                 None => {}
             }
         }
@@ -158,34 +142,18 @@ impl Reconcile<'_, '_> {
         let wanted = value.as_object().expect("validated record");
         let gone: Vec<String> = map.keys().map(|key| key.to_string()).filter(|key| !wanted.contains_key(key)).collect();
         for key in gone {
-            remove(map, &key, self.rows)?;
+            map.delete(&key).map_err(engine)?;
         }
         for (key, value) in wanted {
-            self.field(map, key, entry, value, true)?;
+            self.field(map, key, entry, value)?;
         }
         Ok(())
-    }
-    /// Adds the difference to this writer's contribution, so concurrent increments still
-    /// add to the imported total.
-    fn counter(&mut self, counter: &LoroMap, target: i64) -> Result<()> {
-        let raw = json(counter.get_deep_value());
-        let sum = counter_sum(&raw).ok_or_else(anomalous)?;
-        let by = target - sum;
-        if by == 0 {
-            return Ok(());
-        }
-        let mine = raw.get(self.writer).and_then(Value::as_i64).unwrap_or(0);
-        let next = mine
-            .checked_add(by)
-            .filter(|n| safe(*n))
-            .ok_or_else(|| err(Code::OutOfRange, "Counter would leave the safe integer range"))?;
-        counter.insert(self.writer, next).map_err(engine)
     }
     /// Rows by `$id`: those the value leaves out are removed, kept rows are reconciled in
     /// place, new ones are inserted (a row without `$id` gets a new one), and only rows
     /// outside the longest run already in the target order move.
     fn list(&mut self, list: &LoroMovableList, item: &Node, values: &[Value]) -> Result<()> {
-        let current = identity::clean_rows(list).ok_or_else(anomalous)?;
+        let current = identity::rows(list);
         let wanted: Vec<String> = values
             .iter()
             .map(|value| value.get("$id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(application_id))
@@ -193,9 +161,6 @@ impl Reconcile<'_, '_> {
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
         for (index, id) in current.iter().enumerate().rev() {
             if !keep.contains(id.as_str()) {
-                if let Some(ValueOrContainer::Container(row)) = list.get(index) {
-                    release(&row, self.rows)?;
-                }
                 list.delete(index, 1).map_err(engine)?;
                 self.rows.changed(list, Change::Removed(index));
             }
@@ -212,7 +177,7 @@ impl Reconcile<'_, '_> {
             };
             if existing.contains(id.as_str()) {
                 let row = self.rows.map(self.doc, list, id)?;
-                self.object(&row, item, value, false)?;
+                self.object(&row, item, value)?;
                 let from = self.rows.index(list, id)?;
                 let to = if after > from { after - 1 } else { after };
                 if !staying.contains(id.as_str()) && from != to {
@@ -220,7 +185,7 @@ impl Reconcile<'_, '_> {
                     self.rows.changed(list, Change::Moved(from, to));
                 }
             } else {
-                insert_row(list, item, after, id, value, self.writer, self.rows)?;
+                insert_row(list, item, after, id, value, self.rows)?;
                 self.rows.changed(list, Change::Inserted(after, id.clone()));
                 self.ids.push(id.clone());
             }
@@ -229,8 +194,10 @@ impl Reconcile<'_, '_> {
         Ok(())
     }
 }
-fn anomalous() -> Error {
-    err(Code::TypeMismatch, "Cannot replace an anomalous value")
+/// A stored value whose kind is not its descriptor's, which the open-time check and every
+/// write rule out.
+fn unexpected() -> Error {
+    engine("A stored value does not match its descriptor")
 }
 /// Indexes into `values` of a longest strictly increasing subsequence.
 fn longest_increasing(values: &[usize]) -> Vec<usize> {

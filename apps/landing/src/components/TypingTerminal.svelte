@@ -1,12 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  const steps = [
-    { note: "Make a project and open it in your coding agent", command: "bunx @hitslop/cli init my-slop" },
-    { note: "Try it in the browser while you describe what you want", command: "bun run dev" },
-    { note: "Build the finished app", command: "bun run build" },
-    { note: "Put it in hitSlop’s template catalog", command: "bun run register" },
+  // The prompts mirror `slop init` (packages/cli/src/init.ts, agents.ts).
+  type Step =
+    | { kind: "command"; note?: string; text: string }
+    | { kind: "prompt"; question: string; text: string }
+    | { kind: "choice"; question: string; options: string[] }
+    | { kind: "output"; text: string };
+  const steps: Step[] = [
+    { kind: "command", note: "Make a project", text: "bunx @hitslop/cli init my-slop" },
+    { kind: "prompt", question: "What should your slop do?", text: "A packing list for short trips. Group items by bag and show how many are left." },
+    { kind: "choice", question: "Which agent CLI should build your slop?", options: ["Codex", "Claude Code", "Gemini CLI", "OpenCode"] },
+    { kind: "output", text: "Launching Codex in ~/my-slop" },
+    { kind: "command", note: "Try it in the browser while you refine it", text: "bun run dev" },
+    { kind: "command", note: "Build the finished app", text: "bun run build" },
+    { kind: "command", note: "Put it in hitSlop’s template catalog", text: "bun run register" },
   ];
+  const typable = (step: Step): string => (step.kind === "command" || step.kind === "prompt" ? step.text : "");
   let typed = $state(steps.map(() => ""));
   let current = $state(-1);
   let done = $state(false);
@@ -14,7 +24,7 @@
   let timers: ReturnType<typeof setTimeout>[] = [];
 
   function finish(): void {
-    typed = steps.map((step) => step.command);
+    typed = steps.map(typable);
     current = steps.length;
     done = true;
   }
@@ -28,11 +38,12 @@
     let delay = 300;
     steps.forEach((step, index) => {
       timers.push(setTimeout(() => { current = index; }, delay));
-      for (let i = 1; i <= step.command.length; i++) {
+      const text = typable(step);
+      for (let i = 1; i <= text.length; i++) {
         delay += 34 + Math.random() * 40;
-        timers.push(setTimeout(() => { typed[index] = step.command.slice(0, i); }, delay));
+        timers.push(setTimeout(() => { typed[index] = text.slice(0, i); }, delay));
       }
-      delay += 520;
+      delay += text ? 520 : 800;
     });
     timers.push(setTimeout(() => { current = steps.length; done = true; }, delay));
   }
@@ -55,8 +66,18 @@
   <div class="screen">
     {#each steps as step, index}
       <div class="step" class:shown={current === -1 || current >= index}>
-        <p class="note"># {step.note}</p>
-        <p class="line"><span class="prompt" aria-hidden="true">$</span><code>{current === -1 ? step.command : typed[index]}</code>{#if current === index && typed[index] !== step.command}<span class="caret" aria-hidden="true"></span>{/if}</p>
+        {#if step.kind === "command" && step.note}<p class="note"># {step.note}</p>{/if}
+        {#if step.kind === "command"}
+          <p class="line"><span class="prompt" aria-hidden="true">$</span><code>{current === -1 ? step.text : typed[index]}</code>{#if current === index && typed[index] !== step.text}<span class="caret" aria-hidden="true"></span>{/if}</p>
+        {:else if step.kind === "prompt"}
+          <p class="ask"><span class="prompt" aria-hidden="true">?</span> {step.question}</p>
+          <p class="answer"><code>{current === -1 ? step.text : typed[index]}</code>{#if current === index && typed[index] !== step.text}<span class="caret" aria-hidden="true"></span>{/if}</p>
+        {:else if step.kind === "choice"}
+          <p class="ask"><span class="prompt" aria-hidden="true">?</span> {step.question}</p>
+          <ul class="choices">{#each step.options as option, i}<li class:picked={i === 0}><span aria-hidden="true">{i === 0 ? "❯" : " "}</span> {option}</li>{/each}</ul>
+        {:else}
+          <p class="out">{step.text}</p>
+        {/if}
       </div>
     {/each}
   </div>
@@ -75,12 +96,17 @@
   .lights i:nth-child(3) { background: #28c840; }
   .bar button { margin-left: auto; padding: 5px 10px; border: 1px solid #ffffff26; border-radius: 10px; color: #e9ecf8; background: transparent; font: inherit; font-size: .8rem; cursor: pointer; }
   .bar button:hover { background: #ffffff14; }
-  .screen { min-height: 300px; padding: 22px 24px 8px; font-family: "SFMono-Regular", ui-monospace, monospace; font-size: .95rem; }
+  .screen { min-height: 420px; padding: 22px 24px 8px; font-family: "SFMono-Regular", ui-monospace, monospace; font-size: .95rem; }
   .step { margin-bottom: 18px; opacity: .25; transition: opacity 300ms; }
   .step.shown { opacity: 1; }
   .note { margin: 0 0 6px; color: #8e96bb; font-size: .85rem; }
   .line { margin: 0; display: flex; align-items: center; gap: 10px; min-height: 1.5em; }
   .prompt { color: #69e3a1; }
+  .ask { margin: 0 0 4px; color: #e9ecf8; font-weight: 700; }
+  .answer { margin: 0 0 0 22px; color: #ffe66b; overflow-wrap: anywhere; }
+  .choices { margin: 0 0 0 22px; padding: 0; list-style: none; color: #8e96bb; }
+  .choices .picked { color: #69e3a1; }
+  .out { margin: 0; color: #8e96bb; }
   .caret { width: 9px; height: 1.15em; background: #69e3a1; animation: blink 900ms steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .result { padding: 16px 22px; display: flex; align-items: center; gap: 14px; background: #173024; }

@@ -1,7 +1,7 @@
 //! Window silhouettes: the manifest's radius grammar and bounded SVG path data, parsed
 //! and normalized once. Native builds its path from the output; authoring validates
 //! through WASM. This module is independent of Loro and of document semantics.
-use crate::{err, Code, Error, Result};
+use crate::{Code, Error, Result, err};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -20,12 +20,14 @@ pub enum Segment {
     Cubic { x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64 },
     Close,
 }
+/// A window's shape, as the host draws it (it crosses to Swift as it is).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Silhouette {
-    /// CSS `border-radius` order: top-left, top-right, bottom-right, bottom-left.
-    Radii { horizontal: [Length; 4], vertical: [Length; 4] },
-    /// `view_box` is the coordinate space the segments are drawn in.
-    Path { segments: Vec<Segment>, view_box: [f64; 2], even_odd: bool },
+    /// Four lengths per axis, in CSS `border-radius` order: top-left, top-right,
+    /// bottom-right, bottom-left.
+    Radii { horizontal: Vec<Length>, vertical: Vec<Length> },
+    /// The view box is the coordinate space the segments are drawn in.
+    Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
 }
 
 use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
@@ -85,7 +87,13 @@ fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
                 Some("evenodd") => true,
                 Some(_) => return Err(invalid()),
             };
-            Ok(Silhouette::Path { segments: Parser::new(&shape.path)?.parse()?, view_box, even_odd })
+            let [view_box_width, view_box_height] = view_box;
+            Ok(Silhouette::Path {
+                segments: Parser::new(&shape.path)?.parse()?,
+                view_box_width,
+                view_box_height,
+                even_odd,
+            })
         }
     }
 }
@@ -99,18 +107,18 @@ fn radii(input: &str) -> Result<Silhouette> {
     if !(1..=2).contains(&halves.len()) {
         return Err(invalid());
     }
-    let side = |text: &str| -> Result<[Length; 4]> {
+    let side = |text: &str| -> Result<Vec<Length>> {
         let items = text.split_ascii_whitespace().map(length).collect::<Result<Vec<_>>>()?;
         Ok(match items.as_slice() {
-            [a] => [*a, *a, *a, *a],
-            [a, b] => [*a, *b, *a, *b],
-            [a, b, c] => [*a, *b, *c, *b],
-            [a, b, c, d] => [*a, *b, *c, *d],
+            [a] => vec![*a, *a, *a, *a],
+            [a, b] => vec![*a, *b, *a, *b],
+            [a, b, c] => vec![*a, *b, *c, *b],
+            [a, b, c, d] => vec![*a, *b, *c, *d],
             _ => return Err(invalid()),
         })
     };
     let horizontal = side(halves[0])?;
-    let vertical = if halves.len() == 2 { side(halves[1])? } else { horizontal };
+    let vertical = if halves.len() == 2 { side(halves[1])? } else { horizontal.clone() };
     Ok(Silhouette::Radii { horizontal, vertical })
 }
 /// `0`, or a nonnegative decimal with `px` or `%`. No exponents or other units.
@@ -125,7 +133,9 @@ fn length(token: &str) -> Result<Length> {
     };
     let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
     let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
-    if (whole.is_empty() && fraction.is_empty()) || !digits(whole) || !digits(fraction)
+    if (whole.is_empty() && fraction.is_empty())
+        || !digits(whole)
+        || !digits(fraction)
         || (whole.is_empty() && !number.starts_with('.'))
         || (number.contains('.') && fraction.is_empty())
     {
@@ -153,12 +163,23 @@ struct Parser<'a> {
 impl<'a> Parser<'a> {
     fn new(source: &'a str) -> Result<Self> {
         let bytes = source.as_bytes();
-        if bytes.is_empty() || bytes.len() > SHAPE_PATH
+        if bytes.is_empty()
+            || bytes.len() > SHAPE_PATH
             || !bytes.iter().all(|b| b"MmLlHhVvCcSsQqTtAaZz0123456789eE+.,- \t\r\n".contains(b))
         {
             return Err(invalid());
         }
-        Ok(Self { bytes, at: 0, numeric: false, x: 0.0, y: 0.0, start: (0.0, 0.0), control: (0.0, 0.0), commands: 0, out: vec![] })
+        Ok(Self {
+            bytes,
+            at: 0,
+            numeric: false,
+            x: 0.0,
+            y: 0.0,
+            start: (0.0, 0.0),
+            control: (0.0, 0.0),
+            commands: 0,
+            out: vec![],
+        })
     }
     fn space(&mut self) {
         while self.bytes.get(self.at).is_some_and(|b| b" \t\r\n".contains(b)) {
@@ -269,7 +290,11 @@ impl<'a> Parser<'a> {
                     let n = self.number(false)?;
                     let base = if upper == b'H' { self.x } else { self.y };
                     let value = n + if relative { base } else { 0.0 };
-                    if upper == b'H' { self.x = value } else { self.y = value }
+                    if upper == b'H' {
+                        self.x = value
+                    } else {
+                        self.y = value
+                    }
                     finite(&[self.x, self.y])?;
                     self.out.push(Segment::Line { x: self.x, y: self.y });
                 }
@@ -362,7 +387,8 @@ impl<'a> Parser<'a> {
         finite(&[rx, ry, center.0, center.1, start, delta])?;
         let count = ((delta.abs() / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
         let step = delta / count as f64;
-        let position = |t: f64| (center.0 + c * rx * t.cos() - s * ry * t.sin(), center.1 + s * rx * t.cos() + c * ry * t.sin());
+        let position =
+            |t: f64| (center.0 + c * rx * t.cos() - s * ry * t.sin(), center.1 + s * rx * t.cos() + c * ry * t.sin());
         let derivative = |t: f64| (-c * rx * t.sin() - s * ry * t.cos(), -s * rx * t.sin() + c * ry * t.cos());
         let alpha = 4.0 / 3.0 * (step / 4.0).tan();
         for index in 0..count {

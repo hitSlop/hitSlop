@@ -83,8 +83,9 @@ export class OwnerDocument<N extends ObjectNode> {
   get current(): Value<N> {
     return (this.previews.size ? this.presented : this.store.state.value) as Value<N>;
   }
-  get issues(): OwnerState["issues"] {
-    return this.store.state.issues;
+  /** Effective palette from the same ordered owner frame as the document. */
+  get theme(): OwnerState["theme"] {
+    return this.store.state.theme;
   }
   subscribe(listener: () => void) {
     this.listeners.add(listener);
@@ -446,7 +447,7 @@ export class OwnerDocument<N extends ObjectNode> {
             sequence: this.store.state.sequence,
           };
         },
-        send: (request) => { this.store.assertWritable(); return this.transport.text(request); },
+        send: (batch) => { this.store.assertWritable(); return this.transport.apply(batch); },
         reached: (sequence) => this.store.reached(sequence),
         recover: () => this.store.resync(),
         readOnly: () => !!this.transport.readOnly,

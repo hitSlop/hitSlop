@@ -7,7 +7,7 @@ A slop is a focused app and its document in one portable `.slop` package. Start 
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and building a slop need only Bun. To register templates, render Finder artwork, edit documents and export them, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and building an app, and creating or editing its documents, need only the CLI. To register templates, open windows, render Finder artwork and export PNG/PDF, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
 
 The public CLI workflow is:
 
@@ -35,7 +35,7 @@ Read `slop.ts` first. It declares the app with `defineSlop`: its title, descript
 - `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; the builder includes it automatically.
 
-The builder generates the entry for `App.svelte` and `styles.css`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
+The builder generates the entry for `App.svelte` and `styles.css`. This is the authoring path; custom `main.ts` entries are refused. `Export.svelte` and `Icon.svelte` are optional.
 
 The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state. Test native persistence in a writable document copy.
 

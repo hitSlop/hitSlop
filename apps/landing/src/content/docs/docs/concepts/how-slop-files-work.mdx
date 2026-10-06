@@ -7,7 +7,7 @@ A `.slop` is one file: a small database that holds the app needed to open it and
 
 ## Source is not the runtime file
 
-Authoring source contains `slop.ts`, `schema.ts`, `App.svelte` and `styles.css`. `slop.ts` declares the app with `defineSlop`: its title, description, author, categories, window, theme colors and a new document's values; the folder's name is the slug. The builder generates the Svelte entry; a custom `main.ts` is optional for other frameworks and exports `default { mount(ctx, target) }`. Before mounting the app, the runtime applies the theme's defaults and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
+Authoring source contains `slop.ts`, `schema.ts`, `App.svelte` and `styles.css`. `slop.ts` declares the app with `defineSlop`: its title, description, author, categories, window, theme colors and a new document's values; the folder's name is the slug. The builder generates the Svelte entry; custom `main.ts` entries are refused. Optional `Export.svelte` and `Icon.svelte` define capture layouts. Before mounting the app, the runtime applies the theme's defaults and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
 
 `slop build` compiles the app, evaluates `slop.ts` and `schema.ts` (they never ship in the app), and packs the result into a template file:
 
@@ -26,20 +26,20 @@ The authored bundle does not contain its own document engine. The installed app 
 Creating a document copies a template into a new file. As it is edited, the same file gains:
 
 ```text
-  document     the owner's theme overrides
-  checkpoint   the saved document
+  document     the document's identity
+  checkpoint   saved data and theme overrides
   updates      edits saved since the checkpoint
   attachments  imported files, by content
 ```
 
-The app's Rust core (on Loro) owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
+The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
-One writer at a time owns a document: an OS lock the app keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView or loads the app's code.
+One writer at a time owns a document: an OS lock the Rust owner keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView or loads the app's code.
 
-Owner theme changes are a separate, bounded token object in the file's `document` row. It contains overrides, not another copy of the authored theme defaults, and does not pass through Loro. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
+Theme overrides live in Loro's root `theme` map, outside the authored data tree. They merge per color and share the document's sequence, undo and saving. The page receives the effective palette through its initial state and ordered publications. Replacing document data with JSON preserves the theme. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
 
 ## Templates and copies
 
-Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export uses a live capture or a disposable saved snapshot, not a second writer on the same file.
+Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export renders a fresh read-only page from saved state. For an open document, the owner first saves and copies it; no second writer renders the original file.
 
 Close before moving or renaming a document. Keep it on a local filesystem outside iCloud and other synced folders. Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.

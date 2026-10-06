@@ -53,7 +53,6 @@
     "title": "Replay 2 é 中文",
     "version": "compat 2"
   },
-  "issues": [],
   "theme": {
     "overrides": {
       "accent": "#123456"
@@ -64,8 +63,8 @@
   },
   "attachments": [
     {
-      "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-      "byteLength": 36
+      "byteLength": 36,
+      "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610"
     }
   ]
 }

@@ -10,10 +10,13 @@ extension SlopDocumentWindowController {
     stopLoading()
     if !reportedRendererFailure {
       reportedRendererFailure = true
-      let diagnostic = (error as? any SlopDiagnosticProviding)?.diagnostic
+      let diagnostic =
+        (error as? any SlopDiagnosticProviding)?.diagnostic
         ?? SlopFailureContext(reason: session.failureReason ?? .presentation)
       telemetry.send(.breadcrumb(.renderer, .failed))
-      if !reportedSaveFailure || diagnostic.reason == .webContentTerminated { telemetry.send(.failed(.renderer, diagnostic)) }
+      if !reportedSaveFailure || diagnostic.reason == .webContentTerminated {
+        telemetry.send(.failed(.renderer, diagnostic))
+      }
     }
     updatePageFailure(error.localizedDescription)
   }
@@ -21,8 +24,12 @@ extension SlopDocumentWindowController {
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
     if reportedIssueKinds.insert(issue.isOperation).inserted {
       let rejection = issue.isOperation
-      telemetry.send(.failed(.renderer, .init(rejection ? .rejection : .authored,
-        reason: rejection ? .operationRejected : .authoredException)))
+      telemetry.send(
+        .failed(
+          .renderer,
+          .init(
+            rejection ? .rejection : .authored,
+            reason: rejection ? .operationRejected : .authoredException)))
     }
     guard guestIssue?.message != issue.message else { return }
     guestIssue = issue
@@ -65,7 +72,7 @@ extension SlopDocumentWindowController {
     if guestIssue != nil { telemetry.send(.breadcrumb(.recovery, .recovered)) }
     guestIssue = nil
     refreshIssueBadge()
-    publishControlsVisibility(toolbar?.isVisible == true, force: true)
+    toolbar.republishControls()
   }
   /// What a button in the save-failure alert does.
   private enum AttentionAction {
@@ -79,9 +86,11 @@ extension SlopDocumentWindowController {
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
     let actions: [(title: String, action: AttentionAction)] =
-      invalidated ? [("Discard Unsaved Edits and Reload", .discardAndRetry), ("Keep Open", .keepOpen)]
-      : attentionFailure == .full ? [("Retry Save", .retrySave), ("Discard Unsaved Edits", .discardAndRetry), ("Keep Open", .keepOpen)]
-      : [("Retry Save", .retrySave), ("Keep Open", .keepOpen)]
+      invalidated
+      ? [("Discard Unsaved Edits and Reload", .discardAndRetry), ("Keep Open", .keepOpen)]
+      : attentionFailure == .full
+        ? [("Retry Save", .retrySave), ("Discard Unsaved Edits", .discardAndRetry), ("Keep Open", .keepOpen)]
+        : [("Retry Save", .retrySave), ("Keep Open", .keepOpen)]
     let alert = NSAlert()
     alert.messageText = invalidated ? "The document engine needs recovery" : "Changes could not be saved"
     alert.informativeText = message

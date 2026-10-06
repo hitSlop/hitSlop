@@ -1,1 +1,1 @@
-{"private":true,"dependencies":{"@hitslop/cli":"../hitslop-cli-4.0.0.tgz"},"overrides":{"@hitslop/schema":"../hitslop-schema-4.0.0.tgz","@hitslop/document":"../hitslop-document-4.0.0.tgz","@hitslop/cli":"../hitslop-cli-4.0.0.tgz"}}
+{"private":true,"dependencies":{"@hitslop/cli":"../hitslop-cli-3.0.0.tgz"},"overrides":{"@hitslop/schema":"../hitslop-schema-3.0.0.tgz","@hitslop/document":"../hitslop-document-3.0.0.tgz","@hitslop/cli":"../hitslop-cli-3.0.0.tgz"}}

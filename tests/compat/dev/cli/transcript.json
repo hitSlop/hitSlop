@@ -215,62 +215,65 @@
             }
           }
         },
-        "state": {
-          "value": {
-            "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
-            "cells": {
-              "compat-1": {
-                "input": "Compat 1 ✓ café 🦊"
-              },
-              "compat-2": {
-                "input": "Replay 2 é 中文"
-              }
+        "defaults": {
+          "accent": "#335577"
+        },
+        "value": {
+          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+          "cells": {
+            "compat-1": {
+              "input": "Compat 1 ✓ café 🦊"
             },
-            "checkins": {
-              "compat-1": 1,
-              "compat-2": 2
-            },
-            "colors": [
-              "compat 2",
-              "compat 1"
-            ],
-            "count": 2,
-            "done": false,
-            "epoch": 2,
-            "hits": 5,
-            "label": "compat 2",
-            "lane": "done",
-            "memo": "Replay 2 é 中文",
-            "note": "compat 2",
-            "place": {
-              "name": "compat 1",
-              "visits": 1
-            },
-            "ratio": 0.5,
-            "rows": [
-              {
-                "$id": "compat-1",
-                "done": true,
-                "notes": {},
-                "tags": [],
-                "text": "Compat 1 ✓ café 🦊"
-              },
-              {
-                "$id": "compat-2",
-                "done": false,
-                "notes": {},
-                "tags": [],
-                "text": "Replay 2 é 中文"
-              }
-            ],
-            "settings": {
-              "muted": false,
-              "volume": 2
-            },
-            "title": "Replay 2 é 中文",
-            "version": "compat 2"
+            "compat-2": {
+              "input": "Replay 2 é 中文"
+            }
           },
-          "issues": []
+          "checkins": {
+            "compat-1": 1,
+            "compat-2": 2
+          },
+          "colors": [
+            "compat 2",
+            "compat 1"
+          ],
+          "count": 2,
+          "done": false,
+          "epoch": 2,
+          "hits": 5,
+          "label": "compat 2",
+          "lane": "done",
+          "memo": "Replay 2 é 中文",
+          "note": "compat 2",
+          "place": {
+            "name": "compat 1",
+            "visits": 1
+          },
+          "ratio": 0.5,
+          "rows": [
+            {
+              "$id": "compat-1",
+              "done": true,
+              "notes": {},
+              "tags": [],
+              "text": "Compat 1 ✓ café 🦊"
+            },
+            {
+              "$id": "compat-2",
+              "done": false,
+              "notes": {},
+              "tags": [],
+              "text": "Replay 2 é 中文"
+            }
+          ],
+          "settings": {
+            "muted": false,
+            "volume": 2
+          },
+          "title": "Replay 2 é 中文",
+          "version": "compat 2"
+        },
+        "theme": {
+          "accent": "#123456"
         }
       }
     },
@@ -351,8 +354,7 @@
     {
       "args": [
         "attachments",
-        "import",
-        "{document}",
+        "ref",
         "{attachment}"
       ],
       "code": 0,
@@ -361,6 +363,20 @@
         "byteLength": 28,
         "name": "attachment.txt",
         "mimeType": "text/plain"
+      }
+    },
+    {
+      "args": [
+        "apply",
+        "{document}",
+        "--attach",
+        "{attachment}",
+        "--op",
+        "{\"type\":\"set\",\"path\":[\"attachment\"],\"value\":\"b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418\"}"
+      ],
+      "code": 0,
+      "stdout": {
+        "ids": []
       }
     },
     {
@@ -385,22 +401,10 @@
       "code": 0,
       "stdout": [
         {
-          "byteLength": 36,
-          "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610"
-        },
-        {
           "byteLength": 28,
           "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418"
         }
       ]
-    },
-    {
-      "args": [
-        "compact",
-        "{document}"
-      ],
-      "code": 0,
-      "stdout": ""
     },
     {
       "args": [
@@ -409,7 +413,7 @@
       ],
       "code": 0,
       "stdout": {
-        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "attachment": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
         "cells": {
           "compat-1": {
             "input": "Compat 1 ✓ café 🦊"

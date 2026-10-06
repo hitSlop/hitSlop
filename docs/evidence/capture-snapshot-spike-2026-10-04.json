@@ -1,0 +1,221 @@
+{
+  "addedP95MS": 3121.5920448303223,
+  "baseline": "live editor preview capture",
+  "build": "Debug native test bundle",
+  "candidate": "page flush + core SQLite backup + fresh snapshot WebView preview + close + cleanup",
+  "latencyGatePassed": false,
+  "liveMS": [
+    1865.8519983291626,
+    1880.0859451293945,
+    1792.1090126037598,
+    1291.7650938034058,
+    1305.7219982147217,
+    6625.550031661987,
+    1294.9470281600952,
+    2108.388900756836,
+    7070.974946022034,
+    4265.174984931946,
+    1311.2729787826538,
+    1259.2999935150146,
+    1387.6739740371704,
+    2394.644021987915,
+    1227.5259494781494,
+    4404.3790102005005,
+    3838.925004005432,
+    4014.8099660873413,
+    4019.1489458084106,
+    4021.198034286499
+  ],
+  "liveP95MS": 6625.550031661987,
+  "memory": [
+    {
+      "captureWebContentMiB": 0,
+      "hostMiB": 86.12786865234375,
+      "remainingCaptureProcesses": 0,
+      "sample": -1
+    },
+    {
+      "captureWebContentMiB": 399.2216796875,
+      "hostMiB": 97.3780517578125,
+      "remainingCaptureProcesses": 1,
+      "sample": 0
+    },
+    {
+      "captureWebContentMiB": 404.72149658203125,
+      "hostMiB": 63.61248779296875,
+      "remainingCaptureProcesses": 1,
+      "sample": 1
+    },
+    {
+      "captureWebContentMiB": 415.47149658203125,
+      "hostMiB": 65.4251708984375,
+      "remainingCaptureProcesses": 1,
+      "sample": 2
+    },
+    {
+      "captureWebContentMiB": 398.0028076171875,
+      "hostMiB": 63.00347900390625,
+      "remainingCaptureProcesses": 1,
+      "sample": 3
+    },
+    {
+      "captureWebContentMiB": 418.39337158203125,
+      "hostMiB": 59.769287109375,
+      "remainingCaptureProcesses": 1,
+      "sample": 4
+    },
+    {
+      "captureWebContentMiB": 400.28387451171875,
+      "hostMiB": 60.8006591796875,
+      "remainingCaptureProcesses": 1,
+      "sample": 5
+    },
+    {
+      "captureWebContentMiB": 392.11212158203125,
+      "hostMiB": 97.9884033203125,
+      "remainingCaptureProcesses": 1,
+      "sample": 6
+    },
+    {
+      "captureWebContentMiB": 417.455810546875,
+      "hostMiB": 60.09783935546875,
+      "remainingCaptureProcesses": 1,
+      "sample": 7
+    },
+    {
+      "captureWebContentMiB": 400.7840576171875,
+      "hostMiB": 76.2230224609375,
+      "remainingCaptureProcesses": 1,
+      "sample": 8
+    },
+    {
+      "captureWebContentMiB": 407.4715576171875,
+      "hostMiB": 90.7545166015625,
+      "remainingCaptureProcesses": 1,
+      "sample": 9
+    },
+    {
+      "captureWebContentMiB": 422.12762451171875,
+      "hostMiB": 71.707763671875,
+      "remainingCaptureProcesses": 1,
+      "sample": 10
+    },
+    {
+      "captureWebContentMiB": 404.4246826171875,
+      "hostMiB": 61.16107177734375,
+      "remainingCaptureProcesses": 1,
+      "sample": 11
+    },
+    {
+      "captureWebContentMiB": 394.64337158203125,
+      "hostMiB": 70.9737548828125,
+      "remainingCaptureProcesses": 1,
+      "sample": 12
+    },
+    {
+      "captureWebContentMiB": 421.330810546875,
+      "hostMiB": 61.458251953125,
+      "remainingCaptureProcesses": 1,
+      "sample": 13
+    },
+    {
+      "captureWebContentMiB": 416.2996826171875,
+      "hostMiB": 60.66156005859375,
+      "remainingCaptureProcesses": 1,
+      "sample": 14
+    },
+    {
+      "captureWebContentMiB": 395.20587158203125,
+      "hostMiB": 58.4586181640625,
+      "remainingCaptureProcesses": 1,
+      "sample": 15
+    },
+    {
+      "captureWebContentMiB": 412.11224365234375,
+      "hostMiB": 59.48992919921875,
+      "remainingCaptureProcesses": 1,
+      "sample": 16
+    },
+    {
+      "captureWebContentMiB": 443.58087158203125,
+      "hostMiB": 54.9429931640625,
+      "remainingCaptureProcesses": 1,
+      "sample": 17
+    },
+    {
+      "captureWebContentMiB": 402.89337158203125,
+      "hostMiB": 55.9429931640625,
+      "remainingCaptureProcesses": 1,
+      "sample": 18
+    },
+    {
+      "captureWebContentMiB": 438.518310546875,
+      "hostMiB": 56.4742431640625,
+      "remainingCaptureProcesses": 1,
+      "sample": 19
+    },
+    {
+      "captureWebContentMiB": 415.940185546875,
+      "hostMiB": 69.3804931640625,
+      "remainingCaptureProcesses": 1,
+      "sample": 20
+    },
+    {
+      "captureWebContentMiB": 0,
+      "hostMiB": 59.3023681640625,
+      "remainingCaptureProcesses": 0,
+      "sample": 22
+    }
+  ],
+  "memoryScope": "Host physical footprint and identified capture WebContent processes; excludes source WebContent, GPU and network processes. Warm-up/cache growth is not a leak verdict.",
+  "rows": 5000,
+  "samples": 20,
+  "snapshotMS": [
+    3658.123016357422,
+    3592.1170711517334,
+    3569.7180032730103,
+    4072.0590353012085,
+    7808.863997459412,
+    3795.647978782654,
+    4122.895002365112,
+    4607.136011123657,
+    3687.4890327453613,
+    3617.21408367157,
+    4174.808979034424,
+    4380.892038345337,
+    4421.550989151001,
+    4074.064016342163,
+    4090.2379751205444,
+    3573.140025138855,
+    3882.7229738235474,
+    3635.838031768799,
+    3864.219903945923,
+    3528.6580324172974
+  ],
+  "snapshotP95MS": 4607.136011123657,
+  "warmup": 1,
+  "pairedAddedMS": [
+    1792.2710180282593,
+    1712.0311260223389,
+    1777.6089906692505,
+    2780.2939414978027,
+    6503.14199924469,
+    -2829.9020528793335,
+    2827.947974205017,
+    2498.7471103668213,
+    -3383.4859132766724,
+    -647.960901260376,
+    2863.53600025177,
+    3121.5920448303223,
+    3033.8770151138306,
+    1679.419994354248,
+    2862.712025642395,
+    -831.2389850616455,
+    43.797969818115234,
+    -378.9719343185425,
+    -154.9290418624878,
+    -492.54000186920166
+  ],
+  "p95DifferenceMS": -2018.41402053833,
+  "gate": "p95 of paired (snapshot minus live) elapsed times <= 1000ms; corrected from misleading difference of separate p95 values"
+}

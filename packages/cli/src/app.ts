@@ -31,18 +31,31 @@ const slopFile = {
   required: true,
   description: "Path to a .slop template or document",
 } as const;
+/** The version an agent's text sets were written against. */
+const baseFlag = {
+  name: "base",
+  type: "string",
+  description:
+    "The version you read the text at (version from get --snapshot; read again before each rewrite). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
+} as const;
+const attachFlag = {
+  name: "attach",
+  type: "string",
+  multiple: true,
+  description:
+    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. A file nothing references is removed when the document closes",
+} as const;
 const retrySection = {
   title: "Retries",
   body: "Mutations are never automatically replayed. After an unknown outcome, run slop get before issuing another edit. get saves and returns owner-accepted state; text still being typed in an open window is not included.",
 };
 
-/** Document commands run in the macOS helper, which reaches a live window or owns a
- * closed document. Authoring (init, check, dev, build) needs neither. */
+/** Document commands use the Rust owner; windows and rendering use the macOS helper. Authoring (init, check, dev, build) needs neither. */
 async function native(...argv: string[]) {
-  await (await import("./native")).runNative(argv);
+  await (await import("./native")).runEngine(argv);
 }
-/** Reads a template or a closed or open document with the file engine, on any platform:
- * saved state, never an open window's unsaved edits. */
+/** Reads a template or a closed or open document with the CLI's own file engine, on any
+ * platform, as `build` and `check` do: saved state, never an open window's unsaved edits. */
 async function readSlop(command: "schema" | "inspect", path: string) {
   return (await import("./engine")).engine([command, path]);
 }
@@ -93,7 +106,7 @@ export const app = new Crust("slop", {
   .add(
     defineCommand(
       "attachments",
-      { description: "Import, inspect, and export document attachments" },
+      { description: "Reference, inspect, and export document attachments" },
       (c) =>
         c
           .add(
@@ -103,12 +116,12 @@ export const app = new Crust("slop", {
           )
           .add(
             defineCommand(
-              "import",
-              { description: "Save a file and print its reference as JSON" },
+              "ref",
+              { description: "Print a file's reference as JSON, for operations that store it with --attach" },
               (c) =>
                 c
-                  .args(document, { name: "file", type: "string", required: true })
-                  .action(async ({ args }) => (await documents()).attachmentsImport(args.document, args.file)),
+                  .args({ name: "file", type: "string", required: true })
+                  .action(async ({ args }) => (await documents()).attachmentsRef(args.file)),
             ),
           )
           .add(
@@ -254,10 +267,13 @@ export const app = new Crust("slop", {
               name: "output",
               type: "string",
               required: true,
-              description: "Path for the new writable document",
+              description: "Path for the new writable document; .slop is added if it is missing",
             },
           )
-          .action(({ flags }) => native("create", "--from", flags.from, "--output", flags.output)),
+          // As the app's save panel does: a document's name ends in .slop.
+          .action(({ flags }) =>
+            native("create", "--from", flags.from, "--output", flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop`),
+          ),
     ),
   )
   .add(
@@ -284,7 +300,7 @@ export const app = new Crust("slop", {
         .flags({
           name: "snapshot",
           type: "boolean",
-          description: "Print the schema with the current state ({schema, state})",
+          description: "Print the schema, version, value and colors ({schema, defaults, version, value, theme})",
         })
         .action(async ({ args, flags }) => (await documents()).get(args.document, flags.snapshot === true)),
     ),
@@ -296,13 +312,17 @@ export const app = new Crust("slop", {
       (c) =>
         c
           .args(document)
-          .flags({
-            name: "op",
-            type: "string",
-            required: true,
-            description: "Operation object as JSON",
-          })
-          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op)),
+          .flags(
+            {
+              name: "op",
+              type: "string",
+              required: true,
+              description: "Operation object as JSON",
+            },
+            baseFlag,
+            attachFlag,
+          )
+          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.base, flags.attach)),
     ),
   )
   .add(
@@ -312,13 +332,17 @@ export const app = new Crust("slop", {
       (c) =>
         c
           .args(document)
-          .flags({
-            name: "ops",
-            type: "string",
-            required: true,
-            description: "Array of operations as JSON",
-          })
-          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops)),
+          .flags(
+            {
+              name: "ops",
+              type: "string",
+              required: true,
+              description: "Array of operations as JSON",
+            },
+            baseFlag,
+            attachFlag,
+          )
+          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.base, flags.attach)),
     ),
   )
   .add(
@@ -337,13 +361,6 @@ export const app = new Crust("slop", {
             description: 'Where to replace, as a JSON path (default: the whole document), e.g. \'["rows"]\'',
           })
           .action(async ({ args, flags }) => (await documents()).importValue(args.document, args.file, flags.path)),
-    ),
-  )
-  .add(
-    defineCommand(
-      "compact",
-      { description: "Checkpoint document storage", sections: [retrySection] },
-      (c) => c.args(document).action(async ({ args }) => (await documents()).compact(args.document)),
     ),
   )
   .add(

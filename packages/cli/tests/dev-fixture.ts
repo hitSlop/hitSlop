@@ -2,23 +2,9 @@ import { cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 // Dedicated integration fixture: accepted values, row IDs, and one mounted UI
-// detect broken HMR ownership. A marker distinguishes the custom entry from fallback.
+// detect broken HMR ownership through the generated Svelte entry.
 export async function createFixture(repository: string, source: string) {
   await cp(join(repository, "packages/cli/templates/checklist"), source, { recursive: true });
-  await writeFile(
-    join(source, "main.ts"),
-    `
-import App from './App.svelte';
-import schema from './schema';
-import './styles.css';
-import {svelteApp} from '@hitslop/document/svelte';
-const app = svelteApp(App, { schema });
-export default { mount(ctx, target) {
-  target.dataset.fixtureMounted = "true";
-  return app.mount(ctx, target);
-}};
-`,
-  );
   await writeFile(join(source, "probe.svelte.ts"), "export const local = $state({count: 0});\n");
   await writeFile(
     join(source, "Child.svelte"),

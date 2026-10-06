@@ -1,6 +1,6 @@
 {
   "name": "@hitslop/cli",
-  "version": "4.0.0",
+  "version": "3.0.0",
   "type": "module",
   "bin": {
     "slop": "src/cli.ts"
@@ -10,8 +10,8 @@
     "@crustjs/extensions": "0.5.4",
     "@crustjs/prompts": "0.2.6",
     "@crustjs/skills": "0.5.4",
-    "@hitslop/document": "4.0.0",
-    "@hitslop/schema": "4.0.0",
+    "@hitslop/document": "3.0.0",
+    "@hitslop/schema": "3.0.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",

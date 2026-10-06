@@ -6,7 +6,7 @@ Launch includes the signed/notarized Apple silicon Mac app and matching `@hitslo
 
 A CLI-only release keeps the shipped SDK packages and Mac app. Publish only the
 CLI; keep SDK versions and Mac tags unchanged. This is supported while the shipped
-app's helper serves the CLI's command protocol (`hitslop-native --protocol`) and can
+app's engine and rendering helper serve the CLI's command protocol (`--protocol`) and can
 read the package format emitted by the builder and run the project's SDK runtime ABI.
 An unsupported requirement needs a compatible Mac release first: publish the app before an SDK or CLI that raises `runtimeABI`, `packageFormat` or the command protocol. A compatible protocol does not replace the installed-consumer smoke
 checks below.
@@ -39,7 +39,7 @@ dependency pins must match the released SDK packages.
 
 ## Coordinated release sequence
 
-1. Finish release preparation and commit a clean tree. Check package versions, dependency pins and Apple version/build together. Confirm the intended npm versions and Mac tag have not already shipped. For the first public release, also freeze the manifest rules files open with: `manifest::validate_v1` reads the generated `packages/schema/generated/manifest.schema.json`, so copy it to a versioned schema that `validate_v1` reads instead. From then on a manifest change goes to a new `packageFormat`, and checks on open never tighten for saved files.
+1. Finish release preparation and commit a clean tree. Check package versions, dependency pins and Apple version/build together. Confirm the intended npm versions and Mac tag have not already shipped. For the first public release, also freeze the manifest rules files open with: `manifest::validate` reads the generated `packages/schema/generated/manifest.schema.json`, so copy it to a versioned schema that the released format's reader reads instead. From then on a manifest change goes to a new `packageFormat`, and checks on open never tighten for saved files.
 2. Run the Engines workflow on the candidate's commit and download its artifacts into `generated/engines` (`for p in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do gh run download RUN -n engine-$p -D generated/engines; done`): the capture packs the npm packages, and the published CLI carries the file engine for each platform. Each artifact records the commit and core build it came from: packing refuses one from another commit or core, and the tag workflow refuses a CLI without all four from the candidate. Then capture the release's [compatibility corpus](../testing.md#compatibility-corpus) entry from that clean candidate with `bun run compat:capture VERSION --frozen`, adding `--templates` for templates that exercise what the release changed. Without `--templates` the capture covers every template in `examples/slops/bundled.json`, so the first public release's entry holds every document it can create; the pre-launch `dev` entry is never frozen. Commit the entry (`tests/compat/VERSION`). Capture builds its own inputs, stages scenarios, records producing-input and artifact digests, and freezes only after successful recording. The entry is permanent from then on. The tag workflow refuses a missing or stale entry; only the corpus commit may differ from the producing candidate.
 3. Run the complete local gate below on that final commit and record manual acceptance results. A report from a dirty checkout or another commit does not validate the release candidate.
 4. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-vVERSION` and push the tag; this triggers `.github/workflows/macos-release.yml`.
@@ -60,9 +60,9 @@ bun install --cwd apps/landing --frozen-lockfile
 bun run release:check
 ```
 
-`bun run hygiene` runs only repository hygiene and does not establish release readiness.
+`bun run verify hygiene` runs only repository hygiene and does not establish release readiness.
 
-The complete gate checks hygiene; builds the page shell, helper, and all active templates; verifies generated contracts, types, and skills; runs JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
+The complete gate (`verify --release`) checks hygiene; builds the page shell, native tools, and all active templates; verifies generated contracts, types, and skills; runs the Rust suite (including its corpus replay), JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. It builds the Rust core in the `dist` profile, as compatibility capture, the release archive and the Engines workflow do, so it tests the binaries that ship. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
 
 Bundled selection comes from `examples/slops/bundled.json`. Every selected package must be present in the app with no unexpected stale starters. Every package is checked for matching build bytes, valid manifest/schema/initial data, immutable contents, and preview/icon artwork. Installed create/schema/get/reopen/PNG/PDF checks run on Quick Checklist. Set `HITSLOP_TEMPLATE_EXHAUSTIVE=1` to run those installed checks on every bundled template. Schema-specific mutation/crash probes use known fixtures separately. Packed consumer tests also compile the public getting-started tutorial; its code is an executable contract.
 
@@ -70,7 +70,7 @@ Bundled selection comes from `examples/slops/bundled.json`. Every selected packa
 
 The tiers are listed in [testing](../testing.md#ci); the full `release:check` runs once, in the Release macOS workflow, on a tag before signing or manually as a dry run.
 
-CI restores SwiftPM `.build` by toolchain, lockfile and source identity, with a compatible restore prefix. The template cache reuses complete, fingerprinted template files; damaged entries rebuild, compiler/SDK/page-shell/renderer and file-engine inputs and inherited TypeScript configuration invalidate entries, CLI routing and unrelated scripts do not, and removed templates are pruned. Misses log their changed inputs. Master pushes keep the release template cache warm for tags. Local and CI template builds default to `.hitslop/template-cache`; `HITSLOP_TEMPLATE_CACHE_DIR` can override the location. `build` prepares the page shell/helper, while `build:templates` prepares the complete artwork corpus. Native artwork rendering remains outside the fast job.
+CI restores SwiftPM `.build` by toolchain, lockfile and source identity, with a compatible restore prefix. The template cache reuses complete, fingerprinted template files; damaged entries rebuild, compiler/SDK/page-shell/renderer and file-engine inputs and inherited TypeScript configuration invalidate entries, CLI routing and unrelated scripts do not, and removed templates are pruned. Misses log their changed inputs. Master pushes keep the release template cache warm for tags. Local and CI template builds default to `.hitslop/template-cache`; `HITSLOP_TEMPLATE_CACHE_DIR` can override the location. `build` prepares the page shell, engine and helper, while `build:templates` prepares the complete artwork corpus. Native artwork rendering remains outside the fast job.
 
 Bundled templates are black boxes: every one compiles, opens and reopens in Bun, then renders PNG/PDF and reopens in the native smoke. Conformance fixtures and native boundary tests cover platform edits, picker cancellation, persistence and exports. Application-specific walkthroughs are removed. The gate retains PNG/PDF evidence without visual snapshot comparison.
 
@@ -80,15 +80,15 @@ Validate the final commit, push master and wait for CI, then tag that exact comm
 
 ## Package the Mac app
 
-The deployment target is macOS 15.2+ on Apple silicon. App version/build values live in `apps/apple/project.yml`. Existing TCA features, local catalog, native windows/toolbar, Analytics/Crashlytics, Sparkle, and NativeCLI remain part of release.
+The deployment target is macOS 15.2+ on Apple silicon. App version/build values live in `apps/apple/project.yml`. App lifecycle and quit, local catalog, native windows/toolbar, Analytics/Crashlytics, Sparkle, and NativeCLI remain part of release.
 
 ```sh
-scripts/install-macos-release.sh
-scripts/package-macos-release.sh
-bun scripts/release-artifact.ts /path/to/hitSlop.app
+scripts/release/install-macos-release.sh
+scripts/release/package-macos-release.sh
+bun scripts/release/artifact.ts /path/to/hitSlop.app
 ```
 
-Embedding ships the native executable and its HitSlopDocument resource bundle. Verification checks matching host/helper runtime catalogs and exercises installed helpers with a system-only PATH, including PNG/PDF. Native editing needs no checkout, Node, or Bun. `HITSLOP_NATIVE_CLI` selects an explicit matching helper for authoring verification.
+Embedding ships and signs `slop-engine`, `hitslop-native` and the helper's HitSlopDocument resource bundle. Verification checks matching host/helper page shells, exact core identities across app/engine/helper, matching command protocols and engine architecture/signature. It exercises installed creation, editing and PNG/PDF export through the engine, which passes exports to the helper, with a system-only PATH. Native editing needs no checkout, Node or Bun. `HITSLOP_NATIVE_CLI` selects an explicit helper for verification; document commands then require its sibling engine unless `HITSLOP_ENGINE` is set.
 
 Developer ID, notarization, provisioning, App Store Connect, and Sparkle private keys remain outside Git. The tagged GitHub workflow runs the gate once (`release:check --skip-app`), then archives one Release app. `package-macos-release.sh` runs host-crash acceptance and the compatibility corpus replay with the signed app's helper before notarizing (it needs the Debug helper from `bun run build`; `HITSLOP_SKIP_ACCEPTANCE=1` skips it). The workflow then verifies DMG/ZIP artifacts and publishes the Mac release. It does not publish npm packages. Release the exact tested commit.
 
@@ -115,7 +115,7 @@ Use a disposable Release validation build to verify representative Analytics eve
 
 ## Publish the tested npm artifacts
 
-`bun run packages:pack` writes tarballs under `generated/npm`. `bun run test:packed --native` installs those exact artifacts into a temporary directory with spaces and verifies initialization, authoring, registration, themes, exports, preview resources, and durable installed skill links after package-cache removal. It derives versions from package manifests. Consumer-only overrides connect unpublished tarballs; shipped manifests contain registry versions, never workspace/file dependencies.
+`bun run packages:pack` writes tarballs under `generated/npm`. `HITSLOP_PACKED_NATIVE=1 bun run verify packed` (part of the release gate) installs those exact artifacts into a temporary directory with spaces and verifies initialization, authoring, registration, themes, exports, preview resources, and durable installed skill links after package-cache removal. It derives versions from package manifests. Consumer-only overrides connect unpublished tarballs; shipped manifests contain registry versions, never workspace/file dependencies.
 
 Keep the tested artifacts from the release commit. Confirm package versions and dependency pins agree, and make the compatible signed Mac app available first. Download the three npm tarballs, `SHA256SUMS`, and `release-record.json` from the matching GitHub Release. Verify each tarball against its checksum and confirm the record identifies the tagged commit. The workflow verifies package contents against the capture and retains its exact frozen npm tarballs, which archived-CLI replay tested; do not repack them locally.
 

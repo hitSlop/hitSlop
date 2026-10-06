@@ -21,7 +21,10 @@ struct SlopToolbarVisibility {
       outsideSince = nil
       return true
     }
-    guard visible else { outsideSince = nil; return false }
+    guard visible else {
+      outsideSince = nil
+      return false
+    }
     if outsideSince == nil { outsideSince = now }
     return now - (outsideSince ?? now) < 0.8
   }
@@ -52,8 +55,10 @@ struct SlopToolbarVisibility {
     }
     let file = views.compactMap { $0 as? SlopToolbarFileButton }
       .first { contains($0, event.locationInWindow) }
-    while let next = nextEvent(matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture,
-                               inMode: .eventTracking, dequeue: true) {
+    while let next = nextEvent(
+      matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture,
+      inMode: .eventTracking, dequeue: true)
+    {
       if next.type == .leftMouseUp {
         if let file, file.isEnabled, contains(file, next.locationInWindow) { file.performClick(nil) }
         return
@@ -86,14 +91,19 @@ struct SlopToolbarVisibility {
   private var observers: [NSObjectProtocol] = []
 
   private init() {
-    for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didDeminiaturizeNotification,
-                 NSApplication.didBecomeActiveNotification, NSApplication.didUnhideNotification] {
-      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.start() }
-      })
+    for name in [
+      NSWindow.didChangeOcclusionStateNotification, NSWindow.didDeminiaturizeNotification,
+      NSApplication.didBecomeActiveNotification, NSApplication.didUnhideNotification,
+    ] {
+      observers.append(
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.start() }
+        })
     }
-    observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-      forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+    observers.append(
+      NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+      ) { [weak self] _ in
         MainActor.assumeIsolated { self?.start() }
       })
   }

@@ -7,7 +7,8 @@ import SwiftUI
 /// The theme panel's frame: beside the document, on the right unless the screen ends
 /// first, exactly as tall as the document (within the visible screen); its colors scroll.
 func slopThemePanelFrame(document: NSRect, visible: NSRect?) -> NSRect {
-  let width: CGFloat = 320, gap: CGFloat = 8
+  let width: CGFloat = 320
+  let gap: CGFloat = 8
   var height = document.height
   if let visible { height = min(height, visible.height) }
   var frame = NSRect(x: document.maxX + gap, y: document.maxY - height, width: width, height: height)
@@ -29,9 +30,11 @@ extension SlopDocumentWindowController {
 
   func setThemeShown(_ shown: Bool) {
     guard shown, let window, isContentReady, session.canEditTheme else { return closeThemePanel() }
-    let editor = themeEditor ?? SlopThemeEditorModel(
-      tokens: session.file.themeTokens.map { (name: $0.name, value: $0.value) },
-      send: { [weak self] change, reply in self?.session.changeTheme(change, reply: reply) })
+    let editor =
+      themeEditor
+      ?? SlopThemeEditorModel(
+        tokens: session.file.themeTokens.map { (name: $0.name, value: $0.value) },
+        send: { [weak self] change, reply in self?.session.changeTheme(change, reply: reply) })
     themeEditor = editor
     if themePanel == nil {
       themePanel = makeThemePanel(editor)
@@ -39,7 +42,7 @@ extension SlopDocumentWindowController {
     }
     layoutThemePanel()
     if let panel = themePanel, panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
     Task { [weak self, session] in
       if let theme = try? await session.currentTheme() { self?.themeEditor?.apply(theme) }
     }
@@ -54,13 +57,12 @@ extension SlopDocumentWindowController {
   func closeThemePanel() {
     guard let panel = themePanel else { return }
     themePanel = nil
+    themeEditor?.close()
     themeEditor = nil
-    // A color picker left open must never write into a document whose panel is gone.
     panel.contentView = nil
-    if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.orderOut(nil) }
     panel.parent?.removeChildWindow(panel)
     panel.close()
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
   }
 
   public func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState) {
@@ -79,11 +81,12 @@ extension SlopDocumentWindowController {
     panel.isExcludedFromWindowsMenu = true
     panel.becomesKeyOnlyIfNeeded = true
     panel.title = "Theme"
-    let content = NSHostingView(rootView: SlopThemeEditor(
-      model: editor, title: session.file.manifest.title,
-      close: { [weak self] in self?.request(.theme(false)) },
-      importTheme: { [weak self] in self?.request(.importTheme) },
-      exportTheme: { [weak self] in self?.request(.exportTheme) }))
+    let content = NSHostingView(
+      rootView: SlopThemeEditor(
+        model: editor, title: session.file.manifest.title,
+        close: { [weak self] in self?.setThemeShown(false) },
+        importTheme: { [weak self] in self?.request(.importTheme) },
+        exportTheme: { [weak self] in self?.request(.exportTheme) }))
     // The document sets the panel's size; a long palette scrolls instead of growing it.
     content.sizingOptions = []
     panel.contentView = content
@@ -105,7 +108,10 @@ extension SlopDocumentWindowController {
       try await session.exportTheme().write(to: output, options: .atomic)
       telemetry.send(.breadcrumb(.themeExport, .completed))
       telemetry.send(.themeExported)
-    } catch { telemetry.failure(.themeExport, error: error); throw error }
+    } catch {
+      telemetry.failure(.themeExport, error: error)
+      throw error
+    }
   }
 
   func importTheme() async throws {
@@ -129,7 +135,10 @@ extension SlopDocumentWindowController {
       }
       telemetry.send(.breadcrumb(.themeImport, .completed))
       telemetry.send(.themeImported)
-    } catch { telemetry.failure(.themeImport, error: error); throw error }
+    } catch {
+      telemetry.failure(.themeImport, error: error)
+      throw error
+    }
   }
 
   /// A theme file's text, bounded; the core decides whether it is a theme for this document.
@@ -146,13 +155,11 @@ extension SlopDocumentWindowController {
   private func confirmReplacingTheme() async -> Bool {
     let alert = NSAlert()
     alert.messageText = "Replace this document's colors?"
-    alert.informativeText = "Importing replaces every color you changed. Reset to Original can return to the template's colors, not to yours."
+    alert.informativeText = "Importing replaces your custom colors. You can undo this change."
     alert.addButton(withTitle: "Replace")
     alert.addButton(withTitle: "Cancel")
     guard let window else { return alert.runModal() == .alertFirstButtonReturn }
-    return await withCheckedContinuation { done in
-      alert.beginSheetModal(for: window) { done.resume(returning: $0 == .alertFirstButtonReturn) }
-    }
+    return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
   }
 }
 

@@ -32,6 +32,10 @@ impl std::fmt::Display for Code {
 /// The platform level this build runs; a template or document above it needs a newer app.
 pub const PACKAGE_FORMAT: u64 = 1;
 pub const RUNTIME_ABI: u64 = 1;
+#[cfg(feature = "storage")]
+pub const HELPER_PROTOCOL: u64 = 1;
+#[cfg(feature = "storage")]
+pub const HELPER_MINIMUM_PROTOCOL: u64 = 1;
 /// The CSS `border-radius` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
 /// Effective theme JSON, and a theme file, in UTF-8 bytes.
@@ -74,7 +78,9 @@ pub(crate) const PATH_SEGMENTS: usize = 64;
 pub(crate) const PAGE_PAYLOAD: usize = 4194304;
 /// The largest socket request, an attachment upload; no envelope the core checks is larger.
 #[cfg(feature = "storage")]
-pub(crate) const SOCKET_ATTACHMENT: usize = 16777216;
+pub const SOCKET_ATTACHMENT: usize = 16777216;
+#[cfg(feature = "storage")]
+pub const SOCKET_REQUEST: usize = 1048576;
 /// An attachment's identity: the SHA-256 of its bytes, in lowercase hex.
 #[cfg(feature = "storage")]
 pub(crate) fn valid_attachment_id(id: &str) -> bool {
@@ -123,27 +129,23 @@ impl PatchOp {
         Self::MoveRow { path, .. } => path,
     } }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueCode { TypeMismatch, OutOfRange, UnknownField, InvalidKey, InvalidId, DuplicateId }
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Issue { pub code: IssueCode, pub path: Vec<Segment> }
 #[derive(Debug, Serialize)]
-pub struct State { pub sequence: u64, pub version: String, pub value: Value, pub issues: Vec<Issue> }
-#[derive(Debug, Serialize)]
-pub struct Publication { pub previous: u64, pub sequence: u64, pub version: String, pub ops: Vec<PatchOp>, #[serde(skip_serializing_if = "Option::is_none")] pub issues: Option<Vec<Issue>> }
+pub struct Publication { pub previous: u64, pub sequence: u64, pub version: String, pub ops: Vec<PatchOp>, #[serde(skip_serializing_if = "Option::is_none")] pub theme: Option<std::collections::BTreeMap<String, String>> }
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Intent {
-    Set { path: Vec<Segment>, value: Value },
+    Set { path: Vec<Segment>, value: Value, from: Option<String>, selection: Option<Selection> },
     Insert { path: Vec<Segment>, value: Value, id: Option<String>, at: Option<Anchor>, index: Option<usize> },
     Remove { path: Vec<Segment>, id: Option<String>, index: Option<usize>, count: Option<usize> },
     Move { path: Vec<Segment>, id: String, at: Option<Anchor> },
     Clear { path: Vec<Segment> },
     Increment { path: Vec<Segment>, by: i64 },
     Replace { path: Vec<Segment>, value: Value },
+    SetTheme { values: std::collections::BTreeMap<String, Option<String>>, replace: Option<bool> },
+    ImportTheme { file: String },
 }
 impl Intent {
+    /// The data path; palette intents have none.
     pub fn path(&self) -> &[Segment] { match self {
         Self::Set { path, .. } => path,
         Self::Insert { path, .. } => path,
@@ -152,11 +154,17 @@ impl Intent {
         Self::Clear { path, .. } => path,
         Self::Increment { path, .. } => path,
         Self::Replace { path, .. } => path,
+        Self::SetTheme { .. } => &[],
+        Self::ImportTheme { .. } => &[],
     } }
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Batch { pub intents: Vec<Intent> }
+pub struct Batch { pub base: Option<String>, pub intents: Vec<Intent> }
+/// A text selection in UTF-16 offsets.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Selection { pub start: usize, pub end: usize }
 /// A shared theme file: the template it was made for and its palette.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -168,7 +176,112 @@ pub struct ThemeFile { pub template: String, pub values: std::collections::BTree
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub struct AppRow { pub packageFormat: u64, pub runtimeABI: u64, pub manifest: Box<serde_json::value::RawValue>, pub descriptor: Box<serde_json::value::RawValue>, pub initial: Box<serde_json::value::RawValue>, pub theme: Box<serde_json::value::RawValue> }
+
+
+#[cfg(feature = "storage")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub(crate) enum SocketRequest {
+    #[serde(rename = "attachments.list")]
+    AttachmentsList { protocol: u64, documentPath: String },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { protocol: u64, documentPath: String, attachmentID: String },
+    #[serde(rename = "theme.export")]
+    ThemeExport { protocol: u64, documentPath: String },
+    #[serde(rename = "get")]
+    Get { protocol: u64, documentPath: String },
+    #[serde(rename = "batch")]
+    Batch { protocol: u64, documentPath: String, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] attachments: Option<Vec<String>> },
+    #[serde(rename = "export")]
+    Export { protocol: u64, documentPath: String, format: String, output: String },
+}
+
+#[cfg(feature = "storage")]
+impl SocketRequest {
+    pub fn method(&self) -> &'static str { match self {
+        Self::AttachmentsList { .. } => "attachments.list",
+        Self::AttachmentsRead { .. } => "attachments.read",
+        Self::ThemeExport { .. } => "theme.export",
+        Self::Get { .. } => "get",
+        Self::Batch { .. } => "batch",
+        Self::Export { .. } => "export",
+    } }
+    pub fn path(&self) -> &str { match self {
+        Self::AttachmentsList { documentPath, .. } => documentPath,
+        Self::AttachmentsRead { documentPath, .. } => documentPath,
+        Self::ThemeExport { documentPath, .. } => documentPath,
+        Self::Get { documentPath, .. } => documentPath,
+        Self::Batch { documentPath, .. } => documentPath,
+        Self::Export { documentPath, .. } => documentPath,
+    } }
+}
+/// A page request. The core answers the document requests; the window's own (config,
+/// readiness, resizing, errors) are the host's, so their fields go unread here.
+#[cfg(feature = "storage")]
 #[derive(Debug, Deserialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case, dead_code)]
+pub(crate) enum PageRequest {
+    #[serde(rename = "open")]
+    Open {  },
+    #[serde(rename = "apply")]
+    Apply { batch: String },
+    #[serde(rename = "flush")]
+    Flush {  },
+    #[serde(rename = "undo")]
+    Undo {  },
+    #[serde(rename = "redo")]
+    Redo {  },
+    #[serde(rename = "config")]
+    Config {  },
+    #[serde(rename = "attachments.put")]
+    AttachmentsPut { bytes: String },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { attachmentID: String },
+    #[serde(rename = "window.resize")]
+    WindowResize { width: u64, height: u64 },
+    #[serde(rename = "ready")]
+    Ready {  },
+    #[serde(rename = "pageRecovered")]
+    PageRecovered {  },
+    #[serde(rename = "failed")]
+    Failed { error: String },
+    #[serde(rename = "pageError")]
+    PageError { kind: String, error: String },
+}
+
+
+#[cfg(feature = "storage")]
+#[derive(Debug, Serialize)]
+#[serde(tag = "method", deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub(crate) enum SocketSuccess {
+    #[serde(rename = "get")]
+    Get { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "batch")]
+    Batch { ids: Vec<String> },
+    #[serde(rename = "export")]
+    Export { output: String },
+    #[serde(rename = "theme.export")]
+    ThemeExport { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "attachments.list")]
+    AttachmentsList { state: Box<serde_json::value::RawValue> },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead { state: Box<serde_json::value::RawValue> },
+}
+
+#[cfg(feature = "storage")]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OutcomeCode { Rejected, OwnerReplaced, Closing, SaveFailed, OwnerInvalidated, UnknownOutcome }
+#[cfg(feature = "storage")]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
-pub struct EditText { pub base: String, pub path: Vec<Segment>, pub from: String, pub to: String, pub selectionStart: usize, pub selectionEnd: usize }
+pub(crate) struct SocketFailure {
+    pub error: String,
+    pub code: OutcomeCode,
+    #[serde(skip_serializing_if = "Option::is_none")] pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub opIndex: Option<u32>,
+}

@@ -40,7 +40,6 @@ test("skills are deterministic, self-contained and describe the active commands"
       "get",
       "apply",
       "batch",
-      "compact",
       "export",
       "skills",
     ])

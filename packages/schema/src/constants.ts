@@ -85,7 +85,6 @@ export const RowIdRule = {
   maximum: 64,
   mintAlphabet: "0123456789abcdefghjkmnpqrstvwxyz",
 } as const;
-export const IssueCodes = ["type_mismatch", "out_of_range", "unknown_field", "invalid_key", "invalid_id", "duplicate_id"] as const;
 /** Codes may grow; apps treat an unfamiliar one as a refusal they cannot name. */
 export const CoreErrorCodes = [
   "type_mismatch", "out_of_range", "path_not_found", "invalid_key", "exists", "duplicate_id",

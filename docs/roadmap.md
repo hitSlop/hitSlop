@@ -32,12 +32,18 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
+- Give that entry boundary documents: limits at their maximums, every descriptor kind and
+  every window shape form. The parsers and limits an open applies aren't separate readers
+  per `packageFormat`, so the corpus is what keeps them from tightening.
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.
 - Decide whether Time Machine copying a whole document at the current attachment limits
   is acceptable, or lower the limits for launch.
 - Confirm the platforms the CLI's engine ships for (Windows isn't planned).
+- Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
+  relies on are not on crates.io. Return to an exact crates.io version once one ships
+  them, with the corpus passing.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
@@ -47,33 +53,34 @@ In order, with the reasoning in [ideas](ideas.md):
   benchmarks record footprints only and make no leak claim.
 - Text drafts that can't be saved are reported and dropped, in two cases. One case is a draft
   whose outcome is unknown when its field unmounts, which includes a draft that became
-  unresolved earlier. The other is a draft sent from a version a live `slop compact` trimmed,
-  to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
+  unresolved earlier. The other is a draft sent from a version that automatic retention
+  had to trim in a session exceeding its storage budget, to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
   shows the saved text. The fix to plan is a recoverable draft with an explicit discard.
   Holding the close barrier instead made windows impossible to close.
-- Each removed optional value or record entry that held a container, and each removed
-  row holding one, leaves an empty mergeable container of about 19 bytes in trimmed
-  documents, because Loro retains them by identity
-  ([storage layout](reference/document-types.md#storage-layout)). Churning 1,000 such rows
-  or unique record keys leaves about 37 KB. If that becomes material, ask Loro to drop
-  inactive, empty mergeable containers from shallow snapshots; no layout change is needed.
 
 ## Next
 
 - **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
   in the app, and select the ones that ship.
-- **One page policy.** Generate the page's content security policy from `packages/schema`
-  for the app and `slop dev` (stating `worker-src slop:`), so the preview refuses what
-  the app refuses. Then have `slop build` emit worker and worklet entry points as files in
-  `assets`, so `new Worker` and `addModule` load `slop://` URLs; `blob:` and `data:` code
-  stays refused, and a refused load says why in plain language. WebKit doesn't isolate
-  `slop:` pages, so there is no `SharedArrayBuffer`.
-- **CLI document editing off macOS.** Authoring and reading files (`build`, `schema`,
-  `inspect`) already run anywhere through the Rust `slop-engine`; document edits still
-  run in the Swift helper. Move them into the engine (closed documents under the writer
-  lock, live ones through the owner's socket), ship it inside the app too (the CLI already
-  carries an engine per platform), and have the CLI prefer the app's copy on a Mac so it never writes a format the installed app can't read. The Swift helper
-  keeps screenshot, export and open.
+- **Worker and worklet assets.** The shared page CSP now comes from `packages/schema`
+  for native and browser pages. Explicit worker policy and build support for worker and
+  worklet entry points remain: emit them as files in `assets` so `new Worker` and
+  `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
+  understandable. WebKit does not isolate `slop:` pages, so there is no
+  `SharedArrayBuffer`.
+
+## Implemented foundation
+
+- Rust owns edit admission, save scheduling, discard, close, command dispatch and the
+  live socket. Swift delivers events and provides native UI and rendering.
+- The engine creates and edits documents on macOS and Linux. Mac document commands
+  prefer the engine shipped with the app; authoring validation uses the CLI's engine.
+- Theme overrides share Loro storage, sequence, publications, undo and saving with data.
+- Authoring has one generated Svelte entry. `Export.svelte` and `Icon.svelte` remain
+  optional; captures use fresh saved-state pages, with a fresh App as the export fallback.
+
+Implementation decisions, measurements and verification are recorded in the
+[pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
 
@@ -86,16 +93,16 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Collaboration**, separate from hosted discovery. The owner can exchange Loro updates
-with other replicas (it already imports and exports them), authenticate in Swift and
-persist opaque updates remotely. Each replica keeps one writer and local SQLite storage.
-Frontier version tokens and stateless text edits already work across replicas: a page's
-text request names the history it saw, and the core merges it with whatever arrived
-since. Values more than one replica can create (optional values, record entries) already
-merge when created concurrently. Closing a large document trims all history, so sync will
-need a retention policy compatible with offline replicas.
-Remote edits would arrive as imports. Selective undo that preserves remote changes is
-still needed: today a raw replica import clears the local undo/redo history.
+**Collaboration**, separate from hosted discovery. Today one owner writes each document,
+and every accepted edit keeps it valid, so the core has no replica merge, imports or
+anomaly handling. Collaboration means a new document layout whose containers more than
+one replica can create (optional values, record entries) merge by identity, with a
+lossless migration from layout 1, plus defined handling for states two valid replicas
+can merge into (duplicate row IDs, counters summed past the safe range). Frontier version
+tokens and stateless text edits already carry over: a text set names the version it was
+written against, and the core merges it with what changed since. Closing a large document
+trims all history, so sync will need a retention policy compatible with offline replicas,
+and selective undo that preserves remote changes.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than
 overloading `apply`.
 [Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare

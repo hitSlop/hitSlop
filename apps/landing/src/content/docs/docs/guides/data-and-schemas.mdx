@@ -3,7 +3,7 @@ title: Data and schemas
 description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
 ---
 
-The hitSlop app owns each document. Its Rust core (on Loro) merges and validates every edit, and the app stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
+The Rust document owner (on Loro), shared by the hitSlop app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
 
 ## Define the shape
 
@@ -77,7 +77,7 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, an agent through the CLI) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
+`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, or an agent writing from the version it read) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
 
 Scalar fields (booleans, strings, numbers, integers and enums) have a `value` for Svelte's `bind:`, which works with native inputs and with component libraries such as bits-ui. Assigning shows the value at once and saves it once the person pauses, so dragging a range or typing a date writes once. An emptied control clears an optional field. Svelte binds only to a name or a property path, so give a row's handle a name with `{@const row = doc.at(task)}` before binding its fields.
 
@@ -133,7 +133,7 @@ bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["title"],"value":"Re
 bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
-Edits print `{ids, sequence}` and are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
+Edits print `{ids}` and are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
 
 Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).
 

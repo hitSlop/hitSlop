@@ -28,9 +28,10 @@ extension SlopDocumentWindowController {
     let badge = issueBadge ?? makeIssueBadge()
     issueBadge = badge
     badge.contentView?.toolTip = issue.message
-    badge.setFrame(slopIssueBadgeFrame(
-      toolbar: slopToolbarFrame(document: window.frame, visible: window.screen?.visibleFrame),
-      visible: window.screen?.visibleFrame), display: true)
+    badge.setFrame(
+      slopIssueBadgeFrame(
+        toolbar: slopToolbarFrame(document: window.frame, visible: window.screen?.visibleFrame),
+        visible: window.screen?.visibleFrame), display: true)
     if window.isVisible, badge.parent == nil { window.addChildWindow(badge, ordered: .above) }
   }
 
@@ -55,17 +56,18 @@ extension SlopDocumentWindowController {
     guard let issue = guestIssue else { return }
     let popover = NSPopover()
     popover.behavior = .transient
-    popover.contentViewController = NSHostingController(rootView: SlopIssueDetails(
-      issue: issue,
-      reload: { [weak self, weak popover] in
-        popover?.close()
-        self?.reloadForIssue()
-      },
-      copy: { NSPasteboard.general.copy(issue.message) },
-      dismiss: { [weak self, weak popover] in
-        popover?.close()
-        self?.dismissIssue()
-      }))
+    popover.contentViewController = NSHostingController(
+      rootView: SlopIssueDetails(
+        issue: issue,
+        reload: { [weak self, weak popover] in
+          popover?.close()
+          self?.reloadForIssue()
+        },
+        copy: { NSPasteboard.general.copy(issue.message) },
+        dismiss: { [weak self, weak popover] in
+          popover?.close()
+          self?.dismissIssue()
+        }))
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
   }
 

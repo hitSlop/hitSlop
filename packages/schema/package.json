@@ -1,15 +1,15 @@
 {
   "name": "@hitslop/schema",
-  "version": "4.0.0",
+  "version": "3.0.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./helper": "./src/helper.ts",
     "./constants": "./src/constants.ts",
     "./socket": "./src/socket.ts",
     "./validation": "./src/validation.ts",
     "./core": "./src/core.ts",
     "./page": "./src/page.ts",
+    "./policy": "./src/policy.ts",
     "./values": "./src/values.ts"
   },
   "dependencies": {

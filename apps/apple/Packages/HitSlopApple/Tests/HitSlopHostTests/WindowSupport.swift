@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+
 @testable import HitSlopHost
 
 /// Windows in tests that are not about lifecycle coordination run their commands directly,

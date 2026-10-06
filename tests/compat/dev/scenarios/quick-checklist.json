@@ -17,7 +17,7 @@
       "path": [
         "tasks"
       ],
-      "id": "9rvpnez5wymwgd8bfh6n48efsc",
+      "id": "x-6yyyw505f331nsw29bjpvh38",
       "at": {
         "after": "compat-2"
       }
@@ -33,7 +33,7 @@
   "value": {
     "tasks": [
       {
-        "$id": "wx81xf9zbe73g5t92gpwb030s8",
+        "$id": "x-03yyw505d331nca39bjpvj38",
         "archived": false,
         "done": true,
         "text": "Send the first draft"
@@ -45,7 +45,7 @@
         "text": "Compat 1 ✓ café 🦊"
       },
       {
-        "$id": "6wvwa0yxramaragk8kc162n1a4",
+        "$id": "x-kgyyw505e3315k339bjpbj38",
         "archived": false,
         "done": false,
         "text": "Take a walk without my phone"
@@ -57,7 +57,7 @@
         "text": "Replay 2 é 中文"
       },
       {
-        "$id": "9rvpnez5wymwgd8bfh6n48efsc",
+        "$id": "x-6yyyw505f331nsw29bjpvh38",
         "archived": false,
         "done": false,
         "text": "Make a little room for the weekend"
@@ -70,6 +70,5 @@
       }
     ],
     "title": "Compat 3 ✓ café 🦊"
-  },
-  "issues": []
+  }
 }

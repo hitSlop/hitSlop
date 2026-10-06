@@ -1,11 +1,19 @@
-// Document commands. Each is one `SocketRequest` the macOS helper sends to the document's
-// live owner, or to an owner it opens; files the command names are read and written here.
+// Document commands. Each is one `SocketRequest` the document engine sends to the
+// document's live owner, or to an owner it opens; files the command names are read and
+// written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "@hitslop/schema/constants";
-import { EpochMethods, SocketResults, type HelperRequestFor, type SocketMethod } from "@hitslop/schema/socket";
-import { validate } from "@hitslop/schema/validation";
+import {
+  MutationMethods,
+  type HelperRequestFor,
+  type SocketFailure,
+  type SocketMethod,
+  type SocketReply,
+  type SocketSuccessFor,
+} from "@hitslop/schema/socket";
 import type { OutcomeCode } from "@hitslop/schema/values";
+import type { PaletteIntent } from "@hitslop/schema/core";
 
 type ExportFormat = (typeof ExportFormats)[number];
 /** What a failed edit means for the next one. */
@@ -18,17 +26,22 @@ const outcomes: Record<OutcomeCode, string> = {
   unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
 };
 
+/** A refusal in the core's words, with the operation it refused (`ops[N]`, an index into
+ * the batch) and its reason code, so an agent knows what to fix. */
+function refusal({ error, reason, opIndex }: SocketFailure) {
+  const code = reason ? ` (${reason})` : "";
+  return opIndex === undefined ? `${error}${code}` : `Refused ops[${opIndex}]${code}: ${error}`;
+}
 /** One request, and its successful reply's result as the method's contract requires it.
- * A failed request that carries the owner's epoch says what it means for the next edit. */
-async function send<M extends Exclude<SocketMethod, "hello">>(request: HelperRequestFor<M> & { method: M }) {
+ * A failed edit says what it means for the next one. */
+async function send<M extends SocketMethod>(request: HelperRequestFor<M> & { method: M }): Promise<SocketSuccessFor<M>> {
   const { ExitStatus, request: helper } = await import("./native");
-  const outcome = (code: OutcomeCode) => (EpochMethods.has(request.method) ? outcomes[code] : undefined);
-  const reply = await helper(request).catch((error) => {
+  const outcome = (code: OutcomeCode) => (MutationMethods.has(request.method) ? outcomes[code] : undefined);
+  const reply: SocketReply = await helper<M>(request).catch((error) => {
     throw error instanceof ExitStatus ? new ExitStatus(error.code, outcome("unknown_outcome")) : error;
   });
-  if (!reply.ok) throw new Error([reply.error ?? "Document operation failed", outcome(reply.code ?? "unknown_outcome")].filter(Boolean).join("\n"));
-  const { method } = request;
-  return validate(SocketResults[method], reply, `hitSlop.app sent an invalid ${method} reply; outcome unknown, run slop get before another edit`);
+  if (!reply.ok) throw new Error([refusal(reply), outcome(reply.code)].filter(Boolean).join("\n"));
+  return reply as SocketSuccessFor<M>;
 }
 /** The document a request names. */
 const at = (document: string) => ({ documentPath: resolve(document) });
@@ -64,19 +77,30 @@ const json = (value: string): unknown => {
 };
 
 export async function get(document: string, snapshot: boolean) {
-  const { schema, state: frame } = (await send({ method: "get", ...at(document) })).state;
-  print(snapshot ? { schema, state: frame } : frame.value);
+  const { state } = await send({ method: "get", ...at(document) });
+  print(snapshot ? state : state.value);
 }
-/** An atomic batch. `ops` stays the text given, so numbers keep their spelling. */
-export async function batch(document: string, ops: string) {
+/** An atomic batch. `ops` stays the text given, so numbers keep their spelling. Its text
+ * sets merge from `base` when given. The `attach` files are stored in the same request,
+ * before the operations that reference them (`attachmentsRef` prints a reference). */
+export async function batch(document: string, ops: string, base?: string, attach: string[] = []) {
   if (!Array.isArray(json(ops))) throw new Error("--ops must be a JSON array of operations");
-  const { ids, sequence } = await send({ method: "batch", ...at(document), ops });
-  print({ ids, sequence });
+  const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
+  if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
+    throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
+  const { ids } = await send({
+    method: "batch",
+    ...at(document),
+    ops,
+    ...(base === undefined ? {} : { base }),
+    ...(attachments.length ? { attachments } : {}),
+  });
+  print({ ids });
 }
-export async function apply(document: string, op: string) {
+export async function apply(document: string, op: string, base?: string, attach: string[] = []) {
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
-  await batch(document, `[${op}]`);
+  await batch(document, `[${op}]`, base, attach);
 }
 /** One `replace`: the value at `path` (the whole document by default) becomes the file's
  * JSON. Both are spliced as written; the core parses and validates the result. */
@@ -86,24 +110,33 @@ export async function importValue(document: string, file: string, path = "[]") {
   if (!Array.isArray(json(path))) throw new Error(`--path must be a JSON array, such as '["rows"]'`);
   await batch(document, `[{"type":"replace","path":${path},"value":${value}}]`);
 }
-export async function compact(document: string) {
-  await send({ method: "compact", ...at(document) });
-}
 export async function exportDocument(document: string, format: ExportFormat, output: string) {
   console.log((await send({ method: "export", ...at(document), format, output: resolve(output) })).output);
 }
 
+/** The palette: the template's colors, the document's overrides and the result. */
+async function palette(document: string) {
+  const { defaults, theme: effective } = (await send({ method: "get", ...at(document) })).state;
+  // A write drops an override equal to its default, so the overrides are the colors that differ.
+  const overrides = Object.fromEntries(Object.entries(effective).filter(([token, color]) => defaults[token] !== color));
+  return { defaults, overrides, effective };
+}
+/** One palette intent, as an atomic batch, then the palette it left. */
+async function changeTheme(document: string, intent: PaletteIntent) {
+  await send({ method: "batch", ...at(document), ops: JSON.stringify([intent]) });
+  print(await palette(document));
+}
 export async function themeGet(document: string) {
-  print((await send({ method: "theme.get", ...at(document) })).state);
+  print(await palette(document));
 }
 export async function themeSet(document: string, values: string) {
   const parsed = json(values);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === "string"))
     throw new Error("--values must be a JSON object of theme tokens and colors");
-  print((await send({ method: "theme.set", ...at(document), values: parsed as Record<string, string> })).state);
+  await changeTheme(document, { type: "setTheme", values: parsed as Record<string, string> });
 }
 export async function themeReset(document: string, token?: string) {
-  print((await send({ method: "theme.reset", ...at(document), ...(token === undefined ? {} : { token }) })).state);
+  await changeTheme(document, { type: "setTheme", values: token === undefined ? {} : { [token]: null }, replace: token === undefined });
 }
 /** The theme file as the core writes it, to `output` or standard output. */
 export async function themeExport(document: string, output?: string) {
@@ -113,22 +146,28 @@ export async function themeExport(document: string, output?: string) {
 }
 export async function themeImport(document: string, file: string) {
   const contents = text(await read(file, ThemeFileLimit), "Theme file");
-  print((await send({ method: "theme.import", ...at(document), file: contents })).state);
+  await changeTheme(document, { type: "importTheme", file: contents });
 }
 
 export async function attachmentsList(document: string) {
   print((await send({ method: "attachments.list", ...at(document) })).state);
 }
-/** Saves a file and prints its reference: the stored identity, the file's name and type. */
-export async function attachmentsImport(document: string, file: string) {
+/** A file as an attachment: its bytes, and the reference a document's operations store:
+ * its identity (the SHA-256 of its bytes), length, name and type. */
+async function reference(file: string) {
   const name = basename(file);
   const mimeType = Bun.file(file).type.split(";")[0] || "application/octet-stream";
-  const bytes = (s: string) => new TextEncoder().encode(s).length;
-  if (bytes(name) > AttachmentLimits.name || bytes(mimeType) > AttachmentLimits.name)
+  const length = (s: string) => new TextEncoder().encode(s).length;
+  if (length(name) > AttachmentLimits.name || length(mimeType) > AttachmentLimits.name)
     throw new Error(`File name or type exceeds ${AttachmentLimits.name} bytes`);
-  const encoded = Buffer.from(await read(file, AttachmentLimits.file)).toString("base64");
-  const stored = (await send({ method: "attachments.put", ...at(document), bytes: encoded })).state;
-  print({ ...stored, name, mimeType });
+  const bytes = await read(file, AttachmentLimits.file);
+  const id = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  return { bytes, ref: { id, byteLength: bytes.length, name, mimeType } };
+}
+/** Prints a file's reference without reading any document: operations name it, and
+ * `--attach` stores the file in their batch. */
+export async function attachmentsRef(file: string) {
+  print((await reference(file)).ref);
 }
 /** Writes an attachment's bytes to `output`. */
 export async function attachmentsExport(document: string, id: string, output: string) {

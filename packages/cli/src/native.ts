@@ -1,12 +1,10 @@
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
-import { parseHelperProtocol } from "@hitslop/schema/helper";
-import { SocketReplySchema, type HelperRequest, type SocketReply } from "@hitslop/schema/socket";
+import { SocketReplySchema, type HelperRequest, type HelperRequestFor, type SocketMethod, type SocketReply, type SocketReplyFor } from "@hitslop/schema/socket";
 import { validate } from "@hitslop/schema/validation";
-import { exec, findExecutable } from "./process";
+import { findDocumentEngine } from "./engine";
+import { exec } from "./process";
 
-/** The helper exited without a reply, after printing why; the CLI exits with its status
+/** A native tool exited without a reply, after printing why; the CLI exits with its status
  * (protocol 1), and `message` adds what that means for the command. */
 export class ExitStatus extends Error {
   constructor(readonly code: number, message = "") {
@@ -14,52 +12,31 @@ export class ExitStatus extends Error {
   }
 }
 
-/** The app's helper: `HITSLOP_NATIVE_CLI` names one; otherwise the installed app's. */
-export function findNative(): Promise<string> {
-  if (process.platform !== "darwin")
-    throw new Error("Document commands and export require macOS and hitSlop.app; init, check, dev and build run anywhere.");
-  return findExecutable(
-    "HITSLOP_NATIVE_CLI",
-    ["/Applications/hitSlop.app/Contents/Helpers/hitslop-native", join(homedir(), "Applications/hitSlop.app/Contents/Helpers/hitslop-native")],
-    "Install hitSlop.app in /Applications or ~/Applications to use native document commands",
-  );
-}
-
-/** Refuses a helper that no longer serves, or does not yet serve, this CLI's protocol.
- * Any compatible app build works: app updates keep serving older protocols. */
-function checkProtocol(reported: string) {
-  let served: { version?: unknown; minimum?: unknown } | undefined;
-  try {
-    served = JSON.parse(reported);
-  } catch {}
-  const { version, minimum } = parseHelperProtocol(served);
-  if (HelperProtocol.version < minimum)
-    throw new Error("hitSlop.app no longer supports this @hitslop/cli; update @hitslop/cli");
-  if (HelperProtocol.version > version)
-    throw new Error("This @hitslop/cli needs a newer hitSlop.app; update hitSlop");
-}
-
-/** The helper's arguments for this CLI's protocol, once the helper confirms it serves it. */
-export async function negotiate(binary: string): Promise<string[]> {
-  const { stdout, code } = await exec([binary, "--protocol"], { inherit: ["stderr"] });
-  if (code) throw new ExitStatus(code);
-  checkProtocol(stdout);
+/** A native tool's command in this CLI's protocol. A tool that does not serve it refuses
+ * with exit status 2 and says which side to update; app updates keep serving older ones. */
+export function negotiate(binary: string): string[] {
   return [binary, "--client-protocol", String(HelperProtocol.version)];
 }
 
-export async function runNative(args: string[]) {
-  const { code } = await exec([...(await negotiate(await findNative())), ...args], { inherit: ["stdin", "stdout", "stderr"] });
+/** `create`, or `open` in a window, through the document engine. */
+export async function runEngine(args: string[]) {
+  const { code } = await exec([...negotiate(await findDocumentEngine()), ...args], { inherit: ["stdin", "stdout", "stderr"] });
   if (code) throw new ExitStatus(code);
 }
 
-/** One document request through the helper: the request on its standard input (the helper
- * supplies the owner's epoch), and the `SocketReply` it prints. */
+/** The document engine routes requests to the live or in-process owner, and passes an
+ * export to the app's renderer. */
+export function request<M extends SocketMethod>(body: HelperRequestFor<M> & { method: M }): Promise<SocketReplyFor<M>>;
 export async function request(body: HelperRequest): Promise<SocketReply> {
-  const { stdout, code } = await exec([...(await negotiate(await findNative())), "request"], { stdin: JSON.stringify(body), inherit: ["stderr"] });
+  const { stdout, code } = await exec([...negotiate(await findDocumentEngine()), "request"], { stdin: JSON.stringify(body), inherit: ["stderr"] });
   if (code) throw new ExitStatus(code);
   let reply: unknown;
   try {
     reply = JSON.parse(stdout);
   } catch {}
-  return validate(SocketReplySchema, reply, "hitSlop.app sent an invalid reply; outcome unknown, run slop get before another edit");
+  const message = "Document owner sent an invalid reply; outcome unknown, run slop get before another edit";
+  const checked = validate(SocketReplySchema, reply, message);
+  if (checked.ok && checked.method !== body.method) throw new Error(message);
+  return checked;
 }
+

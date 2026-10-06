@@ -2,40 +2,40 @@ import AppKit
 import ArgumentParser
 import Foundation
 import HitSlopCore
-import HitSlopHost
 import HitSlopDocument
+import HitSlopHost
 
 @main struct NativeCLI: AsyncParsableCommand {
-  /// Select the public adapter before ArgumentParser can execute any document command.
-  /// Unversioned callers retain protocol 1 even when a later adapter is introduced.
+  /// Every command names its caller's protocol first (`--client-protocol N`), checked
+  /// before ArgumentParser runs it; only the helper's own flags need none.
   static func main() async {
     do {
       var arguments = Array(CommandLine.arguments.dropFirst())
-      var version = 1
       if arguments.first == "--client-protocol" {
-        guard arguments.count >= 2, let selected = Int(arguments[1]), selected >= 1 else {
+        guard arguments.count >= 2, let version = Int(arguments[1]), version >= 1 else {
           throw ValidationError("--client-protocol requires a positive integer")
         }
-        version = selected
+        guard (HelperProtocol.minimum...HelperProtocol.version).contains(version) else {
+          throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+        }
+        clientProtocol = version
         arguments.removeFirst(2)
       }
-      switch version {
-      case 1:
-        var command = try parseAsRoot(arguments)
-        if var asynchronous = command as? AsyncParsableCommand {
-          try await asynchronous.run()
-        } else {
-          try command.run()
-        }
-      default:
-        throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+      var command = try parseAsRoot(arguments)
+      guard command is NativeCLI || clientProtocol != nil else {
+        throw ValidationError("Name the command protocol with --client-protocol N")
+      }
+      if var asynchronous = command as? AsyncParsableCommand {
+        try await asynchronous.run()
+      } else {
+        try command.run()
       }
     } catch { exit(withError: error) }
   }
 
   static let configuration = CommandConfiguration(
-    commandName: "hitslop-native", abstract: "Read, edit, open, and export hitSlop documents.",
-    subcommands: [Request.self, Screenshot.self, Create.self, Open.self])
+    commandName: "hitslop-native", abstract: "Open windows and render exports and artwork for slop-engine.",
+    subcommands: [Export.self, Screenshot.self, Open.self])
 
   @Flag(name: .customLong("core-build"), help: "Print the embedded document core build ID.")
   var coreBuild = false
@@ -53,27 +53,40 @@ import HitSlopDocument
   }
 }
 
-/// One document request: a `SocketRequest` (JSON) on standard input, without an epoch, and
-/// its `SocketReply` on standard output. It reaches the document's live owner, or an owner
-/// opened here; `export` of a closed document renders its saved state here.
-struct Request: AsyncParsableCommand {
+/// The command protocol the caller named, set once before any command runs.
+nonisolated(unsafe) var clientProtocol: Int?
+
+/// One export from slop-engine: its `SocketRequest` (JSON) on standard input, and its
+/// `SocketReply` on standard output. An open document's owner renders it; a closed one's
+/// saved state renders here. Documents are read and edited through slop-engine alone, so
+/// any other request is refused.
+struct Export: AsyncParsableCommand {
   @MainActor func run() async throws {
     var input = Data()
     while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
       input.append(chunk)
-      guard input.count <= Limits.socketAttachment else {
-        throw ValidationError("The request exceeds \(Limits.socketAttachment) bytes")
+      guard input.count <= Limits.socketRequest else {
+        throw ValidationError("The request exceeds \(Limits.socketRequest) bytes")
       }
     }
     let method = (try? JSONSerialization.jsonObject(with: input) as? [String: Any])?["method"] as? String
-    let export = method == SocketRequest.Method.export.rawValue
-    if export { bootstrapApp() }
-    let reply = await DocumentCommand.run(json: input, closed: export ? Self.exportClosed : nil)
+    guard method == SocketRequest.Method.export.rawValue else {
+      let refusal = SocketFailure(
+        error: "hitslop-native renders exports; send document requests to slop-engine", code: .rejected,
+        reason: .invalidRequest)
+      return FileHandle.standardOutput.write(SocketReply.failure(refusal).encoded() + [10])
+    }
+    bootstrapApp()
+    guard let version = clientProtocol else {
+      throw ValidationError("Name the command protocol with --client-protocol N")
+    }
+    let reply = await DocumentCommand.run(json: input, protocol: version, export: Self.exportClosed)
     FileHandle.standardOutput.write(reply + [10])
   }
-  @MainActor private static func exportClosed(_ root: URL, _ request: SocketRequest) async throws -> SocketReply {
-    guard case .export(let r) = request else { throw ValidationError("Not an export") }
-    return try await SlopRenderer.exportClosed(root, format: r.format, output: URL(fileURLWithPath: r.output))
+  @MainActor private static func exportClosed(
+    _ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline
+  ) async throws {
+    _ = try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
   }
 }
 
@@ -97,22 +110,11 @@ struct Screenshot: AsyncParsableCommand {
     print(output.path)
   }
 }
-/// A windowless app for WebKit rendering. Document commands don't use AppKit, so they
-/// never start one.
+/// A windowless app for WebKit rendering.
 @MainActor func bootstrapApp() {
   _ = NSApplication.shared
   NSApp.setActivationPolicy(.prohibited)
 }
-struct Create: AsyncParsableCommand {
-  @Option(name: .customLong("from"), transform: URL.init(fileURLWithPath:)) var source: URL
-  @Option(transform: URL.init(fileURLWithPath:)) var output: URL
-  @MainActor func run() async throws {
-    try FileManager.default.createDirectory(
-      at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-    print(try SlopFile.create(from: source, to: output).path)
-  }
-}
-
 struct Open: AsyncParsableCommand {
   @Argument(transform: URL.init(fileURLWithPath:)) var file: URL
   @MainActor func run() async throws {

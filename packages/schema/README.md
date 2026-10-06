@@ -10,9 +10,9 @@ Validate untrusted Foundation dictionaries before mapping them into generated ty
 Native code checks envelopes; the Rust core parses operations and document state.
 
 ```sh
-bun add @hitslop/schema@4.0.0
+bun add @hitslop/schema@3.0.0
 ```
 
 See the [author guides](https://hitslop.com/docs/getting-started/) and [release guide](https://github.com/hitSlop/hitslop/blob/master/docs/guides/releasing.md).
 
-Part of the hitSlop SDK 4.0.0. MIT licensed.
+Part of the hitSlop SDK 3.0.0. MIT licensed.

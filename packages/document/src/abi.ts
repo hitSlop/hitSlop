@@ -18,7 +18,6 @@ export type Scope<N extends ObjectNode> = {
   readonly fields: Handle<N, "tx">;
   readonly at: At<"tx">;
 };
-export type Issue = import("@hitslop/schema/core").OwnerState["issues"][number];
 export type AttachmentInfo = import("@hitslop/schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type CaptureMode = "preview" | "export" | "icon";
@@ -26,10 +25,14 @@ export type CaptureMode = "preview" | "export" | "icon";
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
    * shell refuses to mount it on a document of another. */
-  readonly descriptor?: object;
+  readonly descriptor: object;
+  /** Runs once the document is open, and again after Reload Interface unmounts the
+   * previous view. */
   mount(ctx: SlopContext, target: HTMLElement): SlopView | Promise<SlopView>;
 }
-/** `rendered` resolves after pending framework updates reach the DOM. */
+/** `rendered` resolves after pending framework updates reach the DOM. `unmount` runs
+ * after the document has saved and closed: it stops transient work such as timers, and
+ * writes made then are refused with `closing`. */
 export interface SlopView {
   rendered?(): void | Promise<void>;
   unmount?(): void | Promise<void>;

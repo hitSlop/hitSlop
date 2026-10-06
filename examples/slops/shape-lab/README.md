@@ -62,7 +62,7 @@ remaining acceptance work is listed in the [roadmap](../../../docs/roadmap.md).
 Browser diagnostic (Playwright WebKit):
 
 ```sh
-bun scripts/shape-lab-browser.ts
+bun scripts/dev/shape-lab-browser.ts
 ```
 
 Writes screenshots and `browser.json` under `.hitslop/evidence/shape-lab`.

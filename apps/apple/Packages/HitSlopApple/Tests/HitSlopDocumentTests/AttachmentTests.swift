@@ -1,10 +1,11 @@
 import AppKit
-import Foundation
 import CryptoKit
+import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
-import Testing
 import HitSlopTestSupport
+import Testing
+
 @testable import HitSlopDocument
 
 // The core owns attachment storage (crates/hitslop-core/tests/file.rs); these prove the
@@ -14,14 +15,16 @@ import HitSlopTestSupport
     _ = NSApplication.shared
     let root = try Fixtures.native()
     let copy = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".slop")
-    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: copy) }
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: copy)
+    }
     let engine = try await DocumentSession.open(url: root)
     engine.load()
     try await engine.waitUntilReady()
     let data = Data(repeating: 37, count: 2 * 1024 * 1024)
-    let response = try await commandState("attachments.put", url: root, ["bytes": data.base64EncodedString()])
-    let ref = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
-    let id = try #require(ref["id"] as? String)
+    // Stored with the agent batch that references it, so closing keeps it.
+    let id = try await attach(data, at: ["title"], url: root)
     let expectedID = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     #expect(id == expectedID)
     func expectListed() async throws {
@@ -39,7 +42,11 @@ import HitSlopTestSupport
     try await expectListed()
     #expect(try await bytes(root) == data)
     // A copy of the open document carries the attachment.
-    try await engine.copy(to: copy)
+    let preview = try Fixtures.png(width: 64, height: 64) {
+      NSColor.systemRed.setFill()
+      $0.fill()
+    }
+    try await engine.copy(to: copy, artwork: SlopRenderedArtwork(preview: preview, icon: nil))
     #expect(try await bytes(copy) == data)
     #expect(Fixtures.hasCustomIcon(copy), "a copy gets its own Finder icon")
     try await engine.close()
@@ -52,14 +59,8 @@ import HitSlopTestSupport
   @Test @MainActor func missingAttachmentIsARefusalNotAnUnknownOutcome() async throws {
     let root = try Fixtures.native()
     defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    let request = try SocketRequest(json: [
-      "method": "attachments.read", "documentPath": root.path,
-      "attachmentID": String(repeating: "a", count: 64),
-    ])
-    let reply = try decodeReply(await owner.request(request))
+    let reply = try await command("attachments.read", url: root, ["attachmentID": String(repeating: "a", count: 64)])
     #expect(!reply.ok)
     #expect(reply.code == .rejected)
-    try await owner.close()
   }
 }

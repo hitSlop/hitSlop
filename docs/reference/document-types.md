@@ -3,7 +3,7 @@
 Every document field has a kind, declared with the `s` builder in `schema.ts`. The kind
 decides:
 - what a snapshot holds;
-- how edits from several places merge;
+- how edits from the page and agents combine;
 - which writes are accepted;
 - which handle methods, bindings and CLI operations exist.
 
@@ -36,7 +36,7 @@ export default defineDocument({
 
 ## At a glance
 
-| Kind | Snapshot value | Merge | Main writes |
+| Kind | Snapshot value | Edits from several places | Main writes |
 |---|---|---|---|
 | [`s.text()`](#text) | `string` | character edits merge | `set(value)`, `bindText` |
 | [`s.boolean()`](#scalars) | `boolean` | last writer wins | `set`, `preview`, `value` |
@@ -44,11 +44,11 @@ export default defineDocument({
 | [`s.number({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `value` |
-| [`s.counter()`](#counter) | `number \| null` | increments add up | `increment` |
+| [`s.counter()`](#counter) | `number` | increments add up | `increment` |
 | [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` |
 | [`s.object({...})`](#object) | object | per field | its fields' handles |
 | [`s.list(s.object({...}))`](#rows) | array of rows with `$id` | inserts, removes and moves keep identity | `insert`, `remove`, `move`, `item` |
-| [`s.list(scalar)`](#scalar-lists) | array of values | positions merge; one element: last writer wins | `insert`, `set`, `preview`, `remove`, `replace` |
+| [`s.list(scalar)`](#scalar-lists) | array of values | by position; one element: last writer wins | `insert`, `set`, `preview`, `remove`, `replace` |
 | [`s.record(value)`](#records) | `{[key]: value}` | per key; object entries per field | `put`, `delete`, `entry` |
 
 Kinds nest:
@@ -106,17 +106,13 @@ consecutive edits, are each one step.
 **Import.** The CLI's `replace` operation (`slop import`) makes any value, or the whole
 document, equal a JSON value by writing only the differences: rows match by `$id`, and
 kept rows and text keep their identity, and unchanged values are not written, so open
-fields and concurrent edits elsewhere survive. The
+text fields keep their place. The
 [CLI guide](../guides/cli.md#operations) has the rules.
 
-**Merged anomalies.** Imported CRDT state may contain a value that breaks
-the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key.
-- It is preserved as stored, never repaired on read, and reported in `doc.issues` with
-  its path.
-- A write that would overwrite one, at its path or above it (a `set` of the object or
-  list holding it, or a `replace` covering it), is refused (`type_mismatch`). The
-  exception is an out-of-range value of the right type, which a valid value may
-  overwrite. `set` and `replace` share this rule.
+**Always valid.** One owner applies every edit, and every accepted edit keeps the
+document matching its descriptor, so a snapshot never holds a wrong type, an
+out-of-range value or a duplicate `$id`. Opening refuses a file whose saved state does
+not match (`invalid_bytes`) and changes nothing in it.
 
 **Error codes.**
 
@@ -131,7 +127,7 @@ the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key
 | `invalid_request` | a malformed request, rows addressed by index, or scalar elements by id |
 | `invalid_id` | a row `id` outside 1–64 characters of `A–Z a–z 0–9 _ -` |
 | `invalid_path` | a command path longer than 64 segments |
-| `stale_base` | a text edit whose `from` no longer matches the field at its version, or a version from another history |
+| `stale_base` | a text edit whose `from` no longer matches the field at its version, a version before the document's retained history, or one from another history |
 | `invalid_version` | a version token that is not one the core issued |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
 
@@ -141,9 +137,7 @@ imported), `invalid_shape` (a manifest window shape), `requires_update` (an app 
 storage or document layout newer than this build), `is_template` (a template opened as a
 document: create a document from it) and `engine_error` (an unexpected Loro failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
 
-**Paths** walk the schema from the root. Commands and issues use the same segments; an
-issue names a row by its effective `$id` (the one `doc.current` shows, derived for a row
-without a unique stored ID), and a stored entry that is not a row object by `{"index"}`:
+**Paths** walk the schema from the root, in these segments:
 
 | Segment | Addresses |
 |---|---|
@@ -153,16 +147,19 @@ without a unique stored ID), and a stored entry that is not a row object by `{"i
 
 ## Text
 
-`s.text()` is for anything a person types. Concurrent character edits merge, and
+`s.text()` is for anything a person types. Edits merge character by character, and
 neither side's typing is lost.
 
 - **`bindText(input, handle)`** keeps the user's text in the field and sends each change
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
   binding sends its unsent text first.
-- **`text.set(value)`** replaces the whole field as it is when the owner applies it. It
-  uses a minimal edit script, so concurrent typing outside the changed span survives.
-- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`.
+- **`text.set(value)`** replaces the whole field as the owner holds it when it applies
+  the set. It uses a minimal edit script, so typing still on its way from a binding
+  merges with it; typing the owner already accepted is replaced unless `value` keeps it.
+- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `--base VERSION`
+  (the `version` of the `get --snapshot` you read the text with), the set changes the
+  field from its text at that version, so typing done since is kept.
 
 ## Scalars
 
@@ -191,12 +188,12 @@ Store amounts in minor units with `s.integer` when exactness matters (cents), an
 
 ## Counter
 
-`s.counter()` holds a tally. Each writer's increments are kept separately and summed,
-so concurrent increments all count.
+`s.counter()` holds a tally. An increment adds to the stored total, so the page's and an
+agent's increments all count, where a `set` of a number read earlier would lose one.
 
-- **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no concurrent reset.
-- **Snapshot:** a safe integer, or `null` if the stored contributions are invalid (show
-  it as unavailable).
+- **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no reset.
+- **Snapshot:** a safe integer. An increment that would leave the safe range is refused
+  (`out_of_range`).
 - **CLI:** `{"type":"increment","path":["visits"],"by":1}`.
 
 ## Optional
@@ -216,20 +213,12 @@ so concurrent increments all count.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
-- **Merge:**
-  - Two replicas that create the same unset object or text at once share one value: its
-    fields resolve one by one, last writer wins; text, lists and rows keep both sides;
-    counter starting values add.
-  - `set` on an object that is already set writes only the fields that change, so a
-    concurrent edit to another field survives.
-  - `clear` hides concurrent edits to the cleared value. It removes what this replica has
-    seen; an edit it has not seen reappears if a replica that has not seen it either sets
-    the value again.
+- `set` on an object that is already set writes only the fields that differ.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
 
-`s.object({...})` groups fields. Its fields merge independently. An object always exists
+`s.object({...})` groups fields, each edited on its own. An object always exists
 (unless it is optional) and is never replaced as a whole.
 
 ## Rows
@@ -241,8 +230,8 @@ by `$id`, never by position.
   - `insert(value, { before | after })` mints the id and resolves `{id}`;
   - `remove(id)`, `move(id, { before | after })`, `item(id)`.
   - Omitting the destination appends.
-- **Merge:** concurrent inserts, removes and moves keep identity; a removed row is no
-  longer a valid target.
+- **Identity:** inserts, removes and moves from anywhere keep each row's `$id`; a removed
+  row is no longer a valid target.
 - **Moving between lists:** only moves within the same list preserve the Loro row
   container. SDK insertion always mints a new id; removing and reinserting is a new row.
   Use one list plus a status/group field when identity must survive moving sections.
@@ -264,8 +253,9 @@ a 16×16 grid of colours.
   - `replace(values)` rewrites the list, keeping unchanged positions. It sends a `set`
     of the whole list, not the CLI's `replace` operation.
   - There is no `move`.
-- **Merge:** concurrent inserts are both kept; concurrent sets of one element resolve
-  last-writer-wins.
+- **Positions:** an index means the position when the owner applies the edit, so an
+  index read before another insertion can name a different element; a later `set` of
+  one element wins.
 - **Publishing:** each change publishes the whole list. They are meant to be small (the
   largest in the archive is 256 elements).
 - **CLI:**
@@ -289,8 +279,7 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** Replacing an object entry that holds text or
   a list is refused (`exists`).
-- **Merge:** as for optional fields: concurrent puts of one key share one entry, and edits
-  to different fields of an existing object entry both survive.
+- **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
   - `{"type":"set","path":["checkins","2026-09-23"],"value":1}`;
@@ -321,33 +310,33 @@ Layout 1:
 
 | Kind | Stored as |
 |---|---|
-| the document | the root map `data`, one entry per field |
+| the authored document data | the root map `data`, one entry per field |
+| document theme overrides | the root map `theme`, declared color token → canonical color string |
 | `s.text()` | a `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
 | `s.integer()` | an i64 value |
-| `s.counter()` | a `LoroMap` of writer (Loro peer ID) to that writer's integer total; the snapshot is their sum |
+| `s.counter()` | an i64 value, the total |
 | `s.optional(inner)` | the inner kind's representation, or no entry when unset |
 | `s.object({...})` | a `LoroMap` |
 | `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
 | `s.list(scalar)` | a `LoroMovableList` of values |
 | `s.record(value)` | a `LoroMap` of key to the value's representation |
 
-A container whose path from its nearest row (or the document) passes an optional field or
-a record entry can be created by more than one replica. It is created with Loro's
-`ensure_mergeable_*`, so its identity comes from its parent, key and kind, and concurrent
-creations share it. Every other container is created once, with its row or the document,
-by `insert_container`. Every replica derives the same choice from the descriptor.
+The theme map is host-owned and outside the authored descriptor. Defaults remain in the
+immutable app row; the effective palette combines them with these overrides. Per-color
+writes use the same undo history and saved updates as data, and
+advance the same publication sequence. JSON replacement targets `data`, so it never
+replaces the theme. State carries the effective `theme`; publications include it when
+it changes, including on a theme-only edit.
 
-Loro keeps a mergeable container after its key is removed, including in history-trimmed
-snapshots. So removing a value, removing a row that holds one, and undoing either first
-empty the mergeable containers inside, and creating one empties it again before filling
-it. Each mergeable container ever created stays in the document, empty, at about 19
-bytes.
+Every container is created with its value by `insert_container` and goes with it.
+Stored state always matches the descriptor: every row is a map with a unique `$id`
+string, and a map holds only declared fields (and a row's `$id`). Opening checks this.
 
-Agent (CLI and socket) commits carry the commit message `agent`. Effective row IDs for
-rows without a unique stored `$id` are derived from container identity by a frozen
-function (`identity.rs`).
+Agent (CLI and socket) commits carry the commit message `agent`. Rows in an app's initial
+value without a `$id` get one derived from their position by a frozen function
+(`identity.rs`), so packing the same app writes the same template.
 
 ## Not supported
 

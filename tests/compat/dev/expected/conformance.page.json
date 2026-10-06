@@ -1,0 +1,93 @@
+{
+  "value": {
+    "attachment": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
+    "cells": {
+      "A1": {
+        "input": "43",
+        "width": 10
+      },
+      "compat-1": {
+        "input": "Compat 1 ✓ café 🦊"
+      },
+      "compat-2": {
+        "input": "Replay 2 é 中文"
+      }
+    },
+    "checkins": {
+      "2026-10-02": 2,
+      "compat-1": 1,
+      "compat-2": 2
+    },
+    "colors": [
+      "#111111",
+      "#eeeeee"
+    ],
+    "count": 42,
+    "done": false,
+    "epoch": 2,
+    "hits": 8,
+    "label": "Undo me",
+    "lane": "doing",
+    "memo": "Memo ✎",
+    "place": {
+      "name": "Café",
+      "visits": 2
+    },
+    "ratio": 0.75,
+    "rows": [
+      {
+        "$id": "compat-1",
+        "done": true,
+        "notes": {},
+        "tags": [],
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-2",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "w65p807jzt5155j62eerx7h6ww",
+        "done": true,
+        "notes": {
+          "k": "w"
+        },
+        "tags": [
+          "y",
+          "z"
+        ],
+        "text": "First ✓"
+      },
+      {
+        "$id": "vnr54bf611cx9q54925zktszdg",
+        "done": true,
+        "notes": {},
+        "tags": [],
+        "text": "Added"
+      }
+    ],
+    "settings": {
+      "muted": true,
+      "volume": 7
+    },
+    "title": "Live ✓",
+    "version": "compat 2"
+  },
+  "theme": {
+    "overrides": {
+      "accent": "#123456"
+    },
+    "effective": {
+      "accent": "#123456"
+    }
+  },
+  "attachments": [
+    {
+      "byteLength": 11,
+      "id": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed"
+    }
+  ]
+}

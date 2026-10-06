@@ -7,7 +7,6 @@ import {
   AttachmentBytesSchema,
   AttachmentInfoSchema,
   OutcomeCodeSchema,
-  ThemeValuesSchema,
 } from "./values";
 import { ErrorTextLimit, PagePayloadLimit, WindowBounds } from "./constants";
 
@@ -19,7 +18,6 @@ const text = T.String({ maxLength: ErrorTextLimit });
 const PageRequests = {
   open: Strict({ method: T.Literal("open") }),
   apply: Strict({ method: T.Literal("apply"), batch: payload }),
-  text: Strict({ method: T.Literal("text"), request: payload }),
   flush: Strict({ method: T.Literal("flush") }),
   undo: Strict({ method: T.Literal("undo") }),
   redo: Strict({ method: T.Literal("redo") }),
@@ -59,21 +57,21 @@ export const PageFailureSchema = Strict({
 export type PageFailure = Static<typeof PageFailureSchema>;
 export const PageResults = {
   open: Strict({ state: T.String() }),
-  apply: Strict({ sequence, ids: T.Array(T.String()) }),
-  text: Strict({
+  // A text edit (a batch whose set carries `selection`) also gets the version right after
+  // it on its own branch, the page's next `base`, and its selection in the merged text.
+  apply: Strict({
     sequence,
-    authored: T.String(),
-    selectionStart: sequence,
-    selectionEnd: sequence,
+    ids: T.Array(T.String()),
+    authored: T.Optional(T.String()),
+    selectionStart: T.Optional(sequence),
+    selectionEnd: T.Optional(sequence),
   }),
   flush: Strict({}),
   undo: Strict({ sequence }),
   redo: Strict({ sequence }),
   config: Strict({
-    runtimeABI: T.Integer({ minimum: 1 }),
     readOnly: T.Boolean(),
     presentation: SlopPresentationSchema,
-    theme: ThemeValuesSchema,
     /** The app's document descriptor, from the document file; the core validated it. */
     descriptor: T.Object({}, { additionalProperties: true }),
   }),
@@ -91,3 +89,24 @@ const PagePushSchema = T.Union([
   Strict({ type: T.Literal("resync") }),
 ]);
 export type PagePush = Static<typeof PagePushSchema>;
+
+/** Private host-to-shell calls. Host and shell ship together; authored apps use ctx. */
+const HostRequests = {
+  publish: Strict({ method: T.Literal("publish"), payload: T.String() }),
+  flush: Strict({ method: T.Literal("flush") }),
+  undo: Strict({ method: T.Literal("undo") }),
+  redo: Strict({ method: T.Literal("redo") }),
+  prepareClose: Strict({ method: T.Literal("prepareClose") }),
+  cancelClose: Strict({ method: T.Literal("cancelClose") }),
+  close: Strict({ method: T.Literal("close") }),
+  reloadInterface: Strict({ method: T.Literal("reloadInterface") }),
+  "capture.begin": Strict({ method: T.Literal("capture.begin"), token: T.String(), mode: T.Enum(["preview", "export", "icon"]) }),
+  "capture.settle": Strict({ method: T.Literal("capture.settle"), token: T.String() }),
+  "capture.restore": Strict({ method: T.Literal("capture.restore"), token: T.String() }),
+} as const;
+export const HostRequestSchema = T.Union(Object.values(HostRequests));
+export type HostRequest = { [K in keyof typeof HostRequests]: Static<(typeof HostRequests)[K]> }[keyof typeof HostRequests];
+export const HostCaptureResultSchema = Strict({
+  x: T.Number(), y: T.Number(), width: T.Number(), height: T.Number(), dedicated: T.Boolean(),
+});
+export type HostCaptureResult = Static<typeof HostCaptureResultSchema>;

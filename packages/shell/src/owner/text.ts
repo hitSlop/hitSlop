@@ -1,14 +1,16 @@
 import { isRejected } from "@hitslop/document";
 // Stateless text binding. The DOM keeps the user's text; the owner merges each change
 // from the text the binding last confirmed. No draft identity survives a request.
-import type { EditText } from "@hitslop/schema/core";
+import type { Batch, OwnerPath } from "@hitslop/schema/core";
 import type { Segment } from "@hitslop/document";
 
-type TextReply = import("@hitslop/schema/page").PageResult<"text">;
+type ApplyReply = import("@hitslop/schema/page").PageResult<"apply">;
 interface TextHost {
   /** The store's text at `path` (not a string when the field is gone) and its version. */
   read(path: readonly Segment[]): { text: unknown; version: string; sequence: number };
-  send(request: EditText): Promise<TextReply>;
+  /** Applies a batch; one whose set carries `selection` is answered with `authored` and
+   * the merged selection. */
+  send(batch: Batch): Promise<ApplyReply>;
   reached(sequence: number): Promise<void>;
   recover(): Promise<void>;
   readOnly(): boolean;
@@ -112,17 +114,21 @@ export function bindText(
     const work = (async () => {
       const request = host.send({
         base: from.version,
-        path: target as EditText["path"],
-        from: from.text,
-        to: sent,
-        selectionStart,
-        selectionEnd,
+        intents: [{
+          type: "set",
+          path: target as OwnerPath,
+          value: sent,
+          from: from.text,
+          selection: { start: selectionStart, end: selectionEnd },
+        }],
       });
       dispatched = true;
-      const reply = await request;
-      await host.reached(reply.sequence);
+      const { sequence, authored, selectionStart: mergedStart, selectionEnd: mergedEnd } = await request;
+      if (authored === undefined || mergedStart === undefined || mergedEnd === undefined)
+        throw new Error("The owner did not answer the text edit");
+      await host.reached(sequence);
       if (detached) {
-        confirmed = { text: sent, version: reply.authored };
+        confirmed = { text: sent, version: authored };
         return;
       }
       const current = host.read(path);
@@ -133,10 +139,10 @@ export function bindText(
           element.selectionStart === selectionStart && element.selectionEnd === selectionEnd;
         confirmed = { text: current.text, version: current.version };
         // The reply's caret is exact only if nothing else was published since.
-        const exact = current.sequence === reply.sequence;
+        const exact = current.sequence === sequence;
         if (element.value !== current.text) {
           element.value = current.text;
-          if (untouched && exact) element.setSelectionRange(reply.selectionStart, reply.selectionEnd);
+          if (untouched && exact) element.setSelectionRange(mergedStart, mergedEnd);
           else {
             const start = mapCaret(sent, current.text, selectionStart);
             const end = mapCaret(sent, current.text, selectionEnd);
@@ -144,11 +150,11 @@ export function bindText(
           }
           element.dispatchEvent(new Event("input", { bubbles: true }));
         } else if (untouched && exact) {
-          element.setSelectionRange(reply.selectionStart, reply.selectionEnd);
+          element.setSelectionRange(mergedStart, mergedEnd);
         }
       } else {
         // The user kept typing: the next change starts from what this one authored.
-        confirmed = { text: sent, version: reply.authored };
+        confirmed = { text: sent, version: authored };
       }
     })();
     inflight = work

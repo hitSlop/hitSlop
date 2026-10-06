@@ -23,6 +23,8 @@ jobs:
     # Signing and notarization secrets are scoped to the steps that use them, so
     # dependency installs, the test suite and third-party actions never see them.
     env:
+      # The gate and the archive build what ships: the `dist` Cargo profile.
+      HITSLOP_CARGO_PROFILE: dist
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
     steps:
@@ -53,7 +55,7 @@ jobs:
           templates: release
       - name: Check release identity
         if: github.event_name == 'push'
-        run: bun scripts/release-bundle.ts --preflight
+        run: bun scripts/release/bundle.ts --preflight
       - run: bun install --cwd apps/landing --frozen-lockfile
       - run: brew install xcodegen
       # Tags accept the signed Release app during packaging instead of building a Debug app.
@@ -90,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .hitslop/evidence
-          scripts/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
+          scripts/release/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
       - name: Verify Gatekeeper
         if: github.event_name == 'push'
         run: |
@@ -103,10 +105,12 @@ jobs:
           hdiutil detach "$RUNNER_TEMP/dmg"
           test "$(lipo -archs "$APP/Contents/MacOS/hitSlop")" = "arm64"
           test "$(lipo -archs "$APP/Contents/Helpers/hitslop-native")" = "arm64"
+          test "$(lipo -archs "$APP/Contents/Helpers/slop-engine")" = "arm64"
+          test "$("$APP/Contents/Helpers/slop-engine" --build-id)" = "$("$APP/Contents/Helpers/hitslop-native" --core-build)"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"
-          bun scripts/release-artifact.ts "$APP"
+          bun scripts/release/artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
           ditto -x -k "dist/macos/hitSlop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
@@ -115,7 +119,7 @@ jobs:
       - name: Retain tested npm packages
         if: github.event_name == 'push'
         run: |
-          bun scripts/release-bundle.ts
+          bun scripts/release/bundle.ts
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
       - name: Publish GitHub Release
         if: github.event_name == 'push'

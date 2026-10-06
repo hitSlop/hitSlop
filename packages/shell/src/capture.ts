@@ -2,22 +2,13 @@ import type { CaptureMode } from "@hitslop/document/abi";
 import type { CaptureTarget as Target } from "@hitslop/document/abi";
 export type { CaptureMode } from "@hitslop/document/abi";
 type CaptureState = {
-  attribute: string | null;
-  active: HTMLElement | null;
-  selection: Range[];
-  inputSelection?: [number | null, number | null, "forward" | "backward" | "none" | null];
-  scroll: [Element, number, number][];
-  windowScroll: [number, number];
   style: HTMLStyleElement;
   target?: Target | undefined;
-  block: (event: Event) => void;
   controller: AbortController;
-  imageLoading: Map<HTMLImageElement, string | null>;
-  inputs: { element: HTMLElement; display: string; replacement: HTMLElement }[];
 };
-const interactionEvents = ["pointerdown", "click", "keydown", "wheel", "touchstart"];
 const timeoutMS = 10_000;
 
+/** Captures run in disposable read-only pages, never in the interactive editor. */
 export function createCaptureController() {
   const targets = new Map<"icon" | "export", Target>();
   const preparations = new Set<(mode: CaptureMode, signal: AbortSignal) => void | Promise<void>>();
@@ -87,8 +78,6 @@ export function createCaptureController() {
           (image) => image.getClientRects().length > 0,
         );
         for (const image of images) {
-          if (!state.imageLoading.has(image))
-            state.imageLoading.set(image, image.getAttribute("loading"));
           image.loading = "eager";
         }
         await Promise.all(images.map((image) => image.decode()));
@@ -117,45 +106,8 @@ export function createCaptureController() {
       await bounded(Promise.resolve(state.target?.restore()), new AbortController().signal);
     } finally {
       state.target?.element.removeAttribute("data-hitslop-active-target");
-      if (state.attribute === null) document.documentElement.removeAttribute("data-slop-capture");
-      else document.documentElement.setAttribute("data-slop-capture", state.attribute);
+      document.documentElement.removeAttribute("data-slop-capture");
       state.style.remove();
-      for (const { element, display, replacement } of state.inputs) {
-        replacement.remove();
-        element.style.display = display;
-      }
-      for (const [image, loading] of state.imageLoading) {
-        if (loading === null) image.removeAttribute("loading");
-        else image.setAttribute("loading", loading);
-      }
-      for (const event of interactionEvents) window.removeEventListener(event, state.block, true);
-      state.active?.focus({ preventScroll: true });
-      if (
-        state.inputSelection &&
-        (state.active instanceof HTMLInputElement || state.active instanceof HTMLTextAreaElement)
-      ) {
-        const [start, end, direction] = state.inputSelection;
-        try {
-          state.active.setSelectionRange(start, end, direction ?? undefined);
-        } catch {
-          /* Non-text inputs. */
-        }
-      } else {
-        const selection = window.getSelection();
-        selection?.removeAllRanges();
-        for (const range of state.selection) {
-          try {
-            selection?.addRange(range);
-          } catch {
-            /* Detached selection. */
-          }
-        }
-      }
-      for (const [element, left, top] of state.scroll) {
-        element.scrollLeft = left;
-        element.scrollTop = top;
-      }
-      window.scrollTo(...state.windowScroll);
       session = undefined;
     }
   };
@@ -175,46 +127,16 @@ export function createCaptureController() {
     },
     async begin(token: string, mode: CaptureMode) {
       if (session) throw new Error("Another capture is already in progress");
-      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      const selection = window.getSelection();
       const style = document.createElement("style");
       style.textContent =
         '*{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}html[data-slop-capture="static"] [data-slop-export="hide"]{display:none!important}';
       const state: CaptureState = {
-        attribute: document.documentElement.getAttribute("data-slop-capture"),
-        active,
-        selection: selection
-          ? Array.from({ length: selection.rangeCount }, (_, i) =>
-              selection.getRangeAt(i).cloneRange(),
-            )
-          : [],
-        scroll: [...document.querySelectorAll("*")]
-          .filter((e) => e.scrollTop || e.scrollLeft)
-          .map((e) => [e, e.scrollLeft, e.scrollTop]),
-        windowScroll: [window.scrollX, window.scrollY],
         style,
-        block: (event) => {
-          if (event.isTrusted) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-          }
-        },
         controller: new AbortController(),
-        imageLoading: new Map(),
-        inputs: [],
       };
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
-        state.inputSelection = [
-          active.selectionStart,
-          active.selectionEnd,
-          active.selectionDirection,
-        ];
       session = { token, state };
       try {
-        for (const event of interactionEvents)
-          window.addEventListener(event, state.block, { capture: true, passive: false });
         document.head.append(style);
-        active?.blur();
         document.documentElement.setAttribute(
           "data-slop-capture",
           mode === "icon" ? "icon" : "static",
@@ -250,7 +172,6 @@ export function createCaptureController() {
             replacement.style.overflowWrap = "anywhere";
             replacement.style.display = "block";
             replacement.style.height = "auto";
-            state.inputs.push({ element: input, display: input.style.display, replacement });
             input.after(replacement);
             input.style.display = "none";
           }

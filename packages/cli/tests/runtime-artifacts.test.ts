@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { verifyShellCopies } from "../../../scripts/runtime-artifacts";
+import { verifyShellCopies } from "../../../scripts/lib/artifacts";
 
 // Failure: the app and the CLI dev server serve different page shells.
 test("page shell copies must be byte-identical across consumers", async () => {

@@ -1,0 +1,37 @@
+{
+  "value": {
+    "hits": 5,
+    "rows": [
+      {
+        "$id": "00000000000000000000000000000001",
+        "done": false,
+        "text": "A"
+      },
+      {
+        "$id": "compat-1",
+        "done": true,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "00000000000000000000000000000002",
+        "done": false,
+        "text": "B"
+      },
+      {
+        "$id": "compat-2",
+        "done": false,
+        "text": "Replay 2 é 中文"
+      }
+    ],
+    "title": "Live ✓"
+  },
+  "theme": {
+    "overrides": {
+      "accent": "#123456"
+    },
+    "effective": {
+      "accent": "#123456"
+    }
+  },
+  "attachments": []
+}

@@ -23,10 +23,43 @@ async function elapsing<T>(work: Promise<T>): Promise<T> {
 function fixture() {
   const definition = defineDocument({ count: s.counter() });
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify({ count: 0 }));
-  const open = async () => JSON.parse(core.snapshot());
+  const open = async () => JSON.parse(core.state());
   const edit = () => core.applyBatch(JSON.stringify({ intents: [{ type: "increment", path: ["count"], by: 1 }] }));
   return { core, open, edit };
 }
+
+test("theme-only publications share ordering and recover from a missing theme change", async () => {
+  const definition = defineDocument({ title: s.text() });
+  const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor),
+    JSON.stringify({ title: "Title" }), "theme-test", JSON.stringify({ accent: "#112233" }));
+  const open = async () => JSON.parse(core.state());
+  const seen: string[] = [];
+  const store = new Store(open, () => seen.push(store.state.theme.accent!));
+  try {
+    store.load(await open());
+    const value = store.state.value;
+    const first = JSON.parse(core.themeSet(JSON.stringify({ accent: "#445566" })).publication!);
+    expect(first.ops).toEqual([]);
+    store.publish([{ type: "publication", publication: first }]);
+    await store.reached(first.sequence);
+    expect(store.state.value).toBe(value);
+    expect(store.state.theme).toEqual({ accent: "#445566" });
+    // Theme omitted from a later content publication retains the accepted palette.
+    const edit = core.applyBatch(JSON.stringify({ intents: [{ type: "set", path: ["title"], value: "Changed" }] }));
+    store.publish([{ type: "publication", publication: JSON.parse(edit.publication!) }]);
+    expect(store.state.theme).toEqual({ accent: "#445566" });
+    // Lose one theme delivery: the next publication detects the gap and reads one frame.
+    core.themeSet(JSON.stringify({ accent: "#778899" }));
+    const latest = JSON.parse(core.themeSet(JSON.stringify({ accent: "#aabbcc" })).publication!);
+    store.publish([{ type: "publication", publication: latest }]);
+    await elapsing(store.reached(latest.sequence));
+    expect(store.state.theme).toEqual({ accent: "#aabbcc" });
+    expect(store.state.value).toEqual({ title: "Changed" });
+    store.publish([{ type: "publication", publication: first }]);
+    expect(store.state.theme).toEqual({ accent: "#aabbcc" });
+    expect(seen).toEqual(["#112233", "#445566", "#445566", "#aabbcc"]);
+  } finally { core.free(); }
+});
 
 test("recovery retries transient reads and preserves the accepted counter increment", async () => {
   const { core, open, edit } = fixture();
@@ -37,7 +70,7 @@ test("recovery retries transient reads and preserves the accepted counter increm
     edit();
     await elapsing(store.reached(1));
     expect(store.state.value).toEqual({ count: 1 });
-    expect(JSON.parse(core.snapshot()).value).toEqual({ count: 1 });
+    expect(JSON.parse(core.state()).value).toEqual({ count: 1 });
   } finally { core.free(); }
 });
 
@@ -53,7 +86,7 @@ for (const terminal of [false, true]) test(`recovery failure settles and explici
     store.load(await open()); edit();
     await expect(elapsing(store.reached(1))).rejects.toThrow(terminal ? "owner unavailable" : "timed out");
     expect(() => store.assertWritable()).toThrow();
-    expect(JSON.parse(core.snapshot()).value).toEqual({ count: 1 });
+    expect(JSON.parse(core.state()).value).toEqual({ count: 1 });
     recovered = true;
     await elapsing(store.resync());
     store.assertWritable();
@@ -85,27 +118,24 @@ test("overflow during snapshot loading requires another snapshot", async () => {
   } finally { release(); core.free(); }
 });
 
-// Failure: a text change misplaced across surrogate pairs, or issues dropped when a
-// publication omits them. Oracle: literal strings and the owner's fresh snapshot.
-test("text publications apply in code points and issues persist until they change", async () => {
+// Failure: a text change misplaced across surrogate pairs. Oracle: literal strings and
+// the owner's fresh snapshot.
+test("text publications apply in code points", async () => {
   const definition = defineDocument({ title: s.text() });
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify({ title: "a😀b" }));
-  const open = async () => JSON.parse(core.snapshot());
+  const open = async () => JSON.parse(core.state());
   const store = new Store(open, () => {});
   try {
     store.load(await open());
-    const issues = [{ code: "unknown_field" as const, path: ["extra"] }];
-    store.publish([{ type: "publication", publication: { previous: 0, sequence: 1, version: "", ops: [], issues } }]);
-    const edit = core.editText(JSON.stringify({ base: JSON.parse(core.state()).version, path: ["title"], from: "a😀b", to: "a😀xb", selectionStart: 4, selectionEnd: 4 }));
+    const edit = core.applyBatch(JSON.stringify({ base: JSON.parse(core.state()).version, intents: [{ type: "set", path: ["title"], value: "a😀xb", from: "a😀b", selection: { start: 4, end: 4 } }] }));
     const publication = JSON.parse(edit.publication!);
     expect(publication.ops).toEqual([{ type: "text", path: ["title"], delta: [{ retain: 2 }, { insert: "x" }] }]);
-    store.publish([{ type: "publication", publication: { ...publication, previous: 1, sequence: 2 } }]);
+    store.publish([{ type: "publication", publication }]);
     expect(store.state.value).toEqual({ title: "a😀xb" });
-    expect(store.state.issues).toEqual(issues);
     // A change that does not fit the field forces a fresh snapshot instead.
-    store.publish([{ type: "publication", publication: { previous: 2, sequence: 3, version: "", ops: [{ type: "text", path: ["title"], delta: [{ retain: 9 }] }] } }]);
+    store.publish([{ type: "publication", publication: { previous: 1, sequence: 2, version: "", ops: [{ type: "text", path: ["title"], delta: [{ retain: 9 }] }] } }]);
     await elapsing(store.reached(1));
-    expect(store.state.value).toEqual(JSON.parse(core.snapshot()).value);
+    expect(store.state.value).toEqual(JSON.parse(core.state()).value);
   } finally { core.free(); }
 });
 

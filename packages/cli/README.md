@@ -3,7 +3,7 @@
 Create an app with Bun 1.4.2 or newer:
 
 ```sh
-bunx @hitslop/cli@4.0.0 init my-slop
+bunx @hitslop/cli@3.0.0 init my-slop
 cd my-slop
 bun install
 bun run dev
@@ -28,7 +28,7 @@ bunx @hitslop/cli init budget-book --yes \
 `--yes`, CI, and non-TTY runs never prompt or launch agents. Missing metadata
 defaults to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`.
 
-`init`, `check`, `dev` and `build` run on macOS or Linux; `register` and `build --artwork native` need the hitSlop Mac app (Apple silicon, macOS 15.2+). Installed native document editing requires neither Node nor Bun. Hosted template publication is not supported.
+`init`, `check`, `dev` and `build` run on macOS or Linux; `register` and `build --artwork native` need the hitSlop Mac app (Apple silicon, macOS 15.2+). Hosted template publication is not supported.
 
 ## Common workflows
 
@@ -37,15 +37,15 @@ In a generated project, use `bun run check`, `bun run dev`, `bun run build`, and
 For an existing writable document:
 
 ```sh
-bunx @hitslop/cli@4.0.0 schema My.slop
-bunx @hitslop/cli@4.0.0 get My.slop
-bunx @hitslop/cli@4.0.0 theme get My.slop
-bunx @hitslop/cli@4.0.0 export My.slop --format pdf --output My.pdf
+bunx @hitslop/cli@3.0.0 schema My.slop
+bunx @hitslop/cli@3.0.0 get My.slop
+bunx @hitslop/cli@3.0.0 theme get My.slop
+bunx @hitslop/cli@3.0.0 export My.slop --format pdf --output My.pdf
 ```
 
-Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/cli@4.0.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. The portable guides copied by `init` are ordinary files and do not update with the global CLI. Add `--help` to inspect a command's arguments.
+Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/cli@3.0.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. The portable guides copied by `init` are ordinary files and do not update with the global CLI. Add `--help` to inspect a command's arguments.
 
-Alternatively, `bun install -g @hitslop/cli@4.0.0` provides `slop` on Bun's PATH. Direct native commands use `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native"`.
+Alternatively, `bun install -g @hitslop/cli@3.0.0` provides `slop` on Bun's PATH. `slop` needs Bun; without Node or Bun, send document requests straight to the Mac app's engine with `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request`.
 
 Follow the [CLI workflows](https://hitslop.com/docs/guides/cli-workflows/) for copyable examples, themes, attachments, exports, and skills. The [repository CLI reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md) includes all document operation shapes and contributor setup.
 

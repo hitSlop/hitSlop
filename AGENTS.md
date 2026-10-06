@@ -10,8 +10,8 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - **Every released slop stays openable.** See [Compatibility](#compatibility).
 - `hitslop-core` (Rust on Loro) owns document semantics and durable storage: the `.slop`
   file (one SQLite database holding the app and its saved state), the writer lock and the
-  save policy. The Swift `DocumentOwner` schedules saves and owns
-  the socket and delivery to the page; Loro bytes never reach Swift. The page shell
+  save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
+  is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
@@ -19,14 +19,15 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
   (`~/.hitslop/live`). Closed edits never start WebKit or run authored code.
 - **TypeBox owns the wire.** Run `bun run schema:generate`; never edit generated files.
 - **Writes are async.** They resolve after the snapshot updates. `change` collectors
-  are synchronous. Reads come from immutable snapshots. Preserve `$id` identity; merged
-  anomalies are preserved and flagged, never repaired on read.
+  are synchronous. Reads come from immutable snapshots. Preserve `$id` identity. Every
+  accepted operation keeps the document valid; invalid stored state is refused without
+  modifying the file.
 - Flush before close or export. A failed save keeps ownership and shows a native retry.
   Attachments are host-owned immutable blobs in the file.
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for authoring validation, `slop dev` and tests only.
+  document engine. The WASM core is for `slop dev` and tests only; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
@@ -53,11 +54,12 @@ every document a released build wrote. Downgrades are not supported.
   assessment and a recovery path for their data.
 - Public boundaries grow additively: `ctx` and handle methods (new object-handle members
   start with `$`; reserved field names never grow), error codes (apps treat unknown
-  ones as outcomes), `--slop-*`, `data-hitslop-root`, the embed relay, and the helper's
-  command protocol (`hitslop-native --protocol`). A change an old app cannot run raises
+  ones as outcomes), `--slop-*`, `data-hitslop-root`, the embed relay, and the command
+  protocol (`--client-protocol`, and `protocol` in each socket request). A change an old app cannot run raises
   `runtimeABI` and keeps the old behavior through an adapter. Internals behind them are free.
-- Upgrade Loro (pinned exactly) only with the corpus passing. The helper and the live
-  owner ship in one bundle and keep their exact build check.
+- Upgrade Loro (pinned exactly) only with the corpus passing. The engine and the helper
+  ship in one bundle with one core build; across builds, the CLI, engine and live owner
+  meet only through the command protocol.
 
 ## Authoring
 
@@ -72,9 +74,10 @@ for visual changes. `_vibe` is inspiration only.
   integration. Delete tests together with the code they protect. No tests of private
   call sequences, CSS strings or version numbers.
 - A bug regression test must fail before the fix for the intended reason.
-- Everyday: `bun run check && bun run test` and `cargo test --locked --workspace`.
-  Native: `bun run build && bun run swift:test && bun run test:native`.
-  Release: `bun run release:check`.
+- One runner, `bun run verify` ([testing](docs/testing.md)): it runs the tiers whose
+  inputs changed since they last passed. Iterate with one tier (`bun run verify rust
+  store::`); run `bun run verify` before calling a step done, and `bun run verify --native`
+  once at the end when Swift, the FFI or the helper changed. Release: `bun run release:check`.
 
 ## Deferred
 

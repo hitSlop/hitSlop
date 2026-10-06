@@ -1,13 +1,9 @@
-// Failure: counter values differ between live use, replay, reopen or replicas, or
-// concurrent increments are lost. Oracles: independent integer arithmetic over every
-// accepted increment, literal values, the patch consumer and fresh snapshots.
-// Gap: Loro's Counter regroups float deltas on export (spikes/engine-placement/
-// counter-probe.ts) and no hitSlop counter design had convergence evidence.
+// Failure: counter values differ between live use, replay or reopen, or leave the safe
+// integer range. Oracles: literal values, the patch consumer and fresh snapshots.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View, next, snapshot};
-use loro::{ExportMode, LoroDoc};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use support::{Edit, app, snapshot, updates_since};
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn schema() -> String {
@@ -23,17 +19,12 @@ fn initial() -> String {
 fn increment(path: Value, by: i64) -> String {
     json!({"intents":[{"type":"increment","path":path,"by":by}]}).to_string()
 }
-fn checked(d: &mut Document, projected: &mut View, reply: String) {
-    projected.publish(&reply);
-    projected.check(d, "publication");
-}
 
 #[test]
 fn counters_stay_exact_past_float_precision() {
     // Exact integers, bounded to the safe range, where a float sum would drift.
-    let mut d = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
+    let mut d = Document::create(&app(schema()), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
     let seed = d.checkpoint().unwrap();
-    let v0 = d.version();
     d.apply(&increment(json!(["hits"]), 9_000_000_000_000_000)).unwrap();
     let e = d.apply(&increment(json!(["hits"]), 9_000_000_000_000_000)).unwrap_err();
     assert_eq!(e.code.as_str(), "out_of_range");
@@ -42,125 +33,15 @@ fn counters_stay_exact_past_float_precision() {
         d.apply(&increment(json!(["hits"]), by)).unwrap();
     }
     assert_eq!(snapshot(&d)["value"]["hits"], 1);
-    let replayed = Document::open(&schema(), &seed, &[d.export_since(&v0).unwrap()]).unwrap();
+    let replayed = Document::open(&app(schema()), &seed, &[updates_since(&seed, &d)]).unwrap();
     assert_eq!(snapshot(&replayed)["value"]["hits"], 1);
-    let reopened = Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap();
+    let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(snapshot(&reopened)["value"]["hits"], 1);
-    assert_eq!(snapshot(&reopened)["issues"], json!([]));
-}
-
-#[test]
-fn replicas_converge_to_the_exact_sum_under_any_delivery() {
-    let mut rng = 0xc0417e5u64;
-    for _round in 0..200 {
-        let base = Document::create(&schema(), &initial()).unwrap();
-        let seed = base.checkpoint().unwrap();
-        let v0 = base.version();
-        let mut replicas: Vec<Document> =
-            (0..3).map(|_| Document::open(&schema(), &seed, &[]).unwrap()).collect();
-        let mut projected: Vec<View> = replicas.iter().map(View::of).collect();
-        let (mut hits, mut votes) = (5i64, 0i64);
-        let mut sent: Vec<Vec<u8>> = vec![];
-        for _ in 0..30 {
-            let k = next(&mut rng) as usize % 3;
-            let by = (next(&mut rng) % 2_000_000_000_001) as i64 - 1_000_000_000_000;
-            let by = if by == 0 { 1 } else { by };
-            let (path, total) = if next(&mut rng) % 2 == 0 {
-                (json!(["hits"]), &mut hits)
-            } else {
-                (json!(["rows", {"id":"r1"}, "votes"]), &mut votes)
-            };
-            let before = replicas[k].version();
-            let reply = replicas[k].apply(&increment(path, by)).unwrap();
-            *total += by;
-            checked(&mut replicas[k], &mut projected[k], reply);
-            sent.push(replicas[k].export_since(&before).unwrap());
-            // Deliver a random earlier update to a random replica, possibly again.
-            let j = next(&mut rng) as usize % 3;
-            let pick = next(&mut rng) as usize % sent.len();
-            let known = replicas[j].version();
-            if let Ok(reply) = replicas[j].merge(&sent[pick]) {
-                checked(&mut replicas[j], &mut projected[j], reply);
-            } else {
-                // Missing causal dependencies: that delivery simply waits.
-                assert_eq!(replicas[j].version(), known);
-            }
-        }
-        // Final anti-entropy in a shuffled order, with duplicates.
-        for round in 0..2 {
-            for j in 0..3 {
-                for i in (0..3).map(|x| (x + j + round) % 3) {
-                    if i != j {
-                        let bytes = replicas[i].export_since(&v0).unwrap();
-                        let reply = replicas[j].merge(&bytes).unwrap();
-                        checked(&mut replicas[j], &mut projected[j], reply);
-                    }
-                }
-            }
-        }
-        for d in &replicas {
-            let view = snapshot(d);
-            assert_eq!(view["value"]["hits"], hits);
-            assert_eq!(view["value"]["rows"][0]["votes"], votes);
-            assert_eq!(view["issues"], json!([]));
-        }
-    }
-}
-
-#[test]
-fn restored_checkpoints_and_finder_copies_keep_every_increment() {
-    let mut a = Document::create(&schema(), &initial()).unwrap();
-    let old = a.checkpoint().unwrap();
-    let v0 = a.version();
-    a.apply(&increment(json!(["hits"]), 10)).unwrap();
-    // An older checkpoint restored (or a Finder copy) edits independently.
-    let mut b = Document::open(&schema(), &old, &[]).unwrap();
-    b.apply(&increment(json!(["hits"]), 100)).unwrap();
-    b.apply(&increment(json!(["rows", {"id":"r1"}, "votes"]), -3)).unwrap();
-    let (ab, ba) = (a.export_since(&v0).unwrap(), b.export_since(&v0).unwrap());
-    a.import(&ba).unwrap();
-    b.import(&ab).unwrap();
-    for d in [&a, &b] {
-        assert_eq!(snapshot(d)["value"]["hits"], 115);
-        assert_eq!(snapshot(d)["value"]["rows"][0]["votes"], -3);
-    }
-}
-
-#[test]
-fn anomalous_contributions_are_preserved_flagged_and_block_local_increments() {
-    let mut d = Document::create(&schema(), &initial()).unwrap();
-    let mut projected = View::of(&d);
-    let peer = LoroDoc::new();
-    peer.import(&d.checkpoint().unwrap()).unwrap();
-    let from = peer.oplog_vv();
-    let hits = peer.get_map("data").get("hits").unwrap().into_container().unwrap().into_map().unwrap();
-    hits.insert("remote", 1.5).unwrap();
-    peer.commit();
-    let reply = d.merge(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
-    checked(&mut d, &mut projected, reply);
-    let view = snapshot(&d);
-    assert_eq!(view["issues"], json!([{"code":"type_mismatch","path":["hits"]}]));
-    assert_eq!(view["value"]["hits"], Value::Null);
-    let preserved = LoroDoc::new();
-    preserved.import(&d.checkpoint().unwrap()).unwrap();
-    let stored = serde_json::to_value(preserved.get_map("data").get_deep_value()).unwrap();
-    assert_eq!(stored["hits"]["remote"], 1.5);
-    assert_eq!(d.apply(&increment(json!(["hits"]), 1)).unwrap_err().code.as_str(), "type_mismatch");
-    // Concurrent writers can together leave the safe range: preserved and flagged.
-    let mut x = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
-    let mut y = Document::open(&schema(), &x.checkpoint().unwrap(), &[]).unwrap();
-    let v0 = x.version();
-    x.apply(&increment(json!(["hits"]), MAX_SAFE)).unwrap();
-    y.apply(&increment(json!(["hits"]), 1)).unwrap();
-    let mut projected = View::of(&x);
-    let reply = x.merge(&y.export_since(&v0).unwrap()).unwrap();
-    checked(&mut x, &mut projected, reply);
-    assert_eq!(snapshot(&x)["issues"], json!([{"code":"type_mismatch","path":["hits"]}]));
 }
 
 #[test]
 fn counters_reject_set_zero_and_non_counter_targets() {
-    let mut d = Document::create(&schema(), &initial()).unwrap();
+    let mut d = Document::create(&app(schema()), &initial()).unwrap();
     let before = snapshot(&d);
     for (batch, code) in [
         (increment(json!(["hits"]), 0), "out_of_range"),
@@ -169,32 +50,5 @@ fn counters_reject_set_zero_and_non_counter_targets() {
     ] {
         assert_eq!(d.apply(&batch).unwrap_err().code.as_str(), code);
         assert_eq!(snapshot(&d), before);
-    }
-}
-
-#[test]
-fn cancelling_contributions_are_checked_after_the_complete_sum() {
-    // The literal integer result is MAX_SAFE for every ordering, even if a prefix
-    // exceeds the JS safe range. Raw peers let the oracle control map key order.
-    for negative in 0..3 {
-        let mut d = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
-        let seed = d.checkpoint().unwrap();
-        let v0 = d.version();
-        let raw = LoroDoc::new();
-        raw.import(&seed).unwrap();
-        let from = raw.oplog_vv();
-        let hits = raw.get_map("data").get("hits").unwrap().into_container().unwrap().into_map().unwrap();
-        for (i, key) in ["a", "b", "c"].iter().enumerate() {
-            hits.insert(key, if i == negative { -MAX_SAFE } else { MAX_SAFE }).unwrap();
-        }
-        raw.commit();
-        let mut projected = View::of(&d);
-        let reply = d.merge(&raw.export(ExportMode::updates(&from)).unwrap()).unwrap();
-        checked(&mut d, &mut projected, reply);
-        for view in [snapshot(&d), snapshot(&Document::open(&schema(), &d.checkpoint().unwrap(), &[]).unwrap()),
-            snapshot(&Document::open(&schema(), &seed, &[d.export_since(&v0).unwrap()]).unwrap())] {
-            assert_eq!(view["value"]["hits"], MAX_SAFE);
-            assert_eq!(view["issues"], json!([]));
-        }
     }
 }

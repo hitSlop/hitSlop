@@ -1,23 +1,20 @@
 #![cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-//! The stored manifest: the authored contract at the document's package format. The
-//! package format and runtime ABI are the document's own columns (`tests/file.rs`).
-use hitslop_core::{shape::Silhouette, Code, PACKAGE_FORMAT};
+//! The stored manifest: the authored contract. The package format and runtime ABI are the
+//! document's own columns, refused before the manifest is read (`tests/file.rs`).
+use hitslop_core::{Code, shape::Silhouette};
 
 fn fixture() -> serde_json::Value {
     serde_json::json!({"author":{"name":"Author"},"slug":"fixture","title":"Title","description":"Description","categories":["utilities"],"presentation":{"width":320,"height":240}})
 }
 mod manifest {
     pub fn validate(input: &str) -> Result<hitslop_core::shape::Silhouette, hitslop_core::Error> {
-        hitslop_core::manifest::validate(input, super::PACKAGE_FORMAT).map(|window| window.silhouette)
+        hitslop_core::manifest::validate(input).map(|window| window.silhouette)
     }
 }
 
 #[test]
-fn only_known_package_formats_are_read() {
-    assert!(hitslop_core::manifest::validate(&fixture().to_string(), PACKAGE_FORMAT).is_ok());
-    let error = hitslop_core::manifest::validate(&fixture().to_string(), PACKAGE_FORMAT + 1).unwrap_err();
-    assert_eq!(error.code, Code::InvalidRequest);
-    // The markers are columns now: a manifest carrying them is not the authored contract.
+fn a_manifest_carrying_the_markers_is_not_the_authored_contract() {
+    assert!(manifest::validate(&fixture().to_string()).is_ok());
     let mut stamped = fixture();
     stamped["packageFormat"] = serde_json::json!(1);
     assert_eq!(manifest::validate(&stamped.to_string()).unwrap_err().code, Code::InvalidRequest);
