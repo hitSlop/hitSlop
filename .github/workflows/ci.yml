@@ -91,7 +91,7 @@ jobs:
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo check --locked -p hitslop-core --no-default-features --tests
+      - run: cargo clippy --locked -p hitslop-core --no-default-features --tests -- -D warnings
       - run: cargo nextest run --locked --profile ci -p slop-engine --features bundled-sqlite
   # Tag runs can only restore caches saved on the default branch, so master keeps the
   # full template corpus warm for the next release. Manual runs can also profile

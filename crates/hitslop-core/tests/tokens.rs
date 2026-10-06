@@ -1,9 +1,9 @@
 // Version tokens: stable across reopen and replay, and stale before a trimmed document's
 // retained history. Bad bases in text edits are refused in `text.rs`.
 mod support;
-use support::{app, Edit, fixture, knows, snapshot, type_text, updates_since};
 use hitslop_core::Document;
 use serde_json::json;
+use support::{Edit, app, fixture, knows, snapshot, type_text, updates_since};
 fn create() -> Document {
     let f = fixture("checklist");
     Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap()

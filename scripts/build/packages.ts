@@ -2,7 +2,7 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
 import { buildSkills } from "../../packages/cli/src/skills-build";
-import { buildEngine } from "./core";
+import { buildEngine, cargoOutput } from "./core";
 import { buildShell } from "./shell";
 /** The npm packages (`generated/npm`), each carrying the file engines it ships. */
 export async function packPackages() {
@@ -16,7 +16,7 @@ export async function packPackages() {
   const engines = resolve("packages/cli/engine");
   try {
     const commit = (await new Response(Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout).text()).trim();
-    await stageEngines(engines, resolve("generated/engines"), resolve("target/release/slop-engine"), commit);
+    await stageEngines(engines, resolve("generated/engines"), cargoOutput("slop-engine"), commit);
     for (const name of ["schema", "document", "cli"]) {
       const directory = resolve("packages", name);
       const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));

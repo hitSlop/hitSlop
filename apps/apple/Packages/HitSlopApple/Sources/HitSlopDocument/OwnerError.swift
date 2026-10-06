@@ -4,14 +4,13 @@ import HitSlopCoreBinding
 
 /// Admission failures are distinct from storage failures and uncertain outcomes.
 enum OwnerError: LocalizedError, Sendable {
-  case closed, closing, invalidated, readOnly
+  case closed, closing, readOnly
   case rejected(String)
 
   var errorDescription: String? {
     switch self {
     case .closed: "Document owner is closed"
     case .closing: "Document is closing"
-    case .invalidated: "Owner invalidated; explicit recovery is required"
     case .readOnly: "Read-only capture cannot edit"
     case .rejected(let message): message
     }
@@ -43,7 +42,6 @@ enum RequestOutcome: Equatable {
     case let error as OwnerError:
       switch error {
       case .closed, .closing: self = .closing
-      case .invalidated: self = .invalidated
       case .readOnly, .rejected: self = .rejected(reason: .invalidRequest, opIndex: nil)
       }
     case is SaveFailure: self = .saveFailed

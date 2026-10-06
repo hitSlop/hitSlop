@@ -2,8 +2,9 @@
 //! through its socket, or take the writer lock and run the same owner here. A lost
 //! mutation reply is never replayed.
 use crate::{
+    Code,
     envelope::{self, Envelope},
-    file,
+    file, lock,
     owner::{self, Failure, FailureKind, Owner},
     registry, socket, store,
     wire::{self, OutcomeCode, PageRequest, SocketFailure, SocketRequest, SocketSuccess},
@@ -35,24 +36,11 @@ fn check_protocol(request: &serde_json::Value) -> Result<()> {
     } else {
         return Ok(());
     };
-    Err(Failure { reason: Some("requires_update".into()), ..invalid(message) })
+    Err(Failure::rejected(Code::RequiresUpdate, message))
 }
 pub type Result<T> = std::result::Result<T, Failure>;
-pub(crate) fn failed(kind: FailureKind, message: impl Into<String>) -> Failure {
-    Failure {
-        kind,
-        message: message.into(),
-        reason: None,
-        op_index: None,
-    }
-}
 fn invalid(message: impl Into<String>) -> Failure {
-    Failure {
-        kind: FailureKind::Rejected,
-        message: message.into(),
-        reason: Some("invalid_request".into()),
-        op_index: None,
-    }
+    Failure::rejected(Code::InvalidRequest, message)
 }
 
 #[derive(Clone, Debug)]
@@ -69,45 +57,28 @@ pub struct ExportCompletion {
 }
 impl ExportCompletion {
     pub fn is_active(&self) -> bool {
-        Instant::now() < self.deadline
-            && self
-                .sender
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some()
+        Instant::now() < self.deadline && lock(&self.sender).is_some()
     }
     pub fn complete(&self, result: Result<String>) {
-        if let Some(sender) = self.sender.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Some(sender) = lock(&self.sender).take() {
             let _ = sender.send(result);
         }
     }
     fn cancel(&self) {
-        self.sender.lock().unwrap_or_else(|e| e.into_inner()).take();
+        lock(&self.sender).take();
     }
 }
 pub trait ExportHandler: Send + Sync {
     fn export(&self, request: ExportRequest, completion: Arc<ExportCompletion>);
 }
-fn export(
-    request: ExportRequest,
-    exporter: Option<&Arc<dyn ExportHandler>>,
-    deadline: Instant,
-) -> Result<String> {
+fn export(request: ExportRequest, exporter: Option<&Arc<dyn ExportHandler>>, deadline: Instant) -> Result<String> {
     let handler = exporter.ok_or_else(|| invalid("Export requires the native renderer"))?;
     let (sender, receive) = mpsc::channel();
-    let completion = Arc::new(ExportCompletion {
-        deadline,
-        sender: Mutex::new(Some(sender)),
-    });
+    let completion = Arc::new(ExportCompletion { deadline, sender: Mutex::new(Some(sender)) });
     handler.export(request, completion.clone());
     let result = receive
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .unwrap_or_else(|_| {
-            Err(failed(
-                FailureKind::Failed,
-                "Export timed out; outcome may be unknown",
-            ))
-        });
+        .unwrap_or_else(|_| Err(Failure::new(FailureKind::Failed, "Export timed out; outcome may be unknown")));
     completion.cancel();
     result
 }
@@ -128,9 +99,7 @@ fn success(result: SocketSuccess) -> String {
 }
 pub(crate) fn failure(error: Failure, accepted: bool, saving: bool) -> String {
     let code = match error.kind {
-        FailureKind::Full | FailureKind::Busy | FailureKind::Moved | FailureKind::SaveFailed
-            if saving =>
-        {
+        FailureKind::Full | FailureKind::Busy | FailureKind::Moved | FailureKind::SaveFailed if saving => {
             OutcomeCode::SaveFailed
         }
         FailureKind::SaveFailed => OutcomeCode::SaveFailed,
@@ -151,20 +120,16 @@ pub(crate) fn failure(error: Failure, accepted: bool, saving: bool) -> String {
         result: SocketFailure {
             error: message,
             code,
-            reason: (code == OutcomeCode::Rejected)
-                .then_some(error.reason)
-                .flatten(),
-            opIndex: (code == OutcomeCode::Rejected)
-                .then_some(error.op_index)
-                .flatten(),
+            reason: (code == OutcomeCode::Rejected).then_some(error.reason).flatten(),
+            opIndex: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
         },
     })
 }
 fn fragment(value: impl Serialize) -> Result<Box<RawValue>> {
-    serde_json::value::to_raw_value(&value).map_err(|e| failed(FailureKind::Failed, e.to_string()))
+    serde_json::value::to_raw_value(&value).map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))
 }
 fn raw(value: String) -> Result<Box<RawValue>> {
-    RawValue::from_string(value).map_err(|e| failed(FailureKind::Failed, e.to_string()))
+    RawValue::from_string(value).map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))
 }
 /// One owner request, admitted before `deadline`.
 fn call(owner: &Owner, request: owner::Request, deadline: Instant) -> Result<owner::Reply> {
@@ -176,10 +141,7 @@ fn call_after(owner: &Owner, request: owner::Request, deadline: Instant) -> Resu
 }
 fn call_inner(owner: &Owner, request: owner::Request, deadline: Instant, admission: bool) -> Result<owner::Reply> {
     if admission && Instant::now() >= deadline {
-        return Err(failed(
-            FailureKind::Closing,
-            "Request expired before admission",
-        ));
+        return Err(Failure::new(FailureKind::Closing, "Request expired before admission"));
     }
     let (send, receive) = mpsc::channel();
     let callback = Box::new(move |result| {
@@ -190,14 +152,9 @@ fn call_inner(owner: &Owner, request: owner::Request, deadline: Instant, admissi
     } else {
         owner.submit(request, None, callback);
     }
-    receive
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .unwrap_or_else(|_| {
-            Err(failed(
-                FailureKind::Failed,
-                "Owner disconnected or timed out; outcome may be unknown",
-            ))
-        })
+    receive.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap_or_else(|_| {
+        Err(Failure::new(FailureKind::Failed, "Owner disconnected or timed out; outcome may be unknown"))
+    })
 }
 /// A request as it arrives: its protocol first, then its envelope.
 fn parse(input: &str) -> Result<SocketRequest> {
@@ -206,18 +163,15 @@ fn parse(input: &str) -> Result<SocketRequest> {
     if !envelope::is_valid(Envelope::SocketRequest, input.as_bytes()) {
         return Err(invalid("Invalid socket request"));
     }
-    let request: SocketRequest =
-        serde_json::from_value(value).map_err(|_| invalid("Invalid socket request"))?;
+    let request: SocketRequest = serde_json::from_value(value).map_err(|_| invalid("Invalid socket request"))?;
     // A batch carrying attachments may reach the attachment limit; anything else is small.
-    if input.len() > wire::SOCKET_REQUEST
-        && !matches!(request, SocketRequest::Batch { attachments: Some(_), .. })
-    {
+    if input.len() > wire::SOCKET_REQUEST && !matches!(request, SocketRequest::Batch { attachments: Some(_), .. }) {
         return Err(invalid("Oversized socket request"));
     }
-    if let SocketRequest::Batch { ops, .. } = &request {
-        if !serde_json::from_str::<serde_json::Value>(ops).is_ok_and(|v| v.is_array()) {
-            return Err(invalid("Operations must be an array"));
-        }
+    if let SocketRequest::Batch { ops, .. } = &request
+        && !serde_json::from_str::<serde_json::Value>(ops).is_ok_and(|v| v.is_array())
+    {
+        return Err(invalid("Operations must be an array"));
     }
     Ok(request)
 }
@@ -231,11 +185,16 @@ pub fn serve(owner: &Owner, input: &str, exporter: Option<&Arc<dyn ExportHandler
 }
 /// Runs a validated request against its one owner. Only export reaches native UI. A batch
 /// replies once saved: an agent's edit is durable when its command returns.
-fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn ExportHandler>>, deadline: Instant) -> String {
+fn dispatch(
+    owner: &Owner,
+    request: SocketRequest,
+    exporter: Option<&Arc<dyn ExportHandler>>,
+    deadline: Instant,
+) -> String {
     let (mut accepted, mut saving) = (false, false);
     let result = (|| -> Result<SocketSuccess> {
         use owner::{Reply, Request};
-        let unexpected = || failed(FailureKind::Invalidated, "Unexpected owner result");
+        let unexpected = || Failure::new(FailureKind::Invalidated, "Unexpected owner result");
         Ok(match request {
             SocketRequest::Get { .. } => {
                 saving = true;
@@ -246,10 +205,7 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                 };
                 let app = &owner.app().app;
                 SocketSuccess::Get {
-                    state: raw(format!(
-                        "{{\"schema\":{},\"theme\":{},\"state\":{json}}}",
-                        app.descriptor, app.theme
-                    ))?,
+                    state: raw(format!("{{\"schema\":{},\"theme\":{},\"state\":{json}}}", app.descriptor, app.theme))?,
                 }
             }
             SocketRequest::Batch { ops, base, attachments, .. } => {
@@ -257,7 +213,9 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                 // no close can find a blob waiting for its reference. A refused batch
                 // leaves only blobs nothing references, which its close reclaims.
                 for bytes in attachments.unwrap_or_default() {
-                    let bytes = data_encoding::BASE64.decode(bytes.as_bytes()).map_err(|_| invalid("Invalid attachment bytes"))?;
+                    let bytes = data_encoding::BASE64
+                        .decode(bytes.as_bytes())
+                        .map_err(|_| invalid("Invalid attachment bytes"))?;
                     let Reply::Attachment { .. } = call(owner, Request::PutAttachment { bytes }, deadline)? else {
                         return Err(unexpected());
                     };
@@ -267,11 +225,8 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                     Some(base) => format!("{{\"base\":{},\"intents\":{ops}}}", json!(base)),
                     None => format!("{{\"intents\":{ops}}}"),
                 };
-                let Reply::Applied { sequence, ids, version, .. } = call(
-                    owner,
-                    Request::Apply { batch_json, origin: crate::Origin::Agent },
-                    deadline,
-                )?
+                let Reply::Applied { sequence, ids, version, .. } =
+                    call(owner, Request::Apply { batch_json, origin: crate::Origin::Agent }, deadline)?
                 else {
                     return Err(unexpected());
                 };
@@ -293,10 +248,7 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                 let Reply::Attachments { items } = call(owner, Request::Attachments, deadline)? else {
                     return Err(unexpected());
                 };
-                let state: Vec<_> = items
-                    .into_iter()
-                    .map(|v| json!({"id":v.id,"byteLength":v.bytes}))
-                    .collect();
+                let state: Vec<_> = items.into_iter().map(|v| json!({"id":v.id,"byteLength":v.bytes})).collect();
                 SocketSuccess::AttachmentsList { state: fragment(state)? }
             }
             SocketRequest::AttachmentsRead { attachmentID, .. } => {
@@ -309,12 +261,7 @@ fn dispatch(owner: &Owner, request: SocketRequest, exporter: Option<&Arc<dyn Exp
                     state: fragment(json!({"bytes": data_encoding::BASE64.encode(&bytes)}))?,
                 }
             }
-            SocketRequest::Export {
-                documentPath,
-                format,
-                output,
-                ..
-            } => SocketSuccess::Export {
+            SocketRequest::Export { documentPath, format, output, .. } => SocketSuccess::Export {
                 output: export(ExportRequest { document_path: documentPath, format, output }, exporter, deadline)?,
             },
         })
@@ -353,14 +300,16 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageRep
             Reply::State { json } => Some(json!({ "state": json })),
             _ => None,
         }),
-        Some(PageRequest::Apply { batch }) => (Request::Apply { batch_json: batch, origin: crate::Origin::Page }, |reply| match reply {
-            Reply::Applied { sequence, ids, text: None, .. } => Some(json!({ "sequence": sequence, "ids": ids })),
-            Reply::Applied { sequence, ids, text: Some(text), .. } => Some(json!({
-                "sequence": sequence, "ids": ids, "authored": text.authored,
-                "selectionStart": text.selection[0], "selectionEnd": text.selection[1],
-            })),
-            _ => None,
-        }),
+        Some(PageRequest::Apply { batch }) => {
+            (Request::Apply { batch_json: batch, origin: crate::Origin::Page }, |reply| match reply {
+                Reply::Applied { sequence, ids, text: None, .. } => Some(json!({ "sequence": sequence, "ids": ids })),
+                Reply::Applied { sequence, ids, text: Some(text), .. } => Some(json!({
+                    "sequence": sequence, "ids": ids, "authored": text.authored,
+                    "selectionStart": text.selection[0], "selectionEnd": text.selection[1],
+                })),
+                _ => None,
+            })
+        }
         Some(PageRequest::Flush {}) => (Request::Flush, |reply| matches!(reply, Reply::Unit).then(|| json!({}))),
         Some(PageRequest::Undo {}) => (Request::Undo { redo: false }, sequence),
         Some(PageRequest::Redo {}) => (Request::Undo { redo: true }, sequence),
@@ -371,23 +320,29 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageRep
             }),
             Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"))),
         },
-        Some(PageRequest::AttachmentsRead { attachmentID }) => (Request::ReadAttachment { id: attachmentID }, |reply| match reply {
-            Reply::Bytes { bytes: Some(bytes) } => Some(json!({ "bytes": data_encoding::BASE64.encode(&bytes) })),
-            _ => None,
-        }),
+        Some(PageRequest::AttachmentsRead { attachmentID }) => {
+            (Request::ReadAttachment { id: attachmentID }, |reply| match reply {
+                Reply::Bytes { bytes: Some(bytes) } => Some(json!({ "bytes": data_encoding::BASE64.encode(&bytes) })),
+                _ => None,
+            })
+        }
         Some(_) => return reply(page_failure(invalid("Not a document request"))),
         None => return reply(page_failure(invalid("Invalid page request"))),
     };
-    owner.submit(request, Some(view), Box::new(move |result| {
-        reply(match result.map(answer) {
-            Ok(Some(mut value)) => {
-                value["ok"] = true.into();
-                PageReply { json: value.to_string(), failure: None }
-            }
-            Ok(None) => page_failure(failed(FailureKind::Invalidated, "Unexpected owner result")),
-            Err(error) => page_failure(error),
-        })
-    }));
+    owner.submit(
+        request,
+        Some(view),
+        Box::new(move |result| {
+            reply(match result.map(answer) {
+                Ok(Some(mut value)) => {
+                    value["ok"] = true.into();
+                    PageReply { json: value.to_string(), failure: None }
+                }
+                Ok(None) => page_failure(Failure::new(FailureKind::Invalidated, "Unexpected owner result")),
+                Err(error) => page_failure(error),
+            })
+        }),
+    );
 }
 #[derive(Deserialize)]
 struct Header {
@@ -396,15 +351,11 @@ struct Header {
     code: Option<OutcomeCode>,
 }
 fn header(json: &str) -> Result<Header> {
-    serde_json::from_str(json).map_err(|_| failed(FailureKind::Failed, "Invalid socket response"))
+    serde_json::from_str(json).map_err(|_| Failure::new(FailureKind::Failed, "Invalid socket response"))
 }
 fn discovery(path: &Path) -> Result<String> {
-    let json = registry::discovery(path)?.ok_or_else(|| {
-        failed(
-            FailureKind::Locked,
-            "Writer is busy without a ready session; retry later",
-        )
-    })?;
+    let json = registry::discovery(path)?
+        .ok_or_else(|| Failure::new(FailureKind::Locked, "Writer is busy without a ready session; retry later"))?;
     if !envelope::is_valid(Envelope::SocketDiscovery, json.as_bytes()) {
         return Err(invalid("Invalid live session discovery"));
     }
@@ -414,8 +365,7 @@ fn discovery(path: &Path) -> Result<String> {
         #[serde(rename = "documentPath")]
         path: String,
     }
-    let value: Discovery =
-        serde_json::from_str(&json).map_err(|_| invalid("Invalid live session discovery"))?;
+    let value: Discovery = serde_json::from_str(&json).map_err(|_| invalid("Invalid live session discovery"))?;
     if Path::new(&value.path) != path {
         return Err(invalid("Invalid live session discovery"));
     }
@@ -434,11 +384,8 @@ fn prepare(input: &str, protocol: u64) -> Result<SocketRequest> {
     if input.len() > MAX_REQUEST_BYTES {
         return Err(invalid("Oversized document command"));
     }
-    let mut value: serde_json::Value =
-        serde_json::from_str(input).map_err(|_| invalid("Invalid document command"))?;
-    let path = value["documentPath"]
-        .as_str()
-        .ok_or_else(|| invalid("Invalid document command"))?;
+    let mut value: serde_json::Value = serde_json::from_str(input).map_err(|_| invalid("Invalid document command"))?;
+    let path = value["documentPath"].as_str().ok_or_else(|| invalid("Invalid document command"))?;
     let path = file::resolve(Path::new(path))?;
     registry::identity(&path)?;
     value["documentPath"] = path.to_string_lossy().into_owned().into();
@@ -467,15 +414,7 @@ pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandle
             match discovery(&path) {
                 Ok(socket) => Connection::Live(socket),
                 Err(_) => {
-                    let SocketRequest::Export {
-                        documentPath,
-                        format,
-                        output,
-                        ..
-                    } = request
-                    else {
-                        unreachable!()
-                    };
+                    let SocketRequest::Export { documentPath, format, output, .. } = request else { unreachable!() };
                     return match export(
                         ExportRequest { document_path: documentPath, format, output },
                         exporter.as_ref(),
@@ -504,14 +443,16 @@ pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandle
             }
         };
         let answer = match &connection {
-            Connection::Local(owner) => Ok(dispatch(owner, request.clone(), exporter.as_ref(), Instant::now() + COMMAND_TIMEOUT)),
+            Connection::Local(owner) => {
+                Ok(dispatch(owner, request.clone(), exporter.as_ref(), Instant::now() + COMMAND_TIMEOUT))
+            }
             Connection::Live(socket) => match socket::call(Path::new(socket), &crate::encode(&request)) {
                 // Transport loss cannot confirm admission: its failure already has an
                 // unknown outcome and must not claim the owner accepted the command.
                 Err(error) => Ok(failure(error, false, false)),
                 Ok(response) => match header(&response) {
                     Ok(result) if result.ok && result.method.as_deref() != Some(request.method()) => {
-                        Err(failed(FailureKind::Failed, "Socket response method mismatch"))
+                        Err(Failure::new(FailureKind::Failed, "Socket response method mismatch"))
                     }
                     Ok(_) => Ok(response),
                     Err(error) => Err(error),
@@ -546,38 +487,22 @@ mod tests {
     #[test]
     fn an_accepted_mutation_failure_does_not_claim_it_was_refused() {
         let refusal = "Document changed owners; the request was not applied";
-        let result: serde_json::Value = serde_json::from_str(&failure(
-            failed(FailureKind::Replaced, refusal),
-            true,
-            false,
-        ))
-        .unwrap();
+        let result: serde_json::Value =
+            serde_json::from_str(&failure(Failure::new(FailureKind::Replaced, refusal), true, false)).unwrap();
         assert_eq!(result["code"], "unknown_outcome");
-        assert!(
-            result["error"]
-                .as_str()
-                .unwrap()
-                .contains("could not be confirmed")
-        );
+        assert!(result["error"].as_str().unwrap().contains("could not be confirmed"));
         assert!(!result["error"].as_str().unwrap().contains("not applied"));
-        let refused: serde_json::Value = serde_json::from_str(&failure(
-            failed(FailureKind::Replaced, refusal),
-            false,
-            false,
-        ))
-        .unwrap();
+        let refused: serde_json::Value =
+            serde_json::from_str(&failure(Failure::new(FailureKind::Replaced, refusal), false, false)).unwrap();
         assert_eq!(refused["code"], "owner_replaced");
         assert_eq!(refused["error"], refusal);
     }
 
     #[test]
     fn an_accepted_mutation_save_failure_keeps_its_classification_and_message() {
-        let result: serde_json::Value = serde_json::from_str(&failure(
-            failed(FailureKind::Full, "Document storage is full"),
-            true,
-            true,
-        ))
-        .unwrap();
+        let result: serde_json::Value =
+            serde_json::from_str(&failure(Failure::new(FailureKind::Full, "Document storage is full"), true, true))
+                .unwrap();
         assert_eq!(result["code"], "save_failed");
         assert_eq!(result["error"], "Document storage is full");
     }

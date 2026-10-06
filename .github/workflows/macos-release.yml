@@ -23,6 +23,8 @@ jobs:
     # Signing and notarization secrets are scoped to the steps that use them, so
     # dependency installs, the test suite and third-party actions never see them.
     env:
+      # The gate and the archive build what ships: the `dist` Cargo profile.
+      HITSLOP_CARGO_PROFILE: dist
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
     steps:

@@ -1,9 +1,10 @@
 //! Typed native adapter; sequencing and persistence remain in hitslop-core::owner.
 use super::*;
-use hitslop_core::owner as core;
+use hitslop_core::owner::{self as core, Event, Failure, FailureKind, Request, SaveStatus};
+use std::path::PathBuf;
 
-#[derive(uniffi::Enum)]
-pub enum OwnerFailureKind {
+#[uniffi::remote(Enum)]
+pub enum FailureKind {
     Rejected,
     Replaced,
     Closing,
@@ -17,65 +18,43 @@ pub enum OwnerFailureKind {
     SaveFailed,
     Failed,
 }
-#[derive(uniffi::Record)]
-pub struct OwnerFailure {
-    pub kind: OwnerFailureKind,
+#[uniffi::remote(Record)]
+pub struct Failure {
+    pub kind: FailureKind,
     pub message: String,
     pub reason: Option<String>,
     pub op_index: Option<u32>,
 }
-impl From<core::Failure> for OwnerFailure {
-    fn from(value: core::Failure) -> Self {
-        use core::FailureKind as K;
-        Self {
-            kind: match value.kind {
-                K::Rejected => OwnerFailureKind::Rejected,
-                K::Replaced => OwnerFailureKind::Replaced,
-                K::Closing => OwnerFailureKind::Closing,
-                K::Closed => OwnerFailureKind::Closed,
-                K::ReadOnly => OwnerFailureKind::ReadOnly,
-                K::Invalidated => OwnerFailureKind::Invalidated,
-                K::Locked => OwnerFailureKind::Locked,
-                K::Busy => OwnerFailureKind::Busy,
-                K::Full => OwnerFailureKind::Full,
-                K::Moved => OwnerFailureKind::Moved,
-                K::SaveFailed => OwnerFailureKind::SaveFailed,
-                K::Failed => OwnerFailureKind::Failed,
-            },
-            message: value.message,
-            reason: value.reason,
-            op_index: value.op_index,
-        }
-    }
-}
-impl From<core::Failure> for CoreError {
-    fn from(value: core::Failure) -> Self {
+impl From<Failure> for CoreError {
+    fn from(value: Failure) -> Self {
         match value.kind {
-            core::FailureKind::Rejected => Self::Rejected {
-                code: value.reason.unwrap_or_else(|| "invalid_request".into()),
+            FailureKind::Rejected => Self::Rejected {
+                code: value.reason.unwrap_or_else(|| hitslop_core::Code::InvalidRequest.as_str().into()),
                 message: value.message,
                 op_index: value.op_index,
             },
-            core::FailureKind::Invalidated => Self::Invalidated {
-                message: value.message,
-            },
-            core::FailureKind::Locked => Self::Locked,
-            core::FailureKind::Busy => Self::Busy,
-            core::FailureKind::Full => Self::Full,
-            core::FailureKind::Moved => Self::Moved,
-            core::FailureKind::Closed => Self::Closed,
-            _ => Self::Failed {
-                message: value.message,
-            },
+            FailureKind::Invalidated => Self::Invalidated { message: value.message },
+            FailureKind::Locked => Self::Locked,
+            FailureKind::Busy => Self::Busy,
+            FailureKind::Full => Self::Full,
+            FailureKind::Moved => Self::Moved,
+            FailureKind::Closed => Self::Closed,
+            _ => Self::Failed { message: value.message },
         }
     }
 }
-#[derive(uniffi::Enum)]
-pub enum OwnerRequest {
+// Request destinations are file paths, which Swift passes as strings.
+uniffi::custom_type!(PathBuf, String, {
+    remote,
+    lower: |path| path.to_string_lossy().into_owned(),
+    try_lift: |path| Ok(PathBuf::from(path)),
+});
+#[uniffi::remote(Enum)]
+pub enum Request {
     State,
     Apply {
         batch_json: String,
-        origin: EditOrigin,
+        origin: Origin,
     },
     Undo {
         redo: bool,
@@ -88,16 +67,16 @@ pub enum OwnerRequest {
     },
     /// A copy a person keeps, as a document of its own, with the artwork rendered for it.
     Copy {
-        destination: String,
+        destination: PathBuf,
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
     /// The saved document as stored, for a capture to render once.
     CaptureSource {
-        destination: String,
+        destination: PathBuf,
     },
     Artwork {
-        name: String,
+        name: Artwork,
     },
     Attachments,
     ReadAttachment {
@@ -110,61 +89,18 @@ pub enum OwnerRequest {
     Theme,
     ExportTheme,
 }
-impl From<OwnerRequest> for core::Request {
-    fn from(value: OwnerRequest) -> Self {
-        match value {
-            OwnerRequest::State => Self::State,
-            OwnerRequest::Apply { batch_json, origin } => Self::Apply {
-                batch_json,
-                origin: origin.into(),
-            },
-            OwnerRequest::Undo { redo } => Self::Undo { redo },
-            OwnerRequest::Flush => Self::Flush,
-            OwnerRequest::Discard => Self::Discard,
-            OwnerRequest::Close { preview, icon } => Self::Close { preview, icon },
-            OwnerRequest::Copy { destination, preview, icon } => Self::Copy {
-                destination: destination.into(),
-                preview,
-                icon,
-            },
-            OwnerRequest::CaptureSource { destination } => Self::CaptureSource {
-                destination: destination.into(),
-            },
-            OwnerRequest::Artwork { name } => Self::Artwork { name },
-            OwnerRequest::Attachments => Self::Attachments,
-            OwnerRequest::ReadAttachment { id } => Self::ReadAttachment { id },
-            OwnerRequest::PutAttachment { bytes } => Self::PutAttachment { bytes },
-            OwnerRequest::Theme => Self::Theme,
-            OwnerRequest::ExportTheme => Self::ExportTheme,
-        }
-    }
-}
+/// The owner's reply as the host receives it: the core's, without what only the core's
+/// command path reads, or the failure.
 #[derive(uniffi::Enum)]
 pub enum OwnerReply {
     Unit,
-    State {
-        json: String,
-    },
-    Applied {
-        sequence: u64,
-        ids: Vec<String>,
-    },
-    Theme {
-        state: ThemeState,
-        sequence: u64,
-    },
-    Bytes {
-        bytes: Option<Vec<u8>>,
-    },
-    Attachments {
-        items: Vec<AttachmentRecord>,
-    },
-    Attachment {
-        item: AttachmentRecord,
-    },
-    Failed {
-        failure: OwnerFailure,
-    },
+    State { json: String },
+    Applied { sequence: u64, ids: Vec<String> },
+    Theme { state: ThemeState, sequence: u64 },
+    Bytes { bytes: Option<Vec<u8>> },
+    Attachments { items: Vec<Attachment> },
+    Attachment { item: Attachment },
+    Failed { failure: Failure },
 }
 impl From<core::Reply> for OwnerReply {
     fn from(value: core::Reply) -> Self {
@@ -172,59 +108,25 @@ impl From<core::Reply> for OwnerReply {
             core::Reply::Unit => Self::Unit,
             core::Reply::State { json } => Self::State { json },
             core::Reply::Applied { sequence, ids, .. } => Self::Applied { sequence, ids },
-            core::Reply::Theme { state, sequence } => Self::Theme {
-                state: ThemeState {
-                    defaults: state.defaults,
-                    overrides: state.overrides,
-                    effective: state.effective,
-                },
-                sequence,
-            },
+            core::Reply::Theme { state, sequence } => Self::Theme { state, sequence },
             core::Reply::Bytes { bytes } => Self::Bytes { bytes },
-            core::Reply::Attachments { items } => Self::Attachments {
-                items: items.into_iter().map(Into::into).collect(),
-            },
-            core::Reply::Attachment { item } => Self::Attachment { item: item.into() },
+            core::Reply::Attachments { items } => Self::Attachments { items },
+            core::Reply::Attachment { item } => Self::Attachment { item },
         }
     }
 }
-#[derive(uniffi::Enum)]
-pub enum OwnerSaveStatus {
+#[uniffi::remote(Enum)]
+pub enum SaveStatus {
     Saved,
     Saving,
     Failed,
 }
-#[derive(uniffi::Enum)]
-pub enum OwnerEvent {
-    Publication {
-        json: String,
-    },
-    SaveStatus {
-        status: OwnerSaveStatus,
-        failure: Option<OwnerFailure>,
-    },
-    UndoState {
-        can_undo: bool,
-        can_redo: bool,
-    },
+#[uniffi::remote(Enum)]
+pub enum Event {
+    Publication { json: String },
+    SaveStatus { status: SaveStatus, failure: Option<Failure> },
+    UndoState { can_undo: bool, can_redo: bool },
     ThemeChanged,
-}
-impl From<core::Event> for OwnerEvent {
-    fn from(value: core::Event) -> Self {
-        match value {
-            core::Event::Publication { json } => Self::Publication { json },
-            core::Event::ThemeChanged => Self::ThemeChanged,
-            core::Event::UndoState { can_undo, can_redo } => Self::UndoState { can_undo, can_redo },
-            core::Event::SaveStatus { status, failure } => Self::SaveStatus {
-                status: match status {
-                    core::SaveStatus::Saved => OwnerSaveStatus::Saved,
-                    core::SaveStatus::Saving => OwnerSaveStatus::Saving,
-                    core::SaveStatus::Failed => OwnerSaveStatus::Failed,
-                },
-                failure: failure.map(Into::into),
-            },
-        }
-    }
 }
 #[uniffi::export(callback_interface)]
 pub trait OwnerCompletion: Send + Sync {
@@ -232,7 +134,7 @@ pub trait OwnerCompletion: Send + Sync {
 }
 #[uniffi::export(callback_interface)]
 pub trait OwnerListener: Send + Sync {
-    fn event(&self, event: OwnerEvent);
+    fn event(&self, event: Event);
 }
 
 #[derive(uniffi::Object)]
@@ -240,19 +142,11 @@ pub struct NativeOwner(pub(crate) Arc<core::Owner>);
 #[uniffi::export]
 impl NativeOwner {
     #[uniffi::constructor]
-    pub fn open(
-        path: String,
-        mode: StoreMode,
-        listener: Box<dyn OwnerListener>,
-    ) -> Result<Arc<Self>, CoreError> {
-        let mode = match mode {
-            StoreMode::Document => store::Mode::Document,
-            StoreMode::Snapshot => store::Mode::Snapshot,
-        };
+    pub fn open(path: String, mode: Mode, listener: Box<dyn OwnerListener>) -> Result<Arc<Self>, CoreError> {
         Ok(Arc::new(Self(Arc::new(core::Owner::open(
             Path::new(&path),
             mode,
-            Arc::new(move |event| listener.event(event.into())),
+            Arc::new(move |event| listener.event(event)),
         )?))))
     }
     pub fn app(&self) -> OpenedFile {
@@ -270,21 +164,14 @@ impl NativeOwner {
     pub fn withdraw_discovery(&self) {
         self.0.withdraw_discovery();
     }
-    pub fn submit(
-        &self,
-        request: OwnerRequest,
-        view: Option<String>,
-        completion: Box<dyn OwnerCompletion>,
-    ) {
+    pub fn submit(&self, request: Request, view: Option<String>, completion: Box<dyn OwnerCompletion>) {
         self.0.submit(
-            request.into(),
+            request,
             view,
             Box::new(move |result| {
                 completion.complete(match result {
                     Ok(reply) => reply.into(),
-                    Err(failure) => OwnerReply::Failed {
-                        failure: failure.into(),
-                    },
+                    Err(failure) => OwnerReply::Failed { failure },
                 })
             }),
         );

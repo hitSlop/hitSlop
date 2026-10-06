@@ -216,7 +216,7 @@ ${socketRequests.map(({ method }) => `        Self::${socketName(method)} { docu
 }
 /// A page request. The core answers the document requests; the window's own (config,
 /// readiness, resizing, errors) are the host's, so their fields go unread here.
-${socketEnum("PageRequest", requests(PageRequestSchema), "Debug, Deserialize").replace("#[allow(non_snake_case)]", "#[allow(non_snake_case, dead_code)]")}
+${socketEnum("PageRequest", requests(PageRequestSchema), "Debug, Deserialize").trimStart().replace("#[allow(non_snake_case)]", "#[allow(non_snake_case, dead_code)]")}
 ${socketEnum("SocketSuccess", SocketSuccessSchema.anyOf.map((schema) => ({ method: schema.properties.method.const, fields: socketFields(schema) })), "Debug, Serialize")}
 #[cfg(feature = "storage")]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -3,10 +3,8 @@
 // `model.rs`. Oracle: literal values.
 mod support;
 use hitslop_core::Document;
-use support::{app, Edit, fixture, snapshot, type_text};
 use serde_json::json;
-
-
+use support::{Edit, app, fixture, snapshot, type_text};
 
 #[test]
 fn page_typing_into_an_unset_optional_text_creates_it() {
@@ -23,4 +21,3 @@ fn page_typing_into_an_unset_optional_text_creates_it() {
     let stale = type_text(&mut d, &version, json!(["notes"]), "Hi there", "Hi there!", 9);
     assert_eq!(stale.unwrap_err().code.as_str(), "path_not_found");
 }
-

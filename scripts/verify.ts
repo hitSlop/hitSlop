@@ -19,6 +19,7 @@ import { exec, run } from "../packages/cli/src/process";
 import { repository, sha256, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
 import { debugHelper } from "./lib/helper";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
+import { swiftFormat } from "./lib/swift-format";
 import { swiftTests } from "./lib/swift-tests";
 import { buildCoreWasm, buildEngine } from "./build/core";
 import { buildShell } from "./build/shell";
@@ -61,6 +62,8 @@ const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^macos-v/, "") || undefined;
 useTestRegistry();
+// A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
+if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
 /** The environment tiers run in, as this runner started: what an in-process build changes
  * (Vite sets NODE_ENV=production, which turns off Svelte's hot reload) never reaches a test. */
 const environment = { ...process.env };
@@ -94,7 +97,7 @@ async function bunTest(files: string[], args: string[], env: Record<string, stri
   await sh([process.execPath, "test", ...options, ...selected.map((file) => "./" + file)], { env });
 }
 
-const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^rust-toolchain\.toml$/];
+const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
@@ -149,7 +152,17 @@ const tiers: Tier[] = [
     name: "rust",
     budget: 60,
     inputs: [...rustInputs, /^packages\/schema\/(generated|tests\/fixtures)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
-    run: (args) => sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]),
+    // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
+    // is for iterating, so it runs only the tests.
+    run: async (args) => {
+      if (!args.length) {
+        await quiet(["cargo", "fmt", "--all", "--check"]);
+        await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
+        const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
+        await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
+      }
+      await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
+    },
   },
   {
     name: "landing",
@@ -175,7 +188,10 @@ const tiers: Tier[] = [
     budget: 90,
     needs: ["native"],
     inputs: nativeInputs,
+    // A full run checks formatting first; a filtered one (`verify swift --filter X`) is for
+    // iterating, so it runs only the tests.
     run: async (args) => {
+      if (!args.length) await swiftFormat("lint");
       const fixtures = await prepareNativeFixtures();
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();

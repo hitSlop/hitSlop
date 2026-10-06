@@ -21,19 +21,23 @@ fn helper() -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
         return Err("Opening windows, exporting and native artwork require macOS and hitSlop.app; document edits and authoring run anywhere.".into());
     }
-    let executable = |path: &Path| std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+    let executable =
+        |path: &Path| std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
     if let Some(named) = std::env::var_os("HITSLOP_NATIVE_CLI").filter(|named| !named.is_empty()) {
         let named = PathBuf::from(named);
         return if executable(&named) { Ok(named) } else { Err("HITSLOP_NATIVE_CLI is not executable".into()) };
     }
     let beside = std::env::current_exe().ok().and_then(|engine| Some(engine.parent()?.join("hitslop-native")));
-    let home = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications/hitSlop.app/Contents/Helpers/hitslop-native"));
+    let home = std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join("Applications/hitSlop.app/Contents/Helpers/hitslop-native"));
     beside
         .into_iter()
         .chain([PathBuf::from("/Applications/hitSlop.app/Contents/Helpers/hitslop-native")])
         .chain(home)
         .find(|path| executable(path))
-        .ok_or_else(|| "Install hitSlop.app in /Applications or ~/Applications to open windows, export or render artwork".into())
+        .ok_or_else(|| {
+            "Install hitSlop.app in /Applications or ~/Applications to open windows, export or render artwork".into()
+        })
 }
 /// Runs the helper in `protocol` with `args` and `input` on its standard input. Its output
 /// and exit status are this command's.
@@ -91,17 +95,12 @@ fn main() -> ExitCode {
         protocol = version;
         args.drain(..2);
     }
-    if let Some(folder) =
-        std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty())
-    {
+    if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));
     }
     if args.as_slice() == ["request"] {
         let mut input = String::new();
-        return match std::io::stdin()
-            .take(command::MAX_REQUEST_BYTES as u64 + 1)
-            .read_to_string(&mut input)
-        {
+        return match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
             Ok(_) => {
                 if command::is_export(&input) {
                     return native(protocol, &["request"], Some(&input));
@@ -130,10 +129,7 @@ fn main() -> ExitCode {
     let result = match args.as_slice() {
         ["create", "--from", template, "--output", document] => {
             let destination = Path::new(document);
-            let parent = destination
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
+            let parent = destination.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
             match std::fs::create_dir_all(parent) {
                 Ok(()) => file::create_document(Path::new(template), destination).map(|()| {
                     Some(

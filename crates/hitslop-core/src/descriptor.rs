@@ -2,8 +2,9 @@ use super::*;
 
 // A missing bound is optional; an explicitly null bound is invalid. In particular,
 // JSON.stringify turns authored NaN/Infinity into null, which must not erase a rule.
-fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(deserializer: D)
-    -> std::result::Result<Option<T>, D::Error> {
+fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
     T::deserialize(deserializer).map(Some)
 }
 
@@ -37,14 +38,24 @@ pub(super) enum Node {
         #[serde(default, deserialize_with = "present")]
         max: Option<i64>,
     },
-    Enum { values: Vec<String> },
+    Enum {
+        values: Vec<String>,
+    },
     /// Absent until set; `clear` removes it.
-    Optional { inner: Box<Node> },
-    Object { properties: BTreeMap<String, Node> },
+    Optional {
+        inner: Box<Node>,
+    },
+    Object {
+        properties: BTreeMap<String, Node>,
+    },
     /// Rows (object items with `$id`) or plain scalar elements addressed by index.
-    List { item: Box<Node> },
+    List {
+        item: Box<Node>,
+    },
     /// Entries by string key; each entry behaves like an optional field.
-    Record { value: Box<Node> },
+    Record {
+        value: Box<Node>,
+    },
 }
 /// A record key: 1–256 UTF-16 units, not a reserved name.
 pub(super) fn valid_key(key: &str) -> bool {
@@ -55,10 +66,10 @@ pub(super) fn valid_key(key: &str) -> bool {
 /// The stored form of a validated scalar.
 pub(super) fn loro_scalar(node: &Node, value: &Value) -> loro::LoroValue {
     match unwrap_optional(node) {
-        Node::Boolean {} => value.as_bool().unwrap().into(),
-        Node::Number { .. } => value.as_f64().unwrap().into(),
-        Node::Integer { .. } => value.as_i64().unwrap().into(),
-        _ => value.as_str().unwrap().into(),
+        Node::Boolean {} => value.as_bool().expect("validated boolean").into(),
+        Node::Number { .. } => value.as_f64().expect("validated number").into(),
+        Node::Integer { .. } => value.as_i64().expect("validated integer").into(),
+        _ => value.as_str().expect("validated string or enum").into(),
     }
 }
 /// The value kind under an optional wrapper.
@@ -72,7 +83,10 @@ pub(super) fn utf16_len(s: &str) -> u64 {
     s.encode_utf16().count() as u64
 }
 pub(super) fn is_scalar(node: &Node) -> bool {
-    matches!(node, Node::Boolean {} | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. })
+    matches!(
+        node,
+        Node::Boolean {} | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. }
+    )
 }
 /// Whether replacing a value of this kind would discard identity-bearing collections.
 pub(super) fn holds_collections(node: &Node) -> bool {
@@ -121,14 +135,16 @@ impl Node {
                 }
             }
             Self::Number { min, max } => {
-                if min.is_some_and(|n| !n.is_finite()) || max.is_some_and(|n| !n.is_finite())
+                if min.is_some_and(|n| !n.is_finite())
+                    || max.is_some_and(|n| !n.is_finite())
                     || matches!((min, max), (Some(a), Some(b)) if a > b)
                 {
                     return Err(err(Code::InvalidSchema, "Number bounds must be finite with min ≤ max"));
                 }
             }
             Self::Integer { min, max } => {
-                if min.is_some_and(|n| !safe(n)) || max.is_some_and(|n| !safe(n))
+                if min.is_some_and(|n| !safe(n))
+                    || max.is_some_and(|n| !safe(n))
                     || matches!((min, max), (Some(a), Some(b)) if a > b)
                 {
                     return Err(err(Code::InvalidSchema, "Integer bounds must be safe with min ≤ max"));
@@ -146,10 +162,10 @@ impl Node {
                 if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text {}) {
                     return Err(err(Code::InvalidSchema, "Optional holds a scalar, text or an object"));
                 }
-                if let Self::Object { properties } = &**inner {
-                    if properties.contains_key("set") || properties.contains_key("clear") {
-                        return Err(err(Code::InvalidSchema, "Optional object fields cannot shadow set or clear"));
-                    }
+                if let Self::Object { properties } = &**inner
+                    && (properties.contains_key("set") || properties.contains_key("clear"))
+                {
+                    return Err(err(Code::InvalidSchema, "Optional object fields cannot shadow set or clear"));
                 }
                 inner.check(depth + 1)?;
             }
@@ -166,13 +182,8 @@ impl Node {
             // `null` is never a value: an optional is set or absent.
             Self::Optional { inner } => inner.validate(value, false),
             Self::Object { properties } => {
-                let map = value
-                    .as_object()
-                    .ok_or_else(|| err(Code::TypeMismatch, "Expected object"))?;
-                if map
-                    .keys()
-                    .any(|k| !properties.contains_key(k) && !(row && k == "$id"))
-                {
+                let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected object"))?;
+                if map.keys().any(|k| !(properties.contains_key(k) || (row && k == "$id"))) {
                     return Err(err(Code::TypeMismatch, "Unknown property"));
                 }
                 for (key, node) in properties {
@@ -182,29 +193,22 @@ impl Node {
                         None => return Err(err(Code::TypeMismatch, format!("Missing {key}"))),
                     }
                 }
-                if let Some(id) = map.get("$id") {
-                    if !id.as_str().is_some_and(valid_id) {
-                        return Err(err(
-                            Code::InvalidId,
-                            "Expected a safe 1–64 character application ID",
-                        ));
-                    }
+                if let Some(id) = map.get("$id")
+                    && !id.as_str().is_some_and(valid_id)
+                {
+                    return Err(err(Code::InvalidId, "Expected a safe 1–64 character application ID"));
                 }
                 Ok(())
             }
             Self::List { item } if is_scalar(item) => {
-                let list = value
-                    .as_array()
-                    .ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
+                let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
                 if list.len() > 100_000 {
                     return Err(err(Code::TooLarge, "List is too long"));
                 }
                 list.iter().try_for_each(|element| item.validate(element, false))
             }
             Self::Record { value: entry } => {
-                let map = value
-                    .as_object()
-                    .ok_or_else(|| err(Code::TypeMismatch, "Expected record"))?;
+                let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected record"))?;
                 for (key, value) in map {
                     if !valid_key(key) {
                         return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
@@ -214,16 +218,14 @@ impl Node {
                 Ok(())
             }
             Self::List { item } => {
-                let list = value
-                    .as_array()
-                    .ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
+                let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
                 let mut ids = BTreeSet::new();
                 for value in list {
                     item.validate(value, true)?;
-                    if let Some(id) = value.get("$id") {
-                        if !ids.insert(id.as_str().unwrap()) {
-                            return Err(err(Code::DuplicateId, "Duplicate row ID"));
-                        }
+                    if let Some(id) = value.get("$id")
+                        && !ids.insert(id.as_str().expect("validated row ID"))
+                    {
+                        return Err(err(Code::DuplicateId, "Duplicate row ID"));
                     }
                 }
                 Ok(())
@@ -236,10 +238,7 @@ impl Node {
 pub(super) fn descriptor(s: &str) -> Result<Node> {
     let root: Node = parse(s)?;
     if !matches!(root, Node::Object { .. }) {
-        return Err(err(
-            Code::InvalidSchema,
-            "Expected object descriptor root",
-        ));
+        return Err(err(Code::InvalidSchema, "Expected object descriptor root"));
     }
     root.check(0)?;
     Ok(root)
@@ -256,4 +255,3 @@ pub(crate) fn checked(schema: &str, initial: &str) -> Result<Node> {
     schema.validate(&initial, false)?;
     Ok(schema)
 }
-

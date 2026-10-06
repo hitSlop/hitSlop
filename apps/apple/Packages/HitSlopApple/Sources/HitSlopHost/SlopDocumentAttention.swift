@@ -65,7 +65,7 @@ extension SlopDocumentWindowController {
     if guestIssue != nil { telemetry.send(.breadcrumb(.recovery, .recovered)) }
     guestIssue = nil
     refreshIssueBadge()
-    publishControlsVisibility(toolbar?.isVisible == true, force: true)
+    toolbar.republishControls()
   }
   /// What a button in the save-failure alert does.
   private enum AttentionAction {

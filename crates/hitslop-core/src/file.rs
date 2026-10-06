@@ -3,9 +3,9 @@
 //! open runs, packing a build into a template, creating and copying documents, and serving
 //! the app's assets. `store` saves a document; `registry` holds its writer lock.
 
-use crate::error::{failed, invalid, rejected, requires_update, sqlite, Error, Result};
-use crate::{shape, Code};
-use rusqlite::{config::DbConfig, limits::Limit, params, Connection, OpenFlags, OptionalExtension, MAIN_DB};
+use crate::error::{Error, Result, failed, invalid, rejected, requires_update, sqlite};
+use crate::{Code, shape};
+use rusqlite::{Connection, MAIN_DB, OpenFlags, OptionalExtension, config::DbConfig, limits::Limit, params};
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::fs;
@@ -36,8 +36,32 @@ CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL) STRICT;
 CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL) STRICT;";
 
 use crate::wire::{APP_TEXT_BYTES, ASSET_PATH_BYTES, MANIFEST_BYTES};
-/// The artwork a file may hold, as the `artwork` table's CHECK names it.
-pub(crate) const ARTWORK: [&str; 2] = ["preview", "icon"];
+/// The artwork a file may hold, as the `artwork` table's CHECK names it. Its name is the
+/// row's in the file and the image's in a build's stage (`artwork/<name>.png`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Artwork {
+    Preview,
+    Icon,
+}
+impl Artwork {
+    pub const ALL: [Artwork; 2] = [Artwork::Preview, Artwork::Icon];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preview => "preview",
+            Self::Icon => "icon",
+        }
+    }
+}
+impl std::fmt::Display for Artwork {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl rusqlite::ToSql for Artwork {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
 
 /// The file's path with its folder resolved: NOFOLLOW refuses a symbolic link anywhere in
 /// a path, while the file itself must not be one.
@@ -49,14 +73,18 @@ pub(crate) fn resolve(path: &Path) -> Result<PathBuf> {
 /// Every connection: no symbolic links, defensive mode, no trusted schema, cell checks, no
 /// memory mapping, and values no longer than the largest stored one.
 pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<Connection> {
-    let conn = Connection::open_with_flags(resolve(path)?, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW)
-        .map_err(sqlite("open"))?;
+    let conn = Connection::open_with_flags(
+        resolve(path)?,
+        flags | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )
+    .map_err(sqlite("open"))?;
     conn.busy_timeout(busy).map_err(sqlite("open"))?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true).map_err(sqlite("open"))?;
     // Closing never checkpoints: a file in WAL mode, which only a newer build writes, is
     // refused, never rewritten.
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).map_err(sqlite("open"))?;
-    conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA cell_size_check=ON; PRAGMA mmap_size=0;").map_err(sqlite("open"))?;
+    conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA cell_size_check=ON; PRAGMA mmap_size=0;")
+        .map_err(sqlite("open"))?;
     conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, crate::STORAGE_BYTES as i32).map_err(sqlite("open"))?;
     Ok(conn)
 }
@@ -65,8 +93,10 @@ pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<C
 /// (FAST): Apple's SQLite does so by default, the bundled SQLite of the Linux engines and
 /// the browser does not, and a shared file should not depend on which one wrote it.
 pub(crate) fn configure_writer(conn: &Connection) -> Result<()> {
-    conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA secure_delete=FAST;")
-        .map_err(sqlite("configure"))
+    conn.execute_batch(
+        "PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; PRAGMA secure_delete=FAST;",
+    )
+    .map_err(sqlite("configure"))
 }
 /// A writer's connection: read-write, creating a new file when `create`. An existing file
 /// is checked before `configure_writer`, so a file this build refuses is never written.
@@ -99,9 +129,11 @@ pub enum Kind {
 
 type SchemaRow = (String, String, String, Option<String>);
 fn tables(conn: &Connection) -> Result<Vec<SchemaRow>> {
-    let mut statement =
-        conn.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").map_err(sqlite("read tables"))?;
-    let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sqlite("read tables"))?;
+    let mut statement = conn
+        .prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name")
+        .map_err(sqlite("read tables"))?;
+    let rows =
+        statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sqlite("read tables"))?;
     rows.collect::<rusqlite::Result<_>>().map_err(sqlite("read tables"))
 }
 /// The tables and indexes `SCHEMA` makes, including SQLite's automatic primary-key
@@ -116,8 +148,7 @@ fn expected_tables() -> &'static [SchemaRow] {
 }
 
 /// The saved state's sizes: update rows, update bytes and checkpoint bytes.
-pub(crate) const STATE_SIZES: &str =
-    "SELECT (SELECT count(*) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM checkpoint)";
+pub(crate) const STATE_SIZES: &str = "SELECT (SELECT count(*) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM checkpoint)";
 
 /// The checks every open runs, in order, reading sizes (`length()`, an asset's recorded
 /// size) and never a value. The application ID, the storage version and the app's
@@ -153,19 +184,24 @@ fn markers(conn: &Connection) -> Result<()> {
     }
     let version = one(conn, "PRAGMA user_version")?;
     if version > STORAGE_VERSION {
-        return Err(requires_update(format!("This document uses storage version {version}; this hitSlop reads version {STORAGE_VERSION}")));
+        return Err(requires_update(format!(
+            "This document uses storage version {version}; this hitSlop reads version {STORAGE_VERSION}"
+        )));
     }
     if version != STORAGE_VERSION {
         return Err(invalid("Unsupported document storage"));
     }
     // Two named columns, which any newer app format keeps; the tables are compared next.
-    let found = conn.query_row("SELECT package_format, runtime_abi FROM app WHERE id=1", [], |r| Ok((r.get(0)?, r.get(1)?)));
+    let found =
+        conn.query_row("SELECT package_format, runtime_abi FROM app WHERE id=1", [], |r| Ok((r.get(0)?, r.get(1)?)));
     let (package_format, runtime_abi) = match found {
         Ok(markers) => markers,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Err(invalid("Unexpected rows in app")),
         // No such table or column, or a marker that is not an integer.
         Err(rusqlite::Error::InvalidColumnType(..)) => return Err(invalid("Unexpected document tables")),
-        Err(e) if e.sqlite_error_code() == Some(rusqlite::ffi::ErrorCode::Unknown) => return Err(invalid("Unexpected document tables")),
+        Err(e) if e.sqlite_error_code() == Some(rusqlite::ffi::ErrorCode::Unknown) => {
+            return Err(invalid("Unexpected document tables"));
+        }
         Err(e) => return Err(sqlite("read")(e)),
     };
     requirements(package_format, runtime_abi)
@@ -173,7 +209,8 @@ fn markers(conn: &Connection) -> Result<()> {
 /// The app's requirements, as `pack` reads them from a build and every open from a file:
 /// none newer than this build supports, and each at least 1.
 fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
-    let markers = [("package format", package_format, crate::PACKAGE_FORMAT), ("runtime ABI", runtime_abi, crate::RUNTIME_ABI)];
+    let markers =
+        [("package format", package_format, crate::PACKAGE_FORMAT), ("runtime ABI", runtime_abi, crate::RUNTIME_ABI)];
     if let Some((name, level, supported)) = markers.iter().find(|(_, level, supported)| *level > *supported as i64) {
         return Err(requires_update(format!("This slop needs {name} {level}; this hitSlop supports {supported}")));
     }
@@ -191,7 +228,9 @@ fn layout(conn: &Connection) -> Result<()> {
     // would see.
     for table in ["app", "document", "checkpoint"] {
         let (rows, first): (i64, i64) = conn
-            .query_row(&format!("SELECT count(*), coalesce(sum(id=1),0) FROM {table}"), [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(&format!("SELECT count(*), coalesce(sum(id=1),0) FROM {table}"), [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .map_err(sqlite("read"))?;
         if rows > 1 || rows != first || (table == "app" && rows != 1) {
             return Err(invalid(format!("Unexpected rows in {table}")));
@@ -215,7 +254,11 @@ fn app_sizes(conn: &Connection) -> Result<()> {
 fn stored_assets(conn: &Connection) -> Result<()> {
     // Stored as it is, an asset is its size; compressed, it stores less, and decoding stops
     // at its size. The budgets then bound what decoding produces.
-    if one(conn, "SELECT count(*) FROM assets WHERE typeof(size)!='integer' OR CASE encoding WHEN 'identity' THEN length(bytes)!=size WHEN 'br' THEN length(bytes)>=size ELSE 1 END")? > 0 {
+    if one(
+        conn,
+        "SELECT count(*) FROM assets WHERE typeof(size)!='integer' OR CASE encoding WHEN 'identity' THEN length(bytes)!=size WHEN 'br' THEN length(bytes)>=size ELSE 1 END",
+    )? > 0
+    {
         return Err(invalid("Invalid asset encoding"));
     }
     let (assets, largest, total, longest_path): (i64, i64, i64, i64) = conn
@@ -242,13 +285,22 @@ fn stored_artwork(conn: &Connection) -> Result<()> {
     if one(conn, "SELECT coalesce(max(length(png)),0) FROM artwork")? > crate::ASSET_FILE_BYTES as i64 {
         return Err(invalid("Artwork is too large"));
     }
-    if one(conn, &format!("SELECT count(*) FROM artwork WHERE name NOT IN ('{}')", ARTWORK.join("','")))? > 0 {
+    if one(
+        conn,
+        &format!(
+            "SELECT count(*) FROM artwork WHERE name NOT IN ('{}')",
+            Artwork::ALL.map(Artwork::as_str).join("','")
+        ),
+    )? > 0
+    {
         return Err(invalid("Unexpected artwork"));
     }
     // Artwork reaches Finder and Quick Look's image decoders: its PNG header is checked as
     // pack and every artwork write check it, reading only the header.
     let mut artwork = conn.prepare("SELECT name, substr(png,1,33) FROM artwork").map_err(sqlite("read"))?;
-    for row in artwork.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(sqlite("read"))? {
+    for row in
+        artwork.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(sqlite("read"))?
+    {
         let (name, header) = row.map_err(sqlite("read"))?;
         png(&header, &format!("The {name} artwork"))?;
     }
@@ -263,9 +315,11 @@ fn state(conn: &Connection) -> Result<Kind> {
     let checkpoints = one(conn, "SELECT count(*) FROM checkpoint")?;
     let updates = one(conn, "SELECT count(*) FROM updates")?;
     let (attachments, attachment_largest, attachment_bytes): (i64, i64, i64) = conn
-        .query_row("SELECT count(*), coalesce(max(length(bytes)),0), coalesce(sum(length(bytes)),0) FROM attachments", [], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })
+        .query_row(
+            "SELECT count(*), coalesce(max(length(bytes)),0), coalesce(sum(length(bytes)),0) FROM attachments",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
         .map_err(sqlite("read"))?;
     if checkpoints != 1 {
         return Err(invalid("The file has no saved state; keep it for recovery"));
@@ -309,7 +363,9 @@ fn assets_within(count: usize, largest: usize, total: usize) -> Result<()> {
 }
 /// Whether a document's attachments fit their limits, as stored or with one more.
 pub(crate) fn attachments_fit(count: i64, largest: i64, total: i64) -> bool {
-    count <= crate::ATTACHMENT_COUNT as i64 && largest <= crate::ATTACHMENT_FILE_BYTES as i64 && total <= crate::ATTACHMENT_BYTES as i64
+    count <= crate::ATTACHMENT_COUNT as i64
+        && largest <= crate::ATTACHMENT_FILE_BYTES as i64
+        && total <= crate::ATTACHMENT_BYTES as i64
 }
 /// A relative asset path: no empty or dot segments, no backslash or NUL.
 pub fn valid_asset_path(path: &str) -> bool {
@@ -379,9 +435,12 @@ fn png(bytes: &[u8], label: &str) -> Result<(u32, u32, bool)> {
     if bytes.len() < 33 || bytes[..8] != SIGNATURE || &bytes[12..16] != b"IHDR" {
         return Err(invalid(format!("{label} must be a valid PNG")));
     }
-    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
-    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
-    if width == 0 || height == 0 || width as usize > crate::IMAGE_SIDE || height as usize > crate::IMAGE_SIDE
+    let width = u32::from_be_bytes(bytes[16..20].try_into().expect("4 bytes"));
+    let height = u32::from_be_bytes(bytes[20..24].try_into().expect("4 bytes"));
+    if width == 0
+        || height == 0
+        || width as usize > crate::IMAGE_SIDE
+        || height as usize > crate::IMAGE_SIDE
         || (width as usize) * (height as usize) > crate::IMAGE_PIXELS
     {
         return Err(invalid(format!("{label} exceeds the PNG dimension limit")));
@@ -415,7 +474,9 @@ fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::AppSpe
     let spec = crate::AppSpec::of(schema, &window.slug, theme_tokens);
     Ok((window, spec))
 }
-fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Result<CheckedApp> {
+/// An asset's bytes by key: borrowed from a stage being packed, read from a file.
+type Assets<'a, 'b> = &'b dyn Fn(&str) -> Result<Option<Cow<'a, [u8]>>>;
+fn check_app(app: &App, asset: Assets) -> Result<CheckedApp> {
     let (window, spec) = check_app_values(app)?;
     let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
     std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
@@ -431,7 +492,7 @@ fn check_app(app: &App, asset: &dyn Fn(&str) -> Result<Option<Vec<u8>>>) -> Resu
             if !alpha {
                 return Err(invalid("The window skin must be an RGBA PNG with alpha"));
             }
-            Some(bytes)
+            Some(bytes.into_owned())
         }
     };
     Ok(CheckedApp { spec, silhouette: window.silhouette, skin })
@@ -457,7 +518,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
     let kind = check(conn, integrity)?;
     let app = read_app(conn)?;
-    let found = check_app(&app, &|key| read_asset(conn, key))?;
+    let found = check_app(&app, &|key| Ok(read_asset(conn, key)?.map(Cow::Owned)))?;
     Ok(OpenedApp {
         kind,
         spec: found.spec,
@@ -481,17 +542,17 @@ pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
 /// The first of `preferred` artwork (`preview`, `icon`) the file holds, by name: one read,
 /// for a host displaying the file (Quick Look, the catalog, a window's icon). A file that
 /// cannot be read now (busy, or mid-recovery) is an error, never "no artwork".
-pub fn artwork(path: &Path, preferred: &[&str]) -> Result<Option<(String, Vec<u8>)>> {
+pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Vec<u8>)>> {
     let (conn, _) = checked(path)?;
-    for name in preferred {
+    for &name in preferred {
         if let Some(png) = read_artwork(&conn, name)? {
-            return Ok(Some((name.to_string(), png)));
+            return Ok(Some((name, png)));
         }
     }
     Ok(None)
 }
-/// One artwork image by name, when the file holds it.
-pub(crate) fn read_artwork(conn: &Connection, name: &str) -> Result<Option<Vec<u8>>> {
+/// One artwork image, when the file holds it.
+pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Vec<u8>>> {
     conn.prepare_cached("SELECT png FROM artwork WHERE name=?")
         .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
         .map_err(sqlite("read artwork"))
@@ -512,19 +573,43 @@ fn read_app(conn: &Connection) -> Result<App> {
     })
     .map_err(sqlite("read app"))
 }
+/// How an asset's `bytes` hold it, as the `assets` table's CHECK names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Encoding {
+    Identity,
+    Brotli,
+}
+impl rusqlite::ToSql for Encoding {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(match self {
+            Self::Identity => "identity",
+            Self::Brotli => "br",
+        }
+        .into())
+    }
+}
+impl rusqlite::types::FromSql for Encoding {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match value.as_str()? {
+            "identity" => Ok(Self::Identity),
+            "br" => Ok(Self::Brotli),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
 /// An asset's bytes, decoded.
 fn read_asset(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>> {
-    let row: Option<(String, i64, Vec<u8>)> = conn
+    let row: Option<(Encoding, i64, Vec<u8>)> = conn
         .prepare_cached("SELECT encoding,size,bytes FROM assets WHERE path=?")
         .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional())
         .map_err(sqlite("read asset"))?;
-    row.map(|(encoding, size, bytes)| decode(&encoding, size as usize, bytes)).transpose()
+    row.map(|(encoding, size, bytes)| decode(encoding, size as usize, bytes)).transpose()
 }
 /// How `pack` stores an asset: text and WebAssembly Brotli-compressed when that is smaller,
 /// anything else as it is, so media ranges read straight from the file. Quality 10 stores
 /// within a page or so of 11 in half the time; past 4 MiB it takes seconds, so larger
 /// assets use 9.
-fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(&'static str, Cow<'a, [u8]>)> {
+fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a, [u8]>)> {
     let kind = content_type(key);
     if kind.starts_with("text/") || matches!(kind, "application/json" | "image/svg+xml" | "application/wasm") {
         let params = brotli::enc::BrotliEncoderParams {
@@ -536,16 +621,16 @@ fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(&'static str, Cow<'a, [u8]>
         let mut compressed = Vec::new();
         brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(failed)?;
         if compressed.len() < bytes.len() {
-            return Ok(("br", Cow::Owned(compressed)));
+            return Ok((Encoding::Brotli, Cow::Owned(compressed)));
         }
     }
-    Ok(("identity", Cow::Borrowed(bytes)))
+    Ok((Encoding::Identity, Cow::Borrowed(bytes)))
 }
 /// An asset's stored bytes, decoded to the `size` `check` bounded.
-fn decode(encoding: &str, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
+fn decode(encoding: Encoding, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
     match encoding {
-        "identity" => Ok(stored),
-        "br" => {
+        Encoding::Identity => Ok(stored),
+        Encoding::Brotli => {
             let mut bytes = Vec::with_capacity(size);
             let read = brotli::Decompressor::new(stored.as_slice(), 4096).take(size as u64 + 1).read_to_end(&mut bytes);
             if read.is_ok() && bytes.len() == size {
@@ -554,7 +639,6 @@ fn decode(encoding: &str, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
                 Err(failed("An app asset is damaged; keep the file for recovery"))
             }
         }
-        _ => Err(invalid("Invalid asset encoding")),
     }
 }
 
@@ -568,9 +652,9 @@ impl AssetReader {
     pub(crate) fn new(conn: Connection) -> Self {
         Self { conn }
     }
-    fn row(&self, key: &str) -> Result<Option<(i64, bool, u64)>> {
+    fn row(&self, key: &str) -> Result<Option<(i64, Encoding, u64)>> {
         self.conn
-            .prepare_cached("SELECT rowid, encoding='identity', size FROM assets WHERE path=?")
+            .prepare_cached("SELECT rowid, encoding, size FROM assets WHERE path=?")
             .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64))).optional())
             .map_err(sqlite("read asset"))
     }
@@ -580,9 +664,9 @@ impl AssetReader {
     }
     /// `length` bytes from `offset`, clamped to the asset.
     pub fn read_range(&self, key: &str, offset: u64, length: u64) -> Result<Option<Vec<u8>>> {
-        let Some((row, identity, size)) = self.row(key)? else { return Ok(None) };
+        let Some((row, encoding, size)) = self.row(key)? else { return Ok(None) };
         let length = length.min(size.saturating_sub(offset)) as usize;
-        if !identity {
+        if encoding != Encoding::Identity {
             let Some(mut bytes) = read_asset(&self.conn, key)? else { return Ok(None) };
             let start = offset.min(size) as usize;
             bytes.truncate(start + length);
@@ -604,7 +688,7 @@ pub(crate) struct Staged {
 impl Staged {
     pub(crate) fn beside(dest: &Path) -> Result<Self> {
         let dest = resolve(dest)?;
-        let name = dest.file_name().unwrap().to_string_lossy();
+        let name = dest.file_name().expect("a resolved path names its file").to_string_lossy();
         Ok(Self { path: dest.with_file_name(format!(".{name}.{}.tmp", crate::random_hex(8))), published: false })
     }
     pub(crate) fn path(&self) -> &Path {
@@ -619,7 +703,9 @@ impl Staged {
         let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
         #[cfg(target_os = "linux")]
         // SAFETY: valid C strings.
-        let status = unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
+        let status = unsafe {
+            libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE)
+        };
         if status != 0 {
             let error = std::io::Error::last_os_error();
             return Err(if error.raw_os_error() == Some(libc::EEXIST) {
@@ -638,7 +724,10 @@ impl Staged {
     fn publish_template(mut self, dest: &Path) -> Result<()> {
         if let Ok(meta) = fs::symlink_metadata(dest) {
             if !meta.is_file() {
-                return Err(rejected(Code::Exists, format!("Refusing to replace {}: it is not a template", dest.display())));
+                return Err(rejected(
+                    Code::Exists,
+                    format!("Refusing to replace {}: it is not a template", dest.display()),
+                ));
             }
             if checked(dest)?.1 != Kind::Template {
                 return Err(rejected(Code::Exists, "Refusing to replace a document with a template"));
@@ -663,22 +752,30 @@ fn cstring(path: &Path) -> Result<CString> {
     CString::new(path.as_os_str().as_bytes()).map_err(|_| failed("Invalid path"))
 }
 fn sync_folder(path: &Path) {
-    if let Some(folder) = resolve(path).ok().and_then(|p| p.parent().map(Path::to_owned)) {
-        if let Ok(file) = fs::File::open(folder) {
-            let _ = file.sync_all();
-        }
+    if let Some(folder) = resolve(path).ok().and_then(|p| p.parent().map(Path::to_owned))
+        && let Ok(file) = fs::File::open(folder)
+    {
+        let _ = file.sync_all();
     }
 }
 
 /// Writes a template: the app's row, its initial checkpoint, its assets and its artwork, in
 /// one transaction.
-fn write_template(path: &Path, app: &App, initial: &[u8], assets: &[(String, Vec<u8>)], artwork: &[(String, Vec<u8>)]) -> Result<()> {
+fn write_template(
+    path: &Path,
+    app: &App,
+    initial: &[u8],
+    assets: &[(String, Vec<u8>)],
+    artwork: &[(Artwork, Vec<u8>)],
+) -> Result<()> {
     let conn = writer(path, true)?;
     conn.execute_batch("PRAGMA auto_vacuum=FULL;").map_err(sqlite("create"))?;
     configure_writer(&conn)?;
     let tx = conn.unchecked_transaction().map_err(sqlite("create"))?;
-    tx.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"))
-        .map_err(sqlite("create"))?;
+    tx.execute_batch(&format!(
+        "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"
+    ))
+    .map_err(sqlite("create"))?;
     tx.execute(
         "INSERT INTO app VALUES(1,?,?,?,?,?)",
         params![app.package_format as i64, app.runtime_abi as i64, app.manifest, app.descriptor, app.theme],
@@ -687,7 +784,8 @@ fn write_template(path: &Path, app: &App, initial: &[u8], assets: &[(String, Vec
     tx.execute("INSERT INTO checkpoint VALUES(1,?)", [initial]).map_err(sqlite("create"))?;
     for (key, bytes) in assets {
         let (encoding, stored) = encode(key, bytes)?;
-        tx.execute("INSERT INTO assets VALUES(?,?,?,?)", params![key, encoding, bytes.len() as i64, stored.as_ref()]).map_err(sqlite("create"))?;
+        tx.execute("INSERT INTO assets VALUES(?,?,?,?)", params![key, encoding, bytes.len() as i64, stored.as_ref()])
+            .map_err(sqlite("create"))?;
     }
     for (name, png) in artwork {
         tx.execute("INSERT INTO artwork VALUES(?,?)", params![name, png]).map_err(sqlite("create"))?;
@@ -711,20 +809,20 @@ pub fn pack(stage: &Path, dest: &Path) -> Result<()> {
     let (app, initial) = parse_app(&text)?;
     let assets = stage_assets(&stage.join("assets"))?;
     let mut artwork = vec![];
-    for name in ARTWORK {
+    for name in Artwork::ALL {
         let file = stage.join("artwork").join(format!("{name}.png"));
         match fs::symlink_metadata(&file) {
             Ok(meta) if meta.is_file() => {
                 let bytes = fs::read(&file).map_err(failed)?;
                 check_artwork(&format!("artwork/{name}.png"), &bytes)?;
                 // Packing runs once per build, so it can afford oxipng's default level, 2.
-                artwork.push((name.to_string(), optimize_png(bytes, 2)));
+                artwork.push((name, optimize_png(bytes, 2)));
             }
             Ok(_) => return Err(invalid(format!("artwork/{name}.png must be a regular file"))),
             Err(_) => {}
         }
     }
-    let lookup = |key: &str| Ok(assets.iter().find(|(k, _)| k == key).map(|(_, b)| b.clone()));
+    let lookup = |key: &str| Ok(assets.iter().find(|(k, _)| k == key).map(|(_, b)| Cow::Borrowed(b.as_slice())));
     let checked = check_app(&app, &lookup)?;
     let initial = initial_checkpoint(&checked.spec, &initial)?;
     let staged = Staged::beside(dest)?;
@@ -744,8 +842,11 @@ fn parse_app(input: &str) -> Result<(App, String)> {
     }
     let row: crate::wire::AppRow = serde_json::from_str(input).map_err(|e| invalid(format!("app.json: {e}")))?;
     requirements(row.packageFormat.try_into().unwrap_or(i64::MAX), row.runtimeABI.try_into().unwrap_or(i64::MAX))?;
-    if row.manifest.get().len() > MANIFEST_BYTES || row.descriptor.get().len() > APP_TEXT_BYTES
-        || row.initial.get().len() > APP_TEXT_BYTES || row.theme.get().len() > crate::wire::THEME_LIMIT {
+    if row.manifest.get().len() > MANIFEST_BYTES
+        || row.descriptor.get().len() > APP_TEXT_BYTES
+        || row.initial.get().len() > APP_TEXT_BYTES
+        || row.theme.get().len() > crate::wire::THEME_LIMIT
+    {
         return Err(invalid("The app's manifest, schema, initial values or theme is too large"));
     }
     let app = App {
@@ -804,7 +905,11 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
             if !meta.is_file() {
                 return Err(invalid("Assets must be regular files, without symbolic links"));
             }
-            let key = path.strip_prefix(root).map_err(|_| invalid("An asset escapes its folder"))?.to_string_lossy().into_owned();
+            let key = path
+                .strip_prefix(root)
+                .map_err(|_| invalid("An asset escapes its folder"))?
+                .to_string_lossy()
+                .into_owned();
             if !valid_asset_path(&key) {
                 return Err(invalid(format!("Unsafe asset path {key}")));
             }
@@ -818,19 +923,15 @@ fn stage_assets(root: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(assets)
 }
 
+/// A change a copy makes to its staged file, before its checks.
+pub(crate) type Clean<'a> = &'a dyn Fn(&Connection) -> Result<()>;
 /// Copies `source` to `dest` through SQLite's online backup into a temporary file beside
 /// `dest`, then checks it and publishes it without replacing anything; `create` adds the
 /// document row a template lacks.
 /// A `durable` copy is a document a person keeps; a capture's source, read once and then
 /// deleted, skips the syncs. `clean` changes the staged copy before its checks, which then
 /// include SQLite's quick check.
-pub(crate) fn copy(
-    source: &Connection,
-    dest: &Path,
-    create: bool,
-    durable: bool,
-    clean: Option<&dyn Fn(&Connection) -> Result<()>>,
-) -> Result<()> {
+pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool, clean: Option<Clean>) -> Result<()> {
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
     if !durable {

@@ -1,10 +1,11 @@
 //! One native document owner. Admission, publication order and save scheduling live on
 //! the edit worker; SQLite work runs serially on the persistence worker. Callbacks run
 //! without locks and may enqueue another request, but must not wait for its completion.
-use crate::{file, store, theme, Document, Origin};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use crate::file::{self, Artwork};
+use crate::{Code, Document, Origin, store, theme};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,13 +32,12 @@ pub struct Failure {
     pub op_index: Option<u32>,
 }
 impl Failure {
-    fn new(kind: FailureKind, message: impl Into<String>) -> Self {
-        Self {
-            kind,
-            message: message.into(),
-            reason: None,
-            op_index: None,
-        }
+    pub(crate) fn new(kind: FailureKind, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into(), reason: None, op_index: None }
+    }
+    /// A refusal under a core error code: nothing changed.
+    pub(crate) fn rejected(code: Code, message: impl Into<String>) -> Self {
+        Self { reason: Some(code.as_str().into()), ..Self::new(FailureKind::Rejected, message) }
     }
 }
 impl From<crate::Error> for Failure {
@@ -52,13 +52,8 @@ impl From<crate::Error> for Failure {
 }
 impl From<store::Error> for Failure {
     fn from(e: store::Error) -> Self {
-        let kind = match &e {
-            store::Error::Rejected(_) => {
-                if let store::Error::Rejected(e) = e {
-                    return e.into();
-                }
-                unreachable!()
-            }
+        let kind = match e {
+            store::Error::Rejected(e) => return e.into(),
             store::Error::Locked => FailureKind::Locked,
             store::Error::Busy => FailureKind::Busy,
             store::Error::Full => FailureKind::Full,
@@ -97,7 +92,7 @@ pub enum Request {
         destination: PathBuf,
     },
     Artwork {
-        name: String,
+        name: Artwork,
     },
     Attachments,
     ReadAttachment {
@@ -147,17 +142,9 @@ pub enum SaveStatus {
 /// the owner states its undo state and save status when it starts, then each change.
 #[derive(Debug)]
 pub enum Event {
-    Publication {
-        json: String,
-    },
-    SaveStatus {
-        status: SaveStatus,
-        failure: Option<Failure>,
-    },
-    UndoState {
-        can_undo: bool,
-        can_redo: bool,
-    },
+    Publication { json: String },
+    SaveStatus { status: SaveStatus, failure: Option<Failure> },
+    UndoState { can_undo: bool, can_redo: bool },
     ThemeChanged,
 }
 pub type Completion = Box<dyn FnOnce(Result<Reply>) + Send>;
@@ -166,19 +153,21 @@ fn complete(callback: Completion, value: Result<Reply>) {
     let _ = catch_unwind(AssertUnwindSafe(|| callback(value)));
 }
 fn replaced() -> Failure {
-    Failure::new(
-        FailureKind::Replaced,
-        "The document or page was replaced; the request was not applied",
-    )
+    Failure::new(FailureKind::Replaced, "The document or page was replaced; the request was not applied")
 }
 fn closed() -> Failure {
     Failure::new(FailureKind::Closed, "Document is closed")
 }
 fn poisoned() -> Failure {
-    Failure::new(
-        FailureKind::Invalidated,
-        "Engine panic: reload durable state",
-    )
+    Failure::new(FailureKind::Invalidated, "Engine panic: reload durable state")
+}
+/// Runs storage work; a panic in it fails as a poisoned engine.
+fn contained<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
+    catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(poisoned()))
+}
+/// The request's callback, which the request answers or hands on exactly once.
+fn take(callback: &mut Option<Completion>) -> Completion {
+    callback.take().expect("a request's callback is taken once")
 }
 
 /// A queue handle, independent of any page lifetime. Its store retains the writer lock
@@ -227,11 +216,7 @@ impl Owner {
             .name("hitslop.owner".into())
             .spawn(move || actor.run(receive))
             .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-        Ok(Self {
-            sender,
-            store,
-            path,
-        })
+        Ok(Self { sender, store, path })
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -258,20 +243,9 @@ impl Owner {
     pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
         self.enqueue(request, view, Some(deadline), callback);
     }
-    fn enqueue(
-        &self,
-        request: Request,
-        view: Option<String>,
-        deadline: Option<Instant>,
-        callback: Completion,
-    ) {
+    fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Instant>, callback: Completion) {
         if let Err(mpsc::SendError(Message::Request { callback, .. })) =
-            self.sender.send(Message::Request {
-                request,
-                view,
-                deadline,
-                callback,
-            })
+            self.sender.send(Message::Request { request, view, deadline, callback })
         {
             complete(callback, Err(closed()));
         }
@@ -296,9 +270,10 @@ enum Message {
         target: u64,
         result: Result<()>,
     },
+    /// Boxed: a document is far larger than any other message.
     Restored {
         generation: u64,
-        result: Result<Document>,
+        result: Result<Box<Document>>,
         callback: Completion,
     },
     Stored {
@@ -333,48 +308,33 @@ enum Work {
     },
 }
 /// The artwork a window rendered, by name, leaving out what it did not render.
-fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(&'static str, &'a [u8])> {
-    [("preview", preview), ("icon", icon)].into_iter().filter_map(|(name, png)| Some((name, png.as_deref()?))).collect()
+fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
+    [(Artwork::Preview, preview), (Artwork::Icon, icon)]
+        .into_iter()
+        .filter_map(|(name, png)| Some((name, png.as_deref()?)))
+        .collect()
 }
 enum StorageAction {
-    Copy {
-        path: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
+    Copy { path: PathBuf, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
     CaptureSource(PathBuf),
-    Artwork(String),
+    Artwork(Artwork),
     Attachments,
     ReadAttachment(String),
     PutAttachment(Vec<u8>),
 }
-fn persistence(
-    store: Arc<store::Store>,
-    work: mpsc::Receiver<Work>,
-    sender: mpsc::Sender<Message>,
-) {
+fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
         let done = match work {
-            Work::Save { generation, target, job } => Message::Saved {
-                generation,
-                target,
-                result: catch_unwind(AssertUnwindSafe(|| {
-                    store.write(&job).map_err(Failure::from)
-                }))
-                .unwrap_or_else(|_| Err(poisoned())),
-            },
+            Work::Save { generation, target, job } => {
+                Message::Saved { generation, target, result: contained(|| store.write(&job).map_err(Failure::from)) }
+            }
             Work::Restore { generation, callback } => Message::Restored {
                 generation,
                 callback,
-                result: catch_unwind(AssertUnwindSafe(|| store.document().map_err(Failure::from)))
-                    .unwrap_or_else(|_| Err(poisoned())),
+                result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
             },
-            Work::Store {
-                generation,
-                action,
-                callback,
-            } => {
-                let result = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
+            Work::Store { generation, action, callback } => {
+                let result = contained(|| {
                     Ok(match action {
                         StorageAction::Copy { path, preview, icon } => {
                             store.copy_clean(&path, &named_artwork(&preview, &icon))?;
@@ -384,36 +344,18 @@ fn persistence(
                             store.capture_source(&path)?;
                             Reply::Unit
                         }
-                        StorageAction::Artwork(name) => Reply::Bytes {
-                            bytes: store.artwork(&name)?,
-                        },
-                        StorageAction::Attachments => Reply::Attachments {
-                            items: store.attachments()?,
-                        },
-                        StorageAction::ReadAttachment(id) => Reply::Bytes {
-                            bytes: Some(store.attachment(&id)?),
-                        },
-                        StorageAction::PutAttachment(bytes) => Reply::Attachment {
-                            item: store.put_attachment(&bytes)?,
-                        },
+                        StorageAction::Artwork(name) => Reply::Bytes { bytes: store.artwork(name)? },
+                        StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
+                        StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
+                        StorageAction::PutAttachment(bytes) => {
+                            Reply::Attachment { item: store.put_attachment(&bytes)? }
+                        }
                     })
-                }))
-                .unwrap_or_else(|_| Err(poisoned()));
-                Message::Stored {
-                    generation,
-                    result,
-                    callback,
-                    closing: false,
-                }
+                });
+                Message::Stored { generation, result, callback, closing: false }
             }
-            Work::Close {
-                generation,
-                job,
-                preview,
-                icon,
-                callback,
-            } => {
-                let result = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
+            Work::Close { generation, job, preview, icon, callback } => {
+                let result = contained(|| {
                     // Housekeeping cannot fail a close whose final save succeeded.
                     if let Some(job) = job {
                         let _ = store.write(&job);
@@ -428,23 +370,14 @@ fn persistence(
                     let _ = store.reclaim_attachments();
                     store.close()?;
                     Ok(Reply::Unit)
-                }))
-                .unwrap_or_else(|_| Err(poisoned()));
-                Message::Stored {
-                    generation,
-                    result,
-                    callback,
-                    closing: true,
-                }
+                });
+                Message::Stored { generation, result, callback, closing: true }
             }
         };
-        if let Err(mpsc::SendError(message)) = sender.send(done) {
-            match message {
-                Message::Stored { callback, .. } | Message::Restored { callback, .. } => {
-                    complete(callback, Err(closed()))
-                }
-                _ => {}
-            }
+        if let Err(mpsc::SendError(Message::Stored { callback, .. } | Message::Restored { callback, .. })) =
+            sender.send(done)
+        {
+            complete(callback, Err(closed()))
         }
     }
 }
@@ -456,16 +389,9 @@ enum Lifecycle {
 }
 enum AfterSave {
     Reply(Reply),
-    Copy {
-        path: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
+    Copy { path: PathBuf, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
     CaptureSource(PathBuf),
-    Close {
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
+    Close { preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
 }
 struct Waiter {
     target: u64,
@@ -502,18 +428,13 @@ impl Actor {
         self.emit(Event::UndoState { can_undo: false, can_redo: false });
         self.status(SaveStatus::Saved);
         loop {
-            if self
-                .deadline
-                .is_some_and(|deadline| deadline <= Instant::now())
-            {
+            if self.deadline.is_some_and(|deadline| deadline <= Instant::now()) {
                 self.deadline = None;
                 self.requested = true;
                 self.pump();
             }
             let message = match self.deadline {
-                Some(deadline) => match messages
-                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                {
+                Some(deadline) => match messages.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                     Ok(message) => message,
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         self.deadline = None;
@@ -531,42 +452,23 @@ impl Actor {
             match message {
                 Message::Stop => break,
                 Message::Attach(view) => self.view = Some(view),
-                Message::Request {
-                    request,
-                    view,
-                    deadline,
-                    callback,
-                } => {
+                Message::Request { request, view, deadline, callback } => {
                     if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
-                        complete(
-                            callback,
-                            Err(Failure {
-                                kind: FailureKind::Closing,
-                                message: "Request expired before admission".into(),
-                                reason: None,
-                                op_index: None,
-                            }),
-                        );
+                        complete(callback, Err(Failure::new(FailureKind::Closing, "Request expired before admission")));
                         continue;
                     }
                     let mut callback = Some(callback);
-                    let result = catch_unwind(AssertUnwindSafe(|| {
-                        self.request(request, view, &mut callback)
-                    }))
-                    .unwrap_or_else(|_| {
-                        self.invalidated = true;
-                        self.fail(poisoned(), u64::MAX);
-                        Err(poisoned())
-                    });
+                    let result = catch_unwind(AssertUnwindSafe(|| self.request(request, view, &mut callback)))
+                        .unwrap_or_else(|_| {
+                            self.invalidated = true;
+                            self.fail(poisoned(), u64::MAX);
+                            Err(poisoned())
+                        });
                     if let Some(callback) = callback {
                         complete(callback, result.map(|value| value.unwrap_or(Reply::Unit)));
                     }
                 }
-                Message::Saved {
-                    generation,
-                    target,
-                    result,
-                } => {
+                Message::Saved { generation, target, result } => {
                     if generation != self.generation {
                         continue;
                     }
@@ -588,11 +490,7 @@ impl Actor {
                         self.pump();
                     }
                 }
-                Message::Restored {
-                    generation,
-                    result,
-                    callback,
-                } => {
+                Message::Restored { generation, result, callback } => {
                     if generation != self.generation {
                         complete(callback, Err(replaced()));
                         continue;
@@ -601,7 +499,7 @@ impl Actor {
                     self.writing = false;
                     match result {
                         Ok(core) => {
-                            self.core = core;
+                            self.core = *core;
                             self.sequence = self.core.sequence();
                             self.saved = self.sequence;
                             self.invalidated = false;
@@ -620,29 +518,19 @@ impl Actor {
                         }
                     }
                 }
-                Message::Stored {
-                    generation,
-                    mut result,
-                    callback,
-                    closing,
-                } => {
-                    if closing {
-                        if let Err(failure) = &mut result {
-                            if failure.kind == FailureKind::Failed {
-                                failure.kind = FailureKind::SaveFailed;
-                            }
-                        }
+                Message::Stored { generation, mut result, callback, closing } => {
+                    if closing
+                        && let Err(failure) = &mut result
+                        && failure.kind == FailureKind::Failed
+                    {
+                        failure.kind = FailureKind::SaveFailed;
                     }
                     if generation != self.generation {
                         complete(callback, Err(replaced()));
                         continue;
                     }
                     if closing {
-                        self.lifecycle = if result.is_ok() {
-                            Lifecycle::Closed
-                        } else {
-                            Lifecycle::Open
-                        };
+                        self.lifecycle = if result.is_ok() { Lifecycle::Closed } else { Lifecycle::Open };
                     }
                     complete(callback, result);
                 }
@@ -682,9 +570,7 @@ impl Actor {
     ) -> Result<Option<Reply>> {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
         let reply = match request {
-            Request::State => Reply::State {
-                json: self.core.state()?,
-            },
+            Request::State => Reply::State { json: self.core.state()? },
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;
                 let result = self.core.apply_batch(&batch_json, origin)?;
@@ -698,23 +584,11 @@ impl Actor {
             }
             Request::Undo { redo } => {
                 self.mutation()?;
-                let result = if redo {
-                    self.core.redo()?
-                } else {
-                    self.core.undo()?
-                };
+                let result = if redo { self.core.redo()? } else { self.core.undo()? };
                 self.accepted(result.sequence, result.publication, result.theme_changed);
-                Reply::Applied {
-                    sequence: result.sequence,
-                    ids: result.ids,
-                    version: self.core.version(),
-                    text: None,
-                }
+                Reply::Applied { sequence: result.sequence, ids: result.ids, version: self.core.version(), text: None }
             }
-            Request::Theme => Reply::Theme {
-                state: self.core.theme_state()?,
-                sequence: self.core.sequence(),
-            },
+            Request::Theme => Reply::Theme { state: self.core.theme_state()?, sequence: self.core.sequence() },
             Request::Flush => {
                 self.wait(callback, AfterSave::Reply(Reply::Unit))?;
                 return Ok(None);
@@ -741,11 +615,7 @@ impl Actor {
                 }
                 self.lifecycle = Lifecycle::Closing;
                 self.deadline = None;
-                let (preview, icon) = if self.mode == store::Mode::Document {
-                    (preview, icon)
-                } else {
-                    (None, None)
-                };
+                let (preview, icon) = if self.mode == store::Mode::Document { (preview, icon) } else { (None, None) };
                 self.wait(callback, AfterSave::Close { preview, icon })?;
                 return Ok(None);
             }
@@ -757,30 +627,24 @@ impl Actor {
                 self.discarding = true;
                 self.deadline = None;
                 self.reject_waiters(replaced());
-                self.persist(Work::Restore {
-                    generation: self.generation,
-                    callback: callback.take().unwrap(),
-                });
+                self.persist(Work::Restore { generation: self.generation, callback: take(callback) });
                 return Ok(None);
             }
             Request::Artwork { name } => {
-                self.storage(StorageAction::Artwork(name), callback.take().unwrap());
+                self.storage(StorageAction::Artwork(name), take(callback));
                 return Ok(None);
             }
             Request::Attachments => {
-                self.storage(StorageAction::Attachments, callback.take().unwrap());
+                self.storage(StorageAction::Attachments, take(callback));
                 return Ok(None);
             }
             Request::ReadAttachment { id } => {
-                self.storage(StorageAction::ReadAttachment(id), callback.take().unwrap());
+                self.storage(StorageAction::ReadAttachment(id), take(callback));
                 return Ok(None);
             }
             Request::PutAttachment { bytes } => {
                 self.mutation()?;
-                self.storage(
-                    StorageAction::PutAttachment(bytes),
-                    callback.take().unwrap(),
-                );
+                self.storage(StorageAction::PutAttachment(bytes), take(callback));
                 return Ok(None);
             }
         };
@@ -802,26 +666,18 @@ impl Actor {
         }
         let now = Instant::now();
         let since = *self.unsaved_since.get_or_insert(now);
-        self.deadline =
-            Some((now + Duration::from_millis(150)).min(since + Duration::from_millis(1000)));
+        self.deadline = Some((now + Duration::from_millis(150)).min(since + Duration::from_millis(1000)));
     }
     fn refresh_undo(&mut self) {
         let next = (self.core.can_undo(), self.core.can_redo());
         if next != self.undo {
             self.undo = next;
-            self.emit(Event::UndoState {
-                can_undo: next.0,
-                can_redo: next.1,
-            });
+            self.emit(Event::UndoState { can_undo: next.0, can_redo: next.1 });
         }
     }
     fn status(&self, status: SaveStatus) {
         self.emit(Event::SaveStatus {
-            status: if self.failure.is_some() {
-                SaveStatus::Failed
-            } else {
-                status
-            },
+            status: if self.failure.is_some() { SaveStatus::Failed } else { status },
             failure: self.failure.clone(),
         });
     }
@@ -829,20 +685,12 @@ impl Actor {
         if self.discarding {
             return Err(replaced());
         }
-        self.waiters.push(Waiter {
-            target: self.sequence,
-            callback: callback.take().unwrap(),
-            next,
-        });
+        self.waiters.push(Waiter { target: self.sequence, callback: take(callback), next });
         self.pump();
         Ok(())
     }
     fn pump(&mut self) {
-        if self.writing
-            || self.discarding
-            || self.invalidated
-            || self.lifecycle == Lifecycle::Closed
-        {
+        if self.writing || self.discarding || self.invalidated || self.lifecycle == Lifecycle::Closed {
             return;
         }
         if self.sequence <= self.saved {
@@ -852,21 +700,15 @@ impl Actor {
         self.requested = false;
         self.unsaved_since = None;
         self.deadline = None;
-        let job = catch_unwind(AssertUnwindSafe(|| {
-            self.store.job(&mut self.core, false).map_err(Failure::from)
-        }))
-        .unwrap_or_else(|_| {
-            self.invalidated = true;
-            Err(poisoned())
-        });
+        let job = catch_unwind(AssertUnwindSafe(|| self.store.job(&mut self.core, false).map_err(Failure::from)))
+            .unwrap_or_else(|_| {
+                self.invalidated = true;
+                Err(poisoned())
+            });
         match job {
             Ok(Some(job)) => {
                 self.writing = true;
-                self.persist(Work::Save {
-                    generation: self.generation,
-                    target: self.sequence,
-                    job,
-                });
+                self.persist(Work::Save { generation: self.generation, target: self.sequence, job });
             }
             Ok(None) => {
                 self.saved = self.sequence;
@@ -911,11 +753,7 @@ impl Actor {
         }
     }
     fn storage(&mut self, action: StorageAction, callback: Completion) {
-        self.persist(Work::Store {
-            generation: self.generation,
-            action,
-            callback,
-        });
+        self.persist(Work::Store { generation: self.generation, action, callback });
     }
     fn persist(&mut self, work: Work) {
         if let Err(mpsc::SendError(work)) = self.persist.send(work) {
@@ -926,9 +764,9 @@ impl Actor {
             }
             self.fail(poisoned(), u64::MAX);
             match work {
-                Work::Store { callback, .. }
-                | Work::Restore { callback, .. }
-                | Work::Close { callback, .. } => complete(callback, Err(poisoned())),
+                Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
+                    complete(callback, Err(poisoned()))
+                }
                 Work::Save { .. } => {}
             }
         }

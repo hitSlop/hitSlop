@@ -33,14 +33,14 @@ jobs:
           bun-version: "1.4.2"
       # The release flags every build of the core uses: no machine paths in the binary.
       - run: echo "RUSTFLAGS=$(bun scripts/build/core.ts --rustflags)" >> "$GITHUB_ENV"
-      # The engine's own tests run on the binary this runner built.
-      - run: cargo test --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
-      - run: cargo build --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
+      # The engine's own tests run on the binary this runner built, in the profile that ships.
+      - run: cargo test --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
+      - run: cargo build --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
       # engine.json records what the binary was built from; packing refuses an engine
       # from another commit or core (scripts/build/packages.ts).
       - run: |
           mkdir -p engines/${{ matrix.platform }}
-          cp target/${{ matrix.target }}/release/slop-engine engines/${{ matrix.platform }}/
+          cp target/${{ matrix.target }}/dist/slop-engine engines/${{ matrix.platform }}/
           build_id=$(engines/${{ matrix.platform }}/slop-engine --build-id)
           printf '{"commit":"%s","buildId":"%s"}\n' "$GITHUB_SHA" "$build_id" > engines/${{ matrix.platform }}/engine.json
           cat engines/${{ matrix.platform }}/engine.json

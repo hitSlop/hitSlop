@@ -4,7 +4,7 @@ import HitSlopCoreBinding
 
 /// The only Rust command that needs native UI. Its lifetime extends beyond the editor
 /// once it has acquired a saved snapshot; the Rust deadline still gates publication.
-final class NativeExports: NativeExportHandler, @unchecked Sendable {
+final class NativeExports: NativeExportHandler {
   typealias Render = @MainActor @Sendable (URL, ExportFormat, URL, NativeCommandDeadline) async throws -> Void
   private let render: Render
   init(_ render: @escaping Render) { self.render = render }
@@ -21,7 +21,7 @@ final class NativeExports: NativeExportHandler, @unchecked Sendable {
   }
 }
 
-final class CommandCompletion: NativeCommandCompletion, @unchecked Sendable {
+final class CommandCompletion: NativeCommandCompletion {
   private let reply: @Sendable (Data) -> Void
   init(_ reply: @escaping @Sendable (Data) -> Void) { self.reply = reply }
   func complete(replyJson: String) { reply(Data(replyJson.utf8)) }

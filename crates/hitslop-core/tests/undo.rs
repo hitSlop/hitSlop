@@ -5,8 +5,8 @@
 // equals a fresh snapshot.
 mod support;
 use hitslop_core::{Document, Origin};
-use serde_json::{json, Value};
-use support::{app, View, fixture, type_text, value};
+use serde_json::{Value, json};
+use support::{View, app, fixture, type_text, value};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {
@@ -141,8 +141,12 @@ fn another_field_or_a_change_ends_a_typing_run() {
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
     title.base = d.version();
     title.edit(&mut d, &mut view, "abcde", 5);
-    for expected in [json!({"title":"abcd","row":"AB","done":true}), json!({"title":"abcd","row":"AB","done":false}),
-        json!({"title":"abcd","row":"A","done":false}), json!({"title":"abc","row":"A","done":false})] {
+    for expected in [
+        json!({"title":"abcd","row":"AB","done":true}),
+        json!({"title":"abcd","row":"AB","done":false}),
+        json!({"title":"abcd","row":"A","done":false}),
+        json!({"title":"abc","row":"A","done":false}),
+    ] {
         assert!(undo(&mut d, &mut view));
         let v = value(&d);
         assert_eq!(json!({"title":v["title"],"row":v["rows"][0]["text"],"done":v["rows"][0]["done"]}), expected);
@@ -170,10 +174,13 @@ fn undoing_a_removal_restores_the_row_and_its_id() {
 fn an_agents_refused_batch_keeps_the_persons_undo() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    let refused = d.apply_batch(&batch(json!([
-        {"type":"increment","path":["hits"],"by":1},
-        {"type":"set","path":["missing"],"value":1},
-    ])), Origin::Agent);
+    let refused = d.apply_batch(
+        &batch(json!([
+            {"type":"increment","path":["hits"],"by":1},
+            {"type":"set","path":["missing"],"value":1},
+        ])),
+        Origin::Agent,
+    );
     assert_eq!(refused.err().and_then(|e| e.op_index), Some(1));
     view.check(&d, "after the refusal");
     assert!(undo(&mut d, &mut view), "the person's step survives");
@@ -185,18 +192,30 @@ fn an_agents_refused_batch_keeps_the_persons_undo() {
 fn a_refused_page_batch_keeps_undo_and_redo() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    assert!(d.apply_batch(&batch(json!([
-        {"type":"increment","path":["hits"],"by":1},
-        {"type":"set","path":["missing"],"value":1},
-    ])), Origin::Page).is_err());
+    assert!(
+        d.apply_batch(
+            &batch(json!([
+                {"type":"increment","path":["hits"],"by":1},
+                {"type":"set","path":["missing"],"value":1},
+            ])),
+            Origin::Page
+        )
+        .is_err()
+    );
     view.check(&d, "after the refusal");
     assert!(undo(&mut d, &mut view), "the earlier step survives the refusal");
-    let before = d.snapshot().unwrap();
-    assert!(d.apply_batch(&batch(json!([
-        {"type":"increment","path":["hits"],"by":1},
-        {"type":"set","path":["missing"],"value":1},
-    ])), Origin::Page).is_err());
-    assert_eq!(d.snapshot().unwrap(), before);
+    let before = d.state().unwrap();
+    assert!(
+        d.apply_batch(
+            &batch(json!([
+                {"type":"increment","path":["hits"],"by":1},
+                {"type":"set","path":["missing"],"value":1},
+            ])),
+            Origin::Page
+        )
+        .is_err()
+    );
+    assert_eq!(d.state().unwrap(), before);
     assert!(redo(&mut d, &mut view), "redo survives the refusal too");
     assert_eq!(value(&d)["rows"][0]["done"], true);
     view.check(&d, "after redo across a refusal");
@@ -227,10 +246,13 @@ fn session(checkpoint: &[u8], batches: &[(String, Origin)]) -> Vec<u8> {
 #[test]
 fn a_reopened_document_starts_with_nothing_to_undo() {
     let (d, _) = setup();
-    let saved = session(&d.checkpoint().unwrap(), &[
-        (set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page),
-        (set(json!(["title"]), json!("Agent")), Origin::Agent),
-    ]);
+    let saved = session(
+        &d.checkpoint().unwrap(),
+        &[
+            (set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page),
+            (set(json!(["title"]), json!("Agent")), Origin::Agent),
+        ],
+    );
     let mut d = Document::open(&app(schema()), &saved, &[]).unwrap();
     let mut view = View::of(&d);
     assert!(!d.can_undo() && !d.can_redo());
@@ -267,9 +289,12 @@ fn undo_survives_a_concurrent_text_edit() {
 // agent step. Test text replacement and container restoration below an agent's edit.
 #[test]
 fn agent_and_person_steps_round_trip_repeatedly() {
-    for change in [set(json!(["title"]), json!("PERSON")), batch(json!([
-        {"type":"remove","path":["rows"],"id":ROW},
-    ]))] {
+    for change in [
+        set(json!(["title"]), json!("PERSON")),
+        batch(json!([
+            {"type":"remove","path":["rows"],"id":ROW},
+        ])),
+    ] {
         let (mut d, mut view) = setup();
         let original = value(&d);
         apply(&mut d, &mut view, &set(json!(["title"]), json!("AGENT")), Origin::Agent);
@@ -303,10 +328,15 @@ fn counter_batches_use_the_live_writer_for_both_origins() {
         let mut d = Document::create(&app(&schema), &initial).unwrap();
         let mut view = View::of(&d);
         apply(&mut d, &mut view, &set(json!(["a"]), json!(true)), Origin::Page);
-        apply(&mut d, &mut view, &batch(json!([
-            {"type":"increment","path":["z"],"by":-9007199254740991i64},
-            {"type":"increment","path":["z"],"by":-9007199254740991i64},
-        ])), origin);
+        apply(
+            &mut d,
+            &mut view,
+            &batch(json!([
+                {"type":"increment","path":["z"],"by":-9007199254740991i64},
+                {"type":"increment","path":["z"],"by":-9007199254740991i64},
+            ])),
+            origin,
+        );
         assert_eq!(value(&d)["z"], -9007199254740991i64);
         assert!(undo(&mut d, &mut view));
         assert_eq!(value(&d)["z"], 9007199254740991i64);
@@ -318,7 +348,8 @@ fn counter_batches_use_the_live_writer_for_both_origins() {
 
 #[test]
 fn undo_works_on_a_trimmed_document() {
-    let full = Document::create(&app(schema()), &fixture("checklist")["initial"].to_string()).unwrap().checkpoint().unwrap();
+    let full =
+        Document::create(&app(schema()), &fixture("checklist")["initial"].to_string()).unwrap().checkpoint().unwrap();
     let loro = loro::LoroDoc::new();
     loro.import(&full).unwrap();
     let shallow = loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap();
@@ -344,7 +375,9 @@ fn history_is_bounded() {
     }
     assert!(!d.can_undo());
     assert_eq!(value(&d)["title"], "Agent", "the oldest step was evicted");
-    for _ in 0..100 { assert!(redo(&mut d, &mut view)); }
+    for _ in 0..100 {
+        assert!(redo(&mut d, &mut view));
+    }
     assert!(!d.can_redo());
     assert_eq!(value(&d)["hits"], 100);
     view.check(&d, "redo every retained step");
@@ -356,16 +389,22 @@ fn noops_and_refusals_preserve_runs_and_redo_but_new_edits_clear_redo() {
     let increase = batch(json!([{"type":"increment","path":["hits"],"by":1}]));
     apply(&mut d, &mut view, &increase, Origin::Agent);
     apply(&mut d, &mut view, &set(json!(["title"]), json!("abc")), Origin::Page);
-    assert!(d.apply_batch(&batch(json!([
-        {"type":"increment","path":["hits"],"by":1},
-        {"type":"set","path":["missing"],"value":1},
-    ])), Origin::Page).is_err());
+    assert!(
+        d.apply_batch(
+            &batch(json!([
+                {"type":"increment","path":["hits"],"by":1},
+                {"type":"set","path":["missing"],"value":1},
+            ])),
+            Origin::Page
+        )
+        .is_err()
+    );
     apply(&mut d, &mut view, &increase, Origin::Agent);
     assert!(undo(&mut d, &mut view));
     assert_eq!(value(&d)["hits"], 0, "the agent run survived the noop and refusal");
-    let before = d.snapshot().unwrap();
+    let before = d.state().unwrap();
     apply(&mut d, &mut view, &set(json!(["title"]), json!("abc")), Origin::Agent);
-    assert_eq!(d.snapshot().unwrap(), before);
+    assert_eq!(d.state().unwrap(), before);
     assert!(redo(&mut d, &mut view));
     assert_eq!(value(&d)["hits"], 2);
     assert!(undo(&mut d, &mut view));
@@ -373,7 +412,6 @@ fn noops_and_refusals_preserve_runs_and_redo_but_new_edits_clear_redo() {
     assert!(!d.can_redo());
     view.check(&d, "new edit after undo");
 }
-
 
 // Failure: Loro 1.16.2's `revert_to` panicked (an out-of-bounds movable-list delta)
 // redoing an agent's step that inserted rows before others and moved one, after the
@@ -385,7 +423,9 @@ fn redoing_inserted_and_moved_rows_after_a_removal_restores_them() {
     let row = |id: &str, text: &str| json!({"done": false, "text": text, "$id": id});
     let insert = |id: &str, before: Option<&str>| {
         let mut op = json!({"type":"insert","path":["rows"],"id":id,"value":{"done":false,"text":id}});
-        if let Some(before) = before { op["at"] = json!({"before": before}); }
+        if let Some(before) = before {
+            op["at"] = json!({"before": before});
+        }
         op
     };
     apply(&mut d, &mut view, &batch(json!([{"type":"replace","path":["rows"],"value":[]}])), Origin::Agent);
@@ -393,8 +433,13 @@ fn redoing_inserted_and_moved_rows_after_a_removal_restores_them() {
     apply(&mut d, &mut view, &batch(json!([{"type":"increment","path":["hits"],"by":1}])), Origin::Page);
     apply(&mut d, &mut view, &batch(json!([insert("c", Some("b"))])), Origin::Agent);
     apply(&mut d, &mut view, &batch(json!([insert("d", Some("a"))])), Origin::Agent);
-    apply(&mut d, &mut view, &batch(json!([{"type":"move","path":["rows"],"id":"a","at":{"before":"d"}},
-        {"type":"set","path":["title"],"value":"moved"}])), Origin::Agent);
+    apply(
+        &mut d,
+        &mut view,
+        &batch(json!([{"type":"move","path":["rows"],"id":"a","at":{"before":"d"}},
+        {"type":"set","path":["title"],"value":"moved"}])),
+        Origin::Agent,
+    );
     let moved = value(&d);
     assert_eq!(moved["rows"], json!([row("a", "a"), row("d", "d"), row("c", "c"), row("b", "b")]));
     // The agent's three batches are one step, back to after the page's increment.

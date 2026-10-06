@@ -34,6 +34,9 @@ import { coreBuildId } from "../../packages/cli/src/core";
 import { exec } from "../../packages/cli/src/process";
 import { createDocument, debugHelper } from "../lib/helper";
 useTestRegistry();
+// The producing tools are built as they ship (the `dist` Cargo profile), as the release
+// gate builds them: a candidate's packages then match what was captured.
+process.env.HITSLOP_CARGO_PROFILE = "dist";
 
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun run compat:capture RELEASE [--frozen]");

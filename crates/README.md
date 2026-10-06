@@ -11,8 +11,10 @@ The document semantics every host uses: the Swift app and helper natively, and
 - `hitslop-core-wasm`: wasm-bindgen adapter for browser development and Bun tests.
 - `slop-engine`: the CLI's file tool (`pack`, `inspect`, `schema`) on any platform.
 
-The root toolchain/lockfile pin Rust 1.96.1, Loro main at `c00c9fa` (an exact git rev
-until crates.io publishes its fixes), UniFFI 0.32.2 and wasm-bindgen 0.2.127. Install the matching bindings generators and the test runner once
+The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
+main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
+and wasm-bindgen 0.2.127. The workspace's lints and `rustfmt.toml` apply to every crate;
+`bun run verify rust` checks both. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 
 ```sh
@@ -28,9 +30,13 @@ bun run core:test
 `bun run build` prepares both bindings and the engine before Swift; `bun run verify bun`
 refreshes the WASM binding and the engine before SDK tests. A step whose output would not
 change rewrites nothing, so a repeated build recompiles nothing. On a Mac the engine and
-the app's core library build together, in `target/release`, for Apple silicon only (the
-app ships arm64). CI caches artifacts by toolchain, lockfile and source; a cache hit never
-substitutes for Cargo's dependency checks.
+the app's core library build together, for Apple silicon only (the app ships arm64).
+Development builds use Cargo's `release` profile, in `target/release`: optimized, because
+the core's timeouts and save scheduling assume it. What ships uses `dist`, which adds fat
+LTO (about a fifth smaller, five times slower to rebuild): `HITSLOP_CARGO_PROFILE=dist`
+selects it, and the release gate, compatibility capture, the release workflow and the
+Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; a cache hit
+never substitutes for Cargo's dependency checks.
 Generated XCFramework and Swift bindings are disposable and excluded from Git. TypeBox owns wire types;
 run `bun run schema:generate`, never edit `wire.generated.rs` manually.
 

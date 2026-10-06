@@ -2,7 +2,7 @@
  * helper itself. A step whose inputs did not change leaves its outputs untouched, so a
  * repeated build recompiles nothing. */
 import { repository, verifyShellCopies } from "../lib/artifacts";
-import { buildCoreNative, buildCoreWasm, buildEngine } from "./core";
+import { buildCoreNative, buildCoreWasm, buildEngine, cargoOutput } from "./core";
 import { buildSkills } from "../../packages/cli/src/skills-build";
 import { generateContracts } from "./generate";
 import { buildShell } from "./shell";
@@ -22,7 +22,7 @@ export async function buildNative() {
   const swift = ["swift", "build", "--package-path", join(repository, "apps/apple/Packages/HitSlopApple"), "--product", "hitslop-native"];
   if ((await exec(swift, { inherit: ["stdout", "stderr"] })).code) throw new Error("Native build failed");
   // An explicit debug helper selects this sibling as the same native deployment.
-  await copyFile(join(repository, "target/release/slop-engine"), join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/slop-engine"));
+  await copyFile(cargoOutput("slop-engine"), join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/slop-engine"));
   await verifyShellCopies();
   console.log(`Built native development resources in ${((performance.now() - started) / 1000).toFixed(1)}s`);
 }

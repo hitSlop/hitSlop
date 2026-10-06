@@ -6,7 +6,7 @@
 //! files are never unlinked; only the lock holder removes a discovery file, and a dropped
 //! lease withdraws its own. `sweep` clears a crashed owner's discovery.
 
-use crate::error::{failed, invalid, Error, Result};
+use crate::error::{Error, Result, failed, invalid};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::io::Write;
@@ -15,7 +15,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-
 
 static FOLDER: OnceLock<PathBuf> = OnceLock::new();
 /// Uses `path` as this process's registry instead of `~/.hitslop/live`, so test runs never
@@ -29,15 +28,38 @@ fn folder() -> Result<PathBuf> {
     if let Some(folder) = FOLDER.get() {
         return Ok(folder.clone());
     }
-    // SAFETY: getpwuid returns a pointer into static storage, or null.
-    let home = unsafe {
-        let entry = libc::getpwuid(libc::getuid());
-        if entry.is_null() || (*entry).pw_dir.is_null() {
-            return Err(failed("Cannot find this account's home folder"));
+    static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
+    let home = HOME.get_or_init(home).as_ref().ok_or_else(|| failed("Cannot find this account's home folder"))?;
+    Ok(home.join(".hitslop/live"))
+}
+/// This account's home folder from the password database. `getpwuid_r`, because
+/// `getpwuid`'s result lives in storage every other thread's lookup may overwrite.
+fn home() -> Option<PathBuf> {
+    let mut buffer = vec![0 as libc::c_char; 4096];
+    loop {
+        let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut found = std::ptr::null_mut();
+        // SAFETY: every pointer is valid for the call and `buffer.len()` is its length; the
+        // entry's strings point into `buffer`, which outlives their use below.
+        let status = unsafe {
+            libc::getpwuid_r(libc::getuid(), entry.as_mut_ptr(), buffer.as_mut_ptr(), buffer.len(), &mut found)
+        };
+        if status == libc::ERANGE && buffer.len() < 1 << 20 {
+            buffer.resize(buffer.len() * 2, 0);
+            continue;
         }
-        CStr::from_ptr((*entry).pw_dir).to_string_lossy().into_owned()
-    };
-    Ok(PathBuf::from(home).join(".hitslop/live"))
+        if status != 0 || found.is_null() {
+            return None;
+        }
+        // SAFETY: a found entry was written in full.
+        let directory = unsafe { entry.assume_init_ref() }.pw_dir;
+        if directory.is_null() {
+            return None;
+        }
+        // SAFETY: a non-null `pw_dir` is a NUL-terminated string inside `buffer`.
+        let directory = unsafe { CStr::from_ptr(directory) };
+        return Some(PathBuf::from(std::ffi::OsStr::from_bytes(directory.to_bytes())));
+    }
 }
 /// The device, inode and link count of the regular file at `path`; `Moved` for anything
 /// else. The device and inode name the file in the registry.
@@ -79,18 +101,28 @@ impl Lease {
         fs::create_dir_all(&folder).map_err(|e| failed(format!("Cannot create {}: {e}", folder.display())))?;
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).map_err(failed)?;
         let key = name(dev, ino);
-        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes()).map_err(|_| failed("Invalid path"))?;
+        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes())
+            .map_err(|_| failed("Invalid path"))?;
         // SAFETY: a valid C string; the descriptor is owned from here on.
-        let fd = unsafe { libc::open(lock.as_ptr(), libc::O_RDWR | libc::O_CREAT | libc::O_NOFOLLOW | libc::O_CLOEXEC, 0o600) };
+        let fd = unsafe {
+            libc::open(lock.as_ptr(), libc::O_RDWR | libc::O_CREAT | libc::O_NOFOLLOW | libc::O_CLOEXEC, 0o600)
+        };
         if fd < 0 {
             return Err(failed("Cannot open the writer lock"));
         }
+        // SAFETY: `fd` is an open descriptor nothing else owns.
         let lock = unsafe { OwnedFd::from_raw_fd(fd) };
+        // SAFETY: `lock` is an open descriptor for the whole call.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             let code = std::io::Error::last_os_error().raw_os_error();
-            return Err(if code == Some(libc::EWOULDBLOCK) { Error::Locked } else { failed("Cannot acquire the writer lock") });
+            return Err(if code == Some(libc::EWOULDBLOCK) {
+                Error::Locked
+            } else {
+                failed("Cannot acquire the writer lock")
+            });
         }
-        let lease = Self { _lock: lock, path: path.to_owned(), dev, ino, discovery: folder.join(format!("{key}.json")) };
+        let lease =
+            Self { _lock: lock, path: path.to_owned(), dev, ino, discovery: folder.join(format!("{key}.json")) };
         // The path must still name the file this lock is for.
         lease.check()?;
         // A crashed owner's discovery file is stale; only the lock holder removes it.
@@ -148,14 +180,21 @@ pub fn sweep() -> Result<usize> {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let Some(key) = name.strip_suffix(".json.tmp").or_else(|| name.strip_suffix(".json")) else { continue };
-        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes()).map_err(|_| failed("Invalid path"))?;
+        let lock = CString::new(folder.join(format!("{key}.lock")).as_os_str().as_bytes())
+            .map_err(|_| failed("Invalid path"))?;
         // SAFETY: a valid C string; the descriptor is owned from here on.
         let fd = unsafe { libc::open(lock.as_ptr(), libc::O_RDWR | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
         // No lock file: no owner ever held this key.
         let missing = fd < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT);
         // Held across the removal, and released when it drops at the end of this turn.
+        // SAFETY: a nonnegative `fd` is an open descriptor nothing else owns.
         let held = (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd) });
-        let free = missing || held.as_ref().is_some_and(|lock| unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0);
+        let free = missing
+            || held.as_ref().is_some_and(|lock| {
+                // SAFETY: `lock` is an open descriptor for the whole call.
+                let status = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+                status == 0
+            });
         if free && fs::remove_file(entry.path()).is_ok() {
             removed += 1;
         }

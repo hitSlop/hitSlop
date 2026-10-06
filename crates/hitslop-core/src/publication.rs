@@ -53,15 +53,12 @@ fn slot(v: &ValueOrContainer) -> Slot {
 pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
     let sink = events.clone();
     doc.subscribe_root(Arc::new(move |e: DiffEvent| {
-        let mut out = sink.lock().unwrap();
+        let mut out = lock(&sink);
         for c in e.events {
             let change = match &c.diff {
-                Diff::Map(m) => Change::Map(
-                    m.updated
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), v.as_ref().map(slot)))
-                        .collect(),
-                ),
+                Diff::Map(m) => {
+                    Change::Map(m.updated.iter().map(|(k, v)| (k.to_string(), v.as_ref().map(slot))).collect())
+                }
                 Diff::List(items) => Change::List(
                     items
                         .iter()
@@ -75,11 +72,20 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
                         .collect(),
                 ),
                 Diff::Text(delta) => {
-                    let mut hunks: Vec<Hunk> = delta.iter().filter_map(|item| match item {
-                        loro::TextDelta::Retain { retain, .. } => (*retain > 0).then_some(Hunk::Retain { retain: *retain }),
-                        loro::TextDelta::Insert { insert, .. } => (!insert.is_empty()).then(|| Hunk::Insert { insert: insert.clone() }),
-                        loro::TextDelta::Delete { delete } => (*delete > 0).then_some(Hunk::Delete { delete: *delete }),
-                    }).collect();
+                    let mut hunks: Vec<Hunk> = delta
+                        .iter()
+                        .filter_map(|item| match item {
+                            loro::TextDelta::Retain { retain, .. } => {
+                                (*retain > 0).then_some(Hunk::Retain { retain: *retain })
+                            }
+                            loro::TextDelta::Insert { insert, .. } => {
+                                (!insert.is_empty()).then(|| Hunk::Insert { insert: insert.clone() })
+                            }
+                            loro::TextDelta::Delete { delete } => {
+                                (*delete > 0).then_some(Hunk::Delete { delete: *delete })
+                            }
+                        })
+                        .collect();
                     // The rest of the field is retained anyway.
                     while matches!(hunks.last(), Some(Hunk::Retain { .. })) {
                         hunks.pop();
@@ -88,11 +94,7 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
                 }
                 _ => Change::Other,
             };
-            out.push(Event {
-                target: c.target.clone(),
-                path: c.path.to_vec(),
-                change,
-            });
+            out.push(Event { target: c.target.clone(), path: c.path.to_vec(), change });
         }
     }))
 }
@@ -145,7 +147,12 @@ pub(super) fn index_all(doc: &LoroDoc) -> HashMap<ContainerID, ListState> {
     out
 }
 /// Indexes every row list under `container`, replacing what the index held.
-fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, ListState>, seen: &mut HashSet<ContainerID>) {
+fn walk(
+    doc: &LoroDoc,
+    container: &Container,
+    out: &mut HashMap<ContainerID, ListState>,
+    seen: &mut HashSet<ContainerID>,
+) {
     let mut children = vec![];
     match container {
         Container::Map(map) => map.for_each(|_, v| {
@@ -191,26 +198,24 @@ pub(super) fn json_path(
     path: &[(ContainerID, Index)],
 ) -> std::result::Result<Vec<Segment>, ContainerID> {
     let mut out = Vec::with_capacity(path.len());
-    for i in 1..path.len() {
-        match &path[i].1 {
+    for ((parent, _), (child, index)) in path.iter().zip(path.iter().skip(1)) {
+        match index {
             Index::Key(key) => out.push(Segment::Key(key.to_string())),
-            Index::Seq(_) => {
-                let list = &path[i - 1].0;
-                match lists.get(list).and_then(|s| s.id_of.get(&path[i].0)) {
-                    Some(id) => out.push(Segment::Id { id: id.clone() }),
-                    None => return Err(list.clone()),
-                }
-            }
-            Index::Node(_) => return Err(path[i - 1].0.clone()),
+            Index::Seq(_) => match lists.get(parent).and_then(|s| s.id_of.get(child)) {
+                Some(id) => out.push(Segment::Id { id: id.clone() }),
+                None => return Err(parent.clone()),
+            },
+            Index::Node(_) => return Err(parent.clone()),
         }
     }
     Ok(out)
 }
 fn deep(doc: &LoroDoc, cid: &ContainerID) -> Value {
-    json(doc
-        .get_container(cid.clone())
-        .map(|c| ValueOrContainer::Container(c).get_deep_value())
-        .unwrap_or(LoroValue::Null))
+    json(
+        doc.get_container(cid.clone())
+            .map(|c| ValueOrContainer::Container(c).get_deep_value())
+            .unwrap_or(LoroValue::Null),
+    )
 }
 fn materialize(doc: &LoroDoc, slot: &Slot) -> Value {
     match slot {
@@ -256,10 +261,10 @@ pub(super) fn publish(
                 for item in items {
                     if let Item::Insert(slots, is_move) = item {
                         for s in slots {
-                            if let Slot::Container(c) = s {
-                                if !is_move || !state.is_some_and(|state| state.holds(c)) {
-                                    fresh.insert(c.clone());
-                                }
+                            if let Slot::Container(c) = s
+                                && (!is_move || !state.is_some_and(|state| state.holds(c)))
+                            {
+                                fresh.insert(c.clone());
                             }
                         }
                     }
@@ -463,7 +468,11 @@ fn list_ops(
             };
             ops.push(PatchOp::MoveRow { path: path.clone(), id: id.clone(), index: at });
         } else {
-            ops.push(PatchOp::InsertRow { path: path.clone(), index: at, value: project(Some(item_node), deep(doc, c)) });
+            ops.push(PatchOp::InsertRow {
+                path: path.clone(),
+                index: at,
+                value: project(Some(item_node), deep(doc, c)),
+            });
         }
     }
     let exact = exact && sim == next;

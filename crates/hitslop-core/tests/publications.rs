@@ -3,11 +3,11 @@
 // with literal outcomes covered by conformance.rs.
 mod support;
 use hitslop_core::Document;
-use support::{app, Edit, View, fixture, next};
-use serde_json::{json, Value};
 use hitslop_core::Origin;
+use serde_json::{Value, json};
+use support::{Edit, View, app, fixture, next};
 fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
-    let view: Value = serde_json::from_str(&d.snapshot().unwrap()).unwrap();
+    let view: Value = serde_json::from_str(&d.state().unwrap()).unwrap();
     let rows = view["value"]["rows"].as_array().unwrap();
     let r = next(rng);
     let index = (r as usize) % rows.len().max(1);
@@ -23,7 +23,8 @@ fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
         }
         1 if rows.len() < 20 => {
             *id += 1;
-            let mut op = json!({"type":"insert","path":["rows"],"id":format!("{id:032x}"),"value":{"text":"new","done":false}});
+            let mut op =
+                json!({"type":"insert","path":["rows"],"id":format!("{id:032x}"),"value":{"text":"new","done":false}});
             if !rows.is_empty() && !anchor.is_null() {
                 op["at"] = anchor;
             }
@@ -66,7 +67,9 @@ fn seeded_single_and_combined_steps() {
             projected.check(&d, "publication");
             let reply: Value = serde_json::from_str(&reply).unwrap();
             // Clean lists publish row operations, never a whole-list replacement.
-            assert!(!reply["ops"].as_array().unwrap().iter().any(|op| op["path"] == json!(["rows"]) && op["type"] == "set"));
+            assert!(
+                !reply["ops"].as_array().unwrap().iter().any(|op| op["path"] == json!(["rows"]) && op["type"] == "set")
+            );
         }
     }
 }
@@ -79,14 +82,22 @@ fn a_row_inserted_and_moved_in_one_batch_publishes_as_an_insertion() {
     let mut d = Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap();
     let mut projected = View::of(&d);
     let first = projected.value["rows"][0]["$id"].clone();
-    let reply = d.apply(&json!({"intents":[
-        {"type":"insert","path":["rows"],"id":"new","value":{"text":"new","done":false}},
-        {"type":"move","path":["rows"],"id":"new","at":{"before":first}},
-    ]}).to_string()).unwrap();
+    let reply = d
+        .apply(
+            &json!({"intents":[
+                {"type":"insert","path":["rows"],"id":"new","value":{"text":"new","done":false}},
+                {"type":"move","path":["rows"],"id":"new","at":{"before":first}},
+            ]})
+            .to_string(),
+        )
+        .unwrap();
     projected.publish(&reply);
     projected.check(&d, "insert then move");
     let reply: Value = serde_json::from_str(&reply).unwrap();
-    assert_eq!(reply["ops"], json!([{"type":"insertRow","path":["rows"],"index":0,"value":{"$id":"new","text":"new","done":false}}]));
+    assert_eq!(
+        reply["ops"],
+        json!([{"type":"insertRow","path":["rows"],"index":0,"value":{"$id":"new","text":"new","done":false}}])
+    );
 }
 
 // Failure: a batch that changes nothing advances the sequence and marks the document
@@ -100,4 +111,3 @@ fn a_batch_that_changes_nothing_publishes_nothing() {
     assert!(applied.publication.is_none());
     assert_eq!((applied.sequence, d.sequence(), d.version()), (sequence, sequence, version));
 }
-

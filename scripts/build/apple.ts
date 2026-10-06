@@ -16,7 +16,6 @@ await run([
   "-jobs",
   "4",
   "-skipPackagePluginValidation",
-  "-skipMacroValidation",
   "-quiet",
   "-project",
   "apps/apple/hitSlop.xcodeproj",

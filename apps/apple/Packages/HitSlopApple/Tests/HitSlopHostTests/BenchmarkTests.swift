@@ -161,10 +161,10 @@ private final class PublicationTimes: @unchecked Sendable {
         let openMS = Date().timeIntervalSince(start) * 1000
         let first = windows[0]
         let publicationTimes = PublicationTimes()
-        let originalPublication = first.session.owner.onPublication
-        first.session.owner.onPublication = { publication in
-          publicationTimes.record(publication)
-          originalPublication?(publication)
+        let originalListener = first.session.owner.listener
+        first.session.owner.listener = { event in
+          if case .publication(let publication) = event { publicationTimes.record(publication) }
+          originalListener?(event)
         }
         let timings = try await first.session.webView.callAsyncJavaScript(
           """
@@ -294,7 +294,7 @@ private final class PublicationTimes: @unchecked Sendable {
           return { mountMS: globalThis.benchmarkMountMS, bootMS: globalThis.benchmarkBootMS, acceptance: acceptance.sort((a,b) => a-b), rendered: rendered.sort((a,b) => a-b), drainMS: performance.now()-start, ipcP95: p95(ipc), phases: phaseSummary, arrivals, idle: idle.sort((a,b) => a-b), frame: frame.sort((a,b) => a-b), titleFrame: titleFrame.sort((a,b) => a-b), rowTextFrame: rowTextFrame.sort((a,b) => a-b), clickSplit, rowTextSplit };
           """, arguments: [:], in: nil, contentWorld: .page) as! [String: Any]
         let acceptance = timings["acceptance"] as! [Double], rendered = timings["rendered"] as! [Double]
-        first.session.owner.onPublication = originalPublication
+        first.session.owner.listener = originalListener
         let publicationCosts = publicationTimes.arrivalCosts(timings["arrivals"] as! [[String: Any]])
         #expect(publicationCosts.count == 100)
         let pids = Set(

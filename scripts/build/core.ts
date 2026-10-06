@@ -27,6 +27,16 @@ const env = {
   // Encoded, so a Cargo home with spaces stays one argument.
   CARGO_ENCODED_RUSTFLAGS: releaseRustflags().join("\x1f"),
 };
+/** The Cargo profile every core build uses: `release` while developing, `dist` (fat LTO) for
+ * what ships, chosen by `HITSLOP_CARGO_PROFILE` (the release gate, compatibility capture,
+ * the release workflow). Read at each build, so an entry point can choose it at run time. */
+export function cargoProfile(): string {
+  return process.env.HITSLOP_CARGO_PROFILE || "release";
+}
+/** A build output of `cargoProfile()`, for the host or for `target`. */
+export function cargoOutput(file: string, target?: string): string {
+  return join(repository, "target", ...(target ? [target] : []), cargoProfile(), file);
+}
 async function run(command: string[]) {
   const { code } = await exec(command, { cwd: repository, env, inherit: ["stdout", "stderr"] });
   if (code) throw new Error(`Core build failed: ${command.join(" ")}`);
@@ -49,10 +59,11 @@ export async function buildCoreWasm() {
     "HITSLOP_WASM_BINDGEN",
     "cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools",
   );
-  await run(["cargo", "build", "--locked", "--release", "--target", "wasm32-unknown-unknown", "-p", "hitslop-core-wasm"]);
+  const target = "wasm32-unknown-unknown";
+  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "--target", target, "-p", "hitslop-core-wasm"]);
   // Bindings are a pure function of the module: an unchanged one keeps the folder as is.
   await publishFolder(join(repository, "generated/core/wasm"), (stage) =>
-    run([bindgen, "--target", "web", "--out-dir", stage, "target/wasm32-unknown-unknown/release/hitslop_core_wasm.wasm"]),
+    run([bindgen, "--target", "web", "--out-dir", stage, cargoOutput("hitslop_core_wasm.wasm", target)]),
   );
 }
 
@@ -60,11 +71,12 @@ export async function buildCoreWasm() {
  * (`.github/workflows/engines.yml`); a local build covers only this machine. */
 export const enginePlatforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] as const;
 
-/** The CLI's file engine (`target/release/slop-engine`), from the same locked core. On a Mac
+/** The CLI's file engine (`cargoOutput("slop-engine")`), from the same locked core. On a Mac
  * it builds with the app's core library: alone, the engine's graph would differ (the
  * library's build dependencies add features), and each build would undo the other. */
 export async function buildEngine() {
-  await run(["cargo", "build", "--locked", "--release", "-p", "slop-engine", ...(process.platform === "darwin" ? ["-p", "hitslop-core-ffi"] : [])]);
+  const library = process.platform === "darwin" ? ["-p", "hitslop-core-ffi"] : [];
+  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "slop-engine", ...library]);
 }
 
 /** The app's core: the Swift binding and an arm64 XCFramework (the app ships for Apple
@@ -87,7 +99,7 @@ export async function buildCoreNative() {
       bindgen,
       "generate",
       "--library",
-      "target/release/libhitslop_core_ffi.dylib",
+      cargoOutput("libhitslop_core_ffi.dylib"),
       "--language",
       "swift",
       "--out-dir",
@@ -104,7 +116,7 @@ export async function buildCoreNative() {
     await rm(bindings, { recursive: true, force: true });
   }
   const library = join(generated, "libhitslop_core_ffi.a");
-  changed = (await writeIfChanged(library, await readFile(join(repository, "target/release/libhitslop_core_ffi.a")))) || changed;
+  changed = (await writeIfChanged(library, await readFile(cargoOutput("libhitslop_core_ffi.a")))) || changed;
   // Replace disposable artifacts only; immutable runtime releases are never outputs.
   const framework = join(generated, "HitSlopCoreFFI.xcframework");
   if (!changed && existsSync(framework)) return;

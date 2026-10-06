@@ -1,7 +1,7 @@
 #![cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 //! The stored manifest: the authored contract at the document's package format. The
 //! package format and runtime ABI are the document's own columns (`tests/file.rs`).
-use hitslop_core::{shape::Silhouette, Code, PACKAGE_FORMAT};
+use hitslop_core::{Code, PACKAGE_FORMAT, shape::Silhouette};
 
 fn fixture() -> serde_json::Value {
     serde_json::json!({"author":{"name":"Author"},"slug":"fixture","title":"Title","description":"Description","categories":["utilities"],"presentation":{"width":320,"height":240}})

@@ -24,7 +24,7 @@ extension HostTests {
       await controller.waitForPresentation()
       // Hover follows the sampled pointer, so drive it with a point over the document.
       let frame = try #require(controller.window?.frame)
-      controller.refreshToolbarHover(
+      controller.toolbar.refresh(
         point: NSPoint(x: frame.midX, y: frame.midY), front: controller.window!.windowNumber)
       let panel = try #require(
         NSApp.windows.first { $0 !== controller.window && controller.owns($0) })

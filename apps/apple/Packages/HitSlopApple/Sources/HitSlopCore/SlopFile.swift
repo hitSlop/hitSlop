@@ -138,16 +138,32 @@ public struct SlopFile: Sendable {
 
 /// A slop's preview or icon artwork, read through the core.
 public enum SlopArtwork {
-  public enum Name: String, Sendable { case preview, icon }
+  /// The core's artwork; its raw value is the name `slop screenshot --target` takes.
+  public typealias Name = Artwork
   /// The first of `preferred` the file holds, in one read; nil when it holds none. Throws
   /// when the file can't be read now (busy, or mid-recovery), so a caller can tell that
   /// apart from a file without artwork.
   public static func first(_ url: URL, _ preferred: [Name]) throws -> (name: Name, png: Data)? {
-    guard let image = try fileArtwork(path: url.path, preferred: preferred.map(\.rawValue)) else { return nil }
-    return (Name(rawValue: image.name) ?? preferred[0], image.png)
+    guard let image = try fileArtwork(path: url.path, preferred: preferred) else { return nil }
+    return (image.name, image.png)
   }
   /// One artwork, or nil when the file has none or can't be read now.
   public static func png(_ url: URL, _ name: Name) -> Data? {
     (try? first(url, [name]))??.png
+  }
+}
+
+extension Artwork: CaseIterable, RawRepresentable {
+  public static var allCases: [Artwork] { [.preview, .icon] }
+  public init?(rawValue: String) {
+    guard let artwork = Self.allCases.first(where: { $0.rawValue == rawValue }) else { return nil }
+    self = artwork
+  }
+  /// The name the file and a build's stage give it.
+  public var rawValue: String {
+    switch self {
+    case .preview: "preview"
+    case .icon: "icon"
+    }
   }
 }

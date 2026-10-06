@@ -264,7 +264,7 @@ A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) doc
 | --- | --- | --- |
 | Document engine | Rust, Loro | Merging text, lists and counters; atomic edits; the single owner of the document |
 | File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
-| Mac app | Swift, SwiftUI, AppKit, WebKit, [TCA](https://github.com/pointfreeco/swift-composable-architecture) | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
+| Mac app | Swift, SwiftUI, AppKit, WebKit | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
 | Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
 | Author SDK and CLI | `@hitslop/document`, `@hitslop/cli`, Bun | Schemas, `slop dev` (the core compiled to WASM), build, edit and export |
 | Contracts | TypeBox | One schema for the CLI, socket and page, generated into Rust and Swift |

@@ -2,8 +2,8 @@
 // integer range. Oracles: literal values, the patch consumer and fresh snapshots.
 mod support;
 use hitslop_core::Document;
-use support::{app, Edit, snapshot, updates_since};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use support::{Edit, app, snapshot, updates_since};
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn schema() -> String {
@@ -39,9 +39,6 @@ fn counters_stay_exact_past_float_precision() {
     assert_eq!(snapshot(&reopened)["value"]["hits"], 1);
 }
 
-
-
-
 #[test]
 fn counters_reject_set_zero_and_non_counter_targets() {
     let mut d = Document::create(&app(schema()), &initial()).unwrap();
@@ -55,4 +52,3 @@ fn counters_reject_set_zero_and_non_counter_targets() {
         assert_eq!(snapshot(&d), before);
     }
 }
-

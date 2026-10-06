@@ -43,10 +43,10 @@ bun run release:check          # verify --release: every tier, the shipped build
 |---|---|---|
 | `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently | 5 s |
 | `bun` | Package and example tests over the WASM core, in parallel (`bun test --parallel`) | 25 s |
-| `rust` | The Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang | 25 s after an edit |
+| `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests | 30 s after an edit |
 | `landing` | The site's type check (and build, on release) | — |
 | `packed` | `tests/packed`, when what the npm packages ship changes (their sources, starter, skills, page shell or packing) | 20 s |
-| `swift` | The Swift package in three concurrent process shards, balanced by recorded durations; every listed test must run | 75 s |
+| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, balanced by recorded durations; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests | 75 s |
 | `native` | `*.native.test.ts` against the debug helper | 60 s |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
@@ -55,8 +55,10 @@ repeated `bun run build` takes seconds. Durations and outcomes go to
 `.hitslop/evidence/verify.json` (`release-check.json` for a release); a tier slower than
 its budget says so.
 
-While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo check
---workspace --tests`), then run `bun run verify` before calling the step done. Run
+While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo clippy
+--workspace --all-targets`), run `cargo fmt --all`, then run `bun run verify` before
+calling the step done. While changing Swift, iterate with `bun run verify swift --filter <name>`
+and run `bun run swift:format` before the full run. Run
 `bun run verify --native` once at the end when Swift, the FFI surface or the helper
 changed. `bun run check`, `bun run test`, `bun run core:test`, `bun run swift:test` and
 `bun run test:native` remain as names for single tiers.

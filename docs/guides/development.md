@@ -21,7 +21,7 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | --- | --- |
 | `apps/apple` | macOS entry point, Quick Look extensions, project configuration, signing, and Sparkle |
 | `crates` | `hitslop-core` (Rust on Loro) document semantics and the `.slop` file, its UniFFI and WASM adapters, and the CLI's `slop-engine` |
-| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, TCA Features, Catalog, telemetry, and NativeCLI |
+| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, the app and catalog models (HitSlopFeatures), Catalog, telemetry, and NativeCLI |
 | `packages/document` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
 | `packages/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
 | `packages/schema` | TypeBox manifest, bridge, owner and socket contracts |

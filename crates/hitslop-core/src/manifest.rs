@@ -1,7 +1,7 @@
 //! Native acceptance of a stored manifest: the authored contract, TypeBox-generated. The
 //! document's package format and runtime ABI are columns beside it, checked before this runs;
 //! the package format chooses the rules.
-use crate::{err, shape, Code, Result};
+use crate::{Code, Result, err, shape};
 
 #[jsonschema::validator(
     path = "../../packages/schema/generated/manifest.schema.json",
@@ -35,7 +35,7 @@ pub fn validate(input: &str, package_format: u64) -> Result<Window> {
 }
 
 fn validate_v1(value: &serde_json::Value) -> Result<Window> {
-    Manifest::validate(&value).map_err(|e| {
+    Manifest::validate(value).map_err(|e| {
         let path = e.instance_path().as_str();
         err(Code::InvalidRequest, format!("Invalid manifest at {}", if path.is_empty() { "/" } else { path }))
     })?;

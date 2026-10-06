@@ -3,7 +3,7 @@
 //! container keep their identity, so open text fields, row handles and concurrent edits
 //! survive. An unchanged value writes nothing.
 use super::*;
-use execute::{insert_row, put, rewrite_list, Change};
+use execute::{Change, insert_row, put, rewrite_list};
 
 /// Validates `value` completely before the first mutation.
 pub(super) fn replace(
@@ -55,7 +55,14 @@ pub(super) fn replace(
 
 /// The present object `map` becomes `value`, written as its differences (`set` of an
 /// object that holds only scalars).
-pub(super) fn object(doc: &LoroDoc, map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>, rows: &mut Rows) -> Result<()> {
+pub(super) fn object(
+    doc: &LoroDoc,
+    map: &LoroMap,
+    node: &Node,
+    value: &Value,
+    ids: &mut Vec<String>,
+    rows: &mut Rows,
+) -> Result<()> {
     Reconcile { doc, ids, rows }.object(map, node, value)
 }
 
@@ -82,8 +89,15 @@ impl Reconcile<'_, '_> {
         match (kind, current) {
             (scalar, current) if is_scalar(scalar) || matches!(scalar, Node::Counter {}) => {
                 if stored(scalar, &current) != Some(project(Some(scalar), value.clone())) {
-                    map.insert(key, if is_scalar(scalar) { loro_scalar(scalar, value) } else { value.as_i64().expect("validated counter").into() })
-                        .map_err(engine)?;
+                    map.insert(
+                        key,
+                        if is_scalar(scalar) {
+                            loro_scalar(scalar, value)
+                        } else {
+                            value.as_i64().expect("validated counter").into()
+                        },
+                    )
+                    .map_err(engine)?;
                 }
             }
             (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) => {
@@ -93,7 +107,9 @@ impl Reconcile<'_, '_> {
                     text.apply_delta(&delta).map_err(engine)?;
                 }
             }
-            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => self.object(&child, kind, value)?,
+            (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => {
+                self.object(&child, kind, value)?
+            }
             (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(record))) => {
                 self.record(&record, entry, value)?;
             }

@@ -1,6 +1,7 @@
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import Synchronization
 
 /// Whether Edit ▸ Undo and Redo have anything to do.
 public struct UndoState: Sendable, Equatable {
@@ -14,48 +15,35 @@ public struct UndoState: Sendable, Equatable {
 
 /// The Apple façade of the shared Rust owner. Admission, sequencing, autosave, persistence
 /// and the writer lease live in Rust; Swift delivers events and hosts native services.
-public final class DocumentOwner: @unchecked Sendable {
+public final class DocumentOwner: Sendable {
   public let file: SlopFile
   let mode: StoreMode
   let assets: AssetReader
   private let native: NativeOwner
   private let events: Events
 
-  private let callbacksLock = NSLock()
-  /// What the owner has told this façade, so nothing asks it: the latest undo state and
-  /// save failure, and whether any change was published since open.
-  private var undo = UndoState(canUndo: false, canRedo: false)
-  private var failure: SaveFailure?
-  private var published = false
-  private var publicationCallback: (@Sendable (String) -> Void)?
-  private var statusCallback: (@Sendable (DocumentSaveStatus) -> Void)?
-  private var themeCallback: (@Sendable () -> Void)?
-  private var undoCallback: (@Sendable (UndoState) -> Void)?
-  var onPublication: (@Sendable (String) -> Void)? {
-    get { callbacksLock.withLock { publicationCallback } }
-    set { callbacksLock.withLock { publicationCallback = newValue } }
+  /// What the owner tells its document, in the owner's order, on the owner's queue.
+  enum Event: Sendable {
+    case publication(String)
+    case themeChanged
+    case undo(UndoState)
+    case saveStatus(DocumentSaveStatus)
   }
-  var onSaveStatus: (@Sendable (DocumentSaveStatus) -> Void)? {
-    get { callbacksLock.withLock { statusCallback } }
-    set { callbacksLock.withLock { statusCallback = newValue } }
-  }
-  var onTheme: (@Sendable () -> Void)? {
-    get { callbacksLock.withLock { themeCallback } }
-    set { callbacksLock.withLock { themeCallback = newValue } }
-  }
-  /// Receives the current undo state at once, then each change.
-  var onUndoState: (@Sendable (UndoState) -> Void)? {
-    get { callbacksLock.withLock { undoCallback } }
+  /// Receives the owner's events. A new listener first receives the current undo state.
+  var listener: (@Sendable (Event) -> Void)? {
+    get { events.facts.withLock { $0.listener } }
     set {
-      let current = callbacksLock.withLock { undoCallback = newValue; return undo }
-      newValue?(current)
+      let undo = events.facts.withLock { facts in
+        facts.listener = newValue
+        return facts.undo
+      }
+      newValue?(.undo(undo))
     }
   }
   /// The latest save's failure, until a save succeeds.
-  var saveFailure: SaveFailure? { callbacksLock.withLock { failure } }
+  var saveFailure: SaveFailure? { events.facts.withLock { $0.failure } }
   /// Whether this session published any change, so its document's artwork may be out of date.
-  var edited: Bool { callbacksLock.withLock { published } }
-  private func record(_ change: (DocumentOwner) -> Void) { callbacksLock.withLock { change(self) } }
+  var edited: Bool { events.facts.withLock { $0.published } }
 
   public init(url: URL, mode: StoreMode = .document) throws {
     self.mode = mode
@@ -65,38 +53,45 @@ public final class DocumentOwner: @unchecked Sendable {
     self.events = events
     file = try SlopFile(url: url, opened: owner.app())
     assets = try storeCall { try owner.assetReader() }
-    events.owner = self
   }
 
-  private final class Events: OwnerListener, @unchecked Sendable {
-    weak var owner: DocumentOwner?
+  /// What the owner has said, so nothing asks it, and who hears it next.
+  private struct Facts {
+    var undo = UndoState(canUndo: false, canRedo: false)
+    var failure: SaveFailure?
+    var published = false
+    var listener: (@Sendable (Event) -> Void)?
+  }
+
+  private final class Events: OwnerListener {
+    let facts = Mutex(Facts())
     func event(event: OwnerEvent) {
-      guard let owner else { return }
-      switch event {
-      case .publication(let json):
-        owner.record { $0.published = true }
-        owner.onPublication?(json)
-      case .themeChanged: owner.onTheme?()
-      case .undoState(let canUndo, let canRedo):
-        // The owner states its undo state when it starts, which a listener that set
-        // `onUndoState` already received; only changes are forwarded.
-        let state = UndoState(canUndo: canUndo, canRedo: canRedo)
-        var changed = false
-        owner.record { changed = $0.undo != state; $0.undo = state }
-        if changed { owner.onUndoState?(state) }
-      case .saveStatus(let status, let failure):
-        let failed = status == .failed ? failure.map { Self.saveFailure($0) } ?? .io("Saving failed") : nil
-        owner.record { $0.failure = failed }
-        switch status {
-        case .saved: owner.onSaveStatus?(.saved)
-        case .saving: owner.onSaveStatus?(.saving)
-        case .failed: owner.onSaveStatus?(.failed(failed ?? .io("Saving failed")))
+      let (listener, forwarded): ((@Sendable (Event) -> Void)?, Event?) = facts.withLock { facts in
+        switch event {
+        case .publication(let json):
+          facts.published = true
+          return (facts.listener, .publication(json))
+        case .themeChanged:
+          return (facts.listener, .themeChanged)
+        case .undoState(let canUndo, let canRedo):
+          // The owner states its undo state when it starts, which a listener received when
+          // it was set; only changes are forwarded.
+          let state = UndoState(canUndo: canUndo, canRedo: canRedo)
+          guard state != facts.undo else { return (nil, nil) }
+          facts.undo = state
+          return (facts.listener, .undo(state))
+        case .saveStatus(let status, let failure):
+          let failed = status == .failed ? failure.map(DocumentOwner.saveFailure) ?? .io("Saving failed") : nil
+          facts.failure = failed
+          let saveStatus: DocumentSaveStatus =
+            if let failed { .failed(failed) } else if status == .saving { .saving } else { .saved }
+          return (facts.listener, .saveStatus(saveStatus))
         }
       }
+      if let forwarded { listener?(forwarded) }
     }
-    private static func saveFailure(_ failure: OwnerFailure) -> SaveFailure { DocumentOwner.saveFailure(failure) }
   }
-  private final class Completion: OwnerCompletion, @unchecked Sendable {
+  private final class Completion: OwnerCompletion {
     let reply: @Sendable (OwnerReply) -> Void
     init(_ reply: @escaping @Sendable (OwnerReply) -> Void) { self.reply = reply }
     func complete(reply: OwnerReply) { self.reply(reply) }
@@ -159,7 +154,7 @@ public final class DocumentOwner: @unchecked Sendable {
   func page(json: String, view: String, reply: @escaping @Sendable (String, Error?) -> Void) {
     native.page(json: json, view: view, completion: PageAnswer { answer, failure in reply(answer, failure.map(Self.error)) })
   }
-  private final class PageAnswer: PageCompletion, @unchecked Sendable {
+  private final class PageAnswer: PageCompletion {
     let reply: @Sendable (String, OwnerFailure?) -> Void
     init(_ reply: @escaping @Sendable (String, OwnerFailure?) -> Void) { self.reply = reply }
     func complete(replyJson: String, failure: OwnerFailure?) { reply(replyJson, failure) }
@@ -190,12 +185,8 @@ public final class DocumentOwner: @unchecked Sendable {
     try await unit(.captureSource(destination: destination.path))
   }
   func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
-    guard case .bytes(let bytes) = try await call(.artwork(name: name.rawValue)) else { throw SlopFailure("Invalid artwork response") }
+    guard case .bytes(let bytes) = try await call(.artwork(name: name)) else { throw SlopFailure("Invalid artwork response") }
     return bytes
-  }
-  func listAttachments() async throws -> [PageAttachmentsPutResult] {
-    guard case .attachments(let items) = try await call(.attachments) else { throw SlopFailure("Invalid attachments response") }
-    return items.map { .init(id: $0.id, byteLength: Int($0.byteLength)) }
   }
   struct ThemeRead: Sendable { let state: ThemeState; let revision: Int }
   private static func themeRead(_ reply: OwnerReply) throws -> ThemeRead {

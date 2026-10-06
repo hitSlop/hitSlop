@@ -1,6 +1,6 @@
 import Foundation
 import HitSlopCore
-import HitSlopFeatures
+@testable import HitSlopFeatures
 import Testing
 
 @Test func recentIdentityPreservesFilenameAndAbbreviatesOnlyHomeDirectory() {
@@ -14,20 +14,23 @@ import Testing
     #expect(outside.folderPath == "/external/Work/Plans")
 }
 
-@Test func recentsSearchMatchesFilenameFolderAndTemplate() {
+@Test @MainActor func recentsSearchMatchesFilenameFolderAndTemplate() async {
     let first = CatalogEntry(id: "first", source: .recent(URL(fileURLWithPath: "/Work/Clients/Little things.slop")), title: "Quick Checklist")
     let second = CatalogEntry(id: "second", source: .recent(URL(fileURLWithPath: "/Work/Personal/Little things.slop")), title: "Quick Checklist")
-    var state = CatalogFeature.State()
-    state.filter = .recents
-    state.recents = [first, second]
+    let catalog = Catalog()
+    catalog.recents = { [first, second] }
+    let model = CatalogModel(client: catalog.client)
+    model.refreshRecents()
+    await model.work.settled()
+    model.select(.recents)
     #expect(first.displayTitle == "Little things.slop")
     #expect(first.documentIdentity?.folderPath != second.documentIdentity?.folderPath)
-    state.query = "LITTLE THINGS"
-    #expect(state.visibleEntries == [first, second])
-    state.query = "clients"
-    #expect(state.visibleEntries == [first])
-    state.query = "quick checklist"
-    #expect(state.visibleEntries == [first, second])
+    model.query = "LITTLE THINGS"
+    #expect(model.visibleEntries == [first, second])
+    model.query = "clients"
+    #expect(model.visibleEntries == [first])
+    model.query = "quick checklist"
+    #expect(model.visibleEntries == [first, second])
 }
 
 @Test func templateIdentityAndSearchStillUseManifestMetadata() {

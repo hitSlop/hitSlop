@@ -12,7 +12,11 @@ pub(super) fn scalar(node: &Node, value: &Value) -> Result<()> {
     match (node, value) {
         (Node::Boolean {}, Value::Bool(_)) => Ok(()),
         (Node::String { max_length }, Value::String(s)) => {
-            if max_length.is_some_and(|max| utf16_len(s) > max) { out_of_range() } else { Ok(()) }
+            if max_length.is_some_and(|max| utf16_len(s) > max) {
+                out_of_range()
+            } else {
+                Ok(())
+            }
         }
         (Node::Enum { values }, Value::String(s)) if values.iter().any(|v| v == s) => Ok(()),
         (Node::Number { min, max }, Value::Number(n)) => match n.as_f64() {
@@ -34,13 +38,16 @@ fn mismatch() -> Error {
 /// container, objects and records in maps, lists in movable lists whose rows are maps with
 /// unique valid `$id`s, counters as safe integers, scalars within their rules.
 pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()> {
-    let invalid = || err(Code::InvalidBytes, "Saved state does not match the document's schema; keep the file for recovery");
+    let invalid =
+        || err(Code::InvalidBytes, "Saved state does not match the document's schema; keep the file for recovery");
     match (node, value) {
         (Node::Optional { .. }, None) => Ok(()),
         (Node::Optional { inner }, value) => stored(inner, value),
         (Node::Text {}, Some(ValueOrContainer::Container(Container::Text(_)))) => Ok(()),
         (Node::Counter {}, Some(ValueOrContainer::Value(loro::LoroValue::I64(n)))) if safe(n) => Ok(()),
-        (node, Some(ValueOrContainer::Value(value))) if is_scalar(node) => scalar(node, &json(value)).map_err(|_| invalid()),
+        (node, Some(ValueOrContainer::Value(value))) if is_scalar(node) => {
+            scalar(node, &json(value)).map_err(|_| invalid())
+        }
         (Node::Object { properties }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             if map.keys().any(|key| &*key != "$id" && !properties.contains_key(&*key)) {
                 return Err(invalid());
@@ -53,11 +60,13 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
         }
         (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) if is_scalar(item) => {
             let mut result = Ok(());
-            list.for_each(|element| if result.is_ok() {
-                result = match element {
-                    ValueOrContainer::Value(value) => scalar(item, &json(value)).map_err(|_| invalid()),
-                    ValueOrContainer::Container(_) => Err(invalid()),
-                };
+            list.for_each(|element| {
+                if result.is_ok() {
+                    result = match element {
+                        ValueOrContainer::Value(value) => scalar(item, &json(value)).map_err(|_| invalid()),
+                        ValueOrContainer::Container(_) => Err(invalid()),
+                    };
+                }
             });
             result
         }

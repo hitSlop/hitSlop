@@ -2,8 +2,8 @@
 //! (its text at the batch's `base`) to the set's value; the owner computes the edit script
 //! and merges it with whatever changed since. No draft state survives a batch.
 use super::*;
-use loro::{cursor::Side, event::Diff, TextDelta, UpdateOptions};
 use execute::Location;
+use loro::{TextDelta, UpdateOptions, cursor::Side, event::Diff};
 use wire::Selection;
 
 /// Bounds the diff; past it the script falls back to a single caret-hinted splice.
@@ -39,10 +39,7 @@ fn unicode_offset(text: &str, utf16: usize) -> Result<usize> {
     if n == utf16 {
         Ok(text.chars().count())
     } else {
-        Err(err(
-            Code::OutOfRange,
-            "Selection splits a surrogate or exceeds text",
-        ))
+        Err(err(Code::OutOfRange, "Selection splits a surrogate or exceeds text"))
     }
 }
 fn utf16_offset(text: &str, unicode: usize) -> usize {
@@ -55,12 +52,7 @@ fn utf16_offset(text: &str, unicode: usize) -> usize {
 pub(crate) fn script(from: &str, to: &str, caret: usize) -> Vec<TextDelta> {
     let (a, b): (Vec<char>, Vec<char>) = (from.chars().collect(), to.chars().collect());
     let prefix = a.iter().zip(&b).take_while(|(x, y)| x == y).count().min(caret);
-    let suffix = a[prefix..]
-        .iter()
-        .rev()
-        .zip(b[prefix..].iter().rev())
-        .take_while(|(x, y)| x == y)
-        .count();
+    let suffix = a[prefix..].iter().rev().zip(b[prefix..].iter().rev()).take_while(|(x, y)| x == y).count();
     let (old, new) = (&a[prefix..a.len() - suffix], &b[prefix..b.len() - suffix]);
     let mut delta = vec![];
     if prefix > 0 {
@@ -93,8 +85,11 @@ fn window(old: &[char], new: &[char]) -> Option<Vec<TextDelta>> {
     text.insert(0, &old.iter().collect::<String>()).ok()?;
     scratch.commit();
     let start = scratch.oplog_frontiers();
-    text.update(&new.iter().collect::<String>(), UpdateOptions { timeout_ms: Some(SCRIPT_TIMEOUT_MS), use_refined_diff: false })
-        .ok()?;
+    text.update(
+        &new.iter().collect::<String>(),
+        UpdateOptions { timeout_ms: Some(SCRIPT_TIMEOUT_MS), use_refined_diff: false },
+    )
+    .ok()?;
     scratch.commit();
     let batch = scratch.diff(&start, &scratch.oplog_frontiers()).ok()?;
     let delta = batch.iter().find_map(|(_, diff)| match diff {
@@ -245,10 +240,13 @@ pub(super) fn set(
     let base = texts.base.ok_or_else(|| err(Code::InvalidRequest, "`from` and `selection` need the batch's `base`"))?;
     let to = value.as_str().ok_or_else(|| err(Code::TypeMismatch, "Expected text"))?;
     let given = selection.map(|s| [s.start, s.end]);
-    let selection = [unicode_offset(to, given.map_or(0, |s| s[0]))?, match given {
-        Some([_, end]) => unicode_offset(to, end)?,
-        None => to.chars().count(),
-    }];
+    let selection = [
+        unicode_offset(to, given.map_or(0, |s| s[0]))?,
+        match given {
+            Some([_, end]) => unicode_offset(to, end)?,
+            None => to.chars().count(),
+        },
+    ];
     let current = match at.value {
         ValueOrContainer::Container(Container::Text(text)) => Some(text),
         _ if at.absent => None,
@@ -270,7 +268,15 @@ pub(super) fn set(
     };
     // Only the page's edit, the set carrying a selection, reports back.
     let typed = |authored: Option<String>, positions: [usize; 2], merged: bool| {
-        given.map(|[_, caret]| Typed { path: path.to_vec(), from: from.clone(), to: to.to_owned(), caret, authored, selection: positions, merged })
+        given.map(|[_, caret]| Typed {
+            path: path.to_vec(),
+            from: from.clone(),
+            to: to.to_owned(),
+            caret,
+            authored,
+            selection: positions,
+            merged,
+        })
     };
     // An unset optional text reads as "": the first edit from "" creates it.
     let Some(current) = current else {
@@ -288,10 +294,10 @@ pub(super) fn set(
     };
     // The field must be the same container the writer edited: a row removed and
     // reinserted with the same `$id` has a new text that `base` never saw.
-    if let ContainerID::Normal { peer, counter, .. } = current.id() {
-        if !base.vv.includes_id(ID::new(peer, counter)) {
-            return Err(err(Code::PathNotFound, "Text identity changed"));
-        }
+    if let ContainerID::Normal { peer, counter, .. } = current.id()
+        && !base.vv.includes_id(ID::new(peer, counter))
+    {
+        return Err(err(Code::PathNotFound, "Text identity changed"));
     }
     if from == to {
         texts.typed = typed(Some(base.token.clone()), given.unwrap_or_default(), false);

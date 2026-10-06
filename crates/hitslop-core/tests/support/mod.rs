@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 pub mod generate;
-use hitslop_core::{AppSpec, Applied, Document, Error};
-use serde_json::{json, Value};
 use hitslop_core::Origin;
+use hitslop_core::{AppSpec, Applied, Document, Error};
+use serde_json::{Value, json};
 /// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
 pub fn registry_folder() -> std::path::PathBuf {
     std::env::temp_dir().join("hitslop-test-registry")
@@ -41,13 +41,22 @@ pub struct App<'a> {
 impl<'a> App<'a> {
     /// The fixture app with this descriptor and initial values, for this build's markers.
     pub const fn new(descriptor: &'a str, initial: &'a str) -> Self {
-        App { format: hitslop_core::PACKAGE_FORMAT, abi: hitslop_core::RUNTIME_ABI, manifest: MANIFEST, descriptor, initial, theme: THEME }
+        App {
+            format: hitslop_core::PACKAGE_FORMAT,
+            abi: hitslop_core::RUNTIME_ABI,
+            manifest: MANIFEST,
+            descriptor,
+            initial,
+            theme: THEME,
+        }
     }
 }
 /// Writes `app` as the stage's `app.json`.
 pub fn write_app(stage: &std::path::Path, app: App) {
     let App { format, abi, manifest, descriptor, initial, theme } = app;
-    let json = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#);
+    let json = format!(
+        r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#
+    );
     std::fs::write(stage.join("app.json"), json).unwrap();
 }
 /// A shared fixture (`fixtures/<name>.json`): a descriptor, its initial values and, for
@@ -68,7 +77,7 @@ pub fn fixture(name: &str) -> Value {
 }
 /// A document's snapshot (value, theme and version), parsed.
 pub fn snapshot(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
+    serde_json::from_str(&d.state().unwrap()).unwrap()
 }
 /// A document's value.
 pub fn value(d: &Document) -> Value {
@@ -88,7 +97,14 @@ pub fn typed(base: &str, path: Value, from: &str, to: &str, caret: usize) -> Str
         .to_string()
 }
 /// Applies the page's text edit (`typed`).
-pub fn type_text(d: &mut Document, base: &str, path: Value, from: &str, to: &str, caret: usize) -> Result<Applied, Error> {
+pub fn type_text(
+    d: &mut Document,
+    base: &str,
+    path: Value,
+    from: &str,
+    to: &str,
+    caret: usize,
+) -> Result<Applied, Error> {
     d.apply_batch(&typed(base, path, from, to, caret), Origin::Page)
 }
 /// Whether `d` still accepts `version` as a text base: a no-change edit of `["title"]`
@@ -139,7 +155,7 @@ pub struct View {
 }
 impl View {
     pub fn of(doc: &Document) -> Self {
-        let state: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
+        let state: Value = serde_json::from_str(&doc.state().unwrap()).unwrap();
         Self { value: state["value"].clone(), theme: state["theme"].clone() }
     }
     pub fn publish(&mut self, publication: &str) {
@@ -151,7 +167,7 @@ impl View {
     }
     /// Equal to a fresh snapshot, value and palette.
     pub fn check(&self, doc: &Document, context: &str) {
-        let fresh: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
+        let fresh: Value = serde_json::from_str(&doc.state().unwrap()).unwrap();
         assert_eq!(self.value, fresh["value"], "{context}: projection diverged");
         assert_eq!(self.theme, fresh["theme"], "{context}: theme diverged");
     }
@@ -168,12 +184,7 @@ pub fn apply_patches(value: &mut Value, ops: &Value) {
             } else if let Some(index) = segment.get("index") {
                 target = &mut target[index.as_u64().unwrap() as usize];
             } else {
-                target = target
-                    .as_array_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|v| v["$id"] == segment["id"])
-                    .unwrap();
+                target = target.as_array_mut().unwrap().iter_mut().find(|v| v["$id"] == segment["id"]).unwrap();
             }
         }
         match op["type"].as_str().unwrap() {
@@ -196,15 +207,11 @@ pub fn apply_patches(value: &mut Value, ops: &Value) {
                 *target = Value::String(next);
             }
             "remove" => {
-                target
-                    .as_object_mut()
-                    .unwrap()
-                    .remove(path.last().unwrap().as_str().unwrap());
+                target.as_object_mut().unwrap().remove(path.last().unwrap().as_str().unwrap());
             }
-            "insertRow" => target
-                .as_array_mut()
-                .unwrap()
-                .insert(op["index"].as_u64().unwrap() as usize, op["value"].clone()),
+            "insertRow" => {
+                target.as_array_mut().unwrap().insert(op["index"].as_u64().unwrap() as usize, op["value"].clone())
+            }
             kind => {
                 let rows = target.as_array_mut().unwrap();
                 let i = rows.iter().position(|v| v["$id"] == op["id"]).unwrap();

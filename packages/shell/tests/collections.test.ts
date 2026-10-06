@@ -24,7 +24,7 @@ const initial = { done: {}, cells: {}, pages: {}, pixels: ["#fff", "#fff"], pres
 async function open() {
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify(initial));
   const doc = await OwnerDocument.open(definition, wasmTransport(core), () => {});
-  const saved = () => JSON.parse(core.snapshot()).value;
+  const saved = () => JSON.parse(core.state()).value;
   return { core, doc, saved };
 }
 

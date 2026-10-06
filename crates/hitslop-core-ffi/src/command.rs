@@ -1,7 +1,8 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
 //! only a validated export request is handed to the native renderer.
 use super::*;
-use hitslop_core::{command as core, owner};
+use hitslop_core::command as core;
+use hitslop_core::owner::Failure;
 
 #[derive(uniffi::Record)]
 pub struct NativeExportRequest {
@@ -12,7 +13,7 @@ pub struct NativeExportRequest {
 #[derive(uniffi::Enum)]
 pub enum NativeExportOutcome {
     Success { output: String },
-    Failure { failure: OwnerFailure },
+    Failure { failure: Failure },
 }
 #[derive(uniffi::Object)]
 pub struct NativeExportCompletion(Arc<core::ExportCompletion>);
@@ -24,32 +25,8 @@ impl NativeExportCompletion {
     pub fn complete(&self, outcome: NativeExportOutcome) {
         self.0.complete(match outcome {
             NativeExportOutcome::Success { output } => Ok(output),
-            NativeExportOutcome::Failure { failure } => Err(failure.into()),
+            NativeExportOutcome::Failure { failure } => Err(failure),
         });
-    }
-}
-impl From<OwnerFailure> for owner::Failure {
-    fn from(value: OwnerFailure) -> Self {
-        use OwnerFailureKind as K;
-        Self {
-            kind: match value.kind {
-                K::Rejected => owner::FailureKind::Rejected,
-                K::Replaced => owner::FailureKind::Replaced,
-                K::Closing => owner::FailureKind::Closing,
-                K::Closed => owner::FailureKind::Closed,
-                K::ReadOnly => owner::FailureKind::ReadOnly,
-                K::Invalidated => owner::FailureKind::Invalidated,
-                K::Locked => owner::FailureKind::Locked,
-                K::Busy => owner::FailureKind::Busy,
-                K::Full => owner::FailureKind::Full,
-                K::Moved => owner::FailureKind::Moved,
-                K::SaveFailed => owner::FailureKind::SaveFailed,
-                K::Failed => owner::FailureKind::Failed,
-            },
-            message: value.message,
-            reason: value.reason,
-            op_index: value.op_index,
-        }
     }
 }
 #[uniffi::export(callback_interface)]
@@ -63,7 +40,7 @@ pub trait NativeCommandCompletion: Send + Sync {
 /// A page request's answer: the reply for the page, and the owner's failure when it refused.
 #[uniffi::export(callback_interface)]
 pub trait PageCompletion: Send + Sync {
-    fn complete(&self, reply_json: String, failure: Option<OwnerFailure>);
+    fn complete(&self, reply_json: String, failure: Option<Failure>);
 }
 struct Exporter(Box<dyn NativeExportHandler>);
 impl core::ExportHandler for Exporter {
@@ -83,14 +60,8 @@ pub struct NativeSocketServer(hitslop_core::socket::Server);
 #[uniffi::export]
 impl NativeSocketServer {
     #[uniffi::constructor]
-    pub fn start(
-        owner: Arc<NativeOwner>,
-        exporter: Box<dyn NativeExportHandler>,
-    ) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(hitslop_core::socket::Server::start(
-            owner.0.clone(),
-            Arc::new(Exporter(exporter)),
-        )?)))
+    pub fn start(owner: Arc<NativeOwner>, exporter: Box<dyn NativeExportHandler>) -> Result<Arc<Self>, CoreError> {
+        Ok(Arc::new(Self(hitslop_core::socket::Server::start(owner.0.clone(), Arc::new(Exporter(exporter)))?)))
     }
     pub fn path(&self) -> String {
         self.0.path().to_string_lossy().into_owned()
@@ -122,17 +93,12 @@ pub fn command_request(
 impl NativeOwner {
     /// One document request from the page `view`; the owner admits and answers it.
     pub fn page(&self, json: String, view: String, completion: Box<dyn PageCompletion>) {
-        core::page(&self.0, view, &json, move |reply| completion.complete(reply.json, reply.failure.map(Into::into)));
+        core::page(&self.0, view, &json, move |reply| completion.complete(reply.json, reply.failure));
     }
     pub fn request(&self, json: String, completion: Box<dyn NativeCommandCompletion>) {
         let owner = self.0.clone();
         std::thread::spawn(move || {
-            completion.complete(core::serve(
-                &owner,
-                &json,
-                None,
-                std::time::Instant::now() + core::COMMAND_TIMEOUT,
-            ))
+            completion.complete(core::serve(&owner, &json, None, std::time::Instant::now() + core::COMMAND_TIMEOUT))
         });
     }
 }

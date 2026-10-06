@@ -75,12 +75,14 @@ fi
 # paths out of binaries), so the host's engine comes from it, shared with `bun run build`.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"
 cargo=${CARGO:-"$HOME/.cargo/bin/cargo"}
+# `release` while developing; what ships sets `dist` (scripts/build/core.ts, `cargoProfile`).
+profile=${HITSLOP_CARGO_PROFILE:-release}
 set --
 host_arch=$(/usr/bin/uname -m)
 for arch in $archs; do
   if [ "$arch" = "$host_arch" ]; then
     bun "$repo_root/scripts/build/core.ts" --engine
-    set -- "$@" "$repo_root/target/release/slop-engine"
+    set -- "$@" "$repo_root/target/$profile/slop-engine"
     continue
   fi
   case "$arch" in
@@ -89,9 +91,9 @@ for arch in $archs; do
     *) continue ;;
   esac
   RUSTFLAGS=$(bun "$repo_root/scripts/build/core.ts" --rustflags) \
-    "$cargo" build --locked --release --manifest-path "$repo_root/Cargo.toml" \
+    "$cargo" build --locked --profile "$profile" --manifest-path "$repo_root/Cargo.toml" \
     --target-dir "$repo_root/target" --target "$target" -p slop-engine
-  set -- "$@" "$repo_root/target/$target/release/slop-engine"
+  set -- "$@" "$repo_root/target/$target/$profile/slop-engine"
 done
 engine="$scratch/slop-engine"
 /usr/bin/lipo -create "$@" -output "$engine"

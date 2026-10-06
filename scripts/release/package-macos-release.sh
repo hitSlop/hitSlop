@@ -100,7 +100,6 @@ echo "Archiving Apple-silicon Release…"
 # shellcheck disable=SC2086
 /usr/bin/xcodebuild \
   -skipPackagePluginValidation \
-  -skipMacroValidation \
   -quiet \
   -project "$project" \
   -scheme hitSlop-macOS \

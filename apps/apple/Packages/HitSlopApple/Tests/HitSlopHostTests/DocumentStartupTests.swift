@@ -36,7 +36,7 @@ extension HostTests {
     _ = NSApplication.shared
     let environment = ProcessInfo.processInfo.environment
     if environment["HITSLOP_STARTUP_FOREGROUND"] == "1" {
-      NSApp.activate(ignoringOtherApps: true)
+      NSApp.activate()
     }
     let samples = max(1, Int(environment["HITSLOP_STARTUP_SAMPLES"] ?? "10") ?? 10)
     var names = ["quick-checklist", "large-checklist"]

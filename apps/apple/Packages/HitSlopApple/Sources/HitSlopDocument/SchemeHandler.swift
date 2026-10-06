@@ -1,6 +1,7 @@
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
+import Synchronization
 import WebKit
 
 /// Serves `slop://app`: the page the shell owns, the bundled shell, and the document's app
@@ -8,12 +9,11 @@ import WebKit
 /// task callbacks run on the main actor, and a task WebKit stopped is never answered.
 @MainActor final class SchemeHandler: NSObject, WKURLSchemeHandler {
   /// Bundled page shell files are immutable, so every WebView shares one in-memory copy.
-  nonisolated(unsafe) private static var shellFiles: [String: Data] = [:]
-  nonisolated private static let shellFilesLock = NSLock()
+  nonisolated private static let shellFiles = Mutex<[String: Data]>([:])
   nonisolated private static func shellFile(_ file: URL) throws -> Data {
-    if let data = shellFilesLock.withLock({ shellFiles[file.path] }) { return data }
+    if let data = shellFiles.withLock({ $0[file.path] }) { return data }
     let data = try Data(contentsOf: file)
-    shellFilesLock.withLock { shellFiles[file.path] = data }
+    shellFiles.withLock { $0[file.path] = data }
     return data
   }
   /// The page shell owns every page; a document supplies only its app's assets.

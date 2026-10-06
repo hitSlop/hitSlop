@@ -4,34 +4,38 @@
 #[path = "wire.generated.rs"]
 mod wire;
 use loro::{
-    Container, ContainerID, ContainerTrait, ExportMode, Frontiers, Index, LoroDoc, ID, LoroMap, LoroMovableList,
+    Container, ContainerID, ContainerTrait, ExportMode, Frontiers, ID, Index, LoroDoc, LoroMap, LoroMovableList,
     LoroText, ValueOrContainer, VersionVector,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-mod publication;
-mod identity;
-mod text;
-pub mod theme;
-pub mod shape;
+mod check;
 mod descriptor;
 mod execute;
-mod replace;
+mod identity;
 mod project;
-mod check;
+mod publication;
+mod replace;
+pub mod shape;
+mod text;
+pub mod theme;
 pub use descriptor::validate;
-use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
-use execute::{fill, put, resolve, execute, Rows};
+use descriptor::{Node, descriptor, holds_collections, is_scalar, loro_scalar, unwrap_optional, utf16_len, valid_key};
+use execute::{Rows, execute, fill, put, resolve};
 use identity::stored_id;
 use project::project;
 use publication::{Events, ListState};
 use std::sync::Arc;
-pub use wire::{Code, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, IMAGE_PIXELS, IMAGE_SIDE, ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
-use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, State, Publication, PatchOp};
+pub use wire::{
+    ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, Code,
+    IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
+};
+use wire::{Anchor, Batch, Hunk, Intent, PatchOp, Publication, Segment, State, valid_id};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
-const MAX_JSON: usize = if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
+const MAX_JSON: usize =
+    if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
 
 #[derive(Debug, thiserror::Error)]
 #[error("{code}: {message}")]
@@ -42,11 +46,7 @@ pub struct Error {
 }
 type Result<T> = std::result::Result<T, Error>;
 fn err(code: Code, message: impl ToString) -> Error {
-    Error {
-        code,
-        message: message.to_string(),
-        op_index: None,
-    }
+    Error { code, message: message.to_string(), op_index: None }
 }
 fn engine(e: impl ToString) -> Error {
     err(Code::EngineError, e)
@@ -64,6 +64,11 @@ fn encode(v: &impl Serialize) -> String {
 /// A materialized Loro value as JSON.
 fn json(value: loro::LoroValue) -> Value {
     serde_json::to_value(value).expect("Loro values encode as JSON")
+}
+/// `mutex`'s value, also after a thread panicked holding it: no value guarded here is left
+/// half-changed by a panic.
+pub(crate) fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 /// Fills `buffer` from the platform's randomness, without which no identity can be minted.
 fn random(buffer: &mut [u8]) {
@@ -88,13 +93,10 @@ fn hex(bytes: &[u8]) -> String {
 /// Version tokens name at most 1,024 frontier IDs of 12 bytes each.
 const MAX_TOKEN_BYTES: usize = 12 * 1024;
 fn unhex(s: &str) -> Result<Vec<u8>> {
-    if s.len() > 2 * MAX_TOKEN_BYTES || s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if s.len() > 2 * MAX_TOKEN_BYTES || !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(err(Code::InvalidVersion, "Expected an opaque version token"));
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(engine))
-        .collect()
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(engine)).collect()
 }
 /// Version tokens are the document's frontiers: the IDs of its latest operations,
 /// sorted, as 12-byte big-endian (peer, counter) records. They grow with concurrent
@@ -200,7 +202,9 @@ fn name_rows(node: &Node, value: &mut Value, at: &str) {
             for (index, row) in rows.iter_mut().enumerate() {
                 let place = format!("{at}/{index}");
                 if let Value::Object(fields) = row {
-                    fields.entry("$id").or_insert_with(|| Value::String(identity::derived(&format!("initial:{place}"))));
+                    fields
+                        .entry("$id")
+                        .or_insert_with(|| Value::String(identity::derived(&format!("initial:{place}"))));
                 }
                 name_rows(item, row, &place);
             }
@@ -414,22 +418,22 @@ impl Document {
         version_token(&self.doc.oplog_frontiers())
     }
     /// The application value: the stored value, each counter and number as it reads.
-    fn projected(&self) -> Result<Value> {
-        Ok(project(Some(&self.app.schema), raw(&self.doc)))
+    fn projected(&self) -> Value {
+        project(Some(&self.app.schema), raw(&self.doc))
     }
     /// The application value as JSON.
-    pub fn value(&self) -> Result<String> {
-        Ok(encode(&self.projected()?))
+    pub fn value(&self) -> String {
+        encode(&self.projected())
     }
-    /// `{sequence, version, value, theme}` for a page or a reader.
+    /// `{sequence, version, value, theme}` for a page or a reader, computed from the full
+    /// stored value: the oracle that publications replayed on a page are tested against.
     pub fn state(&self) -> Result<String> {
-        Ok(encode(&State { version: self.version(), value: self.projected()?, sequence: self.sequence, theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))? }))
-    }
-    /// The same state recomputed from the full stored value: the oracle that publications
-    /// replayed on a page are tested against.
-    pub fn snapshot(&self) -> Result<String> {
-        let value = project(Some(&self.app.schema), raw(&self.doc));
-        Ok(encode(&State { version: self.version(), value, sequence: self.sequence, theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))? }))
+        Ok(encode(&State {
+            version: self.version(),
+            value: self.projected(),
+            sequence: self.sequence,
+            theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))?,
+        }))
     }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
@@ -439,7 +443,7 @@ impl Document {
             return Ok(());
         }
         let fresh = replica_at(&self.doc, before)?;
-        self.events.lock().unwrap().clear();
+        lock(&self.events).clear();
         subscribe(&fresh, &self.events);
         self.doc = fresh;
         // Publication may have failed after updating indexes; rebuild those too.
@@ -464,7 +468,9 @@ impl Document {
         if batch.intents.len() > wire::BATCH_INTENTS {
             return Err(err(Code::TooLarge, format!("Batch exceeds {} intents", wire::BATCH_INTENTS)));
         }
-        if batch.intents.len() > 1 && batch.intents.iter().any(|op| matches!(op, Intent::Set { selection: Some(_), .. })) {
+        if batch.intents.len() > 1
+            && batch.intents.iter().any(|op| matches!(op, Intent::Set { selection: Some(_), .. }))
+        {
             return Err(err(Code::InvalidRequest, "A text edit with a selection is its own batch"));
         }
         // Every path validates the base first: an unknown operation must never reach Loro.
@@ -480,13 +486,15 @@ impl Document {
         let mut failure = None;
         let typed = {
             let mut rows = Rows::new(&self.lists);
-            let mut texts = text::Texts { base: base.as_ref(), floor: &self.floor, agent: origin == Origin::Agent, typed: None };
+            let mut texts =
+                text::Texts { base: base.as_ref(), floor: &self.floor, agent: origin == Origin::Agent, typed: None };
             for (index, op) in batch.intents.iter().enumerate() {
-                let result = if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
-                    Err(err(Code::InvalidRequest, "The page cannot change the palette"))
-                } else {
-                    execute(&self.doc, &self.app, op, &mut ids, &mut rows, &mut texts)
-                };
+                let result =
+                    if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
+                        Err(err(Code::InvalidRequest, "The page cannot change the palette"))
+                    } else {
+                        execute(&self.doc, &self.app, op, &mut ids, &mut rows, &mut texts)
+                    };
                 if let Err(mut e) = result {
                     e.op_index = Some(index);
                     failure = Some(e);
@@ -515,10 +523,12 @@ impl Document {
                     let run = match (origin, batch.intents.as_slice()) {
                         (Origin::Agent, _) => Some(Run::Agent),
                         // One color set, not reset: a color panel sends one per step of a drag.
-                        (Origin::Window, [Intent::SetTheme { values, replace: None | Some(false) }]) => match values.first_key_value() {
-                            Some((token, Some(_))) if values.len() == 1 => Some(Run::Color(token.clone())),
-                            _ => None,
-                        },
+                        (Origin::Window, [Intent::SetTheme { values, replace: None | Some(false) }]) => {
+                            match values.first_key_value() {
+                                Some((token, Some(_))) if values.len() == 1 => Some(Run::Color(token.clone())),
+                                _ => None,
+                            }
+                        }
                         _ => None,
                     };
                     let continues = run.is_some() && run == self.run;
@@ -527,7 +537,10 @@ impl Document {
             }
         }
         // An edit applied to the live text has the batch's version as its own.
-        let text = typed.map(|typed| TextEdit { authored: typed.authored.unwrap_or_else(|| self.version()), selection: typed.selection });
+        let text = typed.map(|typed| TextEdit {
+            authored: typed.authored.unwrap_or_else(|| self.version()),
+            selection: typed.selection,
+        });
         Ok(Self::applied(self.sequence, ids, published, text))
     }
     fn applied(sequence: u64, ids: Vec<String>, published: Option<Published>, text: Option<TextEdit>) -> Applied {
@@ -619,19 +632,23 @@ impl Document {
     /// theme?}`. Applying it to the previous snapshot yields a fresh snapshot. `None`
     /// when the document did not change: no publication, and the sequence stays.
     fn publish(&mut self) -> Result<Option<Published>> {
-        let events = std::mem::take(&mut *self.events.lock().unwrap());
+        let events = std::mem::take(&mut *lock(&self.events));
         let theme = publication::theme_changed(&self.doc, &events)
-            .then(|| self.app.theme.effective(&self.doc.get_map(theme::ROOT))).transpose()?;
+            .then(|| self.app.theme.effective(&self.doc.get_map(theme::ROOT)))
+            .transpose()?;
         let ops = publication::publish(&self.doc, &self.app.schema, &mut self.lists, events)?;
         if ops.is_none() && theme.is_none() {
             return Ok(None);
         }
-        let next = self
-            .sequence
-            .checked_add(1)
-            .ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
+        let next = self.sequence.checked_add(1).ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
         let themed = theme.is_some();
-        let json = encode(&Publication { previous: self.sequence, sequence: next, version: self.version(), ops: ops.unwrap_or_default(), theme });
+        let json = encode(&Publication {
+            previous: self.sequence,
+            sequence: next,
+            version: self.version(),
+            ops: ops.unwrap_or_default(),
+            theme,
+        });
         self.sequence = next;
         Ok(Some(Published { json, theme: themed }))
     }
@@ -698,10 +715,7 @@ pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc
 fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
     let status = result.map_err(|e| err(Code::InvalidBytes, e))?;
     if status.pending.as_ref().is_some_and(|v| !v.is_empty()) {
-        return Err(err(
-            Code::MissingDependencies,
-            "Durable pending-import buffering is not implemented",
-        ));
+        return Err(err(Code::MissingDependencies, "Durable pending-import buffering is not implemented"));
     }
     Ok(())
 }
@@ -711,13 +725,13 @@ pub mod envelope;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 mod error;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod store;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod file;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod manifest;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod registry;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod manifest;
+pub mod store;
 
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod owner;

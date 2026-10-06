@@ -1,30 +1,41 @@
 import AppKit
 import HitSlopCore
 import HitSlopHost
-import ComposableArchitecture
 import HitSlopFeatures
 import HitSlopDocument
 import SwiftUI
 
 public struct CatalogView: View {
-    @Bindable var store: StoreOf<CatalogFeature>
+    @Bindable var model: CatalogModel
     @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
-    public init(store: StoreOf<CatalogFeature>) {
-        self.store = store
+    public init(model: CatalogModel) {
+        self.model = model
     }
 
     public var body: some View {
         NavigationSplitView {
-            CatalogSidebarFeatureView(store: store)
+            CatalogSidebar(filter: model.filter, categories: model.categories, recentCount: model.recents.count) {
+                model.select($0)
+            }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
         } content: {
-            CatalogResultsFeatureView(store: store, searchFocused: $searchFocused)
+            CatalogRail(
+                title: model.filter.title, entries: model.visibleEntries,
+                selectedID: $model.selectedID, query: $model.query, searchFocused: $searchFocused,
+                localIssues: model.filter != .recents ? model.localIssues : [],
+                onRefresh: { model.refreshSources() }
+            )
             .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 320)
             .ignoresSafeArea(.container, edges: .top)
         } detail: {
-            CatalogDetailFeatureView(store: store)
+            CatalogDetail(
+                section: model.filter.title, entry: model.selectedEntry,
+                isCreating: model.creating != nil, isCopying: model.isCopying, isQuitting: model.isQuitting
+            ) {
+                model.primaryAction($0)
+            }
             .frame(minWidth: 460)
             .ignoresSafeArea(.container, edges: .top)
         }
@@ -35,48 +46,19 @@ public struct CatalogView: View {
                 .keyboardShortcut("k", modifiers: .command)
                 .frame(width: 1, height: 1).opacity(0)
         }
-        .onAppear { store.send(.start) }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { store.send(.activated) } }
+        .onAppear { model.start() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { model.activated() } }
         .onReceive(NotificationCenter.default.publisher(for: .hitSlopPreviewDidChange)) { notification in
-            if let url = notification.object as? URL { store.send(.artworkChanged(url)) }
+            if let url = notification.object as? URL { model.artworkChanged(url) }
         }
-        .alert($store.scope(state: \.$alert, action: \.alert))
+        .alert("Could not create slop", isPresented: Binding(
+            get: { model.creationError != nil }, set: { if !$0 { model.creationError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.creationError ?? "")
+        }
         .preferredColorScheme(.light)
-    }
-}
-
-private struct CatalogSidebarFeatureView: View {
-    let store: StoreOf<CatalogFeature>
-    var body: some View {
-        CatalogSidebar(filter: store.filter, categories: store.categories, recentCount: store.recents.count) {
-            store.send(.filterChanged($0))
-        }
-    }
-}
-
-private struct CatalogResultsFeatureView: View {
-    @Bindable var store: StoreOf<CatalogFeature>
-    var searchFocused: FocusState<Bool>.Binding
-    var body: some View {
-        CatalogRail(
-            title: store.filter.title, entries: store.visibleEntries,
-            selectedID: $store.selectedID.sending(\.selected),
-            query: $store.query.sending(\.queryChanged), searchFocused: searchFocused,
-            localIssues: store.filter != .recents ? store.localIssues : [],
-            onRefresh: { store.send(.refreshSources) }
-        )
-    }
-}
-
-private struct CatalogDetailFeatureView: View {
-    let store: StoreOf<CatalogFeature>
-    var body: some View {
-        CatalogDetail(
-            section: store.filter.title, entry: store.selectedEntry,
-            isCreating: store.creating != nil, isCopying: store.isCopying, isQuitting: store.isQuitting
-        ) {
-            store.send(.primaryAction($0))
-        }
     }
 }
 

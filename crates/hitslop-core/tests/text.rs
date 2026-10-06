@@ -3,9 +3,9 @@
 // characters, a misplaced caret, a resurrected row, or a panic on a bad base.
 // Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
 mod support;
-use support::{app, Edit, fixture, snapshot, trimmed, type_text, typed};
 use hitslop_core::{Document, Origin};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use support::{Edit, app, fixture, snapshot, trimmed, type_text, typed};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {
@@ -103,7 +103,6 @@ fn a_concurrent_edit_on_a_trimmed_document_merges() {
     assert_eq!(title(&reopened), "RabcXY");
 }
 
-
 #[test]
 fn two_bindings_on_one_field_with_delayed_replies_merge() {
     let mut d = setup();
@@ -184,7 +183,10 @@ fn removed_or_reinserted_rows_are_never_resurrected() {
     page.edit(&mut d, "AX", 2);
     d.apply(&json!({"intents":[{"type":"remove","path":["rows"],"id":ROW}]}).to_string()).unwrap();
     assert_eq!(page.refused(&mut d, "AXY"), "path_not_found");
-    d.apply(&json!({"intents":[{"type":"insert","path":["rows"],"id":ROW,"value":{"text":"AX","done":false}}]}).to_string()).unwrap();
+    d.apply(
+        &json!({"intents":[{"type":"insert","path":["rows"],"id":ROW,"value":{"text":"AX","done":false}}]}).to_string(),
+    )
+    .unwrap();
     // Same `$id`, new text container: the page's base never saw it.
     assert_eq!(page.refused(&mut d, "AXY"), "path_not_found");
 }
@@ -244,7 +246,10 @@ fn a_keystroke_publishes_only_its_change() {
         let base = d.version();
         let edit = type_text(&mut d, &base, json!(["title"]), &from, &to, caret).unwrap();
         let publication: Value = serde_json::from_str(&edit.publication.unwrap()).unwrap();
-        assert_eq!(publication["ops"], json!([{"type":"text","path":["title"],"delta":[{"retain":length / 2},{"insert":"x"}]}]));
+        assert_eq!(
+            publication["ops"],
+            json!([{"type":"text","path":["title"],"delta":[{"retain":length / 2},{"insert":"x"}]}])
+        );
         assert_eq!(title(&d), to);
     }
 }
@@ -291,7 +296,9 @@ fn text_set_fields_are_refused_where_they_do_not_apply() {
     let mut d = setup();
     let base = d.version();
     let before = snapshot(&d);
-    let refused = |d: &mut Document, batch: Value| d.apply_batch(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned();
+    let refused = |d: &mut Document, batch: Value| {
+        d.apply_batch(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned()
+    };
     // A text edit with a selection is its own batch: its reply answers that edit.
     let typing = json!({"type":"set","path":["title"],"value":"abcX","from":"abc","selection":{"start":4,"end":4}});
     let increment = json!({"type":"increment","path":["hits"],"by":1});

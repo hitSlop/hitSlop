@@ -95,7 +95,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   socket envelopes; Swift checks the page sender and decodes the accepted native models.
 - Attachments are host-owned immutable content-addressed blobs in the file's
   `attachments` table, referenced by ordinary document fields.
-- Preserve the macOS client: TCA features, catalog and Recents, slop windows and
+- Preserve the macOS client: app lifecycle and quit, catalog and Recents, slop windows and
   toolbar, PNG/PDF export, Quick Look previews and Finder icons, Firebase
   Analytics/Crashlytics and Sparkle.
 - Active examples are the directories with a `slop.ts` under `examples/slops`;

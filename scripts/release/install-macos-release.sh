@@ -30,7 +30,6 @@ echo "Building development-signed hitSlop Release for ${build_arch}…"
 /usr/bin/env xcodegen generate --spec "$repo_root/apps/apple/project.yml" --quiet
 /usr/bin/xcodebuild \
   -skipPackagePluginValidation \
-  -skipMacroValidation \
   -quiet \
   -allowProvisioningUpdates \
   -project "$project" \

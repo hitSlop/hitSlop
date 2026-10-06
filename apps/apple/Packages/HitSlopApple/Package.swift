@@ -13,8 +13,7 @@ let package = Package(
     .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.26.2"),
-    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.18.0"),
+    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
   ],
   targets: [
@@ -46,18 +45,12 @@ let package = Package(
       dependencies: ["HitSlopCore", "HitSlopDocument"],
       linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
     ),
-    .target(
-      name: "HitSlopFeatures",
-      dependencies: [
-        "HitSlopCore",
-        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
-      ]),
+    .target(name: "HitSlopFeatures", dependencies: ["HitSlopCore"]),
     .testTarget(name: "HitSlopFeaturesTests", dependencies: ["HitSlopFeatures"]),
     .target(
       name: "HitSlopCatalog",
       dependencies: [
         "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures",
-        .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       resources: [.process("Resources")],
       linkerSettings: [.linkedFramework("AppKit")]

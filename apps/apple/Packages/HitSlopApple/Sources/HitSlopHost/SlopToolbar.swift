@@ -139,41 +139,50 @@ private struct ToolbarFileMenu: NSViewRepresentable {
 }
 
 struct SlopToolbar: View {
+  /// What a toolbar control asks its window to do.
+  enum Action {
+    /// A document operation, which the app runs like the menu bar's.
+    case document(SlopDocumentCommand)
+    case close, minimize, togglePin, toggleTheme, reveal, copyPath, openEditor(URL)
+  }
+  /// What the controls show and whether each is available.
+  struct Controls {
+    var pinned = false, canPin = false
+    /// Whether the theme panel is shown, and whether showing or hiding it is available.
+    var themeShown = false, canToggleTheme = false
+    /// Whether the app accepts document operations now.
+    var commandsEnabled = false
+  }
   let identity: SlopDocumentIdentity
+  let controls: Controls
   let menuTrackingChanged: (Bool) -> Void
   let drag: (NSEvent) -> Void
-  let pinned: Bool, commandsEnabled: Bool
-  /// Whether the theme panel is shown, and whether showing or hiding it is available.
-  let themeShown: Bool, themeEnabled: Bool
-  let minimize: () -> Void
-  /// Document commands go to the window, which runs them like the menu bar's.
-  let send: (SlopDocumentCommand) -> Void
+  let act: (Action) -> Void
   let editors: [(String, URL)]
   var body: some View {
     HStack(spacing: 6) {
       ToolbarDragHandle(onDrag: drag).frame(width: 18, height: 28).help("Drag window")
       HStack(spacing: 0) {
-        windowControl("xmark", "Close", .red) { send(.close) }
-        windowControl("minus", "Minimize", .yellow, minimize)
+        windowControl("xmark", "Close", .red) { act(.close) }
+        windowControl("minus", "Minimize", .yellow) { act(.minimize) }
       }.fixedSize().background(SlopToolbarControlRegion())
       Divider().frame(height: 20).padding(.horizontal, 2)
-      ToolbarFileMenu(identity: identity, reveal: { send(.reveal) }, copyPath: { send(.copyPath) })
+      ToolbarFileMenu(identity: identity, reveal: { act(.reveal) }, copyPath: { act(.copyPath) })
         .frame(minWidth: 0, maxWidth: .infinity).frame(height: 28)
-        .disabled(!commandsEnabled)
-      icon(pinned ? "pin.fill" : "pin", pinned ? "Unpin" : "Always on Top") { send(.pin(!pinned)) }.disabled(
-        !commandsEnabled).background(SlopToolbarControlRegion())
-      icon(themeShown ? "paintpalette.fill" : "paintpalette", themeShown ? "Hide Theme" : "Theme") {
-        send(.theme(!themeShown))
-      }.disabled(!themeEnabled).background(SlopToolbarControlRegion())
+      icon(controls.pinned ? "pin.fill" : "pin", controls.pinned ? "Unpin" : "Always on Top") { act(.togglePin) }
+        .disabled(!controls.canPin).background(SlopToolbarControlRegion())
+      icon(controls.themeShown ? "paintpalette.fill" : "paintpalette", controls.themeShown ? "Hide Theme" : "Theme") {
+        act(.toggleTheme)
+      }.disabled(!controls.canToggleTheme).background(SlopToolbarControlRegion())
       Menu {
-        Button("Duplicate…") { send(.duplicate) }
-        Button("Share a Copy…") { send(.share) }
+        Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
+        Button("Share a Copy…") { act(.document(.share)) }.disabled(!controls.commandsEnabled)
         Divider()
-        Button("Export PNG…") { send(.exportPNG) }
-        Button("Export PDF…") { send(.exportPDF) }
+        Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
+        Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
         if !editors.isEmpty {
           Divider()
-          ForEach(editors, id: \.1) { editor in Button(editor.0) { send(.openEditor(editor.1)) } }
+          ForEach(editors, id: \.1) { editor in Button(editor.0) { act(.openEditor(editor.1)) } }
         }
       } label: {
         Image(systemName: "ellipsis").frame(width: 28, height: 28).contentShape(Rectangle())
@@ -181,7 +190,6 @@ struct SlopToolbar: View {
       .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
       .background(SlopToolbarControlRegion())
       .help("More actions").accessibilityLabel("More document actions")
-      .disabled(!commandsEnabled)
     }
     .padding(.horizontal, 10).frame(height: 40)
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13))

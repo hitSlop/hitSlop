@@ -18,8 +18,8 @@ extension DocumentSession {
     guard let json = try? JSONSerialization.data(withJSONObject: body) else {
       return reply(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil)
     }
-    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { answer, error in
-      DispatchQueue.main.async { [weak self] in
+    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { [weak self] answer, error in
+      DispatchQueue.main.async {
         if storage, let error, let self { self.reportStorage(error) }
         reply(try? JSONSerialization.jsonObject(with: Data(answer.utf8)), nil)
       }

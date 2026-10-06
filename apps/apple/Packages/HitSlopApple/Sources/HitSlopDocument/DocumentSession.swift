@@ -126,24 +126,26 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     fileSaver.onFailed = { [weak self] message in self?.report(SlopPageIssue(message: message, isOperation: true)) }
   }
 
+  /// Publications enter `pushes` on the owner's queue, so the page gets them in owner order;
+  /// undo and save status reach the main actor in that order too.
   private func observeOwner() {
-    owner.onPublication = { [weak self] publication in
-      self?.push(#"{"type":"publication","publication":"# + publication + "}")
-    }
-    // The ordered document publications restyle the page. This only refreshes the panel.
-    owner.onTheme = { [weak self] in
-      Task { @MainActor [weak self] in
-        guard let self, let theme = try? await currentTheme() else { return }
-        delegate?.pageSession(self, themeChanged: theme)
-      }
-    }
-    owner.onUndoState = { [weak self] state in
-      DispatchQueue.main.async { self?.undoAvailability = state }
-    }
-    owner.onSaveStatus = { [weak self] status in
-      DispatchQueue.main.async {
-        guard let self else { return }
-        self.delegate?.pageSession(self, saveStatus: status)
+    owner.listener = { [weak self] event in
+      switch event {
+      case .publication(let publication):
+        self?.push(#"{"type":"publication","publication":"# + publication + "}")
+      case .themeChanged:
+        // The ordered document publications restyle the page. This only refreshes the panel.
+        Task { @MainActor [weak self] in
+          guard let self, let theme = try? await currentTheme() else { return }
+          delegate?.pageSession(self, themeChanged: theme)
+        }
+      case .undo(let state):
+        DispatchQueue.main.async { self?.undoAvailability = state }
+      case .saveStatus(let status):
+        DispatchQueue.main.async {
+          guard let self else { return }
+          self.delegate?.pageSession(self, saveStatus: status)
+        }
       }
     }
   }

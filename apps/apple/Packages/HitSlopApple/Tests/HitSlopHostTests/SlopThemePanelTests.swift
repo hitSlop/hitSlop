@@ -51,7 +51,7 @@ import HitSlopTestSupport
   let window = try #require(controller.window)
   #expect(controller.session.canEditTheme)
 
-  _ = try await controller.perform(.theme(true))
+  controller.setThemeShown(true)
   let panel = try #require(controller.themePanel)
   #expect(controller.isThemeShown)
   #expect(panel.parent === window, "the panel moves and minimizes with its document")
@@ -73,9 +73,9 @@ import HitSlopTestSupport
   #expect(painted == "#123456")
   #expect(editor.isChanged(accent) && editor.hasChanges)
 
-  _ = try await controller.perform(.theme(false))
+  controller.setThemeShown(false)
   #expect(controller.themePanel == nil && window.childWindows?.contains(panel) != true)
-  _ = try await controller.perform(.theme(true))
+  controller.setThemeShown(true)
   #expect(controller.isThemeShown)
   try await controller.closeDocument()
   #expect(controller.themePanel == nil)

@@ -1,18 +1,18 @@
 //! Durable storage: identity, limits, crash outcomes and the writer lock, over one
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
+use hitslop_core::Document;
+use hitslop_core::Origin;
 use hitslop_core::file;
 use hitslop_core::registry::Lease;
 use hitslop_core::store::{Error, Mode, Store};
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
-use hitslop_core::Document;
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use hitslop_core::Origin;
 mod support;
-use support::{app, isolate_registry, type_text, write_app, App};
+use support::{App, app, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -69,11 +69,12 @@ fn hold(path: &Path) -> Connection {
     other
 }
 fn title(doc: &Document) -> String {
-    let value: Value = serde_json::from_str(&doc.value().unwrap()).unwrap();
+    let value: Value = serde_json::from_str(&doc.value()).unwrap();
     value["title"].as_str().unwrap().into()
 }
 fn set_title(doc: &mut Document, title: &str) {
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page)
+        .unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     let job = store.job(doc, false).unwrap()?;
@@ -246,7 +247,11 @@ fn a_session_too_large_to_keep_closes_with_no_history() {
         opened = doc.version();
         for _ in 0..160 {
             let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
-            doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(), Origin::Page).unwrap();
+            doc.apply_batch(
+                &json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(),
+                Origin::Page,
+            )
+            .unwrap();
             save(&store, &mut doc);
         }
         close(store, &mut doc);
@@ -315,19 +320,29 @@ fn undo_survives_compaction() {
 fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(
+        &json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(),
+        Origin::Page,
+    )
+    .unwrap();
     save(&store, &mut doc);
-    let with_row = doc.value().unwrap();
-    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page).unwrap();
+    let with_row = doc.value();
+    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
+        .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(snapshot.document().unwrap().value().unwrap(), with_row);
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]}).to_string(), Origin::Page).unwrap();
-    let expected = doc.value().unwrap();
+    assert_eq!(snapshot.document().unwrap().value(), with_row);
+    doc.apply_batch(
+        &json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]})
+            .to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    let expected = doc.value();
     close(store, &mut doc);
-    assert_eq!(open(&path).1.value().unwrap(), expected);
+    assert_eq!(open(&path).1.value(), expected);
 }
 
 // A redo restores a version from before the compaction; the live document still holds
@@ -376,7 +391,8 @@ fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let store = Store::open(&path, Mode::Document).unwrap();
     let mut doc = store.document().unwrap();
     let base = doc.version();
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page).unwrap();
+    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
+        .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
     save(&store, &mut doc);
@@ -384,7 +400,7 @@ fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let store = Store::open(&path, Mode::Document).unwrap();
     let reopened = store.document().expect("the document opens");
     assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
-    let value: Value = serde_json::from_str(&reopened.value().unwrap()).unwrap();
+    let value: Value = serde_json::from_str(&reopened.value()).unwrap();
     assert_eq!(value["title"], "Rabc");
 }
 
@@ -404,17 +420,21 @@ fn doodle_like_use_stays_bounded() {
             doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
             if stroke % 25 == 24 {
-                let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap()["rows"]
-                    .as_array().unwrap().iter().map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]})).collect();
+                let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value()).unwrap()["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]}))
+                    .collect();
                 doc.apply_batch(&json!({"intents":ids}).to_string(), Origin::Page).unwrap();
             }
         }
-        let value = doc.value().unwrap();
+        let value = doc.value();
         close(store, &mut doc);
         let after = stored(&path);
         let bytes = after.checkpoint_bytes + after.update_bytes;
         assert!(bytes <= bound, "day {day}: {bytes} bytes stored");
-        assert_eq!(open(&path).1.value().unwrap(), value);
+        assert_eq!(open(&path).1.value(), value);
     }
 }
 
@@ -575,7 +595,11 @@ fn checkpoints_reclaim_free_pages() {
     }
     assert!(std::fs::metadata(&path).unwrap().len() > 3 * 1024 * 1024);
     for _ in 0..48 {
-        doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(), Origin::Page).unwrap();
+        doc.apply_batch(
+            &json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(),
+            Origin::Page,
+        )
+        .unwrap();
         save(&store, &mut doc);
     }
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
@@ -609,7 +633,8 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     const NOTES: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"cover":{"kind":"string"},"notes":{"kind":"text"}}}"#;
     let (dir, path) = document_with(NOTES, r#"{"title":"Saved","cover":"","notes":""}"#);
     let (store, mut doc) = open(&path);
-    let [cover, inline, _removed] = [&b"cover"[..], b"inline", b"removed"].map(|bytes| store.put_attachment(bytes).unwrap().id);
+    let [cover, inline, _removed] =
+        [&b"cover"[..], b"inline", b"removed"].map(|bytes| store.put_attachment(bytes).unwrap().id);
     let replaced = "replaced-before-the-copy-4b1d";
     set_title(&mut doc, replaced);
     set_title(&mut doc, "Kept");
@@ -621,7 +646,8 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     store.copy_clean(&copy, &[]).unwrap();
-    let holds = |path: &Path, text: &str| std::fs::read(path).unwrap().windows(text.len()).any(|w| w == text.as_bytes());
+    let holds =
+        |path: &Path, text: &str| std::fs::read(path).unwrap().windows(text.len()).any(|w| w == text.as_bytes());
     assert!(holds(&path, replaced), "the original keeps its history");
     assert!(!holds(&copy, replaced), "the copy keeps none");
     assert_eq!(stored(&copy).rows, 0);
@@ -631,7 +657,7 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     let mut referenced = vec![cover, inline];
     referenced.sort();
     assert_eq!(kept, referenced);
-    assert_eq!(copied.artwork("preview").unwrap(), None, "no artwork given, none copied");
+    assert_eq!(copied.artwork(file::Artwork::Preview).unwrap(), None, "no artwork given, none copied");
     assert_eq!(title(&copied.document().unwrap()), "Kept");
     assert_eq!(store.attachments().unwrap().len(), 3, "the original keeps every blob");
     assert!(doc.undo().unwrap().publication.is_some(), "the session's undo is untouched");
@@ -649,7 +675,8 @@ fn saved_accent(path: &Path) -> String {
 }
 /// Applies one palette intent from the window; whether it changed the document.
 fn palette(doc: &mut Document, intent: Value) -> Result<bool, hitslop_core::Error> {
-    doc.apply_batch(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window).map(|a| a.publication.is_some())
+    doc.apply_batch(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window)
+        .map(|a| a.publication.is_some())
 }
 fn set_accent(doc: &mut Document, color: &str) -> bool {
     palette(doc, json!({"type":"setTheme","values":{ "accent": color }})).unwrap()
@@ -698,7 +725,10 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     let job = store.job(&mut doc, false).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
-    let writer = { let store = store.clone(); std::thread::spawn(move || store.write(&job)) };
+    let writer = {
+        let store = store.clone();
+        std::thread::spawn(move || store.write(&job))
+    };
     std::thread::sleep(Duration::from_millis(200));
     let began = Instant::now();
     assert!(set_accent(&mut doc, "#808080"));
@@ -759,7 +789,11 @@ fn a_theme_file_imports_only_into_its_template() {
     assert!(palette(&mut doc, json!({"type":"importTheme","file":missing})).is_err());
     assert_eq!(accent(&doc), "#606060");
     let file = doc.export_theme().unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&file).unwrap()["template"], "checklist", "named by the document's template");
+    assert_eq!(
+        serde_json::from_str::<Value>(&file).unwrap()["template"],
+        "checklist",
+        "named by the document's template"
+    );
     set_accent(&mut doc, "#707070");
     assert!(palette(&mut doc, json!({"type":"importTheme","file":file})).unwrap());
     assert_eq!(accent(&doc), "#606060");
@@ -813,7 +847,9 @@ const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 #[test]
 #[ignore]
 fn save_then_die() {
-    let (Ok(path), Ok(save)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_SAVE")) else { return };
+    let (Ok(path), Ok(save)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_SAVE")) else {
+        return;
+    };
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     let job = match save.as_str() {
@@ -838,9 +874,12 @@ fn a_committed_save_survives_its_process_being_killed() {
         let (_dir, path) = document();
         let (store, _) = open(&path);
         store.close().unwrap();
-        let status = support::child("save_then_die", &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)])
-            .status()
-            .unwrap();
+        let status = support::child(
+            "save_then_die",
+            &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)],
+        )
+        .status()
+        .unwrap();
         // A signal, not a failed assertion: the child reached its save.
         assert_eq!(std::os::unix::process::ExitStatusExt::signal(&status), Some(6), "{save}: {status:?}");
         // Opening as the writer proves the lock died with the child.
@@ -858,7 +897,10 @@ fn a_committed_save_survives_its_process_being_killed() {
 #[test]
 #[ignore]
 fn save_while_held() {
-    let (Ok(path), Ok(marker)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_MARKER")) else { return };
+    let (Ok(path), Ok(marker)) = (std::env::var("HITSLOP_CHILD_DOCUMENT"), std::env::var("HITSLOP_CHILD_MARKER"))
+    else {
+        return;
+    };
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     set_title(&mut doc, "Never saved");
@@ -876,12 +918,18 @@ fn a_save_killed_before_its_commit_leaves_the_saved_state() {
     let held = sql(&path);
     held.execute_batch("BEGIN IMMEDIATE").unwrap();
     let marker = dir.path().join("saving");
-    let mut child = support::child("save_while_held", &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())])
-        .spawn()
-        .unwrap();
+    let mut child = support::child(
+        "save_while_held",
+        &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())],
+    )
+    .spawn()
+    .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while !marker.exists() {
-        assert!(std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none(), "the child never started its save");
+        assert!(
+            std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none(),
+            "the child never started its save"
+        );
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     // Its write now waits for the database (the busy timeout is 2 s).
@@ -914,7 +962,7 @@ fn a_save_retried_after_a_lost_reply_counts_once() {
         }
         store.close().unwrap();
         let (store, doc) = open(&path);
-        let value: Value = serde_json::from_str(&doc.value().unwrap()).unwrap();
+        let value: Value = serde_json::from_str(&doc.value()).unwrap();
         assert_eq!(value["hits"], expected, "checkpoint: {checkpoint}");
         store.close().unwrap();
     }

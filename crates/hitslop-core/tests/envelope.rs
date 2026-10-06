@@ -2,8 +2,8 @@
 //! The core evaluates each envelope kind against its TypeBox-generated contract. What
 //! each contract accepts is tested where it is written (`packages/schema/tests`); this
 //! proves every kind is wired to its contract, bounded and parsed as JSON.
-use hitslop_core::envelope::{is_valid, Envelope};
-use serde_json::{json, Value};
+use hitslop_core::envelope::{Envelope, is_valid};
+use serde_json::{Value, json};
 
 fn check(kind: Envelope, value: &Value) -> bool {
     is_valid(kind, value.to_string().as_bytes())
@@ -17,7 +17,11 @@ fn each_envelope_kind_is_checked_against_its_contract() {
             json!({"documentPath":"/tmp/a.slop","protocol":1,"method":"batch","ops":"{}"}),
             json!({"documentPath":"/tmp/a.slop","method":"batch","ops":"{}"}),
         ),
-        (Envelope::SocketReply, json!({"ok":true,"method":"batch","sequence":3,"ids":["a"],"version":"00"}), json!({"ok":false,"code":"bogus"})),
+        (
+            Envelope::SocketReply,
+            json!({"ok":true,"method":"batch","sequence":3,"ids":["a"],"version":"00"}),
+            json!({"ok":false,"code":"bogus"}),
+        ),
         (
             Envelope::SocketDiscovery,
             json!({"socket":"/tmp/s","documentPath":"/tmp/a.slop"}),

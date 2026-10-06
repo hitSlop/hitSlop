@@ -72,7 +72,7 @@ extension HostTests {
       try await controller.session.close()
     }
     while !finished {
-      controller.refreshToolbarHover()
+      controller.toolbar.refresh()
       await Task.yield()
     }
     try await close.value

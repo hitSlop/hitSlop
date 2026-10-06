@@ -4,8 +4,8 @@
 // page's view equal to a fresh snapshot after every publication.
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
-use serde_json::{json, Value};
-use support::{app, View, fixture, type_text, value};
+use serde_json::{Value, json};
+use support::{View, app, fixture, type_text, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";
@@ -27,9 +27,9 @@ fn apply(d: &mut Document, view: &mut View, batch: &str) -> Applied {
     applied
 }
 fn refused(d: &mut Document, batch: &str) -> Code {
-    let before = d.snapshot().unwrap();
+    let before = d.state().unwrap();
     let code = d.apply_batch(batch, Origin::Agent).unwrap_err().code;
-    assert_eq!(d.snapshot().unwrap(), before, "a refused replace changes nothing");
+    assert_eq!(d.state().unwrap(), before, "a refused replace changes nothing");
     code
 }
 
@@ -49,18 +49,28 @@ fn replacing_a_value_with_itself_writes_nothing() {
 fn rows_and_text_keep_their_identity() {
     let (mut d, mut view) = open("checklist");
     let base = d.version();
-    let applied = apply(&mut d, &mut view, &replace(json!([]), json!({
-        "title": "New title",
-        "hits": 0,
-        "rows": [
-            {"$id": B, "text": "B", "done": false},
-            {"$id": A, "text": "A", "done": true},
-            {"text": "C", "done": false},
-        ],
-    })));
+    let applied = apply(
+        &mut d,
+        &mut view,
+        &replace(
+            json!([]),
+            json!({
+                "title": "New title",
+                "hits": 0,
+                "rows": [
+                    {"$id": B, "text": "B", "done": false},
+                    {"$id": A, "text": "A", "done": true},
+                    {"text": "C", "done": false},
+                ],
+            }),
+        ),
+    );
     assert_eq!(applied.ids.len(), 1, "the new row's minted ID");
     let v = value(&d);
-    assert_eq!(v["rows"].as_array().unwrap().iter().map(|r| r["$id"].clone()).collect::<Vec<_>>(), [json!(B), json!(A), json!(applied.ids[0])]);
+    assert_eq!(
+        v["rows"].as_array().unwrap().iter().map(|r| r["$id"].clone()).collect::<Vec<_>>(),
+        [json!(B), json!(A), json!(applied.ids[0])]
+    );
     assert_eq!((v["title"].clone(), v["rows"][1]["done"].clone()), (json!("New title"), json!(true)));
     view.check(&d, "after the replace");
     // A text field opened before the replace still edits the same text.
@@ -73,9 +83,12 @@ fn rows_and_text_keep_their_identity() {
 #[test]
 fn rows_are_removed_inserted_and_reordered_with_the_fewest_moves() {
     let (mut d, mut view) = open("checklist");
-    let rows = |ids: &[&str]| json!(ids.iter().map(|id| json!({"$id": id, "text": id, "done": false})).collect::<Vec<_>>());
+    let rows =
+        |ids: &[&str]| json!(ids.iter().map(|id| json!({"$id": id, "text": id, "done": false})).collect::<Vec<_>>());
     apply(&mut d, &mut view, &replace(json!(["rows"]), rows(&["a", "b", "c", "d", "e"])));
-    let ids = |d: &Document| value(d)["rows"].as_array().unwrap().iter().map(|r| r["$id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+    let ids = |d: &Document| {
+        value(d)["rows"].as_array().unwrap().iter().map(|r| r["$id"].as_str().unwrap().to_owned()).collect::<Vec<_>>()
+    };
     assert_eq!(ids(&d), ["a", "b", "c", "d", "e"]);
     let moves = |applied: &Applied| {
         let publication: Value = serde_json::from_str(applied.publication.as_deref().unwrap()).unwrap();
@@ -163,8 +176,14 @@ fn invalid_values_are_refused_whole() {
     let mut target = value(&d);
     target["extra"] = json!(1);
     assert_eq!(refused(&mut d, &replace(json!([]), target)), Code::TypeMismatch);
-    assert_eq!(refused(&mut d, &replace(json!(["rows", {"id": A}]), json!({"$id": B, "text": "x", "done": false}))), Code::InvalidId);
-    assert_eq!(refused(&mut d, &replace(json!(["rows", {"id": "missing"}]), json!({"text": "x", "done": false}))), Code::PathNotFound);
+    assert_eq!(
+        refused(&mut d, &replace(json!(["rows", {"id": A}]), json!({"$id": B, "text": "x", "done": false}))),
+        Code::InvalidId
+    );
+    assert_eq!(
+        refused(&mut d, &replace(json!(["rows", {"id": "missing"}]), json!({"text": "x", "done": false}))),
+        Code::PathNotFound
+    );
     // All or nothing with the rest of the batch.
     let batch = json!({"intents":[
         {"type":"set","path":["title"],"value":"Changed"},
@@ -172,8 +191,6 @@ fn invalid_values_are_refused_whole() {
     ]});
     assert_eq!(refused(&mut d, &batch.to_string()), Code::TypeMismatch);
 }
-
-
 
 #[test]
 fn an_import_is_one_undo_step() {

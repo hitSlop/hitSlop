@@ -39,7 +39,7 @@ extension SlopDocumentWindowController {
     }
     layoutThemePanel()
     if let panel = themePanel, panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
     Task { [weak self, session] in
       if let theme = try? await session.currentTheme() { self?.themeEditor?.apply(theme) }
     }
@@ -60,7 +60,7 @@ extension SlopDocumentWindowController {
     if NSColorPanel.sharedColorPanelExists { NSColorPanel.shared.orderOut(nil) }
     panel.parent?.removeChildWindow(panel)
     panel.close()
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
   }
 
   public func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState) {
@@ -81,7 +81,7 @@ extension SlopDocumentWindowController {
     panel.title = "Theme"
     let content = NSHostingView(rootView: SlopThemeEditor(
       model: editor, title: session.file.manifest.title,
-      close: { [weak self] in self?.request(.theme(false)) },
+      close: { [weak self] in self?.setThemeShown(false) },
       importTheme: { [weak self] in self?.request(.importTheme) },
       exportTheme: { [weak self] in self?.request(.exportTheme) }))
     // The document sets the panel's size; a long palette scrolls instead of growing it.
@@ -150,9 +150,7 @@ extension SlopDocumentWindowController {
     alert.addButton(withTitle: "Replace")
     alert.addButton(withTitle: "Cancel")
     guard let window else { return alert.runModal() == .alertFirstButtonReturn }
-    return await withCheckedContinuation { done in
-      alert.beginSheetModal(for: window) { done.resume(returning: $0 == .alertFirstButtonReturn) }
-    }
+    return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
   }
 }
 

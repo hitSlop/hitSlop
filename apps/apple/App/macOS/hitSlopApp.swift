@@ -8,7 +8,7 @@ import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
 
-@main enum hitSlopApp {
+@main enum HitSlopApp {
     @MainActor static func main() {
         if CommandLine.arguments.contains("--core-build") {
             print(DocumentOwner.coreBuildID)
@@ -74,7 +74,7 @@ private struct UpdateSettingsView: View {
         if flag { return true }
         if coordinator.hasOpenDocuments {
             coordinator.revealDocuments()
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             return true
         }
         showCatalog()
@@ -99,7 +99,7 @@ private struct UpdateSettingsView: View {
     @objc private func focusDocumentFromDock(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         coordinator.openDocument(url)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     @objc func showCatalog() { coordinator.showCatalog() }
@@ -110,33 +110,13 @@ private struct UpdateSettingsView: View {
         panel.startOnDesktop()
         guard panel.runModal() == .OK else { return }; panel.urls.forEach(openDocument)
     }
-    @objc private func duplicateActive() { send(#selector(duplicateActive)) }
-    @objc private func shareActive() { send(#selector(shareActive)) }
-    @objc private func exportPNG() { send(#selector(exportPNG)) }
-    @objc private func exportPDF() { send(#selector(exportPDF)) }
-    @objc private func togglePin() { send(#selector(togglePin)) }
-    @objc private func toggleTheme() { send(#selector(toggleTheme)) }
-    @objc private func importTheme() { send(#selector(importTheme)) }
-    @objc private func exportTheme() { send(#selector(exportTheme)) }
-    /// The document command a menu action sends to the active document; a toggle inverts its
-    /// window's state.
-    private func command(_ action: Selector?) -> SlopDocumentCommand? {
-        let controller = coordinator.activeController
-        switch action {
-        case #selector(duplicateActive): return .duplicate
-        case #selector(shareActive): return .share
-        case #selector(exportPNG): return .exportPNG
-        case #selector(exportPDF): return .exportPDF
-        case #selector(togglePin): return .pin(!(controller?.isPinned ?? false))
-        case #selector(toggleTheme): return .theme(!(controller?.isThemeShown ?? false))
-        case #selector(importTheme): return .importTheme
-        case #selector(exportTheme): return .exportTheme
-        default: return nil
-        }
+    /// A document operation from the menu bar, for the active document.
+    @objc private func documentCommand(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? SlopDocumentCommand else { return }
+        coordinator.sendToActiveDocument(command)
     }
-    private func send(_ action: Selector) {
-        if let command = command(action) { coordinator.sendToActiveDocument(command) }
-    }
+    @objc private func togglePin() { coordinator.activeController?.togglePin() }
+    @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
     @objc private func showSettings() {
         if settingsWindow == nil {
             let content = TabView {
@@ -150,7 +130,7 @@ private struct UpdateSettingsView: View {
             settingsWindow = window
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
     @objc private func openWebsite() { NSWorkspace.shared.open(URL(string: "https://hitslop.com")!) }
     @objc private func openRecent(_ sender: NSMenuItem) { if let url = sender.representedObject as? URL { openDocument(url) } }
@@ -187,11 +167,11 @@ private struct UpdateSettingsView: View {
         let recent = NSMenu(title: "Open Recent"); recent.delegate = self; recentItem.submenu = recent; recentMenu = recent
         file.addItem(recentItem)
         file.addItem(.separator())
-        item(file, "Duplicate…", #selector(duplicateActive), "d")
-        item(file, "Share a Copy…", #selector(shareActive), "")
+        item(file, "Duplicate…", .duplicate, "d")
+        item(file, "Share a Copy…", .share)
         let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: ""), exportMenu = NSMenu(title: "Export"); export.submenu = exportMenu; file.addItem(export)
-        item(exportMenu, "Export PNG…", #selector(exportPNG), ""); item(exportMenu, "Export PDF…", #selector(exportPDF), "")
-        item(file, "Import Theme…", #selector(importTheme), ""); item(file, "Export Theme…", #selector(exportTheme), "")
+        item(exportMenu, "Export PNG…", .exportPNG); item(exportMenu, "Export PDF…", .exportPDF)
+        item(file, "Import Theme…", .importTheme); item(file, "Export Theme…", .exportTheme)
         file.addItem(.separator())
         file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
@@ -239,11 +219,23 @@ private struct UpdateSettingsView: View {
         }
     }
     @discardableResult private func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) -> NSMenuItem { let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self; return value }
+    /// A menu item that sends `command` to the active document.
+    private func item(_ menu: NSMenu, _ title: String, _ command: SlopDocumentCommand, _ key: String = "") {
+        item(menu, title, #selector(documentCommand(_:)), key).representedObject = command
+    }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard let command = command(menuItem.action) else { return true }
         let controller = coordinator.activeController
-        if menuItem.action == #selector(togglePin) { menuItem.state = controller?.isPinned == true ? .on : .off }
-        if menuItem.action == #selector(toggleTheme) { menuItem.state = controller?.isThemeShown == true ? .on : .off }
-        return controller?.isAvailable(command) ?? false
+        switch menuItem.action {
+        case #selector(documentCommand(_:)):
+            guard let command = menuItem.representedObject as? SlopDocumentCommand else { return false }
+            return controller?.isAvailable(command) ?? false
+        case #selector(togglePin):
+            menuItem.state = controller?.isPinned == true ? .on : .off
+            return controller?.canPin ?? false
+        case #selector(toggleTheme):
+            menuItem.state = controller?.isThemeShown == true ? .on : .off
+            return controller?.canToggleTheme ?? false
+        default: return true
+        }
     }
 }

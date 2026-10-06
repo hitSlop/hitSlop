@@ -8,9 +8,9 @@
 //! Oracle: the released engine's own reading of its own document.
 //! Runs where the shipped engine runs (darwin-arm64); `HITSLOP_COMPAT_SEEDS` and
 //! `HITSLOP_COMPAT_STEPS` size it.
-use hitslop_core::store::{Mode, Store};
 use hitslop_core::Origin;
-use serde_json::{json, Value};
+use hitslop_core::store::{Mode, Store};
+use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -22,7 +22,8 @@ fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat")
 }
 fn sorted(path: &Path) -> Vec<PathBuf> {
-    let mut found: Vec<PathBuf> = std::fs::read_dir(path).map(|dir| dir.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
+    let mut found: Vec<PathBuf> =
+        std::fs::read_dir(path).map(|dir| dir.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
     found.sort();
     found
 }
@@ -33,13 +34,15 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
         .find(|path| path.file_name().unwrap().to_string_lossy().starts_with("hitslop-cli-"))
         .unwrap_or_else(|| panic!("{}: no released CLI", entry.display()));
     let member = "package/engine/darwin-arm64/slop-engine";
-    let status = Command::new("/usr/bin/tar").arg("-xzf").arg(&tarball).arg("-C").arg(into).arg(member).status().unwrap();
+    let status =
+        Command::new("/usr/bin/tar").arg("-xzf").arg(&tarball).arg("-C").arg(into).arg(member).status().unwrap();
     assert!(status.success(), "{}: the released CLI ships no darwin-arm64 engine", entry.display());
     into.join(member)
 }
 /// `engine` run with `args`: its standard output, which must report success.
 fn run(engine: &Path, args: &[&str]) -> String {
-    let output = Command::new(engine).args(args).env("HITSLOP_TEST_REGISTRY", support::registry_folder()).output().unwrap();
+    let output =
+        Command::new(engine).args(args).env("HITSLOP_TEST_REGISTRY", support::registry_folder()).output().unwrap();
     assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
     String::from_utf8(output.stdout).unwrap()
 }
@@ -63,7 +66,7 @@ fn released_value(engine: &Path, document: &Path) -> Value {
 /// The saved value as this core reads it.
 fn value_here(document: &Path) -> Value {
     let store = Store::open(document, Mode::Snapshot).unwrap_or_else(|e| panic!("this core refuses the document: {e}"));
-    let state: Value = serde_json::from_str(&store.document().unwrap().snapshot().unwrap()).unwrap();
+    let state: Value = serde_json::from_str(&store.document().unwrap().state().unwrap()).unwrap();
     state["value"].clone()
 }
 
@@ -84,16 +87,26 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                 let label = format!("{}/{slug}, seed {seed}", entry.file_name().unwrap().to_string_lossy());
                 let document = dir.path().join(format!("{slug}-{seed}.slop"));
                 run(&engine, &["create", "--from", template.to_str().unwrap(), "--output", document.to_str().unwrap()]);
-                let descriptor: Value = serde_json::from_str(&run(&engine, &["schema", document.to_str().unwrap()])).unwrap();
+                let descriptor: Value =
+                    serde_json::from_str(&run(&engine, &["schema", document.to_str().unwrap()])).unwrap();
                 let (mut rng, mut serial) = (seed as u64 * 0x9e3779b1 + 11, 0);
                 for _ in 0..steps {
                     let current = released_value(&engine, &document);
-                    let ops: Vec<Value> = (0..1 + next(&mut rng) % 3).map(|_| intent(&mut rng, &mut serial, &descriptor, &current)).collect();
+                    let ops: Vec<Value> = (0..1 + next(&mut rng) % 3)
+                        .map(|_| intent(&mut rng, &mut serial, &descriptor, &current))
+                        .collect();
                     // A deliberately invalid value is refused, changing nothing.
-                    request(&engine, json!({"method":"batch","documentPath":document,"ops":Value::Array(ops).to_string()}));
+                    request(
+                        &engine,
+                        json!({"method":"batch","documentPath":document,"ops":Value::Array(ops).to_string()}),
+                    );
                 }
                 let released = released_value(&engine, &document);
-                assert_eq!(value_here(&document), released, "{label}: this core reads the released engine's document differently");
+                assert_eq!(
+                    value_here(&document),
+                    released,
+                    "{label}: this core reads the released engine's document differently"
+                );
 
                 // And it edits it: a generated batch, saved, trimmed on close, reopened.
                 let store = Store::open(&document, Mode::Document).unwrap();
@@ -102,7 +115,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                 for _ in 0..16 {
                     let op = intent(&mut rng, &mut serial, &descriptor, &released);
                     if doc.apply_batch(&json!({"intents":[op]}).to_string(), Origin::Agent).is_ok() {
-                        let value = serde_json::from_str::<Value>(&doc.value().unwrap()).unwrap();
+                        let value = serde_json::from_str::<Value>(&doc.value()).unwrap();
                         // An accepted edit can leave the value as it was (clearing an absent key).
                         if value != released {
                             edited = Some(value);

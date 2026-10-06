@@ -1,9 +1,9 @@
 //! The engine as the CLI runs it: a stage packs into a template, which reads back; a refused
 //! build prints why and publishes nothing.
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::io::Write;
 
 fn engine(args: &[&Path]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_slop-engine")).args(args).output().unwrap()
@@ -13,7 +13,9 @@ fn engine(args: &[&Path]) -> std::process::Output {
 fn write_app(stage: &Path, initial: &str) {
     let manifest = r#"{"author":{"name":"A"},"slug":"engine","title":"Engine","description":"Packs.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
     let descriptor = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
-    let app = format!(r##"{{"packageFormat":1,"runtimeABI":1,"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{{"accent":"#335577"}}}}"##);
+    let app = format!(
+        r##"{{"packageFormat":1,"runtimeABI":1,"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{{"accent":"#335577"}}}}"##
+    );
     fs::write(stage.join("app.json"), app).unwrap();
 }
 
@@ -56,8 +58,12 @@ fn a_refused_build_says_why_and_publishes_nothing() {
 
 fn validate(input: &[u8]) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_slop-engine"))
-        .arg("validate-app").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-        .spawn().unwrap();
+        .arg("validate-app")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     // An oversized request can close the reader before every extra byte is written.
     let _ = child.stdin.take().unwrap().write_all(input);
     child.wait_with_output().unwrap()

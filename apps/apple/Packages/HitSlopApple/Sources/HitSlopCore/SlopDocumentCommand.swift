@@ -1,12 +1,14 @@
 import Foundation
 
-/// Commands shared by native document windows and the application's reducers.
+/// A document operation: the app runs one at a time per document, so none runs beside a
+/// close, an export or a save recovery. What only changes the window (pin, the theme panel,
+/// Reveal) is the window's own.
 public enum SlopDocumentCommand: Equatable, Sendable {
-    case pin(Bool), exportPNG, exportPDF, duplicate, reveal, copyPath, openEditor(URL), retry, close
+    case exportPNG, exportPDF, duplicate, retry, close
     /// Shares a consistent copy of the document as a new logical document.
     case share
-    /// Shows or hides the theme panel; imports or exports a theme file.
-    case theme(Bool), importTheme, exportTheme
+    /// Imports or exports a theme file.
+    case importTheme, exportTheme
     /// The save-failure sheet's choices: save again, or discard unsaved edits and reload
     /// the saved document.
     case retrySave, discardUnsaved

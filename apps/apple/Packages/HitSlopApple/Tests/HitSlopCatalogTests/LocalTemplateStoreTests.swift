@@ -1,5 +1,4 @@
 import AppKit
-import ComposableArchitecture
 import Foundation
 import HitSlopCore
 import HitSlopFeatures
@@ -22,17 +21,15 @@ import SwiftUI
     _ = try SlopFile.create(from: template, to: file)
     try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: file.path)
     let scanner = CatalogScanner()
-    var initial = CatalogFeature.State()
-    initial.isStarted = true
-    initial.filter = .recents
-    initial.recents = try await scanner.recents([file])
-    initial.selectedID = try #require(initial.recents.first).id
-    let store = Store(initialState: initial) { CatalogFeature() } withDependencies: {
-        $0.catalogClient.recents = { (try? await scanner.recents([file])) ?? [] }
-        $0.catalogClient.recent = { try? await scanner.recent($0) }
-        $0.catalogClient.refreshLocal = { _ in }
-    }
-    let host = NSHostingView(rootView: CatalogView(store: store))
+    var client = CatalogClient.empty
+    client.recents = { (try? await scanner.recents([file])) ?? [] }
+    client.recent = { try? await scanner.recent($0) }
+    let model = CatalogModel(client: client)
+    model.start()
+    #expect(try await eventually(timeout: .seconds(5)) { !model.recents.isEmpty })
+    model.select(.recents)
+    let selected = try #require(model.selectedID)
+    let host = NSHostingView(rootView: CatalogView(model: model))
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 720),
         styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
@@ -43,7 +40,7 @@ import SwiftUI
     let blue = try coloredArtwork(.blue)
     try await writeArtwork(file, preview: icon ? nil : blue, icon: icon ? blue : nil)
     try await expectPreview(in: host, blue: true, minimumPixels: icon ? 30 : 100)
-    #expect(store.selectedID == initial.selectedID)
+    #expect(model.selectedID == selected)
 }
 
 private func coloredArtwork(_ color: NSColor) throws -> Data {

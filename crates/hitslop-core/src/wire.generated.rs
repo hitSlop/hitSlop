@@ -220,7 +220,6 @@ impl SocketRequest {
 }
 /// A page request. The core answers the document requests; the window's own (config,
 /// readiness, resizing, errors) are the host's, so their fields go unread here.
-
 #[cfg(feature = "storage")]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]

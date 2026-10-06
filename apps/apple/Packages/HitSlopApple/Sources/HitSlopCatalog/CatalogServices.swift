@@ -1,5 +1,4 @@
 import AppKit
-import ComposableArchitecture
 import HitSlopCore
 import HitSlopFeatures
 import HitSlopHost
@@ -30,12 +29,12 @@ import HitSlopDocument
             recent: { [self] url in try? await scanner.recent(url) },
             chooseDestination: { [self] entry in
                 do { return try await destination(for: entry) }
-                catch { await telemetry.failure(.create, error: error); throw error }
+                catch { telemetry.failure(.create, error: error); throw error }
             },
             create: { [self] entry, url in
-                await telemetry.send(.breadcrumb(.create, .started))
+                telemetry.send(.breadcrumb(.create, .started))
                 do { return try await create(entry, at: url) }
-                catch { await telemetry.failure(.create, error: error); throw error }
+                catch { telemetry.failure(.create, error: error); throw error }
             }
         )
     }
@@ -94,10 +93,7 @@ import HitSlopDocument
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.slop]; panel.canCreateDirectories = true
         panel.startOnDesktop(); panel.nameFieldStringValue = "\(slug).slop"
-        let response = await withCheckedContinuation { continuation in
-            panel.begin { continuation.resume(returning: $0) }
-        }
-        return response == .OK ? panel.url : nil
+        return await panel.begin() == .OK ? panel.url : nil
     }
 
 }

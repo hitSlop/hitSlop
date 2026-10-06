@@ -62,7 +62,7 @@ bun run release:check
 
 `bun run verify hygiene` runs only repository hygiene and does not establish release readiness.
 
-The complete gate (`verify --release`) checks hygiene; builds the page shell, native tools, and all active templates; verifies generated contracts, types, and skills; runs the Rust suite (including its corpus replay), JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
+The complete gate (`verify --release`) checks hygiene; builds the page shell, native tools, and all active templates; verifies generated contracts, types, and skills; runs the Rust suite (including its corpus replay), JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. It builds the Rust core in the `dist` profile, as compatibility capture, the release archive and the Engines workflow do, so it tests the binaries that ship. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
 
 Bundled selection comes from `examples/slops/bundled.json`. Every selected package must be present in the app with no unexpected stale starters. Every package is checked for matching build bytes, valid manifest/schema/initial data, immutable contents, and preview/icon artwork. Installed create/schema/get/reopen/PNG/PDF checks run on Quick Checklist. Set `HITSLOP_TEMPLATE_EXHAUSTIVE=1` to run those installed checks on every bundled template. Schema-specific mutation/crash probes use known fixtures separately. Packed consumer tests also compile the public getting-started tutorial; its code is an executable contract.
 
@@ -80,7 +80,7 @@ Validate the final commit, push master and wait for CI, then tag that exact comm
 
 ## Package the Mac app
 
-The deployment target is macOS 15.2+ on Apple silicon. App version/build values live in `apps/apple/project.yml`. Existing TCA features, local catalog, native windows/toolbar, Analytics/Crashlytics, Sparkle, and NativeCLI remain part of release.
+The deployment target is macOS 15.2+ on Apple silicon. App version/build values live in `apps/apple/project.yml`. App lifecycle and quit, local catalog, native windows/toolbar, Analytics/Crashlytics, Sparkle, and NativeCLI remain part of release.
 
 ```sh
 scripts/release/install-macos-release.sh

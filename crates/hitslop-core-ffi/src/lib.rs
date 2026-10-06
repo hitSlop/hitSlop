@@ -1,6 +1,13 @@
+//! The Swift adapter. Core types that reach the host unchanged cross as UniFFI remote
+//! types: each is restated here once, checked against its definition at compile time, and
+//! named for Swift in `uniffi.toml`.
 uniffi::setup_scaffolding!();
 
-use hitslop_core::{file, store};
+use hitslop_core::Origin;
+use hitslop_core::envelope::Envelope;
+use hitslop_core::file::{self, Artwork, Kind};
+use hitslop_core::store::{self, Attachment, Mode};
+use hitslop_core::theme::ThemeState;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -10,11 +17,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CoreError {
     #[error("{code}: {message}")]
-    Rejected {
-        code: String,
-        message: String,
-        op_index: Option<u32>,
-    },
+    Rejected { code: String, message: String, op_index: Option<u32> },
     #[error("{message}")]
     Invalidated { message: String },
     /// Another process holds the writer lock.
@@ -36,11 +39,7 @@ pub enum CoreError {
     Failed { message: String },
 }
 fn rejected(e: hitslop_core::Error) -> CoreError {
-    CoreError::Rejected {
-        code: e.code.as_str().into(),
-        message: e.message,
-        op_index: e.op_index.map(|i| i as u32),
-    }
+    CoreError::Rejected { code: e.code.as_str().into(), message: e.message, op_index: e.op_index.map(|i| i as u32) }
 }
 impl From<store::Error> for CoreError {
     fn from(e: store::Error) -> Self {
@@ -67,7 +66,7 @@ pub struct ThemeToken {
     pub name: String,
     pub value: String,
 }
-#[derive(uniffi::Record)]
+#[uniffi::remote(Record)]
 pub struct ThemeState {
     pub defaults: String,
     pub overrides: String,
@@ -75,8 +74,8 @@ pub struct ThemeState {
 }
 
 /// The platform envelopes whose generated contracts the core evaluates.
-#[derive(uniffi::Enum)]
-pub enum EnvelopeKind {
+#[uniffi::remote(Enum)]
+pub enum Envelope {
     SocketRequest,
     SocketReply,
     SocketDiscovery,
@@ -84,17 +83,8 @@ pub enum EnvelopeKind {
 }
 /// Whether `json` is a well-formed envelope of this kind.
 #[uniffi::export]
-pub fn envelope_is_valid(kind: EnvelopeKind, json: Vec<u8>) -> bool {
-    use hitslop_core::envelope::Envelope;
-    hitslop_core::envelope::is_valid(
-        match kind {
-            EnvelopeKind::SocketRequest => Envelope::SocketRequest,
-            EnvelopeKind::SocketReply => Envelope::SocketReply,
-            EnvelopeKind::SocketDiscovery => Envelope::SocketDiscovery,
-            EnvelopeKind::PageRequest => Envelope::PageRequest,
-        },
-        &json,
-    )
+pub fn envelope_is_valid(kind: Envelope, json: Vec<u8>) -> bool {
+    hitslop_core::envelope::is_valid(kind, &json)
 }
 
 /// A window corner length: points, or a percentage of the window's width or height.
@@ -126,12 +116,15 @@ fn window_silhouette(silhouette: hitslop_core::shape::Silhouette) -> WindowSilho
             vertical: vertical.into_iter().map(length).collect(),
         },
         Silhouette::Path { segments, view_box, even_odd } => WindowSilhouette::Path {
-            segments: segments.into_iter().map(|segment| match segment {
-                Segment::Move { x, y } => SilhouetteSegment::Move { x, y },
-                Segment::Line { x, y } => SilhouetteSegment::Line { x, y },
-                Segment::Cubic { x1, y1, x2, y2, x, y } => SilhouetteSegment::Cubic { x1, y1, x2, y2, x, y },
-                Segment::Close => SilhouetteSegment::Close,
-            }).collect(),
+            segments: segments
+                .into_iter()
+                .map(|segment| match segment {
+                    Segment::Move { x, y } => SilhouetteSegment::Move { x, y },
+                    Segment::Line { x, y } => SilhouetteSegment::Line { x, y },
+                    Segment::Cubic { x1, y1, x2, y2, x, y } => SilhouetteSegment::Cubic { x1, y1, x2, y2, x, y },
+                    Segment::Close => SilhouetteSegment::Close,
+                })
+                .collect(),
             view_box_width: view_box[0],
             view_box_height: view_box[1],
             even_odd,
@@ -139,23 +132,13 @@ fn window_silhouette(silhouette: hitslop_core::shape::Silhouette) -> WindowSilho
     }
 }
 
-/// `publication` is absent when the batch changed nothing.
 /// Who made a change: the person, in the page or the window's own controls (the theme
 /// panel), or an agent through the CLI or socket.
-#[derive(uniffi::Enum)]
-pub enum EditOrigin {
+#[uniffi::remote(Enum)]
+pub enum Origin {
     Page,
     Window,
     Agent,
-}
-impl From<EditOrigin> for hitslop_core::Origin {
-    fn from(origin: EditOrigin) -> Self {
-        match origin {
-            EditOrigin::Page => Self::Page,
-            EditOrigin::Window => Self::Window,
-            EditOrigin::Agent => Self::Agent,
-        }
-    }
 }
 /// Whether another writer holds the document's lock now.
 #[uniffi::export]
@@ -172,34 +155,29 @@ pub fn core_build_id() -> String {
     hitslop_core::BUILD_ID.into()
 }
 
-#[derive(uniffi::Enum)]
-pub enum StoreMode {
+#[uniffi::remote(Enum)]
+pub enum Mode {
     /// Owns the document: holds the writer lock and persists writes.
     Document,
     /// Reads the saved state without the lock and writes nothing.
     Snapshot,
 }
 /// A stored attachment: its identity (SHA-256, hex) and size in bytes.
-#[derive(uniffi::Record)]
-pub struct AttachmentRecord {
+#[uniffi::remote(Record)]
+pub struct Attachment {
     pub id: String,
-    pub byte_length: u64,
-}
-impl From<store::Attachment> for AttachmentRecord {
-    fn from(a: store::Attachment) -> Self {
-        Self { id: a.id, byte_length: a.bytes }
-    }
+    pub bytes: u64,
 }
 
-#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum FileKind {
+#[uniffi::remote(Enum)]
+pub enum Kind {
     Template,
     Document,
 }
 /// A checked template or document: its markers and the app a host needs to show it.
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
-    pub kind: FileKind,
+    pub kind: Kind,
     pub runtime_abi: u64,
     /// The authored manifest (JSON).
     pub manifest_json: String,
@@ -211,23 +189,20 @@ pub struct OpenedFile {
     pub skin_png: Option<Vec<u8>>,
     pub byte_count: u64,
 }
-impl From<file::Kind> for FileKind {
-    fn from(kind: file::Kind) -> Self {
-        match kind {
-            file::Kind::Template => FileKind::Template,
-            file::Kind::Document => FileKind::Document,
-        }
-    }
-}
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
         OpenedFile {
-            kind: p.kind.into(),
+            kind: p.kind,
             runtime_abi: p.app.runtime_abi,
             manifest_json: p.app.manifest.clone(),
             silhouette: window_silhouette(p.silhouette.clone()),
             descriptor_json: p.app.descriptor.clone(),
-            theme_tokens: p.spec.theme_tokens().iter().map(|(name, value)| ThemeToken { name: name.clone(), value: value.clone() }).collect(),
+            theme_tokens: p
+                .spec
+                .theme_tokens()
+                .iter()
+                .map(|(name, value)| ThemeToken { name: name.clone(), value: value.clone() })
+                .collect(),
             skin_png: p.skin.clone(),
             byte_count: p.bytes,
         }
@@ -242,25 +217,30 @@ pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
 }
 /// A file's kind from its header checks alone, for a host deciding how to open it.
 #[uniffi::export]
-pub fn file_kind(path: String) -> Result<FileKind, CoreError> {
-    Ok(file::kind(Path::new(&path))?.into())
+pub fn file_kind(path: String) -> Result<Kind, CoreError> {
+    Ok(file::kind(Path::new(&path))?)
 }
 /// A new document from a template; never replaces an existing file.
 #[uniffi::export]
 pub fn create_document(template: String, destination: String) -> Result<(), CoreError> {
     Ok(file::create_document(Path::new(&template), Path::new(&destination))?)
 }
-/// One of a file's artwork images, by name (`preview` or `icon`).
+/// A slop's preview or icon artwork.
+#[uniffi::remote(Enum)]
+pub enum Artwork {
+    Preview,
+    Icon,
+}
+/// One of a file's artwork images.
 #[derive(uniffi::Record)]
 pub struct ArtworkImage {
-    pub name: String,
+    pub name: Artwork,
     pub png: Vec<u8>,
 }
 /// The first of `preferred` artwork the file holds, in one read. An error (busy, damaged,
 /// mid-recovery) is never "no artwork".
 #[uniffi::export]
-pub fn file_artwork(path: String, preferred: Vec<String>) -> Result<Option<ArtworkImage>, CoreError> {
-    let preferred: Vec<&str> = preferred.iter().map(String::as_str).collect();
+pub fn file_artwork(path: String, preferred: Vec<Artwork>) -> Result<Option<ArtworkImage>, CoreError> {
     Ok(file::artwork(Path::new(&path), &preferred)?.map(|(name, png)| ArtworkImage { name, png }))
 }
 /// Uses `path` as this process's writer-lock registry: debug hosts only, for test runs

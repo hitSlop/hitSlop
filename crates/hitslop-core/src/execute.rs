@@ -19,35 +19,31 @@ pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value, rows: &mut Rows) -
 pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, rows: &mut Rows) -> Result<()> {
     match node {
         Node::Optional { inner } => put(map, key, inner, value, rows),
-        Node::Counter {} => map.insert(key, value.as_i64().unwrap()).map_err(engine),
+        Node::Counter {} => map.insert(key, value.as_i64().expect("validated counter")).map_err(engine),
         scalar if is_scalar(scalar) => map.insert(key, loro_scalar(scalar, value)).map_err(engine),
         Node::Text {} => {
             let text = map.insert_container(key, LoroText::new()).map_err(engine)?;
-            text.insert_utf16(0, value.as_str().unwrap()).map_err(engine)
+            text.insert_utf16(0, value.as_str().expect("validated text")).map_err(engine)
         }
         Node::Object { .. } => fill(&map.insert_container(key, LoroMap::new()).map_err(engine)?, node, value, rows),
         Node::List { item } if is_scalar(item) => {
             let list = map.insert_container(key, LoroMovableList::new()).map_err(engine)?;
-            for (index, element) in value.as_array().unwrap().iter().enumerate() {
+            for (index, element) in value.as_array().expect("validated list").iter().enumerate() {
                 list.insert(index, loro_scalar(item, element)).map_err(engine)?;
             }
             Ok(())
         }
         Node::Record { value: entry } => {
             let record = map.insert_container(key, LoroMap::new()).map_err(engine)?;
-            for (key, value) in value.as_object().unwrap() {
+            for (key, value) in value.as_object().expect("validated record") {
                 put(&record, key, entry, value, rows)?;
             }
             Ok(())
         }
         Node::List { item } => {
             let list = map.insert_container(key, LoroMovableList::new()).map_err(engine)?;
-            for (index, row) in value.as_array().unwrap().iter().enumerate() {
-                let id = row
-                    .get("$id")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-                    .unwrap_or_else(application_id);
+            for (index, row) in value.as_array().expect("validated list").iter().enumerate() {
+                let id = row.get("$id").and_then(Value::as_str).map(String::from).unwrap_or_else(application_id);
                 insert_row(&list, item, index, &id, row, rows)?;
             }
             Ok(())
@@ -57,7 +53,14 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, rows: &m
     }
 }
 /// Stores a validated row with its ID.
-pub(super) fn insert_row(list: &LoroMovableList, item: &Node, index: usize, id: &str, value: &Value, rows: &mut Rows) -> Result<()> {
+pub(super) fn insert_row(
+    list: &LoroMovableList,
+    item: &Node,
+    index: usize,
+    id: &str,
+    value: &Value,
+    rows: &mut Rows,
+) -> Result<()> {
     let row = list.insert_container(index, LoroMap::new()).map_err(engine)?;
     row.insert("$id", id).map_err(engine)?;
     fill(&row, item, value, rows)
@@ -167,14 +170,8 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment], row
         // A set optional behaves as its inner kind when a path continues through it.
         let current = if index == 0 { node } else { unwrap_optional(node) };
         match (segment, current, &value) {
-            (
-                Segment::Key(key),
-                Node::Object { properties },
-                ValueOrContainer::Container(Container::Map(map)),
-            ) => {
-                let next = properties
-                    .get(key)
-                    .ok_or_else(|| err(Code::PathNotFound, "Unknown field"))?;
+            (Segment::Key(key), Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
+                let next = properties.get(key).ok_or_else(|| err(Code::PathNotFound, "Unknown field"))?;
                 let child = match map.get(key) {
                     Some(child) => child,
                     None if matches!(next, Node::Optional { .. }) => {
@@ -187,11 +184,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment], row
                 node = next;
                 value = child;
             }
-            (
-                Segment::Key(key),
-                Node::Record { value: next },
-                ValueOrContainer::Container(Container::Map(map)),
-            ) => {
+            (Segment::Key(key), Node::Record { value: next }, ValueOrContainer::Container(Container::Map(map))) => {
                 if !valid_key(key) {
                     return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
                 }
@@ -212,19 +205,15 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment], row
                 Node::List { item },
                 ValueOrContainer::Container(Container::MovableList(list)),
             ) if is_scalar(item) => {
-                let child = list
-                    .get(*index)
-                    .ok_or_else(|| err(Code::PathNotFound, "No element at that index"))?;
+                let child = list.get(*index).ok_or_else(|| err(Code::PathNotFound, "No element at that index"))?;
                 element = Some((list.clone(), *index));
                 node = item;
                 value = child;
                 parent = None;
             }
-            (
-                Segment::Id { id },
-                Node::List { item },
-                ValueOrContainer::Container(Container::MovableList(list)),
-            ) if !is_scalar(item) => {
+            (Segment::Id { id }, Node::List { item }, ValueOrContainer::Container(Container::MovableList(list)))
+                if !is_scalar(item) =>
+            {
                 let map = rows.map(doc, list, id)?;
                 node = item;
                 value = ValueOrContainer::Container(Container::Map(map));
@@ -233,14 +222,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment], row
             _ => return Err(err(Code::TypeMismatch, "Path traverses an incompatible value")),
         }
     }
-    Ok(Location {
-        node,
-        value,
-        parent,
-        absent,
-        entry,
-        element,
-    })
+    Ok(Location { node, value, parent, absent, entry, element })
 }
 
 /// Validates each intent completely before its first Loro mutation. A failure in a
@@ -255,15 +237,20 @@ pub(super) fn execute(
 ) -> Result<()> {
     let schema = &app.schema;
     match op {
-        Intent::SetTheme { values, replace } => app.theme.set(&doc.get_map(theme::ROOT), values, replace.unwrap_or(false))?,
+        Intent::SetTheme { values, replace } => {
+            app.theme.set(&doc.get_map(theme::ROOT), values, replace.unwrap_or(false))?
+        }
         Intent::ImportTheme { file } => app.theme.import(&doc.get_map(theme::ROOT), file)?,
         // Replace resolves its own path, which may be empty (the whole document).
         Intent::Replace { path, value } => replace::replace(doc, schema, path, value, ids, rows)?,
         Intent::Set { value, from, selection, .. } => {
             let at = resolve(doc, schema, op.path(), rows)?;
-            let kind = unwrap_optional(&at.node);
+            let kind = unwrap_optional(at.node);
             // A text set from the batch's base merges with what changed since.
-            if matches!(kind, Node::Text {}) && at.element.is_none() && (texts.base.is_some() || from.is_some() || selection.is_some()) {
+            if matches!(kind, Node::Text {})
+                && at.element.is_none()
+                && (texts.base.is_some() || from.is_some() || selection.is_some())
+            {
                 return text::set(doc, schema, op.path(), at, value, from.as_deref(), *selection, rows, texts);
             }
             if from.is_some() || selection.is_some() {
@@ -294,7 +281,7 @@ pub(super) fn execute(
                 let ValueOrContainer::Container(Container::MovableList(list)) = &at.value else {
                     return Err(engine("A scalar list is not stored as a list"));
                 };
-                return rewrite_list(list, item, value.as_array().unwrap());
+                return rewrite_list(list, item, value.as_array().expect("validated list"));
             }
             // Optional fields and record entries can be absent, created and replaced.
             let optional = matches!(at.node, Node::Optional { .. }) || at.entry;
@@ -315,9 +302,7 @@ pub(super) fn execute(
                     return replace::object(doc, object, kind, value, ids, rows);
                 }
             }
-            let (map, key) = at
-                .parent
-                .ok_or_else(|| err(Code::TypeMismatch, "Cannot replace a row"))?;
+            let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot replace a row"))?;
             put(&map, &key, kind, value, rows)?;
         }
         Intent::Clear { .. } => {
@@ -326,26 +311,17 @@ pub(super) fn execute(
                 return Err(err(Code::TypeMismatch, "Only optional fields and record entries can be cleared"));
             }
             if !at.absent {
-                let (map, key) = at
-                    .parent
-                    .ok_or_else(|| err(Code::TypeMismatch, "Cannot clear a row"))?;
+                let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot clear a row"))?;
                 map.delete(&key).map_err(engine)?;
             }
         }
-        Intent::Insert {
-            id,
-            value,
-            at: anchor,
-            index,
-            ..
-        } => {
+        Intent::Insert { id, value, at: anchor, index, .. } => {
             let at = resolve(doc, schema, op.path(), rows)?;
-            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
-                (at.node, at.value)
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) = (at.node, at.value)
             else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
-            if is_scalar(&item) {
+            if is_scalar(item) {
                 if id.is_some() || anchor.is_some() {
                     return Err(err(Code::InvalidRequest, "Scalar lists insert by index"));
                 }
@@ -354,7 +330,7 @@ pub(super) fn execute(
                 if index > list.len() {
                     return Err(err(Code::OutOfRange, "Insert index is past the end"));
                 }
-                list.insert(index, loro_scalar(&item, value)).map_err(engine)?;
+                list.insert(index, loro_scalar(item, value)).map_err(engine)?;
                 return Ok(());
             }
             if index.is_some() {
@@ -373,7 +349,7 @@ pub(super) fn execute(
                 _ => return Err(err(Code::DuplicateId, "Row already exists")),
             }
             let index = position(&list, anchor, rows)?;
-            insert_row(&list, &item, index, &id, value, rows)?;
+            insert_row(&list, item, index, &id, value, rows)?;
             rows.changed(&list, Change::Inserted(index, id.clone()));
             ids.push(id);
         }
@@ -387,14 +363,15 @@ pub(super) fn execute(
             if *by == 0 || !safe(*by) {
                 return Err(err(Code::OutOfRange, "Increment must be a nonzero safe integer"));
             }
-            let next = count.checked_add(*by).filter(|n| safe(*n))
+            let next = count
+                .checked_add(*by)
+                .filter(|n| safe(*n))
                 .ok_or_else(|| err(Code::OutOfRange, "Counter would leave the safe integer range"))?;
             map.insert(key, next).map_err(engine)?;
         }
         Intent::Remove { id, index, count, .. } => {
             let at = resolve(doc, schema, op.path(), rows)?;
-            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
-                (&at.node, at.value)
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) = (&at.node, at.value)
             else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
@@ -421,8 +398,7 @@ pub(super) fn execute(
         }
         Intent::Move { id, at: anchor, .. } => {
             let at = resolve(doc, schema, op.path(), rows)?;
-            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
-                (&at.node, at.value)
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) = (&at.node, at.value)
             else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
@@ -455,12 +431,7 @@ pub(super) fn rewrite_list(list: &LoroMovableList, item: &Node, values: &[Value]
         .collect();
     let target: Vec<Value> = values.iter().map(|v| project(Some(item), v.clone())).collect();
     let prefix = current.iter().zip(&target).take_while(|(a, b)| a == b).count();
-    let suffix = current[prefix..]
-        .iter()
-        .rev()
-        .zip(target[prefix..].iter().rev())
-        .take_while(|(a, b)| a == b)
-        .count();
+    let suffix = current[prefix..].iter().rev().zip(target[prefix..].iter().rev()).take_while(|(a, b)| a == b).count();
     let (old_mid, new_mid) = (current.len() - prefix - suffix, target.len() - prefix - suffix);
     for offset in 0..old_mid.min(new_mid) {
         if current[prefix + offset] != target[prefix + offset] {
@@ -475,4 +446,3 @@ pub(super) fn rewrite_list(list: &LoroMovableList, item: &Node, values: &[Value]
     }
     Ok(())
 }
-

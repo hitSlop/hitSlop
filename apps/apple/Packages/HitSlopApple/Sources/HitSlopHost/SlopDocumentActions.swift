@@ -2,17 +2,18 @@ import AppKit
 import HitSlopCore
 import HitSlopDocument
 
-/// Toolbar and menu commands: pin, theme, duplicate, export, reveal, open in editor, retry,
-/// close.
+/// Toolbar and menu actions. Document operations (duplicate, export, share, theme files,
+/// retry, close) go to the app, which runs them one at a time; pinning, the theme panel and
+/// the file's location only change the window, so the window does them at once.
 extension SlopDocumentWindowController {
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
   /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
-  /// else waits for the coordinator to accept commands and the page to show its content,
-  /// and changing the palette needs a document whose theme can change.
+  /// else waits for the app to accept commands and the page to show its content, and
+  /// importing a palette needs a document whose theme can change.
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
     case .close, .retry, .retrySave, .discardUnsaved: true
-    case .theme(true), .importTheme: commandsEnabled && isContentReady && session.canEditTheme
+    case .importTheme: commandsEnabled && isContentReady && session.canEditTheme
     default: commandsEnabled && isContentReady
     }
   }
@@ -20,10 +21,17 @@ extension SlopDocumentWindowController {
     guard isAvailable(command) else { return }
     routing.command(command)
   }
+  /// Pinning keeps the window above others; it needs the page's content.
+  public var canPin: Bool { isContentReady }
+  public func togglePin() {
+    guard canPin else { return }
+    setPinned(!isPinned)
+  }
+  /// The theme panel opens for a page whose palette can change, and always closes.
+  public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.canEditTheme) }
+  public func toggleTheme() { setThemeShown(!isThemeShown) }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
     switch command {
-    case .pin(let pinned): setPinned(pinned)
-    case .theme(let shown): setThemeShown(shown)
     case .importTheme: try await importTheme()
     case .exportTheme: try await exportTheme()
     case .duplicate:
@@ -37,9 +45,6 @@ extension SlopDocumentWindowController {
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
-    case .reveal: reveal()
-    case .copyPath: copyPath()
-    case .openEditor(let app): try await openInEditor(app)
     case .retry:
       telemetry.send(.breadcrumb(.recovery, .started))
       do {
@@ -64,13 +69,7 @@ extension SlopDocumentWindowController {
 
   /// A save or open panel as a sheet on the document window; nil when cancelled.
   func runSheet(_ panel: NSSavePanel) async -> URL? {
-    let response = await withCheckedContinuation { continuation in
-      if let window {
-        panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
-      } else {
-        panel.begin { continuation.resume(returning: $0) }
-      }
-    }
+    let response = if let window { await panel.beginSheetModal(for: window) } else { await panel.begin() }
     return response == .OK ? panel.url : nil
   }
 
@@ -126,8 +125,7 @@ extension SlopDocumentWindowController {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
     panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.rawValue
-    let output = panel.runModal() == .OK ? panel.url : nil
-    try await exportDocument(format: format, to: output)
+    try await exportDocument(format: format, to: await runSheet(panel))
   }
 
   /// The one export path, for the menu and for `slop export` of this open document. A
@@ -148,15 +146,14 @@ extension SlopDocumentWindowController {
       throw error
     }
   }
-  private func reveal() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-  private func copyPath() {
-    NSPasteboard.general.copy(url.path)
-  }
+  func reveal() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+  func copyPath() { NSPasteboard.general.copy(url.path) }
   /// Opens the folder that holds the document, where an agent or a terminal runs `slop`
   /// commands on it. The document itself is a database, not something to edit as text.
-  private func openInEditor(_ app: URL) async throws {
-    _ = try await NSWorkspace.shared.open(
-      [url.deletingLastPathComponent()], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+  func openInEditor(_ app: URL) {
+    NSWorkspace.shared.open(
+      [url.deletingLastPathComponent()], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(),
+      completionHandler: nil)
   }
 }
 

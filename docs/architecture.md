@@ -82,9 +82,9 @@ identity. Shared limits and codes live in TypeBox-free
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `crates/hitslop-core/src/owner.rs` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
-| Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, page-failure overlay, the save-failure sheet (from the owner's save status); its commands go to the app |
+| Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, theme panel, page-failure overlay, the save-failure sheet (from the owner's save status); its document operations go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
-| App | `HitSlopFeatures` (TCA), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one command at a time per document (a close or a save recovery requested meanwhile runs next), quit, and alerts for failures that are not save failures |
+| App | `HitSlopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
 | Author SDK | `packages/document` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | Contracts | `packages/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |

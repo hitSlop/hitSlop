@@ -7,7 +7,7 @@ import WebKit
 /// Opening a document window: waiting for the page, progress, and the first reveal.
 extension SlopDocumentWindowController {
   public func pageSessionDidBecomeReady(_ session: DocumentSession) {
-    publishControlsVisibility(toolbar?.isVisible == true, force: true)
+    toolbar.republishControls()
     if reportedRendererFailure { telemetry.send(.breadcrumb(.renderer, .recovered)) }
     reportedRendererFailure = false
     recordStartup("page-ready")
@@ -38,10 +38,10 @@ extension SlopDocumentWindowController {
     // A replaced page starts without the panel; it reopens once the new page is ready.
     closeThemePanel()
     window?.orderOut(nil)
-    hideToolbar()
+    toolbar.hide()
     loadingWebView = session.webView
     session.webView.setAccessibilityHidden(true)
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
     if presentationRequested { showOpeningProgress() }
     loadingTask = Task { @MainActor [weak self, session, weak view = session.webView] in
       do {
@@ -71,7 +71,7 @@ extension SlopDocumentWindowController {
     openingProgress = nil
     if let view = loadingWebView { view.setAccessibilityHidden(false) }
     loadingWebView = nil
-    toolbarHost?.rootView = toolbarView()
+    toolbar.update()
   }
 
   func stopLoading() {

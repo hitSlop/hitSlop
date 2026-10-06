@@ -41,7 +41,7 @@ import HitSlopTestSupport
     let template = try Fixtures.template(stage: source)
     defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
     let document = template.deletingLastPathComponent().appendingPathComponent("document.slop")
-    try SlopFile.create(from: template, to: document)
+    _ = try SlopFile.create(from: template, to: document)
     for (url, kind) in [(template, FileKind.template), (document, .document)] {
         let file = try SlopFile(url: url)
         #expect(file.kind == kind)
@@ -81,7 +81,7 @@ import HitSlopTestSupport
     // its live window attempts a second writer.
     #expect(try SlopFile.create(from: template, to: created) == created.standardizedFileURL.resolvingSymlinksInPath())
     let second = folder.appendingPathComponent("second.slop")
-    try SlopFile.create(from: template, to: second)
+    _ = try SlopFile.create(from: template, to: second)
     #expect(try SlopFile(url: second).manifest.slug == SlopFile(url: created).manifest.slug)
     // Creation never replaces an existing file.
     #expect(throws: (any Error).self) { try SlopFile.create(from: template, to: second) }

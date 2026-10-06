@@ -4,8 +4,7 @@ use serde_json::{Value, json};
 mod support;
 use support::{View, snapshot};
 
-const SCHEMA: &str =
-    r#"{"kind":"object","properties":{"title":{"kind":"string"},"hits":{"kind":"counter"}}}"#;
+const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"hits":{"kind":"counter"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial","hits":0}"#;
 const DEFAULTS: &str = r##"{"accent":"#335577","paper":"#ffffff"}"##;
 fn app() -> AppSpec {
@@ -42,17 +41,11 @@ fn theme_only_edits_publish_under_the_document_sequence_and_reopen() {
     view.publish(&publication);
     view.check(&doc, "theme publication");
     assert_eq!(snapshot(&doc)["value"], before["value"]);
-    assert_eq!(
-        snapshot(&doc),
-        serde_json::from_str::<Value>(&doc.state().unwrap()).unwrap()
-    );
+    assert_eq!(snapshot(&doc), serde_json::from_str::<Value>(&doc.state().unwrap()).unwrap());
     let reopened = Document::open(&app(), &doc.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(snapshot(&reopened)["theme"], snapshot(&doc)["theme"]);
     assert_eq!(reopened.version(), doc.version());
-    assert!(
-        !reopened.can_undo(),
-        "history is scoped to the open session"
-    );
+    assert!(!reopened.can_undo(), "history is scoped to the open session");
 }
 
 #[test]
@@ -151,11 +144,7 @@ fn a_run_of_window_changes_to_one_color_is_one_undo_step() {
 fn data_between_color_updates_ends_the_theme_undo_run() {
     let mut doc = doc();
     set(&mut doc, "#111111");
-    doc.apply_batch(
-        r#"{"intents":[{"type":"increment","path":["hits"],"by":2}]}"#,
-        Origin::Agent,
-    )
-    .unwrap();
+    doc.apply_batch(r#"{"intents":[{"type":"increment","path":["hits"],"by":2}]}"#, Origin::Agent).unwrap();
     set(&mut doc, "#222222");
     doc.undo().unwrap();
     assert_eq!(color(&doc), "#111111");

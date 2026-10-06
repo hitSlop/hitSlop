@@ -16,18 +16,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 mod support;
-const SCHEMA: &str =
-    r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
+const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
     std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
-    support::write_app(
-        &stage,
-        support::App::new(SCHEMA, r#"{"title":"Initial","hits":0}"#),
-    );
+    support::write_app(&stage, support::App::new(SCHEMA, r#"{"title":"Initial","hits":0}"#));
     let template = dir.path().join("template.slop");
     file::pack(&stage, &template).unwrap();
     let path = dir.path().join("doc.slop");
@@ -45,10 +41,7 @@ fn batch(path: &Path) -> Value {
     r
 }
 fn checked(text: String) -> Value {
-    assert!(
-        envelope::is_valid(Envelope::SocketReply, text.as_bytes()),
-        "invalid reply: {text}"
-    );
+    assert!(envelope::is_valid(Envelope::SocketReply, text.as_bytes()), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
 fn run(value: Value) -> Value {
@@ -66,14 +59,7 @@ fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> 
     rx.recv_timeout(Duration::from_secs(5)).unwrap()
 }
 fn close(owner: &Owner) {
-    call(
-        owner,
-        Request::Close {
-            preview: None,
-            icon: None,
-        },
-    )
-    .unwrap();
+    call(owner, Request::Close { preview: None, icon: None }).unwrap();
 }
 fn open(path: &Path) -> Arc<Owner> {
     Arc::new(Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap())
@@ -132,10 +118,7 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     assert_eq!(state["state"]["state"]["value"]["hits"], 1);
     assert_eq!(state["state"]["state"]["theme"]["accent"], "#123456");
     assert_eq!(state["state"]["theme"]["accent"], "#335577", "the app's declared palette");
-    assert!(
-        registry::Lease::acquire(&path).is_ok(),
-        "closed commands release ownership"
-    );
+    assert!(registry::Lease::acquire(&path).is_ok(), "closed commands release ownership");
 }
 
 #[test]
@@ -145,10 +128,7 @@ fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     assert!(registry::discovery(&path).unwrap().is_some());
     assert_eq!(run(batch(&path))["sequence"], 1);
-    assert_eq!(
-        run(request(&path, "get"))["state"]["state"]["value"]["hits"],
-        1
-    );
+    assert_eq!(run(request(&path, "get"))["state"]["state"]["value"]["hits"], 1);
     server.withdraw();
     assert!(registry::discovery(&path).unwrap().is_none());
     server.publish().unwrap();
@@ -177,18 +157,10 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         assert!(refused["error"].as_str().unwrap().contains(update), "{refused}");
     }
     assert_eq!(
-        checked(command::serve(
-            &owner,
-            &batch(&path).to_string(),
-            None,
-            Instant::now() - Duration::from_millis(1)
-        ))["code"],
+        checked(command::serve(&owner, &batch(&path).to_string(), None, Instant::now() - Duration::from_millis(1)))["code"],
         "closing"
     );
-    assert_eq!(
-        run(request(&path, "get"))["state"]["state"]["value"]["hits"],
-        0
-    );
+    assert_eq!(run(request(&path, "get"))["state"]["state"]["value"]["hits"], 0);
     close(&owner);
     server.stop();
 }
@@ -208,10 +180,7 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
     assert_eq!(checked(reply)["method"], "get");
     let mut huge = batch(&path);
     huge["ops"] = format!("[{}]", " ".repeat(1024 * 1024 + 1)).into();
-    assert_eq!(
-        checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"],
-        "rejected"
-    );
+    assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
     let mut partial = Vec::new();
     for _ in 0..16 {
         let mut client = UnixStream::connect(server.path()).unwrap();
@@ -220,16 +189,11 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
     }
     std::thread::sleep(Duration::from_millis(100));
     let mut excess = UnixStream::connect(server.path()).unwrap();
-    excess
-        .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
+    excess.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
     let _ = excess.write_all(get.as_bytes());
     let _ = excess.write_all(b"\n");
     let result = excess.read(&mut [0u8; 1]);
-    assert!(
-        matches!(result, Ok(0)) || result.is_err(),
-        "client limit admitted a reply"
-    );
+    assert!(matches!(result, Ok(0)) || result.is_err(), "client limit admitted a reply");
     drop(partial);
     close(&owner);
     server.stop();
@@ -238,9 +202,7 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
 fn mock(owner: &Owner, dir: &Path) -> UnixListener {
     let path = dir.join("mock.sock");
     let listener = UnixListener::bind(&path).unwrap();
-    owner
-        .publish_discovery(&json!({"socket":path,"documentPath":owner.path()}).to_string())
-        .unwrap();
+    owner.publish_discovery(&json!({"socket":path,"documentPath":owner.path()}).to_string()).unwrap();
     listener
 }
 fn line(stream: &mut UnixStream) -> String {
@@ -250,13 +212,7 @@ fn line(stream: &mut UnixStream) -> String {
 }
 #[test]
 fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
-    for code in [
-        "rejected",
-        "owner_replaced",
-        "closing",
-        "save_failed",
-        "unknown_outcome",
-    ] {
+    for code in ["rejected", "owner_replaced", "closing", "save_failed", "unknown_outcome"] {
         let (dir, path) = document();
         let owner = open(&path);
         let saved = std::fs::read(&path).unwrap();
@@ -273,7 +229,10 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
                 }
                 let mut stream = match listener.accept() {
                     // macOS hands out accepted streams nonblocking like their listener.
-                    Ok((stream, _)) => { stream.set_nonblocking(false).unwrap(); stream }
+                    Ok((stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
+                        stream
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(1));
                         continue;
@@ -308,12 +267,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     let peer = std::thread::spawn(move || {
         let (mut edit, _) = listener.accept().unwrap();
         let input = line(&mut edit);
-        let applied = checked(command::serve(
-            &actor,
-            &input,
-            None,
-            Instant::now() + Duration::from_secs(5),
-        ));
+        let applied = checked(command::serve(&actor, &input, None, Instant::now() + Duration::from_secs(5)));
         assert_eq!(applied["ok"], true);
         drop(edit); // The committed reply never reaches the helper.
     });
@@ -321,22 +275,11 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     assert_eq!(answer["code"], "unknown_outcome");
     assert!(!answer["error"].as_str().unwrap().contains("was accepted"));
     peer.join().unwrap();
-    let Reply::State { json } = call(&owner, Request::State).unwrap() else {
-        panic!()
-    };
-    assert_eq!(
-        serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"],
-        1
-    );
+    let Reply::State { json } = call(&owner, Request::State).unwrap() else { panic!() };
+    assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 1);
     close(&owner);
-    let saved = Store::open(&path, Mode::Snapshot)
-        .unwrap()
-        .document()
-        .unwrap();
-    assert_eq!(
-        serde_json::from_str::<Value>(&saved.value().unwrap()).unwrap()["hits"],
-        1
-    );
+    let saved = Store::open(&path, Mode::Snapshot).unwrap().document().unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&saved.value()).unwrap()["hits"], 1);
 }
 // An accepted batch survives in memory when a discard replaces the owner's state before
 // its save confirms; its reply is unknown, never a promise that replaying it is safe.
@@ -416,7 +359,10 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         (json!({"method":"flush","batch":increment}), "invalid_request"),
         (json!({"view":"","method":"apply","batch":increment}), "invalid_request"),
         (json!({"method":"apply","batch":{"intents":[]}}), "invalid_request"),
-        (json!({"method":"apply","batch":json!({"intents":[{"type":"increment","path":["hits"],"by":1,"extra":1}]}).to_string()}), "invalid_request"),
+        (
+            json!({"method":"apply","batch":json!({"intents":[{"type":"increment","path":["hits"],"by":1,"extra":1}]}).to_string()}),
+            "invalid_request",
+        ),
         // Text edits are batches now; there is no separate text request.
         (json!({"method":"text","request":json!({"base":"x"}).to_string()}), "invalid_request"),
         (json!({"method":"apply","batch":json!({"base":"x","intents":[]}).to_string()}), "invalid_version"),
@@ -424,7 +370,11 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         (json!({"method":"apply","batch":"😀".repeat(1_048_577)}), "too_large"),
     ] {
         let reply = page_json(&page(&owner, "page", &refused.to_string()));
-        assert_eq!((reply["code"].as_str(), reply["reason"].as_str()), (Some("rejected"), Some(reason)), "{refused:.120}");
+        assert_eq!(
+            (reply["code"].as_str(), reply["reason"].as_str()),
+            (Some("rejected"), Some(reason)),
+            "{refused:.120}"
+        );
     }
     assert_eq!(page_json(&page(&owner, "page", "not json"))["code"], "rejected");
     let Reply::State { json } = call(&owner, Request::State).unwrap() else { panic!() };
@@ -470,8 +420,7 @@ fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
     export["format"] = "png".into();
     export["output"] = "/tmp/result.png".into();
     let socket = server.path().to_owned();
-    let client =
-        std::thread::spawn(move || checked(socket::call(&socket, &export.to_string()).unwrap()));
+    let client = std::thread::spawn(move || checked(socket::call(&socket, &export.to_string()).unwrap()));
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(completion.is_active());
     close(&owner);
@@ -493,12 +442,7 @@ fn an_expired_export_callback_cannot_publish_late() {
     export["output"] = "/tmp/result.png".into();
     let actor = owner.clone();
     let worker = std::thread::spawn(move || {
-        command::serve(
-            &actor,
-            &export.to_string(),
-            Some(&exporter),
-            Instant::now() + Duration::from_millis(100),
-        )
+        command::serve(&actor, &export.to_string(), Some(&exporter), Instant::now() + Duration::from_millis(100))
     });
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     let answer = checked(worker.join().unwrap());
@@ -506,4 +450,28 @@ fn an_expired_export_callback_cannot_publish_late() {
     assert!(!completion.is_active());
     completion.complete(Ok("/tmp/late.png".into()));
     close(&owner);
+}
+struct Panics;
+impl ExportHandler for Panics {
+    fn export(&self, _: ExportRequest, _: Arc<ExportCompletion>) {
+        panic!("a renderer fault");
+    }
+}
+// Failure: a client whose request panicked kept its place, so after sixteen such faults the
+// socket dropped every connection unanswered. Oracle: the next request is answered.
+#[test]
+fn a_client_that_panics_frees_its_place() {
+    let (_dir, path) = document();
+    let owner = open(&path);
+    let server = Server::start(owner.clone(), Arc::new(Panics)).unwrap();
+    let mut export = request(&path, "export");
+    export["format"] = "png".into();
+    export["output"] = "/tmp/result.png".into();
+    for _ in 0..16 {
+        assert!(socket::call(server.path(), &export.to_string()).is_err(), "a panicked request has no reply");
+    }
+    let answer = socket::call(server.path(), &request(&path, "get").to_string());
+    assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
+    close(&owner);
+    server.stop();
 }

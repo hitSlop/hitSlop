@@ -4,6 +4,9 @@ version = "0.0.0"
 edition.workspace = true
 publish.workspace = true
 
+[lints]
+workspace = true
+
 # The file engine `@hitslop/cli` runs: it builds and reads `.slop` files on any platform, by
 # the rules the app opens them with.
 [dependencies]

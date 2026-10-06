@@ -19,6 +19,7 @@
     "check": "bun scripts/verify.ts contracts,types",
     "test": "bun scripts/verify.ts bun",
     "swift:test": "bun scripts/verify.ts swift",
+    "swift:format": "bun scripts/lib/swift-format.ts",
     "bench:windows": "HITSLOP_BENCH=1 bun run swift:test --filter BenchmarkTests",
     "bench:growth": "bun scripts/dev/bench-document-growth.ts",
     "apple:build": "bun scripts/build/apple.ts",

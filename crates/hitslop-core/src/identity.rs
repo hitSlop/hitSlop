@@ -9,7 +9,10 @@ fn fnv(text: &str) -> u64 {
 pub(super) fn derived(seed: &str) -> String {
     let mut bits = (u128::from(fnv(seed)) << 64) | u128::from(fnv(&format!("hitslop:{seed}")));
     let mut out = String::from("x-");
-    for _ in 0..24 { out.push(wire::ID_ALPHABET[(bits & 31) as usize] as char); bits >>= 5; }
+    for _ in 0..24 {
+        out.push(wire::ID_ALPHABET[(bits & 31) as usize] as char);
+        bits >>= 5;
+    }
     out
 }
 /// A row's stored `$id`, when it is a valid application ID.
@@ -23,10 +26,12 @@ pub(super) fn stored_id(map: &LoroMap) -> Option<String> {
 /// every write keep it so.
 pub(super) fn rows(list: &LoroMovableList) -> Vec<String> {
     let mut ids = Vec::with_capacity(list.len());
-    list.for_each(|row| ids.push(match row {
-        ValueOrContainer::Container(Container::Map(map)) => stored_id(&map).unwrap_or_default(),
-        _ => String::new(),
-    }));
+    list.for_each(|row| {
+        ids.push(match row {
+            ValueOrContainer::Container(Container::Map(map)) => stored_id(&map).unwrap_or_default(),
+            _ => String::new(),
+        })
+    });
     ids
 }
 #[cfg(feature = "storage")]
