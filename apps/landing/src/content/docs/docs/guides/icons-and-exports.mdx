@@ -80,8 +80,8 @@ html[data-slop-capture="static"] .note-export {
 Use the native hover toolbar, File menu, or:
 
 ```sh
-bunx @hitslop/cli export My.slop --format png --output My.png
-bunx @hitslop/cli export My.slop --format pdf --output My.pdf
+bunx hitslop export My.slop --format png --output My.png
+bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
 An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy in a fresh page. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.

@@ -7,11 +7,15 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The file engine `@hitslop/cli` runs: it builds and reads `.slop` files on any platform, by
+# The file engine `hitslop` runs: it builds and reads `.slop` files on any platform, by
 # the rules the app opens them with.
 [dependencies]
 hitslop-core = { path = "../hitslop-core", features = ["storage"] }
 serde_json.workspace = true
+serde.workspace = true
+rquickjs = "=0.14.0"
+libc = "0.2"
+getrandom = "0.2"
 
 [features]
 # SQLite's own amalgamation, for platforms without a system SQLite (release builds only:

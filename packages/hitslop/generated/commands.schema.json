@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "patternProperties": {
+    "^[a-z][a-zA-Z0-9]{0,79}$": {
+      "type": "object",
+      "required": [
+        "description",
+        "args"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "maxProperties": 64
+}

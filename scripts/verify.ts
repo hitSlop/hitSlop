@@ -15,7 +15,7 @@
  *   --ci          CI reporting (nextest's ci profile) */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exec, run } from "../packages/cli/src/process";
+import { exec, run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
@@ -60,7 +60,7 @@ const flag = (name: string) => argv.includes(name);
 const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
-const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^macos-v/, "") || undefined;
+const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
 useTestRegistry();
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
 if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
@@ -83,7 +83,7 @@ async function quiet(command: string[]) {
 
 /** Test files under the Bun runner: native ones (`*.native.test.ts`) or the rest. */
 function bunTests(native: boolean): string[] {
-  return ["packages/{document,shell,cli,schema}/tests/**/*.test.ts", "tests/{examples,native}/**/*.test.ts"]
+  return ["packages/hitslop/tests/**/*.test.ts", "tests/{examples,native,release}/**/*.test.ts"]
     .flatMap((pattern) => [...new Bun.Glob(pattern).scanSync(repository)])
     .filter((file) => file.endsWith(".native.test.ts") === native)
     .sort();
@@ -101,7 +101,7 @@ const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^rust-toolchain\.toml$
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
-  /^packages\/(document|shell|schema)\//,
+  /^packages\/hitslop\/(src\/(sdk|shell|schema)|generated|acceptance)\//,
   /^tests\/(abi|presentation|fixtures|compat)\//,
   /^examples\/slops\//,
   /^scripts\/(lib|build|templates)\//,
@@ -114,10 +114,12 @@ const tiers: Tier[] = [
     quick: true,
     budget: 15,
     inputs: [
-      /^packages\/schema\//,
-      /^packages\/cli\/(skills\/|src\/skills-build\.ts$)/,
+      /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//,
+      /^packages\/hitslop\/(skills\/|src\/cli\/(skills-build|app)\.ts$)/,
       /^\.agents\/skills\//,
       /^scripts\/build\/(generate|rust-contracts|swift-contracts|skills)\.ts$/,
+      /^scripts\/build\/(acceptance|runner)\.ts$/,
+      /^packages\/hitslop\/src\/(sdk|shell)\//,
       /\.generated\.(rs|swift)$/,
     ],
     run: async () => {
@@ -145,13 +147,13 @@ const tiers: Tier[] = [
     name: "bun",
     budget: 30,
     needs: ["web"],
-    inputs: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat)\//, /^scripts\//, /^examples\/slops\//],
+    inputs: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\//, /^examples\/slops\//],
     run: (args) => bunTest(bunTests(false), ["--parallel", ...args]),
   },
   {
     name: "rust",
     budget: 60,
-    inputs: [...rustInputs, /^packages\/schema\/(generated|tests\/fixtures)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+    inputs: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
     // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
     run: async (args) => {
@@ -178,7 +180,7 @@ const tiers: Tier[] = [
     budget: 60,
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
-    inputs: [/^packages\/(cli|document|schema|shell)\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/build\/(packages|engines|shell)\.ts$/, /^tests\/packed\//],
+    inputs: [/^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/build\/(packages|engines|shell)\.ts$/, /^tests\/packed\//],
     // A release installs the packages against the native helper too.
     run: (args) => sh([process.execPath, "test", "./tests/packed/packed.test.ts", ...args], { env: release ? { HITSLOP_PACKED_NATIVE: "1" } : {} }),
   },
@@ -195,7 +197,11 @@ const tiers: Tier[] = [
       const fixtures = await prepareNativeFixtures();
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();
-      await swiftTests({ ...environment, HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures) }, args);
+      await swiftTests({
+        ...environment,
+        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
+        HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
+      }, args);
     },
   },
   {
@@ -212,14 +218,13 @@ const tiers: Tier[] = [
     native: true,
     budget: 120,
     needs: ["native"],
-    inputs: [...nativeInputs, /^packages\/cli\/(src|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
+    inputs: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
     run: (args) =>
       bunTest(bunTests(true), args, {
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
-        // A release renders every bundled template, requires its frozen corpus entry and runs
-        // each frozen release's own CLI.
+        // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
-        ...(release && releaseTag ? { HITSLOP_COMPAT_RELEASE: releaseTag, HITSLOP_COMPAT_INSTALLED: "1" } : {}),
+        ...(release && releaseTag ? { HITSLOP_COMPAT_RELEASE: releaseTag } : {}),
         ...(release && !flag("--skip-app") ? { HITSLOP_APP_BINARY: join(repository, "generated/app/hitSlop.app/Contents/MacOS/hitSlop") } : {}),
       }),
   },

@@ -40,7 +40,10 @@ import Testing
   /// writing `input` to its standard input: the document engine `slop` runs unless `tool`
   /// names the rendering helper.
   func cli(_ args: [String], input: Data? = nil, tool: String = "slop-engine") async throws -> (Int32, String, String) {
-    let binary = Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/\(tool)")
+    let binary =
+      tool == "slop-engine"
+      ? Fixtures.engine
+      : Fixtures.repository.appendingPathComponent("apps/apple/Packages/HitSlopApple/.build/debug/\(tool)")
     let named = ["--client-protocol", String(HelperProtocol.version)] + args
     return try await Task.detached { try Fixtures.run(binary, named, input: input) }.value
   }

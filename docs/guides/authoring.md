@@ -72,4 +72,39 @@ Run check and build, register, create a writable copy, type then immediately clo
 reopen, duplicate, and export PNG and PDF. Inspect the editor, export and icon from the
 same revision. Native tests are required for persistence, clipping, skins and desktop
 click-through. See [presentation fixtures](development.md#focused-checks) and the
-packaged [design skill](../../packages/cli/skills/hitslop-design/SKILL.md).
+packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
+
+## Commands
+
+Keep the stored shape in `schema.ts` and export useful actions by name from `commands.ts`.
+The same action can be called by a page button or `slop call`. Start with the few verbs
+that matter; ordinary handles, bindings and `doc.change()` remain available.
+
+```ts
+import { Type } from "hitslop";
+import doc from "./schema";
+
+export const rename = doc.command({
+  description: "Change the title shown in the window.",
+  args: Type.Object({ title: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+  run({ tx }, { title }) {
+    tx.fields.title.set(title);
+  },
+});
+```
+
+A button imports `rename` and awaits `rename({ title: "Weekend" })`. The CLI discovers it
+with `slop describe My.slop` and calls `slop call My.slop rename --args '{"title":"Weekend"}'`.
+Descriptions on fields use options such as `s.text({ description: "Window title." })`.
+
+Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`, and
+return JSON or throw. Use `ctx.now` (epoch milliseconds) and `ctx.random()`; avoid ambient
+time, random sources, browser APIs, I/O and promises. Argument objects require
+`additionalProperties: false`. Version one supports plain TypeBox JSON primitives,
+objects, arrays and unions; refs, formats, transforms and output schemas are deferred.
+A successful command is one undo step. CLI completion means the batch was saved; page
+completion means its snapshot published. A definite stale conflict retries once with the
+same clock and seed; an unknown outcome never retries.
+
+Builds store metadata and a restricted-runner bundle as private immutable assets.
+Installing a newer hitSlop does not replace those assets or migrate a document's app.

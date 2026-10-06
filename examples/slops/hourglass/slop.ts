@@ -1,4 +1,4 @@
-import { defineSlop } from "@hitslop/document";
+import { defineSlop } from "hitslop";
 import { height, silhouette, width } from "./glass";
 import schema from "./schema";
 

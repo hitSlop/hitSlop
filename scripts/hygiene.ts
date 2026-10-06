@@ -3,7 +3,7 @@ import { releases } from "./compat/corpus";
 import { verifyCorpus } from "./compat/integrity";
 import { lstat, stat, realpath, readFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
-import { exec } from "../packages/cli/src/process";
+import { exec } from "../packages/hitslop/src/cli/process";
 
 async function command(
   argv: string[],
@@ -73,7 +73,7 @@ export function assertNoGeneratedSource(files: string[]): void {
   const generated = files.filter(
     (path) =>
       // The page shell's static entry module is authored JavaScript.
-      path !== "packages/shell/src/boot.js" &&
+      path !== "packages/hitslop/src/shell/boot.js" &&
       /^packages\/[^/]+\/src\//.test(path) &&
       /\.(?:d\.ts|js)$/.test(path),
   );
@@ -161,7 +161,32 @@ export async function assertSkill(
 }
 
 const docsExcluded = /^(?:archive|docs\/evidence|_docs|examples\/archive)\//;
-const packageNames = ["cli", "document", "schema"] as const;
+const packageNames = ["hitslop"] as const;
+
+/** The published surface is small even though its sources share one package. */
+async function assertPackageBoundaries(files: string[]) {
+  const pkg = await Bun.file(resolve(repository, "packages/hitslop/package.json")).json();
+  const workspace = await Bun.file(resolve(repository, "package.json")).json();
+  const apple = await readFile(resolve(repository, "apps/apple/project.yml"), "utf8");
+  if (pkg.version !== workspace.version || pkg.version !== apple.match(/MARKETING_VERSION: "([^"]+)"/)?.[1])
+    throw new Error("Mac, workspace and hitslop must share one release version");
+  const layers = ["schema", "sdk", "shell", "cli"];
+  const prefix = "packages/hitslop/src/";
+  for (const path of files.filter(p => p.startsWith(prefix) && /\.(ts|js|svelte)$/.test(p))) {
+    const layer = path.slice(prefix.length).split("/")[0]!;
+    const content = await readFile(resolve(repository, path), "utf8");
+    for (const [, specifier] of content.matchAll(/(?:from\s*|import\s*\(\s*|import\s*)["']([^"']+)["']/g)) {
+      if (!specifier!.startsWith(".")) continue;
+      const target = resolve(repository, dirname(path), specifier!);
+      const root = resolve(repository, prefix) + "/";
+      if (target.startsWith(root)) {
+        const dependency = target.slice(root.length).split("/")[0]!;
+        if (layers.indexOf(dependency) > layers.indexOf(layer))
+          throw new Error(`Package dependency points inward: ${path} imports ${specifier}`);
+      }
+    }
+  }
+}
 
 /** The released versions the docs may pin: each package's `version` in the tree. */
 async function packageVersions(root: string): Promise<Record<string, string>> {
@@ -194,9 +219,9 @@ export async function assertDocs(
       if (!file || (path.endsWith(".mdx") && file.endsWith("/"))) continue;
       if (!(await pathExists(resolve(root, dirname(path), file)))) problems.push(`${path}: broken link (${target})`);
     }
-    for (const [, name, version] of text.matchAll(/@hitslop\/(cli|document|schema)@(\d+\.\d+\.\d+)\b/g))
+    for (const [, name, version] of text.matchAll(/(hitslop)@(\d+\.\d+\.\d+)\b/g))
       if (version !== current[name!])
-        problems.push(`${path}: pins @hitslop/${name}@${version}, but the tree is at ${current[name!]}`);
+        problems.push(`${path}: pins ${name}@${version}, but the tree is at ${current[name!]}`);
   }
   if (problems.length)
     throw new Error(`Docs are out of date:\n${[...new Set(problems)].map((item) => `  - ${item}`).join("\n")}`);
@@ -235,6 +260,7 @@ async function checkHygiene(): Promise<void> {
   for (const entry of await releases()) await verifyCorpus(entry.root, entry.release);
   assertTrackedHygiene(files);
   assertNoGeneratedSource(files);
+  await assertPackageBoundaries(files);
   await assertTextHygiene(files);
   await assertDocs(files);
   await Promise.all([

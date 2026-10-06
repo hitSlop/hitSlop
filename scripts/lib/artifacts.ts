@@ -14,7 +14,7 @@ export function useTestRegistry() {
 /** The page shell the host injects: the app bundles it; the CLI adds the WASM core for dev. */
 export const shellDestinations = {
   app: join(repository, "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/shell"),
-  cli: join(repository, "packages/cli/shell"),
+  cli: join(repository, "packages/hitslop/shell"),
 };
 export const shellFiles = ["boot.js", "index.js"] as const;
 /** An app asset's text as the build wrote it, read from the file outside the core, which

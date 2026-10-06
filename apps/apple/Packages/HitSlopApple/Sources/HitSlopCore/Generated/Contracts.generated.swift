@@ -115,13 +115,17 @@ public struct SocketGetRequest: Sendable {
 public struct SocketBatchRequest: Sendable {
   public var `protocol`: Int
   public var `documentPath`: String
+  public var `ifVersion`: String?
+  public var `command`: String?
   public var `ops`: String
   public var `base`: String?
   public var `attachments`: [String]?
 
-  public init(`protocol`: Int, `documentPath`: String, `ops`: String, `base`: String? = nil, `attachments`: [String]? = nil) {
+  public init(`protocol`: Int, `documentPath`: String, `ifVersion`: String? = nil, `command`: String? = nil, `ops`: String, `base`: String? = nil, `attachments`: [String]? = nil) {
     self.`protocol` = `protocol`
     self.`documentPath` = `documentPath`
+    self.`ifVersion` = `ifVersion`
+    self.`command` = `command`
     self.`ops` = `ops`
     self.`base` = `base`
     self.`attachments` = `attachments`
@@ -133,6 +137,18 @@ public struct SocketBatchRequest: Sendable {
     self.`protocol` = `protocol`
     guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketBatchRequest.documentPath") }
     self.`documentPath` = `documentPath`
+    if let value = json["ifVersion"] {
+      guard let mapped = value as? String else { throw ContractMappingError.field("SocketBatchRequest.ifVersion") }
+      self.`ifVersion` = mapped
+    } else {
+      self.`ifVersion` = nil
+    }
+    if let value = json["command"] {
+      guard let mapped = value as? String else { throw ContractMappingError.field("SocketBatchRequest.command") }
+      self.`command` = mapped
+    } else {
+      self.`command` = nil
+    }
     guard let `ops` = json["ops"] as? String else { throw ContractMappingError.field("SocketBatchRequest.ops") }
     self.`ops` = `ops`
     if let value = json["base"] {
@@ -154,6 +170,8 @@ public struct SocketBatchRequest: Sendable {
     result["method"] = "batch"
     result["protocol"] = `protocol`
     result["documentPath"] = `documentPath`
+    if let value = `ifVersion` { result["ifVersion"] = value }
+    if let value = `command` { result["command"] = value }
     result["ops"] = `ops`
     if let value = `base` { result["base"] = value }
     if let value = `attachments` { result["attachments"] = value }
@@ -1083,31 +1101,6 @@ public struct SocketReplyHeader: Decodable, Sendable {
     guard ok ? method != nil : (code != nil && error != nil) else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid socket reply header"))
     }
-  }
-}
-
-public struct SocketDiscovery: Sendable {
-  public var `socket`: String
-  public var `documentPath`: String
-
-  public init(`socket`: String, `documentPath`: String) {
-    self.`socket` = `socket`
-    self.`documentPath` = `documentPath`
-  }
-
-  /// Validate the envelope with Envelope.valid before mapping it.
-  public init(json: [String: Any]) throws {
-    guard let `socket` = json["socket"] as? String else { throw ContractMappingError.field("SocketDiscovery.socket") }
-    self.`socket` = `socket`
-    guard let `documentPath` = json["documentPath"] as? String else { throw ContractMappingError.field("SocketDiscovery.documentPath") }
-    self.`documentPath` = `documentPath`
-  }
-
-  public var json: [String: Any] {
-    var result: [String: Any] = [:]
-    result["socket"] = `socket`
-    result["documentPath"] = `documentPath`
-    return result
   }
 }
 

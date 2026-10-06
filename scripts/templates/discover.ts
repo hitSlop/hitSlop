@@ -1,8 +1,8 @@
 import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exists } from "../../packages/cli/src/fs";
-import { projectSlug } from "../../packages/cli/src/build";
+import { exists } from "../../packages/hitslop/src/cli/fs";
+import { projectSlug } from "../../packages/hitslop/src/cli/build";
 
 export type TemplateSource = { slug: string; source: string; bundled: boolean };
 

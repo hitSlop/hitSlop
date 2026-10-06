@@ -12,11 +12,11 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
   file (one SQLite database holding the app and its saved state), the writer lock and the
   save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
-  (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
+  (`packages/hitslop/src/shell`) holds no CRDT; `packages/hitslop/src/sdk` is the author SDK, and slops
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
-  (`~/.hitslop/live`). Closed edits never start WebKit or run authored code.
+  (`~/.hitslop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
 - **TypeBox owns the wire.** Run `bun run schema:generate`; never edit generated files.
 - **Writes are async.** They resolve after the snapshot updates. `change` collectors
   are synchronous. Reads come from immutable snapshots. Preserve `$id` identity. Every
@@ -46,17 +46,31 @@ every document a released build wrote. Downgrades are not supported.
   SQLite storage version (`user_version`; forward migration under the writer lock) or
   the document layout (read it, or migrate losslessly). The markers are requirements,
   not release numbers; refactors never raise them. A build refuses a newer marker with
-  `requires_update` and writes nothing.
+  `requires_update` and writes nothing. The Mac app and the npm packages share one
+  release version, which never stands for compatibility.
 - App format changes (the `app` row, assets, artwork) raise `packageFormat`; app-facing
-  behavior raises `runtimeABI`. These requirements evolve independently. Checks that run
-  on open are versioned by `packageFormat`, so tightening an authoring rule never
-  rejects a saved document; a security fix that must reject old documents needs an
-  assessment and a recovery path for their data.
+  behavior raises `runtimeABI`. These requirements evolve independently. App limits and
+  the checks that run on open are versioned by `packageFormat`; persistence limits
+  (storage size and updates, attachments) by the storage version, never lowered for a
+  released one and raised only with it. Tightening an authoring rule never rejects a
+  saved document or stops one from being edited and saved, and an accepted edit stays
+  readable under the markers its save writes. A security fix that must reject old
+  documents needs an assessment and a recovery path for their data.
+- Installing hitSlop never replaces the app inside an existing document; upgrading a
+  document's app is an explicit operation. Only a write under the writer lock migrates a
+  file: reads that only display it (Quick Look, the catalog, `get`, export) never do.
 - Public boundaries grow additively: `ctx` and handle methods (new object-handle members
   start with `$`; reserved field names never grow), error codes (apps treat unknown
-  ones as outcomes), `--slop-*`, `data-hitslop-root`, the embed relay, and the command
-  protocol (`--client-protocol`, and `protocol` in each socket request). A change an old app cannot run raises
-  `runtimeABI` and keeps the old behavior through an adapter. Internals behind them are free.
+  ones as outcomes), `--slop-*`, `data-hitslop-root` and the embed relay. A change an old
+  app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
+  Internals behind them are free.
+- The command protocol is exact: each side serves one protocol, keeps no adapters for
+  older programs, and refuses any other before touching a document, naming the older
+  side to update. Its refusal path never changes: `--client-protocol N` as the first
+  argument, exit status 2 and one stderr line; the live discovery record (`socket` and
+  `documentPath`; other fields are ignored); newline framing; `protocol` read before any
+  other check; and the reply `{ok: false, code: "rejected", reason: "requires_update",
+  error}`.
 - Upgrade Loro (pinned exactly) only with the corpus passing. The engine and the helper
   ship in one bundle with one core build; across builds, the CLI, engine and live owner
   meet only through the command protocol.

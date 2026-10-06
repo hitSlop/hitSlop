@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, onMount } from "svelte";
-  import { attachments, bindText, capture, resizeWindow } from "@hitslop/document/svelte";
-  import { isDocumentError, isRejected } from "@hitslop/document";
+  import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
+  import { isDocumentError, isRejected } from "hitslop";
   import doc from "./schema";
   let shown: HTMLParagraphElement;
   let input: HTMLTextAreaElement;

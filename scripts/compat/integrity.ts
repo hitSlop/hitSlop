@@ -1,10 +1,8 @@
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
-import { lstat, readdir, readFile, mkdtemp, rm } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { digest, fileDigest, repository } from "../lib/artifacts";
-import { exec } from "../../packages/cli/src/process";
+import { fileDigest, repository } from "../lib/artifacts";
 import type { Release } from "./corpus";
 
 /** Fingerprint producing inputs, excluding the corpus-only commit and build outputs. */
@@ -15,7 +13,7 @@ export async function sourceFingerprint(root = repository): Promise<string> {
   const inputs = [...new Set(out.split("\0"))].filter(path =>
     /^(Cargo\.(toml|lock)|rust-toolchain\.toml|bun\.lock|package\.json|tsconfig[^/]*\.json)$/.test(path) ||
     /^(crates|scripts|apps\/apple|examples\/slops|tests\/abi|tests\/fixtures)\//.test(path) ||
-    /^packages\/(?:document|shell|schema|cli)\/(?:src\/|templates\/|skills\/|package\.json$)/.test(path),
+    /^packages\/(?:hitslop)\/(?:src\/|generated\/|acceptance\/|templates\/|skills\/|package\.json$)/.test(path),
   ).sort();
   const hash = createHash("sha256");
   for (const path of inputs) {
@@ -31,20 +29,6 @@ export async function sourceFingerprint(root = repository): Promise<string> {
   return hash.digest("hex");
 }
 
-
-/** Path + bytes, never tar timestamps or compression metadata. File engines are left out:
- * native executables differ by machine even from the same sources, so each is checked by
- * the core build its `engine.json` records instead (verifyCandidate, release/bundle.ts). */
-export async function archiveDigest(archive: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-archive-"));
-  try {
-    const child = Bun.spawn(["/usr/bin/tar", "-xzf", archive, "-C", root], { stdout: "pipe", stderr: "pipe" });
-    const error = await new Response(child.stderr).text();
-    assert.equal(await child.exited, 0, error);
-    await rm(join(root, "package/engine"), { recursive: true, force: true });
-    return await digest(join(root, "package"));
-  } finally { await rm(root, { recursive: true, force: true }); }
-}
 
 export async function corpusFiles(root: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
@@ -63,6 +47,11 @@ export async function corpusFiles(root: string): Promise<Record<string, string>>
 }
 
 export async function verifyCorpus(root: string, release: Release) {
+  if (release.frozen) {
+    assert.ok(release.acceptance && Object.keys(release.acceptance).length >= 2, "Missing frozen acceptance records");
+    for (const [path, hash] of Object.entries(release.acceptance))
+      assert.equal(await fileDigest(join(repository, path)), hash, `Changed released acceptance: ${path}`);
+  }
   assert.deepEqual(await corpusFiles(root), release.files, `${release.release}: corpus files changed or are missing`);
   assert.ok(Object.keys(release.storage).length > 0, "No saved documents");
   for (const name of Object.keys(release.storage)) {
@@ -73,17 +62,12 @@ export async function verifyCorpus(root: string, release: Release) {
   }
   for (const name of ["conformance", "conformance-compacted", "fixture-checklist", "fixture-scalars", "fixture-collections"])
     assert.ok(release.storage[name], `Missing required conformance case: ${name}`);
-  for (const path of ["cli/transcript.json", "cli/install/package.json", "cli/install/bun.lock"])
-    assert.ok(release.files[path], `Missing ${path}`);
+  const writer = "engine/darwin-arm64/slop-engine";
+  assert.ok(release.writer && release.files[writer], `${release.release}: no candidate writer`);
+  assert.equal(release.files[writer], release.writer.sha256, `${release.release}: changed candidate writer`);
+  assert.equal(release.writer.buildId, release.producer.coreBuildID, `${release.release}: the writer was built from another core`);
   for (const [slug, hash] of Object.entries(release.templates))
     assert.equal(await fileDigest(join(root, "templates", `${slug}.slop`)), hash, `Changed template: ${slug}`);
-  // A release publishes its captured packages as they are: they carry no machine paths.
-  for (const file of Object.keys(release.files).filter((path) => path.startsWith("cli/") && path.endsWith(".tgz"))) {
-    const unpacked = Buffer.from(Bun.gunzipSync(await readFile(join(root, file))));
-    // Home folders and mounted volumes; spelled out, these would trip hygiene's own scan.
-    for (const marker of ["Users", "Volumes", "home"].map((folder) => `/${folder}/`))
-      assert.ok(!unpacked.includes(marker), `${release.release}: ${file} contains a machine path (${marker}); capture with this build`);
-  }
 }
 
 /** Only the release being published must match current producing inputs. */
@@ -92,14 +76,5 @@ export async function verifyCandidate(root: string, release: Release) {
   for (const [slug, hash] of Object.entries(release.templates)) {
     if (slug === "conformance" || slug.startsWith("fixture-")) continue;
     assert.equal(await fileDigest(join(repository, "generated/templates", `${slug}.slop`)), hash, `Captured template differs from candidate: ${slug}`);
-  }
-  for (const [file, hash] of Object.entries(release.archives)) {
-    const candidate = join(repository, "generated/npm", file);
-    assert.equal(await archiveDigest(candidate), hash, `Captured npm contents differ from candidate: ${file}`);
-    if (!file.startsWith("hitslop-cli-")) continue;
-    // The candidate's own engine, left out of the digest, was built from the captured core.
-    const engine = await exec(["/usr/bin/tar", "-xOzf", candidate, `package/engine/${process.platform}-${process.arch}/engine.json`]);
-    assert.equal(engine.code, 0, `${file}: no file engine for ${process.platform}-${process.arch}`);
-    assert.equal(JSON.parse(engine.stdout).buildId, release.producer.coreBuildID, `${file}: the candidate's engine was built from another core`);
   }
 }

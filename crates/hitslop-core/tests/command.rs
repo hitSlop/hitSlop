@@ -10,7 +10,7 @@ use hitslop_core::{
     store::{Mode, Store},
 };
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
@@ -77,6 +77,25 @@ impl ExportHandler for NoExport {
 }
 
 #[test]
+fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
+    let (_dir, path) = document();
+    let owner = open(&path);
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let discovery: Value = serde_json::from_str(&registry::discovery(&path).unwrap().unwrap()).unwrap();
+    let socket = Path::new(discovery["socket"].as_str().unwrap());
+    let before = std::fs::read(&path).unwrap();
+    // A future protocol can carry a payload larger than this reader permits. Its
+    // preflight must reach the permanent refusal before any payload is transmitted.
+    let request = json!({"protocol": PROTOCOL + 1, "method": "future.batch", "payload": "x".repeat(command::MAX_REQUEST_BYTES + 1)});
+    let refusal = checked(socket::call(socket, &request.to_string()).unwrap());
+    assert_eq!(refusal["code"], "rejected");
+    assert_eq!(refusal["reason"], "requires_update");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    drop(server);
+    close(&owner);
+}
+
+#[test]
 fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     let (_dir, path) = document();
     // An agent's edit reports the rows it inserted; it reads state with `get`.
@@ -138,6 +157,20 @@ fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
     assert!(registry::discovery(&path).unwrap().is_none());
     server.publish().unwrap();
     assert!(registry::discovery(&path).unwrap().is_some());
+    // A discovery record a later build extends still reaches the owner: a client reads only
+    // `socket` and `documentPath`, so a client of any age hears the owner's answer.
+    let record = std::fs::read_dir(support::registry_folder())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|file| {
+            file.extension().is_some_and(|e| e == "json")
+                && std::fs::read_to_string(file).is_ok_and(|text| text.contains(&*path.to_string_lossy()))
+        })
+        .expect("the published discovery record");
+    let mut extended: Value = serde_json::from_str(&std::fs::read_to_string(&record).unwrap()).unwrap();
+    extended["addedByALaterBuild"] = json!({"anything": true});
+    std::fs::write(&record, extended.to_string()).unwrap();
+    assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 1);
     close(&owner);
     server.stop();
     assert!(!server.path().exists());
@@ -153,13 +186,22 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     let malformed = checked(socket::call(server.path(), r#"{"protocol":1,"method":"surprise"}"#).unwrap());
     assert_eq!(malformed["code"], "rejected");
-    for (protocol, update) in [(9_999, "update hitSlop"), (0, "update @hitslop/cli")] {
-        let mut newer = batch(&path);
-        newer["protocol"] = protocol.into();
-        newer["surprise"] = "a field of a later protocol".into();
-        let refused = checked(socket::call(server.path(), &newer.to_string()).unwrap());
-        assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("requires_update")));
-        assert!(refused["error"].as_str().unwrap().contains(update), "{refused}");
+    // The permanent refusal path: another protocol, even with a method this build has never
+    // heard of, gets exactly this flat reply, naming the side to update.
+    for (protocol, update) in [(2, "update hitSlop"), (9_999, "update hitSlop"), (0, "update the hitSlop CLI")] {
+        for mut other in [batch(&path), json!({"documentPath": path, "method": "a-later-method"})] {
+            other["protocol"] = protocol.into();
+            other["surprise"] = "a field of another protocol".into();
+            let refused = checked(socket::call(server.path(), &other.to_string()).unwrap());
+            let mut keys: Vec<_> = refused.as_object().unwrap().keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(keys, ["code", "error", "ok", "reason"], "{refused}");
+            assert_eq!(
+                (refused["ok"].as_bool(), refused["code"].as_str(), refused["reason"].as_str()),
+                (Some(false), Some("rejected"), Some("requires_update"))
+            );
+            assert!(refused["error"].as_str().unwrap().contains(update), "{refused}");
+        }
     }
     assert_eq!(
         checked(command::serve(&owner, &batch(&path).to_string(), None, Instant::now() - Duration::from_millis(1)))["code"],
@@ -193,12 +235,9 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
         partial.push(client);
     }
     std::thread::sleep(Duration::from_millis(100));
-    let mut excess = UnixStream::connect(server.path()).unwrap();
-    excess.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-    let _ = excess.write_all(get.as_bytes());
-    let _ = excess.write_all(b"\n");
-    let result = excess.read(&mut [0u8; 1]);
-    assert!(matches!(result, Ok(0)) || result.is_err(), "client limit admitted a reply");
+    // Use the bounded client: on macOS, setting SO_RCVTIMEO after the server has
+    // already rejected and closed an excess connection can itself fail with EINVAL.
+    assert!(socket::call(server.path(), &get).is_err(), "client limit admitted a reply");
     drop(partial);
     close(&owner);
     server.stop();
@@ -244,7 +283,11 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
                     }
                     Err(error) => panic!("{error}"),
                 };
-                line(&mut stream);
+                let input: Value = serde_json::from_str(&line(&mut stream)).unwrap();
+                if input["method"] == "hello" {
+                    writeln!(stream, "{}", json!({"ok":true,"method":"hello"})).unwrap();
+                    continue;
+                }
                 commands += 1;
                 writeln!(stream, "{refusal}").unwrap();
             }
@@ -270,6 +313,10 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     let listener = mock(&owner, dir.path());
     let actor = owner.clone();
     let peer = std::thread::spawn(move || {
+        let (mut hello, _) = listener.accept().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&line(&mut hello)).unwrap()["method"], "hello");
+        writeln!(hello, "{}", json!({"ok":true,"method":"hello"})).unwrap();
+        drop(hello);
         let (mut edit, _) = listener.accept().unwrap();
         let input = line(&mut edit);
         let applied = checked(command::serve(&actor, &input, None, Instant::now() + Duration::from_secs(5)));

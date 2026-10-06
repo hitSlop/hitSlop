@@ -8,7 +8,7 @@
 //
 //   https://hitslop.com/embed/youtube.html#v=<11-character id>[&controls=1][&autoplay=0][&start=<seconds>][&cc=1]
 //
-// Use the SDK helper (`@hitslop/document/embed`) instead of writing this URL by hand.
+// Use the SDK helper (`hitslop/embed`) instead of writing this URL by hand.
 const playerOrigin = "https://www.youtube-nocookie.com";
 const commands = new Set(["playVideo", "pauseVideo", "seekTo", "setVolume", "mute", "unMute"]);
 

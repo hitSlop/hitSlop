@@ -3,7 +3,7 @@ import Brand from "./Brand.svelte";
 import { checklistView } from "./model";
 import { ui } from "./ui.svelte";
 
-  import { bindText } from "@hitslop/document/svelte";
+  import { bindText } from "hitslop/svelte";
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
@@ -14,6 +14,7 @@ import { ui } from "./ui.svelte";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import doc from "./schema";
+  import * as actions from "./commands";
 
 const { visible, filed, finished, ratio } = $derived(checklistView(doc.current));
 
@@ -48,7 +49,7 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
     adding = true;
     // A refused insert is reported by the runtime and leaves the draft for retry.
     try {
-      await doc.fields.tasks.insert({text, done:false, archived:false});
+      await actions.addTask({ text });
       if (draft === submitted) draft = "";
       composer?.focus();
     } finally { adding = false; }
@@ -64,12 +65,11 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
     composer?.focus();
   }
   async function fileFinished() {
-    const done = visible.filter(task => task.done);
-    await doc.change(tx => { for (const task of done) tx.at(task).archived.set(true); });
-    notice = `${done.length} ${done.length === 1 ? "task" : "tasks"} filed.`;
+    const count = await actions.archiveFinished();
+    notice = `${count} ${count === 1 ? "task" : "tasks"} filed.`;
   }
   async function restore(task: (typeof filed)[number]) {
-    await doc.change(tx => { const row = tx.at(task); row.archived.set(false); row.done.set(false); });
+    await actions.restoreTask({ id: task.$id });
     notice = "Task moved back to your list.";
   }
   function openActions(id: string, button: HTMLElement) {

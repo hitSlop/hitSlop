@@ -12,7 +12,7 @@ const shellBudget = 64 * 1024;
 export async function buildShell() {
   const stage = await mkdtemp(join(tmpdir(), "hitslop-shell-"));
   try {
-    await cp(join(repository, "packages/shell/src/boot.js"), join(stage, "boot.js"));
+    await cp(join(repository, "packages/hitslop/src/shell/boot.js"), join(stage, "boot.js"));
     await build({
       configFile: false,
       logLevel: "warn",
@@ -25,7 +25,7 @@ export async function buildShell() {
         modulePreload: false,
         // One module exporting `boot`, which boot.js imports.
         rolldownOptions: {
-          input: join(repository, "packages/shell/src/boot.ts"),
+          input: join(repository, "packages/hitslop/src/shell/boot.ts"),
           preserveEntrySignatures: "strict",
           output: { format: "es", entryFileNames: "index.js" },
         },

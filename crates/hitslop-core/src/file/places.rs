@@ -27,7 +27,7 @@ struct Places {
 impl Places {
     fn current() -> Self {
         let home = crate::registry::home();
-        let account = home.map(|home| home.join(".hitslop/templates"));
+        let account = home.as_ref().map(|home| home.join(".hitslop/templates"));
         // A development app's catalog, which replaces the account's in the listing.
         let development = std::env::var_os("HITSLOP_TEMPLATES_ROOT").filter(|root| !root.is_empty()).map(PathBuf::from);
         // The app's bundled starters, for the app itself (`Contents/MacOS`) and the tools
@@ -40,6 +40,25 @@ impl Places {
                 contents.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Contents"))
                     && contents.parent().and_then(Path::extension).is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
             });
+        // The independently installed npm engine also discovers the installed app's
+        // starters. Explicit development helpers select their own bundle when present.
+        let contents = contents.or_else(|| {
+            let named = std::env::var_os("HITSLOP_NATIVE_CLI")
+                .and_then(|path| fs::canonicalize(path).ok())
+                .and_then(|path| path.parent()?.parent().map(Path::to_owned))
+                .filter(|path| path.file_name().is_some_and(|name| name == "Contents"));
+            named
+                .into_iter()
+                .chain(
+                    [
+                        Some(PathBuf::from("/Applications/hitSlop.app/Contents")),
+                        home.as_ref().map(|home| home.join("Applications/hitSlop.app/Contents")),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                )
+                .find(|path| path.join("Resources/StarterTemplates").is_dir())
+        });
         let bundled = contents.map(|contents| contents.join("Resources/StarterTemplates"));
         let (installed, unlisted) = match development {
             Some(root) => (Some(root), account),

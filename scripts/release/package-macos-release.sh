@@ -39,7 +39,7 @@ if [ -z "$marketing_version" ] || [ -z "$build_version" ]; then
 fi
 
 if [ -n "${GITHUB_REF_NAME:-}" ]; then
-  expected="macos-v$marketing_version"
+  expected="v$marketing_version"
   if [ "$GITHUB_REF_NAME" != "$expected" ]; then
     echo "Git tag $GITHUB_REF_NAME does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
     exit 78
@@ -47,7 +47,7 @@ if [ -n "${GITHUB_REF_NAME:-}" ]; then
 fi
 
 if [ -z "$feed_prefix" ]; then
-  feed_prefix="https://github.com/hitSlop/hitslop/releases/download/macos-v${marketing_version}/"
+  feed_prefix="https://github.com/hitSlop/hitslop/releases/download/v${marketing_version}/"
 fi
 
 if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -F "$identity" >/dev/null; then
@@ -140,12 +140,10 @@ assert_arm64_only() {
 
 assert_arm64_only "$app/Contents/MacOS/hitSlop"
 assert_arm64_only "$app/Contents/Helpers/hitslop-native"
-assert_arm64_only "$app/Contents/Helpers/slop-engine"
 
 echo "Signing nested helper and app…"
 /usr/bin/codesign --force --timestamp --sign "$identity" "$app/Contents/Helpers/HitSlopApple_HitSlopDocument.bundle"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-native"
-/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/slop-engine"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
 /usr/bin/codesign --force --timestamp --options runtime \
   --entitlements "$project_dir/App/macOS/hitSlop.entitlements" \
@@ -162,7 +160,7 @@ if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
       HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
       bun test ./tests/native/crash.native.test.ts
     # Every released document still reads, renders and edits with the signed helper.
-    HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" HITSLOP_COMPAT_INSTALLED=1 \
+    HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
       bun test ./tests/native/compat-replay.native.test.ts
   )
 fi

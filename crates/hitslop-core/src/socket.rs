@@ -114,15 +114,27 @@ fn write_line(stream: &mut UnixStream, input: &str, deadline: Instant) -> Result
 }
 /// The helper's one exchange. Mutations are never retried here, including partial writes.
 pub fn call(path: &Path, input: &str) -> Result<String> {
+    let request: serde_json::Value =
+        serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;
+    let hello = serde_json::json!({"method": "hello", "protocol": request["protocol"]}).to_string();
+    let response = exchange(path, &hello, Some(4096))?;
+    if !crate::envelope::hello_success(&response) {
+        // Return a refusal unchanged. The command router validates the failure header;
+        // no document payload has been sent, even if its limit changed across versions.
+        return Ok(response);
+    }
     if input.len() > command::MAX_REQUEST_BYTES {
         return Err(Failure::rejected(Code::InvalidRequest, "Oversized socket request"));
     }
+    exchange(path, input, None)
+}
+fn exchange(path: &Path, input: &str, reply_limit: Option<usize>) -> Result<String> {
     let mut stream =
         UnixStream::connect(path).map_err(|_| io("Live document unavailable; writer lock remains authoritative"))?;
     configure(&stream)?;
     let deadline = Instant::now() + command::CLIENT_TIMEOUT;
     write_line(&mut stream, input, deadline)?;
-    read_line(&mut stream, None, deadline)
+    read_line(&mut stream, reply_limit, deadline)
 }
 /// The most clients served at once; a connection past it is closed unanswered.
 const CLIENTS: usize = 16;
@@ -243,7 +255,8 @@ fn accept(shared: &Arc<Shared>, mut stream: UnixStream) {
             let response = if worker.stopped.load(Ordering::Acquire) {
                 command::failure(Failure::new(FailureKind::Closing, "Socket server is closing"), false, false)
             } else {
-                command::serve(&worker.owner, &input, Some(&worker.exporter), deadline)
+                command::preflight(&input)
+                    .unwrap_or_else(|| command::serve(&worker.owner, &input, Some(&worker.exporter), deadline))
             };
             let _ = write_line(&mut stream, &response, deadline);
         }

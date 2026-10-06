@@ -1,6 +1,6 @@
 /** Real WebKit pointer and resize diagnostics; screenshots alone cannot establish parity. */
 import { webkit } from "playwright";
-import { startDev } from "../../packages/cli/src/dev";
+import { startDev } from "../../packages/hitslop/src/cli/dev";
 import { resolve } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { buildShapeLabVariant, shapeLabVariants, type ShapeLabVariant } from "../lib/native-fixtures";

@@ -18,7 +18,7 @@ rows in the file, stored and read through the core. The shared Rust owner runs o
 in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
 events; `DocumentSession` delivers ordered publications to the page. The private
 `@hitslop/shell` package holds immutable snapshots and no CRDT;
-`@hitslop/document` contains the author SDK. Never add a second document engine, a JSON
+`hitslop` contains the author SDK. Never add a second document engine, a JSON
 mirror, a JavaScriptCore evaluator or app-specific Swift schemas.
 
 **One edit path.** The CLI forwards to the live owner's socket or takes the lock and runs
@@ -35,7 +35,7 @@ code), replaced, closing, invalidated, save failed, or unknown. Only unknown lea
 outcome uncertain; after it, run `slop get` before another edit. A failed save keeps
 ownership and shows a native retry; close and export flush first.
 
-**Contracts.** TypeBox in packages/schema generates the socket, page, manifest and
+**Contracts.** TypeBox in packages/hitslop/src/schema generates the socket, page, manifest and
 core wire; run `bun run schema:generate` and never edit generated files. The core checks
 envelopes and manifests against those schemas and parses payloads strictly. WebKit
 correlates page replies; Swift checks the sender and supplies its native view token.

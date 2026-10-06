@@ -132,6 +132,9 @@ impl AssetReader {
         Self { conn }
     }
     fn row(&self, key: &str) -> Result<Option<(i64, Encoding, u64)>> {
+        if key.starts_with("__commands/") {
+            return Ok(None);
+        }
         self.conn
             .prepare_cached("SELECT rowid, encoding, size FROM assets WHERE path=?")
             .and_then(|mut s| s.query_row([key], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64))).optional())

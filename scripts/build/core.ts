@@ -7,7 +7,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { existsSync } from "node:fs";
-import { exec } from "../../packages/cli/src/process";
+import { exec } from "../../packages/hitslop/src/cli/process";
+import platforms from "./platforms.json";
 
 /** Release binaries name dependency sources by a fixed prefix instead of this machine's
  * Cargo home, so none carries a local path, and builds of the same sources on different
@@ -69,7 +70,7 @@ export async function buildCoreWasm() {
 
 /** Every platform a published CLI carries a file engine for, built by the engines workflow
  * (`.github/workflows/engines.yml`); a local build covers only this machine. */
-export const enginePlatforms = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] as const;
+export const enginePlatforms = platforms.map(item => item.platform);
 
 /** The CLI's file engine (`cargoOutput("slop-engine")`), from the same locked core. On a Mac
  * it builds with the app's core library: alone, the engine's graph would differ (the

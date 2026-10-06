@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, cp, realpath } from "
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
-import { exec } from "../../packages/cli/src/process";
+import { exec } from "../../packages/hitslop/src/cli/process";
 import { debugHelper } from "../../scripts/lib/native";
 
 const native = process.env.HITSLOP_PACKED_NATIVE === "1";
@@ -28,11 +28,9 @@ beforeAll(async () => {
   await mkdir(bin);
   await symlink(process.execPath, join(bin, "bun"));
   noNode = { PATH: bin + ":/usr/bin:/bin:/usr/sbin:/sbin" };
-  for (const name of ["cli", "document", "schema"]) {
-    const metadata = JSON.parse(await readFile(join(repository, "packages", name, "package.json"), "utf8"));
-    versions[name] = metadata.version;
-    tarballs[metadata.name] = resolve(repository, `generated/npm/hitslop-${name}-${metadata.version}.tgz`);
-  }
+  const metadata = JSON.parse(await readFile(join(repository, "packages/hitslop/package.json"), "utf8"));
+  versions.hitslop = metadata.version;
+  tarballs.hitslop = resolve(repository, `generated/npm/hitslop-${metadata.version}.tgz`);
 });
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
@@ -46,29 +44,27 @@ async function run(args: string[], cwd: string, overrides: Record<string, string
   return stdout;
 }
 const project = () => join(root, "my-slop");
-const cli = () => join(root, "node_modules/@hitslop/cli/src/cli.ts");
+const cli = () => join(root, "node_modules/hitslop/src/cli/cli.ts");
 const built = () => join(project(), "dist/my-slop.slop");
 
-test("the document SDK installs and type-checks alone, without Svelte or the workspace", async () => {
+test("the public SDK imports and type-checks outside the workspace", async () => {
   await writeFile(
     join(coreRoot, "package.json"),
-    JSON.stringify({ private: true, dependencies: { "@hitslop/document": tarballs["@hitslop/document"] }, overrides: { "@hitslop/schema": tarballs["@hitslop/schema"] } }),
+    JSON.stringify({ private: true, dependencies: { "hitslop": tarballs["hitslop"] } }),
   );
   await run([process.execPath, "install"], coreRoot, noNode);
-  expect(JSON.parse(await readFile(join(repository, "packages/shell/package.json"), "utf8")).private).toBe(true);
   await run(
     [
       process.execPath,
       "-e",
       `
     import {strict as assert} from "node:assert";
-    import {defineDocument, defineSlop, s} from "@hitslop/document";
+    import {defineDocument, defineSlop, s} from "hitslop";
     const schema = defineDocument({title: s.text()});
     assert.ok(schema.descriptor);
     assert.equal(defineSlop({title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], presentation: {width: 320, height: 240}, theme: {accent: "#123456"}, schema, initial: {title: ""}}).schema, schema);
-    assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
-    assert.throws(() => Bun.resolveSync("@hitslop/shell", process.cwd()));
+    for (const name of ["abi", "internal", "schema", "shell"]) assert.throws(() => Bun.resolveSync("hitslop/" + name, process.cwd()));
   `,
     ],
     coreRoot,
@@ -78,11 +74,10 @@ test("the document SDK installs and type-checks alone, without Svelte or the wor
   await writeFile(
     join(coreRoot, "consumer.ts"),
     `
-    import type {SlopApp} from "@hitslop/document/abi";
-    import type {HelperRequest} from "@hitslop/schema/socket";
-    const app: SlopApp = {descriptor: {}, mount: (ctx, target) => (target.textContent = String(ctx.document.current), {})};
-    const read: HelperRequest = {documentPath: "/doc", method: "get"};
-    void app; void read;
+    import {defineDocument, s} from "hitslop";
+    const definition = defineDocument({title: s.text()});
+    const value: import("hitslop").Input<typeof definition.descriptor> = {title: "Hello"};
+    void value;
   `,
   );
   await run(
@@ -93,13 +88,12 @@ test("the document SDK installs and type-checks alone, without Svelte or the wor
 }, minutes(5));
 
 test("the installed CLI creates, checks and builds a project with the engine it ships", async () => {
-  await writeFile(join(root, "package.json"), JSON.stringify({ private: true, dependencies: { "@hitslop/cli": tarballs["@hitslop/cli"] }, overrides: tarballs }));
+  await writeFile(join(root, "package.json"), JSON.stringify({ private: true, dependencies: { "hitslop": tarballs["hitslop"] }, overrides: tarballs }));
   await run([process.execPath, "install"], root, noNode);
   // The folder's name is the slug; the path above it holds spaces.
-  await run([process.execPath, "x", "--no-install", "@hitslop/cli", "init", project()], root, noNode);
+  await run([process.execPath, "x", "--no-install", "hitslop", "init", project()], root, noNode);
   const metadata = JSON.parse(await readFile(join(project(), "package.json"), "utf8"));
-  expect(metadata.dependencies["@hitslop/document"]).toBe(versions.document);
-  expect(metadata.devDependencies["@hitslop/cli"]).toBe(versions.cli);
+  expect(metadata.devDependencies["hitslop"]).toBe(versions.hitslop);
   metadata.overrides = tarballs;
   await writeFile(join(project(), "package.json"), JSON.stringify(metadata));
   await run([process.execPath, "install"], project(), noNode);
@@ -113,6 +107,13 @@ test("the installed CLI creates, checks and builds a project with the engine it 
   expect(JSON.parse(await run([process.execPath, cli(), "schema", built()], root, noNode)).kind).toBe("object");
   expect(appAsset(built(), "app.css")).toContain(".slop-paper");
   expect(appAsset(built(), "app.js")).not.toContain(repository);
+  const document = join(root, "Command example.slop");
+  await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);
+  const described = JSON.parse(await run([process.execPath, cli(), "describe", document, "--json"], root, noNode));
+  expect(described.commands.addTask.args.properties.text.type).toBe("string");
+  const called = JSON.parse(await run([process.execPath, cli(), "call", document, "addTask", "--args", '{"text":"  From the installed command  "}'], root, noNode));
+  const value = JSON.parse(await run([process.execPath, cli(), "get", document], root, noNode));
+  expect(value.tasks.find((task: { $id: string }) => task.$id === called.result.id)).toMatchObject({ text: "From the installed command", done: false });
 }, minutes(5));
 
 test.if(native)("the global CLI registers, links agent skills, follows upgrades and edits natively", async () => {
@@ -124,28 +125,28 @@ test.if(native)("the global CLI registers, links agent skills, follows upgrades 
   const globalDir = join(bunHome, "install/global");
   await mkdir(globalDir, { recursive: true });
   // Unreleased SDK packages resolve to their tarballs; the CLI itself is installed below.
-  const { "@hitslop/cli": _, ...sdkTarballs } = tarballs;
+  const { "hitslop": _, ...sdkTarballs } = tarballs;
   await writeFile(join(globalDir, "package.json"), JSON.stringify({ overrides: sdkTarballs }));
   const globalEnv = { ...noNode, HOME: home, BUN_INSTALL: bunHome };
   const slop = join(bunHome, "bin/slop");
-  await run([process.execPath, "install", "-g", tarballs["@hitslop/cli"]!], root, globalEnv);
+  await run([process.execPath, "install", "-g", tarballs["hitslop"]!], root, globalEnv);
   await run([slop, "skills", "--all", "--scope", "global"], root, globalEnv);
-  const packagedSkills = await realpath(join(globalDir, "node_modules/@hitslop/cli/.crust/root/skills"));
+  const packagedSkills = await realpath(join(globalDir, "node_modules/hitslop/.crust/root/skills"));
   const agentSkill = (name: string) => join(home, ".agents/skills", name);
   for (const name of ["hitslop", "hitslop-authoring", "hitslop-design", "hitslop-document", "hitslop-cli"])
     expect(await realpath(agentSkill(name))).toBe(join(packagedSkills, name));
   // A later global install serves its skills through the same links.
   const next = join(root, "next");
   await mkdir(next);
-  await run(["/usr/bin/tar", "-xzf", tarballs["@hitslop/cli"]!, "-C", next], root, noNode);
-  const nextVersion = versions.cli + "-next";
+  await run(["/usr/bin/tar", "-xzf", tarballs["hitslop"]!, "-C", next], root, noNode);
+  const nextVersion = versions.hitslop + "-next";
   const nextPackage = join(next, "package");
   const manifestPath = join(nextPackage, "package.json");
   await writeFile(manifestPath, JSON.stringify({ ...JSON.parse(await readFile(manifestPath, "utf8")), version: nextVersion }));
   const cliSkill = join(nextPackage, ".crust/root/skills/hitslop-cli/SKILL.md");
   await writeFile(cliSkill, (await readFile(cliSkill, "utf8")).replace(/version: ".*"/, `version: "${nextVersion}"`));
   await run([process.execPath, "pm", "pack", "--destination", next], nextPackage, noNode);
-  await run([process.execPath, "install", "-g", join(next, `hitslop-cli-${nextVersion}.tgz`)], root, globalEnv);
+  await run([process.execPath, "install", "-g", join(next, `hitslop-${nextVersion}.tgz`)], root, globalEnv);
   expect(await readFile(join(agentSkill("hitslop-cli"), "SKILL.md"), "utf8")).toContain(`version: "${nextVersion}"`);
   const document = join(root, "Document.slop");
   await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);
@@ -225,6 +226,11 @@ test("the installed CLI previews the project with its own page shell and core", 
           () => getComputedStyle(document.querySelector(".slop-eyebrow")!).color === "rgb(11, 22, 33)",
         );
         expect(await frame.getByRole("textbox", { name: "List title", exact: true }).inputValue()).toBe("Installed SDK works");
+        await frame.getByRole("textbox", { name: "New task", exact: true }).fill("From the page command");
+        await frame.getByRole("button", { name: "Add", exact: true }).click();
+        await page.frames().find((frame) => frame.url().includes("/app.html"))!.waitForFunction(
+          () => [...document.querySelectorAll<HTMLInputElement>('[aria-label="Task text"]')].some(input => input.value === "From the page command"),
+        );
       } finally {
         await browser.close();
       }

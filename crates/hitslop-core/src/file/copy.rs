@@ -115,7 +115,9 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool
         configure_writer(&output)?;
     }
     if create {
-        rows::add_document(&output)?;
+        let tx = super::begin_write(&output, "create document")?;
+        rows::add_document(&tx)?;
+        tx.commit()?;
     }
     if let Some(clean) = clean {
         clean(&output)?;

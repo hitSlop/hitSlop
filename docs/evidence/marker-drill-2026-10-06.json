@@ -1,0 +1,20 @@
+{
+  "spike": "A, marker fire drill",
+  "date": "2026-10-06",
+  "machine": "development M1",
+  "base": "0f05fe6f plus the uncommitted tree",
+  "olderBuild": { "engineBuildId": "30ef53620cbe276c", "storage": 1, "packageFormat": 1, "runtimeABI": 1 },
+  "raised": { "storage": "1 -> 2 (a local table)", "packageFormat": "1 -> 2 (required manifest locale)", "runtimeABI": "1 -> 2 (ctx.platform)" },
+  "rustSuite": { "tests": 203, "passed": 203, "skipped": 4 },
+  "nativePageReplay": { "scenarios": 7, "passed": 7 },
+  "displayReadOfOldStorage": {
+    "fileMiB": 132,
+    "inMemoryMigratedCopyMs": { "best": 107, "worst": 262 },
+    "inMemoryMigratedCopyMemoryMiB": 132,
+    "readInPlaceMs": 0.4
+  },
+  "crashInsideMigration": {
+    "spilled": { "fileBytesBeforeReopen": 1101824, "originalBytes": 159744, "reopenedByNew": "storage 1, bytes identical", "reopenedByOld": "storage 1, bytes identical" },
+    "notSpilled": { "reopenedByNew": "storage 1, bytes identical", "reopenedByOld": "storage 1, bytes identical" }
+  }
+}

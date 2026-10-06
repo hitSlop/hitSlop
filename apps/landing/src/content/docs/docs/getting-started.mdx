@@ -12,13 +12,13 @@ Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and bu
 The public CLI workflow is:
 
 ```sh
-bunx @hitslop/cli init tiny-counter
+bunx hitslop init tiny-counter
 cd tiny-counter
 bun install
 bun run dev
 ```
 
-Alternatively, install the CLI with `bun install -g @hitslop/cli` and run `slop init tiny-counter`. The generated project pins its own CLI and SDK versions; prefer its `bun run` scripts after creation.
+Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
 
 See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, moving data between documents, export, and agent skill installation.
 
@@ -31,6 +31,7 @@ The final question asks which agent CLI should build it for you. Choose an insta
 Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. The directory's name is the app's slug. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
 - `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
+- `commands.ts` exports named actions shared by the page and CLI; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
 - `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; the builder includes it automatically.
@@ -44,14 +45,14 @@ The browser preview uses disposable memory. Refreshing resets document state. Vi
 Replace the starter's data definition:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 export default defineDocument({ title: s.text(), count: s.counter() });
 ```
 
 Then describe the counter in `slop.ts`. Its `initial` values must fit the new schema, and its `theme` declares the colors `styles.css` uses below:
 
 ```ts title="slop.ts"
-import { defineSlop } from "@hitslop/document";
+import { defineSlop } from "hitslop";
 import schema from "./schema";
 
 export default defineSlop({
@@ -66,17 +67,31 @@ export default defineSlop({
 });
 ```
 
+Replace the starter's `commands.ts` with a counter action:
+
+```ts title="commands.ts"
+import { Type } from "hitslop";
+import doc from "./schema";
+
+export const countOne = doc.command({
+  description: "Count one more.",
+  args: Type.Object({}, { additionalProperties: false }),
+  run({ tx }) { tx.fields.count.increment(); },
+});
+```
+
 Replace `App.svelte` with:
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { bindText } from "@hitslop/document/svelte";
+  import { bindText } from "hitslop/svelte";
   import doc from "./schema";
+  import { countOne } from "./commands";
 </script>
 <main class="counter">
   <input aria-label="Counter title" use:bindText={doc.fields.title} />
   <p class="counter-value">{doc.current.count}</p>
-  <button onclick={() => doc.fields.count.increment()}>
+  <button onclick={() => countOne()}>
     Count one
   </button>
 </main>

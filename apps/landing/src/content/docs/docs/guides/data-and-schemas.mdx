@@ -8,7 +8,7 @@ The Rust document owner (on Loro), shared by the hitSlop app and CLI, merges and
 ## Define the shape
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 export default defineDocument({
   title: s.text(),
   archived: s.boolean(),
@@ -58,7 +58,7 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 ```svelte
 <script lang="ts">
-  import { bindText } from "@hitslop/document/svelte";
+  import { bindText } from "hitslop/svelte";
   import doc from "./schema";
 </script>
   <input aria-label="Title" use:bindText={doc.fields.title} />
@@ -127,10 +127,10 @@ The host autosaves, and `await doc.flush()` sends any unsent text, waits for pen
 CLI reads and edits go through the same app-owned core:
 
 ```sh
-bunx @hitslop/cli schema My.slop
-bunx @hitslop/cli get My.slop
-bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
-bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
+bunx hitslop schema My.slop
+bunx hitslop get My.slop
+bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
+bunx hitslop apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
 Edits print `{ids}` and are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
@@ -139,7 +139,7 @@ Every kind's merge rules, error codes and CLI paths are in the [document types r
 
 ### Handling refused edits
 
-Use `isRejected(error)` from `@hitslop/document` when catching a semantic refusal;
+Use `isRejected(error)` from `hitslop` when catching a semantic refusal;
 its `reason` and `opIndex` identify the core rule and operation. Use
 `isDocumentError(error)` to distinguish other document outcomes from application
 errors. Use these guards rather than `instanceof`. An unknown outcome does not prove

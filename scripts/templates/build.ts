@@ -1,6 +1,6 @@
 import { repository } from "../lib/artifacts";
-import { buildTemplate } from "../../packages/cli/src/template";
-import { negotiate } from "../../packages/cli/src/native";
+import { buildTemplate } from "../../packages/hitslop/src/cli/template";
+import { negotiate } from "../../packages/hitslop/src/cli/native";
 import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { discoverTemplates, templateInventory } from "./discover";

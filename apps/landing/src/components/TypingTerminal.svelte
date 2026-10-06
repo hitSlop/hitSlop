@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  // The prompts mirror `slop init` (packages/cli/src/init.ts, agents.ts).
+  // The prompts mirror `slop init` (packages/hitslop/src/cli/init.ts, agents.ts).
   type Step =
     | { kind: "command"; note?: string; text: string }
     | { kind: "prompt"; question: string; text: string }
     | { kind: "choice"; question: string; options: string[] }
     | { kind: "output"; text: string };
   const steps: Step[] = [
-    { kind: "command", note: "Make a project", text: "bunx @hitslop/cli init my-slop" },
+    { kind: "command", note: "Make a project", text: "bunx hitslop init my-slop" },
     { kind: "prompt", question: "What should your slop do?", text: "A packing list for short trips. Group items by bag and show how many are left." },
     { kind: "choice", question: "Which agent CLI should build your slop?", options: ["Codex", "Claude Code", "Gemini CLI", "OpenCode"] },
     { kind: "output", text: "Launching Codex in ~/my-slop" },

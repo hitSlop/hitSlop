@@ -480,6 +480,19 @@ impl Document {
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
     pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
         let batch: Batch = parse(batch)?;
+        if let Some(expected) = &batch.ifVersion
+            && *expected != self.version()
+        {
+            return Err(err(Code::StaleBase, "The document changed since the command read it"));
+        }
+        if let Some(name) = &batch.command
+            && (name.is_empty()
+                || name.len() > 80
+                || !name.starts_with(|c: char| c.is_ascii_lowercase())
+                || !name.chars().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(err(Code::InvalidRequest, "Invalid command name"));
+        }
         if batch.intents.len() > wire::BATCH_INTENTS {
             return Err(err(Code::TooLarge, format!("Batch exceeds {} intents", wire::BATCH_INTENTS)));
         }
@@ -522,13 +535,16 @@ impl Document {
             self.abort(&before)?;
             return Err(e);
         }
-        if origin == Origin::Agent {
+        if let Some(name) = &batch.command {
+            self.doc.set_next_commit_message(&format!("command:{name}"));
+        } else if origin == Origin::Agent {
             self.doc.set_next_commit_message(AGENT);
         }
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
         if published.is_some() {
             match &typed {
+                _ if batch.command.is_some() => self.record(before, None, false),
                 // A merged edit ends the typing run and is its own undo step.
                 Some(typed) if origin != Origin::Agent && typed.merged => self.record(before, None, false),
                 Some(typed) if origin != Origin::Agent => {
@@ -753,5 +769,6 @@ pub mod owner;
 
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod command;
+pub mod describe;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod socket;

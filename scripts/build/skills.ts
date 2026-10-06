@@ -1,4 +1,4 @@
-import { buildSkills } from "../../packages/cli/src/skills-build";
+import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

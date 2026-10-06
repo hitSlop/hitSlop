@@ -1,10 +1,10 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
-import { buildSkills } from "../../packages/cli/src/skills-build";
+import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
 import { buildEngine, cargoOutput } from "./core";
 import { buildShell } from "./shell";
-/** The npm packages (`generated/npm`), each carrying the file engines it ships. */
+/** The npm package (`generated/npm`), carrying the file engines it ships. */
 export async function packPackages() {
   await buildShell();
   await buildSkills();
@@ -13,11 +13,11 @@ export async function packPackages() {
   await mkdir(output, { recursive: true });
 
   /** Removed after packing, so a checkout always runs its fresh build. */
-  const engines = resolve("packages/cli/engine");
+  const engines = resolve("packages/hitslop/engine");
   try {
     const commit = (await new Response(Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout).text()).trim();
     await stageEngines(engines, resolve("generated/engines"), cargoOutput("slop-engine"), commit);
-    for (const name of ["schema", "document", "cli"]) {
+    for (const name of ["hitslop"]) {
       const directory = resolve("packages", name);
       const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
       for (const value of Object.values(metadata.dependencies ?? {}))
@@ -32,7 +32,7 @@ export async function packPackages() {
     }
   } finally {
     await rm(engines, { recursive: true, force: true });
-}
+  }
 }
 
 if (import.meta.main) await packPackages();

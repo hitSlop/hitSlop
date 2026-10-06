@@ -3,7 +3,7 @@
 //! only rules; this module parses bounded JSON and answers whether an envelope matches.
 
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/socket-request.schema.json",
+    path = "../../packages/hitslop/generated/socket-request.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = true, validate = false, iter_errors = false }
@@ -11,7 +11,7 @@
 struct SocketRequest;
 
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/socket-reply.schema.json",
+    path = "../../packages/hitslop/generated/socket-reply.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = true, validate = false, iter_errors = false }
@@ -19,15 +19,21 @@ struct SocketRequest;
 struct SocketReply;
 
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/socket-discovery.schema.json",
+    path = "../../packages/hitslop/generated/socket-discovery.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = true, validate = false, iter_errors = false }
 )]
 struct SocketDiscovery;
 
+#[jsonschema::validator(path = "../../packages/hitslop/generated/socket-hello.schema.json", draft = Draft7)]
+struct SocketHello;
+
+#[jsonschema::validator(path = "../../packages/hitslop/generated/socket-hello-success.schema.json", draft = Draft7)]
+struct SocketHelloSuccess;
+
 #[jsonschema::validator(
-    path = "../../packages/schema/generated/page-request.schema.json",
+    path = "../../packages/hitslop/generated/page-request.schema.json",
     draft = Draft7,
     validate_formats = true,
     methods = { is_valid = true, validate = false, iter_errors = false }
@@ -57,4 +63,11 @@ pub fn is_valid(kind: Envelope, json: &[u8]) -> bool {
         Envelope::SocketDiscovery => SocketDiscovery::is_valid(&value),
         Envelope::PageRequest => PageRequest::is_valid(&value),
     }
+}
+
+pub(crate) fn hello(value: &serde_json::Value) -> bool {
+    SocketHello::is_valid(value)
+}
+pub(crate) fn hello_success(input: &str) -> bool {
+    serde_json::from_str(input).is_ok_and(|value| SocketHelloSuccess::is_valid(&value))
 }

@@ -48,7 +48,7 @@ fn template(path: &Path) -> Result<(OpenedApp, Manifest)> {
     if opened.kind != Kind::Template {
         return Err(invalid("An installed template holds no document"));
     }
-    let manifest: Manifest = serde_json::from_str(&opened.app.manifest).map_err(failed)?;
+    let manifest: Manifest = serde_json::from_str(&opened.manifest).map_err(failed)?;
     if path.file_name() != Some(OsStr::new(&format!("{}.slop", manifest.slug))) {
         return Err(invalid("An installed template's file name must be its slug"));
     }

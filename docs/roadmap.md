@@ -1,6 +1,6 @@
 # Direction
 
-Today hitSlop is a signed Mac app and matching npm authoring packages. People create local
+Today hitSlop is a signed Mac app and one matching npm package. People create local
 documents from bundled or installed templates, edit them in the window or through the CLI
 (their coding agent included), and export PNG and PDF.
 
@@ -33,14 +33,14 @@ In order, with the reasoning in [ideas](ideas.md):
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
 - Give that entry boundary documents: limits at their maximums, every descriptor kind and
-  every window shape form. The parsers and limits an open applies aren't separate readers
-  per `packageFormat`, so the corpus is what keeps them from tightening.
+  every window shape form. Frozen format acceptance and persistence limits keep current
+  authoring rules from rejecting saved documents.
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.
 - Decide whether Time Machine copying a whole document at the current attachment limits
   is acceptable, or lower the limits for launch.
-- Confirm the platforms the CLI's engine ships for (Windows isn't planned).
+- Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows isn't planned).
 - Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
   relies on are not on crates.io. Return to an exact crates.io version once one ships
   them, with the corpus passing.
@@ -62,7 +62,7 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
   in the app, and select the ones that ship.
-- **Worker and worklet assets.** The shared page CSP now comes from `packages/schema`
+- **Worker and worklet assets.** The shared page CSP now comes from `packages/hitslop/src/schema`
   for native and browser pages. Explicit worker policy and build support for worker and
   worklet entry points remain: emit them as files in `assets` so `new Worker` and
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
@@ -73,8 +73,10 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
-- The engine creates and edits documents on macOS and Linux. Mac document commands
-  prefer the engine shipped with the app; authoring validation uses the CLI's engine.
+- The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
+  app links its core and supplies the rendering helper independently.
+- The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
+  the Mac app's release version. Named commands share page and CLI behavior.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
 - Authoring has one generated Svelte entry. `Export.svelte` and `Icon.svelte` remain
   optional; captures use fresh saved-state pages, with a fresh App as the export fallback.
@@ -104,7 +106,8 @@ written against, and the core merges it with what changed since. Closing a large
 trims all history, so sync will need a retention policy compatible with offline replicas,
 and selective undo that preserves remote changes.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than
-overloading `apply`.
+overloading `apply`. Sync gets its own protocol, never the command protocol's number, and
+attachment reclamation must allow for references arriving from other replicas.
 [Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare
 Durable Objects, the SDK additions, and per-person `s.local` state.
 

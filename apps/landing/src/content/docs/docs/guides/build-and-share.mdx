@@ -16,7 +16,7 @@ bun run build
 
 Build validates the manifest and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-Build runs on macOS and Linux and needs only Bun. It refuses a project whose `@hitslop/document` is newer than the CLI supports; update `@hitslop/cli` when it says so.
+Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
 
 ### Finder artwork
 
@@ -45,7 +45,7 @@ For a filled document, use **Share a Copy** in the document window: it saves wha
 For read-only output, export PNG or PDF:
 
 ```sh
-bunx @hitslop/cli export My.slop --format pdf --output My.pdf
+bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
 See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-state capture behavior. Live collaboration is [coming soon](/docs/guides/live-sharing/). Public template publishing and hosted discovery remain future work; file distribution and image/PDF exports work locally today.

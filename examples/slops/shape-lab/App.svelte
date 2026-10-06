@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { bindText, resizeWindow } from "@hitslop/document/svelte";
+  import { bindText, resizeWindow } from "hitslop/svelte";
   import doc from "./schema";
   import variant from "./variant";
   let root: HTMLElement;

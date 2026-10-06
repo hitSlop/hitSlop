@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Build, embed, and sign the native renderer and Rust document engine in an existing .app.
+# Build, embed, and sign the native renderer in an existing .app.
 # Usage: embed-hitslop-native.sh <HitSlop.app>
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -69,46 +69,13 @@ if [ ! -f "$helper" ]; then
   exit 70
 fi
 
-# Build the document engine for exactly the architectures embedded by this host.
-# Its core must match the Swift library; checking IDs catches stale generated bindings.
-# scripts/build/core.ts owns release builds (their graph, and the flags that keep machine
-# paths out of binaries), so the host's engine comes from it, shared with `bun run build`.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"
-cargo=${CARGO:-"$HOME/.cargo/bin/cargo"}
-# `release` while developing; what ships sets `dist` (scripts/build/core.ts, `cargoProfile`).
-profile=${HITSLOP_CARGO_PROFILE:-release}
-set --
-host_arch=$(/usr/bin/uname -m)
-for arch in $archs; do
-  if [ "$arch" = "$host_arch" ]; then
-    bun "$repo_root/scripts/build/core.ts" --engine
-    set -- "$@" "$repo_root/target/$profile/slop-engine"
-    continue
-  fi
-  case "$arch" in
-    arm64) target=aarch64-apple-darwin ;;
-    x86_64) target=x86_64-apple-darwin ;;
-    *) continue ;;
-  esac
-  RUSTFLAGS=$(bun "$repo_root/scripts/build/core.ts" --rustflags) \
-    "$cargo" build --locked --profile "$profile" --manifest-path "$repo_root/Cargo.toml" \
-    --target-dir "$repo_root/target" --target "$target" -p slop-engine
-  set -- "$@" "$repo_root/target/$target/$profile/slop-engine"
-done
-engine="$scratch/slop-engine"
-/usr/bin/lipo -create "$@" -output "$engine"
-if [ "$("$engine" --build-id)" != "$("$helper" --core-build)" ]; then
-  echo "slop-engine and hitslop-native embed different cores; rebuild native bindings" >&2
-  exit 70
-fi
-
 # SwiftPM executables locate Bundle.module resources beside the executable.
 # Host resources are not visible to this independently-built helper.
 /bin/mkdir -p "$app/Contents/Helpers"
+# Remove the retired payload when Xcode reuses an app from before consolidation.
+/bin/rm -f "$app/Contents/Helpers/slop-engine"
 /bin/cp "$helper" "$app/Contents/Helpers/hitslop-native"
 /bin/chmod 755 "$app/Contents/Helpers/hitslop-native"
-/bin/cp "$engine" "$app/Contents/Helpers/slop-engine"
-/bin/chmod 755 "$app/Contents/Helpers/slop-engine"
 
 # Xcode does not automatically sign nested content added by a run script. Use
 # its resolved identity for normal builds and an ad-hoc signature when signing
@@ -132,5 +99,4 @@ for module in HitSlopDocument; do
   /usr/bin/codesign --force --sign "$signing_identity" "$embedded"
 done
 /usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/hitslop-native"
-/usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/slop-engine"
-echo "Embedded hitslop-native and slop-engine in $app/Contents/Helpers"
+echo "Embedded hitslop-native in $app/Contents/Helpers"

@@ -5,16 +5,16 @@ import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { debugHelper } from "../lib/native";
-import { exec } from "../../packages/cli/src/process";
+import { exec } from "../../packages/hitslop/src/cli/process";
 import { strict as assert } from "node:assert";
-import { validate } from "../../packages/schema/src/validation";
-import { ThemeStateSchema, AttachmentInfoSchema, type AttachmentInfo } from "../../packages/schema/src/values";
+import { validate } from "../../packages/hitslop/src/schema/validation";
+import { ThemeStateSchema, AttachmentInfoSchema, type AttachmentInfo } from "../../packages/hitslop/src/schema/values";
 import { Type, type Static } from "typebox";
 
 export const corpus = join(repository, "tests/compat");
 export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
-/** The document engine beside `helper`, the one the CLI selects for it. */
-export const documentEngine = join(dirname(helper), "slop-engine");
+/** The checkout engine, independent of the selected renderer. */
+export const documentEngine = () => resolve(process.env.HITSLOP_ENGINE ?? `target/${process.env.HITSLOP_CARGO_PROFILE || "release"}/slop-engine`);
 
 /** `release.json`: what captured the entry, and whether it is permanent. */
 export type Release = {
@@ -27,8 +27,11 @@ export type Release = {
   inputs: string;
   producer: { coreBuildID: string; shell: string };
   files: Record<string, string>;
+  acceptance?: Record<string, string>;
   templates: Record<string, string>;
-  archives: Record<string, string>;
+  /** The candidate writer: the darwin-arm64 engine that wrote the entry's documents, kept at
+   * `engine/darwin-arm64/slop-engine` so later builds can run it (`compat_writers.rs`). */
+  writer: { buildId: string; commit: string; sha256: string };
   toolchain: Record<string, string>;
   /** Page scenarios run with this clock, so date-dependent apps behave the same later. */
   clock: number;
@@ -47,12 +50,6 @@ export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
  * with page-minted row IDs replaced by `minted-N`. */
 export type Page = { script: "contractTest" | "actions"; actions?: { selector: string; value: string; enter?: boolean }[]; value: unknown };
-/** `cli/transcript.json`: `slop` commands as the entry's release ran them, and what they printed. */
-export type Transcript = {
-  document: string;
-  commands: { args: string[]; code: number; stdout: unknown; outputHash?: string }[];
-};
-
 export async function releases(): Promise<{ name: string; root: string; release: Release }[]> {
   const found = [];
   for (const entry of await readdir(corpus, { withFileTypes: true }).catch(() => [])) {
@@ -83,7 +80,7 @@ export async function readJSON<T>(path: string): Promise<T | undefined> {
 
 /** Runs a `slop` command through this build's CLI and helper, returning its exit code and output. */
 export function slop(args: string[]) {
-  return exec([process.execPath, join(repository, "packages/cli/src/cli.ts"), ...args], {
+  return exec([process.execPath, join(repository, "packages/hitslop/src/cli/cli.ts"), ...args], {
     env: { ...process.env, HITSLOP_NATIVE_CLI: helper },
     timeout: 120_000,
   });
@@ -100,29 +97,4 @@ export async function savedState(document: string): Promise<Expected> {
   const theme = validate(ThemeStateSchema, await slopJSON(["theme", "get", document]), "slop theme get");
   const attachments = validate(Type.Array(AttachmentInfoSchema), await slopJSON(["attachments", "list", document]), "slop attachments list");
   return { value: state.value, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
-}
-
-/** Normalizes the parts of CLI output that name a session rather than a document: a
- * snapshot's `version`. */
-export function stable(output: unknown, args: readonly string[]): unknown {
-  if (output && typeof output === "object" && !Array.isArray(output) && args[0] === "get" && args.includes("--snapshot"))
-    return Object.fromEntries(Object.entries(output).filter(([key]) => key !== "version"));
-  return output;
-}
-
-/** Envelope metadata can grow; authored values, descriptors, palettes and IDs cannot. */
-export function assertOutput(actual: unknown, expected: unknown, args: readonly string[], label = "CLI output") {
-  const a = stable(actual, args) as any, e = stable(expected, args) as any;
-  const envelope = (got: any, wanted: any) => {
-    assert.ok(got && typeof got === "object" && !Array.isArray(got), label);
-    for (const [key, value] of Object.entries(wanted)) {
-      assert.ok(Object.hasOwn(got, key), `${label}: missing ${key}`);
-      assert.deepEqual(got[key], value, `${label}: ${key}`);
-    }
-  };
-  if (e && typeof e === "object" && !Array.isArray(e)) {
-    const snapshot = args[0] === "get" && args.includes("--snapshot");
-    if (snapshot || ["apply", "batch", "import", "theme"].includes(args[0]!)) return envelope(a, e);
-  }
-  assert.deepEqual(a, e, label);
 }

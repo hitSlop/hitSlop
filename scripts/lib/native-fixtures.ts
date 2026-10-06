@@ -1,8 +1,8 @@
 import { repository } from "./artifacts";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { stageProject } from "../../packages/cli/src/build";
-import { buildTemplate } from "../../packages/cli/src/template";
+import { stageProject } from "../../packages/hitslop/src/cli/build";
+import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { buildTemplates, templateCache } from "../templates/build";
 import { discoverTemplates } from "../templates/discover";
 

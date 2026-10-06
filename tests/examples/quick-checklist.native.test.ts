@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { webkit, type Page } from "playwright";
 import { mkdtemp, rm, cp } from "node:fs/promises";
 import { join } from "node:path";
-import { startDev } from "../../packages/cli/src/dev";
+import { startDev } from "../../packages/hitslop/src/cli/dev";
 
 async function preview(run: (page: Page) => Promise<void>) {
   const root = await mkdtemp(join(process.cwd(), ".dev-test-"));

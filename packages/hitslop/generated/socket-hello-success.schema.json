@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "required": [
+    "ok",
+    "method"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "method": {
+      "type": "string",
+      "const": "hello"
+    }
+  },
+  "additionalProperties": false
+}

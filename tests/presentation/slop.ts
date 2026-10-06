@@ -1,4 +1,4 @@
-import { defineSlop } from "@hitslop/document";
+import { defineSlop } from "hitslop";
 import schema from "./schema";
 import variant from "./variant";
 

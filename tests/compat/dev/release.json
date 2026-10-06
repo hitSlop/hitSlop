@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "ad6b01bc55660497bc2d4ce803a644f921bde766-dirty",
-  "captured": "2026-10-06T03:09:55.189Z",
+  "commit": "3d34df8dd92346781f47815186e418733f2c4fb3-dirty",
+  "captured": "2026-10-06T18:44:17.839Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,33 +10,31 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "ed2378d2ee4d1e2bfe1cfc8027aebbfe0ec9fe173152a126e86df5b547f92231",
+  "inputs": "130f9f0df80941e2fa55e5d3884681727e587d755d5e0959027ce5e17cf47bc9",
   "producer": {
-    "coreBuildID": "2e83248f48c0794d",
-    "shell": "af31023e926d842cf07a98164ba37806aa4042d878fb0ac49fbaebd490b0659c"
+    "coreBuildID": "da020e7f0f049181",
+    "shell": "49a2512f46ea7e89a4c22b2774d31b853e7a7a77b740be55a76a802c679ffd39"
   },
   "files": {
-    "cli/attachment.txt": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
-    "cli/hitslop-cli-3.0.0.tgz": "22012ba422ff360586f4ea55e0b929fe89906c4ac99e88e95d6db4fa65b28f19",
-    "cli/hitslop-document-3.0.0.tgz": "c430695d72cdbeacf1345b633184c0597bee75468035edccd145df3e22950ff3",
-    "cli/hitslop-schema-3.0.0.tgz": "7ae1d46c9fb6b7f6d89a104ccf35ce45e87fada62372d98cafa7bfb687ad248b",
-    "cli/install/bun.lock": "84ad0dd859ae1336e8c18d96e8c9a7ade9fdca55ccf29099419a29311d2c8500",
-    "cli/install/package.json": "da6de46a792f89b76436b96d4c2a6466a8b55c7bb54616b7640cbf0f1b2a8f25",
-    "cli/transcript.json": "e2ee9609f87b73c2ad3c97b0c96d2580d7c38ffbc715a342499091816be717c7",
-    "documents/conformance-compacted.page.slop": "f74444ccde24ff55b75f91080ba01c51fcbdba1197f1c9695b7640264cfed099",
-    "documents/conformance-compacted.slop": "b34554ffac9c729fca4f460c65b0c06ffa246dcd86431fda446a2e2a8c43efa8",
-    "documents/conformance.page.slop": "8d19414fdba5952897eb2fbf35dbf7ef2e02f3debbdcceadd19c00281d98f6c5",
-    "documents/conformance.slop": "93c5e84677475312381bece9493ff75bdf2a0170f28aa3d5e36631019d64511c",
-    "documents/fixture-checklist.page.slop": "3d6e82f21ab31ea12373feac883a8af65b81f56d933ecf233d00adc1dd983376",
-    "documents/fixture-checklist.slop": "296ad5ed2220463d232205ff13d34fcd47315b036a1a490f1035544d88648e0a",
-    "documents/fixture-collections.page.slop": "fc89e6baa0afb08fe486f64e14fa73958460cc39876534b91bc3607bcf9a499d",
-    "documents/fixture-collections.slop": "3eee98d72701eccea6e3f5fb13b2792390d8877ccd8ac009d73224fdfebe2b27",
-    "documents/fixture-scalars.page.slop": "b24da7d8e25e5ae73d8362d25f39b61e46c21daa7dd5820b0ed342d8a57c942b",
-    "documents/fixture-scalars.slop": "9044b299c11feb8070d80a60906037a40af70e680ff6edc2571de12dee06a9af",
-    "documents/quick-checklist-compacted.page.slop": "e115750565e35327e0dbd22d860f0fe71e6f3a5e8fe538c7b447c6a907c733e5",
-    "documents/quick-checklist-compacted.slop": "2727729eb8f53805f296dbb4a02d7ce34fa55cb7f2bd28d52af0d4f72fd341fb",
-    "documents/quick-checklist.page.slop": "eb2e43f071e7e448c6b5434eb788c6fb45a9b0422a990a11c0111bfc154cd62c",
-    "documents/quick-checklist.slop": "20369669d60a4edfbdbddbb544989e7e2da5cfe47f9ab76a4e763f2d0419beb7",
+    "commands/hourglass.json": "0d4834f3e95a4aa53f8e10c7529fb600396b468e5cc657100f7f3dcb24787d2b",
+    "commands/quick-checklist.json": "4e402be0c685ca74714fc15480d8e01dc38ea18094d6ef47bc61650182ec1c2e",
+    "documents/conformance-compacted.page.slop": "f4a7981e2b5cd1467109833f5ff441e4e2c5be180b7c7be223718aa3043b81ba",
+    "documents/conformance-compacted.slop": "fb29eaf16031ceb3246d925f6c3bfc59d845212eb5ea41863337b75cdf197879",
+    "documents/conformance.page.slop": "599fe0e32ce8334f9d9be9b7f5d943bcc638247980a858d302eebc5aad7c7b44",
+    "documents/conformance.slop": "a511994bb7455c14f62fed2954947f57eb5b11fa808ec5f92a19bc498fb6d549",
+    "documents/fixture-checklist.page.slop": "3460939d4f5df02174f27f07955e988d375cbab0c27f026717d4c2238594d357",
+    "documents/fixture-checklist.slop": "a0d63b07952b7a4f71a883772d4ff242b3fb6636bb85b6079fcc84b3d0b11e87",
+    "documents/fixture-collections.page.slop": "a40add488922f285a2c8d1c5034ea9c2fb94b538cceaa88dc63fab722dc94730",
+    "documents/fixture-collections.slop": "659f80af558b978d024eda4ba249a3ef2cf9fadc6d1524319cf382a659ceea5f",
+    "documents/fixture-scalars.page.slop": "cece1d5a149616eabcd7c9409b0c69cc215a32612ab98c21938622f62c501457",
+    "documents/fixture-scalars.slop": "ad0a7e899e326bef1cd71eee4b55701efb5cd1c8d12757327856ae8cdf529ad8",
+    "documents/hourglass.page.slop": "0a9d1f40024e8a8c519406755840b675c11168cfe6c44277d711530639ef4008",
+    "documents/hourglass.slop": "e3fc441f894b6957fabe0771dc859f16d68f64a0a7d0444f5837a5d55fe143fa",
+    "documents/quick-checklist-compacted.page.slop": "e616fd9ca81dd792c440b9655b359c65c628f210677b4f2646ae2668b7591bf2",
+    "documents/quick-checklist-compacted.slop": "12665d36e1b1f184a84f250d16368126d472e0d1a16218e4f83236cc1299e71a",
+    "documents/quick-checklist.page.slop": "4f41e4755369019328ec7670cf1aa9b6f521c4be334fdd9e75c059d1b8ef4273",
+    "documents/quick-checklist.slop": "cf352194c5fcb9b5b4bfb8144088c308622fb37cbb121a79599d1f4a1efd267d",
+    "engine/darwin-arm64/slop-engine": "a4988318432a62e46ca0ed48f64bc72a6dc1ce0f143927dac8ed021a01615103",
     "expected/conformance-compacted.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
     "expected/conformance-compacted.page.json": "4ef292b10799bf5347845a32ec1ff80e79e3ab0b53a60cfa940fd0b05f716cc6",
     "expected/conformance.json": "2b1927f0379cf0387c0f419ee7f18b6654aecc27bed01111f0debbe3d883bfe8",
@@ -47,10 +45,13 @@
     "expected/fixture-collections.page.json": "b5d58886a917089f109fecd5c1b9980d43c0cb49a1f104e03a4478c683b33a6f",
     "expected/fixture-scalars.json": "6da2a9e454850d27ee20281e2896a79b9dee3311981575e3f856a4568c832c3f",
     "expected/fixture-scalars.page.json": "de1edb2ec3e49d92524bec2a2e8deb3af676f763d55c4d6b555486254b6f3deb",
+    "expected/hourglass.json": "fbd75bd7ea0824b783ff123eb43ea0d47fc6c68c4d3704bd850f257ae5575023",
+    "expected/hourglass.page.json": "3d9d17172e2b3e8f6189f69515ee097c24fbb5fd293b82a8df015a48ddb6f45f",
     "expected/new-conformance.json": "3bbfd996e4d43581e419a0fcf14c2c31a039c18f7c72f9f9a74ac6a2061d6b0b",
     "expected/new-fixture-checklist.json": "095af5baa71998048de7a4c829200093690396fba33931929dd8288a91dd3f51",
     "expected/new-fixture-collections.json": "52d06bdca3663c8c7dcfd01300880263e13c1490eb516f8a52b3d735281a2e47",
     "expected/new-fixture-scalars.json": "fe5f8bff2bd4f77d82a165d57138b2c6a2353a61663109f1829af88cef3380f5",
+    "expected/new-hourglass.json": "c686df8429d49054e703a50ddc99e82d19f75094ecd0b8945a5d9159c3ce993d",
     "expected/new-quick-checklist.json": "36366b5f1644834e50e2f44b2c53106f03e0f6a1c348171549ed9e518fe2a7c1",
     "expected/quick-checklist-compacted.json": "b557a25a527c8c694e916f751f5a2a72da12f8c06462395e91d6c22434010c0f",
     "expected/quick-checklist-compacted.page.json": "fd5cc5336b3268ffa1ae50bdae8d6df76ee30920b5bdb58cc1f2012a83e817a2",
@@ -61,6 +62,7 @@
     "pages/fixture-checklist.json": "fc51229a46d7810f6531fa8370612580b0d401cc7ae5cf8ab2fd976dc8e449a7",
     "pages/fixture-collections.json": "145bb517ca97dcfb5072bf052ee8d17c46544389eda1aa2ea28189298bfb3c35",
     "pages/fixture-scalars.json": "181180a8be6a83b9269eb2ba3173c382032a739e33df7d75f321ec3b150b494f",
+    "pages/hourglass.json": "bc1b718e52c2c8ca66291eda5aa3210026c0c764aec66588cb0804be4082e4a9",
     "pages/quick-checklist-compacted.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
     "pages/quick-checklist.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
     "scenarios/conformance-compacted.json": "a76a35e76abc7e70e1101d3bb311d57512c0b8f247a652774f27d38db5272b78",
@@ -73,27 +75,36 @@
     "scenarios/fixture-collections.page.json": "9deee34464609cd4a529681e2c6fec696869f151d30d7e1ee160098021649d72",
     "scenarios/fixture-scalars.json": "3ac9e8586ae6717fb3722ddb57f811e79de97431e9b8c8402026616bc681d91a",
     "scenarios/fixture-scalars.page.json": "3ac9e8586ae6717fb3722ddb57f811e79de97431e9b8c8402026616bc681d91a",
+    "scenarios/hourglass.json": "366760649262519b01333e656846fc2bf78098270d8c9db8886237bef901b081",
+    "scenarios/hourglass.page.json": "366760649262519b01333e656846fc2bf78098270d8c9db8886237bef901b081",
     "scenarios/quick-checklist-compacted.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist-compacted.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
     "scenarios/quick-checklist.page.json": "818b69b6a0744303ca0a8fa0fa80c90b4e22f9cf363e9c5a21a15dfbce08d7e0",
-    "templates/conformance.slop": "65ccc7f6906af5fca3563d212024cee106ad5cdae828ee78388f6853419a9b58",
+    "templates/conformance.slop": "e29b5aad727e5b1a4e32af13d99bb4ca6c2c945fe27a6e1a2d9cbeb715b451ee",
     "templates/fixture-checklist.slop": "2017094bf0a768b4561482f199e47cddbce0d309cdaa60a1e189702600f68a47",
     "templates/fixture-collections.slop": "f330b7d3a47c4010300c54a766785f96d4cd4cc5ca3c5bd72b415dd170ed7555",
     "templates/fixture-scalars.slop": "859344c4630b4bd90b034077edd62a54ea29a43681376c79e4c265da0b503657",
-    "templates/quick-checklist.slop": "a136a5137d634e09e6694fd9d8d83257acf14c1961fe934a92a732df0661db1a"
+    "templates/hourglass.slop": "b4ae3308aea7bd03a1d29a54609e6ec179b225996a53e6026d449c4b27698dec",
+    "templates/quick-checklist.slop": "15d66247cb9d3705619d576ed080bb794789bede62015726b09f748f27c584cc"
+  },
+  "acceptance": {
+    "packages/hitslop/acceptance/packageFormat-1.json": "1da56e252be6ffda0fb31738cee3ac4243fbcee18e7454f5c74700bd8cc8626c",
+    "packages/hitslop/acceptance/storage-1.json": "487eb6b86ab8cb9e0d6a4d5d13426af490249a7e34cb697abfc78860db1ff1ac",
+    "crates/hitslop-core/src/file/storage-1.sql": "fb1abb8781c71de6f3968764f5c7834010892a50be62b3270397fce098520bd4"
   },
   "templates": {
-    "quick-checklist": "a136a5137d634e09e6694fd9d8d83257acf14c1961fe934a92a732df0661db1a",
+    "quick-checklist": "15d66247cb9d3705619d576ed080bb794789bede62015726b09f748f27c584cc",
+    "hourglass": "b4ae3308aea7bd03a1d29a54609e6ec179b225996a53e6026d449c4b27698dec",
     "fixture-scalars": "859344c4630b4bd90b034077edd62a54ea29a43681376c79e4c265da0b503657",
     "fixture-collections": "f330b7d3a47c4010300c54a766785f96d4cd4cc5ca3c5bd72b415dd170ed7555",
     "fixture-checklist": "2017094bf0a768b4561482f199e47cddbce0d309cdaa60a1e189702600f68a47",
-    "conformance": "65ccc7f6906af5fca3563d212024cee106ad5cdae828ee78388f6853419a9b58"
+    "conformance": "e29b5aad727e5b1a4e32af13d99bb4ca6c2c945fe27a6e1a2d9cbeb715b451ee"
   },
-  "archives": {
-    "hitslop-schema-3.0.0.tgz": "4f4d5d8f17a4493f78a7c0150b615fa70ce61fdc7048eb0e9392e6e502222772",
-    "hitslop-document-3.0.0.tgz": "0884aab350d42ada4321ed41cfb995424346fa6cd03b7a20243aabae1181f1ca",
-    "hitslop-cli-3.0.0.tgz": "03cec0af04c069fa6227827237714f9006e5cd02706325a1fe3db0afffabceb3"
+  "writer": {
+    "buildId": "da020e7f0f049181",
+    "commit": "3d34df8dd92346781f47815186e418733f2c4fb3-dirty",
+    "sha256": "a4988318432a62e46ca0ed48f64bc72a6dc1ce0f143927dac8ed021a01615103"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -110,7 +121,7 @@
       "updates": 4
     },
     "conformance-compacted": {
-      "checkpointBytes": 1572,
+      "checkpointBytes": 1586,
       "updates": 0
     },
     "fixture-checklist": {
@@ -125,12 +136,16 @@
       "checkpointBytes": 718,
       "updates": 3
     },
+    "hourglass": {
+      "checkpointBytes": 389,
+      "updates": 3
+    },
     "quick-checklist": {
       "checkpointBytes": 1137,
       "updates": 3
     },
     "quick-checklist-compacted": {
-      "checkpointBytes": 1152,
+      "checkpointBytes": 1178,
       "updates": 0
     },
     "conformance.page": {
@@ -138,7 +153,7 @@
       "updates": 10
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 1572,
+      "checkpointBytes": 1586,
       "updates": 6
     },
     "fixture-checklist.page": {
@@ -153,12 +168,16 @@
       "checkpointBytes": 718,
       "updates": 5
     },
+    "hourglass.page": {
+      "checkpointBytes": 389,
+      "updates": 4
+    },
     "quick-checklist.page": {
       "checkpointBytes": 1137,
       "updates": 4
     },
     "quick-checklist-compacted.page": {
-      "checkpointBytes": 1152,
+      "checkpointBytes": 1178,
       "updates": 1
     }
   }

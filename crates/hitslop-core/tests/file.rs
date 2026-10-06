@@ -803,6 +803,33 @@ fn an_asset_reader_reads_only_the_checked_file() {
 }
 
 #[test]
+fn commands_are_paired_validated_assets_hidden_from_the_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let assets = stage.join("assets/__commands");
+    fs::create_dir(&assets).unwrap();
+    let metadata = r#"{"addTask":{"description":"Add a task","args":{"type":"object"}}}"#;
+    fs::write(assets.join("metadata.json"), metadata).unwrap();
+    let template = dir.path().join("Template.slop");
+    assert!(file::pack(&stage, &template).is_err());
+    assert!(!template.exists());
+    fs::write(assets.join("run.js"), "globalThis.__slopCommands = {};").unwrap();
+    fs::write(assets.join("metadata.json"), metadata.replace("addTask", "invalid-name")).unwrap();
+    assert!(file::pack(&stage, &template).is_err());
+    assert!(!template.exists());
+    fs::write(assets.join("metadata.json"), metadata).unwrap();
+    file::pack(&stage, &template).unwrap();
+    let doc = dir.path().join("Document.slop");
+    file::create_document(&template, &doc).unwrap();
+    assert_eq!(file::commands(&doc).unwrap().unwrap().metadata["addTask"]["description"], "Add a task");
+    let reader = Store::open(&doc, Mode::Snapshot).unwrap().asset_reader().unwrap();
+    for name in ["__commands/metadata.json", "__commands/run.js"] {
+        assert_eq!(reader.size(name).unwrap(), None);
+        assert_eq!(reader.read_range(name, 0, u64::MAX).unwrap(), None);
+    }
+}
+
+#[test]
 fn assets_are_served_whole_or_in_ranges() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());

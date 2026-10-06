@@ -14,13 +14,13 @@ rebuild. Writable state is managed by the document runtime; media import is defe
 `schema` is `schema.ts`'s default export, and `initial` must fit it:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 
 export default defineDocument({ count: s.counter() });
 ```
 
 ```ts title="slop.ts"
-import { defineSlop } from "@hitslop/document";
+import { defineSlop } from "hitslop";
 import schema from "./schema";
 
 export default defineSlop({
@@ -157,7 +157,7 @@ remains the next launch's initial size. Browser preview has no native window: re
 it with the preview's handle or arrow keys.
 
 ```ts
-import { resizeWindow } from "@hitslop/document/svelte";
+import { resizeWindow } from "hitslop/svelte";
 
 // Ignored in browser preview, which has no native window.
 await resizeWindow({ width: 560, height: 680 });

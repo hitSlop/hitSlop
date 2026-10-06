@@ -4,12 +4,12 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { coreBuildId } from "../../packages/cli/src/core";
-import { run } from "../../packages/cli/src/process";
+import { coreBuildId } from "../../packages/hitslop/src/cli/core";
+import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
-const documentEngine = join(app, "Contents/Helpers/slop-engine");
+const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine();
 // Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>
   dirname(join(app, p)),
@@ -22,7 +22,7 @@ assert.deepEqual([...new Bun.Glob("**/*.wasm").scanSync({ cwd: app, onlyFiles: t
 const folder = await mkdtemp(join(tmpdir(), "hitslop-release-verify-"));
 try {
   // Installed, without Bun or Node on the path.
-  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_NATIVE_CLI: helper } };
   const installed = (args: string[], executable = helper) => run([executable, ...args], placement);
   const value = async (document: string) => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
   const appCore = (await installed(["--core-build"], join(app, "Contents/MacOS/hitSlop"))).trim();
@@ -31,7 +31,7 @@ try {
   assert.equal(appCore, helperCore, "App and helper embed different document cores");
   assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), helperCore, "Document engine and helper embed different cores");
   assert.deepEqual(JSON.parse(await installed(["--protocol"], documentEngine)), JSON.parse(await installed(["--protocol"])), "Native tools serve different command protocols");
-  await installed(["--verify", "--strict", documentEngine], "/usr/bin/codesign");
+  assert.deepEqual([...new Bun.Glob("**/slop-engine").scanSync({ cwd: app })], [], "The Mac app must not bundle the npm engine");
   // A release is built from one tree, so the CLI's authoring core is the app's core.
   assert.equal(await coreBuildId(), helperCore, "CLI and helper embed different document cores");
   // Finder shows a .slop through the app's type declaration and its Quick Look extensions,

@@ -1,4 +1,4 @@
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 // Every descriptor kind and option, so a frozen build of this app exercises them all.
 export default defineDocument({
   title: s.text(),

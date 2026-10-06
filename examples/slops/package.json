@@ -4,7 +4,6 @@
   "type": "module",
   "dependencies": {
     "@chenglou/pretext": "0.0.9",
-    "@hitslop/document": "workspace:*",
     "@humanspeak/svelte-markdown": "1.9.0",
     "@internationalized/date": "^3.12.4",
     "@lucide/svelte": "1.37.0",
@@ -24,7 +23,8 @@
     "svelte": "5.57.1",
     "three": "0.186.0",
     "tone": "15.1.22",
-    "webamp": "2.3.1"
+    "webamp": "2.3.1",
+    "hitslop": "workspace:*"
   },
   "devDependencies": {
     "@types/d3-sankey": "0.12.5",

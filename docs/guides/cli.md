@@ -8,13 +8,11 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 | Entry point | Use |
 | --- | --- |
-| `bunx @hitslop/cli@3.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
-| `slop COMMAND` | Run after `bun install -g @hitslop/cli@3.0.0`, with Bun's bin directory on PATH. |
+| `bunx hitslop@1.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
+| `slop COMMAND` | Run after `bun install -g hitslop@1.0.0`, with Bun's bin directory on PATH. |
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
-| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` | Send one document request directly, without Node or Bun ([engine requests](#engine-requests)). |
 
-`slop-engine` ships with the CLI for macOS and Linux, and beside `hitslop-native` in
-`hitSlop.app/Contents/Helpers`. It creates, reads and edits documents without Bun,
+`slop-engine` ships with the CLI for macOS and Linux. The executable creates, reads and edits documents without Bun,
 WebKit or a running app. The TypeScript CLI runs only the engine; opening a window,
 PNG/PDF export and native template artwork run in the Swift helper, which the engine
 passes them to.
@@ -49,14 +47,14 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 An OS lock on the document's file in the account's registry (`~/.hitslop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
 
-Successful mutations acknowledge persistence. No automatic replay or public retry flags exist. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, the consecutive ones as one step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
+Successful mutations acknowledge persistence. Generic edits are never automatically replayed and have no public retry flags. Named commands may reevaluate once after a definite pre-admission conflict, keeping their original time and seed. After an unknown outcome, run `slop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, consecutive generic edits as one step and each named command as its own step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
 ## Engine requests
 
-`slop-engine request` reads one `HelperRequest` (`@hitslop/schema/socket`) from standard
+`slop-engine request` reads one `HelperRequest` (`packages/hitslop/src/schema/socket.ts`) from standard
 input, at most 1 MiB (16 MiB for a batch carrying attachments), and prints one `SocketReply` line.
 A request names no protocol: the engine adds the one it was called with. A success carries its
-method and required result fields (`SocketReply` in `@hitslop/schema/socket`); the CLI treats a success
+method and required result fields (`SocketReply` in `packages/hitslop/src/schema/socket.ts`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
@@ -68,23 +66,18 @@ export again, remove the old file first.
 
 ## Helper discovery and identity
 
-`HITSLOP_ENGINE` selects an explicit engine and takes precedence for document commands
-and authoring. Without it, macOS document commands first use the app's engine in
-`/Applications/hitSlop.app`, then `~/Applications/hitSlop.app`, then the CLI's platform
-engine or the checkout's `target/release/slop-engine`. Linux uses the CLI or checkout
-engine. A newer CLI therefore never migrates a document past what the installed app can
-open. What the author builds is read with the engine that built it: validation, packing,
-`inspect` and `schema` always select the CLI engine, independently of an installed app or
-`HITSLOP_NATIVE_CLI`, unless `HITSLOP_ENGINE` is set.
+The CLI uses its own packaged engine for both authoring and document commands, on macOS
+and Linux. A checkout uses `target/release/slop-engine` (or `HITSLOP_CARGO_PROFILE`).
+`HITSLOP_ENGINE` selects an explicit engine. File markers protect saved documents;
+the exact command protocol protects communication with a live owner or rendering helper.
 
 The CLI runs only the document engine. What needs AppKit or WebKit (`open`, `export`,
 `build --artwork native` and `register`) the engine passes, unchanged, to the app's
 rendering helper, so those require macOS and hitSlop.app; document creation and editing
-do not. The engine finds the helper beside itself (inside the app), then in the same two
-app locations. `HITSLOP_NATIVE_CLI` selects an explicit helper; on macOS, when it is set
-without `HITSLOP_ENGINE`, the CLI requires `slop-engine` beside that helper and does not
-fall back to another deployment. `bun run build` places the engine beside the Debug
-helper. Missing or non-executable overrides fail, and an executed tool is never retried
+do not. The engine finds the helper in `/Applications/hitSlop.app`, then
+`~/Applications/hitSlop.app`. `HITSLOP_NATIVE_CLI` independently selects an explicit helper.
+The app contains its linked core and renderer; the engine ships only in npm.
+Missing or non-executable overrides fail, and an executed tool is never retried
 through another binary.
 
 The CLI and Mac app update separately. The CLI names its command protocol on every
@@ -102,7 +95,7 @@ A CLI-only release may reuse an installed app while the protocol and
 `slop-engine` (`crates/slop-engine`) is the native build of the shared Rust core.
 `validate-app` checks bounded evaluated app JSON on standard input. `pack` turns a build
 stage into an immutable template. `templates` prints the templates the app's catalog lists
-as JSON: its `folders` (the bundled starters beside the engine inside the app, then the
+as JSON: its `folders` (the starters inside the selected or installed Mac app, then the
 installed folder, `HITSLOP_TEMPLATES_ROOT` or `~/.hitslop/templates`, which `slop register`
 builds into), each template found there, and an issue for each `.slop` file left out.
 `create --from TEMPLATE --output DOCUMENT` creates a writable copy, makes missing parent
@@ -121,27 +114,38 @@ command.
 The TypeScript CLI uses Crust for command parsing, help and packaged agent skills.
 `bun run skills:build` (also part of `bun run build`) packages the authored `hitslop`,
 `hitslop-authoring`, `hitslop-design` and `hitslop-document` guides from
-`packages/cli/skills`, plus the generated `hitslop-cli` command reference, into the
-untracked `packages/cli/.crust/root/skills`. Rebuild after changing command metadata or
+`packages/hitslop/skills`, plus the generated `hitslop-cli` command reference, into the
+untracked `packages/hitslop/.crust/root/skills`. Rebuild after changing command metadata or
 authored guidance.
 
-Install, repair and uninstall are described in the public workflows. Details they leave
-out:
-- `skill` is an alias of `skills`.
-- Scope defaults to global (Crust's `defaultScope`), so the installer does not ask for one;
-  pass `--scope project` for project links. `--all` skips conflicting real directories;
-  interactive replacement asks first.
-- Installed links target the global install's packaged skills, under
-  `$BUN_INSTALL/install/global/node_modules/@hitslop/cli` (or `BUN_INSTALL_GLOBAL_DIR`).
-  `bun install -g` replaces that directory in place, so links survive upgrades and serve
-  the new content.
-- Only the global install installs or repairs links, and only when asked: `skills repair`
-  fixes a link that is dangling or points elsewhere. Crust's `autoUpdate` never runs here,
-  because Crust skips it for CLIs run from source rather than a `crust build` bundle.
-  bunx and project copies refuse `skills install` and `skills repair` and never rewrite
-  links; any copy can uninstall.
-- To dogfood unreleased skills, run `bun run packages:pack` and install
-  `generated/npm/hitslop-cli-VERSION.tgz` with `bun install -g`. While the matching
-  `@hitslop/document` and `@hitslop/schema` are unpublished, first list their tarballs as
-  `overrides` in `$BUN_INSTALL/install/global/package.json`, as `tests/packed/packed.test.ts`
-  does.
+Global skills come from the global install; `bun install -g hitslop` upgrades their
+content through stable links. `skills repair` changes links only when explicitly invoked.
+Bunx copies may uninstall global links but do not install them.
+
+`slop skills --scope project` installs the pinned project's guides through unresolved
+`node_modules/hitslop` paths, so Bun can replace its package-cache target during upgrades.
+Run `bun install` first. `init` creates local links that become usable after installation.
+`--scope project` also supports repair and uninstall; ordinary files are never replaced.
+
+`bun run packages:pack` creates `generated/npm/hitslop-VERSION.tgz` for dogfooding. Install
+that one tarball globally or in a temporary project; no unpublished dependency overrides
+are needed.
+
+## Project version selection
+
+Use `bun run check`, `bun run dev` and `bun run build` in a project. These scripts run
+its pinned package. A global authoring command refuses a different installed project
+version and directs you to those scripts. `slop --project=DIR build .` explicitly delegates
+to that install. Merely changing cwd never redirects document commands.
+
+## Domain commands
+
+`slop describe PATH` prints fields, allowed operations, named commands, values, row IDs
+and the snapshot version. Add `--json` for its complete structured representation.
+`slop call PATH NAME --args JSON` invokes the command stored inside that document, using
+TypeBox argument validation and one atomic owner batch. A success is durable. A refusal
+applies no collected edits; an unknown outcome is never automatically replayed.
+
+The runner retries one definite stale snapshot conflict using the original clock and
+random seed. A second conflict returns `stale_base`. Commands have their own undo steps;
+`apply`, `batch`, handles and `change()` remain available for other edits.

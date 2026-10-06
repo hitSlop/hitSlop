@@ -12,11 +12,17 @@ import HitSlopHost
     do {
       var arguments = Array(CommandLine.arguments.dropFirst())
       if arguments.first == "--client-protocol" {
-        guard arguments.count >= 2, let version = Int(arguments[1]), version >= 1 else {
-          throw ValidationError("--client-protocol requires a positive integer")
+        guard arguments.count >= 2, let version = Int(arguments[1]) else {
+          throw ValidationError("--client-protocol requires an integer")
         }
-        guard (HelperProtocol.minimum...HelperProtocol.version).contains(version) else {
-          throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+        // The permanent refusal path: one line on stderr naming the older side, status 2.
+        if version != HelperProtocol.version {
+          FileHandle.standardError.write(
+            Data(
+              (version > HelperProtocol.version
+                ? "This command needs a newer hitSlop app; update hitSlop\n"
+                : "This hitSlop app needs a newer command line; update the hitSlop CLI\n").utf8))
+          Foundation.exit(2)
         }
         clientProtocol = version
         arguments.removeFirst(2)
@@ -44,8 +50,8 @@ import HitSlopHost
 
   func run() async throws {
     if commandProtocol {
-      // The range a CLI checks its own protocol against; any compatible app build serves it.
-      print(#"{"version":\#(HelperProtocol.version),"minimum":\#(HelperProtocol.minimum)}"#)
+      // The one protocol this helper serves.
+      print(#"{"version":\#(HelperProtocol.version)}"#)
       return
     }
     guard coreBuild else { throw CleanExit.helpRequest(self) }

@@ -1,8 +1,9 @@
 //! Documents a released engine wrote, opened by this core. Every corpus entry (`tests/compat`)
-//! keeps its release's npm CLI, which carries the file engine that release shipped. That
-//! engine creates documents from the entry's templates and applies generated batches
-//! through its own request protocol; this core must then read exactly what the released
-//! engine reads, and edit, save, trim and reopen the document. Beside the fixed documents
+//! keeps its candidate writer: the darwin-arm64 engine its release built and wrote its
+//! documents with. That engine creates documents from the entry's templates and applies
+//! generated batches through its own request protocol (these requests are the only adapter
+//! for older protocols, and they live here, in the test); this core must then read exactly
+//! what the released engine reads, and edit, save, trim and reopen the document. Beside the fixed documents
 //! `compat.rs` replays, this covers generated edits by every released writer.
 //! Failure: a saved shape some release writes that this build reads differently or refuses.
 //! Oracle: the released engine's own reading of its own document.
@@ -27,17 +28,14 @@ fn sorted(path: &Path) -> Vec<PathBuf> {
     found.sort();
     found
 }
-/// The file engine the entry's CLI tarball ships for this platform, unpacked into `into`.
+/// The entry's candidate writer, copied into `into` and made executable.
 fn released_engine(entry: &Path, into: &Path) -> PathBuf {
-    let tarball = sorted(&entry.join("cli"))
-        .into_iter()
-        .find(|path| path.file_name().unwrap().to_string_lossy().starts_with("hitslop-cli-"))
-        .unwrap_or_else(|| panic!("{}: no released CLI", entry.display()));
-    let member = "package/engine/darwin-arm64/slop-engine";
-    let status =
-        Command::new("/usr/bin/tar").arg("-xzf").arg(&tarball).arg("-C").arg(into).arg(member).status().unwrap();
-    assert!(status.success(), "{}: the released CLI ships no darwin-arm64 engine", entry.display());
-    into.join(member)
+    use std::os::unix::fs::PermissionsExt;
+    let writer = entry.join("engine/darwin-arm64/slop-engine");
+    let copy = into.join("slop-engine");
+    std::fs::copy(&writer, &copy).unwrap_or_else(|e| panic!("{}: no candidate writer: {e}", entry.display()));
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
+    copy
 }
 /// `engine` run with `args`: its standard output, which must report success.
 fn run(engine: &Path, args: &[&str]) -> String {

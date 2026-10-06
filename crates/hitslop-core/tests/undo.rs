@@ -17,6 +17,29 @@ fn setup() -> (Document, View) {
     let view = View::of(&d);
     (d, view)
 }
+
+#[test]
+fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
+    let (mut d, mut view) = setup();
+    let before = value(&d);
+    apply(&mut d, &mut view, &set(json!(["title"]), json!("Agent")), Origin::Agent);
+    let agent = value(&d);
+    let old_version = d.version();
+    for title in ["First command", "Second command"] {
+        let batch = json!({"command":"rename","ifVersion":d.version(),"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
+        apply(&mut d, &mut view, &batch, Origin::Agent);
+    }
+    let latest = value(&d);
+    let stale = json!({"command":"rename","ifVersion":old_version,"intents":[{"type":"set","path":["title"],"value":"Lost edit"}]}).to_string();
+    assert_eq!(d.apply_batch(&stale, Origin::Agent).unwrap_err().code, hitslop_core::Code::StaleBase);
+    assert_eq!(value(&d), latest);
+    assert!(undo(&mut d, &mut view));
+    assert_eq!(value(&d)["title"], "First command");
+    assert!(undo(&mut d, &mut view));
+    assert_eq!(value(&d), agent);
+    assert!(undo(&mut d, &mut view));
+    assert_eq!(value(&d), before);
+}
 fn batch(intents: Value) -> String {
     json!({ "intents": intents }).to_string()
 }

@@ -1,7 +1,7 @@
 // Captures a compatibility corpus entry from this build: the conformance app (every ctx
 // member and descriptor kind), the conformance fixtures and a few shipped templates, as
 // built; documents saved through this build's CLI and helper; what they read as; edits to
-// replay on them; and the commands a CLI of this release runs, with what they print.
+// replay on them; and the engine that wrote them (the candidate writer).
 // Usage: bun run compat:capture RELEASE [--frozen] [--templates slug,slug]
 // The templates default to the shipped ones (`examples/slops/bundled.json`).
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
@@ -10,7 +10,7 @@ import { Database } from "bun:sqlite";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { HelperProtocol, PackageFormat, RuntimeABI } from "../../packages/schema/src/constants";
+import { HelperProtocol, PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
 import {
   corpus,
   helper,
@@ -19,21 +19,20 @@ import {
   slopJSON,
   readJSON,
   savedState,
-  stable,
   type Expected,
   type Page,
   type Release,
   type Scenario,
-  type Transcript,
 } from "./corpus";
 import { prepareNativeFixtures } from "../lib/native-fixtures";
 import { builtTemplates } from "../templates/discover";
-import { archiveDigest, corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
+import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
 import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
-import { engine, pack } from "../../packages/cli/src/engine";
-import { coreBuildId } from "../../packages/cli/src/core";
-import { exec } from "../../packages/cli/src/process";
+import { engine, pack } from "../../packages/hitslop/src/cli/engine";
+import { coreBuildId } from "../../packages/hitslop/src/cli/core";
+import { exec } from "../../packages/hitslop/src/cli/process";
 import { createDocument, debugHelper } from "../lib/native";
+import { evaluateStored } from "./commands";
 useTestRegistry();
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
@@ -74,7 +73,7 @@ try {
 // member and descriptor kind.
 await prepareNativeFixtures();
 const { templates: built } = await builtTemplates();
-for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "cli"])
+for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "commands", "engine/darwin-arm64"])
   await mkdir(join(root, directory), { recursive: true });
 const templates: Record<string, string> = {};
 for (const slug of chosen) {
@@ -142,18 +141,19 @@ const valueOf = async (document: string) => (await slopJSON(["get", document])) 
 const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
 // Documents: each package's document after two closed editing sessions (agent edits,
-// counter contributions from two writers, checkpoint plus saved updates) and a theme
+// counter increments from two writers, checkpoint plus saved updates) and a theme
 // change; the conformance document also holds an attachment.
 const documents = join(root, "documents");
 const pageScripts: Record<string, Page["script"]> = {};
 const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
   "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
+  "hourglass": [{ selector: '[aria-label="What it counts down to"]', value: "Hourglass edited ✓" }],
   "quick-checklist": [{ selector: '[aria-label="Checklist title"]', value: "Checklist edited ✓" }],
 };
 for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
-  await createDocument(join(root, "templates", slug + ".slop"), document, { engine: documentEngine });
+  await createDocument(join(root, "templates", slug + ".slop"), document, { engine: documentEngine() });
   // What a new document of this release's template holds: its initial checkpoint.
   await writeFile(join(root, "expected", `new-${slug}.json`), JSON.stringify(await valueOf(document), null, 2) + "\n");
   const schema = await schemaOf(document);
@@ -209,55 +209,12 @@ for (const document of names) {
   await writeFile(join(root, "pages", document + ".json"), JSON.stringify(page, null, 2) + "\n");
 }
 
-// The commands a CLI of this release runs, and what they print.
-const attachmentBytes = "Archived CLI attachment ✓\n";
-await writeFile(join(root, "cli/attachment.txt"), attachmentBytes);
-const attachmentID = sha256(attachmentBytes);
-const transcript: Transcript = { document: "conformance", commands: [] };
-await rm(scratch, { recursive: true, force: true });
-await copyFile(join(documents, "conformance.slop"), scratch);
-for (const args of [
-  ["get", "{document}"],
-  ["get", "{document}", "--snapshot"],
-  ["apply", "{document}", "--op", JSON.stringify({ type: "set", path: ["label"], value: "From the CLI" })],
-  ["batch", "{document}", "--ops", JSON.stringify([{ type: "increment", path: ["hits"], by: 4 }, { type: "insert", path: ["colors"], value: "#abcdef" }])],
-  ["apply", "{document}", "--op", JSON.stringify({ type: "set", path: ["count"], value: 1000 })],
-  ["theme", "get", "{document}"],
-  ["theme", "set", "{document}", "--values", JSON.stringify({ accent: "#204060" })],
-  ["attachments", "ref", "{attachment}"],
-  ["apply", "{document}", "--attach", "{attachment}", "--op", JSON.stringify({ type: "set", path: ["attachment"], value: attachmentID })],
-  ["attachments", "export", "{document}", attachmentID, "--output", "{output}"],
-  ["attachments", "list", "{document}"],
-  ["get", "{document}"],
-]) {
-  const exported = join(work, "attachment-export.txt");
-  const result = await slop(args.map((arg) => arg === "{document}" ? scratch : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
-  let stdout: unknown = result.stdout.trim();
-  try {
-    stdout = stable(JSON.parse(result.stdout), args);
-  } catch {}
-  if (args.includes("{output}")) {
-    stdout = String(stdout).replaceAll(exported, "{output}");
-    transcript.commands.push({ args, code: result.code, stdout, outputHash: await fileDigest(exported) });
-  } else transcript.commands.push({ args, code: result.code, stdout });
-}
-await writeFile(join(root, "cli/transcript.json"), JSON.stringify(transcript, null, 2) + "\n");
-// The npm packages of this release, which the release gate installs and runs.
-await run([process.execPath, "scripts/build/packages.ts"]);
-const archives: Record<string, string> = {};
-const npmPackages: Record<string, string> = {};
-for (const pkg of ["schema", "document", "cli"]) {
-  const metadata = JSON.parse(await readFile(join(repository, "packages", pkg, "package.json"), "utf8"));
-  const file = `hitslop-${pkg}-${metadata.version}.tgz`;
-  await copyFile(join(repository, "generated/npm", file), join(root, "cli", file));
-  archives[file] = await archiveDigest(join(root, "cli", file));
-  npmPackages[metadata.name] = `../${file}`;
-}
-const install = join(root, "cli/install");
-await mkdir(install);
-await writeFile(join(install, "package.json"), JSON.stringify({ private: true, dependencies: { "@hitslop/cli": npmPackages["@hitslop/cli"] }, overrides: npmPackages }));
-await run([process.execPath, "install"], install);
-await rm(join(install, "node_modules"), { recursive: true, force: true });
+// The candidate writer: the engine that wrote these documents, which later builds run to
+// write more (`crates/hitslop-core/tests/compat_writers.rs`). Not the shipped binary: the
+// release replays the corpus with the engine in its final tarball as well.
+const writerPath = join(root, "engine/darwin-arm64/slop-engine");
+await copyFile(documentEngine(), writerPath);
+const writer = { buildId: await run([writerPath, "--build-id"]), commit: "", sha256: await fileDigest(writerPath) };
 
 // Storage shapes the documents cover.
 const storage: Release["storage"] = {};
@@ -273,10 +230,12 @@ if (!Object.values(storage).some(({ updates }) => updates > 0)) throw new Error(
 
 const version = async (command: string[]) => (await run(command)).split("\n")[0]!;
 const lock = await readFile(join(repository, "Cargo.lock"), "utf8");
+const commit = (await run(["git", "rev-parse", "HEAD"])) + (dirty ? "-dirty" : "");
+writer.commit = commit;
 const release: Release = {
   release: name,
   frozen: false,
-  commit: (await run(["git", "rev-parse", "HEAD"])) + (dirty ? "-dirty" : ""),
+  commit,
   captured: new Date().toISOString(),
   markers: {
     packageFormat: PackageFormat,
@@ -288,8 +247,13 @@ const release: Release = {
   inputs: capturedInputs,
   producer: { coreBuildID: await run([helper, "--core-build"]), shell: await digest(shellDestinations.app, shellFiles) },
   files: {},
+  acceptance: Object.fromEntries(await Promise.all([
+    `packages/hitslop/acceptance/packageFormat-${PackageFormat}.json`,
+    "packages/hitslop/acceptance/storage-1.json",
+    "crates/hitslop-core/src/file/storage-1.sql",
+  ].map(async path => [path, await fileDigest(join(repository, path))]))),
   templates: Object.fromEntries(await Promise.all(Object.keys(templates).map(async slug => [slug, await fileDigest(join(root, "templates", slug + ".slop"))]))),
-  archives,
+  writer,
   toolchain: {
     rust: await version(["rustc", "--version"]),
     bun: Bun.version,
@@ -306,6 +270,23 @@ const release: Release = {
   storage,
 };
 await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
+
+const commandProbes = {
+  "quick-checklist": { name: "addTask", args: { text: "Frozen command replay ✓" } },
+  hourglass: { name: "startFor", args: { duration: 60_000 } },
+};
+for (const [slug, probe] of Object.entries(commandProbes)) {
+  if (!templates[slug]) continue;
+  const original = join(documents, slug + ".slop"), copy = join(work, "command.slop");
+  await rm(copy, { force: true });
+  await copyFile(original, copy);
+  const input = { ...probe, now: release.clock, seed: [1, 2, 3, 4] };
+  const state = await slopJSON(["get", copy, "--snapshot"]);
+  const evaluated = await evaluateStored(copy, state, input);
+  await batch(copy, evaluated.intents);
+  const value = await valueOf(copy);
+  await writeFile(join(root, "commands", slug + ".json"), JSON.stringify({ ...input, evaluated, value }, null, 2) + "\n");
+}
 
 // The old apps' own edits: the native corpus test records what each page scenario saves.
 const swift = await exec([process.execPath, "scripts/verify.ts", "--no-build", "swift", "--filter", "CompatCorpusTests"], {

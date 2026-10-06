@@ -10,11 +10,11 @@ openable, so its frozen entries never change.
 | Rust semantics | `crates/hitslop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
 | Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
 | File engine | `crates/slop-engine/tests` | `pack`, `inspect` and `schema` as the CLI runs them; a refused build publishes nothing |
-| Shell over WASM | `packages/shell/tests`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
-| Author SDK | `packages/document/tests` | Descriptor types, cross-bundle errors and framework-neutral helpers |
+| Shell over WASM | `packages/hitslop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
+| Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors and framework-neutral helpers |
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
-| Native tools | `tests/native`, `packages/cli/tests/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
+| Native tools | `tests/native`, `packages/hitslop/tests/cli/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
 | Examples | `tests/examples`, run with the package tests (`verify bun`, or `verify native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
@@ -148,50 +148,44 @@ completed; inspect `releaseBlocked` and each workload's stopping reason before r
 
 ## Compatibility corpus
 
-`tests/compat/<release>/` stores original built templates, saved documents (with their attachments),
-expected state, CLI transcripts and explicit page interactions. Its documents are written
-both ways a release writes them: through its CLI and helper, and by its own app's page
-(`NAME.page.slop`, saved by the page scenario, so text splices against older versions and
-page-minted IDs are replayed too). A small sample includes
-the conformance app, three type fixtures and selected real templates. It is regression
-evidence, not proof of all possible authored apps.
+Old files are checked, not old programs. `tests/compat/<release>/` stores original built
+templates, saved documents (with their attachments), expected state, explicit page
+interactions, and the candidate writer: the darwin-arm64 `slop-engine` the release built
+and wrote its documents with (`engine/darwin-arm64/slop-engine`, with its build ID, commit
+and hash in `release.json`). Its documents are written both ways a release writes them:
+through its CLI and helper, and by its own app's page (`NAME.page.slop`, saved by the page
+scenario, so text splices against older versions and page-minted IDs are replayed too). A
+small sample includes the conformance app, three type fixtures and selected real
+templates. It is regression evidence, not proof of all possible authored apps.
 
 `bun run compat:capture VERSION --frozen` builds the producing tools and templates (the
 shipped ones in `examples/slops/bundled.json`, or `--templates slug,slug`), records their
-source fingerprint and identities, and captures into a temporary directory.
-It records template/archive content digests, per-file hashes, dependency installation lock,
-and required case inventory. Only a completed capture is published and frozen. Recording
-an existing frozen entry is refused. Before launch `dev` may be recaptured.
+source fingerprint and identities, and captures into a temporary directory. It records
+template digests, per-file hashes and the required case inventory. Only a completed capture
+is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
+may be recaptured.
 
 - Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
   values, themes, edits, save/close and reopen.
-- Rust (`compat_writers.rs`) also replays every release's writer, not only its sample: the
-  file engine each entry's CLI shipped creates documents from the entry's templates and
-  applies generated batches, and this core must read exactly what that engine reads, then
-  edit, save, trim and reopen them. 2 seeds × 8 batches per template by default; the
-  weekly `Core model` run uses 16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
-- Native replay (`tests/native/compat-replay.native.test.ts`) checks inventory/hashes,
-  original app rendering, PNG/PDF, attachments, template creation, and the commands each
-  release's CLI ran, through this build's CLI and helper. A release also sets
-  `HITSLOP_COMPAT_RELEASE`, which requires the tagged frozen entry.
+- Rust (`compat_writers.rs`) also replays every release's writer, not only its sample: each
+  entry's candidate writer creates documents from the entry's templates and applies
+  generated batches in its own protocol, and this core must read exactly what that engine
+  reads, then edit, save, trim and reopen them. Requests in older protocols live only in
+  this test. 2 seeds × 8 batches per template by default; the weekly `Core model` run uses
+  16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
+- Native replay (`tests/native/compat-replay.native.test.ts`) checks inventory and hashes,
+  original app rendering, PNG/PDF, attachments and template creation, through this build's
+  CLI and helper. A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
+  frozen entry.
 - Swift (`CompatCorpusTests`) runs frozen explicit UI actions or the old conformance app's own scenario,
   requires an actual saved edit and checks reopen. Missing controls fail.
-- `HITSLOP_COMPAT_INSTALLED=1 bun run verify native compat-replay` installs each archived
-  CLI with its frozen lockfile and replays reads, writes, refusals, themes and attachments through its public executable.
-  Envelope metadata can grow; document contents compare exactly. Session metadata is
-  ignored only at documented envelope locations, never inside user values.
 
 Hygiene compares frozen entries with protected Git history and verifies their content
-hashes, and refuses an archived package that carries a machine path (a home folder or a
-mounted volume): a release publishes the captured packages as they are, and release
-builds name dependency sources by a fixed prefix (`scripts/build/core.ts`). Release checks
-additionally require the tagged entry to match current producing inputs, selected shipped
-templates and npm package contents. Package contents compare byte for byte except the
-file engines: native executables differ by machine even from the same sources, so each
-engine is checked by the core build its `engine.json` records. A corpus-only commit does
-not change the input fingerprint. Historical entries never need current build identities.
-The release retains the exact tested frozen npm archives. Signed-helper acceptance also
-runs archived CLIs before notarization.
+hashes. Release checks additionally require the tagged entry to match current producing
+inputs and selected shipped templates, and its writer to come from the captured core. A
+corpus-only commit does not change the input fingerprint. Historical entries never need
+current build identities. The CLI and the app meet only through the command protocol, whose
+refusal path is fixed and tested in each build; old CLIs are never run against new apps.
 
 ## CI
 
@@ -201,7 +195,7 @@ runs archived CLIs before notarization.
 | `native` (macOS) | `verify swift,native`, when the change touches what they cover (verify's tier table decides) |
 | `linux-smoke` (Ubuntu) | The core as WASM builds it (no storage) and the CLI's file engine with bundled SQLite |
 | `release-templates` (master) | builds and caches the full template corpus |
-| Release macOS (`macos-v*` tag, or manual dry run) | `release:check` (`verify --release`, including the Rust suite), sign, notarize, publish |
+| Release macOS (`v*` tag, or manual dry run) | `release:check` (`verify --release`, including the Rust suite), sign, notarize, publish |
 
 `fast` runs on pull requests, master pushes and manual runs; feature-branch pushes don't
 repeat PR checks. `native` always reports; it skips its tools when the change touches no

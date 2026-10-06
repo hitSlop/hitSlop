@@ -1,10 +1,10 @@
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { localImports } from "../../packages/cli/src/imports";
-import { engine } from "../../packages/cli/src/engine";
+import { localImports } from "../../packages/hitslop/src/cli/imports";
+import { engine } from "../../packages/hitslop/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
-import { run } from "../../packages/cli/src/process";
+import { run } from "../../packages/hitslop/src/cli/process";
 
 const ignored = new Set([
   "node_modules",
@@ -61,14 +61,11 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
     "crates/hitslop-core/Cargo.toml",
     "crates/hitslop-core/src",
     "crates/slop-engine",
-    "packages/cli/package.json",
-    "packages/document/src",
-    "packages/shell/src",
-    "packages/shell/package.json",
-    "packages/document/package.json",
-    "packages/schema/src",
-    "packages/schema/package.json",
-    "packages/cli/shell",
+    "packages/hitslop/package.json",
+    "packages/hitslop/src/sdk",
+    "packages/hitslop/src/shell",
+    "packages/hitslop/src/schema",
+    "packages/hitslop/shell",
     "scripts/templates/build.ts",
     "scripts/templates/cache.ts",
     `${native}/Package.swift`,
@@ -77,8 +74,8 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
       (name) => `${native}/Sources/${name}`,
     ),
     ...(await compilerSources(repository, [
-      "packages/cli/src/template.ts",
-      "packages/cli/src/stage-worker.ts",
+      "packages/hitslop/src/cli/template.ts",
+      "packages/hitslop/src/cli/stage-worker.ts",
     ])),
   ];
   // Shared authoring configs and directories, but not other templates, docs or local tool state.

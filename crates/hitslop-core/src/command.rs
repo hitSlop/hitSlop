@@ -20,23 +20,39 @@ pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(35);
 const ADMISSION: Duration = Duration::from_secs(2);
 pub fn protocol() -> String {
-    json!({"version":wire::HELPER_PROTOCOL,"minimum":wire::HELPER_MINIMUM_PROTOCOL}).to_string()
+    json!({ "version": wire::HELPER_PROTOCOL }).to_string()
 }
-pub fn supports_protocol(version: u64) -> bool {
-    (wire::HELPER_MINIMUM_PROTOCOL..=wire::HELPER_PROTOCOL).contains(&version)
+/// What to say when a caller names `version`: nothing when this build serves it, otherwise
+/// which side is older. The wording is part of the permanent refusal path.
+pub fn protocol_mismatch(version: u64) -> Option<&'static str> {
+    use std::cmp::Ordering::*;
+    match version.cmp(&wire::HELPER_PROTOCOL) {
+        Equal => None,
+        Greater => Some("This command needs a newer hitSlop app; update hitSlop"),
+        Less => Some("This hitSlop app needs a newer command line; update the hitSlop CLI"),
+    }
 }
-/// Refuses a request written in a protocol this build does not serve, before its envelope
-/// is read: a request from an engine of another build gets a clear answer.
+/// Refuses a request written in another protocol, before its envelope or method is read: a
+/// request from any other build gets the same answer (docs/engineering-contract.md).
 fn check_protocol(request: &serde_json::Value) -> Result<()> {
     let version = request["protocol"].as_u64().ok_or_else(|| invalid("Invalid socket request"))?;
-    let message = if version > wire::HELPER_PROTOCOL {
-        "This command needs a newer hitSlop; update hitSlop"
-    } else if version < wire::HELPER_MINIMUM_PROTOCOL {
-        "This hitSlop no longer serves this command protocol; update @hitslop/cli"
-    } else {
-        return Ok(());
-    };
-    Err(Failure::rejected(Code::RequiresUpdate, message))
+    match protocol_mismatch(version) {
+        None => Ok(()),
+        Some(message) => Err(Failure::rejected(Code::RequiresUpdate, message)),
+    }
+}
+
+/// The permanent preflight has no document path and never admits an operation.
+pub(crate) fn preflight(input: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(input).ok()?;
+    if value["method"] != "hello" {
+        return None;
+    }
+    Some(match check_protocol(&value) {
+        Err(error) => failure(error, false, false),
+        Ok(()) if input.len() <= 1024 && envelope::hello(&value) => json!({"ok": true, "method": "hello"}).to_string(),
+        Ok(()) => failure(invalid("Invalid protocol preflight"), false, false),
+    })
 }
 pub type Result<T> = std::result::Result<T, Failure>;
 fn invalid(message: impl Into<String>) -> Failure {
@@ -212,7 +228,7 @@ fn dispatch(
                     state: raw(format!("{{\"schema\":{},\"defaults\":{},{}", app.descriptor, app.theme, &json[1..]))?,
                 }
             }
-            SocketRequest::Batch { ops, base, attachments, .. } => {
+            SocketRequest::Batch { ops, base, ifVersion, command, attachments, .. } => {
                 // The blobs first, in this one request: their reference edits follow, so
                 // no close can find a blob waiting for its reference. A refused batch
                 // leaves only blobs nothing references, which its close reclaims.
@@ -225,10 +241,17 @@ fn dispatch(
                     };
                 }
                 // `ops` was checked to be an array; the core parses the batch.
-                let batch_json = match base {
-                    Some(base) => format!("{{\"base\":{},\"intents\":{ops}}}", json!(base)),
-                    None => format!("{{\"intents\":{ops}}}"),
-                };
+                let mut batch = json!({"intents": serde_json::from_str::<serde_json::Value>(&ops).map_err(|e| invalid(e.to_string()))?});
+                if let Some(base) = base {
+                    batch["base"] = base.into();
+                }
+                if let Some(version) = ifVersion {
+                    batch["ifVersion"] = version.into();
+                }
+                if let Some(name) = command {
+                    batch["command"] = name.into();
+                }
+                let batch_json = batch.to_string();
                 let Reply::Applied { ids, .. } =
                     call(owner, Request::Apply { batch_json, origin: crate::Origin::Agent }, deadline)?
                 else {

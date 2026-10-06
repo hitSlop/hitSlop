@@ -1,0 +1,12 @@
+{
+  "name": "my-slop",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "svelte": "5.57.1",
+    "bits-ui": "^2.19.2"
+  },
+  "devDependencies": {
+    "hitslop": "1.0.0"
+  }
+}

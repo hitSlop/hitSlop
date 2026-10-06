@@ -21,7 +21,7 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Choose checks and write tests | [Testing](testing.md) |
 | Validate and release the app and npm packages | [Releasing](guides/releasing.md) |
 
-Packaged agent guidance lives in [packages/cli/skills](../packages/cli/skills).
+Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/skills).
 Measurements live in [`evidence/`](evidence/). [`archive/`](../archive/) holds historical
 material for provenance only; it is not a contract. The executed plans in `archive/docs`
 and the spikes in `archive/spikes` are tracked; the rest stays local.

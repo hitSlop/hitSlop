@@ -1,0 +1,38 @@
+{
+  "name": "startFor",
+  "args": {
+    "duration": 60000
+  },
+  "now": 1791288000000,
+  "seed": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "evaluated": {
+    "ok": true,
+    "intents": [
+      {
+        "type": "set",
+        "path": [
+          "start"
+        ],
+        "value": 1791288000000
+      },
+      {
+        "type": "set",
+        "path": [
+          "end"
+        ],
+        "value": 1791288060000
+      }
+    ],
+    "result": null
+  },
+  "value": {
+    "end": 1791288060000,
+    "start": 1791288000000,
+    "title": "Replay 2 é 中文"
+  }
+}

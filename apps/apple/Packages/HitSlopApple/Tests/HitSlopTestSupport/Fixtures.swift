@@ -9,6 +9,13 @@ import SQLite3
 public enum Fixtures {
   public static let repository = URL(fileURLWithPath: String(#filePath.components(separatedBy: "/apps/apple/")[0]))
 
+  public static var engine: URL {
+    let environment = ProcessInfo.processInfo.environment
+    if let override = environment["HITSLOP_ENGINE"] { return URL(fileURLWithPath: override) }
+    let profile = environment["HITSLOP_CARGO_PROFILE"] ?? "release"
+    return repository.appendingPathComponent("target/\(profile)/slop-engine")
+  }
+
   /// JSON text (a document's state, a reply) as an object.
   public static func object(_ json: String) throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
@@ -143,7 +150,7 @@ public enum Fixtures {
   public static func template(stage: URL, named name: String = "fixture") throws -> URL {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
     let (status, _, errors) = try run(
-      repository.appendingPathComponent("target/release/slop-engine"), ["pack", stage.path, template.path])
+      engine, ["pack", stage.path, template.path])
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
     return template
   }

@@ -1,9 +1,0 @@
-{
-  "name": "@hitslop/shell",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "@hitslop/document": "workspace:*",
-    "@hitslop/schema": "workspace:*"
-  }
-}

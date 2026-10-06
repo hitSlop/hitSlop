@@ -1,9 +1,10 @@
 <script lang="ts">
-import { bindText } from "@hitslop/document/svelte";
+import { bindText } from "hitslop/svelte";
 import { prefersReducedMotion } from "svelte/motion";
 import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 import CalendarClock from "@lucide/svelte/icons/calendar-clock";
 import doc from "./schema";
+import * as actions from "./commands";
 import Vessel from "./Vessel.svelte";
 import { localInput, presets, read } from "./model";
 
@@ -39,14 +40,14 @@ async function turnOver(end: number) {
   problem = "";
   const at = Date.now();
   now = at;
-  await doc.change((tx) => {
-    tx.fields.start.set(at);
-    tx.fields.end.set(end);
-  });
+  try { await actions.startUntil({ end }); }
+  catch (error) { problem = error instanceof Error ? error.message : String(error); changing = true; }
 }
-function again() {
-  const { start, end } = doc.current;
-  void turnOver(Date.now() + (end - start));
+async function again() {
+  if (!prefersReducedMotion.current) turning = reading.remaining;
+  now = Date.now();
+  try { await actions.restart(); }
+  catch (error) { problem = error instanceof Error ? error.message : String(error); }
 }
 function change() {
   const { end } = doc.current;

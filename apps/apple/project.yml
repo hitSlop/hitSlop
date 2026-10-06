@@ -10,8 +10,8 @@ settings:
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
     # The app and its extensions ship as one version.
-    MARKETING_VERSION: "1.3.0"
-    CURRENT_PROJECT_VERSION: "30"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "31"
 packages:
   HitSlopApple:
     path: Packages/HitSlopApple

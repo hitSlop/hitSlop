@@ -34,8 +34,6 @@ pub const PACKAGE_FORMAT: u64 = 1;
 pub const RUNTIME_ABI: u64 = 1;
 #[cfg(feature = "storage")]
 pub const HELPER_PROTOCOL: u64 = 1;
-#[cfg(feature = "storage")]
-pub const HELPER_MINIMUM_PROTOCOL: u64 = 1;
 /// The CSS `border-radius` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
 /// Effective theme JSON, and a theme file, in UTF-8 bytes.
@@ -160,7 +158,8 @@ impl Intent {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Batch { pub base: Option<String>, pub intents: Vec<Intent> }
+#[allow(non_snake_case)]
+pub struct Batch { pub ifVersion: Option<String>, pub command: Option<String>, pub base: Option<String>, pub intents: Vec<Intent> }
 /// A text selection in UTF-16 offsets.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -192,7 +191,7 @@ pub(crate) enum SocketRequest {
     #[serde(rename = "get")]
     Get { protocol: u64, documentPath: String },
     #[serde(rename = "batch")]
-    Batch { protocol: u64, documentPath: String, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] attachments: Option<Vec<String>> },
+    Batch { protocol: u64, documentPath: String, #[serde(skip_serializing_if = "Option::is_none")] ifVersion: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] command: Option<String>, ops: String, #[serde(skip_serializing_if = "Option::is_none")] base: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] attachments: Option<Vec<String>> },
     #[serde(rename = "export")]
     Export { protocol: u64, documentPath: String, format: String, output: String },
 }

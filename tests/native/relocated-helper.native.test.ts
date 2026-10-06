@@ -20,12 +20,14 @@ beforeAll(async () => {
   helpers = join(folder, "hitSlop.app/Contents/Helpers");
   await mkdir(helpers, { recursive: true });
   const build = resolve("apps/apple/Packages/HitSlopApple/.build/debug");
-  for (const name of ["hitslop-native", "slop-engine", "HitSlopApple_HitSlopDocument.bundle"])
+  for (const name of ["hitslop-native", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
+  const engine = join(folder, "slop-engine");
+  await cp(await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine(), engine);
   placement = {
-    engine: join(helpers, "slop-engine"),
+    engine,
     cwd: folder,
-    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
+    env: { HITSLOP_NATIVE_CLI: join(helpers, "hitslop-native"), HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
   };
   document = join(folder, "List.slop");
   await createDocument(resolve("generated/native-fixtures/quick-checklist.slop"), document, placement);

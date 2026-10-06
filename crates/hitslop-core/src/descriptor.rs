@@ -17,7 +17,7 @@ pub(super) enum Node {
     // variants of an internally tagged enum, which would accept `{"kind":"text","x":1}`.
     Text {},
     Boolean {},
-    /// Stored as a map of writer key → integer contribution; projects to their sum.
+    /// An exact safe-integer total; increments serialize through the single writer.
     Counter {},
     /// Last writer wins. `maxLength` counts UTF-16 units, as JavaScript does.
     String {
@@ -235,8 +235,32 @@ impl Node {
     }
 }
 
+/// The longest description, in UTF-16 units.
+const DESCRIPTION: u64 = 500;
+/// Checks a node's `description` and its children's, then removes them. Descriptions tell
+/// people and agents what a field means; they stay in the stored descriptor and never
+/// change what the descriptor means, so two that differ only in descriptions compare equal.
+fn strip_descriptions(node: &mut Value) -> Result<()> {
+    let Some(map) = node.as_object_mut() else { return Ok(()) };
+    if let Some(description) = map.remove("description")
+        && !description.as_str().is_some_and(|d| !d.is_empty() && utf16_len(d) <= DESCRIPTION)
+    {
+        return Err(err(Code::InvalidSchema, "A description is 1–500 characters"));
+    }
+    if let Some(Value::Object(properties)) = map.get_mut("properties") {
+        properties.values_mut().try_for_each(strip_descriptions)?;
+    }
+    for child in ["item", "value", "inner"] {
+        if let Some(child) = map.get_mut(child) {
+            strip_descriptions(child)?;
+        }
+    }
+    Ok(())
+}
 pub(super) fn descriptor(s: &str) -> Result<Node> {
-    let root: Node = parse(s)?;
+    let mut root: Value = parse(s)?;
+    strip_descriptions(&mut root)?;
+    let root: Node = serde_json::from_value(root).map_err(|e| err(Code::InvalidRequest, e))?;
     if !matches!(root, Node::Object { .. }) {
         return Err(err(Code::InvalidSchema, "Expected object descriptor root"));
     }

@@ -46,7 +46,7 @@ hitSlop is built for tools with one clear job and a little character. It comes w
 Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows, register templates and export PNG/PDF.
 
 ```sh
-bunx @hitslop/cli@3.0.0 init weekend-kit
+bunx hitslop@1.0.0 init weekend-kit
 cd weekend-kit
 bun install
 ```
@@ -69,7 +69,7 @@ Open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Exi
 
 ## Use the CLI
 
-Run commands with `bunx @hitslop/cli@3.0.0`, or install it with `bun install -g @hitslop/cli@3.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
+Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitslop@1.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
 
 | Task | Commands |
 | --- | --- |
@@ -80,9 +80,9 @@ Run commands with `bunx @hitslop/cli@3.0.0`, or install it with `bun install -g 
 | Move data between documents | `get`, then one `batch` of `insert` operations |
 | Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/import/export` |
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
-| Install agent guidance | `bun install -g @hitslop/cli`, then `slop skills install`; skills update with the global CLI |
+| Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
 
-Document creation and editing run on macOS and Linux. On a Mac, the CLI prefers the engine shipped with hitSlop; opening windows and exporting PNG/PDF use the Mac app. Call `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" request` directly to edit without Node or Bun. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+Document creation and editing run on macOS and Linux. The CLI carries its own engine; opening windows and exporting PNG/PDF use the Mac app's rendering helper. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
 
 ## Where it's going
 
@@ -109,7 +109,7 @@ Svelte is our supported authoring integration. The document engine is framework 
 With the same Bun and Mac app setup above, create a fresh starter:
 
 ```sh
-bunx @hitslop/cli@3.0.0 init tiny-wins
+bunx hitslop@1.0.0 init tiny-wins
 cd tiny-wins
 bun install
 ```
@@ -121,7 +121,7 @@ Replace the following starter files. Keep the generated `package.json` and `tsco
 `schema.ts` defines the saved fields. Text is editable; a counter supports increments.
 
 ```ts
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 
 export default defineDocument({
   title: s.text(),
@@ -134,7 +134,7 @@ export default defineDocument({
 `slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The folder's name, `tiny-wins`, is the app's slug.
 
 ```ts
-import { defineSlop } from "@hitslop/document";
+import { defineSlop } from "hitslop";
 import schema from "./schema";
 
 export default defineSlop({
@@ -161,7 +161,7 @@ The theme's colors are available as CSS variables; fonts and other styling stay 
 
 ```svelte
 <script lang="ts">
-  import { bindText } from "@hitslop/document/svelte";
+  import { bindText } from "hitslop/svelte";
   import doc from "./schema";
 </script>
 <main class="wins-card">
@@ -266,7 +266,7 @@ A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) doc
 | File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
 | Mac app | Swift, SwiftUI, AppKit, WebKit | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
 | Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
-| Author SDK and CLI | `@hitslop/document`, `@hitslop/cli`, Bun | Schemas, `slop dev` (the core compiled to WASM), build, edit and export |
+| Author SDK and CLI | `hitslop`, `hitslop`, Bun | Schemas, `slop dev` (the core compiled to WASM), build, edit and export |
 | Contracts | TypeBox | One schema for the CLI, socket and page, generated into Rust and Swift |
 
 ```text

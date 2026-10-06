@@ -11,7 +11,7 @@ bun run build
 bun run verify --all --native
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine is copied beside the Debug helper so an explicit `HITSLOP_NATIVE_CLI` selects a matching deployment. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine stays in its Cargo output directory; `HITSLOP_ENGINE` and `HITSLOP_NATIVE_CLI` independently select development tools. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 
@@ -22,10 +22,10 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `apps/apple` | macOS entry point, Quick Look extensions, project configuration, signing, and Sparkle |
 | `crates` | `hitslop-core` (Rust on Loro) document semantics and the `.slop` file, its UniFFI and WASM adapters, and the CLI's `slop-engine` |
 | `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, the app and catalog models (HitSlopFeatures), Catalog, telemetry, and NativeCLI |
-| `packages/document` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
-| `packages/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
-| `packages/schema` | TypeBox manifest, bridge, owner and socket contracts |
-| `packages/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
+| `packages/hitslop/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
+| `packages/hitslop/src/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
+| `packages/hitslop/src/schema` | TypeBox manifest, bridge, owner and socket contracts |
+| `packages/hitslop/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
 | `examples/slops` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |

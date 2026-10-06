@@ -46,7 +46,7 @@ on).
 ## Already verified
 
 - `slop://app` is a secure context. The shell's `crypto.subtle.digest` already works
-  there (`packages/shell/src/attachments.ts:23`), so `navigator.mediaDevices` should
+  there (`packages/hitslop/src/shell/attachments.ts:23`), so `navigator.mediaDevices` should
   exist. Phase 6 asserts this.
 - The installed Xcode 27 SDK includes FoundationModels. The deployment target is macOS
   15.2 (`apps/apple/project.yml`), so model code needs `@available(macOS 26, *)`.
@@ -68,8 +68,8 @@ export default defineSlop({
 
 ```svelte
 <script lang="ts">
-  import { s, isDocumentError } from "@hitslop/document";
-  import { ai, speech } from "@hitslop/document/svelte";
+  import { s, isDocumentError } from "hitslop";
+  import { ai, speech } from "hitslop/svelte";
   import doc from "./schema";
 
   let topic = $state("");
@@ -114,10 +114,10 @@ Other forms:
 
 **Files**
 
-- `packages/schema/src/constants.ts`: add
+- `packages/hitslop/src/schema/constants.ts`: add
   `export const SlopCapabilities = ["microphone", "camera", "speech", "ai"] as const;`
   next to `SlopCategories`.
-- `packages/schema/src/manifest.ts`: add this to `manifestFields`:
+- `packages/hitslop/src/schema/manifest.ts`: add this to `manifestFields`:
 
   ```ts
   capabilities: Type.Optional(
@@ -129,23 +129,23 @@ Other forms:
   ```
 
 - Run `bun run schema:generate`. It regenerates
-  `packages/schema/generated/manifest.schema.json`,
+  `packages/hitslop/generated/manifest.schema.json`,
   `HitSlopCore/Generated/SlopManifest.generated.swift` (`capabilities:
   [SlopCapability]?`) and the contracts. Never edit generated files.
 
 **These follow with no edits**
 
 - The `Slop` type behind `defineSlop` is `Omit<SlopManifest, …>`
-  (`packages/document/src/slop.ts`).
+  (`packages/hitslop/src/sdk/slop.ts`).
 - `normalizeApp` spreads the remaining `slop.ts` fields into `parseManifest`
-  (`packages/cli/src/build.ts:84-92`).
+  (`packages/hitslop/src/cli/build.ts:84-92`).
 - The Rust open-time check compiles the generated schema
   (`crates/hitslop-core/src/manifest.rs`, the `jsonschema::validator` macro).
 - Swift `SlopFile.manifest` (`HitSlopCore/SlopFile.swift:44`) is the generated type.
 
 **Tests**
 
-- `packages/schema/tests/manifest.test.ts` accepts each known value and rejects an
+- `packages/hitslop/tests/schema/manifest.test.ts` accepts each known value and rejects an
   unknown value, a duplicate and a non-array.
 - `crates/hitslop-core/tests/manifest.rs` checks that the native check agrees, both on
   a manifest with `capabilities` and on one without.
@@ -213,7 +213,7 @@ unless noted.
      speech."
 6. **No change to the page policy.** A MediaStream is not a URL, and playing back a
    recording uses `blob:`, which `media-src` already allows. Leave
-   `SchemeHandler.swift` (CSP) and `packages/cli/src/dev.ts` alone. In `slop dev`, the
+   `SchemeHandler.swift` (CSP) and `packages/hitslop/src/cli/dev.ts` alone. In `slop dev`, the
    browser shows its own prompt.
 7. **Check xcodegen.** `project.yml` already points `CODE_SIGN_ENTITLEMENTS` and
    `INFOPLIST_FILE` at these files, so it should need no edit. Verify that
@@ -221,7 +221,7 @@ unless noted.
 
 ## Phase 3: host services on the page bridge
 
-### Wire (`packages/schema/src/page.ts`)
+### Wire (`packages/hitslop/src/schema/page.ts`)
 
 Requests stay flat strings and numbers, because `PageRequest.init`
 (`HitSlopDocument/PageRequest.swift`) rejects anything else.
@@ -299,7 +299,7 @@ public enum SlopHostServiceError: Error { case unavailable(String) }
 
 ### Shell and SDK
 
-- `packages/document/src/abi.ts` adds two members to `SlopContext`:
+- `packages/hitslop/src/sdk/abi.ts` adds two members to `SlopContext`:
 
   ```ts
   readonly ai: {
@@ -311,18 +311,18 @@ public enum SlopHostServiceError: Error { case unavailable(String) }
   };
   ```
 
-- `packages/shell/src/boot.ts`, `createContextV1`, implements both through `call()`:
+- `packages/hitslop/src/shell/boot.ts`, `createContextV1`, implements both through `call()`:
   - `output` is sent as `JSON.stringify(node)`, and structured replies are parsed with
     `JSON.parse(text)`.
   - Audio is base64-encoded the same way `attachments.put` does it
-    (`packages/shell/src/attachments.ts:49`). Share that helper; don't copy it.
+    (`packages/hitslop/src/shell/attachments.ts:49`). Share that helper; don't copy it.
   - In the browser preview, both reject with a `DocumentError` whose code is
     `unavailable`.
-- Author helpers go in `packages/document/src/app/ai.ts` and `speech.ts`. Each forwards
+- Author helpers go in `packages/hitslop/src/sdk/app/ai.ts` and `speech.ts`. Each forwards
   to `current().ai` and `current().speech`, the same way `attachments.ts` does. Export
   them from wherever `attachments` is exported (`./svelte`).
 - Tests:
-  - Update `packages/shell/tests/platform-contracts.types.ts`: both overloads, and
+  - Update `packages/hitslop/tests/shell/platform-contracts.types.ts`: both overloads, and
     `Input<N>` inference for objects, lists and enums.
   - Shell tests: the preview rejects with `unavailable`, structured replies are parsed,
     and the audio is encoded.
@@ -332,7 +332,7 @@ public enum SlopHostServiceError: Error { case unavailable(String) }
 **Why not raw JSON Schema**
 
 - One vocabulary has one owner. Authors already write `s.*`
-  (`packages/document/src/schema.ts:107`).
+  (`packages/hitslop/src/sdk/schema.ts:107`).
 - The core already checks node shapes (`Node::check`) and values (`Node::validate`)
   (`crates/hitslop-core/src/descriptor.rs:89,162`).
 - The result type comes free from `Input<N>`.
@@ -484,7 +484,7 @@ fail before its fix for the intended reason. Tests don't cover private call sequ
   - `files-and-web.mdx`: mic and camera, `ctx.speech`, `ctx.ai` (text and `output`),
     and fallbacks for `unavailable`.
   - Keep repository internals out.
-- The authoring skill references under `packages/cli/skills/`, then run
+- The authoring skill references under `packages/hitslop/skills/`, then run
   `bun run skills:build`.
 - `docs/ideas.md`:
   - Update "Permissions bound to the app's code": declaration has landed, and the

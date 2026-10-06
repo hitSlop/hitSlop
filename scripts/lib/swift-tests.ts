@@ -6,7 +6,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { exec } from "../../packages/cli/src/process";
+import { exec } from "../../packages/hitslop/src/cli/process";
 import { repository } from "./artifacts";
 
 const packagePath = "apps/apple/Packages/HitSlopApple";

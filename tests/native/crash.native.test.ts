@@ -8,9 +8,9 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { debugHelper, documentFromStage, engineRequest } from "../../scripts/lib/native";
-import { engine } from "../../packages/cli/src/engine";
-import { negotiate } from "../../packages/cli/src/native";
-import { run } from "../../packages/cli/src/process";
+import { engine } from "../../packages/hitslop/src/cli/engine";
+import { negotiate } from "../../packages/hitslop/src/cli/native";
+import { run } from "../../packages/hitslop/src/cli/process";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
 useTestRegistry();
 
@@ -18,7 +18,7 @@ const fixture = "tests/fixtures/checklist/document";
 const rounds = 24;
 const helper = process.env.HITSLOP_NATIVE_CLI ?? debugHelper;
 // The engine the CLI selects for that helper: the one beside it.
-const documentEngine = join(dirname(helper), "slop-engine");
+const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine();
 const app = process.env.HITSLOP_APP_BINARY;
 let folder: string;
 beforeAll(async () => {
@@ -83,7 +83,7 @@ test.if(!!app)("an acknowledged edit survives the death of the host that acknowl
       await Bun.sleep(30);
     }
     await run(
-      [process.execPath, "packages/cli/src/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
+      [process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
       { env: { ...process.env, HITSLOP_NATIVE_CLI: helper } },
     );
   } finally {

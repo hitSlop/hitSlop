@@ -23,7 +23,7 @@ let nextPort = 5400;
 /** Serves one example through `slop dev` and resolves once it answers. */
 export async function serve(slug: string) {
   const port = nextPort++;
-  const proc = Bun.spawn(["bun", "packages/cli/src/cli.ts", "dev", `examples/slops/${slug}`, "--port", String(port)], {
+  const proc = Bun.spawn(["bun", "packages/hitslop/src/cli/cli.ts", "dev", `examples/slops/${slug}`, "--port", String(port)], {
     cwd: repo,
     stdout: "ignore",
     stderr: "inherit",

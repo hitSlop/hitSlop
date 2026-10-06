@@ -21,10 +21,9 @@ public enum PackageFormat {
 public enum RuntimeABI {
   public static let level = 1
 }
-/// The helper's command-line protocol: the version it speaks and the oldest it serves.
+/// The command protocol: the one version the helper serves.
 public enum HelperProtocol {
   public static let version = 1
-  public static let minimum = 1
 }
 public enum WindowBounds {
   public static let minWidth = 240

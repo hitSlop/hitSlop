@@ -8,7 +8,7 @@ decides:
 - which handle methods, bindings and CLI operations exist.
 
 The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
-(`packages/document`) gives authors types and adapters; the private shell implements
+(`packages/hitslop/src/sdk`) gives authors types and adapters; the private shell implements
 the handles and immutable snapshots.
 
 `defineDocument` produces a plain object-root descriptor. Build validation calls the
@@ -21,7 +21,7 @@ and, for a batch, `opIndex`. Uncertain outcomes have distinct error codes: inspe
 state before deciding on a new edit.
 
 ```ts
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 export default defineDocument({
   title: s.text(),
   mood: s.integer({ min: 1, max: 5 }),

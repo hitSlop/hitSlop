@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../../packages/cli/src/process";
+import { run } from "../../packages/hitslop/src/cli/process";
 import { publishFolder } from "../lib/artifacts";
 
 

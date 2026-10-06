@@ -79,12 +79,12 @@ In the Mac app, the palette button in a document's toolbar, or **Window ▸ Them
 The CLI does the same:
 
 ```sh
-bunx @hitslop/cli theme get My.slop
-bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad","surface":"#f5efff"}'
-bunx @hitslop/cli theme reset My.slop --token accent
-bunx @hitslop/cli theme reset My.slop
-bunx @hitslop/cli theme export My.slop --output Purple.json
-bunx @hitslop/cli theme import Other.slop Purple.json
+bunx hitslop theme get My.slop
+bunx hitslop theme set My.slop --values '{"accent":"#7050ad","surface":"#f5efff"}'
+bunx hitslop theme reset My.slop --token accent
+bunx hitslop theme reset My.slop
+bunx hitslop theme export My.slop --output Purple.json
+bunx hitslop theme import Other.slop Purple.json
 ```
 
 A theme file names its template and every color:

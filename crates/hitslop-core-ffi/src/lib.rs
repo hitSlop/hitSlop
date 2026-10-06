@@ -146,7 +146,7 @@ impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
         OpenedFile {
             kind: p.kind,
-            manifest_json: p.app.manifest.clone(),
+            manifest_json: p.manifest.clone(),
             silhouette: p.silhouette.clone(),
             descriptor_json: p.app.descriptor.clone(),
             theme_tokens: p

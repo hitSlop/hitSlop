@@ -23,7 +23,7 @@ fn write_template(
     let conn = writer(path, true)?;
     conn.execute_batch("PRAGMA auto_vacuum=FULL;").map_err(sqlite("create"))?;
     configure_writer(&conn)?;
-    let tx = conn.unchecked_transaction().map_err(sqlite("create"))?;
+    let tx = super::initialize(&conn)?;
     tx.execute_batch(&format!(
         "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"
     ))
@@ -37,7 +37,7 @@ fn write_template(
     for (name, png) in artwork {
         rows::put_artwork(&tx, *name, png)?;
     }
-    tx.commit().map_err(sqlite("create"))?;
+    tx.commit()?;
     conn.close().map_err(|(_, e)| sqlite("close")(e))
 }
 
@@ -89,6 +89,7 @@ fn parse_app(input: &str) -> Result<(App, String)> {
     }
     let row: crate::wire::AppRow = serde_json::from_str(input).map_err(|e| invalid(format!("app.json: {e}")))?;
     requirements(row.packageFormat.try_into().unwrap_or(i64::MAX), row.runtimeABI.try_into().unwrap_or(i64::MAX))?;
+    crate::manifest::validate(row.manifest.get()).map_err(Error::Rejected)?;
     if row.manifest.get().len() > MANIFEST_BYTES
         || row.descriptor.get().len() > APP_TEXT_BYTES
         || row.initial.get().len() > APP_TEXT_BYTES
@@ -117,7 +118,7 @@ fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {
 /// checked later when they exist. Refuses unsupported markers before interpreting values.
 pub fn validate_app(input: &str) -> Result<()> {
     let (app, initial) = parse_app(input)?;
-    let (_, spec) = check_app_values(&app)?;
+    let (_, spec, _) = check_app_values(&app)?;
     initial_checkpoint(&spec, &initial).map(|_| ())
 }
 /// Parsed JSON text without the whitespace between its tokens, in the order written: the

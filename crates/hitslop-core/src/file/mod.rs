@@ -7,6 +7,7 @@
 mod artwork;
 mod assets;
 mod catalog;
+mod commands;
 mod copy;
 mod pack;
 mod places;
@@ -16,6 +17,7 @@ pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png};
 pub use assets::{AssetReader, content_type, valid_asset_path};
 pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
+pub use commands::{COMMAND_BUNDLE, COMMAND_METADATA, CommandAssets, commands, valid_call};
 pub(crate) use copy::copy;
 pub use copy::create_document;
 pub use pack::{APP_INPUT_BYTES, pack, validate_app};
@@ -45,14 +47,8 @@ pub(crate) const STORAGE_VERSION: i64 = 1;
 /// `encoding` is how `bytes` holds it (`encode`). The tables are STRICT: SQLite refuses a
 /// mistyped write and the quick check finds a mistyped row, but a file is untrusted bytes,
 /// so every open still checks what it reads.
-pub(crate) const SCHEMA: &str = "\
-CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL, runtime_abi INTEGER NOT NULL, manifest TEXT NOT NULL, descriptor TEXT NOT NULL, theme TEXT NOT NULL) STRICT;
-CREATE TABLE assets(path TEXT PRIMARY KEY, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br')), size INTEGER NOT NULL, bytes BLOB NOT NULL) STRICT;
-CREATE TABLE artwork(name TEXT PRIMARY KEY CHECK(name IN ('preview','icon')), png BLOB NOT NULL) STRICT;
-CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1)) STRICT;
-CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), bytes BLOB NOT NULL) STRICT;
-CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL) STRICT;
-CREATE TABLE attachments(id TEXT PRIMARY KEY, bytes BLOB NOT NULL) STRICT;";
+pub(crate) const SCHEMA: &str = include_str!("storage-1.sql");
+const _: () = assert!(STORAGE_VERSION == 1, "add the old reader and a transactional migration before raising storage");
 
 /// The file's path with its folder resolved: NOFOLLOW refuses a symbolic link anywhere in
 /// a path, while the file itself must not be one.
@@ -76,7 +72,10 @@ pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<C
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).map_err(sqlite("open"))?;
     conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA cell_size_check=ON; PRAGMA mmap_size=0;")
         .map_err(sqlite("open"))?;
-    conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, crate::STORAGE_BYTES as i32).map_err(sqlite("open"))?;
+    let version = one(&conn, "PRAGMA user_version")?;
+    if version <= STORAGE_VERSION {
+        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, crate::STORAGE_BYTES as i32).map_err(sqlite("open"))?;
+    }
     Ok(conn)
 }
 /// The writer's durability: a rollback journal that exists only while a save commits, and
@@ -110,10 +109,40 @@ pub(crate) fn reader(path: &Path) -> Result<Connection> {
         Err(_) => connect(path, OpenFlags::SQLITE_OPEN_READ_ONLY, busy),
     }
 }
-/// A write transaction that takes the database's write lock at once, so a busy file fails
-/// before anything is written. Dropping it uncommitted rolls back.
-pub(crate) fn immediate<'a>(conn: &'a Connection, action: &str) -> Result<Transaction<'a>> {
-    Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite(action))
+/// All durable writes pass through this transaction. Future forward migrations run
+/// here, never on reads, and validate before the same transaction commits.
+pub(crate) struct WriteTransaction<'a> {
+    tx: Transaction<'a>,
+    validate: bool,
+}
+impl std::ops::Deref for WriteTransaction<'_> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        &self.tx
+    }
+}
+impl WriteTransaction<'_> {
+    pub(crate) fn commit(self) -> Result<()> {
+        if self.validate {
+            check(&self.tx, true)?;
+        }
+        self.tx.commit().map_err(sqlite("commit"))
+    }
+}
+pub(crate) fn begin_write<'a>(conn: &'a Connection, action: &str) -> Result<WriteTransaction<'a>> {
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite(action))?;
+    let version = markers(&tx)?;
+    // Version 1 is the first public storage. The assertion above forces a real reader
+    // and migration step to accompany a bump; no prelaunch legacy format is supported.
+    let validate = version != STORAGE_VERSION;
+    if validate {
+        return Err(invalid("Missing storage migration"));
+    }
+    Ok(WriteTransaction { tx, validate })
+}
+pub(crate) fn initialize(conn: &Connection) -> Result<WriteTransaction<'_>> {
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("create"))?;
+    Ok(WriteTransaction { tx, validate: true })
 }
 
 /// A template holds only the app; a document also holds its saved state.
@@ -134,7 +163,8 @@ fn tables(conn: &Connection) -> Result<Vec<SchemaRow>> {
 }
 /// The tables and indexes `SCHEMA` makes, including SQLite's automatic primary-key
 /// indexes; built once.
-fn expected_tables() -> &'static [SchemaRow] {
+fn expected_tables(version: i64) -> &'static [SchemaRow] {
+    assert_eq!(version, 1, "reader selected after marker validation");
     static LAYOUT: OnceLock<Vec<SchemaRow>> = OnceLock::new();
     LAYOUT.get_or_init(|| {
         let memory = Connection::open_in_memory().expect("in-memory database");
@@ -152,8 +182,8 @@ fn expected_tables() -> &'static [SchemaRow] {
 /// caller's if it holds one (`opened`), so they see one state while another process saves.
 pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
-    markers(conn)?;
-    layout(conn)?;
+    let version = markers(conn)?;
+    layout(conn, version)?;
     app_sizes(conn)?;
     stored_assets(conn)?;
     stored_artwork(conn)?;
@@ -171,7 +201,7 @@ fn one(conn: &Connection, sql: &str) -> Result<i64> {
 }
 /// The application ID, the storage version and the app's requirements: what tells a file
 /// this build reads from one it is too old for.
-fn markers(conn: &Connection) -> Result<()> {
+fn markers(conn: &Connection) -> Result<i64> {
     if one(conn, "PRAGMA application_id")? != APPLICATION_ID {
         return Err(invalid("This is not a hitSlop document"));
     }
@@ -197,7 +227,8 @@ fn markers(conn: &Connection) -> Result<()> {
         }
         Err(e) => return Err(sqlite("read")(e)),
     };
-    requirements(package_format, runtime_abi)
+    requirements(package_format, runtime_abi)?;
+    Ok(version)
 }
 /// The app's requirements, as `pack` reads them from a build and every open from a file:
 /// none newer than this build supports, and each at least 1.
@@ -213,8 +244,8 @@ fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
     Ok(())
 }
 /// The exact tables, and at most one row, row 1, in each one-row table.
-fn layout(conn: &Connection) -> Result<()> {
-    if tables(conn)? != expected_tables() {
+fn layout(conn: &Connection, version: i64) -> Result<()> {
+    if tables(conn)? != expected_tables(version) {
         return Err(invalid("Unexpected document tables"));
     }
     // A file written without its CHECK constraints may hold other rows, which no read
@@ -358,23 +389,25 @@ pub struct App {
 /// the window skin's PNG when the manifest names one.
 struct CheckedApp {
     spec: crate::AppSpec,
+    manifest: String,
     silhouette: shape::Silhouette,
     skin: Option<Vec<u8>>,
 }
 /// The content rules `pack` applies and every open relies on, each run once.
-fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::AppSpec)> {
-    let window = crate::manifest::validate(&app.manifest).map_err(Error::Rejected)?;
+fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::AppSpec, String)> {
+    let (window, manifest) = crate::manifest::stored(&app.manifest, app.package_format).map_err(Error::Rejected)?;
     let schema = crate::descriptor::descriptor(&app.descriptor).map_err(Error::Rejected)?;
     let theme_tokens = crate::theme::validate_defaults(&app.theme).map_err(Error::Rejected)?;
     let spec = crate::AppSpec::of(schema, &window.slug, theme_tokens);
-    Ok((window, spec))
+    Ok((window, spec, manifest))
 }
 /// An asset's bytes by key: borrowed from a stage being packed, read from a file.
 type Assets<'a, 'b> = &'b dyn Fn(&str) -> Result<Option<Cow<'a, [u8]>>>;
 fn check_app(app: &App, asset: Assets) -> Result<CheckedApp> {
-    let (window, spec) = check_app_values(app)?;
+    let (window, spec, manifest) = check_app_values(app)?;
     let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
     std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
+    commands::validate(asset(COMMAND_METADATA)?.as_deref(), asset(COMMAND_BUNDLE)?.as_deref())?;
     let skin = match &window.skin {
         None => None,
         Some(skin) => {
@@ -390,7 +423,7 @@ fn check_app(app: &App, asset: Assets) -> Result<CheckedApp> {
             Some(bytes.into_owned())
         }
     };
-    Ok(CheckedApp { spec, silhouette: window.silhouette, skin })
+    Ok(CheckedApp { spec, manifest, silhouette: window.silhouette, skin })
 }
 
 /// A template or document a host opened: its kind and markers, its app as stored, and what
@@ -398,6 +431,8 @@ fn check_app(app: &App, asset: Assets) -> Result<CheckedApp> {
 pub struct OpenedApp {
     pub kind: Kind,
     pub app: App,
+    /// Normalized host-facing manifest. The stored manifest is never rewritten on read.
+    pub manifest: String,
     /// What its documents are instances of: the descriptor and the declared palette.
     pub spec: crate::AppSpec,
     pub silhouette: shape::Silhouette,
@@ -417,6 +452,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     Ok(OpenedApp {
         kind,
         spec: found.spec,
+        manifest: found.manifest,
         silhouette: found.silhouette,
         skin: found.skin,
         bytes: fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0),
@@ -483,7 +519,7 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
         "kind": match opened.kind { Kind::Template => "template", Kind::Document => "document" },
         "packageFormat": opened.app.package_format,
         "runtimeABI": opened.app.runtime_abi,
-        "manifest": serde_json::from_str::<serde_json::Value>(&opened.app.manifest).map_err(failed)?,
+        "manifest": serde_json::from_str::<serde_json::Value>(&opened.manifest).map_err(failed)?,
         "assets": list("SELECT path, size FROM assets ORDER BY path")?,
         "artwork": list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         "attachments": { "count": attachments, "bytes": attachment_bytes },

@@ -27,7 +27,6 @@ function unsupported(path: string): never {
 export function swiftContracts(
   request: TSchema,
   reply: TSchema,
-  discovery: TSchema,
   pageRequest: TSchema,
   pageFailure: TSchema,
   pageResults: Record<string, TSchema>,
@@ -323,7 +322,6 @@ public struct SocketReplyHeader: Decodable, Sendable {
   structure("HostCaptureResult", hostCaptureResult as Schema);
   structure("PageFailure", pageFailure as Schema, undefined, false);
   socketReplies(reply);
-  structure("SocketDiscovery", discovery as Schema);
   // One case per page method; a result with fields carries its generated structure.
   const results = Object.entries(pageResults).map(([method, schema]) => {
     const name = "Page" + title(method) + "Result";

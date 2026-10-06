@@ -35,11 +35,10 @@ checking it as the app opens it; text assets are stored compressed, since every 
 carries its own copy of the app. Only `--artwork native` and `register` render artwork
 with the app, from a draft of the template. The CLI and the app update separately: the
 CLI names its command protocol to the engine, and the engine names it in every request
-to a live owner; a side that does not serve it refuses and says which to update. On a
-Mac, document commands prefer the app's bundled `slop-engine`; on Linux they use the
-CLI's engine. The engine passes what needs AppKit or WebKit (exports, windows, native
-artwork) to the app's rendering helper. The app bundles and signs both executables with
-the same core.
+to a live owner; a side that does not serve it refuses and says which to update. Document
+commands use the CLI's own `slop-engine` on every platform. The engine passes what needs
+AppKit or WebKit (exports, windows, native artwork) to the app's rendering helper.
+The app and helper link the same core; the engine ships only in the npm package.
 Saved documents carry what they need to be read: the
 file's `packageFormat` and `runtimeABI` requirements (`app` columns), the SQLite
 application ID and storage version, and the document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
@@ -68,7 +67,7 @@ contract. The core answers the document requests (open, edits, text, undo, flush
 attachments) and the window answers its own (config, readiness, resizing, errors).
 WebKit correlates replies; native view tokens fence retired pages without page-carried
 identity. Shared limits and codes live in TypeBox-free
-`packages/schema/src/constants.ts` and are generated into Rust and Swift.
+`packages/hitslop/src/schema/constants.ts` and are generated into Rust and Swift.
 
 ## Layers
 
@@ -85,9 +84,9 @@ identity. Shared limits and codes live in TypeBox-free
 | Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, theme panel, page-failure overlay, the save-failure sheet (from the owner's save status); its document operations go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
 | App | `HitSlopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
-| Author SDK | `packages/document` | Descriptors, public types, errors, Svelte adapter; no host runtime |
-| Page shell | `packages/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
-| Contracts | `packages/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
+| Author SDK | `packages/hitslop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
+| Page shell | `packages/hitslop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
+| Contracts | `packages/hitslop/src/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
 
 ## An edit
 
@@ -309,7 +308,7 @@ the same owner in-process, without WebKit or authored code. Closed exports use a
 read-only saved-state renderer. Socket work runs off the main actor; edit payloads
 remain JSON text until the core parses them.
 
-Edits print `{ids}` after saving and are never replayed automatically. The socket has
+Generic edits print `{ids}` after saving and are never replayed automatically. The socket has
 one edit method, `batch`, for data and palette alike; CLI `apply` wraps one operation.
 Socket `get` returns `{schema, defaults, version, value, theme}` after flushing: the app's
 descriptor and declared colors, and the document's version, value and effective colors.

@@ -1,4 +1,4 @@
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 export default defineDocument({
   note: s.text(),
   hits: s.counter(),

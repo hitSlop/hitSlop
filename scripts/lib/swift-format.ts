@@ -3,7 +3,7 @@
  * `bun run swift:format` rewrites them. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { exec } from "../../packages/cli/src/process";
+import { exec } from "../../packages/hitslop/src/cli/process";
 import { repository } from "./artifacts";
 
 async function swiftSources(): Promise<string[]> {

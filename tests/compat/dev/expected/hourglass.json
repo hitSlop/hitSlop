@@ -1,0 +1,20 @@
+{
+  "value": {
+    "end": 0.5,
+    "start": 0.5,
+    "title": "Replay 2 é 中文"
+  },
+  "theme": {
+    "overrides": {
+      "glass": "#123456"
+    },
+    "effective": {
+      "frame": "#4b2f1f",
+      "glass": "#123456",
+      "ink": "#2a1f17",
+      "onFrame": "#f4e7d2",
+      "sand": "#e2b15e"
+    }
+  },
+  "attachments": []
+}

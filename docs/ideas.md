@@ -39,7 +39,7 @@ a person and their agent edit the same live document. What's missing is the slop
   with the document's path and the `hitslop-document` skill the CLI installs. The agent
   edits through the owner socket, so the person watches its edits land.
 - **Why:** puts the agent next to the work for people who never open a terminal.
-- **Builds on:** `installedAgents()` in `packages/cli/src/agents.ts` (Codex, Claude Code,
+- **Builds on:** `installedAgents()` in `packages/hitslop/src/cli/agents.ts` (Codex, Claude Code,
   Gemini CLI, OpenCode) and the one edit path. The agent is just another CLI client.
 - **Open questions:** permissions when an app launches an agent, choosing the agent, and
   showing its cost.
@@ -66,7 +66,7 @@ a person and their agent edit the same live document. What's missing is the slop
     export and theme as tools whose input schemas come from each document's descriptor.
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
   clients without a shell work on slops.
-- **Builds on:** the owner socket and its TypeBox envelopes in `packages/schema`. The
+- **Builds on:** the owner socket and its TypeBox envelopes in `packages/hitslop/src/schema`. The
   socket takes one request per connection today, so streaming needs a new envelope.
 
 ### Gradient theme tokens
@@ -93,7 +93,7 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the essay's in-place toolchain: the tool you hold carries what you need to
   change it. Without it, the slope ends at a cliff.
 - **Builds on:** `slop init`'s agent handoff and the build staging in
-  `packages/cli/src/build.ts`.
+  `packages/hitslop/src/cli/build.ts`.
 - **Contract change:** templates contain no source today. Shipping source also raises
   questions about licenses and private notes in briefs.
 - **Constraints:** compressed and optional, with a size limit and provenance; source
@@ -103,22 +103,31 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Additive app upgrades
 
-- **What:** let a document move to a newer build of its app when the new descriptor only
-  adds things:
-  - a field with an initial value;
+- **What:** let a document move to a newer build of its app when the new app keeps an
+  equivalent descriptor (new UI code only) or its descriptor only adds things:
+  - a field with an explicit initial value for existing data;
   - an optional field;
   - an enum value;
   - wider bounds.
 
-  Rust checks that the change is additive, and the document keeps its Loro state.
+  Rust checks that the change is additive, keeps existing values and `$id`s, and commits
+  the new app, descriptor and transformed state in one transaction, so a reopen after a
+  failure finds the complete old version or the complete new one. Renames, deletions and
+  type changes come later, each with explicit transformation rules; they are never
+  guessed.
 - **Why:** remixing is a dead end if every schema change strands existing data.
-- **Builds on:** preserve-and-flag (merged anomalies are kept and reported, never
-  repaired), which already keeps unexpected values safe; saved state stored with its
-  app row, so replacing the row compares the old and new parsed descriptors in the same
-  commit; and the [compatibility](engineering-contract.md#compatibility) markers and
-  corpus.
+- **Builds on:** saved state stored with its app row, so replacing the row compares the
+  old and new parsed descriptors in the same commit; and the
+  [compatibility](engineering-contract.md#compatibility) markers and corpus.
+- **Identity:** safety comes from the descriptor comparison, so an explicit "move this
+  document to that template" needs no lineage. Offering "a newer version of this app
+  exists" does, and neither a slug nor an SDK version provides it. The exact revision is
+  a digest of the app (its `app` row and assets) that Rust computes; lineage comes with
+  publishing and signing.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
-  they were created with. This is the one deferral worth pulling forward.
+  they were created with. An upgrade is always an explicit operation: installing hitSlop
+  never replaces the app inside an existing document. This is the one deferral worth
+  pulling forward.
 
 ### Permissions bound to the app's code
 
@@ -216,9 +225,29 @@ a person and their agent edit the same live document. What's missing is the slop
     exactly like a CLI edit, and text bindings already merge concurrent edits from the
     history they saw.
 - **The room is not an authority.** It may run hitslop-core compiled to WASM to check
-  decoding, sizes and history-trimmed bytes, and to compact the log. Replicas keep
-  preserve-and-flag for merged anomalies.
+  decoding, sizes and history-trimmed bytes, and to compact the log.
+- **Merged anomalies need a designed policy.** Two valid edits can merge into a state
+  outside the app's constraints, and refusing whichever import arrives second doesn't
+  converge. Today every accepted operation keeps the document valid and the core has no
+  anomaly handling, so the policy has to reconcile the two.
 - **Prerequisites:**
+  - a sync protocol of its own, never sharing a number with the command protocol. Its
+    handshake checks the document's identity, its app revision and layout, the sync
+    capabilities, and whether the peers retain enough common history to exchange
+    updates;
+  - a document identity that holds across machines (device and inode identify only the
+    local writer), and a rule for what duplicating a shared document means: a fork, or
+    another replica;
+  - one shared starting snapshot, made when sharing is turned on, for every joining
+    replica;
+  - one app revision and one layout inside a shared document. A lossless local migration
+    is not a safe replica migration, because another offline replica's operations may
+    address the old containers, so app upgrades wait or happen as a coordinated
+    operation;
+  - a replica refused as incompatible keeps its offline edits; they're never replaced by
+    the latest snapshot;
+  - attachment reclamation that allows for references arriving later from another
+    replica;
   - the invitee has the same app, which a shared document carries;
   - capability links until accounts exist;
   - rate and connection limits;

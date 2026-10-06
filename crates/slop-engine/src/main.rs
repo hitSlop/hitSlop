@@ -1,4 +1,4 @@
-//! `slop-engine`, the file engine `@hitslop/cli` runs. `validate-app` checks evaluated app
+//! `slop-engine`, the file engine `hitslop` runs. `validate-app` checks evaluated app
 //! JSON from bounded standard input; `pack <stage> <file>` builds a template
 //! from a build's stage; `inspect <file>` prints a file's kind, markers, app and sizes as
 //! JSON, and whether a live owner has published its socket (`live`; a crashed owner's stays
@@ -15,13 +15,14 @@
 //! a usage error exits 2.
 //! `HITSLOP_TEST_REGISTRY` selects an isolated registry for tests.
 use hitslop_core::{command, file, registry};
+mod call;
+mod runner;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
-/// The app's helper. `HITSLOP_NATIVE_CLI` names one; otherwise the helper beside this
-/// engine (inside the app), then the installed app's.
+/// The app's helper. `HITSLOP_NATIVE_CLI` names one; otherwise the installed app's.
 fn helper() -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
         return Err("Opening windows, exporting and native artwork require macOS and hitSlop.app; document edits and authoring run anywhere.".into());
@@ -32,12 +33,10 @@ fn helper() -> Result<PathBuf, String> {
         let named = PathBuf::from(named);
         return if executable(&named) { Ok(named) } else { Err("HITSLOP_NATIVE_CLI is not executable".into()) };
     }
-    let beside = std::env::current_exe().ok().and_then(|engine| Some(engine.parent()?.join("hitslop-native")));
     let home = std::env::var_os("HOME")
         .map(|home| PathBuf::from(home).join("Applications/hitSlop.app/Contents/Helpers/hitslop-native"));
-    beside
+    [PathBuf::from("/Applications/hitSlop.app/Contents/Helpers/hitslop-native")]
         .into_iter()
-        .chain([PathBuf::from("/Applications/hitSlop.app/Contents/Helpers/hitslop-native")])
         .chain(home)
         .find(|path| executable(path))
         .ok_or_else(|| {
@@ -92,13 +91,17 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut protocol = None;
+    if args.as_slice() == ["--evaluate-command"] {
+        runner::child();
+        return ExitCode::SUCCESS;
+    }
     if args.first() == Some(&"--client-protocol") {
         let Some(version) = args.get(1).and_then(|v| v.parse().ok()) else {
             eprintln!("Invalid client protocol");
             return ExitCode::from(2);
         };
-        if !command::supports_protocol(version) {
-            eprintln!("Unsupported client protocol; update hitSlop and @hitslop/cli");
+        if let Some(message) = command::protocol_mismatch(version) {
+            eprintln!("{message}");
             return ExitCode::from(2);
         }
         protocol = Some(version);
@@ -110,6 +113,31 @@ fn main() -> ExitCode {
     }
     if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));
+    }
+    if args.first() == Some(&"call") || args.first() == Some(&"describe") {
+        let protocol = match named(protocol) {
+            Ok(protocol) => protocol,
+            Err(code) => return code,
+        };
+        let reply = match args.as_slice() {
+            ["describe", path] => call::describe(path, protocol),
+            ["call"] => {
+                let mut input = String::new();
+                if std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input).is_err()
+                    || input.len() > command::MAX_REQUEST_BYTES
+                {
+                    eprintln!("Command input is too large or invalid UTF-8");
+                    return ExitCode::FAILURE;
+                }
+                call::call(&input, protocol)
+            }
+            _ => {
+                eprintln!("usage: describe <file> | call < request.json");
+                return ExitCode::from(2);
+            }
+        };
+        println!("{reply}");
+        return ExitCode::SUCCESS;
     }
     if args.as_slice() == ["request"] {
         let protocol = match named(protocol) {

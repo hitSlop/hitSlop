@@ -379,7 +379,7 @@ impl Store {
     }
     /// Dropping the guard rolls back: on any error, after a failed COMMIT, or in a panic.
     fn transaction(&self, conn: &Connection, job: &SaveJob) -> Result<Metadata> {
-        let tx = file::immediate(conn, "begin")?;
+        let tx = file::begin_write(conn, "begin")?;
         let meta = match &job.rows {
             Rows::Checkpoint(bytes) => {
                 if !within(0, checkpoint_row(bytes.len())) {
@@ -400,7 +400,7 @@ impl Store {
                 Metadata { rows: meta.rows + 1, update_bytes: meta.update_bytes + size, ..meta }
             }
         };
-        tx.commit().map_err(sqlite("commit"))?;
+        tx.commit()?;
         Ok(meta)
     }
 
@@ -441,7 +441,7 @@ impl Store {
         Ok(Attachment { id, bytes: bytes.len() as u64 })
     }
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
-        let tx = file::immediate(conn, "store attachment")?;
+        let tx = file::begin_write(conn, "store attachment")?;
         // The same bytes are already stored only if the stored copy is intact; damage is
         // refused, never repaired in passing, so a successful import is always readable.
         if stored_attachment(&tx, id)?.is_none() {
@@ -458,7 +458,7 @@ impl Store {
             }
             rows::put_attachment(&tx, id, bytes)?;
         }
-        tx.commit().map_err(sqlite("store attachment"))
+        tx.commit()
     }
     /// An attachment's bytes, verified against its identity.
     pub fn attachment(&self, id: &str) -> Result<Vec<u8>> {
@@ -482,11 +482,11 @@ impl Store {
         self.check(true)?;
         let optimized = optimized_artwork(artwork)?;
         self.connected(&mut lock(&self.backing).conn, |conn| {
-            let tx = file::immediate(conn, "write artwork")?;
+            let tx = file::begin_write(conn, "write artwork")?;
             for (name, png) in &optimized {
                 rows::put_artwork(&tx, *name, png)?;
             }
-            tx.commit().map_err(sqlite("write artwork"))
+            tx.commit()
         })
     }
     /// Every stored attachment, by identity.
@@ -538,9 +538,9 @@ impl Store {
             return Ok(0);
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {
-            let tx = file::immediate(conn, "reclaim attachments")?;
+            let tx = file::begin_write(conn, "reclaim attachments")?;
             let deleted = delete_unreferenced(&tx, None, &self.app.spec)?;
-            tx.commit().map_err(sqlite("reclaim attachments"))?;
+            tx.commit()?;
             Ok(deleted)
         })
     }
@@ -565,7 +565,7 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
     if !within(0, checkpoint_row(state.len())) {
         return Err(Error::Full);
     }
-    let tx = file::immediate(conn, "clean copy")?;
+    let tx = file::begin_write(conn, "clean copy")?;
     rows::put_checkpoint(&tx, &state)?;
     rows::clear_updates(&tx)?;
     rows::clear_artwork(&tx)?;
@@ -573,7 +573,7 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
     for (name, png) in artwork {
         rows::put_artwork(&tx, *name, png)?;
     }
-    tx.commit().map_err(sqlite("clean copy"))
+    tx.commit()
 }
 /// Deletes the attachments `doc`, or the saved state when none is given, does not
 /// reference (`Document::attachment_references`), inside the caller's transaction.

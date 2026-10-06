@@ -57,11 +57,11 @@ fn native_manifest_bounds_json_and_preserves_unicode_semantics() {
     assert_eq!(manifest::validate("{").unwrap_err().code, Code::InvalidRequest);
 }
 
-/// The same corpus TypeBox is checked against (`packages/schema/tests/manifest.test.ts`):
+/// The same corpus TypeBox is checked against (`packages/hitslop/tests/schema/manifest.test.ts`):
 /// complete acceptance is the schema plus the core's window-shape parser.
 #[test]
 fn native_manifest_agrees_with_the_shared_corpus() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/schema/tests/fixtures/manifest-cases.json");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/hitslop/tests/schema/fixtures/manifest-cases.json");
     let cases: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     assert!(cases.len() > 80);
     for case in cases {

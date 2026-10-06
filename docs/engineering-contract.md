@@ -18,10 +18,12 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the range served (`{version, minimum}`) | Selects the adapter for the named protocol, which every document command names. Keeps serving every protocol from `minimum`, and refuses any other before touching the document (exit status 2, or `requires_update`) naming the side to update. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
 
 Markers are requirements, not release numbers: refactors never raise them, and app,
-CLI and SDK versions never stand for them. An additive `ctx` API still raises
+CLI and SDK versions never stand for them. The Mac app and the npm packages share one
+release version. A format change that an older build cannot read correctly raises a
+marker; a change without one is allowed only when older readers already handle it. An additive `ctx` API still raises
 `runtimeABI` once the SDK depends on it; an app may treat an API as optional only where
 it has a real fallback. A syntax reader never caps `runtimeABI`: the supported runtime is
 checked before the reader is chosen. The build stamps `runtimeABI` from the project's
@@ -35,10 +37,18 @@ add the new one beside it; keep the old layout and storage arms. Until then, rai
 the markers (application ID, storage version, then `package_format` and `runtime_abi`)
 before it compares the exact tables, so a newer file is refused with `requires_update`
 even when its tables differ. Saved state belongs to the descriptor in its file's `app`
-row, which is written once; no copy of it is stored with the state. Checks that run
-on open are versioned by `packageFormat`, so tightening an authoring rule never rejects a
-saved document; a security fix that must reject old documents needs an assessment and a
-recovery path for their data. Public boundaries grow additively: `ctx` and handle
+row, which is written once; no copy of it is stored with the state. App limits and the
+checks that run on open are versioned by `packageFormat`. Persistence limits (storage
+size and updates, attachments) govern every save as well as every open, so they are
+versioned by the storage version: never lowered for a released one, and raised only
+together with it. Tightening an authoring rule never rejects a saved document or stops
+one from being edited and saved, and an accepted edit stays readable under the markers
+its save writes. A security fix that must reject old documents needs an assessment and a
+recovery path for their data. Installing hitSlop never replaces the app inside an
+existing document; upgrading a document's app is an explicit operation. Only a write
+under the writer lock migrates a file, validating the result and committing the data and
+its markers together; reads that only display it (Quick Look, the catalog, `get`,
+export) never migrate it. Public boundaries grow additively: `ctx` and handle
 methods (new object-handle members start with `$`; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
 `data-hitslop-root` and the embed relay. The engine, rendering helper and live owner ship in one
@@ -58,7 +68,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   (the writer lock, the `.slop` file, the save policy), and is the only code that opens a
   `.slop` file: the app, the helper, Quick Look and the CLI's `slop-engine` all read and
   write through it. The Rust owner schedules saves and serializes edits; Swift
-  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/shell`) holds no CRDT.
+  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/hitslop/src/shell`) holds no CRDT.
 - A `.slop` file is one SQLite database. A template holds its app: the `app` row
   (manifest, descriptor, theme defaults and the two requirements), `assets` (including
   `app.js`) and optional preview and icon `artwork`, and its initial values as its
@@ -91,7 +101,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
   JavaScriptCore engine or a second document engine. The WASM core ships only in the
   CLI, for `slop dev` and tests. The native engine validates authoring input.
-- TypeBox owns platform contracts (`packages/schema`). Run `bun run schema:generate`;
+- TypeBox owns platform contracts (`packages/hitslop/src/schema`). Run `bun run schema:generate`;
   never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
   every build it packs, not authored UI behavior. Rust validates generated page and

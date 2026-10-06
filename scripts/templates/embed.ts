@@ -1,7 +1,7 @@
 import { publishFolder, repository } from "../lib/artifacts";
 import { chmod, copyFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { exists } from "../../packages/cli/src/fs";
+import { exists } from "../../packages/hitslop/src/cli/fs";
 import { builtTemplates, type TemplateInventory } from "./discover";
 import { validateTemplate } from "./cache";
 
