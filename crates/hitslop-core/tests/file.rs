@@ -1,6 +1,6 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
-use hitslop_core::file::{self, Artwork, Kind};
+use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
 use hitslop_core::{Code, Origin};
@@ -445,6 +445,80 @@ fn templates_create_documents_and_never_open_as_one() {
     file::create_document(&template, &b).unwrap();
     assert_eq!(file::open(&a, true).unwrap().kind, Kind::Document);
     assert_eq!(file::open(&b, true).unwrap().kind, Kind::Document);
+}
+
+/// The catalog lists each template folder's templates, named for their slugs, and says why
+/// it left out every other `.slop` file. A missing folder lists nothing and is not made.
+#[test]
+fn template_folders_list_their_templates_and_why_others_were_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let (bundled, installed, missing) =
+        (dir.path().join("bundled"), dir.path().join("installed"), dir.path().join("missing"));
+    let template = template(dir.path());
+    for folder in [&bundled, &installed] {
+        fs::create_dir_all(folder).unwrap();
+        fs::copy(&template, folder.join("checklist.slop")).unwrap();
+    }
+    fs::copy(&template, installed.join(".hidden.slop")).unwrap();
+    fs::copy(&template, installed.join("renamed.slop")).unwrap();
+    fs::write(installed.join("notes.txt"), "not a template").unwrap();
+    fs::create_dir(installed.join("folder.slop")).unwrap();
+    fs::rename(document(dir.path()), installed.join("doc.slop")).unwrap();
+    let roots = [
+        (TemplateSource::Bundled, bundled.clone()),
+        (TemplateSource::Installed, installed.clone()),
+        (TemplateSource::Installed, missing.clone()),
+    ];
+    let catalog = file::list_templates(&roots);
+    let folders: Vec<_> =
+        roots.iter().map(|(source, path)| file::Folder { source: *source, path: path.clone() }).collect();
+    assert_eq!(catalog.folders, folders, "every listed folder, made or not");
+    let listed: Vec<_> = catalog.templates.iter().map(|t| (t.slug.as_str(), t.source, t.path.clone())).collect();
+    assert_eq!(
+        listed,
+        [
+            ("checklist", TemplateSource::Bundled, fs::canonicalize(&bundled).unwrap().join("checklist.slop")),
+            ("checklist", TemplateSource::Installed, fs::canonicalize(&installed).unwrap().join("checklist.slop")),
+        ]
+    );
+    assert_eq!(
+        (catalog.templates[0].title.as_str(), &catalog.templates[0].categories[..]),
+        ("Checklist", &["utilities".to_owned()][..])
+    );
+    let left_out: Vec<_> = catalog.issues.iter().map(|issue| issue.split(':').next().unwrap()).collect();
+    assert_eq!(left_out, ["doc.slop", "folder.slop", "renamed.slop"]);
+    assert!(!missing.exists(), "listing makes no folder");
+    file::open_template(&installed.join("checklist.slop")).unwrap();
+    for refused in ["doc.slop", "renamed.slop"] {
+        assert_eq!(
+            code(file::open_template(&installed.join(refused)).err().unwrap()),
+            Code::InvalidRequest,
+            "{refused}"
+        );
+    }
+}
+
+/// A slug names the listed template with that slug, an installed one before a bundled
+/// starter; a name no listed template has, or that is not a bare name, is refused.
+#[test]
+fn a_slug_names_a_listed_template_and_installed_ones_come_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let (bundled, installed) = (dir.path().join("bundled"), dir.path().join("installed"));
+    let template = template(dir.path());
+    for folder in [&bundled, &installed] {
+        fs::create_dir_all(folder).unwrap();
+        fs::copy(&template, folder.join("checklist.slop")).unwrap();
+    }
+    fs::copy(&template, installed.join("renamed.slop")).unwrap();
+    let both = [(TemplateSource::Bundled, bundled.clone()), (TemplateSource::Installed, installed.clone())];
+    assert_eq!(file::find_template("checklist", &both).unwrap(), installed.join("checklist.slop"));
+    assert_eq!(file::find_template("checklist", &both[..1]).unwrap(), bundled.join("checklist.slop"));
+    for name in ["renamed", "missing", "../installed/checklist", ""] {
+        assert_eq!(code(file::find_template(name, &both).unwrap_err()), Code::InvalidRequest, "{name:?}");
+    }
+    for path in ["Template.slop", "./checklist", "templates/checklist"] {
+        assert_eq!(file::template_source(path).unwrap(), Path::new(path), "a path stays a path");
+    }
 }
 
 /// A store keeps the app its open checked, in either mode, so a host shows the document

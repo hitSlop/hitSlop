@@ -128,6 +128,32 @@ test("create makes parent folders and reports the new document path", async () =
   } finally { await rm(folder, { recursive: true, force: true }); }
 }, 60000);
 
+// An agent finds templates without knowing where the app keeps them: `templates` lists the
+// catalog's, and `create --from` takes a listed slug. An unknown slug creates nothing.
+test("templates lists the catalog and create takes a listed slug", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "hsl-templates-"));
+  try {
+    const templates = join(folder, "templates");
+    await writeTemplate(join(templates, "quick-checklist.slop"));
+    const env = { HITSLOP_TEMPLATES_ROOT: templates };
+    const listed = await run(["templates"], env);
+    expect(listed.code).toBe(0);
+    const catalog = JSON.parse(listed.out);
+    expect(catalog.folders).toContainEqual({ source: "installed", path: templates });
+    expect(catalog.templates.map((t: { slug: string; source: string }) => [t.slug, t.source])).toEqual([["quick-checklist", "installed"]]);
+    expect(catalog.issues).toEqual([]);
+    const output = join(folder, "Checklist.slop");
+    const created = await run(["create", "--from", "quick-checklist", "--output", output], env);
+    expect(created.code).toBe(0);
+    expect((await cli("get", output)).code).toBe(0);
+    const unknown = join(folder, "Unknown.slop");
+    const refused = await run(["create", "--from", "no-such-template", "--output", unknown], env);
+    expect(refused.code).not.toBe(0);
+    expect(refused.error).toContain("No installed or bundled template is named no-such-template");
+    expect(existsSync(unknown)).toBe(false);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+}, 60000);
+
 // Failure: the engine created a document named `notes`, which the app refuses to open, and
 // documents inside the template catalog. Oracle: the name the app opens, and for the
 // catalog the refusal with no file or folder made.

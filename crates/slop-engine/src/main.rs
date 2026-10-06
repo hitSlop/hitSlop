@@ -3,14 +3,16 @@
 //! from a build's stage; `inspect <file>` prints a file's kind, markers, app and sizes as
 //! JSON, and whether a live owner has published its socket (`live`; a crashed owner's stays
 //! until the document next opens or the app's launch sweep); `schema <file>` prints its app's
-//! document descriptor. `request` routes through the live owner or acquires the writer
-//! lock and runs the same owner in-process; its classified result is printed as JSON.
+//! document descriptor. `templates` prints the templates the app's catalog lists, as JSON;
+//! `create --from` takes one's slug or a template's path. `request` routes through the live
+//! owner or acquires the writer lock and runs the same owner in-process; its classified
+//! result is printed as JSON.
 //! What needs AppKit or WebKit runs in the app's helper: the engine passes it an export
 //! request unchanged (`hitslop-native export`), `screenshot` artwork and `open` in a window,
 //! so the CLI talks to one binary. The helper serves no other document request. `request`,
-//! `create`, `open` and `screenshot` run in the command protocol their caller names first
-//! (`--client-protocol N`). Other refusals print a message on stderr and exit 1; a usage
-//! error exits 2.
+//! `templates`, `create`, `open` and `screenshot` run in the command protocol their caller
+//! names first (`--client-protocol N`). Other refusals print a message on stderr and exit 1;
+//! a usage error exits 2.
 //! `HITSLOP_TEST_REGISTRY` selects an isolated registry for tests.
 use hitslop_core::{command, file, registry};
 use std::io::{Read, Write};
@@ -150,7 +152,9 @@ fn main() -> ExitCode {
                 return code;
             }
             let destination = Path::new(document);
-            file::create_document(Path::new(template), destination).map(|()| {
+            let created =
+                file::template_source(template).and_then(|template| file::create_document(&template, destination));
+            created.map(|()| {
                 Some(
                     std::fs::canonicalize(destination)
                         .unwrap_or_else(|_| destination.to_owned())
@@ -158,6 +162,15 @@ fn main() -> ExitCode {
                         .into_owned(),
                 )
             })
+        }
+        ["templates"] => {
+            if let Err(code) = named(protocol) {
+                return code;
+            }
+            // A path that is not UTF-8 has no JSON spelling.
+            serde_json::to_string_pretty(&file::list_templates(&file::template_roots()))
+                .map(Some)
+                .map_err(|error| hitslop_core::store::Error::Failed(error.to_string()))
         }
         ["pack", stage, file] => file::pack(Path::new(stage), Path::new(file)).map(|()| None),
         ["inspect", file] => file::inspect(Path::new(file)).and_then(|mut value| {
@@ -168,7 +181,7 @@ fn main() -> ExitCode {
         ["--build-id"] => Ok(Some(hitslop_core::BUILD_ID.to_owned())),
         _ => {
             eprintln!(
-                "usage: slop-engine validate-app < app.json | pack <stage> <file> | inspect <file> | schema <file> | --client-protocol N (request | create --from <template> --output <file> | open <file> | screenshot <file> --output <png> [--target preview|icon] [--if-present]) | --protocol | --build-id"
+                "usage: slop-engine validate-app < app.json | pack <stage> <file> | inspect <file> | schema <file> | --client-protocol N (request | templates | create --from <slug-or-template> --output <file> | open <file> | screenshot <file> --output <png> [--target preview|icon] [--if-present]) | --protocol | --build-id"
             );
             return ExitCode::from(2);
         }

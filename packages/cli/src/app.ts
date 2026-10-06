@@ -252,8 +252,15 @@ export const app = new Crust("slop", {
   )
   .add(
     defineCommand(
+      "templates",
+      { description: "List the templates the app's catalog shows, bundled and installed, as JSON" },
+      (c) => c.action(() => native("templates")),
+    ),
+  )
+  .add(
+    defineCommand(
       "create",
-      { description: "Create a writable document from a built or registered template" },
+      { description: "Create a writable document from a template" },
       (c) =>
         c
           .flags(
@@ -261,7 +268,7 @@ export const app = new Crust("slop", {
               name: "from",
               type: "string",
               required: true,
-              description: "Template .slop to copy",
+              description: "Template to copy: a slug from slop templates, or a template .slop path",
             },
             {
               name: "output",

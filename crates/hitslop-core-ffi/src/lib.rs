@@ -5,7 +5,7 @@ uniffi::setup_scaffolding!();
 
 use hitslop_core::Origin;
 use hitslop_core::envelope::Envelope;
-use hitslop_core::file::{self, Artwork, Kind};
+use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::owner::Failure;
 use hitslop_core::shape::{Length, Segment, Silhouette};
 use hitslop_core::store::{self, Attachment, Mode};
@@ -166,6 +166,33 @@ impl From<&file::OpenedApp> for OpenedFile {
 #[uniffi::export]
 pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
     Ok((&file::open(Path::new(&path), false)?).into())
+}
+/// Opens a file in a template folder for the catalog: a template, never a document, whose
+/// file is named for its slug.
+#[uniffi::export]
+pub fn open_template(path: String) -> Result<OpenedFile, CoreError> {
+    Ok((&file::open_template(Path::new(&path))?).into())
+}
+/// Where a listed template comes from.
+#[uniffi::remote(Enum)]
+pub enum TemplateSource {
+    Bundled,
+    Installed,
+}
+/// A template folder the catalog lists.
+#[derive(uniffi::Record)]
+pub struct TemplateRoot {
+    pub source: TemplateSource,
+    pub path: String,
+}
+/// The template folders the catalog lists, the bundled starters first: the core's, so the
+/// app, its helper and the CLI list the same templates and keep new documents out of them.
+#[uniffi::export]
+pub fn template_roots() -> Vec<TemplateRoot> {
+    file::template_roots()
+        .into_iter()
+        .map(|(source, path)| TemplateRoot { source, path: path.to_string_lossy().into_owned() })
+        .collect()
 }
 /// A file's kind from its header checks alone, for a host deciding how to open it.
 #[uniffi::export]

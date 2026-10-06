@@ -64,12 +64,7 @@ actor CatalogScanner {
   private func validate(_ child: URL) async throws -> Outcome {
     do {
       let template = try await SlopPreparation.run(on: SlopPreparation.catalog) {
-        let file = try SlopFile(url: child)
-        guard file.kind == .template else { throw SlopError.invalid("an installed template holds no document") }
-        guard child.deletingPathExtension().lastPathComponent == file.manifest.slug else {
-          throw SlopError.invalid("installed filename must match manifest slug")
-        }
-        return Self.entry(template: file)
+        Self.entry(template: try SlopFile(template: child))
       }
       return .template(template)
     } catch is CancellationError {

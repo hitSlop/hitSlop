@@ -101,8 +101,13 @@ A CLI-only release may reuse an installed app while the protocol and
 
 `slop-engine` (`crates/slop-engine`) is the native build of the shared Rust core.
 `validate-app` checks bounded evaluated app JSON on standard input. `pack` turns a build
-stage into an immutable template. `create --from TEMPLATE --output DOCUMENT` creates a
-writable copy, makes missing parent folders and prints its resolved path.
+stage into an immutable template. `templates` prints the templates the app's catalog lists
+as JSON: its `folders` (the bundled starters beside the engine inside the app, then the
+installed folder, `HITSLOP_TEMPLATES_ROOT` or `~/.hitslop/templates`, which `slop register`
+builds into), each template found there, and an issue for each `.slop` file left out.
+`create --from TEMPLATE --output DOCUMENT` creates a writable copy, makes missing parent
+folders and prints its resolved path; TEMPLATE is a template's path, or a listed slug when
+it is a bare name, and an installed template shadows a bundled one.
 
 `inspect` prints a file's kind, requirements, manifest, asset/artwork/attachment and
 saved-state sizes, and whether an owner published its socket. `schema` prints the

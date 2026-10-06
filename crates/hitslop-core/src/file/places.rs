@@ -1,21 +1,35 @@
 //! Where documents may live: never in iCloud Drive, and new ones never among the templates.
+//! Also where templates are listed from (`catalog`).
 
 use crate::error::{Result, invalid};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Where a listed template comes from: the starters bundled with the app, or the installed
+/// templates folder that `slop register` builds into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TemplateSource {
+    Bundled,
+    Installed,
+}
+
 /// Where documents may not live, for this account and executable: iCloud Drive, whose
 /// syncing documents do not support yet, and the installed and bundled templates.
 struct Places {
     cloud: Option<PathBuf>,
-    templates: Vec<PathBuf>,
+    /// The template folders hosts list, the bundled starters first.
+    listed: Vec<(TemplateSource, PathBuf)>,
+    /// A template folder hosts do not list, which new documents still stay out of: the
+    /// account's while a development app's replaces it.
+    unlisted: Option<PathBuf>,
 }
 impl Places {
     fn current() -> Self {
         let home = crate::registry::home();
-        let mut templates: Vec<PathBuf> = home.map(|home| home.join(".hitslop/templates")).into_iter().collect();
-        // A development app's catalog.
-        templates.extend(std::env::var_os("HITSLOP_TEMPLATES_ROOT").filter(|root| !root.is_empty()).map(PathBuf::from));
+        let account = home.map(|home| home.join(".hitslop/templates"));
+        // A development app's catalog, which replaces the account's in the listing.
+        let development = std::env::var_os("HITSLOP_TEMPLATES_ROOT").filter(|root| !root.is_empty()).map(PathBuf::from);
         // The app's bundled starters, for the app itself (`Contents/MacOS`) and the tools
         // beside its helper (`Contents/Helpers`).
         let contents = std::env::current_exe()
@@ -26,9 +40,27 @@ impl Places {
                 contents.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Contents"))
                     && contents.parent().and_then(Path::extension).is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
             });
-        templates.extend(contents.map(|contents| contents.join("Resources/StarterTemplates")));
-        Self { cloud: home.map(|home| home.join("Library/Mobile Documents")), templates }
+        let bundled = contents.map(|contents| contents.join("Resources/StarterTemplates"));
+        let (installed, unlisted) = match development {
+            Some(root) => (Some(root), account),
+            None => (account, None),
+        };
+        let listed = bundled
+            .map(|root| (TemplateSource::Bundled, root))
+            .into_iter()
+            .chain(installed.map(|root| (TemplateSource::Installed, root)))
+            .collect();
+        Self { cloud: home.map(|home| home.join("Library/Mobile Documents")), listed, unlisted }
     }
+    /// Every template folder new documents stay out of.
+    fn templates(&self) -> impl Iterator<Item = &Path> {
+        self.listed.iter().map(|(_, root)| root.as_path()).chain(self.unlisted.as_deref())
+    }
+}
+/// The template folders hosts list, for this account and executable: the app's bundled
+/// starters (when this executable is inside the app), then the installed templates folder.
+pub fn template_roots() -> Vec<(TemplateSource, PathBuf)> {
+    Places::current().listed
 }
 /// `path` made absolute with its existing ancestors resolved: a destination need not exist
 /// yet, and a link above it counts as where it leads.
@@ -71,7 +103,7 @@ fn check_location(path: &Path, places: &Places) -> Result<()> {
 /// Where a new document may go: where a document may open, outside the templates.
 fn check_destination(path: &Path, places: &Places) -> Result<()> {
     check_location(path, places)?;
-    if places.templates.iter().any(|root| within(path, root, false)) {
+    if places.templates().any(|root| within(path, root, false)) {
         return Err(invalid("A document cannot be created among installed templates"));
     }
     Ok(())
@@ -99,7 +131,11 @@ mod tests {
         fs::create_dir_all(&cloud).unwrap();
         fs::create_dir_all(&templates).unwrap();
         std::os::unix::fs::symlink(&cloud, root.join("alias")).unwrap();
-        let places = Places { cloud: Some(cloud.clone()), templates: vec![templates.clone()] };
+        let places = Places {
+            cloud: Some(cloud.clone()),
+            listed: vec![(TemplateSource::Installed, templates.clone())],
+            unlisted: None,
+        };
         for (path, location, destination) in [
             (root.join("notes"), false, false),
             (root.join("Notes.SLOP"), false, false),

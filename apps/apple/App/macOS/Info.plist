@@ -44,7 +44,7 @@
 				<string>slop</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>hitSlop Document</string>
+			<string>Slop document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
@@ -61,7 +61,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.hitslop.slop</string>
 			<key>UTTypeDescription</key>
-			<string>hitSlop Document</string>
+			<string>Slop document</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

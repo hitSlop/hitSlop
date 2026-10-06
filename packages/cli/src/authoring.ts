@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { shellDirectory } from "./paths";
+import { run } from "./process";
 import { buildTemplate, prepareRenderer } from "./template";
 import { projectSlug } from "./build";
 
@@ -11,11 +11,20 @@ export async function build(source: string, artwork?: string) {
   console.log(await buildTemplate(source, artwork ? await prepareRenderer() : undefined));
 }
 
-/** Builds into the template folder the app lists, replacing only an earlier build. */
+/** The installed templates folder, as the app's engine lists it: `HITSLOP_TEMPLATES_ROOT`,
+ * or `~/.hitslop/templates` in the account's home folder. */
+async function installedTemplates(engine: string[]) {
+  const { folders } = JSON.parse(await run([...engine, "templates"])) as { folders?: { source: unknown; path: unknown }[] };
+  const installed = folders?.find((folder) => folder.source === "installed")?.path;
+  if (typeof installed !== "string") throw new Error("Cannot find this account's home folder");
+  return installed;
+}
+
+/** Builds into the installed templates folder the app lists, replacing only an earlier build. */
 export async function register(source: string) {
   const slug = projectSlug(source);
   const renderer = await prepareRenderer();
-  const templates = join(homedir(), ".hitslop/templates");
+  const templates = await installedTemplates(renderer);
   await mkdir(templates, { recursive: true });
   console.log(await buildTemplate(source, renderer, join(templates, slug + ".slop")));
 }

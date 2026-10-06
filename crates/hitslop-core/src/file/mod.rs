@@ -1,11 +1,12 @@
 //! A document is one SQLite file: the app its author built, the document's saved state, its
 //! attachments and its artwork. This module owns that format: the tables and every statement
 //! on them (every write, and the store's reads, in `rows`), the checks every open runs, packing a build into a template (`pack`),
-//! creating and copying documents (`copy`), where documents may live (`places`), and serving
-//! the app's assets (`assets`). `store` saves a document; `registry` holds its writer lock.
+//! creating and copying documents (`copy`), where documents may live (`places`), which
+//! templates hosts list (`catalog`), and serving the app's assets (`assets`). `store` saves a document; `registry` holds its writer lock.
 
 mod artwork;
 mod assets;
+mod catalog;
 mod copy;
 mod pack;
 mod places;
@@ -14,9 +15,11 @@ pub(crate) mod rows;
 pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png};
 pub use assets::{AssetReader, content_type, valid_asset_path};
+pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
 pub(crate) use copy::copy;
 pub use copy::create_document;
 pub use pack::{APP_INPUT_BYTES, pack, validate_app};
+pub use places::{TemplateSource, template_roots};
 pub(crate) use places::{document_destination, document_location};
 
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};

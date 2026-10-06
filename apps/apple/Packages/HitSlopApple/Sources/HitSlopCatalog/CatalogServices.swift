@@ -5,15 +5,16 @@ import HitSlopFeatures
 import HitSlopHost
 
 @MainActor final class CatalogServices {
-  let templatesURL: URL
+  /// The installed templates folder; nil lists only the bundled starters.
+  let templatesURL: URL?
   private let telemetry: SlopTelemetry
   private let bundledRoot: URL?
   private let chooseDestination: (String) async -> URL?
   private let scanner = CatalogScanner()
   private weak var localStore: LocalTemplateStore?
   init(
-    templatesURL: URL,
-    bundledRoot: URL? = Bundle.main.resourceURL?.appendingPathComponent("StarterTemplates"),
+    templatesURL: URL?,
+    bundledRoot: URL? = SlopTemplateLocation.bundledRoot,
     telemetry: SlopTelemetry = .disabled,
     chooseDestination: @escaping (String) async -> URL? = CatalogServices.chooseDestination
   ) {
@@ -55,8 +56,9 @@ import HitSlopHost
     } else {
       bundled = LocalTemplateSnapshot()
     }
-    let store = LocalTemplateStore(templatesURL: templatesURL)
+    let store = templatesURL.map { LocalTemplateStore(templatesURL: $0) }
     localStore = store
+    let installed = store?.snapshots ?? AsyncStream { $0.yield(LocalTemplateSnapshot()) }
     let starters = bundled.templates.map { template in
       var entry = template
       entry.isBundled = true
@@ -65,7 +67,7 @@ import HitSlopHost
     return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
       let forwarding = Task { @MainActor [telemetry] in
         var reported = Set<Int>()
-        for await snapshot in store.snapshots {
+        for await snapshot in installed {
           for diagnostic in bundled.diagnostics + snapshot.diagnostics {
             if reported.insert(diagnostic.code(for: .catalog)).inserted {
               telemetry.send(.failed(.catalog, diagnostic))
@@ -77,7 +79,7 @@ import HitSlopHost
       }
       continuation.onTermination = { _ in
         forwarding.cancel()
-        Task { @MainActor in store.stop() }
+        Task { @MainActor in store?.stop() }
       }
     }
   }

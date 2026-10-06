@@ -32,7 +32,7 @@ defaults to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini
 
 ## Common workflows
 
-In a generated project, use `bun run check`, `bun run dev`, `bun run build`, and `bun run register`. Build creates `dist/SLUG.slop`; register adds an immutable template to the Mac app's catalog. Choose **Create** in the app, or run `slop create --from dist/SLUG.slop --output My.slop`, to make a writable document before editing; `slop open My.slop` opens it.
+In a generated project, use `bun run check`, `bun run dev`, `bun run build`, and `bun run register`. Build creates `dist/SLUG.slop`; register adds an immutable template to the Mac app's catalog. Choose **Create** in the app, or run `slop create --from SLUG --output My.slop`, to make a writable document before editing; `slop open My.slop` opens it. `slop templates` lists the catalog's templates and their slugs; `--from` also takes a built file such as `dist/SLUG.slop`.
 
 For an existing writable document:
 

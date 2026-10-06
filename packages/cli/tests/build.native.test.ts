@@ -146,3 +146,27 @@ test("native artwork is complete before a rebuild replaces a registered template
     await rm(root, { recursive: true, force: true });
   }
 }, 120000);
+
+// Failure: register built into $HOME/.hitslop/templates whatever folder the app lists, so
+// with HITSLOP_TEMPLATES_ROOT set the template never reached the catalog. Oracle: the file
+// in the listed folder, and `templates` listing it as installed.
+test("register builds into the installed folder the catalog lists", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    const templates = join(root, "templates");
+    // A stand-in home, so a register that ignores the listed folder never writes the real one.
+    const env = { ...process.env, HITSLOP_TEMPLATES_ROOT: templates, HOME: join(root, "home") };
+    const slop = async (...args: string[]) => {
+      const child = Bun.spawn([process.execPath, "packages/cli/src/cli.ts", ...args], { env, stdout: "pipe", stderr: "pipe" });
+      const [out, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      expect(code, error).toBe(0);
+      return out;
+    };
+    await slop("register", "examples/slops/quick-checklist");
+    expect(await Bun.file(join(templates, "quick-checklist.slop")).exists()).toBe(true);
+    const listed = JSON.parse(await slop("templates")).templates.filter((t: { source: string }) => t.source === "installed");
+    expect(listed.map((t: { slug: string }) => t.slug)).toEqual(["quick-checklist"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 120000);

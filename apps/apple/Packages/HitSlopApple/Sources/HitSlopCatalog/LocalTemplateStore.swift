@@ -28,7 +28,7 @@ public struct LocalTemplateSnapshot: Sendable {
   private var generation = 0
   private var stopped = false
 
-  public convenience init(templatesURL: URL = SlopTemplateLocation.templatesRoot) {
+  public convenience init(templatesURL: URL) {
     let scanner = CatalogScanner()
     self.init(templatesURL: templatesURL, scan: { try await scanner.local(at: $0) })
   }

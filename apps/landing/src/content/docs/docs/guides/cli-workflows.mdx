@@ -73,6 +73,15 @@ bunx @hitslop/cli open "$HOME/Documents/Weekend.slop"
 
 Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.slop` is added if you leave it off. Open launches it in hitSlop. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
 
+To start from a template in the Mac app's catalog instead, list them and pass a slug to `--from`:
+
+```sh
+bunx @hitslop/cli templates
+bunx @hitslop/cli create --from weekend-kit --output "$HOME/Documents/Weekend.slop"
+```
+
+`templates` prints each template's slug, title, description, categories, path and source: `bundled` with the app, or `installed` by register. If you register a template with the same slug as a bundled one, the slug names yours.
+
 ## Read and edit data
 
 In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read the schema and current data first:

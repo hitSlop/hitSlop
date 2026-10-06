@@ -64,6 +64,13 @@ public struct SlopFile: Sendable {
     try self.init(url: root, opened: Self.opening { try openFile(path: root.path) })
   }
 
+  /// Opens the file at `url` in a template folder as the catalog lists it: the core refuses
+  /// a document, or a template whose file is not named for its slug, as it does for the CLI.
+  public init(template url: URL) throws {
+    let root = try Self.resolvedRoot(url)
+    try self.init(url: root, opened: Self.opening { try openTemplate(path: root.path) })
+  }
+
   /// The file at `url` as the core opened and checked it.
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root

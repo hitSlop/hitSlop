@@ -17,15 +17,15 @@ import SwiftUI
   private let alertOverride: (@MainActor (AppAlert, UUID?) -> Void)?
 
   /// The app's coordinator, reporting through the app's `telemetry`.
-  public convenience init(templatesURL: URL = SlopTemplateLocation.templatesRoot, telemetry: SlopTelemetry) {
+  public convenience init(templatesURL: URL? = SlopTemplateLocation.templatesRoot, telemetry: SlopTelemetry) {
     self.init(templatesURL: templatesURL, presentsWindows: true, telemetry: telemetry)
   }
 
   /// Native integration tests use hidden windows and avoid modifying the user's recents;
   /// they may supply the catalog's client and receive the alerts.
   init(
-    templatesURL: URL, presentsWindows: Bool, telemetry: SlopTelemetry = .disabled, catalogClient: CatalogClient? = nil,
-    alert: (@MainActor (AppAlert, UUID?) -> Void)? = nil
+    templatesURL: URL?, presentsWindows: Bool, telemetry: SlopTelemetry = .disabled,
+    catalogClient: CatalogClient? = nil, alert: (@MainActor (AppAlert, UUID?) -> Void)? = nil
   ) {
     self.presentsWindows = presentsWindows
     alertOverride = alert

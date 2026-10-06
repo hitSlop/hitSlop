@@ -7,9 +7,9 @@ description: Create, fill, open, and export useful hitSlop documents, or build a
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Use `bunx @hitslop/cli`, or install with `bun install -g @hitslop/cli` and use `slop`; both need Bun. On a Mac, `slop` edits documents through the app's bundled engine. Use the Mac catalog browser for templates registered under ~/.hitslop/templates. File → New from Template opens that browser. For new source read hitslop-authoring and hitslop-design. Local templates and recents work offline. Remote catalog loading, publication, and sharing are deferred.
+Use `bunx @hitslop/cli`, or install with `bun install -g @hitslop/cli` and use `slop`; both need Bun. On a Mac, `slop` edits documents through the app's bundled engine. `slop templates` lists the templates the Mac catalog shows as JSON: each one's slug, title, description, categories, source (`bundled` with the app, or `installed` under ~/.hitslop/templates) and path. People browse the same catalog with File → New from Template. Start from a listed template that fits; when none does, read hitslop-authoring and hitslop-design for new source. Local templates and recents work offline. Remote catalog loading, publication, and sharing are deferred.
 
-Build with slop build SOURCE. Make a writable document with `slop create --from TEMPLATE --output PATH` at a fresh user-selected path; never edit a master under ~/.hitslop/templates or copy one by hand. Open it with `slop open PATH`.
+Make a writable document with `slop create --from SLUG --output PATH` at a fresh user-selected path, where SLUG comes from `slop templates`; `--from` also takes a template's path, such as one slop build SOURCE wrote. Never edit a master under ~/.hitslop/templates or copy one by hand. Open it with `slop open PATH`.
 
 When creating source on the user's behalf, use `slop init SOURCE --yes --brief
 'What the slop should do'`, then set the title, description, and
