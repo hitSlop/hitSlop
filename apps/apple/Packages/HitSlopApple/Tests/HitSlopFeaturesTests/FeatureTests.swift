@@ -23,7 +23,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let failOnce = LockIsolated(true)
     let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
         $0.documentClient.prepareToQuit = { _ in }
-        $0.documentClient.finishAssetRefreshes = {}
         $0.documentClient.finishQuit = { id in
             if id == ids[1], failOnce.withValue({ value in defer { value = false }; return value }) {
                 throw Failure()
@@ -123,7 +122,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
 }
 
 @Test @MainActor func repeatedOpenDuringPreparationUsesOneOperation() async {
-    let gate = AsyncStream<String>.makeStream()
+    let gate = AsyncStream<Void>.makeStream()
     let calls = LockIsolated(0)
     let focusCalls = LockIsolated(0)
     let store = TestStore(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
@@ -132,14 +131,14 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
         $0.documentClient.focus = { _ in focusCalls.withValue { $0 += 1 } }
         $0.documentClient.open = { _, _ in
             calls.withValue { $0 += 1 }
-            for await title in gate.stream { return title }
+            for await _ in gate.stream { return }
             throw Failure()
         }
     }
     await store.send(.openDocument(documentURL)) { $0.documents = [DocumentFeature.State(id: documentID, url: documentURL)] }
     await store.send(.openDocument(documentURL))
-    gate.continuation.yield("Counter")
-    await store.receive(\.openFinished) { $0.documents[id: documentID]?.isOpening = false; $0.documents[id: documentID]?.title = "Counter" }
+    gate.continuation.yield(())
+    await store.receive(\.openFinished) { $0.documents[id: documentID]?.isOpening = false }
     await store.receive(\.catalog.refreshRecents) { $0.catalog.recentsGeneration = 1 }
     await store.receive(\.catalog.recentsReceived)
     #expect(calls.value == 1)
@@ -232,7 +231,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
         $0.catalogClient.recents = { [] }
         $0.documentClient.open = { _, _ in
             for await _ in opening.stream { break }
-            return "Counter"
         }
         $0.documentClient.finishQuit = { _ in }
         $0.documentClient.cancelQuit = { _ in }
@@ -240,7 +238,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
             prepared.withValue { $0.append(id) }
             for await _ in preparation.stream { break }
         }
-        $0.documentClient.finishAssetRefreshes = {}
         $0.documentClient.replyToQuit = { result in replies.withValue { $0.append(result) } }
     }
     await store.send(.catalog(.primaryAction(entry))) { $0.catalog.creating = entry }
@@ -262,7 +259,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     opening.continuation.yield(())
     await store.receive(\.openFinished) {
         $0.documents[id: documentID]?.isOpening = false
-        $0.documents[id: documentID]?.title = "Counter"
         $0.quitPhase = .preparing
     }
     await store.receive(\.catalog.refreshRecents) { $0.catalog.recentsGeneration = 2 }
@@ -280,7 +276,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let otherID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     var initial = AppFeature.State()
     var first = DocumentFeature.State(id: documentID, url: documentURL); first.isOpening = false
-    var second = DocumentFeature.State(id: otherID, url: URL(fileURLWithPath: "/tmp/other.slop")); second.isOpening = false; second.title = "Other"
+    var second = DocumentFeature.State(id: otherID, url: URL(fileURLWithPath: "/tmp/other.slop")); second.isOpening = false
     initial.documents = [first, second]
     let calls = LockIsolated<[UUID]>([])
     let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
@@ -306,7 +302,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
         $0.documentClient.finishQuit = { _ in }
         $0.documentClient.cancelQuit = { _ in }
         $0.documentClient.prepareToQuit = { _ in events.withValue { $0.append("prepared") } }
-        $0.documentClient.finishAssetRefreshes = { events.withValue { $0.append("assets") } }
         $0.documentClient.replyToQuit = { _ in events.withValue { $0.append("reply") } }
     }
     await store.send(.documents(.element(id: documentID, action: .command(.exportPNG)))) { $0.documents[id: documentID]?.operation = .exportPNG }
@@ -317,7 +312,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: documentID) }
     await store.receive(\.quitFinished) { $0.quitPhase = .finished }
     await store.finish()
-    #expect(events.value == ["exported", "prepared", "assets", "reply"])
+    #expect(events.value == ["exported", "prepared", "reply"])
 }
 
 @Test @MainActor func aFailedPendingCloseCancelsQuitWithOneError() async {
@@ -427,7 +422,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
         $0.documentClient.finishQuit = { _ in }
         $0.documentClient.cancelQuit = { _ in }
         $0.documentClient.prepareToQuit = { _ in events.withValue { $0.append("prepared") } }
-        $0.documentClient.finishAssetRefreshes = {}
         $0.documentClient.replyToQuit = { _ in }
     }
     await store.send(.documents(.element(id: documentID, action: .command(.exportPNG)))) { $0.documents[id: documentID]?.operation = .exportPNG }
@@ -528,7 +522,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
         $0.documentClient.open = { id, url in
             #expect(id == duplicateID && url == duplicateURL)
             for await _ in opening.stream { break }
-            return "Duplicate"
         }
         $0.documentClient.finishQuit = { _ in }
         $0.documentClient.cancelQuit = { _ in }
@@ -536,7 +529,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
             prepared.withValue { $0.append(id) }
             if id == documentID { for await _ in preparation.stream { break } }
         }
-        $0.documentClient.finishAssetRefreshes = {}
         $0.documentClient.replyToQuit = { allowed in replies.withValue { $0.append(allowed) } }
     }
     await store.send(.documents(.element(id: documentID, action: .command(.duplicate)))) { $0.documents[id: documentID]?.operation = .duplicate }
@@ -551,7 +543,6 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     #expect(prepared.value.isEmpty)
     opening.continuation.yield(())
     await store.receive(\.openFinished) {
-        $0.documents[id: duplicateID]?.title = "Duplicate"
         $0.documents[id: duplicateID]?.isOpening = false
         $0.quitPhase = .preparing
     }
@@ -622,14 +613,14 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     var initial = CatalogFeature.State()
     initial.isStarted = true; initial.filter = .recents; initial.recents = [first, second]; initial.selectedID = first.id
     var reread = first
-    reread.packageBytes = 42
+    reread.fileBytes = 42
     let changed = reread
     let recentsCalls = LockIsolated(0)
     let store = TestStore(initialState: initial) { CatalogFeature() } withDependencies: {
         $0.catalogClient.recent = { _ in changed }
         $0.catalogClient.recents = { recentsCalls.withValue { $0 += 1 }; return [] }
     }
-    await store.send(.packageChanged(URL(fileURLWithPath: "/a.slop")))
+    await store.send(.artworkChanged(URL(fileURLWithPath: "/a.slop")))
     await store.receive(\.recentReceived) { $0.recents = [changed, second] }
     #expect(recentsCalls.value == 0)
 }

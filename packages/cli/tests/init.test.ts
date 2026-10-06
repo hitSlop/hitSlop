@@ -1,5 +1,5 @@
 // CLI subprocesses are non-TTY. These cases cover the distinct interactive
-// boundary: answers reach the manifest, and cancellation never creates a project.
+// boundary: answers reach slop.ts, and cancellation never creates a project.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createPromptIO } from "@crustjs/prompts/testing";
 import { PassThrough } from "node:stream";
@@ -7,7 +7,7 @@ import { mkdtemp, lstat, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initProject } from "../src/init";
-import { parseManifest } from "@hitslop/schema";
+import { loadProject, normalizeApp } from "../src/build";
 import sdk from "../../document/package.json";
 import cli from "../package.json";
 
@@ -43,7 +43,8 @@ function terminal() {
 // Only the brief and author are asked; the building agent replaces the
 // placeholder title, categories, and description to match the brief.
 test("interactive init asks for a brief and author and leaves other metadata to the agent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-init-tty-"));
+  // Inside the checkout, so the created slop.ts resolves @hitslop/document.
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const tty = terminal();
   try {
     const brief = tty.shown("What should your slop do?");
@@ -56,9 +57,7 @@ test("interactive init asks for a brief and author and leaves other metadata to 
     tty.type("Jordan");
     tty.keys("return");
     const destination = await result;
-    const manifest = parseManifest(
-      JSON.parse(await readFile(join(destination, "manifest.json"), "utf8")),
-    );
+    const { manifest } = await normalizeApp(destination, await loadProject(destination));
     expect([
       manifest.title,
       manifest.categories,

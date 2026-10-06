@@ -114,15 +114,15 @@ pub(super) fn container_issues(
     value: Option<ValueOrContainer>,
     path: &mut Vec<Segment>,
     result: &mut Vec<Issue>,
-) -> Result<()> {
+) {
     match (node, value) {
         (Node::Text {}, Some(ValueOrContainer::Container(Container::Text(_)))) => {}
         (Node::Optional { .. }, None) => {}
-        (Node::Optional { inner }, value @ Some(_)) => container_issues(inner, value, path, result)?,
+        (Node::Optional { inner }, value @ Some(_)) => container_issues(inner, value, path, result),
         (Node::Object { properties }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             for (key, child) in properties {
                 path.push(Segment::Key(key.clone()));
-                container_issues(child, map.get(key), path, result)?;
+                container_issues(child, map.get(key), path, result);
                 path.pop();
             }
             let mut keys: Vec<_> = map.keys().map(|key| key.to_string()).collect();
@@ -135,7 +135,7 @@ pub(super) fn container_issues(
         }
         // A scalar list is a movable list of plain values; its elements are checked as JSON.
         (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) if is_scalar(item) => {
-            let value = json(list.get_deep_value())?;
+            let value = json(list.get_deep_value());
             issues(node, &value, None, path, result);
         }
         (Node::Record { value: entry }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
@@ -146,7 +146,7 @@ pub(super) fn container_issues(
                 let valid = valid_key(&key);
                 path.push(Segment::Key(key));
                 if valid {
-                    container_issues(entry, value, path, result)?;
+                    container_issues(entry, value, path, result);
                 } else {
                     push(result, IssueCode::InvalidKey, path);
                 }
@@ -168,7 +168,7 @@ pub(super) fn container_issues(
                     }
                     // A plain value (or other container) row: as the JSON oracle sees it.
                     Some(other) => {
-                        let value = json(other.get_deep_value())?;
+                        let value = json(other.get_deep_value());
                         let stored = value.get("$id").and_then(Value::as_str).map(str::to_owned);
                         (stored, row_segment(Some(&value), index))
                     }
@@ -183,18 +183,17 @@ pub(super) fn container_issues(
                     }
                     _ => push(result, IssueCode::InvalidId, path),
                 }
-                container_issues(item, row, path, result)?;
+                container_issues(item, row, path, result);
                 path.pop();
             }
         }
         // Plain values and unusual container kinds: exact JSON semantics, small or rare.
         (node, value) => {
             let value = match value {
-                Some(v) => json(v.get_deep_value())?,
+                Some(v) => json(v.get_deep_value()),
                 None => Value::Null,
             };
             issues(node, &value, Some(&value), path, result);
         }
     }
-    Ok(())
 }

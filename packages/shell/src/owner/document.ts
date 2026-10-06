@@ -1,9 +1,9 @@
 import { isRejected } from "@hitslop/document";
 import { DocumentError } from "@hitslop/document/internal";
 import type { OwnerIntent, OwnerPath as Path, OwnerState } from "@hitslop/schema/core";
-import type { Handle, At } from "@hitslop/document/internal";
+import type { Handle } from "@hitslop/document/internal";
 import type { Definition, Node, ObjectNode, Value } from "@hitslop/document";
-import { schemaKey, unwrap } from "@hitslop/document/internal";
+import { unwrap } from "@hitslop/document/internal";
 import type { Segment } from "@hitslop/document";
 import { Store, type Changes } from "./store";
 import { readPath, pathKey, atOrBeneath } from "./path";
@@ -18,11 +18,10 @@ const readOnly = () => new DocumentError("rejected", "Read-only document");
 const barrier = () => new DocumentError("closing", "Document barrier is active");
 /** How long an assigned `value` waits for the next assignment before it commits, like
  * the host's autosave idle. */
-export const settleMS = 150;
+const settleMS = 150;
 
 /** Page-side document state. It contains no CRDT and never writes persistent JSON. */
 export class OwnerDocument<N extends ObjectNode> {
-  readonly key: string;
   readonly fields: Handle<N>;
   private readonly store: Store;
   private readonly paths = new WeakMap<object, { node: Node; path: Path }>();
@@ -34,6 +33,7 @@ export class OwnerDocument<N extends ObjectNode> {
   private readonly pathListeners = new Map<string, Set<() => void>>();
   /** Work the close and capture barriers wait for: writes, text sends, attachments. */
   private readonly pending = new Set<Promise<unknown>>();
+  /** One FIFO queue for handle writes, so `insert` then `move` cannot reorder. */
   private tail: Promise<unknown> = Promise.resolve();
   private collecting = false;
   private blocked = false;
@@ -63,7 +63,6 @@ export class OwnerDocument<N extends ObjectNode> {
     private readonly transport: OwnerTransport,
     private readonly reportError: (error: unknown, kind?: "application" | "operation") => void,
   ) {
-    this.key = schemaKey(definition.descriptor);
     this.store = new Store(
       () => transport.open(),
       (changes) => this.changed(changes),
@@ -257,7 +256,6 @@ export class OwnerDocument<N extends ObjectNode> {
     work.then(done, done);
     return work;
   }
-  /** One FIFO queue for handle writes, so `insert` then `move` cannot reorder. */
   /** `collected` intents were already copied when their collector ran. */
   private submit<R>(intents: OwnerIntent[], result: R, { admitted = false, collected = false }: { admitted?: boolean; collected?: boolean } = {}): Promise<R> {
     this.assertNotCollecting();
@@ -277,7 +275,7 @@ export class OwnerDocument<N extends ObjectNode> {
     // an unhandled rejection on the author's promise.
     return this.track(run).then(value => value);
   }
-  at = (<T extends Node>(value: object) => {
+  at = ((value: object) => {
     const location = this.locate(value);
     return this.handle(location.node, location.path, undefined);
   }) as <T extends Node>(value: import("@hitslop/document").Snapshot<T>) => Handle<T>;
@@ -330,7 +328,8 @@ export class OwnerDocument<N extends ObjectNode> {
   /**
    * Stores a blob, then submits the collector's edits that reference it. It joins the
    * barrier's pending set before its first await, and its edits pass an active barrier,
-   * so close or capture can never save the blob without its reference.
+   * so a close or capture never falls between the two. A collector that throws, or edits
+   * the core refuses, leave the stored blob unreferenced.
    */
   admit<R, T>(
     store: () => Promise<T>,

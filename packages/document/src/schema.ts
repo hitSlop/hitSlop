@@ -1,6 +1,6 @@
 export type { DocumentError } from "./errors";
 export { isDocumentError, isRejected } from "./errors";
-export { defineTheme } from "./theme";
+export { defineSlop, type Slop } from "./slop";
 export type { Issue, Scope } from "./abi";
 export type { InsertResult } from "./handle-types";
 import type { Issue, Scope } from "./abi";

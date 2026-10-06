@@ -1,0 +1,45 @@
+name: Engines
+# The file engine (`crates/slop-engine`) for every platform the published CLI supports. A
+# release downloads these artifacts into `generated/engines/` before capturing its
+# compatibility entry, which packs the npm packages (docs/guides/releasing.md).
+# Run it on the release candidate's commit, before the capture.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { platform: darwin-arm64, os: macos-15, target: aarch64-apple-darwin, features: "" }
+          - { platform: darwin-x64, os: macos-15, target: x86_64-apple-darwin, features: "" }
+          # Static musl binaries with SQLite bundled: no libc or SQLite baseline to meet.
+          - { platform: linux-x64, os: ubuntu-latest, target: x86_64-unknown-linux-musl, features: bundled-sqlite }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, features: bundled-sqlite }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC_x86_64_unknown_linux_musl: musl-gcc
+      CC_aarch64_unknown_linux_musl: musl-gcc
+      FEATURES: ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: rustup target add ${{ matrix.target }}
+      # The engine's own tests run on the binary this runner built.
+      - run: cargo test --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
+      - run: cargo build --locked --release -p slop-engine --target ${{ matrix.target }} $FEATURES
+      # engine.json records what the binary was built from; packing refuses an engine
+      # from another commit or core (scripts/packages.ts).
+      - run: |
+          mkdir -p engines/${{ matrix.platform }}
+          cp target/${{ matrix.target }}/release/slop-engine engines/${{ matrix.platform }}/
+          build_id=$(engines/${{ matrix.platform }}/slop-engine --build-id)
+          printf '{"commit":"%s","buildId":"%s"}\n' "$GITHUB_SHA" "$build_id" > engines/${{ matrix.platform }}/engine.json
+          cat engines/${{ matrix.platform }}/engine.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: engine-${{ matrix.platform }}
+          path: engines

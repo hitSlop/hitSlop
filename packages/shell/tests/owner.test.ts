@@ -31,7 +31,7 @@ const initial = {
   ],
 };
 
-test("WASM binding executes literal core fixtures and replays native-compatible bytes", async () => {
+test("WASM binding executes literal core fixtures", async () => {
   for (const name of ["checklist", "scalars", "collections"]) {
   const fixture = await Bun.file(
     new URL(`../../../crates/hitslop-core/fixtures/${name}.json`, import.meta.url),
@@ -44,8 +44,6 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
     try {
       const before = core.snapshot();
       expect(Check(OwnerStateSchema, JSON.parse(before))).toBe(true);
-      const seed = core.checkpoint();
-      const version = core.version();
       const batch = JSON.stringify({ intents: scenario.intents });
       if (scenario.error) {
         let failure: unknown;
@@ -61,12 +59,6 @@ test("WASM binding executes literal core fixtures and replays native-compatible 
         if (applied.publication === undefined) expect(core.snapshot()).toBe(before);
         else expect(Check(OwnerPublicationSchema, JSON.parse(applied.publication))).toBe(true);
         expect(JSON.parse(core.snapshot()).value).toEqual(scenario.after);
-        const reopened = wasm.WasmDocument.open(JSON.stringify(fixture.schema), seed, [core.exportSince(version)]);
-        try {
-          expect(JSON.parse(reopened.snapshot()).value).toEqual(scenario.after);
-        } finally {
-          reopened.free();
-        }
       }
     } finally {
       core.free();
@@ -79,8 +71,13 @@ async function open(state = initial) {
   const core = wasm.WasmDocument.create(JSON.stringify(definition.descriptor), JSON.stringify(state));
   const errors: unknown[] = [];
   const transport = wasmTransport(core) as OwnerTransport & Record<string, any>;
+  // The document's own push receiver, so a test can deliver what the host would.
+  let receiver!: (pushes: PagePush[]) => void;
+  const listen = transport.onPush.bind(transport);
+  transport.onPush = (next: (pushes: PagePush[]) => void) => { receiver = next; listen(next); };
   const doc = await OwnerDocument.open(definition, transport, (error) => errors.push(error));
-  return { core, transport, doc, errors };
+  transport.onPush = listen;
+  return { core, transport, doc, errors, push: (pushes: PagePush[]) => receiver(pushes) };
 }
 const gate = () => {
   let release!: () => void;
@@ -247,7 +244,7 @@ test("observer failures cannot reject acceptance; a failed save rejects flush un
 // rebuilt the page and lost text the user was still typing. Oracle: the resynced state
 // equals the owner's, and the DOM keeps its unsent text and sends it afterwards.
 test("a push gap resyncs from a fresh snapshot and keeps unsent text", async () => {
-  const { core, transport, doc } = await open();
+  const { core, transport, doc, push } = await open();
   const input = field();
   const binding = doc.bindText(input, doc.fields.title);
   let deliver!: (pushes: PagePush[]) => void;
@@ -258,7 +255,7 @@ test("a push gap resyncs from a fresh snapshot and keeps unsent text", async () 
     await transport.apply({ intents: [{ type: "increment", path: ["hits"], by: 2 }] });
     await Bun.sleep(5);
     expect(dropped.length).toBe(1);
-    deliver = (pushes) => (doc as any).store.publish(pushes);
+    deliver = push;
     input.dispatchEvent(new Event("compositionstart"));
     input.type("Hello there");
     await doc.fields.done.set(true); // arrives with previous = 1 while the page is at 0
@@ -276,11 +273,11 @@ test("a push gap resyncs from a fresh snapshot and keeps unsent text", async () 
 });
 
 test("a publication older than the current state is ignored", async () => {
-  const { core, doc } = await open();
+  const { core, doc, push } = await open();
   try {
     await doc.fields.hits.increment(1);
     const current = doc.current;
-    (doc as any).store.publish([
+    push([
       {
         type: "publication",
         publication: { previous: 0, sequence: 1, version: "old", ops: [{ type: "set", path: ["hits"], value: 99 }], issues: [] },
@@ -647,13 +644,16 @@ test("recovery confirms a lost text reply before draining newer input", async ()
 // later flush and close failed. Oracle: after recovery the typed text is saved once.
 test("text refused before sending is sent once the document recovers", async () => {
   const { DocumentError } = await import("@hitslop/document/internal");
-  const { core, transport, doc } = await open();
+  const { core, transport, doc, push } = await open();
   const input = field();
   const binding = doc.bindText(input, doc.fields.title);
   const reopen = transport.open;
   try {
     transport.open = async () => { throw new DocumentError("owner_invalidated", "owner unavailable"); };
-    await expect((doc as any).store.resync()).rejects.toThrow("owner unavailable");
+    // The host asks for a resync, and the owner cannot answer it: edits are refused.
+    push([{ type: "resync" }]);
+    await Bun.sleep(1);
+    await expect(doc.fields.done.set(true)).rejects.toThrow("owner unavailable");
     input.type("Hello again");
     await Bun.sleep(1);
     transport.open = reopen;

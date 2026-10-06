@@ -1,1 +1,0 @@
-Read manifest.json and BRIEF.md first. Follow the repository AGENTS.md and shared hitSlop authoring/design skills. Use the examples workspace dependencies and repository `bun slop` commands. Keep this a local, single-baby journal; preserve entry and caregiver identities.

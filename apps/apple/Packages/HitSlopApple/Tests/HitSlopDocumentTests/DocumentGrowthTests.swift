@@ -2,19 +2,17 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopDocument
 
 /// A measurement, not a CI performance assertion. Every edit and save uses the production owner.
 @Suite(.serialized) struct DocumentGrowthTests {
-  private func json(_ value: Any) throws -> String {
-    String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self)
-  }
   private func frame(_ owner: DocumentOwner) async throws -> [String: Any] {
-    try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
+    try Fixtures.object(await owner.state())
   }
-  private func text(_ owner: DocumentOwner, request: String) async throws -> DocumentOwner.TextEdit {
+  private func text(_ owner: DocumentOwner, request: String) async throws -> PageTextResult {
     try await withCheckedThrowingContinuation { continuation in
-      owner.enqueuePage(.text(request), view: "growth") { result in
+      owner.enqueuePage(.text(PageTextRequest(request: request)), view: "growth") { result in
         do {
           guard case .text(let edit) = try result.get() else { throw OwnerError.rejected("Missing text reply") }
           continuation.resume(returning: edit)
@@ -28,9 +26,8 @@ import Testing
     let env = ProcessInfo.processInfo.environment
     let input = URL(fileURLWithPath: env["HITSLOP_GROWTH_INPUT"]!)
     let days = Int(env["HITSLOP_GROWTH_DAYS"] ?? "365")!
-    let repo = #filePath.components(separatedBy: "/apps/apple/")[0]
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-growth-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let repo = Fixtures.repository.path
+    let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     // `bun run bench:growth` names a dated evidence file.
     let output = URL(fileURLWithPath: env["HITSLOP_GROWTH_OUTPUT"] ?? repo + "/.hitslop/evidence/document-growth.json")
@@ -52,12 +49,11 @@ import Testing
       ], options: [.prettyPrinted, .sortedKeys]).write(to: output, options: .atomic)
     }
     for slug in ["doodle-board", "pixel-art", "morning-pages"] {
-      let root = folder.appendingPathComponent(slug + ".slop")
-      try FileManager.default.copyItem(atPath: repo + "/generated/templates/" + slug + ".slop", toPath: root.path)
-      try SlopPermissions.makeWritable(root)
-      var owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+      let root = try Fixtures.document(
+        from: URL(fileURLWithPath: repo + "/generated/templates/" + slug + ".slop"), at: folder.appendingPathComponent(slug + ".slop"))
+      var owner = try DocumentOwner(url: root)
       owner.attach(view: "growth")
-      let initialMeta = try owner.storageQueue.sync { try owner.store.metadata() }
+      let initialMeta = try Fixtures.stored(root)
       let initialBytes = Int64(initialMeta.checkpointBytes + initialMeta.updateBytes)
       var samples: [[String: Any]] = []
       var commits = 0, intents = 0, saves = 0, saveMS = 0.0, completedDays = 0
@@ -66,10 +62,10 @@ import Testing
       var isClosed = false
       var finalMeta = initialMeta
       var progress = 0.0
-      var lastSavedValue = try json(try await frame(owner)["value"]!)
+      var lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
       let started = Date()
       func apply(_ operations: [[String: Any]]) async throws -> DocumentOwner.Applied {
-        let reply = try await owner.apply(batch: json(["intents": operations]))
+        let reply = try await owner.apply(batch: Fixtures.json(["intents": operations]))
         commits += 1; intents += operations.count
         return reply
       }
@@ -114,27 +110,27 @@ import Testing
                 let offset = (edit - 251) * 20
                 to = String(from.prefix(offset)) + String(from.dropFirst(offset).prefix(20)).uppercased() + String(from.dropFirst(offset + 20))
               }
-              let reply = try await text(owner, request: json(["base": base, "path": ["entries", key, "text"], "from": from, "to": to, "selectionStart": min(edit * 20, 5000), "selectionEnd": min(edit * 20, 5000)]))
+              let reply = try await text(owner, request: Fixtures.json(["base": base, "path": ["entries", key, "text"], "from": from, "to": to, "selectionStart": min(edit * 20, 5000), "selectionEnd": min(edit * 20, 5000)]))
               base = reply.authored; from = to; commits += 1; intents += 1
               if edit % 10 == 0 { try await flush() }
             }
           }
           try await flush()
-          lastSavedValue = try json(try await frame(owner)["value"]!)
-          let meta = try owner.storageQueue.sync { try owner.store.metadata() }
+          lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
+          let meta = try Fixtures.stored(root)
           finalMeta = meta
-          let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.appendingPathComponent("state/document.sqlite").path)[.size] as! NSNumber).int64Value
+          let diskBytes = (try FileManager.default.attributesOfItem(atPath: root.path)[.size] as! NSNumber).int64Value
           samples.append(["day": day, "commits": commits, "intents": intents, "checkpointBytes": meta.checkpointBytes, "updateBytes": meta.updateBytes, "updateRows": meta.rows, "databaseBytes": diskBytes, "retainedValueJSONBytes": lastSavedValue.utf8.count, "reopenVerified": false])
           try await owner.close()
           isClosed = true
           let start = Date()
-          owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+          owner = try DocumentOwner(url: root)
           isClosed = false
           let reopenMS = Date().timeIntervalSince(start) * 1000
           owner.attach(view: "growth")
-          let closed = try owner.storageQueue.sync { try owner.store.metadata() }
+          let closed = try Fixtures.stored(root)
           samples[samples.count - 1]["closedBytes"] = closed.checkpointBytes + closed.updateBytes
-          #expect(try await json(frame(owner)["value"]!) == lastSavedValue)
+          #expect(try await Fixtures.json(frame(owner)["value"]!) == lastSavedValue)
           samples[samples.count - 1]["reopenMS"] = reopenMS
           samples[samples.count - 1]["reopenVerified"] = true
           completedDays = day
@@ -143,8 +139,8 @@ import Testing
           fullAt = progress
           // Retain the saved document; discard only the unsaved tail of this disposable workload.
           try await owner.discardPending()
-          lastSavedValue = try json(try await frame(owner)["value"]!)
-          finalMeta = try owner.storageQueue.sync { try owner.store.metadata() }
+          lastSavedValue = try Fixtures.json(try await frame(owner)["value"]!)
+          finalMeta = try Fixtures.stored(root)
           print("Growth \(slug): FULL at day \(progress)")
           break
         } catch {
@@ -156,9 +152,9 @@ import Testing
       }
       if stoppedError == nil {
         try await owner.close()
-        let reopened = try DocumentOwner(package: SlopPackage(rootURL: root))
-        #expect(try await json(frame(reopened)["value"]!) == lastSavedValue)
-        finalMeta = try reopened.storageQueue.sync { try reopened.store.metadata() }
+        let reopened = try DocumentOwner(url: root)
+        #expect(try await Fixtures.json(frame(reopened)["value"]!) == lastSavedValue)
+        finalMeta = try Fixtures.stored(root)
         try await reopened.close()
       }
       if fullAt != nil || stoppedError != nil {

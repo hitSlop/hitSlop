@@ -69,8 +69,7 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value, writer: 
                     .get("$id")
                     .and_then(Value::as_str)
                     .map(String::from)
-                    .map(Ok)
-                    .unwrap_or_else(application_id)?;
+                    .unwrap_or_else(application_id);
                 insert_row(&list, item, index, &id, row, writer, rows)?;
             }
             // A mergeable list keeps its identity across a clear: later intents in this
@@ -296,7 +295,7 @@ pub(super) struct Location<'a> {
     pub(super) shared: bool,
 }
 pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment], rows: &Rows) -> Result<Location<'a>> {
-    if path.is_empty() || path.len() > 64 {
+    if path.is_empty() || path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
     let mut node = schema;
@@ -405,16 +404,15 @@ pub(super) fn execute(
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
-    // Replace resolves its own path, which may be empty (the whole document).
-    if let Intent::Replace { path, value } = op {
-        return replace::replace(doc, schema, path, value, issues, ids, rows);
-    }
-    let at = resolve(doc, schema, op.path(), rows)?;
     match op {
-        Intent::Replace { .. } => unreachable!("handled above"),
-        Intent::Set { value, .. } => {
+        // Replace resolves its own path, which may be empty (the whole document).
+        Intent::Replace { path, value } => replace::replace(doc, schema, path, value, issues, ids, rows)?,
+        Intent::Set { value, path } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
+            replace::refuse_anomalies(issues, path)?;
             let kind = unwrap_optional(&at.node);
-            // One scalar-list element: last writer wins.
+            // One scalar-list element: last writer wins. An earlier insert in the batch may
+            // have moved the element an issue names, so its stored value is checked too.
             if let Some((list, index)) = &at.element {
                 kind.validate(value, false)?;
                 if let ValueOrContainer::Value(stored) = &at.value {
@@ -456,18 +454,6 @@ pub(super) fn execute(
             }
             kind.validate(value, false)?;
             if !at.absent {
-                // A stored value of the wrong type is a preserved anomaly: never overwritten.
-                let anomalous = match (&at.value, replaces_object) {
-                    (ValueOrContainer::Container(Container::Map(_)), true) => false,
-                    (ValueOrContainer::Container(_), _) | (_, true) => true,
-                    (ValueOrContainer::Value(stored), false) => {
-                        let stored = serde_json::to_value(stored).map_err(engine)?;
-                        scalar_issue(kind, &stored) == Some(IssueCode::TypeMismatch)
-                    }
-                };
-                if anomalous {
-                    return Err(err(Code::TypeMismatch, "Cannot edit anomalous field"));
-                }
                 // Replacing an object must not discard identity-bearing collections.
                 if replaces_object && holds_collections(kind) {
                     return Err(err(Code::Exists, "Object is already set; edit its fields"));
@@ -484,6 +470,7 @@ pub(super) fn execute(
             put(&map, &key, kind, value, &writer(doc), at.shared, rows)?;
         }
         Intent::Clear { .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             if !matches!(at.node, Node::Optional { .. }) && !at.entry {
                 return Err(err(Code::TypeMismatch, "Only optional fields and record entries can be cleared"));
             }
@@ -501,6 +488,7 @@ pub(super) fn execute(
             index,
             ..
         } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (at.node, at.value)
             else {
@@ -522,7 +510,7 @@ pub(super) fn execute(
                 return Err(err(Code::InvalidRequest, "Rows insert by anchor, not index"));
             }
             item.validate(value, true)?;
-            let id = id.clone().map(Ok).unwrap_or_else(application_id)?;
+            let id = id.clone().unwrap_or_else(application_id);
             if !valid_id(&id) {
                 return Err(err(Code::InvalidId, "Expected a safe 1–64 character application ID"));
             }
@@ -539,6 +527,7 @@ pub(super) fn execute(
             ids.push(id);
         }
         Intent::Increment { by, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::Counter {}, ValueOrContainer::Container(Container::Map(counter))) =
                 (&at.node, &at.value)
             else {
@@ -547,7 +536,7 @@ pub(super) fn execute(
             if *by == 0 || !safe(*by) {
                 return Err(err(Code::OutOfRange, "Increment must be a nonzero safe integer"));
             }
-            let raw = json(counter.get_deep_value())?;
+            let raw = json(counter.get_deep_value());
             let sum = counter_sum(&raw)
                 .ok_or_else(|| err(Code::TypeMismatch, "Cannot edit anomalous counter"))?;
             let key = writer(doc);
@@ -560,6 +549,7 @@ pub(super) fn execute(
             counter.insert(&key, next).map_err(engine)?;
         }
         Intent::Remove { id, index, count, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (&at.node, at.value)
             else {
@@ -570,6 +560,9 @@ pub(super) fn execute(
                     return Err(err(Code::InvalidRequest, "Scalar lists remove by index"));
                 };
                 let count = count.unwrap_or(1);
+                if count == 0 {
+                    return Err(err(Code::OutOfRange, "Remove count must be at least 1"));
+                }
                 if index.checked_add(count).is_none_or(|end| end > list.len()) {
                     return Err(err(Code::OutOfRange, "Remove range is past the end"));
                 }
@@ -587,6 +580,7 @@ pub(super) fn execute(
             rows.changed(&list, Change::Removed(index));
         }
         Intent::Move { id, at: anchor, .. } => {
+            let at = resolve(doc, schema, op.path(), rows)?;
             let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
                 (&at.node, at.value)
             else {

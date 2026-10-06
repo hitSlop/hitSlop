@@ -17,12 +17,11 @@ appropriate. Use native nesting for related states and descendants.
 }
 ```
 
-Declare the colors a person may change in `theme.ts` using `defineTheme` from
-`@hitslop/document`, as lowercase `#rrggbb` or `#rrggbbaa`; the build refuses anything
-else. Fonts, sizes and derived colors are plain custom properties in `styles.css`, as
-above; a derived color follows the palette color it mixes. The builder writes defaults
-to `assets/theme.json`; the runtime applies defaults and document changes before
-mounting the app. Compiled app styling lives in `assets/app.css`. Owners use the
+Declare the colors a person may change in slop.ts's `theme`, as lowercase `#rrggbb` or
+`#rrggbbaa`; the build refuses anything else. Fonts, sizes and derived colors are plain
+custom properties in `styles.css`, as above; a derived color follows the palette color it
+mixes. The build stores the defaults in the template; the runtime applies defaults and
+document changes before mounting the app. Compiled app styling lives in `assets/app.css`. Owners use the
 window's theme panel or `slop theme get/set/reset/export/import`; the host saves their
 changes in the document's database. Never edit these built files directly. Layout
 changes require authoring source and a rebuild. Do not add mutable CSS files or

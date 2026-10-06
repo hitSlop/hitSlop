@@ -7,11 +7,9 @@ fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(deserializer: 
     T::deserialize(deserializer).map(Some)
 }
 
-// The descriptor is authored data, never executable application code.
-// Serialize gives the canonical form saved state records: fields in declaration order,
-// properties sorted by the BTreeMap, numbers in their parsed type. Identity compares
-// parsed descriptors (`same_schema`), so this spelling may change between builds.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+// The descriptor is authored data, never executable application code. Parsed, two
+// descriptors compare by meaning: key order and number spelling never matter.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub(super) enum Node {
     // Empty struct variants, not unit variants: serde ignores unknown fields on unit
@@ -22,21 +20,21 @@ pub(super) enum Node {
     Counter {},
     /// Last writer wins. `maxLength` counts UTF-16 units, as JavaScript does.
     String {
-        #[serde(default, rename = "maxLength", deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        #[serde(default, rename = "maxLength", deserialize_with = "present")]
         max_length: Option<u64>,
     },
     /// A finite f64. Integral values project as JSON integers.
     Number {
-        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        #[serde(default, deserialize_with = "present")]
         min: Option<f64>,
-        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        #[serde(default, deserialize_with = "present")]
         max: Option<f64>,
     },
     /// A safe integer (±2^53−1), stored as i64.
     Integer {
-        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        #[serde(default, deserialize_with = "present")]
         min: Option<i64>,
-        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        #[serde(default, deserialize_with = "present")]
         max: Option<i64>,
     },
     Enum { values: Vec<String> },
@@ -143,7 +141,7 @@ impl Node {
                 }
             }
             Self::Optional { inner } => {
-                // Optional text, lists and counters wait for a design that keeps their
+                // Optional lists and counters wait for a design that keeps their
                 // identity when two replicas create them concurrently.
                 if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text {}) {
                     return Err(err(Code::InvalidSchema, "Optional holds a scalar, text or an object"));
@@ -251,24 +249,15 @@ pub(super) fn descriptor(s: &str) -> Result<Node> {
     Ok(root)
 }
 
-/// Validates authoring input without creating a CRDT or executing authored code, and
-/// returns the descriptor's schema key.
-pub fn validate(schema: &str, initial: &str) -> Result<String> {
+/// Validates authoring input without creating a CRDT or executing authored code.
+pub fn validate(schema: &str, initial: &str) -> Result<()> {
+    checked(schema, initial).map(|_| ())
+}
+/// The parsed descriptor, once the initial values are checked against it.
+pub(crate) fn checked(schema: &str, initial: &str) -> Result<Node> {
     let schema = descriptor(schema)?;
     let initial: Value = parse(initial)?;
     schema.validate(&initial, false)?;
-    encode(&schema)
+    Ok(schema)
 }
 
-/// The descriptor's storage key: the parsed descriptor serialized canonically, so key
-/// order and number spelling in the authored JSON never change it. Saved state records
-/// it; `same_schema` compares keys by meaning, so this spelling may change between builds.
-pub fn schema_key(schema: &str) -> Result<String> {
-    encode(&descriptor(schema)?)
-}
-
-/// Whether two descriptors mean the same thing: equal once parsed, whatever their
-/// spelling. A descriptor that does not parse matches nothing.
-pub fn same_schema(a: &str, b: &str) -> bool {
-    matches!((descriptor(a), descriptor(b)), (Ok(a), Ok(b)) if a == b)
-}

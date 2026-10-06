@@ -22,11 +22,11 @@ should have enough character that someone wants to keep it on their desktop.
 Slops are portable local documents hosted in native windows, with disposable
 browser previews for development. People can open, duplicate, share, and keep
 them. Loro owns live structured state; the host persists its bytes. Each document owns its UI.
-The supported authored examples use Svelte, Bits UI, the document DSL, and typed themes.
+The supported authored examples use Svelte, Bits UI, the document DSL, and theme colors declared in `slop.ts`.
 
 ## Capabilities and Constraints
 
-- Each manifest defines the initial viewport and window presentation.
+- Each `slop.ts` defines the initial viewport and window presentation.
 - Preserve saved data and useful behavior when redesigning an example.
 - Each object may have a distinct palette, typography, layout, and material.
 - Paper, Instrument, and Skin are optional directions, not mandatory looks.
@@ -55,7 +55,7 @@ essential text or controls.
 
 ## Evidence on Hand
 
-Quick Checklist and Small Expenses are current examples; additional templates
-are welcome. Their individual visual identities belong to those objects alone.
+Quick Checklist and Shape Lab are the current examples, and more return as they move
+to `slop.ts`; additional templates are welcome. Their individual visual identities belong to those objects alone.
 Use current working examples and local `_vibe/` references as evidence for
 clarity and expressiveness, not as a collection-wide skin.

@@ -1,18 +1,19 @@
 import AppKit
+import HitSlopDocument
 
 /// Native feedback for a slow open. Never renders document content.
-@MainActor final class SlopOpeningProgress: NSObject {
+@MainActor public final class SlopOpeningProgress: NSObject {
   private(set) var panel: NSPanel?
   private(set) var wasShown = false
   private var timer: Task<Void, Never>?
   private var finished = false
   var onCancel: (() -> Void)?
 
-  init(started: ContinuousClock.Instant = .now, wait: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = { deadline in
+  public init(started: ContinuousClock.Instant = .now, wait: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = { deadline in
     try await Task.sleep(until: deadline, clock: .continuous)
   }) {
     super.init()
-    let deadline = started.advanced(by: .seconds(1))
+    let deadline = started.advanced(by: Timeouts.progressDelay)
     timer = Task { @MainActor [weak self] in
       do { try await wait(deadline) } catch { return }
       self?.show()
@@ -51,7 +52,7 @@ import AppKit
 
   func waitForFeedback() async { await timer?.value }
 
-  func focus() { panel?.makeKeyAndOrderFront(nil) }
+  public func focus() { panel?.makeKeyAndOrderFront(nil) }
 
   func finish() {
     finished = true

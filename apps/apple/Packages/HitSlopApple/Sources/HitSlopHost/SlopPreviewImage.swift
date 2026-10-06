@@ -19,7 +19,7 @@ import HitSlopCore
             bytesPerRow: 0,
             bitsPerPixel: 0
         ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
-            throw SlopPackageError.invalid("could not encode rendered image")
+            throw SlopFailure("could not encode rendered image")
         }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
@@ -27,7 +27,7 @@ import HitSlopCore
         context.flushGraphics()
         NSGraphicsContext.restoreGraphicsState()
         guard let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw SlopPackageError.invalid("could not encode rendered image")
+            throw SlopFailure("could not encode rendered image")
         }
         return png
     }
@@ -37,7 +37,7 @@ import HitSlopCore
         try png(size: image.size) { image.draw(in: $0) }
     }
 
-    static func png(from image: NSImage, package: SlopPackage, scale: CGFloat = 1) throws -> Data {
-        try SlopWindowMask(package: package).png(from: image, scale: scale)
+    static func png(from image: NSImage, file: SlopFile, scale: CGFloat = 1) throws -> Data {
+        try SlopWindowMask(file: file).png(from: image, scale: scale)
     }
 }

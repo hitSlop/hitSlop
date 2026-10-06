@@ -1,18 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  // The real package layout (docs/reference/runtime.md): immutable app files plus your document state.
+  // The real file layout (docs/reference/runtime.md): the app's tables, then your document's.
   const app = [
-    { name: "manifest.json", note: "its name, size and shape", emoji: "🏷️" },
-    { name: "assets/app.js", note: "the little app itself", emoji: "🧩" },
-    { name: "state.schema.json", note: "the shape of your data", emoji: "📐" },
-    { name: "initial.json", note: "fresh-copy starting values", emoji: "🌱" },
-    { name: ".agents/skills/", note: "how your AI edits it", emoji: "🤖" },
-    { name: "QuickLook/", note: "Finder preview and icon", emoji: "👀" },
+    { name: "app", note: "its name, shape and starting values", emoji: "🏷️" },
+    { name: "assets", note: "the little app itself", emoji: "🧩" },
+    { name: "artwork", note: "Quick Look preview and icon", emoji: "👀" },
   ];
   const yours = [
-    { name: "state/document.sqlite", note: "everything you’ve saved, your colors too", emoji: "💾" },
-    { name: "state/attachments/", note: "photos and files you add", emoji: "📎" },
+    { name: "checkpoint + updates", note: "everything you’ve saved", emoji: "💾" },
+    { name: "document", note: "its own identity, your colors too", emoji: "🎨" },
+    { name: "attachments", note: "photos and files you add", emoji: "📎" },
   ];
   // null = server/no-JS: everything visible. After mount it folds, then opens on first view.
   let open = $state<boolean | null>(null);

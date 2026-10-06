@@ -98,10 +98,10 @@ public struct SlopDocumentRouting {
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate
 {
-  public let packageURL: URL
+  public let url: URL
   public let session: DocumentSession
   let routing: SlopDocumentRouting
-  public var telemetry: SlopTelemetry = .disabled
+  public let telemetry: SlopTelemetry
   var reportedSaveFailure = false
   var reportedRendererFailure = false
   /// Issue kinds already reported (operations, authored); each is reported once.
@@ -115,7 +115,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var failedOverlay: NSHostingView<FailureOverlay>?
   var presentedPageError: String?
   var documentAttention: NSPanel?
-  var attentionMessage: String?
   var attentionFailure: SaveFailure?
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
@@ -134,26 +133,18 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   weak var loadingWebView: NSView?
   let startupStarted: ContinuousClock.Instant
 
-  private static var preparingProgress: [URL: SlopOpeningProgress] = [:]
-
-  public static func focusOpeningDocument(at url: URL) {
-    preparingProgress[url.standardizedFileURL]?.focus()
-  }
-
+  /// Opens the document at `url`. With `progress`, the window is shown once ready, and the
+  /// progress panel (its caller's, shown if opening is slow) can cancel the open.
   public static func open(
-    packageURL: URL, routing: SlopDocumentRouting, presentsWindow: Bool = false, telemetry: SlopTelemetry = .disabled
+    url: URL, routing: SlopDocumentRouting, progress: SlopOpeningProgress? = nil, telemetry: SlopTelemetry = .disabled
   ) async throws -> SlopDocumentWindowController {
     let started = ContinuousClock.now
-    let progress = presentsWindow ? SlopOpeningProgress(started: started) : nil
-    let key = packageURL.standardizedFileURL
-    if let progress { preparingProgress[key] = progress }
-    defer { if preparingProgress[key] === progress { preparingProgress[key] = nil } }
     let preparation = Task { @MainActor in
-      let session = try await DocumentSession.open(packageURL: packageURL)
+      let session = try await DocumentSession.open(url: url)
       do {
         try Task.checkCancellation()
-        return try SlopDocumentWindowController(
-          packageURL: packageURL, session: session, routing: routing, started: started, telemetry: telemetry)
+        return SlopDocumentWindowController(
+          url: url, session: session, routing: routing, started: started, telemetry: telemetry)
       } catch {
         try await session.close()
         throw error
@@ -168,7 +159,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         try await controller.finishClose()
         throw CancellationError()
       }
-      if presentsWindow {
+      if let progress {
         controller.openingProgress = progress
         controller.showWindow(nil)
       }
@@ -180,34 +171,33 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   private init(
-    packageURL: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
+    url: URL, session: DocumentSession, routing: SlopDocumentRouting, started: ContinuousClock.Instant,
     telemetry: SlopTelemetry = .disabled
-  ) throws {
+  ) {
     self.routing = routing
     self.telemetry = telemetry
     startupStarted = started
-    self.packageURL = packageURL.standardizedFileURL
+    self.url = url.standardizedFileURL
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
     session.load()
-    let windowMask = try SlopWindowMask(package: session.package)
-    let spec = session.package.manifest.presentation
+    let windowMask = SlopWindowMask(file: session.file)
+    let spec = session.file.manifest.presentation
     let size = NSSize(width: spec.width, height: spec.height)
     let window = FramelessDocumentWindow(
       contentRect: NSRect(origin: .zero, size: size),
-      styleMask: slopDocumentWindowStyleMask(resizable: session.package.isResizable),
+      styleMask: slopDocumentWindowStyleMask(resizable: session.file.isResizable),
       backing: .buffered, defer: false)
-    window.title = SlopDocumentIdentity(url: self.packageURL).filename
+    window.title = SlopDocumentIdentity(url: self.url).filename
     window.minSize = NSSize(width: WindowBounds.minWidth, height: WindowBounds.minHeight)
     window.isOpaque = false
     window.backgroundColor = .clear
-    window.hasShadow = !session.package.usesTransparentBackground || session.package.isSkinned
+    window.hasShadow = !session.file.usesTransparentBackground || session.file.isSkinned
     window.isReleasedWhenClosed = false
     window.tabbingMode = .disallowed
-    window.representedURL = self.packageURL
+    window.representedURL = self.url
     window.miniwindowTitle = window.title
-    window.miniwindowImage = NSImage(contentsOf: session.package.iconURL)
     if spec.lockAspect == true {
       window.contentAspectRatio = size
     }
@@ -220,9 +210,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     super.init(window: window)
     window.delegate = self
     session.delegate = self
-    SlopRenderer.installCLIExport(on: session,
-      telemetry: SlopTelemetry { [weak self] in self?.telemetry.send($0) },
-      onFailure: { [weak self] error, format in self?.reportLifecycleFailure(.export, error: error, format: format) })
+    // `slop export` of this open document exports its live view, as the window does.
+    session.onExport = { [weak self] format, output, deadline in
+      guard let self else { throw SlopFailure("Document closed") }
+      try await self.exportDocument(format: format, to: output, deadline: deadline)
+    }
     container.changed = { [weak self] _ in self?.refreshToolbarHover() }
     SlopToolbarPointerSampler.shared.add(self) { [weak self] point, front in
       self?.refreshToolbarHover(point: point, front: front)
@@ -230,14 +222,13 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
     // Editor discovery queries Launch Services; warm it before the first hover.
     Task.detached(priority: .utility) { _ = SlopEditors.installed }
-    SlopDocumentAssetRefreshQueue.invalidate(self.packageURL)
     startLoading()
     recordStartup("native-prepared")
-    // Finder icon metadata is cosmetic; keep its disk writes off the opening path.
-    Task { @MainActor [weak self, package = session.package] in
-      await self?.waitForPresentation()
-      guard self?.isContentReady == true else { return }
-      SlopPreviewWriter.installAuthoredIcon(for: package, telemetry: self?.telemetry ?? .disabled)
+    // The minimized window shows the document's icon, read by its owner rather than by a
+    // new open on the main thread.
+    Task { [weak self, session] in
+      guard let icon = await session.artwork(.icon) else { return }
+      self?.window?.miniwindowImage = NSImage(data: icon)
     }
   }
   /// A discard or recovery replaced the page: show the new one and wait for it, clearing
@@ -269,9 +260,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func pageSession(_ session: DocumentSession, resizeContentTo requested: CGSize)
     throws -> CGSize
   {
-    guard let window else { throw SlopPackageError.invalid("document window is unavailable") }
+    guard let window else { throw SlopFailure("document window is unavailable") }
     var requested = requested
-    let spec = session.package.manifest.presentation
+    let spec = session.file.manifest.presentation
     if spec.lockAspect == true {
       let ratio = CGFloat(spec.width) / CGFloat(spec.height)
       requested.width = max(CGFloat(WindowBounds.minWidth), CGFloat(WindowBounds.minHeight) * ratio, requested.width)
@@ -296,10 +287,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     if toolbar?.isVisible == true { showToolbar() }
     layoutThemePanel()
   }
-  public var documentTitle: String { window?.title ?? SlopDocumentIdentity(url: packageURL).filename }
+  public var documentTitle: String { window?.title ?? SlopDocumentIdentity(url: url).filename }
   /// The window's icon, read once at open, at menu size.
   public var dockMenuImage: NSImage {
-    let source = window?.miniwindowImage ?? NSWorkspace.shared.icon(forFile: packageURL.path)
+    let source = window?.miniwindowImage ?? NSWorkspace.shared.icon(forFile: url.path)
     let image = (source.copy() as? NSImage) ?? source
     image.size = NSSize(width: 16, height: 16)
     return image
@@ -328,14 +319,34 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
 
+  /// Saves and releases the document, writing artwork rendered from its page first, so
+  /// Finder, Quick Look and the catalog show it as it closed. A failed close shows the
+  /// window again, open and editable.
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
     guard !closePrepared else { return }
+    let artwork = await closingArtwork()
     do {
-      try await session.close()
+      try await session.close(artwork: artwork)
+      if artwork != nil { SlopPreviewWriter.announce(url) }
       closePrepared = true
       window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
-    } catch { reportLifecycleFailure(operation, error: error); throw error }
+    } catch {
+      if artwork != nil { window?.orderFront(nil) }
+      reportLifecycleFailure(operation, error: error)
+      throw error
+    }
+  }
+  /// The page's preview and icon, when this session changed the document or it has no
+  /// preview yet. The window leaves the screen first: capture resizes the page.
+  private func closingArtwork() async -> SlopRenderedArtwork? {
+    guard isContentReady, session.isReady, !session.rendererDead else { return nil }
+    let edited = await session.edited()
+    let preview = edited ? nil : await session.artwork(.preview)
+    guard edited || preview == nil else { return nil }
+    hideToolbar()
+    window?.orderOut(nil)
+    return await SlopRenderer.artwork(session: session, telemetry: telemetry)
   }
 
   public func windowDidMove(_ notification: Notification) {
@@ -359,18 +370,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       await cancelPreparedClose()
       throw error
     }
-    // Nothing was editable during startup; closing an unfinished open does
-    // not need to launch another WebView to refresh artwork.
-    guard isContentReady else { return }
-    // The render reads the saved document into memory after this window closes.
-    SlopDocumentAssetRefreshQueue.schedule(presentedURL: packageURL, telemetry: telemetry)
   }
   public func cancelPreparedClose() async {
     await session.cancelClose()
     if isLoading { startLoading() }
-  }
-  public static func finishAssetRefreshesForTermination() async {
-    await SlopDocumentAssetRefreshQueue.finishForTermination()
   }
   public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
   /// Closing is a command: the coordinator runs it after any command in progress, and
@@ -408,5 +411,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
 }
 
 extension UTType {
-  public static let slop = UTType(exportedAs: "com.hitslop.slop", conformingTo: .package)
+  /// A `.slop`: one file (the app's Info.plist declares it as `public.data`).
+  public static let slop = UTType(exportedAs: "com.hitslop.slop", conformingTo: .data)
 }

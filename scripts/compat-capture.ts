@@ -1,22 +1,21 @@
 // Captures a compatibility corpus entry from this build: the conformance app (every ctx
 // member and descriptor kind), the conformance fixtures and a few shipped templates, as
-// built; documents saved through the real helper; what they read as; edits to replay on
-// them; and the helper commands a CLI of this release sends.
+// built; documents saved through this build's CLI and helper; what they read as; edits to
+// replay on them; and the commands a CLI of this release runs, with what they print.
 // Usage: bun scripts/compat-capture.ts RELEASE [--frozen] [--templates slug,slug]
-// Pick templates that cover what the release changed; the defaults store rows and text,
-// records of objects with text, and records an effect creates from today's date.
+// The templates default to the shipped ones (`examples/slops/bundled.json`).
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
 // release candidate with a clean tree, then commit it before tagging.
 import { Database } from "bun:sqlite";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HelperProtocol, PackageFormat, RuntimeABI } from "../packages/schema/src/constants";
 import {
   corpus,
   helper,
-  native,
-  nativeJSON,
+  slop,
+  slopJSON,
   readJSON,
   savedState,
   stable,
@@ -27,30 +26,29 @@ import {
   type Transcript,
 } from "./compat";
 import { prepareNativeFixtures } from "./native-fixtures";
-import { builtTemplates, repository } from "./templates";
+import { builtTemplates } from "./templates";
 import { archiveDigest, corpusFiles, sourceFingerprint, verifyCorpus } from "./compat-integrity";
-import { digest, shellDestinations, shellFiles } from "./runtime-artifacts";
-import { createHash } from "node:crypto";
+import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "./runtime-artifacts";
+import { engine, pack } from "../packages/cli/src/engine";
+import { coreBuildId } from "../packages/cli/src/core";
+import { exec } from "../packages/cli/src/process";
+import { createDocument, debugHelper } from "./helper";
+useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun scripts/compat-capture.ts RELEASE [--frozen]");
 const frozen = flags.includes("--frozen");
-if (helper !== join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native"))
+if (helper !== debugHelper)
   throw new Error("Capture uses the helper it builds; remove HITSLOP_NATIVE_CLI for capture");
 const chosen = flags.includes("--templates")
   ? flags[flags.indexOf("--templates") + 1]!.split(",")
-  : ["quick-checklist", "pocket-sheet", "morning-pages"];
+  : (JSON.parse(await readFile(join(repository, "examples/slops/bundled.json"), "utf8")) as string[]);
 const destination = join(corpus, name);
 const previous = await readJSON<Release>(join(destination, "release.json"));
 if (previous?.frozen) throw new Error(`tests/compat/${name} is frozen; it is never recaptured`);
 const run = async (command: string[], cwd = repository) => {
   if (command[0] === process.execPath) console.log(`Capture: ${command.slice(1).join(" ")}`);
-  const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+  const { stdout, stderr, code } = await exec(command, { cwd });
   if (code) throw new Error(`${command.join(" ")} failed: ${stdout.trim()}\n${stderr.trim()}`);
   return stdout.trim();
 };
@@ -60,28 +58,31 @@ if (frozen && dirty) throw new Error("Capture a frozen entry from a clean releas
 // Build the producing tools rather than trusting an existing helper or inventory.
 await run([process.execPath, "run", "build"]);
 await run([process.execPath, "run", "build:templates"]);
-const producingCore = await import(resolve("packages/cli/shell/core/hitslop_core_wasm.js"));
-producingCore.initSync({ module: await Bun.file(resolve("packages/cli/shell/core/hitslop_core_wasm_bg.wasm")).bytes() });
-if (producingCore.coreBuildId() !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
+if ((await coreBuildId()) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 const root = join(stage, name);
 try {
-// Packages: the chosen shipped templates as built, the hand-written conformance fixtures
-// and the Svelte conformance app, which exercises every ctx member and descriptor kind.
+// Templates: the chosen shipped templates as built, the hand-written conformance fixtures
+// (packed from their stages) and the Svelte conformance app, which exercises every ctx
+// member and descriptor kind.
 await prepareNativeFixtures();
-const { templates } = await builtTemplates();
-for (const directory of ["packages", "documents", "expected", "scenarios", "pages", "cli"])
+const { templates: built } = await builtTemplates();
+for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "cli"])
   await mkdir(join(root, directory), { recursive: true });
-const packages: Record<string, string> = {};
+const templates: Record<string, string> = {};
 for (const slug of chosen) {
-  if (!templates.some((t) => t.slug === slug && t.bundled)) throw new Error(`Not a shipped template: ${slug}`);
-  packages[slug] = join(repository, "generated/templates", slug + ".slop");
+  if (!built.some((t) => t.slug === slug && t.bundled)) throw new Error(`Not a shipped template: ${slug}`);
+  templates[slug] = join(repository, "generated/templates", slug + ".slop");
 }
 for (const fixture of await readdir(join(repository, "tests/fixtures")))
-  packages[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
-packages.conformance = join(repository, "generated/abi/owner-svelte.slop");
-for (const [slug, source] of Object.entries(packages)) await cp(source, join(root, "packages", slug + ".slop"), { recursive: true });
+  templates[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
+templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
+for (const [slug, source] of Object.entries(templates)) {
+  const template = join(root, "templates", slug + ".slop");
+  if (source.endsWith(".slop")) await copyFile(source, template);
+  else await pack(source, template);
+}
 
 // Generic edits derived from a descriptor: one valid write of every kind it declares.
 type Node = { kind: string; [key: string]: any };
@@ -128,50 +129,51 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
   }
   return ops;
 }
-const schemaOf = async (document: string) => JSON.parse(await readFile(join(document, "state.schema.json"), "utf8")) as Node;
-const valueOf = async (document: string) => (await nativeJSON(["get", document])) as unknown;
-const batch = (document: string, ops: unknown[]) => nativeJSON(["batch", document, "--ops", JSON.stringify(ops)]);
+const schemaOf = async (document: string) => JSON.parse(await engine(["schema", document])) as Node;
+/** The app's module, read from the file outside the core. */
+const appOf = (document: string) => appAsset(document, "app.js");
+const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
+const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
 // Documents: each package's document after two closed editing sessions (agent edits,
 // counter contributions from two writers, checkpoint plus saved updates) and a theme
 // change; the conformance document also holds an attachment.
 const documents = join(root, "documents");
-const work = await mkdtemp(join(tmpdir(), "hitslop-compat-capture-"));
+// Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
+const work = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-capture-")));
 const pageScripts: Record<string, Page["script"]> = {};
 const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
   "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
   "quick-checklist": [{ selector: '[aria-label="Checklist title"]', value: "Checklist edited ✓" }],
-  "pocket-sheet": [{ selector: '[aria-label="Sheet title"]', value: "Sheet edited ✓" }],
-  "morning-pages": [{ selector: '[aria-label="Morning Pages writing area"]', value: "Morning pages edited ✓" }],
 };
-for (const slug of Object.keys(packages)) {
+for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
-  await run([helper, "create", "--from", join(root, "packages", slug + ".slop"), "--output", document]);
+  await createDocument(join(root, "templates", slug + ".slop"), document, { helper });
   const schema = await schemaOf(document);
   for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
-  const theme = await nativeJSON(["theme", "get", document]);
+  const theme = await slopJSON(["theme", "get", document]);
   const [token, color] = Object.entries(theme.defaults as Record<string, string>)[0] ?? [];
-  if (token) await nativeJSON(["theme", "set", document, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
+  if (token) await slopJSON(["theme", "set", document, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
   if (slug === "conformance") {
     const file = join(work, "attachment.txt");
     await writeFile(file, "Compatibility corpus attachment ✓\n");
-    const ref = await nativeJSON(["attachments", "import", document, file]);
+    const ref = await slopJSON(["attachments", "import", document, file]);
     await rm(file);
     await batch(document, [{ type: "set", path: ["attachment"], value: ref.id }]);
   }
-  const app = await readFile(join(document, "assets/app.js"), "utf8");
+  const app = appOf(document);
   pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
 }
 // Storage shapes: a compacted (history-trimmed) checkpoint, and merged anomalies.
 for (const slug of ["conformance", "quick-checklist"]) {
   const compacted = join(documents, `${slug}-compacted.slop`);
-  await cp(join(documents, slug + ".slop"), compacted, { recursive: true });
-  await run([helper, "compact", compacted]);
+  await copyFile(join(documents, slug + ".slop"), compacted);
+  await slop(["compact", compacted]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
   pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
 }
 const anomalies = join(documents, "conformance-anomalies.slop");
-await run([helper, "create", "--from", join(root, "packages/conformance.slop"), "--output", anomalies]);
+await createDocument(join(root, "templates/conformance.slop"), anomalies, { helper });
 await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_anomalies", "--", anomalies]);
 
 // What each document reads as, and an edit to replay on it with its result.
@@ -188,16 +190,15 @@ for (const document of names) {
       ? [{ type: "set", path: ["title"], value: "Anomalies survive ✓" }]
       : edits(await schemaOf(path), expected.value, 3);
   await rm(scratch, { recursive: true, force: true });
-  await cp(path, scratch, { recursive: true });
-  const reply = await batch(scratch, ops);
-  const { state } = await nativeJSON(["get", scratch, "--snapshot"]);
-  if (JSON.stringify(state.value) !== JSON.stringify(reply.value)) throw new Error(`${document}: the replayed edit did not save`);
+  await copyFile(path, scratch);
+  await batch(scratch, ops);
+  const { state } = await slopJSON(["get", scratch, "--snapshot"]);
   const scenario: Scenario = { ops, value: state.value, issues: state.issues };
   await writeFile(join(root, "scenarios", document + ".json"), JSON.stringify(scenario, null, 2) + "\n");
   // The old app must render its saved document.
   for (const format of ["png", "pdf"]) {
     const output = join(work, `render.${format}`);
-    await run([helper, "export", path, "--format", format, "--output", output]);
+    await slop(["export", path, "--format", format, "--output", output]).then(({ code, stderr }) => { if (code) throw new Error(stderr); });
     await rm(output);
   }
   if (document !== "conformance-anomalies") {
@@ -209,15 +210,14 @@ for (const document of names) {
   }
 }
 
-// The helper commands a CLI of this release sends, and what they print.
+// The commands a CLI of this release runs, and what they print.
 const attachmentBytes = "Archived CLI attachment ✓\n";
 await writeFile(join(root, "cli/attachment.txt"), attachmentBytes);
-const attachmentID = createHash("sha256").update(attachmentBytes).digest("hex");
+const attachmentID = sha256(attachmentBytes);
 const transcript: Transcript = { document: "conformance", commands: [] };
 await rm(scratch, { recursive: true, force: true });
-await cp(join(documents, "conformance.slop"), scratch, { recursive: true });
+await copyFile(join(documents, "conformance.slop"), scratch);
 for (const args of [
-  ["schema", "{document}"],
   ["get", "{document}"],
   ["get", "{document}", "--snapshot"],
   ["apply", "{document}", "--op", JSON.stringify({ type: "set", path: ["label"], value: "From the CLI" })],
@@ -232,14 +232,14 @@ for (const args of [
   ["get", "{document}"],
 ]) {
   const exported = join(work, "attachment-export.txt");
-  const result = await native(args.map((arg) => arg === "{document}" ? scratch : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
+  const result = await slop(args.map((arg) => arg === "{document}" ? scratch : arg === "{attachment}" ? join(root, "cli/attachment.txt") : arg === "{output}" ? exported : arg));
   let stdout: unknown = result.stdout.trim();
   try {
     stdout = stable(JSON.parse(result.stdout), args);
   } catch {}
   if (args.includes("{output}")) {
     stdout = String(stdout).replaceAll(exported, "{output}");
-    transcript.commands.push({ args, code: result.code, stdout, outputHash: createHash("sha256").update(await readFile(exported)).digest("hex") });
+    transcript.commands.push({ args, code: result.code, stdout, outputHash: await fileDigest(exported) });
   } else transcript.commands.push({ args, code: result.code, stdout });
 }
 await writeFile(join(root, "cli/transcript.json"), JSON.stringify(transcript, null, 2) + "\n");
@@ -251,7 +251,7 @@ const npmPackages: Record<string, string> = {};
 for (const pkg of ["schema", "document", "cli"]) {
   const metadata = JSON.parse(await readFile(join(repository, "packages", pkg, "package.json"), "utf8"));
   const file = `hitslop-${pkg}-${metadata.version}.tgz`;
-  await cp(join(repository, "generated/npm", file), join(root, "cli", file));
+  await copyFile(join(repository, "generated/npm", file), join(root, "cli", file));
   archives[file] = await archiveDigest(join(root, "cli", file));
   npmPackages[metadata.name] = `../${file}`;
 }
@@ -264,7 +264,7 @@ await rm(join(install, "node_modules"), { recursive: true, force: true });
 // Storage shapes the documents cover.
 const storage: Release["storage"] = {};
 for (const document of names) {
-  const database = new Database(join(documents, document + ".slop/state/document.sqlite"), { readonly: true });
+  const database = new Database(join(documents, document + ".slop"), { readonly: true });
   const checkpoint = database.query("SELECT length(bytes) AS n FROM checkpoint").get() as { n: number };
   const updates = database.query("SELECT count(*) AS n FROM updates").get() as { n: number };
   database.close();
@@ -282,14 +282,14 @@ const release: Release = {
   markers: {
     packageFormat: PackageFormat,
     runtimeABI: RuntimeABI,
-    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/store.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
+    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/file.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
     layout: Number((await readFile(join(repository, "crates/hitslop-core/src/lib.rs"), "utf8")).match(/pub const LAYOUT: i64 = (\d+);/)![1]),
     protocol: HelperProtocol.version,
   },
   inputs: capturedInputs,
   producer: { coreBuildID: await run([helper, "--core-build"]), shell: await digest(shellDestinations.app, shellFiles) },
   files: {},
-  packages: Object.fromEntries(await Promise.all(Object.keys(packages).map(async slug => [slug, await digest(join(root, "packages", slug + ".slop"))]))),
+  templates: Object.fromEntries(await Promise.all(Object.keys(templates).map(async slug => [slug, await fileDigest(join(root, "templates", slug + ".slop"))]))),
   archives,
   toolchain: {
     rust: await version(["rustc", "--version"]),
@@ -309,11 +309,12 @@ const release: Release = {
 await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
 
 // The old apps' own edits: the native corpus test records what each page scenario saves.
-const swift = Bun.spawn(
-  [process.execPath, "scripts/swift-test.ts", "--filter", "CompatCorpusTests"],
-  { cwd: repository, stdout: "inherit", stderr: "inherit", env: { ...process.env, HITSLOP_COMPAT_RECORD: name, HITSLOP_COMPAT_ROOT: stage, TZ: "UTC" } },
-);
-if (await swift.exited) throw new Error("Recording page scenarios failed");
+const swift = await exec([process.execPath, "scripts/swift-test.ts", "--filter", "CompatCorpusTests"], {
+  cwd: repository,
+  inherit: ["stdout", "stderr"],
+  env: { ...process.env, HITSLOP_COMPAT_RECORD: name, HITSLOP_COMPAT_ROOT: stage, TZ: "UTC" },
+});
+if (swift.code) throw new Error("Recording page scenarios failed");
 for (const document of await readdir(join(root, "pages"))) {
   const page = JSON.parse(await readFile(join(root, "pages", document), "utf8")) as Page;
   if (page.value === null) throw new Error(`No page result recorded for ${document}`);

@@ -26,7 +26,8 @@
     "templates",
     "skills",
     ".crust/root/skills",
-    "shell"
+    "shell",
+    "engine"
   ],
   "engines": {
     "bun": ">=1.4.2"

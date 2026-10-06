@@ -11,7 +11,7 @@ extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
   public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "health")!, SlopCategory(rawValue: "creative")!, SlopCategory(rawValue: "music")!, SlopCategory(rawValue: "other")!]
 }
-/// The platform level this build runs; a package above it needs a newer app.
+/// The platform level this build runs; a template or document above it needs a newer app.
 public enum PackageFormat {
   public static let level = 1
 }
@@ -45,10 +45,10 @@ public enum Limits {
   /// Socket requests: every method, and attachment uploads.
   public static let socketRequest = 1048576
   public static let socketAttachment = 16777216
-  /// A package's immutable entries: one file, the entry count and total bytes; image size.
-  public static let packageFile = 26214400
-  public static let packageEntries = 256
-  public static let packageBytes = 52428800
+  /// An app's assets: one file, the asset count and total bytes; image size.
+  public static let assetFile = 26214400
+  public static let assetCount = 256
+  public static let assetBytes = 52428800
   public static let imageSide = 16384
   public static let imagePixels = 24000000
 }

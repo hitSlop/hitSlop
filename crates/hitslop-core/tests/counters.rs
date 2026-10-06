@@ -5,7 +5,7 @@
 // counter-probe.ts) and no hitSlop counter design had convergence evidence.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View};
+use support::{Edit, View, next, snapshot};
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
 
@@ -20,9 +20,6 @@ fn schema() -> String {
 fn initial() -> String {
     json!({"hits":5,"rows":[{"$id":"r1","text":"a","votes":0}]}).to_string()
 }
-fn snapshot(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
-}
 fn increment(path: Value, by: i64) -> String {
     json!({"intents":[{"type":"increment","path":path,"by":by}]}).to_string()
 }
@@ -32,33 +29,8 @@ fn checked(d: &mut Document, projected: &mut View, reply: String) {
 }
 
 #[test]
-fn loro_counter_loses_precision_where_the_hitslop_counter_stays_exact() {
-    // Upstream behaviour, reproduced: (1e16 - 1e16) + 1 replays as 0.
-    let a = LoroDoc::new();
-    let c = a.get_counter("c");
-    c.increment(1e16).unwrap();
-    a.commit();
-    let seed = a.export(ExportMode::Snapshot).unwrap();
-    let from = a.oplog_vv();
-    c.increment(-1e16).unwrap();
-    a.commit();
-    c.increment(1.0).unwrap();
-    a.commit();
-    let b = LoroDoc::new();
-    b.import(&seed).unwrap();
-    b.import(&a.export(ExportMode::updates(&from)).unwrap()).unwrap();
-    assert_eq!((c.get_value(), b.get_counter("c").get_value()), (1.0, 0.0));
-    // Even individually safe increments go wrong once the running float sum
-    // crosses 2^53: the exact integer total is 1.
-    let live = LoroDoc::new();
-    let lc = live.get_counter("c");
-    for by in [9e15, 9e15, 1.0, -9e15, -9e15] {
-        lc.increment(by).unwrap();
-        live.commit();
-    }
-    assert_ne!(lc.get_value(), 1.0);
-
-    // hitSlop counter: exact integers, bounded to the safe range.
+fn counters_stay_exact_past_float_precision() {
+    // Exact integers, bounded to the safe range, where a float sum would drift.
     let mut d = Document::create(&schema(), &json!({"hits":0,"rows":[]}).to_string()).unwrap();
     let seed = d.checkpoint().unwrap();
     let v0 = d.version();
@@ -77,12 +49,6 @@ fn loro_counter_loses_precision_where_the_hitslop_counter_stays_exact() {
     assert_eq!(snapshot(&reopened)["issues"], json!([]));
 }
 
-fn next(rng: &mut u64) -> u64 {
-    *rng ^= *rng << 13;
-    *rng ^= *rng >> 7;
-    *rng ^= *rng << 17;
-    *rng
-}
 #[test]
 fn replicas_converge_to_the_exact_sum_under_any_delivery() {
     let mut rng = 0xc0417e5u64;

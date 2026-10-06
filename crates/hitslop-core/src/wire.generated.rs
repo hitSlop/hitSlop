@@ -2,7 +2,7 @@
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape, RequiresUpdate }
+pub enum Code { TypeMismatch, OutOfRange, PathNotFound, InvalidKey, Exists, DuplicateId, InvalidRequest, InvalidId, InvalidPath, InvalidSchema, TooLarge, StaleBase, InvalidVersion, InvalidBytes, MissingDependencies, EngineError, InvalidShape, RequiresUpdate, IsTemplate }
 impl Code {
     pub fn as_str(self) -> &'static str { match self {
         Self::TypeMismatch => "type_mismatch",
@@ -23,12 +23,13 @@ impl Code {
         Self::EngineError => "engine_error",
         Self::InvalidShape => "invalid_shape",
         Self::RequiresUpdate => "requires_update",
+        Self::IsTemplate => "is_template",
     } }
 }
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }
 }
-/// The platform level this build runs; a package above it needs a newer app.
+/// The platform level this build runs; a template or document above it needs a newer app.
 pub const PACKAGE_FORMAT: u64 = 1;
 pub const RUNTIME_ABI: u64 = 1;
 /// The CSS `border-radius` of a window whose manifest names no shape.
@@ -46,6 +47,39 @@ pub(crate) const ID_ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// A document's saved checkpoint plus updates, in bytes, and its update rows.
 pub const STORAGE_BYTES: usize = 33554432;
 pub const STORAGE_ROWS: usize = 4096;
+/// An app: its manifest and its descriptor or initial values, in bytes, and its longest
+/// asset path; one asset's bytes, the asset count and their total bytes; and the largest
+/// image it may carry, per side and in pixels.
+#[cfg(feature = "storage")]
+pub(crate) const MANIFEST_BYTES: usize = 65536;
+pub(crate) const APP_TEXT_BYTES: usize = 4194304;
+#[cfg(feature = "storage")]
+pub(crate) const ASSET_PATH_BYTES: usize = 240;
+pub const ASSET_FILE_BYTES: usize = 26214400;
+pub const ASSET_COUNT: usize = 256;
+pub const ASSET_BYTES: usize = 52428800;
+pub const IMAGE_SIDE: usize = 16384;
+pub const IMAGE_PIXELS: usize = 24000000;
+/// A document's attachments: one file's bytes, their total bytes and their count.
+pub const ATTACHMENT_FILE_BYTES: usize = 10485760;
+pub const ATTACHMENT_BYTES: usize = 104857600;
+pub const ATTACHMENT_COUNT: usize = 256;
+/// A window shape's longest path data and radius list, and its largest view box side.
+pub(crate) const SHAPE_PATH: usize = 4096;
+pub(crate) const SHAPE_RADIUS: usize = 256;
+pub(crate) const SHAPE_VIEW_BOX: f64 = 16384.0;
+/// A batch's most intents and an intent's longest path; a page request's largest payload.
+pub(crate) const BATCH_INTENTS: usize = 1000;
+pub(crate) const PATH_SEGMENTS: usize = 64;
+pub(crate) const PAGE_PAYLOAD: usize = 4194304;
+/// The largest socket request, an attachment upload; no envelope the core checks is larger.
+#[cfg(feature = "storage")]
+pub(crate) const SOCKET_ATTACHMENT: usize = 16777216;
+/// An attachment's identity: the SHA-256 of its bytes, in lowercase hex.
+#[cfg(feature = "storage")]
+pub(crate) fn valid_attachment_id(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| b"0123456789abcdef".contains(&b))
+}
 pub(crate) fn valid_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= 64 && value.bytes().all(|b| b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-".contains(&b))
 }
@@ -127,6 +161,13 @@ pub struct Batch { pub intents: Vec<Intent> }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeFile { pub template: String, pub values: std::collections::BTreeMap<String, String> }
+/// A built app (a build's `app.json`), as the file engine packs it into the `app` row.
+/// Each part stays the JSON text the build wrote: its own validator reads it, in order.
+#[cfg(feature = "storage")]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(non_snake_case)]
+pub struct AppRow { pub packageFormat: u64, pub runtimeABI: u64, pub manifest: Box<serde_json::value::RawValue>, pub descriptor: Box<serde_json::value::RawValue>, pub initial: Box<serde_json::value::RawValue>, pub theme: Box<serde_json::value::RawValue> }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

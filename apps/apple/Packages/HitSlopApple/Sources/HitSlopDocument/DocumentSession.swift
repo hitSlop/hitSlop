@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 @preconcurrency import WebKit
 
 /// Whether a document's edits are durable. A failed save keeps the edits live and unsaved.
@@ -9,7 +10,7 @@ public enum DocumentSaveStatus: Sendable, Equatable {
   case failed(SaveFailure)
 }
 
-/// A package lease outlives its renderer. The native Rust owner interprets Loro bytes.
+/// A document's writer lease outlives its renderer. The native Rust owner interprets Loro bytes.
 @MainActor
 public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, WKNavigationDelegate, WKUIDelegate {
   private var liveWebView: WKWebView?
@@ -17,7 +18,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     guard let liveWebView else { preconditionFailure("Document WebView has been destroyed") }
     return liveWebView
   }
-  public let package: SlopPackage
+  public let file: SlopFile
   /// The owner's epoch: socket clients name it, and it rotates on discard.
   public var epoch: String { owner.epoch }
   private enum Renderer {
@@ -59,24 +60,23 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     }
   }
   public private(set) var failureReason: SlopFailureContext.Reason?
-  public private(set) var failureClassification: SlopFailureContext.Classification = .platform
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
   /// While a capture reads the page, accepted theme changes wait to restyle it.
-  public var capturing = false {
+  public private(set) var capturing = false {
     didSet { if oldValue && !capturing { refreshTheme() } }
   }
-  public var allowsFileSelection = true {
-    didSet { if !allowsFileSelection { filePicker.cancel(); fileSaver.cancel() } }
-  }
+  /// Captures queued behind the one in progress (`withCapture`).
+  private var captureQueue: [CheckedContinuation<Void, Never>] = []
+  /// An owner selects and saves files; a snapshot rendered in the background never does.
+  var allowsFileSelection: Bool { owner.mode == .document }
+  /// The system panels, which tests replace with scripted presenters.
   var filePicker = DocumentFilePicker()
   var fileSaver = DocumentFileSaver() {
     didSet { configureFileSaver() }
   }
   /// Render-target pages (icons, close-time assets) mark the document so authored capture
   /// views render; every replacement page carries the same marker.
-  public var renderTargetsEnabled = false {
-    didSet { if renderTargetsEnabled && !oldValue { markRenderTarget(webView.configuration) } }
-  }
+  let renderTargetsEnabled: Bool
   private func markRenderTarget(_ configuration: WKWebViewConfiguration) {
     configuration.userContentController.addUserScript(
       WKUserScript(
@@ -86,28 +86,28 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   /// The window that shows this session.
   public weak var delegate: DocumentSessionDelegate?
   /// Whether Edit ▸ Undo and Redo have anything to do in this document.
-  public private(set) var undoAvailability = UndoAvailability()
+  public private(set) var undoAvailability = UndoState(canUndo: false, canRedo: false)
   let owner: DocumentOwner
   private var server: SocketServer?
   /// The attached page's token (see `makeWebView`).
-  private var view = UUID().uuidString
+  private(set) var view = UUID().uuidString
   nonisolated private let pushes = PushQueue()
   private var closeTask: Task<Void, Error>?
   /// The manifest presentation as the page's `config` reply carries it.
   private lazy var presentation: [String: Any] = (try? JSONSerialization.jsonObject(
-    with: JSONEncoder().encode(package.manifest.presentation))) as? [String: Any] ?? [:]
+    with: JSONEncoder().encode(file.manifest.presentation))) as? [String: Any] ?? [:]
   private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
   private let webViewResources: URL
 
+  /// What opening reads off the main actor: the owner, with the app's assets, and the page
+  /// shell.
   struct Prepared: Sendable {
-    let package: SlopPackage
     let shell: URL
     let owner: DocumentOwner
 
-    init(package: SlopPackage, storage mode: StorageMode = .document) throws {
-      self.package = package
+    init(url: URL, storage mode: StoreMode = .document) throws {
       shell = try DocumentSession.pageShell()
-      owner = try DocumentOwner(package: package, mode: mode)
+      owner = try DocumentOwner(url: url, mode: mode)
     }
   }
 
@@ -115,17 +115,23 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   nonisolated static func pageShell() throws -> URL {
     guard let url = Bundle.module.url(forResource: "shell", withExtension: nil),
       ["boot.js", "index.js"].allSatisfy({ FileManager.default.fileExists(atPath: url.appendingPathComponent($0).path) })
-    else { throw failure("Incomplete page shell; reinstall hitSlop") }
+    else { throw SlopFailure("Incomplete page shell; reinstall hitSlop") }
     return url
   }
 
-  private init(prepared: Prepared) {
-    package = prepared.package
+  private init(prepared: Prepared, renderTargetsEnabled: Bool) {
+    self.renderTargetsEnabled = renderTargetsEnabled
+    file = prepared.owner.file
     webViewResources = prepared.shell
     owner = prepared.owner
     super.init()
     observeOwner()
+    configureFileSaver()
     makeWebView()
+  }
+  private func configureFileSaver() {
+    fileSaver.window = { [weak self] in self?.liveWebView?.window }
+    fileSaver.onFailed = { [weak self] message in self?.report(SlopPageIssue(message: message, isOperation: true)) }
   }
 
   private func observeOwner() {
@@ -187,7 +193,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       refreshTheme()
       await themeDelivery?.value
     }
-    if themeDirty { throw failure("Theme could not be applied to the page") }
+    if themeDirty { throw SlopFailure("Theme could not be applied to the page") }
   }
 
   // MARK: Theme panel
@@ -203,15 +209,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   /// revision once the change is accepted (unchanged when it changed nothing), or the
   /// refusal.
   public func changeTheme(_ change: SlopThemeChange, reply: @escaping @MainActor (Result<Int, Error>) -> Void = { _ in }) {
-    guard !closing, !closed else { return reply(.failure(failure("Document is closing"))) }
+    guard !closing, !closed else { return reply(.failure(SlopFailure("Document is closing"))) }
     owner.enqueueTheme(change) { result in
       Task { @MainActor in reply(result.map(\.revision)) }
     }
   }
-  /// The full palette as a theme file, formatted like `slop theme export`.
+  /// The full palette as a theme file, the bytes the core writes for every export.
   public func exportTheme() async throws -> Data {
-    let file = try JSONSerialization.jsonObject(with: Data(try await owner.exportTheme().utf8))
-    return try DocumentCommand.formatted(file) + Data("\n".utf8)
+    Data(try await owner.exportTheme().utf8)
   }
 
   /// Called on the owner queue, so pushes enter `pushes` in owner order. One drain at a
@@ -220,9 +225,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     guard pushes.append(json) else { return }
     Task { @MainActor [weak self] in await self?.drainPushes() }
   }
-  #if DEBUG
-  var testingDeliveryFailure: (() throws -> Void)?
-  #endif
   private func drainPushes() async {
     var retryMS = 100
     var retryView = view
@@ -234,9 +236,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         continue
       }
       do {
-        #if DEBUG
-        try testingDeliveryFailure?()
-        #endif
         _ = try await webView.callAsyncJavaScript("globalThis.__slop?.publish(JSON.parse(payload)); return true",
           arguments: ["payload": "[" + batch.items.joined(separator: ",") + "]"], in: nil, contentWorld: .page)
         pushes.acknowledge(batch)
@@ -255,35 +254,31 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     }
   }
 
+  /// Opens the document at `url`: as its owner, or as a snapshot of its saved state for a
+  /// background render, which selects and saves no files.
   public static func open(
-    packageURL: URL, renderTargetsEnabled: Bool = false, purpose: SlopPagePurpose = .interactive
+    url: URL, renderTargetsEnabled: Bool = false, storage: StoreMode = .document
   ) async throws -> DocumentSession {
-    let prepared = try await prepare(packageURL: packageURL, storage: purpose.storageMode)
-    let session = try await finishOpening(prepared)
-    session.allowsFileSelection = purpose == .interactive
-    session.renderTargetsEnabled = renderTargetsEnabled
-    return session
+    try await finishOpening(try await prepare(url: url, storage: storage), renderTargetsEnabled: renderTargetsEnabled)
   }
 
-  static func prepare(packageURL: URL, storage mode: StorageMode = .document) async throws -> Prepared {
+  private static func prepare(url: URL, storage mode: StoreMode = .document) async throws -> Prepared {
     try await SlopPreparation.run {
-      try SlopLocalDocument.requireLocal(packageURL)
-      let package: SlopPackage
-      do { package = try SlopPackage(rootURL: packageURL) }
-      catch let error as SlopPackageError {
-        throw SlopDiagnosticError(error, diagnostic: .init(.rejection, reason: .invalidPackage))
+      // The owner's store opens and checks the file once; the session shows it from that.
+      do { return try Prepared(url: SlopFile.documentRoot(url), storage: mode) }
+      catch let error as SlopError {
+        throw SlopDiagnosticError(error, diagnostic: .init(.rejection, reason: .invalidFile))
       }
-      return try Prepared(package: package, storage: mode)
     }
   }
 
-  static func finishOpening(_ prepared: Prepared) async throws -> DocumentSession {
+  static func finishOpening(_ prepared: Prepared, renderTargetsEnabled: Bool = false) async throws -> DocumentSession {
     if Task.isCancelled {
       // No renderer has used the owner yet. Release the lease before reporting cancellation.
       try? await prepared.owner.close()
       throw CancellationError()
     }
-    let session = DocumentSession(prepared: prepared)
+    let session = DocumentSession(prepared: prepared, renderTargetsEnabled: renderTargetsEnabled)
     do { try session.startDiscovery() } catch {
       try? await prepared.owner.close()
       throw error
@@ -293,7 +288,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   public func reloadInterface() async throws {
     guard isReady, !closed, !closing, !capturing, !rendererDead else {
-      throw failure("Document interface unavailable")
+      throw SlopFailure("Document interface unavailable")
     }
     filePicker.cancel()
     fileSaver.cancel()
@@ -311,9 +306,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-    configuration.setURLSchemeHandler(
-      SchemeHandler(root: package.rootURL, shell: webViewResources),
-      forURLScheme: "slop")
+    configuration.setURLSchemeHandler(SchemeHandler(assets: owner.assets, shell: webViewResources), forURLScheme: "slop")
     // One handler: document requests go to the owner, everything else to the host bridge.
     configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "hitslop")
     configuration.userContentController.addUserScript(
@@ -333,38 +326,32 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           }, true);
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     if renderTargetsEnabled { markRenderTarget(configuration) }
-    let spec = package.manifest.presentation
+    let spec = file.manifest.presentation
     let view = WKWebView(
       frame: CGRect(x: 0, y: 0, width: spec.width, height: spec.height),
       configuration: configuration)
-    WebViewBackground.set(!package.usesTransparentBackground, on: view)
+    WebViewBackground.set(!file.usesTransparentBackground, on: view)
     view.navigationDelegate = self
     view.uiDelegate = self
     liveWebView = view
-    configureFileSaver()
-  }
-
-  private func configureFileSaver() {
-    fileSaver.window = { [weak self] in self?.liveWebView?.window }
-    fileSaver.onFailed = { [weak self] message in self?.report(SlopPageIssue(message: message, isOperation: true)) }
   }
 
   public func load() { liveWebView?.load(URLRequest(url: URL(string: "slop://app/")!)) }
 
-  public func waitUntilReady(timeout: Duration = .seconds(15)) async throws {
+  public func waitUntilReady(timeout: Duration = Timeouts.pageReady) async throws {
     if isReady { return }
     if closed || rendererDead || openingError != nil {
-      throw failure(openingError ?? "Document page unavailable")
+      throw SlopFailure(openingError ?? "Document page unavailable")
     }
     let id = UUID()
+    let timer = Task { [weak self] in
+      try await Task.sleep(for: timeout)
+      self?.waiters.removeValue(forKey: id)?.resume(throwing: SlopFailure("Document page did not become ready"))
+    }
+    defer { timer.cancel() }
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         waiters[id] = continuation
-        Task { [weak self] in
-          try? await Task.sleep(for: timeout)
-          self?.waiters.removeValue(forKey: id)?.resume(
-            throwing: failure("Document page did not become ready"))
-        }
         if Task.isCancelled {
           waiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
         }
@@ -389,21 +376,18 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
       message.frameInfo.securityOrigin.protocol == "slop",
       message.frameInfo.securityOrigin.host == "app",
-      let args = message.body as? [String: Any]
+      let request = PageRequest.checked(message.body)
     else {
-      replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Invalid page request")), nil)
+      replyHandler(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil)
       return
     }
-    let request: PageRequest
-    do { request = try PageRequest(args) }
-    catch { replyHandler(DocumentOwner.pageFailure(error), nil); return }
-    switch request.method {
+    switch request {
     case .open, .apply, .text, .flush, .undo, .redo:
       owner.admitPage(request, view: view) { replyHandler($0, nil) }
     case .config:
       let page = message.webView
       Task { @MainActor [weak self] in
-        guard let self else { return replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Page unavailable")), nil) }
+        guard let self else { return replyHandler(RequestOutcome.page(OwnerError.rejected("Page unavailable")), nil) }
         do {
           // A queued request from a replaced page cannot consume the new page's
           // dirty flag. Changes arriving during the read set it again.
@@ -412,24 +396,26 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           let theme: [String: String]
           do {
             let values = try JSONSerialization.jsonObject(with: Data(try await owner.loadTheme().state.effective.utf8))
-            guard let values = values as? [String: String] else { throw failure("Invalid effective theme") }
+            guard let values = values as? [String: String] else { throw SlopFailure("Invalid effective theme") }
             theme = values
           } catch {
             if page === liveWebView { themeDirty = true }
             throw error
           }
+          guard let descriptor = try JSONSerialization.jsonObject(with: Data(file.descriptor.utf8)) as? [String: Any]
+          else { throw SlopFailure("Invalid document descriptor") }
           replyHandler(PageResult.config(.init(
-            runtimeABI: package.manifest.runtimeABI, readOnly: owner.mode == .snapshot, presentation: presentation, theme: theme)).json, nil)
-        } catch { replyHandler(DocumentOwner.pageFailure(error), nil) }
+            runtimeABI: file.runtimeABI, readOnly: owner.mode == .snapshot, presentation: presentation, theme: theme,
+            descriptor: descriptor)).json, nil)
+        } catch { replyHandler(RequestOutcome.page(error), nil) }
       }
-    case .windowResize:
+    case .windowResize(let r):
       do {
-        guard package.isResizable, let delegate, !capturing, !closing, !closed,
-          let width = args["width"] as? Double, let height = args["height"] as? Double
-        else { throw failure("Window resizing unavailable") }
-        let size = try delegate.pageSession(self, resizeContentTo: CGSize(width: width, height: height))
+        guard file.isResizable, let delegate, !capturing, !closing, !closed
+        else { throw SlopFailure("Window resizing unavailable") }
+        let size = try delegate.pageSession(self, resizeContentTo: CGSize(width: r.width, height: r.height))
         replyHandler(PageResult.windowResize(.init(width: Double(size.width), height: Double(size.height))).json, nil)
-      } catch { replyHandler(DocumentOwner.pageFailure(error), nil) }
+      } catch { replyHandler(RequestOutcome.page(error), nil) }
     case .ready:
       switch phase {
       case .active(.opening): phase = .active(.ready)
@@ -437,7 +423,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       // into a renderer failure.
       case .closing(.opening, let prepared): phase = .closing(.ready, prepared: prepared)
       default:
-        replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Document page is not opening")), nil)
+        replyHandler(RequestOutcome.page(OwnerError.rejected("Document page is not opening")), nil)
         return
       }
       refreshTheme()
@@ -447,16 +433,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     case .pageRecovered:
       delegate?.pageSessionRecovered(self)
       replyHandler(PageResult.pageRecovered.json, nil)
-    case .failed, .pageError:
-      let error = args["error"] as? String ?? "Runtime error"
-      if request.method == .pageError && isReady {
-        report(SlopPageIssue(message: error, isOperation: args["kind"] as? String == "operation"))
-      } else {
-        let authored = request.method == .pageError
-        failOpening(error, reason: authored ? .authoredException : .startup,
-                    classification: authored ? .authored : .platform)
-      }
-      replyHandler((request.method == .failed ? PageResult.failed : .pageError).json, nil)
+    case .failed(let r):
+      failOpening(r.error, reason: .startup, classification: .platform)
+      replyHandler(PageResult.failed.json, nil)
+    case .pageError(let r):
+      if isReady { report(SlopPageIssue(message: r.error, isOperation: r.kind == .operation)) }
+      else { failOpening(r.error, reason: .authoredException, classification: .authored) }
+      replyHandler(PageResult.pageError.json, nil)
     case .attachmentsPut, .attachmentsRead:
       servePageStorage(request, reply: replyHandler)
     }
@@ -468,26 +451,23 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func request(
     _ request: SocketRequest, deadline: NativeCommandDeadline = NativeCommandDeadline()
   ) async -> Data {
-    if closing || capturing {
-      return SocketReply(ok: false, epoch: epoch, error: "Document barrier is active", code: .closing).encoded()
-    }
-    guard !closed else {
-      return SocketReply(ok: false, epoch: epoch, error: "Document unavailable", code: .unavailable).encoded()
+    if closing || capturing || closed {
+      return RequestOutcome.socket(OwnerError.closing, epoch: epoch).encoded()
     }
     guard case .export(let export) = request else { return await owner.request(request) }
+    guard export.epoch == epoch else { return RequestOutcome.socket(OwnerReplaced(), epoch: epoch).encoded() }
     do {
       try deadline.check()
-      guard let onExport, isReady, !rendererDead, export.epoch == epoch
-      else { throw failure("Export unavailable or session changed") }
+      guard let onExport, isReady, !rendererDead else { throw SlopFailure("Export unavailable") }
       try await onExport(export.format, URL(fileURLWithPath: export.output), deadline)
       return SocketReply(ok: true, output: export.output).encoded()
-    } catch { return SocketReply(ok: false, epoch: epoch, error: error.localizedDescription, code: .failed).encoded() }
+    } catch { return RequestOutcome.socket(error, epoch: epoch).encoded() }
   }
 
   /// Saves every accepted edit and theme change, and settles the palette on the page,
   /// before an export, a duplicate or a close reads it.
   public func flush() async throws {
-    guard isReady, !rendererDead, !closed else { throw failure("Document renderer unavailable") }
+    guard isReady, !rendererDead, !closed else { throw SlopFailure("Document renderer unavailable") }
     do {
       _ = try await webView.callAsyncJavaScript(
         "await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
@@ -512,19 +492,54 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// Retries saving on the owner directly; works whether or not the page is alive.
   public func retrySave() async throws { try await owner.flush() }
+  /// Saves what the document accepted: a live page sends its unsent text first; without
+  /// one, the owner saves what it accepted.
+  public func saveAccepted() async throws {
+    if isReady && !rendererDead { try await flush() } else { try await retrySave() }
+  }
+
+  /// One of the document's artwork images, read by its owner, off the main thread.
+  public func artwork(_ name: SlopArtwork.Name) async -> Data? {
+    try? await owner.artwork(name)
+  }
+  /// Copies the document to `destination`, with everything the owner accepted saved first.
+  /// Never replaces an existing file. The copy gets its own Finder icon: file metadata is
+  /// not part of the copy.
+  /// Returns the copy's canonical URL (the identity Recents and live owners use).
+  @discardableResult public func copy(to destination: URL) async throws -> URL {
+    guard !closed, !closing else { throw SlopFailure("Document is closing") }
+    try await owner.copy(to: destination)
+    let copied = try SlopFile.resolvedRoot(destination)
+    SlopFinderIcon.refresh(copied)
+    return copied
+  }
+
+  /// Whether this session saved any change, so its document's artwork may be out of date.
+  public func edited() async -> Bool { await owner.edited() }
+
+  /// Runs one capture of the page at a time. `capturing` stays set across a hand-off to the
+  /// next queued capture, so no page or socket request slips in between.
+  public func withCapture<T>(_ body: () async throws -> T) async rethrows -> T {
+    if capturing { await withCheckedContinuation { captureQueue.append($0) } }
+    capturing = true
+    defer {
+      if captureQueue.isEmpty { capturing = false } else { captureQueue.removeFirst().resume() }
+    }
+    return try await body()
+  }
 
   /// Drops unsaved edits and shows saved state in a new page. Returns once the owner has
   /// discarded; a replacement page that fails to open reports through the renderer
   /// failure path, never as a failed discard.
   public func discardPending() async throws {
-    guard !closed, !closing, !capturing else { throw failure("Document is closing or exporting") }
+    guard !closed, !closing, !capturing else { throw SlopFailure("Document is closing or exporting") }
     try await owner.discardPending()
     replaceWebView()
   }
 
   public func prepareClose() async throws {
     guard !closed, !closePrepared else { return }
-    guard !capturing else { throw failure("Document is exporting; try again when it finishes") }
+    guard !capturing else { throw SlopFailure("Document is exporting; try again when it finishes") }
     filePicker.cancel()
     fileSaver.cancel()
     closing = true
@@ -552,9 +567,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     closing = false
   }
 
-  public func close() async throws {
+  /// Saves, writes `artwork` and releases the document, then retires the page.
+  public func close(artwork: SlopRenderedArtwork? = nil) async throws {
     if let closeTask { return try await closeTask.value }
-    let task = Task { try await self.finishClose() }
+    let task = Task { try await self.finishClose(artwork: artwork) }
     closeTask = task
     do { try await task.value } catch {
       closeTask = nil
@@ -565,13 +581,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// The barrier has refused new edits, so the owner saves and releases the document
   /// before the app unmounts; a failed close leaves the app mounted and editable.
-  private func finishClose() async throws {
+  private func finishClose(artwork: SlopRenderedArtwork?) async throws {
     if closed { return }
     try await prepareClose()
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
-    withdrawDiscovery()
-    do { try await owner.close() } catch {
+    owner.withdrawDiscovery()
+    do { try await owner.close(artwork: artwork) } catch {
       try? publishDiscovery()
       await cancelClose()
       throw error
@@ -583,13 +599,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     // Retire the session before tearing down the renderer they would access.
     phase = .closed
     destroyWebView()
-    completeWaiters(.failure(failure("Document closed")))
+    completeWaiters(.failure(SlopFailure("Document closed")))
   }
 
   /// The document is saved and released, so the app's teardown cannot change it: a
   /// failing or unsettled `unmount` is logged after a short grace, never awaited. The
   /// call holds no reference to the page, so an abandoned one is released with the view.
-  private func unmountApp(grace: Duration = .seconds(2)) async {
+  private func unmountApp(grace: Duration = Timeouts.unmount) async {
     enum Outcome: Sendable { case settled, failed(String), unsettled }
     let (outcomes, result) = AsyncStream<Outcome>.makeStream()
     webView.callAsyncJavaScript(
@@ -616,7 +632,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   /// The OS writer lease stays owned while replacing a failed renderer.
   public func reopenSavedDocument() async throws {
     guard !closed, !closing, !capturing, rendererDead || openingError != nil else {
-      throw failure("Renderer is still active; retry saving instead")
+      throw SlopFailure("Renderer is still active; retry saving instead")
     }
     replaceWebView()
     try await waitUntilReady()
@@ -624,7 +640,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   private func replaceWebView() {
     destroyWebView()
-    failureClassification = .platform
     failureReason = nil
     phase = .active(.opening)
     makeWebView()
@@ -648,30 +663,24 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   func startDiscovery() throws {
     guard server == nil, owner.mode == .document else { return }
     let server = try SocketServer { [weak self] request, deadline in
-      guard let self else { return SocketReply(ok: false, error: "Document closed", code: .unavailable).encoded() }
+      guard let self else { return RequestOutcome.socket(OwnerError.closed).encoded() }
       return await self.request(request, deadline: deadline)
     }
     self.server = server
     try publishDiscovery()
   }
 
-  /// Names this session's socket in `state/host.lock`. Snapshot sessions own nothing and
-  /// never publish discovery.
+  /// Names this session's socket in the registry. Snapshot sessions own nothing and never
+  /// publish discovery.
   private func publishDiscovery() throws {
     guard let server, owner.mode == .document else { return }
-    let discovery = SocketDiscovery(socket: server.path, documentPath: package.rootURL.path)
-    try JSONSerialization.data(withJSONObject: discovery.json).write(to: package.discoveryURL, options: .atomic)
-  }
-
-  private func withdrawDiscovery() {
-    guard owner.mode == .document else { return }
-    try? FileManager.default.removeItem(at: package.discoveryURL)
+    let discovery = SocketDiscovery(socket: server.path, documentPath: file.url.path)
+    try owner.publishDiscovery(try JSONSerialization.data(withJSONObject: discovery.json))
   }
 
   private func failOpening(_ message: String, reason: SlopFailureContext.Reason = .startup,
                            classification: SlopFailureContext.Classification = .platform) {
     guard !closed, openingError == nil || reason == .webContentTerminated else { return }
-    failureClassification = classification
     failureReason = reason
     let wasReady = isReady
     let failed = Renderer.failed(message, terminated: reason == .webContentTerminated)
@@ -679,9 +688,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
     if !wasReady { destroyWebView() }
-    completeWaiters(.failure(failure(message)))
+    completeWaiters(.failure(SlopFailure(message)))
     delegate?.pageSession(self, didFail: SlopDiagnosticError(
-      SlopPackageError.invalid(message), diagnostic: .init(classification, reason: reason)))
+      SlopFailure(message), diagnostic: .init(classification, reason: reason)))
   }
   private func report(_ issue: SlopPageIssue) { delegate?.pageSession(self, didReport: issue) }
 

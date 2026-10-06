@@ -9,13 +9,12 @@ use loro::{ExportMode, LoroDoc, LoroMap, LoroMovableList};
 use std::path::Path;
 
 fn main() {
+    // A tool run never fills the account's `~/.hitslop/live` with lock files.
+    hitslop_core::registry::use_folder(&std::env::temp_dir().join("hitslop-test-registry")).unwrap();
     let root = std::env::args().nth(1).expect("document path");
     let root = Path::new(&root);
-    let read = |file: &str| std::fs::read_to_string(root.join(file)).unwrap();
-    let initial = read("initial.json");
-    let key = hitslop_core::validate(&read("state.schema.json"), &initial).unwrap();
     let store = Store::open(root, Mode::Document).unwrap();
-    let mut doc = store.document(&key, &initial, &read("assets/theme.json")).unwrap();
+    let mut doc = store.document().unwrap();
     doc.apply_batch(
         r#"{"intents":[{"type":"insert","path":["rows"],"id":"dup","value":{"text":"Original","done":false,"tags":[],"notes":{}}}]}"#,
         Origin::Page,

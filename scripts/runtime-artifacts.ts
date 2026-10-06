@@ -1,14 +1,54 @@
+import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { lstat, readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { brotliDecompressSync } from "node:zlib";
 
 export const repository = resolve(import.meta.dir, "..");
+/** Test runs keep their own writer-lock registry, so they never fill a person's
+ * `~/.hitslop/live`. Debug hosts and the file engine honor it; release builds never do. */
+export function useTestRegistry() {
+  process.env.HITSLOP_TEST_REGISTRY ||= join(tmpdir(), "hitslop-test-registry");
+}
 /** The page shell the host injects: the app bundles it; the CLI adds the WASM core for dev. */
 export const shellDestinations = {
   app: join(repository, "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/shell"),
   cli: join(repository, "packages/cli/shell"),
 };
 export const shellFiles = ["boot.js", "index.js"] as const;
+/** An app asset's text as the build wrote it, read from the file outside the core, which
+ * stores text Brotli-compressed. */
+export function appAsset(file: string, path: string): string {
+  const database = new Database(file, { readonly: true });
+  try {
+    const row = database.query("SELECT encoding, bytes FROM assets WHERE path = ?").get(path) as { encoding: string; bytes: Uint8Array };
+    return (row.encoding === "br" ? brotliDecompressSync(row.bytes) : Buffer.from(row.bytes)).toString("utf8");
+  } finally {
+    database.close();
+  }
+}
+/** Fills a new folder beside `destination`, then replaces `destination` with it: a failure
+ * leaves the previous folder, never a partial one. */
+export async function publishFolder(destination: string, fill: (stage: string) => Promise<void>) {
+  await mkdir(dirname(destination), { recursive: true });
+  const stage = `${destination}.building-${crypto.randomUUID()}`;
+  await mkdir(stage);
+  try {
+    await fill(stage);
+    await rm(destination, { recursive: true, force: true });
+    await rename(stage, destination);
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+/** SHA-256 in hex. */
+export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
+/** A regular file's SHA-256 in hex. */
+export async function fileDigest(path: string): Promise<string> {
+  if (!(await lstat(path)).isFile()) throw new Error(`Not a file: ${path}`);
+  return sha256(await readFile(path));
+}
 export async function digest(root: string, topLevel?: readonly string[]): Promise<string> {
   const hash = createHash("sha256");
   async function visit(prefix: string) {

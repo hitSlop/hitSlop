@@ -31,7 +31,7 @@ bun run check
 bun run dev
 ```
 
-`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `manifest.json` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
+`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `slop.ts` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
 
 At the end, choose which agent CLI should build your slop. The picker offers detected Codex, Claude Code, Gemini CLI, and OpenCode installations. Choose **Other CLI…** for Grok or another installed tool: enter its executable name or path, then its prompt option (leave blank if it accepts a positional prompt). The agent opens in the new project and is asked to read the brief and hitSlop guidance before implementing your app. It uses its existing account, model, and permission settings.
 
@@ -42,14 +42,14 @@ For an agent or script that is already running, create the project without anoth
 ```sh
 bunx @hitslop/cli init budget-book --yes \
   --brief 'Track spending by category with a monthly summary.' \
-  --title 'Budget Book' --slug budget-book \
+  --title 'Budget Book' \
   --category finance --category personal --author Jordan \
   --description 'A simple monthly spending tracker.'
 ```
 
-Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The slug comes from the directory name unless you pass `--slug`. Metadata is validated before files are created, and an existing destination is never overwritten.
+Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The directory's name is the slug: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
 
-Read `manifest.json`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component/CSS updates preserve accepted edits; schema, initial data, theme and manifest changes reset disposable state.
+Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state.
 
 Stop the preview, then package the app and add it to your local catalog:
 
@@ -75,7 +75,7 @@ Create makes a new document with the template's starting data; choose a destinat
 
 ## Read and edit data
 
-In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read `manifest.json`, the schema, and current data first:
+In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read the schema and current data first:
 
 ```sh
 bunx @hitslop/cli schema My.slop
@@ -93,7 +93,7 @@ bunx @hitslop/cli batch My.slop \
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON (edits print `{ids, sequence, value}`), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints the data; ordinary edits never need it. You can edit a document while it is open or closed, and Edit ▸ Undo in the window can revert what the agent changed, open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids, sequence}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. `compact` writes a storage checkpoint without edit history and prints nothing; ordinary edits never need it. You can edit a document while it is open or closed. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
 ## Move data between documents
 
@@ -132,7 +132,7 @@ bunx @hitslop/cli attachments export My.slop ATTACHMENT_ID \
 
 Import saves the file and returns its ID, name, type, and size. Ask your agent to store that reference in the appropriate document field so the app can use it. List shows saved attachment IDs and sizes.
 
-Attachment export refuses existing output files and destinations inside the document package. After an uncertain import, inspect the attachment list before another command.
+Attachment export refuses existing output files and the document itself. After an uncertain import, inspect the attachment list before another command.
 
 ## Export PNG or PDF
 
@@ -141,7 +141,7 @@ bunx @hitslop/cli export My.slop --format png --output My.png
 bunx @hitslop/cli export My.slop --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose an output outside the `.slop` package; existing output files are replaced. Open documents export the current view. Closed documents use saved data and the app's starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose an output other than the `.slop` itself; existing output files are replaced. Open documents export the current view. Closed documents use saved data and the app's starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
 
 ## Install agent skills
 

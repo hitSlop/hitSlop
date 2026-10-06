@@ -12,7 +12,7 @@ export function deactivate(ctx: SlopContext) {
   if (active?.ctx === ctx) active = undefined;
 }
 function mounted() {
-  if (!active) throw new Error("Requires a mounted hitSlop app: export default defineSlop(App, { schema })");
+  if (!active) throw new Error("Requires a mounted hitSlop app: export default svelteApp(App, { schema })");
   return active;
 }
 export function current(): SlopContext {

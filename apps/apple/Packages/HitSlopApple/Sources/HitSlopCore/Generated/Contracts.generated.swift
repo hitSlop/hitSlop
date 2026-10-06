@@ -518,12 +518,426 @@ public enum SocketRequest: Sendable {
   }
 }
 
-public enum SocketReplyCode: String, CaseIterable, Sendable {
+public struct PageOpenRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "open"
+    return result
+  }
+}
+
+public struct PageApplyRequest: Sendable {
+  public var `batch`: String
+
+  public init(`batch`: String) {
+    self.`batch` = `batch`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `batch` = json["batch"] as? String else { throw ContractMappingError.field("PageApplyRequest.batch") }
+    self.`batch` = `batch`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "apply"
+    result["batch"] = `batch`
+    return result
+  }
+}
+
+public struct PageTextRequest: Sendable {
+  public var `request`: String
+
+  public init(`request`: String) {
+    self.`request` = `request`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `request` = json["request"] as? String else { throw ContractMappingError.field("PageTextRequest.request") }
+    self.`request` = `request`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "text"
+    result["request"] = `request`
+    return result
+  }
+}
+
+public struct PageFlushRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "flush"
+    return result
+  }
+}
+
+public struct PageUndoRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "undo"
+    return result
+  }
+}
+
+public struct PageRedoRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "redo"
+    return result
+  }
+}
+
+public struct PageConfigRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "config"
+    return result
+  }
+}
+
+public struct PageAttachmentsPutRequest: Sendable {
+  public var `bytes`: String
+
+  public init(`bytes`: String) {
+    self.`bytes` = `bytes`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `bytes` = json["bytes"] as? String else { throw ContractMappingError.field("PageAttachmentsPutRequest.bytes") }
+    self.`bytes` = `bytes`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "attachments.put"
+    result["bytes"] = `bytes`
+    return result
+  }
+}
+
+public struct PageAttachmentsReadRequest: Sendable {
+  public var `attachmentID`: String
+
+  public init(`attachmentID`: String) {
+    self.`attachmentID` = `attachmentID`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `attachmentID` = json["attachmentID"] as? String else { throw ContractMappingError.field("PageAttachmentsReadRequest.attachmentID") }
+    self.`attachmentID` = `attachmentID`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "attachments.read"
+    result["attachmentID"] = `attachmentID`
+    return result
+  }
+}
+
+public struct PageWindowResizeRequest: Sendable {
+  public var `width`: Int
+  public var `height`: Int
+
+  public init(`width`: Int, `height`: Int) {
+    self.`width` = `width`
+    self.`height` = `height`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `width` = json["width"] as? Int else { throw ContractMappingError.field("PageWindowResizeRequest.width") }
+    self.`width` = `width`
+    guard let `height` = json["height"] as? Int else { throw ContractMappingError.field("PageWindowResizeRequest.height") }
+    self.`height` = `height`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "window.resize"
+    result["width"] = `width`
+    result["height"] = `height`
+    return result
+  }
+}
+
+public struct PageReadyRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "ready"
+    return result
+  }
+}
+
+public struct PagePageRecoveredRequest: Sendable {
+
+  public init() {
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "pageRecovered"
+    return result
+  }
+}
+
+public struct PageFailedRequest: Sendable {
+  public var `error`: String
+
+  public init(`error`: String) {
+    self.`error` = `error`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `error` = json["error"] as? String else { throw ContractMappingError.field("PageFailedRequest.error") }
+    self.`error` = `error`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "failed"
+    result["error"] = `error`
+    return result
+  }
+}
+
+public enum PagePageErrorRequestKind: String, CaseIterable, Sendable {
+  case `operation` = "operation"
+  case `application` = "application"
+}
+
+public struct PagePageErrorRequest: Sendable {
+  public var `kind`: PagePageErrorRequestKind
+  public var `error`: String
+
+  public init(`kind`: PagePageErrorRequestKind, `error`: String) {
+    self.`kind` = `kind`
+    self.`error` = `error`
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let `kind` = (json["kind"] as? String).flatMap(PagePageErrorRequestKind.init(rawValue:)) else { throw ContractMappingError.field("PagePageErrorRequest.kind") }
+    self.`kind` = `kind`
+    guard let `error` = json["error"] as? String else { throw ContractMappingError.field("PagePageErrorRequest.error") }
+    self.`error` = `error`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["method"] = "pageError"
+    result["kind"] = `kind`.rawValue
+    result["error"] = `error`
+    return result
+  }
+}
+
+public enum PageRequest: Sendable {
+  case `open`(PageOpenRequest)
+  case `apply`(PageApplyRequest)
+  case `text`(PageTextRequest)
+  case `flush`(PageFlushRequest)
+  case `undo`(PageUndoRequest)
+  case `redo`(PageRedoRequest)
+  case `config`(PageConfigRequest)
+  case `attachmentsPut`(PageAttachmentsPutRequest)
+  case `attachmentsRead`(PageAttachmentsReadRequest)
+  case `windowResize`(PageWindowResizeRequest)
+  case `ready`(PageReadyRequest)
+  case `pageRecovered`(PagePageRecoveredRequest)
+  case `failed`(PageFailedRequest)
+  case `pageError`(PagePageErrorRequest)
+
+  public enum Method: String, CaseIterable, Sendable {
+    case `open` = "open"
+    case `apply` = "apply"
+    case `text` = "text"
+    case `flush` = "flush"
+    case `undo` = "undo"
+    case `redo` = "redo"
+    case `config` = "config"
+    case `attachmentsPut` = "attachments.put"
+    case `attachmentsRead` = "attachments.read"
+    case `windowResize` = "window.resize"
+    case `ready` = "ready"
+    case `pageRecovered` = "pageRecovered"
+    case `failed` = "failed"
+    case `pageError` = "pageError"
+  }
+
+  public var method: Method {
+    switch self {
+    case .`open`: return .`open`
+    case .`apply`: return .`apply`
+    case .`text`: return .`text`
+    case .`flush`: return .`flush`
+    case .`undo`: return .`undo`
+    case .`redo`: return .`redo`
+    case .`config`: return .`config`
+    case .`attachmentsPut`: return .`attachmentsPut`
+    case .`attachmentsRead`: return .`attachmentsRead`
+    case .`windowResize`: return .`windowResize`
+    case .`ready`: return .`ready`
+    case .`pageRecovered`: return .`pageRecovered`
+    case .`failed`: return .`failed`
+    case .`pageError`: return .`pageError`
+    }
+  }
+
+  /// Validate the envelope with Envelope.valid before mapping it.
+  public init(json: [String: Any]) throws {
+    guard let raw = json["method"] as? String, let method = Method(rawValue: raw) else { throw ContractMappingError.field("PageRequest.method") }
+    switch method {
+    case .`open`: self = .`open`(try PageOpenRequest(json: json))
+    case .`apply`: self = .`apply`(try PageApplyRequest(json: json))
+    case .`text`: self = .`text`(try PageTextRequest(json: json))
+    case .`flush`: self = .`flush`(try PageFlushRequest(json: json))
+    case .`undo`: self = .`undo`(try PageUndoRequest(json: json))
+    case .`redo`: self = .`redo`(try PageRedoRequest(json: json))
+    case .`config`: self = .`config`(try PageConfigRequest(json: json))
+    case .`attachmentsPut`: self = .`attachmentsPut`(try PageAttachmentsPutRequest(json: json))
+    case .`attachmentsRead`: self = .`attachmentsRead`(try PageAttachmentsReadRequest(json: json))
+    case .`windowResize`: self = .`windowResize`(try PageWindowResizeRequest(json: json))
+    case .`ready`: self = .`ready`(try PageReadyRequest(json: json))
+    case .`pageRecovered`: self = .`pageRecovered`(try PagePageRecoveredRequest(json: json))
+    case .`failed`: self = .`failed`(try PageFailedRequest(json: json))
+    case .`pageError`: self = .`pageError`(try PagePageErrorRequest(json: json))
+    }
+  }
+
+  public var json: [String: Any] {
+    switch self {
+    case .`open`(let value): return value.json
+    case .`apply`(let value): return value.json
+    case .`text`(let value): return value.json
+    case .`flush`(let value): return value.json
+    case .`undo`(let value): return value.json
+    case .`redo`(let value): return value.json
+    case .`config`(let value): return value.json
+    case .`attachmentsPut`(let value): return value.json
+    case .`attachmentsRead`(let value): return value.json
+    case .`windowResize`(let value): return value.json
+    case .`ready`(let value): return value.json
+    case .`pageRecovered`(let value): return value.json
+    case .`failed`(let value): return value.json
+    case .`pageError`(let value): return value.json
+    }
+  }
+}
+
+public enum OutcomeCode: String, CaseIterable, Sendable {
   case `rejected` = "rejected"
-  case `sessionChanged` = "session_changed"
+  case `ownerReplaced` = "owner_replaced"
   case `closing` = "closing"
-  case `unavailable` = "unavailable"
-  case `failed` = "failed"
+  case `saveFailed` = "save_failed"
+  case `ownerInvalidated` = "owner_invalidated"
+  case `unknownOutcome` = "unknown_outcome"
+}
+
+public enum CoreErrorCode: String, CaseIterable, Sendable {
+  case `typeMismatch` = "type_mismatch"
+  case `outOfRange` = "out_of_range"
+  case `pathNotFound` = "path_not_found"
+  case `invalidKey` = "invalid_key"
+  case `exists` = "exists"
+  case `duplicateId` = "duplicate_id"
+  case `invalidRequest` = "invalid_request"
+  case `invalidId` = "invalid_id"
+  case `invalidPath` = "invalid_path"
+  case `invalidSchema` = "invalid_schema"
+  case `tooLarge` = "too_large"
+  case `staleBase` = "stale_base"
+  case `invalidVersion` = "invalid_version"
+  case `invalidBytes` = "invalid_bytes"
+  case `missingDependencies` = "missing_dependencies"
+  case `engineError` = "engine_error"
+  case `invalidShape` = "invalid_shape"
+  case `requiresUpdate` = "requires_update"
+  case `isTemplate` = "is_template"
+}
+
+public struct PageFailure: Sendable {
+  public var `code`: OutcomeCode
+  public var `error`: String
+  public var `reason`: CoreErrorCode?
+  public var `opIndex`: Int?
+
+  public init(`code`: OutcomeCode, `error`: String, `reason`: CoreErrorCode? = nil, `opIndex`: Int? = nil) {
+    self.`code` = `code`
+    self.`error` = `error`
+    self.`reason` = `reason`
+    self.`opIndex` = `opIndex`
+  }
+
+  public var json: [String: Any] {
+    var result: [String: Any] = [:]
+    result["ok"] = false
+    result["code"] = `code`.rawValue
+    result["error"] = `error`
+    if let value = `reason` { result["reason"] = value.rawValue }
+    if let value = `opIndex` { result["opIndex"] = value }
+    return result
+  }
 }
 
 public struct SocketReply {
@@ -535,9 +949,11 @@ public struct SocketReply {
   public var `sequence`: Int?
   public var `output`: String?
   public var `error`: String?
-  public var `code`: SocketReplyCode?
+  public var `code`: OutcomeCode?
+  public var `reason`: CoreErrorCode?
+  public var `opIndex`: Int?
 
-  public init(`ok`: Bool, `epoch`: String? = nil, `coreBuildId`: String? = nil, `state`: Any? = nil, `ids`: [String]? = nil, `sequence`: Int? = nil, `output`: String? = nil, `error`: String? = nil, `code`: SocketReplyCode? = nil) {
+  public init(`ok`: Bool, `epoch`: String? = nil, `coreBuildId`: String? = nil, `state`: Any? = nil, `ids`: [String]? = nil, `sequence`: Int? = nil, `output`: String? = nil, `error`: String? = nil, `code`: OutcomeCode? = nil, `reason`: CoreErrorCode? = nil, `opIndex`: Int? = nil) {
     self.`ok` = `ok`
     self.`epoch` = `epoch`
     self.`coreBuildId` = `coreBuildId`
@@ -547,6 +963,8 @@ public struct SocketReply {
     self.`output` = `output`
     self.`error` = `error`
     self.`code` = `code`
+    self.`reason` = `reason`
+    self.`opIndex` = `opIndex`
   }
 
   /// Validate the envelope with Envelope.valid before mapping it.
@@ -595,10 +1013,22 @@ public struct SocketReply {
       self.`error` = nil
     }
     if let value = json["code"] {
-      guard let mapped = (value as? String).flatMap(SocketReplyCode.init(rawValue:)) else { throw ContractMappingError.field("SocketReply.code") }
+      guard let mapped = (value as? String).flatMap(OutcomeCode.init(rawValue:)) else { throw ContractMappingError.field("SocketReply.code") }
       self.`code` = mapped
     } else {
       self.`code` = nil
+    }
+    if let value = json["reason"] {
+      guard let mapped = (value as? String).flatMap(CoreErrorCode.init(rawValue:)) else { throw ContractMappingError.field("SocketReply.reason") }
+      self.`reason` = mapped
+    } else {
+      self.`reason` = nil
+    }
+    if let value = json["opIndex"] {
+      guard let mapped = value as? Int else { throw ContractMappingError.field("SocketReply.opIndex") }
+      self.`opIndex` = mapped
+    } else {
+      self.`opIndex` = nil
     }
   }
 
@@ -613,6 +1043,8 @@ public struct SocketReply {
     if let value = `output` { result["output"] = value }
     if let value = `error` { result["error"] = value }
     if let value = `code` { result["code"] = value.rawValue }
+    if let value = `reason` { result["reason"] = value.rawValue }
+    if let value = `opIndex` { result["opIndex"] = value }
     return result
   }
 }
@@ -640,23 +1072,6 @@ public struct SocketDiscovery: Sendable {
     result["documentPath"] = `documentPath`
     return result
   }
-}
-
-public enum PageMethod: String, CaseIterable, Sendable {
-  case `open` = "open"
-  case `apply` = "apply"
-  case `text` = "text"
-  case `flush` = "flush"
-  case `undo` = "undo"
-  case `redo` = "redo"
-  case `config` = "config"
-  case `attachmentsPut` = "attachments.put"
-  case `attachmentsRead` = "attachments.read"
-  case `windowResize` = "window.resize"
-  case `ready` = "ready"
-  case `pageRecovered` = "pageRecovered"
-  case `failed` = "failed"
-  case `pageError` = "pageError"
 }
 
 public struct PageOpenResult: Sendable {
@@ -746,12 +1161,14 @@ public struct PageConfigResult {
   public var `readOnly`: Bool
   public var `presentation`: [String: Any]
   public var `theme`: [String: String]
+  public var `descriptor`: [String: Any]
 
-  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String]) {
+  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `theme`: [String: String], `descriptor`: [String: Any]) {
     self.`runtimeABI` = `runtimeABI`
     self.`readOnly` = `readOnly`
     self.`presentation` = `presentation`
     self.`theme` = `theme`
+    self.`descriptor` = `descriptor`
   }
 
   public var json: [String: Any] {
@@ -760,6 +1177,7 @@ public struct PageConfigResult {
     result["readOnly"] = `readOnly`
     result["presentation"] = `presentation`
     result["theme"] = `theme`
+    result["descriptor"] = `descriptor`
     return result
   }
 }
@@ -812,7 +1230,7 @@ public struct PageWindowResizeResult: Sendable {
   }
 }
 
-/// A successful page reply. `json` adds `ok`; failures use `DocumentOwner.pageFailure`.
+/// A successful page reply. `json` adds `ok`; failures are `PageFailure`.
 public enum PageResult {
   case `open`(PageOpenResult)
   case `apply`(PageApplyResult)

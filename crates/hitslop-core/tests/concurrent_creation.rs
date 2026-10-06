@@ -11,7 +11,7 @@ mod support;
 use hitslop_core::{Code, Document, Error};
 use loro::{ExportMode, LoroDoc};
 use serde_json::{json, Value};
-use support::{Edit, View};
+use support::{Edit, View, next, trimmed, value};
 
 fn schema() -> String {
     let int = json!({"kind":"optional","inner":{"kind":"integer"}});
@@ -41,12 +41,6 @@ fn batch(intents: Value) -> String { json!({ "intents": intents }).to_string() }
 fn state(doc: &Document) -> Value {
     let snapshot: Value = serde_json::from_str(&doc.snapshot().unwrap()).unwrap();
     json!({"value": snapshot["value"], "issues": snapshot["issues"], "version": snapshot["version"]})
-}
-fn value(doc: &Document) -> Value { state(doc)["value"].clone() }
-fn trimmed(checkpoint: &[u8]) -> Vec<u8> {
-    let loro = LoroDoc::new();
-    loro.import(checkpoint).unwrap();
-    loro.export(ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap()
 }
 /// A full and a history-trimmed reopen read exactly as `doc` does.
 fn reopens(doc: &Document) {
@@ -393,7 +387,6 @@ fn clearing_and_undoing_around_a_merged_plain_list_keeps_it_flagged() {
     reopens(&doc.doc);
 }
 
-fn next(rng: &mut u64) -> u64 { *rng ^= *rng << 13; *rng ^= *rng >> 7; *rng ^= *rng << 17; *rng }
 /// Text that snapshots cannot compress away, so a size bound sees whether it was kept.
 fn prose(seed: u64) -> String {
     let mut rng = seed.wrapping_mul(0x9e3779b97f4a7c15) | 1;

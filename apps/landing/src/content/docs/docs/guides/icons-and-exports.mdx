@@ -7,7 +7,7 @@ The editor, Finder artwork, and exported document should feel like the same obje
 
 ## Declare capture views
 
-The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.svelte`. An authored `main.ts` takes precedence and registers components explicitly with `defineSlop(App, { export: Export, icon: Icon })`. Export receives `mode: "preview" | "export"`:
+The CLI discovers `App.svelte`, optional `Export.svelte`, and optional `Icon.svelte`. An authored `main.ts` takes precedence and registers components explicitly with `svelteApp(App, { schema, export: Export, icon: Icon })` from `@hitslop/document/svelte`. Export receives `mode: "preview" | "export"`:
 
 ```svelte
 <main class="note-editor">
@@ -79,7 +79,7 @@ bunx @hitslop/cli export My.slop --format png --output My.png
 bunx @hitslop/cli export My.slop --format pdf --output My.pdf
 ```
 
-The destination must be outside the package. Open documents export the selected live view after sending unsent text and saving. Closed documents render a private saved snapshot using their initial view. Theme overrides apply in both cases. The original document is not used as a scratch rendering workspace.
+An export never replaces the document it renders. Open documents export the selected live view after sending unsent text and saving. Closed documents render a private saved snapshot using their initial view. Theme overrides apply in both cases. The original document is not used as a scratch rendering workspace.
 
 Capture waits for fonts, visible images and a stable layout, and blocks edits while it runs; afterwards the editor's focus, selection and scroll are restored. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
 
@@ -87,10 +87,10 @@ Completed captures publish atomically before their deadline. If the acknowledgem
 
 ## Other frameworks
 
-An app without `defineSlop` registers capture views itself with `ctx.capture.registerTarget("export" | "icon", { element, prepare, restore })`. Targets must be direct children of `body`. `capture.onPrepare` supports asynchronous readiness. Dispose registrations on unmount, and never change saved state to prepare a view.
+An app without `svelteApp` registers capture views itself with `ctx.capture.registerTarget("export" | "icon", { element, prepare, restore })`. Targets must be direct children of `body`. `capture.onPrepare` supports asynchronous readiness. Dispose registrations on unmount, and never change saved state to prepare a view.
 
-## QuickLook and Finder artwork
+## Quick Look and Finder artwork
 
-Registration, or `slop build --artwork native`, captures initial artwork into `QuickLook/Preview.png` and, when declared, `QuickLook/Icon.png`; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme, and installs the same icon image as its Finder custom icon. Recents reads the updated PNG, so its icons follow the document too. Template masters keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
+Registration, or `slop build --artwork native`, captures the initial preview and, when declared, icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, live selected views, and closed exports. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

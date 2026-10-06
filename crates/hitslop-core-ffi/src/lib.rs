@@ -1,7 +1,8 @@
 uniffi::setup_scaffolding!();
 
-use hitslop_core::store;
+use hitslop_core::{file, store};
 use hitslop_core::Document as Core;
+use std::path::Path;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
@@ -27,10 +28,10 @@ pub enum CoreError {
     /// The write would exceed the storage limits; saved state is intact.
     #[error("document is full")]
     Full,
-    /// The package directory was moved or replaced while open.
+    /// The document file was moved or replaced while open.
     #[error("document moved or replaced")]
     Moved,
-    /// The store no longer owns the package.
+    /// The store no longer owns the document.
     #[error("document is closed")]
     Closed,
     #[error("{message}")]
@@ -61,46 +62,17 @@ impl From<store::Error> for CoreError {
         }
     }
 }
-impl From<CoreError> for store::Error {
-    fn from(e: CoreError) -> Self {
-        match e {
-            CoreError::Locked => Self::Locked,
-            CoreError::Busy => Self::Busy,
-            CoreError::Full => Self::Full,
-            CoreError::Moved => Self::Moved,
-            CoreError::Closed => Self::Closed,
-            other => Self::Failed(other.to_string()),
-        }
-    }
-}
-impl From<uniffi::UnexpectedUniFFICallbackError> for CoreError {
-    fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::Failed { message: e.reason }
+impl From<hitslop_core::Error> for CoreError {
+    fn from(e: hitslop_core::Error) -> Self {
+        rejected(e)
     }
 }
 
-/// Validates a template's descriptor and initial value; returns the schema key.
-#[uniffi::export]
-pub fn validate_document(schema_json: String, initial_json: String) -> Result<String, CoreError> {
-    hitslop_core::validate(&schema_json, &initial_json).map_err(rejected)
-}
-/// Parses a package's descriptor; returns its schema key. Opening a document needs only
-/// this: `initial.json` is creation-only and is checked when storage is created.
-#[uniffi::export]
-pub fn document_schema_key(schema_json: String) -> Result<String, CoreError> {
-    hitslop_core::schema_key(&schema_json).map_err(rejected)
-}
 /// A declared theme color.
 #[derive(uniffi::Record)]
 pub struct ThemeToken {
     pub name: String,
     pub value: String,
-}
-/// A package's declared colors, in the order the author wrote them.
-#[uniffi::export]
-pub fn validate_theme_defaults(json: String) -> Result<Vec<ThemeToken>, CoreError> {
-    let tokens = hitslop_core::theme::validate_defaults(&json).map_err(rejected)?;
-    Ok(tokens.into_iter().map(|(name, value)| ThemeToken { name, value }).collect())
 }
 /// A theme command; see `hitslop_core::theme::Change`.
 #[derive(uniffi::Enum)]
@@ -108,8 +80,8 @@ pub enum ThemeChange {
     Get,
     Set { values_json: String },
     Reset { token: Option<String> },
-    /// Replaces the overrides with a theme file made for `template`.
-    Import { template: String, file_json: String },
+    /// Replaces the overrides with a theme file made for this document's template.
+    Import { file_json: String },
 }
 #[derive(uniffi::Record)]
 pub struct ThemeState {
@@ -163,12 +135,10 @@ pub enum WindowSilhouette {
     Radii { horizontal: Vec<SilhouetteLength>, vertical: Vec<SilhouetteLength> },
     Path { segments: Vec<SilhouetteSegment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
 }
-/// Validates the manifest contract and returns its normalized window geometry.
-#[uniffi::export]
-pub fn validate_manifest(manifest_json: String) -> Result<WindowSilhouette, CoreError> {
+fn window_silhouette(silhouette: hitslop_core::shape::Silhouette) -> WindowSilhouette {
     use hitslop_core::shape::{self, Segment, Silhouette};
     let length = |l: shape::Length| SilhouetteLength { value: l.value, percent: l.percent };
-    Ok(match hitslop_core::manifest::validate(&manifest_json).map_err(rejected)? {
+    match silhouette {
         Silhouette::Radii { horizontal, vertical } => WindowSilhouette::Radii {
             horizontal: horizontal.into_iter().map(length).collect(),
             vertical: vertical.into_iter().map(length).collect(),
@@ -184,7 +154,7 @@ pub fn validate_manifest(manifest_json: String) -> Result<WindowSilhouette, Core
             view_box_height: view_box[1],
             even_odd,
         },
-    })
+    }
 }
 
 /// `publication` is absent when the batch changed nothing.
@@ -231,26 +201,14 @@ pub struct NativeDocument {
     inner: Mutex<Option<Core>>,
 }
 impl NativeDocument {
-    fn construct(
-        f: impl FnOnce() -> Result<Core, hitslop_core::Error>,
-    ) -> Result<Arc<Self>, CoreError> {
-        let core = catch_unwind(AssertUnwindSafe(f))
-            .map_err(|_| invalidated("engine_panic: creation failed"))?
-            .map_err(rejected)?;
-        Ok(Arc::new(Self {
-            inner: Mutex::new(Some(core)),
-        }))
-    }
-    fn call<T>(
-        &self,
-        f: impl FnOnce(&mut Core) -> Result<T, hitslop_core::Error>,
-    ) -> Result<T, CoreError> {
+    /// Runs `f` on the core; a panic invalidates this owner.
+    fn call<T>(&self, f: impl FnOnce(&mut Core) -> Result<T, CoreError>) -> Result<T, CoreError> {
         let mut guard = self.inner.lock().map_err(|_| invalidated("owner_poisoned"))?;
         let core = guard
             .as_mut()
             .ok_or_else(|| invalidated("owner_poisoned: reload durable state"))?;
         match catch_unwind(AssertUnwindSafe(|| f(core))) {
-            Ok(result) => result.map_err(rejected),
+            Ok(result) => result,
             Err(_) => {
                 *guard = None;
                 Err(invalidated(
@@ -262,10 +220,6 @@ impl NativeDocument {
 }
 #[uniffi::export]
 impl NativeDocument {
-    #[uniffi::constructor]
-    pub fn create(schema_json: String, initial_json: String) -> Result<Arc<Self>, CoreError> {
-        Self::construct(|| Core::create(&schema_json, &initial_json))
-    }
     pub fn sequence(&self) -> Result<u64, CoreError> {
         self.call(|d| Ok(d.sequence()))
     }
@@ -274,14 +228,14 @@ impl NativeDocument {
             EditOrigin::Page => hitslop_core::Origin::Page,
             EditOrigin::Agent => hitslop_core::Origin::Agent,
         };
-        self.call(|d| d.apply_batch(&batch_json, origin).map(Into::into))
+        self.call(|d| Ok(d.apply_batch(&batch_json, origin)?.into()))
     }
     /// Reverts the person's last undo step; nothing to undo publishes nothing.
     pub fn undo(&self) -> Result<ApplyResult, CoreError> {
-        self.call(|d| d.undo().map(Into::into))
+        self.call(|d| Ok(d.undo()?.into()))
     }
     pub fn redo(&self) -> Result<ApplyResult, CoreError> {
-        self.call(|d| d.redo().map(Into::into))
+        self.call(|d| Ok(d.redo()?.into()))
     }
     pub fn undo_state(&self) -> Result<UndoState, CoreError> {
         self.call(|d| Ok(UndoState { can_undo: d.can_undo(), can_redo: d.can_redo() }))
@@ -300,31 +254,17 @@ impl NativeDocument {
     }
     /// `{sequence, version, value, issues}` as JSON.
     pub fn state(&self) -> Result<String, CoreError> {
-        self.call(|d| d.state())
-    }
-    /// The application value as JSON.
-    pub fn value(&self) -> Result<String, CoreError> {
-        self.call(|d| d.value())
+        self.call(|d| Ok(d.state()?))
     }
     /// The next write for `store`, or none when its durable state covers every edit and
     /// no checkpoint is requested. Runs on the edit queue; the bytes stay in Rust.
     pub fn save_job(&self, store: Arc<NativeStore>, force_checkpoint: bool) -> Result<Option<Arc<SaveJob>>, CoreError> {
-        let mut result = Ok(None);
-        self.call(|d| {
-            result = store.0.job(d, force_checkpoint);
-            Ok(())
-        })?;
-        Ok(result?.map(|job| Arc::new(SaveJob(job))))
+        self.call(|d| Ok(store.0.job(d, force_checkpoint)?.map(|job| Arc::new(SaveJob(job)))))
     }
     /// The checkpoint to write as the owner closes, after its last save, or none. Runs on
     /// the edit queue once edits have stopped.
     pub fn close_job(&self, store: Arc<NativeStore>) -> Result<Option<Arc<SaveJob>>, CoreError> {
-        let mut result = Ok(None);
-        self.call(|d| {
-            result = store.0.close_job(d);
-            Ok(())
-        })?;
-        Ok(result?.map(|job| Arc::new(SaveJob(job))))
+        self.call(|d| Ok(store.0.close_job(d)?.map(|job| Arc::new(SaveJob(job)))))
     }
 }
 
@@ -338,55 +278,75 @@ impl SaveJob {
     }
 }
 
-/// Fault injection for tests; see `hitslop_core::store::Phases`.
-#[uniffi::export(with_foreign)]
-pub trait StorePhases: Send + Sync {
-    fn reached(&self, phase: String) -> Result<(), CoreError>;
-}
-struct ForeignPhases(Arc<dyn StorePhases>);
-impl store::Phases for ForeignPhases {
-    fn reached(&self, phase: &str) -> store::Result<()> {
-        self.0.reached(phase.into()).map_err(Into::into)
-    }
-}
-
 #[derive(uniffi::Enum)]
 pub enum StoreMode {
-    /// Owns the package: holds the writer lock and persists writes.
+    /// Owns the document: holds the writer lock and persists writes.
     Document,
-    /// Reads the saved state once, without the lock; writes stay in memory.
+    /// Reads the saved state without the lock and writes nothing.
     Snapshot,
 }
-#[derive(uniffi::Record)]
-pub struct StoreMetadata {
-    pub rows: u64,
-    pub update_bytes: u64,
-    pub checkpoint_bytes: u64,
-}
-/// A package's storage. Every call but `NativeDocument::save_job` runs on the host's
+/// A document file's storage. Every call but `NativeDocument::save_job` runs on the host's
 /// storage queue.
 #[derive(uniffi::Object)]
 pub struct NativeStore(store::Store);
 #[uniffi::export]
 impl NativeStore {
     #[uniffi::constructor]
-    pub fn open(root: String, mode: StoreMode) -> Result<Arc<Self>, CoreError> {
+    pub fn open(path: String, mode: StoreMode) -> Result<Arc<Self>, CoreError> {
         let mode = match mode {
             StoreMode::Document => store::Mode::Document,
             StoreMode::Snapshot => store::Mode::Snapshot,
         };
-        Ok(Arc::new(Self(store::Store::open(std::path::Path::new(&root), mode)?)))
+        Ok(Arc::new(Self(store::Store::open(Path::new(&path), mode)?)))
     }
-    /// The logical document's identity; a duplicate gets a new one.
-    pub fn doc_id(&self) -> String {
-        self.0.doc_id().into()
+    /// The file's app as this open checked it: the host shows the document from it.
+    pub fn app(&self) -> OpenedFile {
+        self.0.app().into()
     }
-    /// The saved document, or `initial_json` saved as its first checkpoint, with its
-    /// palette over `theme_defaults_json`. Also the reload after discarding unsaved edits.
-    pub fn document(&self, schema_key: String, initial_json: String, theme_defaults_json: String) -> Result<Arc<NativeDocument>, CoreError> {
-        let core = catch_unwind(AssertUnwindSafe(|| self.0.document(&schema_key, &initial_json, &theme_defaults_json)))
-            .map_err(|_| invalidated("engine_panic: open failed"))??;
+    /// A reader of the app's assets for the document's pages, on its own connection to the
+    /// file this open checked.
+    pub fn asset_reader(&self) -> Result<Arc<AssetReader>, CoreError> {
+        Ok(Arc::new(AssetReader(Mutex::new(self.0.asset_reader()?))))
+    }
+    /// The saved document, or the app's initial values saved as its first checkpoint, with
+    /// its palette over the app's theme defaults. Also the reload after discarding unsaved
+    /// edits.
+    pub fn document(&self) -> Result<Arc<NativeDocument>, CoreError> {
+        let core = catch_unwind(AssertUnwindSafe(|| self.0.document())).map_err(|_| invalidated("engine_panic: open failed"))??;
         Ok(Arc::new(NativeDocument { inner: Mutex::new(Some(core)) }))
+    }
+    /// Stores an attachment's bytes; storing the same bytes again returns the same reference.
+    pub fn put_attachment(&self, bytes: Vec<u8>) -> Result<AttachmentRecord, CoreError> {
+        Ok(self.0.put_attachment(&bytes)?.into())
+    }
+    /// An attachment's bytes, verified against its identity.
+    pub fn attachment(&self, id: String) -> Result<Vec<u8>, CoreError> {
+        Ok(self.0.attachment(&id)?)
+    }
+    /// One artwork image (`preview` or `icon`), through this store's own connection.
+    pub fn artwork(&self, name: String) -> Result<Option<Vec<u8>>, CoreError> {
+        Ok(self.0.artwork(&name)?)
+    }
+    pub fn attachments(&self) -> Result<Vec<AttachmentRecord>, CoreError> {
+        Ok(self.0.attachments()?.into_iter().map(Into::into).collect())
+    }
+    /// Writes the document's artwork as its window closes, through the writer's connection.
+    pub fn set_artwork(&self, preview: Option<Vec<u8>>, icon: Option<Vec<u8>>) -> Result<(), CoreError> {
+        let artwork: Vec<(&str, &[u8])> =
+            [("preview", &preview), ("icon", &icon)].into_iter().filter_map(|(name, png)| png.as_deref().map(|png| (name, png))).collect();
+        Ok(self.0.set_artwork(&artwork)?)
+    }
+    /// Names this writer's live socket for clients (`live_discovery`).
+    pub fn publish_discovery(&self, json: String) -> Result<(), CoreError> {
+        Ok(self.0.publish_discovery(&json)?)
+    }
+    pub fn withdraw_discovery(&self) {
+        self.0.withdraw_discovery()
+    }
+    /// Copies the open document to `destination` as a new logical document; saves queue
+    /// behind the copy.
+    pub fn copy_to(&self, destination: String) -> Result<(), CoreError> {
+        Ok(self.0.copy_to(Path::new(&destination))?)
     }
     pub fn write(&self, job: Arc<SaveJob>) -> Result<(), CoreError> {
         Ok(self.0.write(&job.0)?)
@@ -399,52 +359,143 @@ impl NativeStore {
             ThemeChange::Get => Change::Get,
             ThemeChange::Set { values_json } => Change::Set(values_json),
             ThemeChange::Reset { token } => Change::Reset(token.as_deref()),
-            ThemeChange::Import { template, file_json } => Change::Import { template, file: file_json },
+            ThemeChange::Import { file_json } => Change::Import(file_json),
         };
         let (state, changed) = self.0.theme(change)?;
         Ok(ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective, changed })
     }
-    /// The full palette as a theme file for `template`.
-    pub fn export_theme(&self, template: String) -> Result<String, CoreError> {
-        Ok(self.0.export_theme(&template)?)
-    }
-    /// Fails once the package moved, or, with `writable`, once the store owns nothing.
-    pub fn check(&self, writable: bool) -> Result<(), CoreError> {
-        Ok(self.0.check(writable)?)
+    /// The full palette as a theme file for this document's template.
+    pub fn export_theme(&self) -> Result<String, CoreError> {
+        Ok(self.0.export_theme()?)
     }
     /// Releases the database, then the writer lock. A failed close keeps ownership.
     pub fn close(&self) -> Result<(), CoreError> {
         Ok(self.0.close()?)
     }
-    /// The stored sizes; benchmarks and tests compare them with the file.
-    pub fn metadata(&self) -> Result<StoreMetadata, CoreError> {
-        let meta = self.0.metadata()?;
-        Ok(StoreMetadata { rows: meta.rows as u64, update_bytes: meta.update_bytes as u64, checkpoint_bytes: meta.checkpoint_bytes as u64 })
-    }
-    pub fn set_phases(&self, phases: Option<Arc<dyn StorePhases>>) {
-        self.0.set_phases(phases.map(|p| Arc::new(ForeignPhases(p)) as Arc<dyn store::Phases>));
+}
+
+/// A stored attachment: its identity (SHA-256, hex) and size in bytes.
+#[derive(uniffi::Record)]
+pub struct AttachmentRecord {
+    pub id: String,
+    pub byte_length: u64,
+}
+impl From<store::Attachment> for AttachmentRecord {
+    fn from(a: store::Attachment) -> Self {
+        Self { id: a.id, byte_length: a.bytes }
     }
 }
 
-/// A package's writer lock alone, for a closed-document command that reads without
-/// editing.
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FileKind {
+    Template,
+    Document,
+}
+/// A checked template or document: its markers and the app a host needs to show it.
+#[derive(uniffi::Record)]
+pub struct OpenedFile {
+    pub kind: FileKind,
+    pub runtime_abi: u64,
+    /// The authored manifest (JSON).
+    pub manifest_json: String,
+    pub silhouette: WindowSilhouette,
+    pub descriptor_json: String,
+    /// The declared colors, in the order the author wrote them.
+    pub theme_tokens: Vec<ThemeToken>,
+    /// The window skin's PNG, when the manifest names one.
+    pub skin_png: Option<Vec<u8>>,
+    pub byte_count: u64,
+}
+impl From<file::Kind> for FileKind {
+    fn from(kind: file::Kind) -> Self {
+        match kind {
+            file::Kind::Template => FileKind::Template,
+            file::Kind::Document => FileKind::Document,
+        }
+    }
+}
+impl From<&file::OpenedApp> for OpenedFile {
+    fn from(p: &file::OpenedApp) -> Self {
+        OpenedFile {
+            kind: p.kind.into(),
+            runtime_abi: p.app.runtime_abi,
+            manifest_json: p.app.manifest.clone(),
+            silhouette: window_silhouette(p.silhouette.clone()),
+            descriptor_json: p.app.descriptor.clone(),
+            theme_tokens: p.theme_tokens.iter().map(|(name, value)| ThemeToken { name: name.clone(), value: value.clone() }).collect(),
+            skin_png: p.skin.clone(),
+            byte_count: p.bytes,
+        }
+    }
+}
+/// Opens and checks a template or document file for display (the catalog, a template opened
+/// from Finder), without its writer lock or SQLite's quick check. A document a host edits
+/// opens through `NativeStore`, whose `app` is its one check.
+#[uniffi::export]
+pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
+    Ok((&file::open(Path::new(&path), false)?).into())
+}
+/// A file's kind from its header checks alone, for a host deciding how to open it.
+#[uniffi::export]
+pub fn file_kind(path: String) -> Result<FileKind, CoreError> {
+    Ok(file::kind(Path::new(&path))?.into())
+}
+/// A new document from a template; never replaces an existing file.
+#[uniffi::export]
+pub fn create_document(template: String, destination: String) -> Result<(), CoreError> {
+    Ok(file::create_document(Path::new(&template), Path::new(&destination))?)
+}
+/// One of a file's artwork images, by name (`preview` or `icon`).
+#[derive(uniffi::Record)]
+pub struct ArtworkImage {
+    pub name: String,
+    pub png: Vec<u8>,
+}
+/// The first of `preferred` artwork the file holds, in one read. An error (busy, damaged,
+/// mid-recovery) is never "no artwork".
+#[uniffi::export]
+pub fn file_artwork(path: String, preferred: Vec<String>) -> Result<Option<ArtworkImage>, CoreError> {
+    let preferred: Vec<&str> = preferred.iter().map(String::as_str).collect();
+    Ok(file::artwork(Path::new(&path), &preferred)?.map(|(name, png)| ArtworkImage { name, png }))
+}
+/// Uses `path` as this process's writer-lock registry: debug hosts only, for test runs
+/// (`HITSLOP_TEST_REGISTRY`). Every process sharing documents must use the same folder.
+#[uniffi::export]
+pub fn use_registry_folder(path: String) -> Result<(), CoreError> {
+    Ok(hitslop_core::registry::use_folder(Path::new(&path))?)
+}
+/// Removes discovery files a crashed owner left; returns how many. Run at app launch.
+#[uniffi::export]
+pub fn sweep_registry() -> Result<u32, CoreError> {
+    Ok(hitslop_core::registry::sweep()? as u32)
+}
+/// The live owner's discovery for a document file, when one is published.
+#[uniffi::export]
+pub fn live_discovery(path: String) -> Result<Option<String>, CoreError> {
+    Ok(hitslop_core::registry::discovery(Path::new(&path))?)
+}
+/// Whether `path` is an app asset's key a page may name: relative, at most 240 bytes, with
+/// no empty, dot or parent segments.
+#[uniffi::export]
+pub fn valid_asset_path(path: String) -> bool {
+    file::valid_asset_path(&path)
+}
+/// The content type a served file carries, by its extension.
+#[uniffi::export]
+pub fn content_type(path: String) -> String {
+    file::content_type(&path).into()
+}
+/// Serves a document's app assets: whole, or a byte range (`NativeStore::asset_reader`).
 #[derive(uniffi::Object)]
-pub struct WriterLock(Mutex<Option<store::WriterLock>>);
+pub struct AssetReader(Mutex<file::AssetReader>);
 #[uniffi::export]
-impl WriterLock {
-    #[uniffi::constructor]
-    pub fn acquire(root: String) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(Mutex::new(Some(store::WriterLock::acquire(std::path::Path::new(&root))?)))))
+impl AssetReader {
+    pub fn size(&self, key: String) -> Result<Option<u64>, CoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).size(&key)?)
     }
-    pub fn release(&self) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).take();
+    pub fn read_range(&self, key: String, offset: u64, length: u64) -> Result<Option<Vec<u8>>, CoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(&key, offset, length)?)
     }
-}
-
-/// Copies a package's saved state into `destination_root` as a new logical document.
-#[uniffi::export]
-pub fn duplicate_document(source_root: String, destination_root: String) -> Result<(), CoreError> {
-    Ok(store::duplicate(std::path::Path::new(&source_root), std::path::Path::new(&destination_root))?)
 }
 
 #[cfg(test)]
@@ -454,18 +505,32 @@ mod tests {
     // every call must refuse until a new owner is explicitly reloaded from storage.
     #[test]
     fn panic_invalidates_owner_and_durable_reload_uses_a_new_owner() {
-        let schema = r#"{"kind":"object","properties":{"done":{"kind":"boolean"}}}"#;
-        let root = std::env::temp_dir().join(format!("hitslop-ffi-{}.slop", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let store = NativeStore::open(root.to_string_lossy().into(), StoreMode::Document).unwrap();
-        let owner = store.document(schema.into(), r#"{"done":false}"#.into(), "{}".into()).unwrap();
-        let result: Result<(), _> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
+        use_registry_folder(std::env::temp_dir().join("hitslop-test-registry").to_string_lossy().into()).unwrap();
+        let dir = std::env::temp_dir().join(format!("hitslop-ffi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (stage, template, doc) = (dir.join("stage"), dir.join("Panic.template.slop"), dir.join("Panic.slop"));
+        std::fs::create_dir_all(stage.join("assets")).unwrap();
+        std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+        let manifest = r#"{"author":{"name":"Fixture"},"slug":"panic","title":"Panic","description":"FFI unwind test.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+        let app = format!(
+            r#"{{"packageFormat":{},"runtimeABI":{},"manifest":{manifest},"descriptor":{{"kind":"object","properties":{{"done":{{"kind":"boolean"}}}}}},"initial":{{"done":false}},"theme":{{}}}}"#,
+            hitslop_core::PACKAGE_FORMAT,
+            hitslop_core::RUNTIME_ABI
+        );
+        std::fs::write(stage.join("app.json"), app).unwrap();
+        file::pack(&stage, &template).unwrap();
+        file::create_document(&template, &doc).unwrap();
+        let store = NativeStore::open(doc.to_string_lossy().into(), StoreMode::Document).unwrap();
+        let owner = store.document().unwrap();
+        owner.apply_batch(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#.into(), EditOrigin::Page).unwrap();
+        let result: Result<(), CoreError> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
         assert!(matches!(result, Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.state(), Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.save_job(store.clone(), true), Err(CoreError::Invalidated { .. })));
-        let restored = store.document(schema.into(), r#"{"done":true}"#.into(), "{}".into()).unwrap();
+        // The reload reads durable state: the first checkpoint, before the unsaved edit.
+        let restored = store.document().unwrap();
         assert!(restored.state().unwrap().contains("\"done\":false"));
         store.close().unwrap();
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

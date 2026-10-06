@@ -1,7 +1,7 @@
-import { discoverTemplates, repository, type TemplateSource } from "./templates";
+import { repository } from "./runtime-artifacts";
+import { discoverTemplates } from "./templates";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
 const env = { ...process.env, PATH: "/opt/homebrew/bin:/usr/bin:/bin:" + process.env.PATH };
 async function run(cmd: string[]) {
   const p = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit", env });
@@ -11,40 +11,24 @@ await run([process.execPath, "scripts/generate.ts", "--check"]);
 await run([process.execPath, "scripts/skills.ts", "--check"]);
 await run([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]);
 const templates = await discoverTemplates();
-// Share the standard compiler program; preserve project-specific settings when
-// a template opts into them. Discovery keeps archived examples out.
-const shared: TemplateSource[] = [],
-  custom: TemplateSource[] = [];
-const standard = {
-  extends: "../../../tsconfig.json",
-  include: ["./**/*.svelte", "./**/*.ts"],
-  exclude: ["dist", "node_modules"],
-};
-for (const template of templates) {
-  const config = await Bun.file(join(template.source, "tsconfig.json")).text();
-  let settings: unknown;
-  try {
-    settings = JSON.parse(config);
-  } catch {
-    /* svelte-check handles JSONC and diagnostics. */
-  }
-  (isDeepStrictEqual(settings, standard) ? shared : custom).push(template);
-}
+// One compiler program for every template, with the starter's self-contained tsconfig.
+// Discovery keeps archived examples out.
+const standard = await Bun.file(join(repository, "packages/cli/templates/checklist/tsconfig.json")).json();
 const temporary = await mkdtemp(join(repository, ".build-test-check-"));
 try {
   const config = join(temporary, "tsconfig.json");
   await writeFile(
     config,
     JSON.stringify({
-      extends: join(repository, "tsconfig.json"),
-      include: shared.flatMap(({ source }) => [
+      compilerOptions: standard.compilerOptions,
+      include: templates.flatMap(({ source }) => [
         join(source, "**/*.svelte"),
         join(source, "**/*.ts"),
       ]),
       exclude: [join(repository, "**/node_modules/**"), join(repository, "**/dist/**")],
     }),
   );
-  if (shared.length)
+  if (templates.length)
     await run([
       process.execPath,
       "node_modules/svelte-check/bin/svelte-check",
@@ -55,14 +39,4 @@ try {
     ]);
 } finally {
   await rm(temporary, { recursive: true, force: true });
-}
-for (const { source } of custom) {
-  await run([
-    process.execPath,
-    "node_modules/svelte-check/bin/svelte-check",
-    "--workspace",
-    source,
-    "--tsconfig",
-    "tsconfig.json",
-  ]);
 }

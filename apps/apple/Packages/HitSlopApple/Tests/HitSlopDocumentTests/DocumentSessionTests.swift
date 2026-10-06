@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import Testing
 import HitSlopTestSupport
 import WebKit
@@ -9,11 +10,9 @@ import WebKit
 @Suite(.serialized) struct DocumentSessionTests {
   // The production shell must open and execute document operations under the page CSP.
   @Test @MainActor func shellStartupAndOperationsRespectCSP() async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    let root = try Fixtures.document()
     defer { try? FileManager.default.removeItem(at: root) }
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
       globalThis.cspViolations = [];
       addEventListener('securitypolicyviolation', event => cspViolations.push(event.violatedDirective));
@@ -31,37 +30,33 @@ import WebKit
   // The native dispatch boundary must reject an oversized or unknown-field request
   // before base64 decoding or touching SQLite.
   @Test func bridgeRejectsOversizedPayloadsAndUnknownFields() {
-    #expect((try? PageRequest(["method": "config"])) != nil)
-    #expect((try? PageRequest(["method": "config", "extra": "unexpected"])) == nil)
-    #expect((try? PageRequest(["method": "attachments.list"])) == nil)
-    #expect((try? PageRequest(["method": "open"])) != nil)
-    #expect((try? PageRequest(["method": "window.resize", "width": ["nested": 1], "height": 300])) == nil)
+    #expect(PageRequest.checked(["method": "config"]) != nil)
+    #expect(PageRequest.checked(["method": "config", "extra": "unexpected"]) == nil)
+    #expect(PageRequest.checked(["method": "attachments.list"]) == nil)
+    #expect(PageRequest.checked(["method": "open"]) != nil)
+    #expect(PageRequest.checked(["method": "window.resize", "width": ["nested": 1], "height": 300]) == nil)
     let oversized = String(repeating: "A", count: 15 * 1024 * 1024)
-    #expect((try? PageRequest(["method": "attachments.put", "bytes": oversized])) == nil)
+    #expect(PageRequest.checked(["method": "attachments.put", "bytes": oversized]) == nil)
   }
 
   // A theme can change after config is read but before the app finishes mounting.
   @Test @MainActor func themeChangesDuringMountReachTheReadyPage() async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    defer { try? FileManager.default.removeItem(at: root) }
+    let stage = try Fixtures.stage()
     try Data("""
       export default { async mount() {
         globalThis.mountStarted = true;
         await new Promise(resolve => globalThis.finishMount = resolve);
         return {};
       }};
-      """.utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try await DocumentSession.open(packageURL: root)
+      """.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
     session.load()
     do {
-      var mounted = false
-      for _ in 0..<200 where !mounted {
-        mounted = (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
-        if !mounted { try await Task.sleep(for: .milliseconds(25)) }
-      }
-      #expect(mounted)
+      #expect(await eventually(timeout: .seconds(5)) {
+        (try? await session.webView.callAsyncJavaScript("return globalThis.mountStarted === true", arguments: [:], in: nil, contentWorld: .page)) as? Bool == true
+      })
       _ = try await session.owner.applyTheme(.set(valuesJson: ##"{"accent":"#123456"}"##))
       _ = try await session.webView.callAsyncJavaScript("finishMount(); return true", arguments: [:], in: nil, contentWorld: .page)
       try await session.waitUntilReady()
@@ -88,12 +83,11 @@ import WebKit
   // before a flush returns (so an export shows them), held back from a capture in
   // progress, reported to the window, and saved by close.
   @Test @MainActor func panelThemeChangesSettleBeforeFlushAndSaveOnClose() async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    let stage = try Fixtures.stage()
+    try Data("export default { mount() { return {}; } };".utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
-    try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     let events = SessionEvents()
     var reported: [String?] = []
     events.theme = { reported.append($0.effective["accent"]) }
@@ -105,7 +99,7 @@ import WebKit
         contentWorld: .page) as? String
     }
     func saved() async throws -> String? {
-      let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+      let snapshot = try DocumentOwner(url: root, mode: .snapshot)
       defer { Task { try? await snapshot.close() } }
       return try JSONDecoder().decode([String: String].self, from: Data(try await snapshot.loadTheme().state.effective.utf8))["accent"]
     }
@@ -125,12 +119,12 @@ import WebKit
       #expect(refused != nil)
       #expect(try await accent() == "#335577")
 
-      session.capturing = true
-      session.changeTheme(.set(["accent": "#abcabc"]))
-      try await Task.sleep(for: .milliseconds(150))
-      #expect(try await accent() == "#335577", "a capture in progress is not restyled")
-      session.capturing = false
-      for _ in 0..<100 where try await accent() != "#abcabc" { try await Task.sleep(for: .milliseconds(10)) }
+      try await session.withCapture {
+        session.changeTheme(.set(["accent": "#abcabc"]))
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(try await accent() == "#335577", "a capture in progress is not restyled")
+      }
+      try await eventually(timeout: .seconds(1)) { try await accent() == "#abcabc" }
       #expect(try await accent() == "#abcabc")
 
       session.changeTheme(.set(["accent": "#fedcba"]))
@@ -183,7 +177,7 @@ import WebKit
       }
     }
     let tasks = (0..<16).map { _ in Task { try await call() } }
-    for _ in 0..<200 where replies.value.count < 16 { try await Task.sleep(for: .milliseconds(10)) }
+    await eventually(timeout: .seconds(2)) { replies.value.count >= 16 }
     #expect(replies.value.count == 16)
     await #expect(throws: (any Error).self) {
       _ = try await call()
@@ -192,42 +186,22 @@ import WebKit
     for task in tasks { _ = try await task.value }
   }
 
-  @Test @MainActor func schemeRejectsSymlinkReplacedAfterOpen() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(
-      at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let asset = root.appendingPathComponent("assets/test.js")
-    try Data("safe".utf8).write(to: asset)
-    let handler = SchemeHandler(root: root, shell: root)
-    try FileManager.default.removeItem(at: asset)
-    try FileManager.default.createSymbolicLink(
-      at: asset, withDestinationURL: root.appendingPathComponent("initial.json"))
-    try Data("secret".utf8).write(to: root.appendingPathComponent("initial.json"))
-    let task = SchemeTask(URL(string: "slop://app/assets/test.js")!)
-    handler.webView(WKWebView(), start: task)
-    await task.completion()
-    #expect(task.error != nil)
-    #expect(task.data.isEmpty)
-  }
-
-  // Decoding and normalization must never turn an authored asset into a private resource.
-  @Test @MainActor func schemeRejectsEncodedTraversalAndPreservesAllowedResources() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    for directory in ["assets", "state", "shell/loro"] {
-      try FileManager.default.createDirectory(at: root.appendingPathComponent(directory), withIntermediateDirectories: true)
-    }
-    for path in ["assets/test.js", "shell/loro/test.js", "shell/secret.js", "state/host.lock", "state/document.sqlite"] {
-      try Data(path.utf8).write(to: root.appendingPathComponent(path))
-    }
-    let shell = root.appendingPathComponent("shell")
-    let handler = SchemeHandler(root: root, shell: shell)
+  // Decoding and normalization must never turn a request into anything but an app asset
+  // or a shell file: the document's other contents are not resources.
+  @Test @MainActor func schemeRejectsEncodedTraversalAndServesOnlyAssets() async throws {
+    let stage = try Fixtures.stage()
+    try Data("assets/test.js".utf8).write(to: stage.appendingPathComponent("assets/test.js"))
+    let root = try Fixtures.document(stage: stage)
+    let shell = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: shell) }
+    try FileManager.default.createDirectory(at: shell.appendingPathComponent("loro"), withIntermediateDirectories: true)
+    for path in ["loro/test.js", "secret.js"] { try Data(("shell/" + path).utf8).write(to: shell.appendingPathComponent(path)) }
+    let handler = SchemeHandler(assets: try NativeStore.open(path: root.path, mode: .snapshot).assetReader(), shell: shell)
     let view = WKWebView()
     for path in [
-      "assets%2F..%2Fstate%2Fhost.lock", "assets/..%2Fstate/document.sqlite",
-      "assets/%2e%2e/state/host.lock", "assets//test.js", "assets/%2e/test.js",
-      "__shell__/loro%2F..%2Fsecret.js", "__shell__/loro//test.js",
+      "app", "document.slop", "assets%2F..%2Fapp", "assets/..%2Fapp.js", "assets/%2e%2e/app.js", "assets//test.js",
+      "assets/%2e/test.js", "assets/missing.js", "__shell__/loro%2F..%2Fsecret.js", "__shell__/loro//test.js",
+      "__shell__/../secret.js",
     ] {
       let task = SchemeTask(URL(string: "slop://app/" + path)!)
       handler.webView(view, start: task)
@@ -251,21 +225,16 @@ import WebKit
     await next.completion()
     for _ in 0..<10 { await Task.yield() }
     #expect(stopped.calls == 0)
-
   }
 
   // Manifest sizing must govern actual bridge requests, not just native window chrome.
   @Test(arguments: [false, true]) @MainActor
   func resizeBridgeHonorsManifest(resizable: Bool) async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
+    let stage = try Fixtures.stage()
+    try Fixtures.updateManifest(stage) { $0["presentation"] = ["width": 480, "height": 480, "resizable": resizable] }
+    let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
-    let manifestURL = root.appendingPathComponent("manifest.json")
-    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
-    manifest["presentation"] = ["width": 480, "height": 480, "resizable": resizable]
-    try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     var resized = false
     let events = SessionEvents()
     events.resize = { size in resized = true; return size }
@@ -284,9 +253,9 @@ import WebKit
       #expect(resized == resizable)
       // A capture owns the view's size; the page cannot resize the window meanwhile.
       resized = false
-      session.capturing = true
-      let duringCapture = try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
-      session.capturing = false
+      let duringCapture = try await session.withCapture {
+        try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
+      }
       #expect(duringCapture as? Bool == false)
       #expect(!resized)
       try await session.close()
@@ -300,17 +269,13 @@ import WebKit
   // A same-origin `slop://app` frame shares the page's origin, leaving the main-frame check as
   // the only guard.
   @Test @MainActor func embeddedFrameCannotUseBridge() async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    defer { try? FileManager.default.removeItem(at: root) }
+    let stage = try Fixtures.stage()
     try Data("<!doctype html><title>frame</title>".utf8).write(
-      to: root.appendingPathComponent("assets/frame.html"))
-    let manifestURL = root.appendingPathComponent("manifest.json")
-    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any])
-    manifest["presentation"] = ["width": 480, "height": 480, "resizable": true]
-    try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
-    let session = try await DocumentSession.open(packageURL: root)
+      to: stage.appendingPathComponent("assets/frame.html"))
+    try Fixtures.updateManifest(stage) { $0["presentation"] = ["width": 480, "height": 480, "resizable": true] }
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
     var resizes = 0
     let events = SessionEvents()
     events.resize = { size in resizes += 1; return size }

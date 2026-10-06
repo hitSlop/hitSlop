@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import HitSlopDocument
 import Testing
+import HitSlopTestSupport
 @testable import HitSlopHost
 
 @Test func themeColorsUseThePalettesOneSpelling() throws {
@@ -44,7 +45,7 @@ import Testing
 @Test @MainActor func themePanelOpensBesideTheWindowAndRecolorsThePage() async throws {
   let root = try themeWindowFixture()
   defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-  let controller = try await SlopDocumentWindowController.open(packageURL: root)
+  let controller = try await SlopDocumentWindowController.open(url: root)
   controller.showWindow(nil)
   await controller.waitForPresentation()
   let window = try #require(controller.window)
@@ -81,22 +82,10 @@ import Testing
 }
 
 private func themeWindowFixture() throws -> URL {
-  let parent = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-theme-\(UUID().uuidString)", isDirectory: true)
-  let root = parent.appendingPathComponent("theme.slop", isDirectory: true)
-  try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
-  try Data("export default { mount() { return {}; } };".utf8).write(to: root.appendingPathComponent("assets/app.js"))
-  try Data(#"{"kind":"object","properties":{}}"#.utf8).write(to: root.appendingPathComponent("state.schema.json"))
-  try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
   // More colors than fit beside the window, so the list must scroll.
   let extra = (0..<30).map { ",\"color\($0)\":\"#000000\"" }.joined()
-  try Data((##"{"paper":"#ffffff","accent":"#335577""## + extra + "}").utf8).write(to: root.appendingPathComponent("assets/theme.json"))
-  let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author"},"slug":"theme-fixture","title":"Theme Fixture","description":"Tests the theme panel.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#
-  try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
-  let skill = root.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
-  try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)
-  try Data(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-    .appendingPathComponent("../../../../../../packages/cli/skills/hitslop-document/SKILL.md").standardizedFileURL).write(to: skill)
-  return root
+  let stage = try Fixtures.minimalStage(slug: "theme-fixture", theme: ##"{"paper":"#ffffff","accent":"#335577""## + extra + "}")
+  return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("theme.slop"))
 }
 
 // Failure: drafts retired only when a delivered color matched them, so a change that

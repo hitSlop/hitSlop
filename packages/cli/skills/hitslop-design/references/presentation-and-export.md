@@ -2,9 +2,9 @@
 
 ## Standard and responsive
 
-Manifest width/height are the initial viewport. Standard windows may be
+`slop.ts`'s `presentation` width/height are the initial viewport. Standard windows may be
 resizable, with `shape` as a CSS radius string (default `"22px"`) or an SVG path object.
-Use `lockAspect: true` to preserve the manifest width/height ratio. Build the outer
+Use `lockAspect: true` to preserve the initial width/height ratio. Build the outer
 layout with grid/flex, relative units, min/max constraints, and container
 queries. Test initial, narrower, and content-heavy states.
 
@@ -19,7 +19,7 @@ mark their root `data-hitslop-root`. Size the shell with `height: 100%`, grid, o
 flex and scroll inside panes. Prefer these defaults over repeated `html`/`body`
 sizing or `100vh`; override deliberately when the layout requires it. Native
 masks radius/path shapes and skins, so keep controls inside the visible silhouette.
-`slop dev` previews the manifest size and mask.
+`slop dev` previews the `presentation` size and mask.
 
 ## Transparent backgrounds
 
@@ -40,7 +40,7 @@ there is no guest drag API or drag-attribute contract.
 ## PNG skins
 
 Use SVG paths for geometric outlines and holes. Use a PNG for bitmap artwork. The skin
-path is under `assets/`; RGBA dimensions exactly equal manifest dimensions.
+path is under `assets/`; RGBA dimensions exactly equal the `presentation` dimensions.
 The image is both native backing artwork and alpha mask. Alpha 0–25 is
 click-through; 26–255 receives input. Skinned windows cannot resize. Avoid
 critical controls on antialiased/translucent edges. Verify clicks actually reach
@@ -71,5 +71,5 @@ failures still use native application-error recovery and prevent capture.
 Use optional `Icon.svelte` alongside `App.svelte`. It mounts
 only for capture, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
-Finder metadata on close; the published `QuickLook/Icon.png` remains immutable.
-Build with `--artwork native` (or register) and inspect the generated QuickLook images, then verify native exports.
+a document's artwork and Finder icon on close; the template's icon remains as built.
+Build with `--artwork native` (or register) and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.

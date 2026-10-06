@@ -2,6 +2,100 @@
 use hitslop_core::{Document, Error};
 use serde_json::{json, Value};
 use hitslop_core::Origin;
+/// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
+pub fn registry_folder() -> std::path::PathBuf {
+    std::env::temp_dir().join("hitslop-test-registry")
+}
+/// Points this process's registry at `registry_folder`; every test that takes a writer
+/// lock calls it first.
+#[cfg(feature = "storage")]
+pub fn isolate_registry() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| hitslop_core::registry::use_folder(&registry_folder()).unwrap());
+}
+/// This test binary running only its ignored test `name`, as a separate process, with
+/// `env`: a child test returns at once unless its variables are set. Output is discarded.
+pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", name, "--ignored", "--nocapture"]);
+    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+}
+/// A fixture app's manifest and declared colors.
+pub const MANIFEST: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+pub const THEME: &str = r##"{"accent":"#335577"}"##;
+/// A build's `app.json`: the `app` row, each part the JSON text a build writes.
+#[derive(Clone, Copy)]
+pub struct App<'a> {
+    pub format: u64,
+    pub abi: u64,
+    pub manifest: &'a str,
+    pub descriptor: &'a str,
+    pub initial: &'a str,
+    pub theme: &'a str,
+}
+impl<'a> App<'a> {
+    /// The fixture app with this descriptor and initial values, for this build's markers.
+    pub const fn new(descriptor: &'a str, initial: &'a str) -> Self {
+        App { format: hitslop_core::PACKAGE_FORMAT, abi: hitslop_core::RUNTIME_ABI, manifest: MANIFEST, descriptor, initial, theme: THEME }
+    }
+}
+/// Writes `app` as the stage's `app.json`.
+pub fn write_app(stage: &std::path::Path, app: App) {
+    let App { format, abi, manifest, descriptor, initial, theme } = app;
+    let json = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#);
+    std::fs::write(stage.join("app.json"), json).unwrap();
+}
+/// A shared fixture (`fixtures/<name>.json`): a descriptor, its initial values and, for
+/// some, conformance cases.
+pub fn fixture(name: &str) -> Value {
+    serde_json::from_str(match name {
+        "checklist" => include_str!("../../fixtures/checklist.json"),
+        "collections" => include_str!("../../fixtures/collections.json"),
+        "scalars" => include_str!("../../fixtures/scalars.json"),
+        "nested" => include_str!("../../fixtures/nested.json"),
+        other => panic!("no fixture {other}"),
+    })
+    .unwrap()
+}
+/// A document's snapshot (value, issues and version), parsed.
+pub fn snapshot(d: &Document) -> Value {
+    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
+}
+/// A document's value.
+pub fn value(d: &Document) -> Value {
+    snapshot(d)["value"].clone()
+}
+/// Two replicas of a fixture's document that edit concurrently, then `exchange` updates,
+/// and the version they share.
+pub fn pair(f: &Value) -> (Document, Document, String) {
+    let a = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
+    let b = Document::open(&f["schema"].to_string(), &a.checkpoint().unwrap(), &[]).unwrap();
+    let base = a.version();
+    (a, b, base)
+}
+/// Each replica imports what the other wrote since `base`.
+pub fn exchange(a: &mut Document, b: &mut Document, base: &str) {
+    let (left, right) = (a.export_since(base).unwrap(), b.export_since(base).unwrap());
+    a.import(&right).unwrap();
+    b.import(&left).unwrap();
+}
+/// A checkpoint saved again without its history, as trimming does.
+pub fn trimmed(checkpoint: &[u8]) -> Vec<u8> {
+    let loro = loro::LoroDoc::new();
+    loro.import(checkpoint).unwrap();
+    loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap()
+}
+/// The next number of a xorshift sequence: seeded workloads that replay exactly.
+pub fn next(rng: &mut u64) -> u64 {
+    *rng ^= *rng << 13;
+    *rng ^= *rng >> 7;
+    *rng ^= *rng << 17;
+    *rng
+}
 /// Keep the everyday tier bounded; use the same knobs for extended stress runs.
 pub fn workload(name: &str, default: usize) -> usize {
     std::env::var(name).map(|v| v.parse::<usize>().expect("positive test workload")).unwrap_or(default).max(1)

@@ -15,7 +15,7 @@ public enum SlopLocalDocument {
             current.deleteLastPathComponent()
         }
         guard !inside && !ubiquitous else {
-            throw SlopPackageError.invalid("iCloud document locations are not supported. Move the document to a local folder.")
+            throw SlopFailure("iCloud document locations are not supported. Move the document to a local folder.")
         }
     }
 

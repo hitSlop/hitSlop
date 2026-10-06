@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { cp, mkdtemp, rm, symlink, readFile, lstat } from "node:fs/promises";
-import { parseManifest } from "@hitslop/schema";
+import { loadProject, normalizeApp } from "../src/build";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import metadata from "../package.json";
@@ -23,32 +23,36 @@ async function run(
   return { stdout, stderr, code };
 }
 
-// A successful init must produce a valid manifest, even for directory names
-// outside the manifest slug grammar or title length. The build test covers only "starter".
-test("init derives valid slugs before reporting success", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-init-metadata-"));
+/** The manifest a build would store for `project`, from its slop.ts. */
+async function manifestOf(project: string) {
+  return (await normalizeApp(project, await loadProject(project))).manifest;
+}
+
+// A project's folder name is its slug, so init refuses a folder that is not one before
+// creating anything.
+test("init names a project by its folder and refuses a folder that is not a slug", async () => {
+  // Inside the checkout, so the created slop.ts resolves @hitslop/document.
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
-    for (const [name, slug] of [
-      ["a", "a-slop"],
-      ["foo--bar", "foo-bar"],
-      ["a".repeat(90), "a".repeat(64)],
-    ]) {
-      const target = join(root, name!);
-      expect((await run(["init", target])).code).toBe(0);
-      const manifest = parseManifest(
-        JSON.parse(await readFile(join(target, "manifest.json"), "utf8")),
-      );
-      expect(manifest.slug).toBe(slug!);
+    for (const name of ["a", "foo--bar", "Foo", "my app", "a".repeat(65)]) {
+      const target = join(root, name);
+      const result = await run(["init", target, "--yes"]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("folder's name is its slug");
+      expect(await lstat(target).catch(() => undefined)).toBeUndefined();
     }
+    const target = join(root, "a".repeat(64));
+    expect((await run(["init", target, "--yes"])).code).toBe(0);
+    expect((await manifestOf(target)).slug).toBe("a".repeat(64));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("init flags and defaults produce validated metadata without prompts or partial projects", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-init-flags-"));
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
-    const target = join(root, "custom");
+    const target = join(root, "budget-book");
     const created = await run([
       "init",
       target,
@@ -57,8 +61,6 @@ test("init flags and defaults produce validated metadata without prompts or part
       "Track monthly spending.",
       "--title",
       'My "budget"',
-      "--slug",
-      "budget-book",
       "--category",
       "finance",
       "--category",
@@ -71,9 +73,7 @@ test("init flags and defaults produce validated metadata without prompts or part
     expect(created.code).toBe(0);
     expect(created.stderr).toBe("");
     expect(await readFile(join(target, "BRIEF.md"), "utf8")).toContain("Track monthly spending.");
-    const manifest = parseManifest(
-      JSON.parse(await readFile(join(target, "manifest.json"), "utf8")),
-    );
+    const manifest = await manifestOf(target);
     expect({
       title: manifest.title,
       slug: manifest.slug,
@@ -89,9 +89,7 @@ test("init flags and defaults produce validated metadata without prompts or part
     });
     const defaults = join(root, "defaults");
     expect((await run(["init", defaults], { CI: "1" })).code).toBe(0);
-    const fallback = parseManifest(
-      JSON.parse(await readFile(join(defaults, "manifest.json"), "utf8")),
-    );
+    const fallback = await manifestOf(defaults);
     expect([
       fallback.title,
       fallback.author.name,
@@ -99,8 +97,6 @@ test("init flags and defaults produce validated metadata without prompts or part
       fallback.categories,
     ]).toEqual(["defaults", "Anonymous", "A hitSlop mini app.", ["productivity"]]);
     const invalid = [
-      ["--slug", "x"],
-      ["--slug", "bad--slug"],
       ["--title", ""],
       ["--title", "x".repeat(81)],
       ["--author", " "],

@@ -6,28 +6,16 @@
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{json, Value};
-use support::{Edit, View};
+use support::{Edit, View, fixture, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";
 
-fn fixture(name: &str) -> Value {
-    let text = match name {
-        "checklist" => include_str!("../fixtures/checklist.json"),
-        "collections" => include_str!("../fixtures/collections.json"),
-        "scalars" => include_str!("../fixtures/scalars.json"),
-        _ => include_str!("../fixtures/nested.json"),
-    };
-    serde_json::from_str(text).unwrap()
-}
 fn open(name: &str) -> (Document, View) {
     let f = fixture(name);
     let d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let view = View::of(&d);
     (d, view)
-}
-fn value(d: &Document) -> Value {
-    serde_json::from_str::<Value>(&d.snapshot().unwrap()).unwrap()["value"].clone()
 }
 fn replace(path: Value, value: Value) -> String {
     json!({"intents":[{"type":"replace","path":path,"value":value}]}).to_string()
@@ -214,6 +202,55 @@ fn a_replace_never_overwrites_a_stored_anomaly() {
     apply(&mut a, &mut view, &replace(json!(["title"]), json!("Elsewhere")));
     assert_eq!(value(&a)["rows"], current["rows"]);
     view.check(&a, "after a replace away from the anomaly");
+}
+
+// Failure: `set` repaired a merged anomaly that `replace` refuses, or a write refused to
+// overwrite a value of the right type. Oracle: one rule for every write: a wrong-typed
+// value is preserved and flagged, never overwritten; an out-of-range one may be.
+#[test]
+fn set_and_replace_share_one_anomaly_rule() {
+    use loro::{Container, ExportMode, LoroDoc, ValueOrContainer};
+    let merged = |name: &str, setup: &str, damage: &dyn Fn(&loro::LoroMap)| {
+        let f = fixture(name);
+        let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
+        d.apply(setup).unwrap();
+        let peer = LoroDoc::new();
+        peer.import(&d.checkpoint().unwrap()).unwrap();
+        let from = peer.oplog_vv();
+        damage(&peer.get_map("data"));
+        peer.commit();
+        d.merge(&peer.export(ExportMode::updates(&from)).unwrap()).unwrap();
+        d
+    };
+    let set = |path: Value, value: Value| json!({"intents":[{"type":"set","path":path,"value":value}]}).to_string();
+
+    let mut d = merged("scalars", &set(json!(["photo"]), json!({"id":"p","name":"n"})), &|data| {
+        let Some(ValueOrContainer::Container(Container::Map(photo))) = data.get("photo") else { panic!("photo") };
+        photo.insert("name", 5).unwrap();
+        data.insert("rating", 9).unwrap();
+        data.insert("ratio", 7.0).unwrap();
+    });
+    let issues = serde_json::from_str::<Value>(&d.snapshot().unwrap()).unwrap()["issues"].clone();
+    assert_eq!(issues, json!([
+        {"code":"type_mismatch","path":["photo","name"]},
+        {"code":"out_of_range","path":["rating"]},
+        {"code":"out_of_range","path":["ratio"]},
+    ]));
+    let fixed = json!({"id":"p","name":"fixed"});
+    assert_eq!(refused(&mut d, &set(json!(["photo"]), fixed.clone())), Code::TypeMismatch, "set over a nested anomaly");
+    assert_eq!(refused(&mut d, &replace(json!(["photo"]), fixed)), Code::TypeMismatch, "replace over a nested anomaly");
+    let mut view = View::of(&d);
+    apply(&mut d, &mut view, &set(json!(["rating"]), json!(4)));
+    apply(&mut d, &mut view, &replace(json!(["ratio"]), json!(0.25)));
+    assert_eq!((value(&d)["rating"].clone(), value(&d)["ratio"].clone()), (json!(4), json!(0.25)));
+    view.check(&d, "after overwriting out-of-range values");
+
+    let mut d = merged("collections", &set(json!(["title"]), json!("Board")), &|data| {
+        let Some(ValueOrContainer::Container(Container::MovableList(presets))) = data.get("presets") else { panic!("presets") };
+        presets.set(0, "x").unwrap();
+    });
+    assert_eq!(refused(&mut d, &set(json!(["presets"]), json!([60, 90]))), Code::TypeMismatch, "set over an anomalous element");
+    assert_eq!(refused(&mut d, &replace(json!(["presets"]), json!([60, 90]))), Code::TypeMismatch);
 }
 
 #[test]

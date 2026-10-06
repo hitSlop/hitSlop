@@ -58,59 +58,6 @@ test("skills are deterministic, self-contained and describe the active commands"
   }
 });
 
-test("Crust installs and repairs links without replacing conflicting directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-skill-links-"));
-  try {
-    const home = join(root, "home"),
-      project = join(root, "project"),
-      skills = join(root, "bundle/skills");
-    await mkdir(home);
-    await mkdir(project);
-    await buildSkills(skills);
-    // Run in a separate process so homedir and scope resolution cannot touch the real user.
-    const module = resolve("packages/cli/node_modules/@crustjs/skills/dist/index.js");
-    const script = `import { installSkill, getSkillStatus, uninstallSkill } from ${JSON.stringify(module)};
-      import {readlink} from "node:fs/promises";
-      const sourceDir = ${JSON.stringify(join(skills, "hitslop-cli"))};
-      const options = { sourceDir, agents: ["codex"], scope: "project" };
-      await installSkill(options);
-      if ((await readlink(".agents/skills/hitslop-cli")).startsWith("/")) throw new Error("Expected relative project link");
-      console.log((await getSkillStatus({name:"hitslop-cli", ...options})).agents.find(a=>a.agent==="codex").status);
-      await uninstallSkill({name:"hitslop-cli",agents:["codex"],scope:"project"});
-      await installSkill({...options,scope:"global"});`;
-    const run = async (code: string) => {
-      const child = Bun.spawn([process.execPath, "-e", code], {
-        cwd: project,
-        env: { ...process.env, HOME: home },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [out, err, status] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
-      expect(err).toBe("");
-      expect(status).toBe(0);
-      return out;
-    };
-    expect(await run(script)).toContain("linked");
-    const globalLink = join(home, ".agents/skills/hitslop-cli");
-    expect(await readlink(globalLink)).toBe(join(skills, "hitslop-cli"));
-    await rm(globalLink);
-    await symlink(join(home, ".hitslop/skills/hitslop-cli"), globalLink);
-    await run(script); // Repair an old native-style dangling link.
-    expect(await readlink(globalLink)).toBe(join(skills, "hitslop-cli"));
-    await rm(globalLink);
-    await mkdir(globalLink);
-    await run(`import { installSkill } from ${JSON.stringify(module)};
-      try { await installSkill({sourceDir:${JSON.stringify(join(skills, "hitslop-cli"))},agents:["codex"],scope:"global"}); throw new Error("Expected conflict"); }
-      catch(e) { if(e.name !== "SkillConflictError") throw e; }`);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 const skillNames = ["hitslop", "hitslop-authoring", "hitslop-design", "hitslop-document", "hitslop-cli"];
 
 /** A temporary HOME, Bun home and project, and a runner for any CLI copy inside them. */

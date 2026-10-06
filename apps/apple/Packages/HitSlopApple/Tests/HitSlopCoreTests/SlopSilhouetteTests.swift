@@ -1,21 +1,21 @@
 import CoreGraphics
 import Foundation
 import Testing
-import HitSlopCoreBinding
+import HitSlopTestSupport
 @testable import HitSlopCore
 
 private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 100, height: Double = 100) -> SlopShape {
   .slopPathShape(.init(fillRule: evenOdd ? .evenodd : .nonzero, path: path, viewBox: [width, height]))
 }
-// Rust owns parsing; these tests exercise native path construction from its output.
+// Rust owns parsing; these tests exercise native path construction from its output, read
+// from a template the core packed.
 private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> SlopSilhouette {
-  let object: [String: Any] = [
-    "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"], "packageFormat": 1, "runtimeABI": 1,
+  let stage = try Fixtures.minimalStage(slug: "shape-lab", manifest: [
     "presentation": ["width": max(240, width), "height": max(180, height),
       "shape": try JSONSerialization.jsonObject(with: JSONEncoder().encode(shape), options: .fragmentsAllowed)],
-  ]
-  let json = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
-  return SlopSilhouette(parsed: try validateManifest(manifestJson: json))
+  ])
+  defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
+  return try SlopFile(url: Fixtures.template(stage: stage)).silhouette
 }
 @Test func silhouettesPreserveOrientationOriginsAndEvenOddHoles() throws {
   let shape = try silhouette(shape: pathShape("M0 0H100V100H0Z M60 10H90V40H60Z", evenOdd: true), width: 100, height: 100)
@@ -51,15 +51,4 @@ private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> Slo
   let rotated = try silhouette(shape: pathShape("M50 10A40 20 90 1 1 50 90A40 20 90 1 1 50 10Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
   #expect(abs(rotated.boundingBoxOfPath.width - 40) < 0.01)
   #expect(abs(rotated.boundingBoxOfPath.height - 80) < 0.01)
-}
-
-@Test func nativeManifestValidatorChecksViewBoxTupleMembers() throws {
-  for box: [Any] in [[0, 100], [100, "bad"], [100, 20000]] {
-    let manifest: [String: Any] = [
-      "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"], "packageFormat": 1, "runtimeABI": 1,
-      "presentation": ["width": 480, "height": 360, "shape": ["path": "M0 0H100V100Z", "viewBox": box]],
-    ]
-    let json = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
-    #expect(throws: CoreError.self) { _ = try validateManifest(manifestJson: json) }
-  }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import HitSlopCoreBinding
 
 /// PNG or PDF: the socket's export format, also used by the window and telemetry.
 public typealias ExportFormat = SocketExportRequestFormat
@@ -8,14 +9,14 @@ public enum SlopTelemetryEvent: Equatable, Sendable {
     public enum TemplateSource: String, Sendable { case bundled, installed }
     public enum Failure: String, Sendable {
         case create, open, save, export, renderer, duplicate, close, quit, recovery, catalog, artwork
-        case themeImport, themeExport
+        case themeImport, themeExport, share
         // Explicit identifiers are persistent Crashlytics grouping keys. Never renumber.
         public var code: Int {
             switch self {
             case .create: 1; case .open: 2; case .save: 3; case .export: 4
             case .renderer: 5; case .duplicate: 6; case .close: 7; case .quit: 8
             case .recovery: 9; case .catalog: 10; case .artwork: 11
-            case .themeImport: 12; case .themeExport: 13
+            case .themeImport: 12; case .themeExport: 13; case .share: 14
             }
         }
     }
@@ -35,13 +36,15 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
     public enum Reason: String, Sendable {
         case unknown, storage, webContentTerminated, navigation, startup, presentation
-        case invalidPackage, missingFile, permission, diskFull, busy
+        // Reported under its earlier name, so the analytics series continues.
+        case invalidFile = "invalidPackage"
+        case missingFile, permission, diskFull, busy
         case authoredException, operationRejected, preview, icon, destinationExists, requiresUpdate
         var code: Int {
             switch self {
             case .unknown: 0; case .storage: 1; case .webContentTerminated: 2
             case .navigation: 3; case .startup: 4; case .presentation: 5
-            case .invalidPackage: 6; case .missingFile: 7; case .permission: 8
+            case .invalidFile: 6; case .missingFile: 7; case .permission: 8
             case .diskFull: 9; case .busy: 10
             case .authoredException: 12; case .operationRejected: 13
             // 16 was retired; codes are never reused.
@@ -60,7 +63,10 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
     public static func classify(_ error: Error) -> Self {
         if let diagnostic = error as? any SlopDiagnosticProviding { return diagnostic.diagnostic }
-        if error is any SlopRejection { return .init(.rejection, reason: .operationRejected) }
+        // The core never replaces a file: creating, duplicating or sharing onto one is refused.
+        if case let CoreError.Rejected(code, _, _) = error, code == CoreErrorCode.exists.rawValue {
+            return .init(.rejection, reason: .destinationExists)
+        }
         // Never serialize the original NSError, its description, or userInfo.
         let native = error as NSError
         if native.domain == NSCocoaErrorDomain {

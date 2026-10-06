@@ -1,24 +1,30 @@
 import { input, resolvePromptIO, type PromptIO } from "@crustjs/prompts";
-import { SlopManifestSchema, parseManifest, type SlopCategory } from "@hitslop/schema";
+import { SlopManifestSchema, type SlopCategory } from "@hitslop/schema";
 import { validate } from "@hitslop/schema/validation";
 import { ManifestText } from "@hitslop/schema/constants";
 import { cp, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import metadata from "../package.json";
+import { cliRoot } from "./paths";
+import { projectSlug } from "./build";
 
-export interface InitOptions {
+interface InitOptions {
   brief?: string;
   title?: string;
-  slug?: string;
   category?: SlopCategory[];
   author?: string;
   description?: string;
   yes?: boolean;
 }
 
-const cliRoot = fileURLToPath(new URL("../", import.meta.url));
 const fields = SlopManifestSchema.properties;
+
+/** The starter's `slop.ts` with one top-level field's line replaced. */
+function setField(slop: string, key: string, value: string) {
+  const line = new RegExp(`^  ${key}: .*,$`, "m");
+  if (!line.test(slop)) throw new Error(`The starter's slop.ts has no ${key} line`);
+  return slop.replace(line, () => `  ${key}: ${value},`);
+}
 
 export async function initProject(target: string, options: InitOptions = {}, streams?: PromptIO) {
   const destination = resolve(target);
@@ -26,25 +32,9 @@ export async function initProject(target: string, options: InitOptions = {}, str
     if (error.code !== "ENOENT") throw error;
   });
   if (existing) throw new Error("Choose a new source directory");
-  const template = parseManifest(
-    JSON.parse(await readFile(join(cliRoot, "templates/checklist/manifest.json"), "utf8")),
-  );
+  const slug = projectSlug(destination);
   const io = resolvePromptIO(streams);
   const interactive = !options.yes && !process.env.CI && io.input.isTTY && io.output.isTTY;
-  let slug =
-    basename(destination)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, ManifestText.slug.maxLength)
-      .replace(/-+$/g, "") || "my-slop";
-  if (slug.length === 1) slug += "-slop";
-  slug = options.slug ?? slug;
-  try {
-    validate(fields.slug, slug);
-  } catch {
-    throw new Error("Slug must be 2–64 lowercase letters or digits, separated by single hyphens");
-  }
 
   async function text(
     message: string,
@@ -109,14 +99,11 @@ export async function initProject(target: string, options: InitOptions = {}, str
     ManifestText.description,
     false,
   );
-  const manifest = parseManifest({
-    ...template,
-    slug,
-    title,
-    categories,
-    author: { name: author },
-    description,
-  });
+  let slop = await readFile(join(cliRoot, "templates/checklist/slop.ts"), "utf8");
+  slop = setField(slop, "title", JSON.stringify(title));
+  slop = setField(slop, "description", JSON.stringify(description));
+  slop = setField(slop, "author", `{ name: ${JSON.stringify(author)} }`);
+  slop = setField(slop, "categories", JSON.stringify(categories));
   const project = JSON.parse(
     await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"),
   );
@@ -143,7 +130,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
         force: false,
       });
     await writeFile(join(destination, "package.json"), JSON.stringify(project, null, 2) + "\n");
-    await writeFile(join(destination, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+    await writeFile(join(destination, "slop.ts"), slop);
     await writeFile(
       join(destination, "BRIEF.md"),
       `# Build brief\n\n${brief.trim() || description}\n`,
@@ -151,7 +138,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
     await cp(join(cliRoot, "skills"), join(destination, ".agents/skills"), { recursive: true });
     await writeFile(
       join(destination, "AGENTS.md"),
-      "Read manifest.json, BRIEF.md, .agents/skills/hitslop-authoring/SKILL.md, and .agents/skills/hitslop-design/SKILL.md first. Build the slop described in BRIEF.md. Update manifest.json's title, description, and categories to match what you build; the user can edit them later. Choose a visual direction suited to its purpose; the checklist is a functional starting point whose layout and appearance should be adapted to the task. Use plain CSS, defineTheme colors (only colors a person may change; fonts in CSS), and typed document handles. Install dependencies with bun install, then run bun run check and bun run build.\n\nThe project includes portable copies of its agent guides. Installed agent skills update with the global CLI; these copies do not, so review guide changes when you upgrade the project's @hitslop/cli and @hitslop/document versions. CLI and SDK versions may differ; use the SDK version declared by the CLI's @hitslop/document dependency.\n",
+      "Read slop.ts, BRIEF.md, .agents/skills/hitslop-authoring/SKILL.md, and .agents/skills/hitslop-design/SKILL.md first. Build the slop described in BRIEF.md. Update the title, description, and categories in slop.ts to match what you build; the user can edit them later. Choose a visual direction suited to its purpose; the checklist is a functional starting point whose layout and appearance should be adapted to the task. Use plain CSS, slop.ts theme colors (only colors a person may change; fonts in CSS), and typed document handles. Install dependencies with bun install, then run bun run check and bun run build.\n\nThe project includes portable copies of its agent guides. Installed agent skills update with the global CLI; these copies do not, so review guide changes when you upgrade the project's @hitslop/cli and @hitslop/document versions. CLI and SDK versions may differ; use the SDK version declared by the CLI's @hitslop/document dependency.\n",
     );
   } catch (error) {
     await rm(destination, { recursive: true, force: true });

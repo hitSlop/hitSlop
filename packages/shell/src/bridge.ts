@@ -1,5 +1,5 @@
 import type { PageFailure, PageMethod, PageRequest, PageResult } from "@hitslop/schema/page";
-import { PageErrorCodes } from "@hitslop/schema/constants";
+import { OutcomeCodes } from "@hitslop/schema/constants";
 import { DocumentError } from "@hitslop/document/internal";
 
 /** One native request path. WebKit correlates each reply with its returned promise. */
@@ -18,7 +18,7 @@ export async function call<M extends PageMethod>(request: PageRequest<M>): Promi
   if (
     envelope.ok === false &&
     typeof envelope.error === "string" &&
-    (PageErrorCodes as readonly unknown[]).includes(envelope.code)
+    (OutcomeCodes as readonly unknown[]).includes(envelope.code)
   ) {
     const failure = reply as PageFailure;
     throw new DocumentError(failure.code, failure.error, failure.reason, failure.opIndex);

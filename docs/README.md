@@ -14,7 +14,7 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Understand how an edit, a save and a close move | [Architecture](architecture.md) |
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
 | Every document kind: snapshot, merge, writes, handles and CLI paths | [Document types](reference/document-types.md) |
-| Package layout, limits, security, capture and telemetry | [Runtime reference](reference/runtime.md) |
+| File layout, limits, security, capture and telemetry | [Runtime reference](reference/runtime.md) |
 | Operation shapes, ownership and tool identity | [CLI reference](guides/cli.md) |
 | Standards for the templates in this repository | [Authoring templates](guides/authoring.md) |
 | Work on the repository or add templates | [Development](guides/development.md) |
@@ -23,6 +23,5 @@ published on hitslop.com. The pages here cover how the platform works and how to
 
 Packaged agent guidance lives in [packages/cli/skills](../packages/cli/skills).
 Measurements live in [`evidence/`](evidence/). [`archive/`](../archive/) holds historical
-material for provenance only; it is not a contract. Its slops, the executed plans in
-`archive/docs` (the host-owned reset, scalars, collections) and one spike are tracked;
-the rest stays local.
+material for provenance only; it is not a contract. The executed plans in `archive/docs`
+and the spikes in `archive/spikes` are tracked; the rest stays local.

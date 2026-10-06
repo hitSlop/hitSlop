@@ -1,7 +1,16 @@
 import { Strict } from "./strict";
 import * as T from "typebox";
-import { ThemeTokenSchema, ThemeValuesSchema, AttachmentIDSchema, AttachmentBytesSchema } from "./values";
-import { SocketLimits, ThemeFileLimit } from "./constants";
+import {
+  ThemeTokenSchema,
+  ThemeValuesSchema,
+  ThemeStateSchema,
+  AttachmentIDSchema,
+  AttachmentBytesSchema,
+  AttachmentInfoSchema,
+  OutcomeCodeSchema,
+} from "./values";
+import { CoreErrorCodeSchema, OwnerStateSchema } from "./core";
+import { ExportFormats, SocketLimits, ThemeFileLimit } from "./constants";
 
 const identity = T.String({ minLength: 1, maxLength: 128 });
 const path = T.String({ minLength: 1, maxLength: 4096 });
@@ -27,7 +36,7 @@ export const SocketRequestSchema = T.Union([
   Strict({
     ...mutation,
     method: T.Literal("export"),
-    format: T.Enum(["png", "pdf"]),
+    format: T.Enum(ExportFormats),
     output: path,
   }),
 ]);
@@ -36,21 +45,60 @@ export const SocketReplySchema = Strict({
   epoch: T.Optional(identity),
   /** hello: exact build identity of the owner's document core. */
   coreBuildId: T.Optional(identity),
+  /** The method's result (`SocketResults`), as the core's JSON. */
   state: T.Optional(T.Unknown()),
   /** batch: the IDs of inserted rows (minted or supplied) and the owner sequence. */
   ids: T.Optional(T.Array(T.String())),
   sequence: T.Optional(T.Integer({ minimum: 0 })),
   output: T.Optional(path),
   error: T.Optional(T.String()),
-  /** Every code except "failed" means the request was not applied. Absent or "failed": outcome unknown. */
-  code: T.Optional(T.Enum(["rejected", "session_changed", "closing", "unavailable", "failed"])),
+  /** A failure's outcome (`OutcomeCodes`); absent means unknown. */
+  code: T.Optional(OutcomeCodeSchema),
+  /** A refusal's core error code, and the intent it refused. */
+  reason: T.Optional(CoreErrorCodeSchema),
+  opIndex: T.Optional(T.Integer({ minimum: 0 })),
 });
-/** `state/host.lock`: where a live owner listens. Clients learn the epoch from `hello`. */
+/** What each method's successful reply must carry beside `ok`; a reply without it is an
+ * unknown outcome, never a result with defaults. */
+const theme = T.Object({ state: ThemeStateSchema });
+export const SocketResults = {
+  get: T.Object({ state: Strict({ schema: T.Object({}, { additionalProperties: true }), state: OwnerStateSchema }) }),
+  batch: T.Object({ ids: T.Array(T.String()), sequence: T.Integer({ minimum: 0 }) }),
+  compact: T.Object({}),
+  export: T.Object({ output: path }),
+  "theme.get": theme,
+  "theme.set": theme,
+  "theme.reset": theme,
+  "theme.import": theme,
+  /** The theme file's text, as the core writes it. */
+  "theme.export": T.Object({ state: Strict({ file: T.String() }) }),
+  "attachments.list": T.Object({ state: T.Array(AttachmentInfoSchema) }),
+  "attachments.read": T.Object({ state: Strict({ bytes: AttachmentBytesSchema }) }),
+  "attachments.put": T.Object({ state: AttachmentInfoSchema }),
+} as const satisfies Record<Exclude<SocketMethod, "hello">, T.TObject>;
+/** Methods whose requests carry the owner's epoch: a failure leaves an outcome to report. */
+export const EpochMethods: ReadonlySet<SocketMethod> = new Set(
+  SocketRequestSchema.anyOf.flatMap((member) =>
+    "epoch" in member.properties && "const" in member.properties.method ? [member.properties.method.const as SocketMethod] : [],
+  ),
+);
+/** A live owner's discovery, in the registry (`~/.hitslop/live`): where it listens. Clients
+ * learn the epoch from `hello`. */
 export const SocketDiscoverySchema = Strict({
   socket: path,
   documentPath: path,
 });
 
 export type SocketRequest = T.Static<typeof SocketRequestSchema>;
+export type SocketMethod = SocketRequest["method"];
+/** A request as a client hands it to the helper, which adds the owner's epoch. */
+export type HelperRequest = SocketRequest extends infer R ? (R extends unknown ? Omit<R, "epoch"> : never) : never;
+/** The helper request for `M`, whose method is exactly `M`. */
+export type HelperRequestFor<M extends SocketMethod> = HelperRequest extends infer R
+  ? R extends { method: infer K }
+    ? M extends K
+      ? Omit<R, "method"> & { method: M }
+      : never
+    : never
+  : never;
 export type SocketReply = T.Static<typeof SocketReplySchema>;
-export type SocketDiscovery = T.Static<typeof SocketDiscoverySchema>;

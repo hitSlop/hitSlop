@@ -19,7 +19,7 @@ fn error(e: hitslop_core::Error) -> JsValue {
 
 #[wasm_bindgen]
 pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
-    hitslop_core::validate(schema_json, initial_json).map(|_| ()).map_err(error)
+    hitslop_core::validate(schema_json, initial_json).map_err(error)
 }
 #[wasm_bindgen(js_name = validateThemeDefaults)]
 pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
@@ -28,11 +28,7 @@ pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
 /// Validates a manifest window `shape` (JSON, or undefined for the default).
 #[wasm_bindgen(js_name = validateWindowShape)]
 pub fn validate_window_shape(shape_json: Option<String>, width: f64, height: f64) -> Result<(), JsValue> {
-    let shape: Option<serde_json::Value> = shape_json
-        .map(|json| serde_json::from_str(&json))
-        .transpose()
-        .map_err(|_| error(hitslop_core::Error { code: hitslop_core::Code::InvalidShape, message: "Invalid window silhouette".into(), op_index: None }))?;
-    hitslop_core::shape::silhouette(shape.as_ref(), width, height).map(|_| ()).map_err(error)
+    hitslop_core::shape::validate(shape_json.as_deref(), width, height).map_err(error)
 }
 
 /// Mirrors the native `ApplyResult` record.
@@ -70,12 +66,6 @@ impl WasmDocument {
             inner: Core::create(schema_json, initial_json).map_err(error)?,
         })
     }
-    pub fn open(schema_json: &str, checkpoint: &[u8], updates: Vec<js_sys::Uint8Array>) -> Result<WasmDocument, JsValue> {
-        let updates: Vec<Vec<u8>> = updates.iter().map(js_sys::Uint8Array::to_vec).collect();
-        Ok(Self {
-            inner: Core::open(schema_json, checkpoint, &updates).map_err(error)?,
-        })
-    }
     /// The owner's current state, as a page opens it.
     pub fn state(&self) -> Result<String, JsValue> {
         self.inner.state().map_err(error)
@@ -83,9 +73,6 @@ impl WasmDocument {
     /// The full recomputation that `state` is tested against.
     pub fn snapshot(&self) -> Result<String, JsValue> {
         self.inner.snapshot().map_err(error)
-    }
-    pub fn version(&self) -> String {
-        self.inner.version()
     }
     /// A page's batch, part of the person's undo.
     #[wasm_bindgen(js_name = applyBatch)]
@@ -98,9 +85,6 @@ impl WasmDocument {
     pub fn redo(&mut self) -> Result<ApplyResult, JsValue> {
         self.inner.redo().map(applied).map_err(error)
     }
-    pub fn sequence(&self) -> f64 {
-        self.inner.sequence() as f64
-    }
     #[wasm_bindgen(js_name = editText)]
     pub fn edit_text(&mut self, request_json: &str) -> Result<TextResult, JsValue> {
         let edit = self.inner.edit_text(request_json).map_err(error)?;
@@ -111,12 +95,5 @@ impl WasmDocument {
             selection_end: edit.selection_end as u32,
             publication: edit.publication,
         })
-    }
-    pub fn checkpoint(&self) -> Result<Vec<u8>, JsValue> {
-        self.inner.checkpoint().map_err(error)
-    }
-    #[wasm_bindgen(js_name = exportSince)]
-    pub fn export_since(&self, version: &str) -> Result<Vec<u8>, JsValue> {
-        self.inner.export_since(version).map_err(error)
     }
 }

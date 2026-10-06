@@ -1,11 +1,14 @@
+import { repository } from "./runtime-artifacts";
 import { readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { parseManifest } from "../packages/schema/src/manifest";
+import { join } from "node:path";
+import { exists } from "../packages/cli/src/fs";
+import { projectSlug } from "../packages/cli/src/build";
 
-export const repository = resolve(import.meta.dir, "..");
 export type TemplateSource = { slug: string; source: string; bundled: boolean };
 
-/** Only immediate authored projects are active; archives and build outputs are not scanned. */
+/** Only immediate authored projects (folders with a `slop.ts`) are active; archives and
+ * build outputs are not scanned. Discovery never runs author code: a folder's name is its
+ * slug. */
 export async function discoverTemplates(
   root = join(repository, "examples/slops"),
 ): Promise<TemplateSource[]> {
@@ -26,13 +29,8 @@ export async function discoverTemplates(
     )
       continue;
     const source = join(root, entry.name);
-    const manifest = await readFile(join(source, "manifest.json"), "utf8").catch((error) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (manifest === undefined) continue;
-    const { slug } = parseManifest(JSON.parse(manifest));
-    if (slugs.has(slug)) throw new Error(`Duplicate template slug: ${slug}`);
+    if (!(await exists(join(source, "slop.ts"), true))) continue;
+    const slug = projectSlug(source);
     slugs.add(slug);
     templates.push({ slug, source, bundled: selected.includes(slug) });
   }

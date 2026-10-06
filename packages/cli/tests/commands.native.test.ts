@@ -21,25 +21,73 @@ async function run(args: string[], env: Record<string, string> = {}) {
   return { stdout, stderr, code };
 }
 
-test("native forwarding preserves JSON, paths, flags and exit status", async () => {
+test("document commands send one request and print its reply", async () => {
   if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-command-"));
   try {
     const helper = join(root, "helper");
+    const sent = join(root, "sent.json");
+    // Records the request it reads and answers like an owner that accepted a batch.
     await writeFile(
       helper,
-      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else { console.log(JSON.stringify(process.argv.slice(2))); process.exit(23); }\n`,
+      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else { await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, ids: ["r1"], sequence: 3 })); }\n`,
       { mode: 0o755 },
     );
-    const json = '{ "type": "text.replace", "value": "hello \\"world\\"" }';
-    const args = ["apply", "a file.slop", "--op", json];
-    const result = await run(args, { HITSLOP_NATIVE_CLI: helper });
-    expect(result.code).toBe(23);
-    expect(JSON.parse(result.stdout)).toEqual([...selection, ...args]);
-    const imported = ["import", "a file.slop", "new data.json", "--path", '["rows"]'];
-    const importing = await run(imported, { HITSLOP_NATIVE_CLI: helper });
-    expect(importing.code).toBe(23);
-    expect(JSON.parse(importing.stdout)).toEqual([...selection, ...imported]);
+    const op = '{ "type": "set", "path": ["title"], "value": "hello \\"world\\"" }';
+    const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper });
+    expect(applied.code).toBe(0);
+    expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"], sequence: 3 });
+    const { args, body } = JSON.parse(await Bun.file(sent).text());
+    expect(args).toEqual([...selection, "request"]);
+    // The operation reaches the core as written, inside the batch.
+    expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), ops: `[${op}]` });
+    const data = join(root, "new data.json");
+    await writeFile(data, '{"n": 1.50}');
+    const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper });
+    expect(imported.code).toBe(0);
+    expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).ops).toBe('[{"type":"replace","path":["rows"],"value":{"n": 1.50}}]');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a refused edit says whether it was applied", async () => {
+  if (process.platform !== "darwin") return;
+  const root = await mkdtemp(join(tmpdir(), "hsl-refused-"));
+  try {
+    const helper = join(root, "helper");
+    await writeFile(
+      helper,
+      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else console.log(JSON.stringify({ ok: false, error: "No such row", code: "rejected", reason: "path_not_found" }));\n`,
+      { mode: 0o755 },
+    );
+    const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_NATIVE_CLI: helper });
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain("No such row");
+    expect(refused.stderr).toContain("Not applied.");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// Failure: a reply of {ok: true} printed {ids: [], sequence: 0} for a batch whose result
+// never arrived. Oracle: the exit status and stderr; nothing is printed as the result.
+test("a success missing its method's result is an unknown outcome", async () => {
+  if (process.platform !== "darwin") return;
+  const root = await mkdtemp(join(tmpdir(), "hsl-bare-success-"));
+  try {
+    const helper = join(root, "helper");
+    await writeFile(
+      helper,
+      `#!${process.execPath}\nif (process.argv[2] === "--protocol") console.log(${served}); else console.log(JSON.stringify({ ok: true }));\n`,
+      { mode: 0o755 },
+    );
+    for (const args of [["batch", "a.slop", "--ops", "[]"], ["export", "a.slop", "--format", "pdf", "--output", join(root, "a.pdf")]]) {
+      const reply = await run(args, { HITSLOP_NATIVE_CLI: helper });
+      expect(reply.code).not.toBe(0);
+      expect(reply.stdout).toBe("");
+      expect(reply.stderr).toContain("outcome unknown");
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

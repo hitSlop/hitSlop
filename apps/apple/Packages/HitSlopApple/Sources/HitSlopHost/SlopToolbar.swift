@@ -143,7 +143,7 @@ struct SlopToolbar: View {
   let menuTrackingChanged: (Bool) -> Void
   let drag: (NSEvent) -> Void
   let pinned: Bool, commandsEnabled: Bool
-  /// Whether the theme panel is shown, and whether this document's palette can change.
+  /// Whether the theme panel is shown, and whether showing or hiding it is available.
   let themeShown: Bool, themeEnabled: Bool
   let minimize: () -> Void
   /// Document commands go to the window, which runs them like the menu bar's.
@@ -164,9 +164,10 @@ struct SlopToolbar: View {
         !commandsEnabled).background(SlopToolbarControlRegion())
       icon(themeShown ? "paintpalette.fill" : "paintpalette", themeShown ? "Hide Theme" : "Theme") {
         send(.theme(!themeShown))
-      }.disabled(!themeShown && !themeEnabled).background(SlopToolbarControlRegion())
+      }.disabled(!themeEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { send(.duplicate) }
+        Button("Share a Copy…") { send(.share) }
         Divider()
         Button("Export PNG…") { send(.exportPNG) }
         Button("Export PDF…") { send(.exportPDF) }

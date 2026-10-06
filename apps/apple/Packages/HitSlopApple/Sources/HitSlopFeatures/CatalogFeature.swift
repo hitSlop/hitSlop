@@ -34,17 +34,19 @@ public enum CatalogFilter: Hashable, Sendable {
     }
 }
 
-/// A scanned artwork file. Metadata participates in view reloads and decoded-image caching.
+/// A slop's preview or icon artwork: the file holding it and which one. The file's
+/// modification date and size participate in view reloads and decoded-image caching.
 public struct CatalogArtwork: Hashable, Sendable {
-    public let url: URL
+    public let file: URL
+    public let name: SlopArtwork.Name
     public let modifiedAt: Date?
     public let byteCount: Int?
-    public init(url: URL, modifiedAt: Date?, byteCount: Int?) {
-        self.url = url; self.modifiedAt = modifiedAt; self.byteCount = byteCount
+    public init(file: URL, name: SlopArtwork.Name, modifiedAt: Date?, byteCount: Int?) {
+        self.file = file; self.name = name; self.modifiedAt = modifiedAt; self.byteCount = byteCount
     }
 }
 
-/// Display and creation metadata only; no package reads occur when rendering a view.
+/// Display and creation metadata only; no file reads occur when rendering a view.
 public struct CatalogEntry: Equatable, Identifiable, Sendable {
     public enum Source: Equatable, Sendable { case local(URL), recent(URL) }
     public var id: String
@@ -58,7 +60,7 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     public var authorURL: URL?
     public var icons: [CatalogArtwork] = []
     public var previews: [CatalogArtwork] = []
-    public var packageBytes: Int64 = 0
+    public var fileBytes: Int64 = 0
     public var createdAt: Date?
     public var updatedAt: Date?
     public var initialSize: String?
@@ -155,8 +157,8 @@ public extension DependencyValues {
     public enum Action {
         /// `refreshSources` rescans everything; `activated` skips templates a watcher covers.
         case start, refreshRecents, refreshSources, activated
-        /// A package's artwork changed; only its entry is read again.
-        case packageChanged(URL), recentReceived(URL, CatalogEntry?)
+        /// A file's artwork changed; only its entry is read again.
+        case artworkChanged(URL), recentReceived(URL, CatalogEntry?)
         case queryChanged(String), filterChanged(CatalogFilter), selected(String?)
         case localReceived(CatalogSnapshot), recentsReceived(Int, [CatalogEntry])
         case primaryAction(CatalogEntry), destinationChosen(URL?), creationFinished(URL?), creationFailed(String)
@@ -181,7 +183,7 @@ public extension DependencyValues {
                 return .merge(recents(&state), .run { _ in
                     await client.refreshLocal(force)
                 }.cancellable(id: CancelID.refreshLocal, cancelInFlight: true))
-            case .packageChanged(let url):
+            case .artworkChanged(let url):
                 guard state.isStarted else { return .none }
                 guard state.recents.contains(where: { $0.source == .recent(url) }) else { return recents(&state) }
                 return .run { send in await send(.recentReceived(url, await client.recent(url))) }

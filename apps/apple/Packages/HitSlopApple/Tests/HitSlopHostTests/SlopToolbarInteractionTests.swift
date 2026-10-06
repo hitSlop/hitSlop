@@ -1,5 +1,6 @@
 import AppKit
 import HitSlopDocument
+import HitSlopTestSupport
 import PDFKit
 @testable import HitSlopHost
 import Testing
@@ -36,7 +37,7 @@ import Testing
   #expect(result27)
 }
 
-extension OwnerClientTests {
+extension HostTests {
   // Clicks pass through a transparent document's empty pixels, so the window server reports
   // the window behind it there. The document's shape still decides hover unless another
   // window covers the point.
@@ -44,7 +45,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     do {
@@ -72,7 +73,7 @@ extension OwnerClientTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     var other: NSWindow?
@@ -108,24 +109,25 @@ extension OwnerClientTests {
   // Existing deadline tests do not exercise delivery into a real WKWebView.
   @Test @MainActor func guestControlsFollowNativeToolbar() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture()
+    let root = try contractFixture { stage in
+      // Wrap the probe app with an authored control that follows the native toolbar.
+      let assets = stage.appendingPathComponent("assets")
+      try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
+      try Data("""
+        import probe from "./probe.js";
+        export default { mount(ctx, target) {
+          const style = document.createElement("style");
+          style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
+          document.head.append(style);
+          const button = document.createElement("button");
+          button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
+          target.append(button);
+          return probe.mount(ctx, target);
+        } };
+        """.utf8).write(to: assets.appendingPathComponent("app.js"))
+    }
     defer { try? FileManager.default.removeItem(at: root) }
-    // Wrap the probe app with an authored control that follows the native toolbar.
-    let assets = root.appendingPathComponent("assets")
-    try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-    try Data("""
-      import probe from "./probe.js";
-      export default { mount(ctx, target) {
-        const style = document.createElement("style");
-        style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
-        document.head.append(style);
-        const button = document.createElement("button");
-        button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
-        target.append(button);
-        return probe.mount(ctx, target);
-      } };
-      """.utf8).write(to: assets.appendingPathComponent("app.js"))
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     SlopToolbarPointerSampler.shared.remove(controller)
     await controller.waitForPresentation()
     let view = controller.session.webView
@@ -170,10 +172,7 @@ extension OwnerClientTests {
       let pid = try #require(view.value(forKey: "_webProcessIdentifier") as? Int32)
       try #require(pid > 0)
       try #require(Darwin.kill(pid, SIGKILL) == 0)
-      let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-      while !controller.session.rendererDead && ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(25))
-      }
+      await eventually(timeout: .seconds(5)) { controller.session.rendererDead }
       try #require(controller.session.rendererDead)
       try await controller.session.reopenSavedDocument()
       // The replacement page reloads like any recovery; interact once it is presented.

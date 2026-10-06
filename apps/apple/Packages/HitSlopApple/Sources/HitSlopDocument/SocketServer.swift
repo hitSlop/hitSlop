@@ -17,17 +17,17 @@ final class SocketServer: @unchecked Sendable {
     self.handle = handle
     let directory = "/tmp/hitslop-\(getuid())"
     if mkdir(directory, 0o700) != 0 && errno != EEXIST {
-      throw failure("Cannot create socket directory")
+      throw SlopFailure("Cannot create socket directory")
     }
     var info = stat()
     guard lstat(directory, &info) == 0, info.st_uid == getuid(), info.st_mode & S_IFMT == S_IFDIR
     else {
-      throw failure("Unsafe socket directory")
+      throw SlopFailure("Unsafe socket directory")
     }
-    guard chmod(directory, 0o700) == 0 else { throw failure("Cannot protect socket directory") }
+    guard chmod(directory, 0o700) == 0 else { throw SlopFailure("Cannot protect socket directory") }
     path = directory + "/" + UUID().uuidString + ".sock"
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard fd >= 0 else { throw failure("Cannot create socket") }
+    guard fd >= 0 else { throw SlopFailure("Cannot create socket") }
     _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
@@ -43,7 +43,7 @@ final class SocketServer: @unchecked Sendable {
     guard bound == 0, listen(fd, 16) == 0, fcntl(fd, F_SETFL, O_NONBLOCK) == 0 else {
       Darwin.close(fd)
       unlink(path)
-      throw failure("Cannot listen on socket")
+      throw SlopFailure("Cannot listen on socket")
     }
     chmod(path, 0o600)
     source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
@@ -99,28 +99,27 @@ final class SocketServer: @unchecked Sendable {
     guard !stopped, clients[fd]?.token == token else { return }
     let deadline = NativeCommandDeadline()
     guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-      bytes.count <= Limits.socketRequest || object["method"] as? String == "attachments.put",
+      bytes.count <= Limits.socketRequest || object["method"] as? String == SocketRequest.Method.attachmentsPut.rawValue,
       Envelope.valid(.socketRequest, bytes),
       let request = try? SocketRequest(json: object)
     else {
-      return respond(SocketReply(ok: false, error: "Invalid socket request", code: .rejected).encoded(), fd: fd, token: token)
+      return respond(RequestOutcome.socket(OwnerError.rejected("Invalid socket request")).encoded(), fd: fd, token: token)
     }
     let handle = handle
     Task { [weak self] in
       // A queued request may expire while the owner is busy; never start it late.
       let reply = (try? deadline.check()) == nil
-        ? SocketReply(ok: false, error: "Command timed out before dispatch", code: .unavailable).encoded()
+        ? RequestOutcome.socket(OwnerError.closing).encoded()
         : await handle(request, deadline)
       guard let server = self else { return }
       server.queue.async { server.respond(reply, fd: fd, token: token) }
     }
   }
 
-  /// The client validates the reply; one larger than a socket message cannot be sent.
+  /// The client validates the reply, which is as large as the document it carries.
   private func respond(_ reply: Data, fd: Int32, token: UUID) {
     guard !stopped, let client = clients[fd], client.token == token else { return }
-    client.send(reply.count <= Limits.socketAttachment ? reply
-      : Data(#"{"ok":false,"error":"Oversized response. Outcome unknown; run slop get before another edit."}"#.utf8))
+    client.send(reply)
   }
 }
 
@@ -161,14 +160,14 @@ private final class Connection: @unchecked Sendable {
 
   func start() {
     reader.resume()
-    expire(after: 10)
+    expire(after: Timeouts.requestRead)
   }
 
-  private func expire(after seconds: Int) {
+  private func expire(after timeout: Duration) {
     timer?.cancel()
-    let timeout = DispatchWorkItem { [weak self] in self?.close() }
-    timer = timeout
-    queue.asyncAfter(deadline: .now() + .seconds(seconds), execute: timeout)
+    let work = DispatchWorkItem { [weak self] in self?.close() }
+    timer = work
+    queue.asyncAfter(deadline: .now() + timeout.dispatch, execute: work)
   }
 
   private func readRequest() {
@@ -200,7 +199,7 @@ private final class Connection: @unchecked Sendable {
           return
         }
         dispatched = true
-        expire(after: 30)
+        expire(after: Timeouts.connection)
         request(Data(input.prefix(upTo: end)))
         input.removeAll()
         return

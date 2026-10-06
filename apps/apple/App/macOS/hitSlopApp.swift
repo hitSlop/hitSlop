@@ -38,7 +38,7 @@ private struct UpdateSettingsView: View {
 
 @MainActor final class HitSlopAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     private lazy var coordinator: SlopApplicationCoordinator = {
-        let coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
+        let coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot, telemetry: HitSlopFirebase.telemetry)
         coordinator.checkForUpdates = { [updaterController] in updaterController.checkForUpdates(nil) }
         return coordinator
     }()
@@ -55,13 +55,16 @@ private struct UpdateSettingsView: View {
         NSApp.setActivationPolicy(.regular)
         installMenus()
         HitSlopFirebase.telemetry.send(.launched)
+        // A crashed session's discovery file would name a dead owner; clear it off the main
+        // thread.
+        Task.detached(priority: .utility) { SlopRegistry.sweep() }
         let urls = CommandLine.arguments.dropFirst().filter { $0.hasSuffix(".slop") }.map(URL.init(fileURLWithPath:))
         if urls.isEmpty {
             showCatalog()
             // A launch that opens documents warms WebKit itself.
         } else { urls.forEach(openDocument) }
     }
-    func application(_ application: NSApplication, open urls: [URL]) { urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "slop" }.forEach(openDocument) }
+    func application(_ application: NSApplication, open urls: [URL]) { urls.forEach(openDocument) }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         coordinator.requestQuit()
@@ -83,7 +86,7 @@ private struct UpdateSettingsView: View {
         for controller in open {
             let item = NSMenuItem(title: controller.documentTitle, action: #selector(focusDocumentFromDock(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = controller.packageURL
+            item.representedObject = controller.url
             item.image = controller.dockMenuImage
             menu.addItem(item)
         }
@@ -107,13 +110,33 @@ private struct UpdateSettingsView: View {
         panel.startOnDesktop()
         guard panel.runModal() == .OK else { return }; panel.urls.forEach(openDocument)
     }
-    @objc private func duplicateActive() { coordinator.sendToActiveDocument(.duplicate) }
-    @objc private func exportPNG() { coordinator.sendToActiveDocument(.exportPNG) }
-    @objc private func exportPDF() { coordinator.sendToActiveDocument(.exportPDF) }
-    @objc private func togglePin() { coordinator.sendToActiveDocument(.pin(!coordinator.isActiveDocumentPinned)) }
-    @objc private func toggleTheme() { coordinator.sendToActiveDocument(.theme(!coordinator.isActiveDocumentThemeShown)) }
-    @objc private func importTheme() { coordinator.sendToActiveDocument(.importTheme) }
-    @objc private func exportTheme() { coordinator.sendToActiveDocument(.exportTheme) }
+    @objc private func duplicateActive() { send(#selector(duplicateActive)) }
+    @objc private func shareActive() { send(#selector(shareActive)) }
+    @objc private func exportPNG() { send(#selector(exportPNG)) }
+    @objc private func exportPDF() { send(#selector(exportPDF)) }
+    @objc private func togglePin() { send(#selector(togglePin)) }
+    @objc private func toggleTheme() { send(#selector(toggleTheme)) }
+    @objc private func importTheme() { send(#selector(importTheme)) }
+    @objc private func exportTheme() { send(#selector(exportTheme)) }
+    /// The document command a menu action sends to the active document; a toggle inverts its
+    /// window's state.
+    private func command(_ action: Selector?) -> SlopDocumentCommand? {
+        let controller = coordinator.activeController
+        switch action {
+        case #selector(duplicateActive): return .duplicate
+        case #selector(shareActive): return .share
+        case #selector(exportPNG): return .exportPNG
+        case #selector(exportPDF): return .exportPDF
+        case #selector(togglePin): return .pin(!(controller?.isPinned ?? false))
+        case #selector(toggleTheme): return .theme(!(controller?.isThemeShown ?? false))
+        case #selector(importTheme): return .importTheme
+        case #selector(exportTheme): return .exportTheme
+        default: return nil
+        }
+    }
+    private func send(_ action: Selector) {
+        if let command = command(action) { coordinator.sendToActiveDocument(command) }
+    }
     @objc private func showSettings() {
         if settingsWindow == nil {
             let content = TabView {
@@ -165,6 +188,7 @@ private struct UpdateSettingsView: View {
         file.addItem(recentItem)
         file.addItem(.separator())
         item(file, "Duplicate…", #selector(duplicateActive), "d")
+        item(file, "Share a Copy…", #selector(shareActive), "")
         let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: ""), exportMenu = NSMenu(title: "Export"); export.submenu = exportMenu; file.addItem(export)
         item(exportMenu, "Export PNG…", #selector(exportPNG), ""); item(exportMenu, "Export PDF…", #selector(exportPDF), "")
         item(file, "Import Theme…", #selector(importTheme), ""); item(file, "Export Theme…", #selector(exportTheme), "")
@@ -199,9 +223,7 @@ private struct UpdateSettingsView: View {
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === recentMenu else { return }
         menu.removeAllItems()
-        let urls = NSDocumentController.shared.recentDocumentURLs.filter {
-            $0.pathExtension.lowercased() == "slop" && !SlopTemplateLocation.isManagedTemplatePackage($0)
-        }
+        let urls = NSDocumentController.shared.recentDocumentURLs
         if urls.isEmpty {
             let empty = menu.addItem(withTitle: "No Recent Documents", action: nil, keyEquivalent: "")
             empty.isEnabled = false
@@ -218,14 +240,10 @@ private struct UpdateSettingsView: View {
     }
     @discardableResult private func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) -> NSMenuItem { let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self; return value }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if [#selector(duplicateActive), #selector(exportPNG), #selector(exportPDF), #selector(togglePin)].contains(menuItem.action) { if menuItem.action == #selector(togglePin) { menuItem.state = coordinator.isActiveDocumentPinned ? .on : .off }; return coordinator.canPerformDocumentCommands }
-        if menuItem.action == #selector(toggleTheme) {
-            menuItem.state = coordinator.isActiveDocumentThemeShown ? .on : .off
-            return coordinator.canPerformDocumentCommands && (coordinator.isActiveDocumentThemeShown || coordinator.canEditActiveDocumentTheme)
-        }
-        if [#selector(importTheme), #selector(exportTheme)].contains(menuItem.action) {
-            return coordinator.canPerformDocumentCommands && (menuItem.action == #selector(exportTheme) || coordinator.canEditActiveDocumentTheme)
-        }
-        return true
+        guard let command = command(menuItem.action) else { return true }
+        let controller = coordinator.activeController
+        if menuItem.action == #selector(togglePin) { menuItem.state = controller?.isPinned == true ? .on : .off }
+        if menuItem.action == #selector(toggleTheme) { menuItem.state = controller?.isThemeShown == true ? .on : .off }
+        return controller?.isAvailable(command) ?? false
     }
 }

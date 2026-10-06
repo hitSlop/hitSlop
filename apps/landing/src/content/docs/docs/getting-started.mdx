@@ -28,16 +28,16 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `manifest.json` first. Its slug comes from the directory name unless you supplied `--slug`. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
+Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. The directory's name is the app's slug. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
-- `schema.ts` defines document fields; `initial.ts` provides creation-only values.
+- `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
 - `App.svelte` renders and edits the document through typed handles.
-- `theme.ts` declares public visual tokens.
+- `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; the builder includes it automatically.
 
-The builder generates the entry for `App.svelte` and `styles.css` through `defineSlop`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
+The builder generates the entry for `App.svelte` and `styles.css`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
 
-The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; metadata changes reset disposable state. Test native persistence in a writable document copy.
+The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 
@@ -48,8 +48,22 @@ import { defineDocument, s } from "@hitslop/document";
 export default defineDocument({ title: s.text(), count: s.counter() });
 ```
 
-```ts title="initial.ts"
-export default { title: "Tiny Counter", count: 0 };
+Then describe the counter in `slop.ts`. Its `initial` values must fit the new schema, and its `theme` declares the colors `styles.css` uses below:
+
+```ts title="slop.ts"
+import { defineSlop } from "@hitslop/document";
+import schema from "./schema";
+
+export default defineSlop({
+  title: "Tiny Counter",
+  description: "Count the small things worth counting.",
+  author: { name: "Your Name" },
+  categories: ["utilities"],
+  presentation: { width: 360, height: 360 },
+  theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
+  schema,
+  initial: { title: "Tiny Counter", count: 0 },
+});
 ```
 
 Replace `App.svelte` with:

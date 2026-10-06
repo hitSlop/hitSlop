@@ -1,13 +1,15 @@
-import { cp, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { builtTemplates, repository, type TemplateInventory } from "./templates";
+import { publishFolder, repository } from "./runtime-artifacts";
+import { chmod, copyFile, readdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { exists } from "../packages/cli/src/fs";
+import { builtTemplates, type TemplateInventory } from "./templates";
+import { validateTemplate } from "./template-cache";
 
-async function permissions(path: string, mode: string) {
-  const child = Bun.spawn(["/bin/chmod", "-R", mode, path], {
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if (await child.exited) throw new Error(`Cannot set template permissions: ${path}`);
+/** Starter templates ship read-only: the folder and each template file in it. */
+async function setWritable(folder: string, writable: boolean) {
+  if (writable) await chmod(folder, 0o755);
+  for (const name of await readdir(folder)) await chmod(join(folder, name), writable ? 0o644 : 0o444);
+  if (!writable) await chmod(folder, 0o555);
 }
 
 export async function embedTemplates(
@@ -15,45 +17,18 @@ export async function embedTemplates(
   destination: string,
   inventory: TemplateInventory,
 ) {
-  await mkdir(dirname(destination), { recursive: true });
-  const stage = await mkdtemp(join(dirname(destination), ".starter-"));
-  try {
+  // The previous starters are read-only; replacing them needs write access first.
+  if (await exists(destination)) await setWritable(destination, true);
+  await publishFolder(destination, async (stage) => {
     for (const { slug, bundled } of inventory.templates) {
       if (!bundled) continue;
       const template = join(source, slug + ".slop");
-      const manifest = JSON.parse(await readFile(join(template, "manifest.json"), "utf8"));
-      if (manifest.slug !== slug)
-        throw new Error(`Invalid built template: ${slug}`);
-      for (const name of ["state", "stores"])
-        if (
-          await stat(join(template, name)).then(
-            () => true,
-            (error) => {
-              if (error.code === "ENOENT") return false;
-              throw error;
-            },
-          )
-        )
-          throw new Error(`Mutable template: ${slug}`);
-      await cp(template, join(stage, slug + ".slop"), { recursive: true });
+      // A template file the engine opens, for this slug: never a document.
+      await validateTemplate(template, slug);
+      await copyFile(template, join(stage, slug + ".slop"));
     }
-    if (
-      await stat(destination).then(
-        () => true,
-        (error) => {
-          if (error.code === "ENOENT") return false;
-          throw error;
-        },
-      )
-    ) {
-      await permissions(destination, "u+w");
-      await rm(destination, { recursive: true });
-    }
-    await rename(stage, destination);
-    await permissions(destination, "a-w");
-  } finally {
-    await rm(stage, { recursive: true, force: true });
-  }
+  });
+  await setWritable(destination, false);
 }
 
 if (import.meta.main) {

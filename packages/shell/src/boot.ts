@@ -1,6 +1,6 @@
 // Host-owned page lifecycle. The page shell, SDK, app and host are built from one tree;
 // the ctx handed to SlopApp.mount is the only interface apps use.
-import type { SlopApp, SlopContext } from "@hitslop/document/abi";
+import type { SlopContext } from "@hitslop/document/abi";
 import { ownerAttachments } from "./attachments";
 import { call } from "./bridge";
 import { createCaptureController } from "./capture";
@@ -11,8 +11,10 @@ import type { ObjectNode } from "@hitslop/document";
 import { fromDescriptor } from "@hitslop/document/internal";
 import { applyTheme } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
+import { checkedApp } from "./app-module";
 import { isDocumentError } from "@hitslop/document";
 import type { PageResult } from "@hitslop/schema/page";
+import type { AppRow } from "@hitslop/schema";
 import type {} from "./page-handle";
 import { ErrorTextLimit } from "@hitslop/schema/constants";
 
@@ -28,25 +30,24 @@ const fetchJSON = async (path: string, missing: string) => {
   return response.json();
 };
 
-/** The browser preview's config: a disposable document, with the manifest's stage. */
-async function previewConfig(): Promise<PageResult<"config">> {
-  const manifest = await fetchJSON("/manifest.json", "Missing manifest");
+/** The browser preview's document: the build's `app.json`, the row a `.slop` stores, in
+ * disposable memory storage. */
+async function previewApp(): Promise<{ config: PageResult<"config">; initial: unknown }> {
+  const app: AppRow = await fetchJSON("/app.json", "Missing app.json");
+  const { runtimeABI, theme, manifest, descriptor, initial } = app;
   return {
-    readOnly: false,
-    runtimeABI: manifest.runtimeABI,
-    theme: await fetchJSON("/assets/theme.json", "Missing theme defaults"),
-    presentation: manifest.presentation,
+    config: { readOnly: false, runtimeABI, theme, presentation: manifest.presentation, descriptor: descriptor as object },
+    initial,
   };
 }
 
-/** Open the package's document with host or disposable memory storage. The native owner
- * holds the saved state, so only the preview reads the initial values. */
+/** Open the document with host or disposable memory storage. The native owner holds the
+ * saved state and sends the descriptor with the config; only the preview reads the
+ * initial values. */
 async function openDocument(native: boolean) {
-  const [config, descriptor, initial] = await Promise.all([
-    native ? call({ method: "config" }) : previewConfig(),
-    fetchJSON("/state.schema.json", "Missing document descriptor"),
-    native ? undefined : fetchJSON("/initial.json", "Missing initial values"),
-  ]);
+  const { config, initial } = native ? { config: await call({ method: "config" }), initial: undefined } : await previewApp();
+  // The core checked the descriptor when the file opened, or the build evaluated it.
+  const descriptor = config.descriptor as ObjectNode;
   applyTheme(config.theme);
   const host = native ? nativeTransport(config.readOnly) : undefined;
   const transport = host ?? (await browserTransport(descriptor, initial));
@@ -82,9 +83,6 @@ function createContext(
 function createContextV1(doc: Document<ObjectNode>, options: Parameters<typeof createContext>[2]): SlopContext {
   const { attachments, capture } = options;
   const document = Object.freeze({
-    get key() {
-      return doc.key;
-    },
     get current() {
       return doc.current;
     },
@@ -142,16 +140,14 @@ export async function boot() {
     throw error;
   };
   const app = import(new URL("/assets/app.js", location.href).href).then(
-    (module) => module.default as SlopApp,
+    (module) => module.default as unknown,
     authored,
   );
   app.catch(() => {});
   const opened = openDocument(native);
   const { config, doc, attachments } = await opened;
   installPresentationStage(presentationStage(config.presentation));
-  const view = await app;
-  if (!view || typeof view.mount !== "function")
-    throw new Error("assets/app.js must export default { mount(ctx, target) }");
+  const view = checkedApp(await app, config.descriptor);
   const capture = createCaptureController();
   const reportError = (error: unknown) => {
     globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));

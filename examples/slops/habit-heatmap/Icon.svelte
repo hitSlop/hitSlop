@@ -1,1 +1,0 @@
-<div class="habit-icon" aria-label="Habit Heatmap"><div class="habit-icon-paper"><span>DAILY PRACTICE</span><div class="habit-icon-grid">{#each Array.from({ length: 35 }) as _, i}<i class:filled={(i * 7 + 3) % 11 < 6}></i>{/each}</div><strong>Keep the thread</strong></div></div>

@@ -9,14 +9,13 @@ let package = Package(
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
-    .library(name: "HitSlopFeatures", targets: ["HitSlopFeatures"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
     .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
   dependencies: [
     .package(url: "https://github.com/pointfreeco/swift-composable-architecture", exact: "1.26.2"),
     .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.18.0"),
-    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
+    .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
   ],
   targets: [
     .binaryTarget(name: "HitSlopCoreFFI", path: "Generated/HitSlopCoreFFI.xcframework"),
@@ -25,7 +24,7 @@ let package = Package(
     .target(name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding",
       swiftSettings: [.swiftLanguageMode(.v5)], linkerSettings: [.linkedLibrary("sqlite3")]),
     .target(name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"], resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit")]),
-    .target(name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopDocument"], path: "Tests/HitSlopTestSupport"),
+    .target(name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"], path: "Tests/HitSlopTestSupport"),
     .testTarget(name: "HitSlopDocumentTests", dependencies: ["HitSlopDocument", "HitSlopCoreBinding", "HitSlopTestSupport"]),
     .target(
       name: "HitSlopCore",
@@ -57,7 +56,7 @@ let package = Package(
     .target(
       name: "HitSlopCatalog",
       dependencies: [
-        "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopFirebase",
+        "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures",
         .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
       ],
       resources: [.process("Resources")],
@@ -73,11 +72,11 @@ let package = Package(
       ],
       linkerSettings: [.linkedFramework("AppKit")]
     ),
-    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore", "HitSlopDocument"]),
+    .testTarget(name: "HitSlopCoreTests", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(name: "HitSlopHostTests", dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(
       name: "HitSlopCatalogTests",
-      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures"]
+      dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopTestSupport"]
     ),
   ],
   swiftLanguageModes: [.v6]

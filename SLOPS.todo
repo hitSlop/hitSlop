@@ -1,10 +1,10 @@
 # hitSlop template roadmap
 
-Single-purpose digital objects worth building as `.slop` packages. The list is
+Single-purpose digital objects worth building as `.slop` templates. The list is
 ordered by product value, breadth of everyday use, and how well each template
 helps establish the hitSlop design language.
 
-- `[x]` implemented, reviewed, and ready in `examples/slops/`
+- `[x]` implemented and reviewed (most wait in `examples/archive/` until they move to `slop.ts`)
 - `[ ]` planned or implemented but still awaiting the current quality review
 - **Paper** favors editorial hierarchy, direct editing, and clean static export.
 - **Instrument** favors compact controls, inset readouts, and durable state.

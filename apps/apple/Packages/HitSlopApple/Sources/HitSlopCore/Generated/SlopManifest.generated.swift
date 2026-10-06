@@ -8,36 +8,27 @@ import Foundation
 
 // MARK: - SlopManifest
 public struct SlopManifest: Codable, Sendable {
-    public let schema: Schema?
     public let author: SlopAuthor
     public let categories: [SlopCategory]
     public let description: String
-    public let packageFormat: Int
     public let presentation: SlopPresentation
-    public let runtimeABI: Int
     public let slug: String
     public let title: String
 
     public enum CodingKeys: String, CodingKey {
-        case schema = "$schema"
         case author = "author"
         case categories = "categories"
         case description = "description"
-        case packageFormat = "packageFormat"
         case presentation = "presentation"
-        case runtimeABI = "runtimeABI"
         case slug = "slug"
         case title = "title"
     }
 
-    public init(schema: Schema?, author: SlopAuthor, categories: [SlopCategory], description: String, packageFormat: Int, presentation: SlopPresentation, runtimeABI: Int, slug: String, title: String) {
-        self.schema = schema
+    public init(author: SlopAuthor, categories: [SlopCategory], description: String, presentation: SlopPresentation, slug: String, title: String) {
         self.author = author
         self.categories = categories
         self.description = description
-        self.packageFormat = packageFormat
         self.presentation = presentation
-        self.runtimeABI = runtimeABI
         self.slug = slug
         self.title = title
     }
@@ -62,24 +53,18 @@ public extension SlopManifest {
     }
 
     func with(
-        schema: Schema?? = nil,
         author: SlopAuthor? = nil,
         categories: [SlopCategory]? = nil,
         description: String? = nil,
-        packageFormat: Int? = nil,
         presentation: SlopPresentation? = nil,
-        runtimeABI: Int? = nil,
         slug: String? = nil,
         title: String? = nil
     ) -> SlopManifest {
         return SlopManifest(
-            schema: schema ?? self.schema,
             author: author ?? self.author,
             categories: categories ?? self.categories,
             description: description ?? self.description,
-            packageFormat: packageFormat ?? self.packageFormat,
             presentation: presentation ?? self.presentation,
-            runtimeABI: runtimeABI ?? self.runtimeABI,
             slug: slug ?? self.slug,
             title: title ?? self.title
         )
@@ -334,10 +319,6 @@ public extension SlopPathShape {
 public enum FillRule: String, Codable, Sendable {
     case evenodd = "evenodd"
     case nonzero = "nonzero"
-}
-
-public enum Schema: String, Codable, Sendable {
-    case httpsAPIHitslopCOMSchemasManifestSchemaJSON = "https://api.hitslop.com/schemas/manifest.schema.json"
 }
 
 // MARK: - Helper functions for creating encoders and decoders

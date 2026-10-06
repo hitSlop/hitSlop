@@ -17,7 +17,7 @@ export const SlopCategories = [
   "music",
   "other",
 ] as const;
-/** Manifest text fields: lengths in UTF-16 units, and patterns they must match. */
+/** Manifest text fields: lengths in code points, and patterns they must match. */
 export const ManifestText = {
   slug: { minLength: 2, maxLength: 64, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
   title: { minLength: 1, maxLength: 80 },
@@ -32,27 +32,33 @@ export const DefaultWindowRadius = "22px";
 export const AttachmentLimits = { file: 10 * 1024 * 1024, total: 100 * 1024 * 1024, count: 256, name: 255 } as const;
 export const base64Length = (bytes: number) => 4 * Math.ceil(bytes / 3);
 /** An attachment's ID: the SHA-256 of its bytes, in lowercase hex. */
-export const AttachmentIdPattern = "^[a-f0-9]{64}$";
-/** A theme is a palette: token names, their longest length, and colors as lowercase
- * `#rrggbb` or `#rrggbbaa` with one spelling per color (opaque colors omit `ff`). The
- * host reserves the `window-` prefix for window geometry. */
-export const ThemeTokenRule = {
-  name: "^[a-zA-Z][a-zA-Z0-9-]{0,63}$",
-  nameLength: 64,
-  value: "^#[0-9a-f]{6}(?:[0-9a-e][0-9a-f]|f[0-9a-e])?$",
-  reservedPrefix: "window-",
-  tokens: 256,
-} as const;
-/** A package's immutable entries (everything but `state/`): one file's bytes, the entry
- * count and total bytes. Images a package carries or a capture emits are at most `imageSide`
- * pixels on a side and `imagePixels` in all. The authoring build and native open both check them. */
-export const PackageLimits = {
+export const AttachmentIdRule = { length: 64, characters: "0123456789abcdef" } as const;
+export const AttachmentIdPattern = `^[${AttachmentIdRule.characters}]{${AttachmentIdRule.length}}$`;
+/** A theme is a palette of at most `tokens` colors: token names up to `nameLength`
+ * characters, and colors as lowercase `#rrggbb` or `#rrggbbaa` with one spelling per color
+ * (opaque colors omit `ff`). The host reserves the `window-` prefix for window geometry.
+ * The core owns these rules (`crates/hitslop-core/src/theme.rs`). */
+export const ThemeTokenRule = { nameLength: 64, reservedPrefix: "window-", tokens: 256 } as const;
+/** An app's assets: one asset's bytes, the asset count and their total bytes. Images an
+ * app carries or a capture emits are at most `imageSide` pixels on a side and
+ * `imagePixels` in all. The core checks them when it packs and when it opens a file. */
+export const AssetLimits = {
   file: 25 * 1024 * 1024,
-  entries: 256,
+  count: 256,
   bytes: 50 * 1024 * 1024,
   imageSide: 16_384,
   imagePixels: 24_000_000,
 } as const;
+/** An app's stored JSON in UTF-8 bytes: its manifest, and its descriptor or initial
+ * values; and the longest asset path. The core checks them when it packs and opens. */
+export const AppLimits = { manifest: 64 * 1024, text: 4 * 1024 * 1024, assetPath: 240 } as const;
+/** Window shapes: the longest path data and radius list, and the largest view box side.
+ * The core owns the shape grammar (`crates/hitslop-core/src/shape.rs`). */
+export const ShapeLimits = { path: 4096, radius: 256, viewBox: 16_384 } as const;
+/** What `slop export` writes. */
+export const ExportFormats = ["png", "pdf"] as const;
+/** A batch: the most intents it carries, and the longest path an intent names. */
+export const BatchLimits = { intents: 1000, pathSegments: 64 } as const;
 /** A document's saved checkpoint plus updates: bytes, and update rows. */
 export const StorageLimits = { bytes: 32 * 1024 * 1024, rows: 4096 } as const;
 /** Effective theme JSON, in UTF-8 bytes. */
@@ -85,7 +91,7 @@ export const CoreErrorCodes = [
   "type_mismatch", "out_of_range", "path_not_found", "invalid_key", "exists", "duplicate_id",
   "invalid_request", "invalid_id", "invalid_path", "invalid_schema", "too_large", "stale_base",
   "invalid_version", "invalid_bytes", "missing_dependencies", "engine_error", "invalid_shape",
-  "requires_update",
+  "requires_update", "is_template",
 ] as const;
 /** Persisted package syntax (manifest, resources and descriptor encoding). */
 export const PackageFormat = 1;
@@ -95,7 +101,10 @@ export const RuntimeABI = 1;
  * oldest one a helper still serves. App updates keep serving every version in the range,
  * so a CLI keeps working until the minimum passes it. */
 export const HelperProtocol = { version: 1, minimum: 1 } as const;
-export const PageErrorCodes = [
+/** What a failed page or socket request means. `rejected`, `owner_replaced`, `closing` and
+ * `owner_invalidated` were not applied; `save_failed` was applied but is not yet durable;
+ * `unknown_outcome` needs a read before relying on it. Codes may grow. */
+export const OutcomeCodes = [
   "rejected",
   "owner_replaced",
   "closing",

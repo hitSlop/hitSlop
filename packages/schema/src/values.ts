@@ -1,5 +1,5 @@
 import * as T from "typebox";
-import { AttachmentIdPattern, AttachmentLimits, ManifestText, ThemeTokenRule, base64Length } from "./constants";
+import { AttachmentIdPattern, AttachmentLimits, ManifestText, OutcomeCodes, ThemeTokenRule, base64Length } from "./constants";
 import { Strict } from "./strict";
 export const AttachmentIDSchema = T.String({
   pattern: AttachmentIdPattern,
@@ -7,9 +7,11 @@ export const AttachmentIDSchema = T.String({
   maxLength: 64,
 });
 export const AttachmentBytesSchema = T.String({ maxLength: base64Length(AttachmentLimits.file) });
-export const ThemeTokenSchema = T.String({ pattern: ThemeTokenRule.name });
+// The core owns the palette rules (`crates/hitslop-core/src/theme.rs`); the schema bounds
+// a palette's shape.
+export const ThemeTokenSchema = T.String({ minLength: 1, maxLength: ThemeTokenRule.nameLength });
 /** A palette: declared token names and their colors. */
-export const ThemeValuesSchema = T.Record(ThemeTokenSchema, T.String({ pattern: ThemeTokenRule.value }), {
+export const ThemeValuesSchema = T.Record(ThemeTokenSchema, T.String({ maxLength: 9 }), {
   additionalProperties: false,
   maxProperties: ThemeTokenRule.tokens,
 });
@@ -18,7 +20,10 @@ export const ThemeFileSchema = Strict({
   template: T.String({ ...ManifestText.slug }),
   values: ThemeValuesSchema,
 });
-export type ThemeFile = T.Static<typeof ThemeFileSchema>;
+export const OutcomeCodeSchema = T.Enum(OutcomeCodes, { title: "OutcomeCode" });
+export type OutcomeCode = T.Static<typeof OutcomeCodeSchema>;
+/** A palette as the core reports it: the template's colors, the overrides and the result. */
+export const ThemeStateSchema = Strict({ defaults: ThemeValuesSchema, overrides: ThemeValuesSchema, effective: ThemeValuesSchema });
 export const AttachmentInfoSchema = Strict({
   id: AttachmentIDSchema,
   byteLength: T.Integer({ minimum: 0 }),

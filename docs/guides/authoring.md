@@ -23,20 +23,20 @@ adding a template and choosing which templates ship.
 
 ## Rules for authored code
 
-- Read `manifest.json` first. One slop does one understandable job.
+- Read `slop.ts` first. One slop does one understandable job.
 - Apps never import the runtime, call the host bridge, write SQLite or keep a second JSON
   copy of the document.
 - Save only what is worth keeping. Selection, hover, drag positions and timers stay in
   Svelte `$state`; files are attachments, never base64 in fields.
-- Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `initial.ts`,
-  which seeds new documents only. Changing the schema makes a new document type.
+- Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `slop.ts`'s
+  `initial`, which seeds new documents only. Changing the schema makes a new document type.
 - Don't silence writes with `.catch(() => {})`: the host reports a refused write. Catch
   only to show the template's own message. Order rows with `move`, not a position field.
 - Capture views and export hooks never change saved state to prepare a view.
 
 ## Design standards
 
-Quick Checklist and Small Expenses are current examples, not a limit or a default visual
+The examples are references, not a limit or a default visual
 style. Start each template from its own purpose. Paper, Instrument and Skin are optional
 directions. `_vibe/` is inspiration only; never ship its images. Record product context in
 [PRODUCT.md](../../examples/slops/PRODUCT.md) and each object's actual palette, typography,

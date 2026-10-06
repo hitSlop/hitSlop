@@ -7,21 +7,20 @@ Give the app one clear visual identity: paper for an invoice or note, an instrum
 
 ## Declare the theme palette
 
-Root `theme.ts` declares the colors a person may change. Every value is a lowercase `#rrggbb` color, or `#rrggbbaa` when it is translucent (an opaque color leaves out `ff`):
+`slop.ts`'s `theme` declares the colors a person may change. Every value is a lowercase `#rrggbb` color, or `#rrggbbaa` when it is translucent (an opaque color leaves out `ff`):
 
-```ts title="theme.ts"
-import { defineTheme } from "@hitslop/document";
-export default defineTheme({
-  surface: "#f7f4eb",
-  panel: "#e3e9df",
-  ink: "#182126",
-  muted: "#687276",
-  accent: "#db6648",
-  accentSoft: "#db66482e",
-});
+```ts
+  theme: {
+    surface: "#f7f4eb",
+    panel: "#e3e9df",
+    ink: "#182126",
+    muted: "#687276",
+    accent: "#db6648",
+    accentSoft: "#db66482e",
+  },
 ```
 
-The builder writes these defaults to `assets/theme.json` and refuses anything that is not a palette color. The runtime applies them, with the person's changes, before mounting the app. Each key becomes `--slop-KEY`, preserving case. Declare only colors worth changing: the theme panel lists every one, in the order you wrote them.
+The builder stores these defaults in the template and refuses anything that is not a palette color. The runtime applies them, with the person's changes, before mounting the app. Each key becomes `--slop-KEY`, preserving case. Declare only colors worth changing: the theme panel lists every one, in the order you wrote them.
 
 Fonts, sizes and colors derived from the palette belong in your CSS. A derived color that mixes a theme color follows the person's change automatically. Do not maintain a second defaults stylesheet.
 
@@ -78,12 +77,12 @@ A theme file names its template and every color:
 }
 ```
 
-Themes live inside the `.slop` package:
+Themes live inside the `.slop` file:
 
-| File | Purpose |
+| Part | Purpose |
 | --- | --- |
-| `assets/theme.json` | Immutable defaults generated from the author's `theme.ts`. |
-| `state/document.sqlite` | Loro document data, plus the colors this writable document changed. |
+| Theme defaults | Immutable, from the author's `slop.ts` when the template is built. |
+| Theme overrides | The colors this writable document changed, saved with its contents. |
 
 Only declared colors can change, and a document stores only the ones that differ from the template's. An open window applies accepted CLI changes at once; unknown colors and invalid values are refused. Fonts and layout stay authored. Registered masters and generated templates remain unchanged.
 
@@ -93,4 +92,4 @@ Every presentation mode receives host page resets, window sizing, and initial si
 
 Dedicated `Icon.svelte` and `Export.svelte` components use the same current document and theme as the editor. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `Export.svelte`, mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
 
-See [package anatomy](/docs/concepts/how-slop-files-work/) for how theme files travel with a document.
+See [how .slop files work](/docs/concepts/how-slop-files-work/) for how a theme travels with a document.

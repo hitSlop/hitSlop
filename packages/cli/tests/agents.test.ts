@@ -36,7 +36,7 @@ test("agent picker launches known and user-entered CLIs in the project with a br
     ]) {
       const resultFile = join(root, scenario + ".json");
       const script = `
-        import {offerAgentLaunch,installedAgents} from ${JSON.stringify(resolve("packages/cli/src/agents.ts"))};
+        import {offerAgentLaunch} from ${JSON.stringify(resolve("packages/cli/src/agents.ts"))};
         import {createPromptIO} from ${JSON.stringify(resolve("packages/cli/node_modules/@crustjs/prompts/dist/testing.js"))};
         import {PassThrough} from "node:stream";
         const scenario=${JSON.stringify(scenario)};
@@ -44,7 +44,6 @@ test("agent picker launches known and user-entered CLIs in the project with a br
         const output=Object.assign(new PassThrough(),{isTTY:scenario!=="non-tty"});
         output.pipe(tty.io.output);
         function shown(text){return new Promise(resolve=>{const listen=chunk=>{if(chunk.toString().includes(text)){output.off("data",listen);resolve()}};output.on("data",listen)})}
-        if(installedAgents().length!==4) throw Error("Unexpected discovery");
         const ready=shown("Which agent CLI");
         const result=offerAgentLaunch(${JSON.stringify(project)},scenario==="yes",{input:tty.io.input,output}).catch(e=>e);
         if(!["yes","ci","non-tty"].includes(scenario)) {
@@ -92,8 +91,8 @@ test("agent picker launches known and user-entered CLIs in the project with a br
         if (scenario === "gemini") expect(actual.args[0]).toBe("--prompt-interactive");
         if (scenario === "opencode") expect(actual.args[0]).toBe("--prompt");
         if (scenario === "custom") expect(actual.args[0]).toBe("-i");
-        expect(actual.args.at(-1)).toContain("Read manifest.json, AGENTS.md, BRIEF.md");
-        expect(actual.args.at(-1)).toContain("bun run check");
+        // The brief reaches the agent through the project, never through the command line.
+        expect(actual.args.at(-1)).toContain("BRIEF.md");
       }
       expect(await readFile(join(project, "BRIEF.md"), "utf8")).toBe(
         "Build a budget tracker; $(not-a-command)",

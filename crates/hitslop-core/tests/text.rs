@@ -3,25 +3,19 @@
 // characters, a misplaced caret, a resurrected row, or a panic on a bad base.
 // Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
 mod support;
-use support::Edit;
+use support::{Edit, fixture, snapshot, trimmed};
 use hitslop_core::{Document, TextEdit};
 use serde_json::{json, Value};
 
 const ROW: &str = "00000000000000000000000000000001";
-fn fixture() -> Value {
-    serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap()
-}
 fn schema() -> String {
-    fixture()["schema"].to_string()
+    fixture("checklist")["schema"].to_string()
 }
 fn setup() -> Document {
-    Document::create(&schema(), &fixture()["initial"].to_string()).unwrap()
-}
-fn view(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
+    Document::create(&schema(), &fixture("checklist")["initial"].to_string()).unwrap()
 }
 fn title(d: &Document) -> String {
-    view(d)["value"]["title"].as_str().unwrap().to_owned()
+    snapshot(d)["value"]["title"].as_str().unwrap().to_owned()
 }
 fn utf16(s: &str) -> usize {
     s.encode_utf16().count()
@@ -34,7 +28,7 @@ struct Binding {
 }
 impl Binding {
     fn new(d: &Document, path: Value) -> Self {
-        let mut at = &view(d)["value"];
+        let mut at = &snapshot(d)["value"];
         for segment in path.as_array().unwrap() {
             at = match segment {
                 Value::String(key) => &at[key],
@@ -56,9 +50,9 @@ impl Binding {
         reply
     }
     fn refused(&self, d: &mut Document, to: &str) -> String {
-        let before = view(d);
+        let before = snapshot(d);
         let code = d.edit_text(&self.request(to, utf16(to))).unwrap_err().code.as_str();
-        assert_eq!(view(d), before, "a refused edit changed the document");
+        assert_eq!(snapshot(d), before, "a refused edit changed the document");
         code.to_owned()
     }
 }
@@ -83,19 +77,11 @@ fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
     assert_eq!(title(&reopened), "RabcXYZ");
 }
 
-/// The document as it reopens from a checkpoint trimmed to its latest version.
-fn trimmed(d: &Document) -> Document {
-    let loro = loro::LoroDoc::new();
-    loro.import(&d.checkpoint().unwrap()).unwrap();
-    let bytes = loro.export(loro::ExportMode::shallow_snapshot(&loro.oplog_frontiers())).unwrap();
-    Document::open(&schema(), &bytes, &[]).unwrap()
-}
-
 // Failure: a concurrent edit branched with `LoroDoc::fork_at`, which Loro does not
 // implement for trimmed documents, so it failed on every document after a checkpoint.
 #[test]
 fn a_concurrent_edit_on_a_trimmed_document_merges() {
-    let mut d = trimmed(&setup());
+    let mut d = Document::open(&schema(), &trimmed(&setup().checkpoint().unwrap()), &[]).unwrap();
     let mut page = Binding::new(&d, json!(["title"]));
     page.edit(&mut d, "abcX", 4);
     splice(&mut d, 0, "R");
@@ -165,19 +151,19 @@ fn emoji_selection_maps_in_utf16_and_a_split_surrogate_is_refused() {
     let reply = page.edit(&mut d, "abc😀", 5);
     assert_eq!(title(&d), "éabc😀");
     assert_eq!(reply.selection_start, 6);
-    let before = view(&d);
+    let before = snapshot(&d);
     let bad = json!({"base":page.base,"path":["title"],"from":page.text,"to":"abc😀!","selectionStart":4,"selectionEnd":4});
     assert_eq!(d.edit_text(&bad.to_string()).unwrap_err().code.as_str(), "out_of_range");
-    assert_eq!(view(&d), before);
+    assert_eq!(snapshot(&d), before);
 }
 
 #[test]
 fn caret_only_moves_publish_nothing() {
     let mut d = setup();
     let page = Binding::new(&d, json!(["title"]));
-    let before = view(&d);
+    let before = snapshot(&d);
     let reply = d.edit_text(&page.request("abc", 1)).unwrap();
-    assert_eq!(view(&d), before);
+    assert_eq!(snapshot(&d), before);
     assert_eq!(reply.authored, page.base);
     assert!(reply.publication.is_none());
 }
@@ -190,7 +176,7 @@ fn an_unrelated_edit_keeps_the_fast_path() {
     let reply = page.edit(&mut d, "AB", 2);
     // The owner edited directly: the authored version is the owner's own.
     assert_eq!(reply.authored, d.version());
-    assert_eq!(view(&d)["value"]["rows"][0]["text"], "AB");
+    assert_eq!(snapshot(&d)["value"]["rows"][0]["text"], "AB");
 }
 
 #[test]
@@ -220,12 +206,14 @@ fn bad_bases_are_refused_on_every_path_without_panicking() {
     for base in [foreign.as_str(), "zz", "", "00", "0000000000000001ffffffff"] {
         // fast (owner text equals `from`), no-op (`from == to`) and slow paths.
         for (from, to) in [("Rabc", "RabcX"), ("abc", "abc"), ("abc", "abcX")] {
-            let before = view(&d);
+            let before = snapshot(&d);
             let request = json!({"base":base,"path":["title"],"from":from,"to":to,"selectionStart":0,"selectionEnd":0});
             let code = d.edit_text(&request.to_string()).unwrap_err().code.as_str();
             assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
-            assert_eq!(view(&d), before);
+            assert_eq!(snapshot(&d), before);
         }
+        let code = d.export_since(base).unwrap_err().code.as_str();
+        assert!(["stale_base", "invalid_version"].contains(&code), "export since {base}: {code}");
     }
     // A known base whose text was not `from` is stale, never silently rebased.
     let page = Binding { path: json!(["title"]), base: d.version(), text: "zzz".into() };
@@ -242,12 +230,12 @@ fn whole_field_set_is_exact_and_atomic_in_a_batch() {
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":a}]}).to_string()).unwrap();
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":b}]}).to_string()).unwrap();
     assert_eq!(title(&d), b);
-    let before = view(&d);
+    let before = snapshot(&d);
     let batch = json!({"intents":[
         {"type":"set","path":["title"],"value":"short"},
         {"type":"set","path":["rows",{"id":ROW},"done"],"value":"not a boolean"}]});
     assert_eq!(d.apply(&batch.to_string()).unwrap_err().op_index, Some(1));
-    assert_eq!(view(&d), before);
+    assert_eq!(snapshot(&d), before);
 }
 
 // Failure: every keystroke republishes the whole field. Oracle: the publication of one

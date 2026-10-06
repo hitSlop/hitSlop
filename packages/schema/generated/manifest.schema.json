@@ -9,10 +9,6 @@
     "presentation"
   ],
   "properties": {
-    "$schema": {
-      "type": "string",
-      "const": "https://api.hitslop.com/schemas/manifest.schema.json"
-    },
     "author": {
       "type": "object",
       "required": [
@@ -102,8 +98,7 @@
                 {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 256,
-                  "pattern": "^[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3}(?:[ \t\r\n]*/[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3})?[ \t\r\n]*$"
+                  "maxLength": 256
                 },
                 {
                   "type": "object",

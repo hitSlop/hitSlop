@@ -1,20 +1,12 @@
-import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { join, resolve, dirname, basename } from "node:path";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { findNative, negotiate } from "./native";
-import { buildProject } from "./build";
-import { checkTemplatePackage } from "./package-check";
-import { assertReplaceable, defaultOutput, exists, replaceDirectory } from "./fs";
+import { projectSlug, stageProject } from "./build";
+import { pack } from "./engine";
+import { run } from "./process";
+import { defaultOutput, exists } from "./fs";
 
-async function run(command: string[]) {
-  const child = Bun.spawn(command, { stdout: "pipe", stderr: "pipe" });
-  const [output, error, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  if (code) throw new Error(`${command[0]} failed: ${error || output}`);
-}
 
 /** Native artwork comes from the installed app's helper, never a compiler or checkout,
  * through the same protocol check as document commands. Returns the helper's command. */
@@ -24,56 +16,37 @@ export async function prepareRenderer() {
   return negotiate(await findNative());
 }
 
-/** Artwork the author supplies, by the name it takes in `QuickLook/`. */
-const suppliedArtwork = [
-  ["artwork/preview.png", "Preview.png"],
-  ["artwork/icon.png", "Icon.png"],
-] as const;
-
-/** Publish only a completed, checked artifact. Supplied artwork is copied; with a
- * `render` command (from `prepareRenderer`), the app renders what was not supplied,
- * reading the stage into disposable memory storage. Without one, the build uses no
- * helper and needs no Mac. */
+/** Builds a project into a template file and returns its path: the stage, with artwork
+ * the project supplies (`artwork/preview.png`, `artwork/icon.png`), packed by the file
+ * engine. With a `render` command (from `prepareRenderer`), the app renders the artwork
+ * the project does not supply, from a draft of the template. Without one, the build needs
+ * no Mac. The engine publishes only a checked file and replaces only a template. */
 export async function buildTemplate(source: string, render: string[] | undefined, destination?: string) {
-  const manifest = JSON.parse(await readFile(join(source, "manifest.json"), "utf8"));
-  const output = resolve(destination ?? defaultOutput(source, manifest.slug));
-  await assertReplaceable(output, source);
-  const temporary = await mkdtemp(join(tmpdir(), "hitslop-template-"));
-  const stage = join(temporary, "Template.slop");
+  source = resolve(source);
+  const output = resolve(destination ?? defaultOutput(source, projectSlug(source)));
+  if (!output.endsWith(".slop")) throw new Error("Build output must be a .slop file");
+  const temporary = await mkdtemp(join(tmpdir(), "hitslop-build-"));
+  const stage = join(temporary, "stage");
   try {
-    await buildProject(source, stage);
-    await mkdir(join(stage, "QuickLook"));
-    for (const [from, name] of suppliedArtwork)
-      if (await exists(join(source, from), true)) await copyFile(join(source, from), join(stage, "QuickLook", name));
-    const quickLook = (name: string) => exists(join(stage, "QuickLook", name), true);
-    if (render && !(await quickLook("Preview.png")))
-      await run([...render, "screenshot", stage, "--target", "preview", "--output", join(stage, "QuickLook/Preview.png")]);
-    if (render && !(await quickLook("Icon.png"))) {
-      await run([...render, "screenshot", stage, "--target", "icon", "--if-present", "--output", join(stage, "QuickLook/Icon.png")]);
-      if (!(await quickLook("Icon.png"))) console.warn("No icon view; Finder will show the generic icon.");
+    await stageProject(source, stage);
+    const supplied = (name: string) => exists(join(stage, "artwork", name + ".png"), true);
+    if (render && !((await supplied("preview")) && (await supplied("icon")))) {
+      const draft = join(temporary, "draft.slop");
+      await pack(stage, draft);
+      await mkdir(join(stage, "artwork"), { recursive: true });
+      if (!(await supplied("preview")))
+        await run([...render, "screenshot", draft, "--target", "preview", "--output", join(stage, "artwork/preview.png")]);
+      if (!(await supplied("icon"))) {
+        await run([...render, "screenshot", draft, "--target", "icon", "--if-present", "--output", join(stage, "artwork/icon.png")]);
+        if (!(await supplied("icon"))) console.warn("No icon view; Finder will show the generic icon.");
+      }
     }
-    if (!render && !(await quickLook("Preview.png")))
+    if (!render && !(await supplied("preview")))
       console.warn("No artwork: add artwork/preview.png and artwork/icon.png, or build with --artwork native on a Mac.");
-    if (!(await readdir(join(stage, "QuickLook"))).length) await rm(join(stage, "QuickLook"), { recursive: true });
-    await checkTemplatePackage(stage);
-    // The output may have become a document while rendering.
-    await assertReplaceable(output, source);
-    await replaceDirectory(stage, output);
+    await mkdir(dirname(output), { recursive: true });
+    await pack(stage, output);
     return output;
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-}
-
-export async function installTemplate(source: string, destination: string) {
-  const existing = await lstat(destination).catch((error) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (existing?.isSymbolicLink() || (existing && !existing.isDirectory()))
-    throw new Error("Registered template must be a directory, not a link");
-  if (await exists(join(destination, "state")))
-    throw new Error("Refusing to replace a template containing writable document state");
-  const backup = join(dirname(dirname(destination)), "template-backups", basename(destination) + "." + crypto.randomUUID());
-  await replaceDirectory(source, destination, backup);
 }

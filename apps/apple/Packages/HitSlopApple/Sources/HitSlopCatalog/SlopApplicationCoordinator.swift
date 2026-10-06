@@ -2,7 +2,6 @@ import AppKit
 import ComposableArchitecture
 import HitSlopCore
 import HitSlopFeatures
-import HitSlopFirebase
 import HitSlopHost
 import HitSlopDocument
 import SwiftUI
@@ -20,19 +19,22 @@ import SwiftUI
 
     private var previousDocumentCount = 0
 
-    public convenience init(templatesURL: URL = SlopTemplateLocation.defaultTemplatesRoot) {
-        self.init(templatesURL: templatesURL, presentsWindows: true)
+    /// The app's coordinator, reporting through the app's `telemetry`.
+    public convenience init(templatesURL: URL = SlopTemplateLocation.templatesRoot, telemetry: SlopTelemetry) {
+        self.init(templatesURL: templatesURL, presentsWindows: true, telemetry: telemetry)
     }
 
-    /// Native integration tests use hidden windows and avoid modifying the user's recents.
-    init(templatesURL: URL, presentsWindows: Bool) {
+    /// Native integration tests use hidden windows and avoid modifying the user's recents;
+    /// they may supply the catalog's client.
+    init(templatesURL: URL, presentsWindows: Bool, telemetry: SlopTelemetry = .disabled, catalogClient: CatalogClient? = nil) {
         self.presentsWindows = presentsWindows
-        let native = NativeDocumentServices(templatesURL: templatesURL, presentsWindows: presentsWindows, telemetry: presentsWindows ? HitSlopFirebase.telemetry : .disabled)
-        let catalogServices = CatalogServices(templatesURL: templatesURL, telemetry: presentsWindows ? HitSlopFirebase.telemetry : .disabled)
+        let native = NativeDocumentServices(presentsWindows: presentsWindows, telemetry: telemetry)
+        let catalogServices = CatalogServices(templatesURL: templatesURL, telemetry: telemetry)
         self.native = native; self.catalogServices = catalogServices
         store = Store(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
-            $0.catalogClient = presentsWindows ? catalogServices.client : .empty
+            $0.catalogClient = catalogClient ?? (presentsWindows ? catalogServices.client : .empty)
             $0.documentClient = native.client
+            $0.uuid = .init { UUID() }
         }
         native.routing = { [weak self] id in
             SlopDocumentRouting(
@@ -56,13 +58,9 @@ import SwiftUI
 
     public var hasOpenDocuments: Bool { !store.documents.isEmpty }
     public var documentControllers: [SlopDocumentWindowController] { Array(native.controllers.values) }
-    public var canPerformDocumentCommands: Bool {
-        guard let id = activeID else { return false }
-        return store.documents[id: id]?.acceptsCommands == true && native.controllers[id]?.isContentReady == true
-    }
-    public var isActiveDocumentPinned: Bool { activeID.flatMap { native.controllers[$0]?.isPinned } ?? false }
-    public var isActiveDocumentThemeShown: Bool { activeID.flatMap { native.controllers[$0]?.isThemeShown } ?? false }
-    public var canEditActiveDocumentTheme: Bool { activeID.flatMap { native.controllers[$0]?.session.canEditTheme } ?? false }
+    /// The key or main document window's controller: which commands it can run
+    /// (`isAvailable`) and its state.
+    public var activeController: SlopDocumentWindowController? { activeID.flatMap { native.controllers[$0] } }
     private var activeID: UUID? {
         // Resolve from AppKit at invocation; modal panels cannot retarget an existing operation.
         let candidate = NSApp.keyWindow ?? NSApp.mainWindow
@@ -84,25 +82,24 @@ import SwiftUI
 
     public func openDocument(_ url: URL) {
         guard store.quitPhase == .running else { return }
-        guard (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
-            store.send(.externalFailure("Document packages cannot be symlinks."))
+        let canonical: URL
+        do { canonical = try SlopFile.resolvedRoot(url) } catch {
+            store.send(.externalFailure(error.localizedDescription))
             return
         }
-        let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
-        if SlopTemplateLocation.isManagedTemplatePackage(canonical, templatesRoot: catalogServices.templatesURL) {
+        // A template opens by creating a document from it, wherever it lives. Its header
+        // decides, so a document is checked once, by its owner's open. Anything else,
+        // including a file that fails its checks, goes to the document path, which reports.
+        Task {
+            let template = try? await SlopPreparation.run { () throws -> CatalogEntry? in
+                guard try SlopFile.kind(of: canonical) == .template else { return nil }
+                return CatalogScanner.entry(template: try SlopFile(url: canonical))
+            }
+            guard store.quitPhase == .running else { return }
+            guard let template else { store.send(.openDocument(canonical)); return }
             showCatalog()
-            Task { do {
-                let package = try await SlopPreparation.run {
-                    let package = try SlopPackage(rootURL: canonical)
-                    try package.validateAsTemplate()
-                    return package
-                }
-                guard store.quitPhase == .running else { return }
-                var entry = CatalogEntry(id: "local:\(package.manifest.slug)", source: .local(canonical), title: package.manifest.title)
-                CatalogServices.apply(package.manifest, to: &entry)
-                store.send(.catalog(.primaryAction(entry)))
-            } catch { store.send(.externalFailure(error.localizedDescription)) } }
-        } else { store.send(.openDocument(canonical)) }
+            store.send(.catalog(.primaryAction(template)))
+        }
     }
     public func revealDocuments() {
         for controller in native.controllers.values { controller.revealFromDock() }
@@ -149,12 +146,12 @@ import SwiftUI
 }
 
 @MainActor private final class NativeDocumentServices {
-    private let templatesURL: URL
     private let presentsWindows: Bool
     private let telemetry: SlopTelemetry
-    init(templatesURL: URL, presentsWindows: Bool, telemetry: SlopTelemetry) { self.templatesURL = templatesURL; self.presentsWindows = presentsWindows; self.telemetry = telemetry }
+    init(presentsWindows: Bool, telemetry: SlopTelemetry) { self.presentsWindows = presentsWindows; self.telemetry = telemetry }
     var controllers: [UUID: SlopDocumentWindowController] = [:]
-    private var preparingURLs: [UUID: URL] = [:]
+    /// Each document still opening's progress panel, which focus brings forward.
+    private var openings: [UUID: SlopOpeningProgress] = [:]
     /// Sends a document's window commands to the coordinator, which runs them in order.
     var routing: ((UUID) -> SlopDocumentRouting)?
     var onOpened: ((UUID, SlopDocumentWindowController) -> Void)?
@@ -162,7 +159,7 @@ import SwiftUI
         DocumentClient(
             open: { [self] id, url in
                 await telemetry.send(.breadcrumb(.open, .started))
-                do { return try await open(id, url: url) }
+                do { try await open(id, url: url) }
                 catch { await telemetry.failure(.open, error: error); throw error }
             },
             focus: { [self] id in await focus(id) },
@@ -176,24 +173,20 @@ import SwiftUI
                 do { try await finishQuit(id) } catch { throw SlopDocumentFailure(command: error) }
             },
             cancelQuit: { [self] id in await cancelQuit(id) },
-            finishAssetRefreshes: { await SlopDocumentWindowController.finishAssetRefreshesForTermination() },
             replyToQuit: { allowed in await MainActor.run { NSApp.reply(toApplicationShouldTerminate: allowed) } }
         )
     }
     func controller(_ id: UUID) throws -> SlopDocumentWindowController {
-        guard let controller = controllers[id] else { throw SlopPackageError.invalid("The document is no longer open.") }
+        guard let controller = controllers[id] else { throw SlopFailure("The document is no longer open.") }
         return controller
     }
-    private func open(_ id: UUID, url: URL) async throws -> String {
-        guard !SlopTemplateLocation.isManagedTemplatePackage(url, templatesRoot: templatesURL) else {
-            throw SlopPackageError.invalid("Create a document from this template before opening it.")
-        }
+    private func open(_ id: UUID, url: URL) async throws {
         try Task.checkCancellation()
-        preparingURLs[id] = url
-        defer { preparingURLs[id] = nil }
-        guard let routing = routing?(id) else { throw SlopPackageError.invalid("Document windows need a coordinator.") }
-        let controller = try await SlopDocumentWindowController.open(
-            packageURL: url, routing: routing, presentsWindow: presentsWindows, telemetry: telemetry)
+        guard let routing = routing?(id) else { throw SlopFailure("Document windows need a coordinator.") }
+        let progress = presentsWindows ? SlopOpeningProgress() : nil
+        openings[id] = progress
+        defer { openings[id] = nil }
+        let controller = try await SlopDocumentWindowController.open(url: url, routing: routing, progress: progress, telemetry: telemetry)
         controllers[id] = controller
         onOpened?(id, controller)
         if presentsWindows {
@@ -201,7 +194,6 @@ import SwiftUI
         }
         telemetry.send(.breadcrumb(.open, .completed))
         telemetry.send(.opened)
-        return controller.documentTitle
     }
     private func finishQuit(_ id: UUID) async throws {
         try await controller(id).finishClose(operation: .quit)
@@ -211,8 +203,7 @@ import SwiftUI
     private func prepareToQuit(_ id: UUID) async throws { try await controller(id).prepareToClose(operation: .quit) }
     private func focus(_ id: UUID) {
         if presentsWindows {
-            if let controller = controllers[id] { controller.revealFromDock() }
-            else if let url = preparingURLs[id] { SlopDocumentWindowController.focusOpeningDocument(at: url) }
+            if let controller = controllers[id] { controller.revealFromDock() } else { openings[id]?.focus() }
             NSApp.activate(ignoringOtherApps: true)
         }
     }

@@ -5,8 +5,19 @@
 use super::*;
 use execute::{insert_row, release, remove, rewrite_list, Change};
 
-/// Validates `value` completely before the first mutation. A stored anomaly under (or
-/// above) the target is preserved and flagged, never repaired, so it refuses the replace.
+/// The one rule for writes over merged anomalies (`set` and `replace`): a stored anomaly at
+/// or under the target is preserved and flagged, never repaired, so it refuses the write.
+/// An out-of-range value has the right type and may be overwritten. A write inside an
+/// anomalous value leaves the anomaly as stored, and one through a wrong-typed value does
+/// not resolve.
+pub(super) fn refuse_anomalies(issues: &[Issue], path: &[Segment]) -> Result<()> {
+    if issues.iter().any(|issue| issue.path.starts_with(path) && issue.code != IssueCode::OutOfRange) {
+        return Err(err(Code::TypeMismatch, "Cannot overwrite a value that holds a stored anomaly"));
+    }
+    Ok(())
+}
+
+/// Validates `value` completely before the first mutation.
 pub(super) fn replace(
     doc: &LoroDoc,
     schema: &Node,
@@ -16,12 +27,10 @@ pub(super) fn replace(
     ids: &mut Vec<String>,
     rows: &mut Rows,
 ) -> Result<()> {
-    if path.len() > 64 {
+    if path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
-    if issues.iter().any(|issue| issue.path.starts_with(path) || path.starts_with(&issue.path)) {
-        return Err(err(Code::TypeMismatch, "Cannot replace a value that holds a stored anomaly"));
-    }
+    refuse_anomalies(issues, path)?;
     let writer = writer(doc);
     let mut to = Reconcile { doc, writer: &writer, ids, rows };
     if path.is_empty() {
@@ -32,7 +41,7 @@ pub(super) fn replace(
     let kind = unwrap_optional(at.node);
     if let Some((list, index)) = &at.element {
         kind.validate(value, false)?;
-        if stored(kind, &at.value)? != Some(project(Some(kind), value.clone())) {
+        if stored(kind, &at.value) != Some(project(Some(kind), value.clone())) {
             list.set(*index, loro_scalar(kind, value)).map_err(engine)?;
         }
         return Ok(());
@@ -75,10 +84,10 @@ pub(super) fn object(
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
-fn stored(kind: &Node, value: &ValueOrContainer) -> Result<Option<Value>> {
+fn stored(kind: &Node, value: &ValueOrContainer) -> Option<Value> {
     match value {
-        ValueOrContainer::Value(value) => Ok(Some(project(Some(kind), json(value.clone())?))),
-        ValueOrContainer::Container(_) => Ok(None),
+        ValueOrContainer::Value(value) => Some(project(Some(kind), json(value.clone()))),
+        ValueOrContainer::Container(_) => None,
     }
 }
 
@@ -99,7 +108,7 @@ impl Reconcile<'_, '_> {
         };
         match (kind, current) {
             (scalar, current) if is_scalar(scalar) => {
-                if stored(scalar, &current)? != Some(project(Some(scalar), value.clone())) {
+                if stored(scalar, &current) != Some(project(Some(scalar), value.clone())) {
                     if matches!(current, ValueOrContainer::Container(_)) {
                         return Err(anomalous());
                     }
@@ -159,7 +168,7 @@ impl Reconcile<'_, '_> {
     /// Adds the difference to this writer's contribution, so concurrent increments still
     /// add to the imported total.
     fn counter(&mut self, counter: &LoroMap, target: i64) -> Result<()> {
-        let raw = json(counter.get_deep_value())?;
+        let raw = json(counter.get_deep_value());
         let sum = counter_sum(&raw).ok_or_else(anomalous)?;
         let by = target - sum;
         if by == 0 {
@@ -179,8 +188,8 @@ impl Reconcile<'_, '_> {
         let current = identity::clean_rows(list).ok_or_else(anomalous)?;
         let wanted: Vec<String> = values
             .iter()
-            .map(|value| value.get("$id").and_then(Value::as_str).map(|id| Ok(id.to_owned())).unwrap_or_else(application_id))
-            .collect::<Result<_>>()?;
+            .map(|value| value.get("$id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(application_id))
+            .collect();
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
         for (index, id) in current.iter().enumerate().rev() {
             if !keep.contains(id.as_str()) {

@@ -1,13 +1,14 @@
-/** Black-box package coverage: no template selectors, actions, or business logic. */
+/** Black-box template coverage: no template selectors, actions, or business logic. */
 import { strict as assert } from "node:assert";
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { builtTemplates } from "./templates";
-import { digest } from "./runtime-artifacts";
+import { digest, fileDigest, useTestRegistry } from "./runtime-artifacts";
+import { assertExport, createDocument, documentFromStage, helperRequest } from "./helper";
 import { nativeFixtureSlugs, prepareNativeFixtures } from "./native-fixtures";
+useTestRegistry();
 
-const helper = resolve("apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
 const evidence = resolve(".hitslop/evidence/render");
 const parent = await mkdtemp(join(tmpdir(), "hitslop-native-smoke-"));
 // Everyday CI renders the native fixtures; releases render every bundled template.
@@ -26,6 +27,9 @@ const packages = fixtures
       }));
 for (const name of (await readdir("tests/fixtures")).sort())
   packages.push({ name: `fixture-${name}`, source: resolve("tests/fixtures", name, "document") });
+/** A built template file, or a fixture's build stage. */
+const checksum = async (source: string) =>
+  (await stat(source)).isDirectory() ? digest(source) : fileDigest(source);
 type Stage = "initialRead" | "png" | "pdf" | "finalRead";
 type RenderResult = {
   name: string;
@@ -33,24 +37,12 @@ type RenderResult = {
   passed: boolean;
   seconds: Partial<Record<Stage | "total", number>>;
 };
-async function run(args: string[], result: RenderResult, stage: Stage) {
+/** `work`, timed as `stage`. */
+async function timed<T>(result: RenderResult, stage: Stage, work: Promise<T>): Promise<T> {
   const started = performance.now();
-  const child = Bun.spawn([helper, ...args], { stdout: "pipe", stderr: "pipe" });
-  const timeout = setTimeout(() => child.kill(), 60_000);
   try {
-    const [out, error, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    assert.equal(
-      code,
-      0,
-      `${args.join(" ")} (${((performance.now() - started) / 1000).toFixed(1)}s): ${error}`,
-    );
-    return out;
+    return await work;
   } finally {
-    clearTimeout(timeout);
     result.seconds[stage] = (performance.now() - started) / 1000;
   }
 }
@@ -58,29 +50,27 @@ const results: RenderResult[] = [];
 const sweepStarted = performance.now();
 let failure: string | undefined;
 try {
+  // This run's evidence only: exports never replace a file.
+  await rm(evidence, { recursive: true, force: true });
   await mkdir(evidence, { recursive: true });
   for (const { name, source } of packages) {
     const started = performance.now();
     console.log(`Checking ${name}`);
     const root = join(parent, `${name}.slop`);
-    const before = await digest(source);
+    const before = await checksum(source);
     const result: RenderResult = { name, sha256: before, passed: false, seconds: {} };
     results.push(result);
     try {
-      await cp(source, root, { recursive: true });
-      const state = JSON.parse(await run(["get", root], result, "initialRead"));
+      if ((await stat(source)).isDirectory()) await documentFromStage(source, root);
+      else await createDocument(source, root);
+      const state = (await timed(result, "initialRead", helperRequest({ method: "get", documentPath: root }))).state;
       for (const format of ["png", "pdf"] as const) {
         const output = join(evidence, `${name}.${format}`);
-        await run(["export", root, "--format", format, "--output", output], result, format);
-        const bytes = await Bun.file(output).bytes();
-        assert(bytes.length > 100, `Empty ${format}: ${name}`);
-        assert.equal(
-          Buffer.from(bytes.subarray(0, format === "png" ? 8 : 4)).toString("hex"),
-          format === "png" ? "89504e470d0a1a0a" : "25504446",
-        );
+        await timed(result, format, helperRequest({ method: "export", documentPath: root, format, output }));
+        await assertExport(output, format);
       }
-      assert.deepEqual(JSON.parse(await run(["get", root], result, "finalRead")), state);
-      assert.equal(await digest(source), before, `Master changed: ${name}`);
+      assert.deepEqual((await timed(result, "finalRead", helperRequest({ method: "get", documentPath: root }))).state, state);
+      assert.equal(await checksum(source), before, `Master changed: ${name}`);
       result.passed = true;
       console.log(
         `PASS ${name}: native open, authored render, PNG/PDF, reopen (${((performance.now() - started) / 1000).toFixed(1)}s)`,

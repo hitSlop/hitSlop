@@ -2,7 +2,13 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultBrush, strokePath, StrokeSamples } from "../examples/slops/doodle-board/drawing";
+
+// The workload draws with doodle-board's own stroke code, and measures doodle-board,
+// pixel-art and morning-pages; they are archived until they move to `defineSlop`.
+const drawing = "../examples/slops/doodle-board/drawing";
+const { defaultBrush, strokePath, StrokeSamples } = await import(drawing).catch(() => {
+  throw new Error("The growth benchmark needs examples/slops/doodle-board, which is archived until it moves to defineSlop");
+});
 
 const days = Number(process.env.HITSLOP_GROWTH_DAYS ?? 365);
 if (!Number.isInteger(days) || days < 1 || days > 365) throw new Error("Days must be 1…365");

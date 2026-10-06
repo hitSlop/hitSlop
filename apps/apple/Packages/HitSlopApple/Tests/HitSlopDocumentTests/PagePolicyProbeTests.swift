@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import HitSlopTestSupport
 import WebKit
 
 @testable import HitSlopDocument
@@ -9,11 +10,8 @@ import WebKit
 /// workers, worklets, WebAssembly, cross-origin isolation and media seeking.
 @Suite(.serialized) struct PagePolicyProbeTests {
   @Test @MainActor func pagePolicyRunsPackageCodeAndWebAssemblyNotInlineScripts() async throws {
-    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
-    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let assets = root.appendingPathComponent("assets")
+    let stage = try Fixtures.stage()
+    let assets = stage.appendingPathComponent("assets")
     let files: [String: Data] = [
       "app.js": Data("export default { mount() { return {}; } };".utf8),
       "worker.js": Data("postMessage('worker');".utf8),
@@ -31,8 +29,10 @@ import WebKit
       "tone.wav": Self.wav(seconds: 3),
     ]
     for (name, data) in files { try data.write(to: assets.appendingPathComponent(name)) }
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
 
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
       globalThis.policyViolations = [];
       addEventListener('securitypolicyviolation', event => policyViolations.push(`${event.violatedDirective} ${event.blockedURI}`));
@@ -57,7 +57,7 @@ import WebKit
       try JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys])
         .write(to: URL(fileURLWithPath: output))
     }
-    // Workers and worklets shipped as package files run.
+    // Workers and worklets shipped as app assets run.
     #expect(results["worker.asset"] == "ok:worker")
     #expect(results["worker.module.js"] == "ok:module")
     #expect(results["worker.module.mjs"] == "ok:mjs")
@@ -66,12 +66,12 @@ import WebKit
     for refused in ["worker.blob", "worker.data", "worklet.blob", "worklet.data"] {
       #expect(results[refused]?.hasPrefix("error") == true, "\(refused): \(results[refused] ?? "missing")")
     }
-    // WebAssembly compiles, including from a package file streamed with its own type
+    // WebAssembly compiles, including from an asset streamed with its own type
     // (MilkDrop presets in Soma Amp compile their equations this way).
     #expect(results["wasm.instantiate"] == "5", "wasm.instantiate: \(results["wasm.instantiate"] ?? "missing")")
     #expect(results["wasm.module"] == "5", "wasm.module: \(results["wasm.module"] ?? "missing")")
     #expect(results["wasm.streaming"] == "5", "wasm.streaming: \(results["wasm.streaming"] ?? "missing")")
-    // Packaged media plays and seeks: WebKit's media loader needs byte ranges.
+    // Media assets play and seek: WebKit's media loader needs byte ranges, read from the file.
     #expect(results["media.asset"]?.hasSuffix("seekedTo=1.50") == true, "media.asset: \(results["media.asset"] ?? "missing")")
   }
 
@@ -88,6 +88,10 @@ import WebKit
     #expect(ByteRange("bytes=0-1,4-5", length: 10) == .whole)
     #expect(ByteRange("items=0-1", length: 10) == .whole)
     #expect(ByteRange("bytes=a-b", length: 10) == .whole)
+    // The largest endpoints a request can name never overflow.
+    #expect(ByteRange("bytes=0-\(Int.max)", length: 10) == .part(0..<10))
+    #expect(ByteRange("bytes=\(Int.max)-", length: 10) == .unsatisfiable)
+    #expect(ByteRange("bytes=-\(Int.max)", length: 10) == .part(0..<10))
   }
 
   private static let workletSource =

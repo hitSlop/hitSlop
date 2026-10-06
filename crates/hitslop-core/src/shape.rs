@@ -28,7 +28,7 @@ pub enum Silhouette {
     Path { segments: Vec<Segment>, view_box: [f64; 2], even_odd: bool },
 }
 
-const MAX_SOURCE: usize = 4096;
+use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
 /// Arcs expand to at most four cubics, so output stays under 2,048 segments.
 const MAX_COMMANDS: usize = 512;
 
@@ -37,7 +37,7 @@ fn invalid() -> Error {
 }
 /// Rejects values whose later geometry (scaled up to 16,384 points) cannot be finite.
 fn finite(values: &[f64]) -> Result<()> {
-    if values.iter().all(|v| v.is_finite() && (v * 16384.0).is_finite()) { Ok(()) } else { Err(invalid()) }
+    if values.iter().all(|v| v.is_finite() && (v * SHAPE_VIEW_BOX).is_finite()) { Ok(()) } else { Err(invalid()) }
 }
 
 #[derive(Deserialize)]
@@ -56,6 +56,12 @@ enum Shape {
     Path(PathShape),
 }
 
+/// Checks a manifest `shape` given as JSON text (`None` for the default rounded corners),
+/// as authoring validates it.
+pub fn validate(shape: Option<&str>, width: f64, height: f64) -> Result<()> {
+    let shape: Option<Value> = shape.map(serde_json::from_str).transpose().map_err(|_| invalid())?;
+    silhouette(shape.as_ref(), width, height).map(|_| ())
+}
 /// The silhouette for a manifest `shape` (or `None` for the default rounded corners) on a
 /// window of `width` × `height` points.
 pub fn silhouette(shape: Option<&Value>, width: f64, height: f64) -> Result<Silhouette> {
@@ -71,7 +77,7 @@ fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
         Shape::Radius(value) => radii(&value),
         Shape::Path(shape) => {
             let view_box = shape.view_box.unwrap_or([width, height]);
-            if !view_box.iter().all(|n| n.is_finite() && (1.0..=16384.0).contains(n)) {
+            if !view_box.iter().all(|n| n.is_finite() && (1.0..=SHAPE_VIEW_BOX).contains(n)) {
                 return Err(invalid());
             }
             let even_odd = match shape.fill_rule.as_deref() {
@@ -86,7 +92,7 @@ fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
 
 /// One to four lengths per axis, optionally `horizontal / vertical`, as in CSS.
 fn radii(input: &str) -> Result<Silhouette> {
-    if input.len() > 256 || !input.bytes().all(|b| b"0123456789.px%/ \t\r\n".contains(&b)) {
+    if input.len() > SHAPE_RADIUS || !input.bytes().all(|b| b"0123456789.px%/ \t\r\n".contains(&b)) {
         return Err(invalid());
     }
     let halves: Vec<&str> = input.split('/').collect();
@@ -147,7 +153,7 @@ struct Parser<'a> {
 impl<'a> Parser<'a> {
     fn new(source: &'a str) -> Result<Self> {
         let bytes = source.as_bytes();
-        if bytes.is_empty() || bytes.len() > MAX_SOURCE
+        if bytes.is_empty() || bytes.len() > SHAPE_PATH
             || !bytes.iter().all(|b| b"MmLlHhVvCcSsQqTtAaZz0123456789eE+.,- \t\r\n".contains(b))
         {
             return Err(invalid());

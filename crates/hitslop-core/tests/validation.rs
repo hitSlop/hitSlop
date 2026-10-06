@@ -1,21 +1,26 @@
 use hitslop_core::Document;
-use serde_json::json;
+use serde_json::{json, Value};
+
+/// Whether authoring accepts the descriptor, with initial values that fit it, so only the
+/// descriptor can refuse.
+fn accepts(schema: &Value) -> bool {
+    fn fitting(node: &Value) -> Value {
+        match node["kind"].as_str().unwrap() {
+            "object" => Value::Object(node["properties"].as_object().unwrap().iter().map(|(k, v)| (k.clone(), fitting(v))).collect()),
+            "string" | "text" => json!(""),
+            "boolean" => json!(false),
+            _ => json!(0),
+        }
+    }
+    hitslop_core::validate(&schema.to_string(), &fitting(schema).to_string()).is_ok()
+}
 
 #[test]
 fn explicit_null_bounds_are_not_silently_treated_as_absent() {
     for node in [json!({"kind":"string","maxLength":null}), json!({"kind":"number","min":null}), json!({"kind":"integer","max":null})] {
         let schema = json!({"kind":"object","properties":{"value":node}});
-        assert!(hitslop_core::schema_key(&schema.to_string()).is_err(), "{schema}");
+        assert!(!accepts(&schema), "{schema}");
     }
-}
-
-#[test]
-fn schema_identity_normalizes_key_order_and_number_spelling() {
-    let a = r#"{"kind":"object","properties":{"value":{"kind":"number","min":1.0,"max":2e0}}}"#;
-    let b = r#"{"properties":{"value":{"max":2,"min":1,"kind":"number"}},"kind":"object"}"#;
-    let key = hitslop_core::schema_key(a).unwrap();
-    assert_eq!(key, hitslop_core::schema_key(b).unwrap());
-    assert_eq!(key, hitslop_core::schema_key(&key).unwrap());
 }
 
 #[test]
@@ -51,7 +56,7 @@ fn unknown_options_are_refused_on_every_kind() {
         json!({"kind":"string","max":3}),
     ] {
         let schema = json!({"kind":"object","properties":{"value":node}});
-        assert!(hitslop_core::schema_key(&schema.to_string()).is_err(), "{schema}");
+        assert!(!accepts(&schema), "{schema}");
     }
 }
 
@@ -60,13 +65,13 @@ fn unknown_options_are_refused_on_every_kind() {
 fn descriptor_limits_accept_their_boundaries() {
     let mut node = json!({"kind":"string"});
     for _ in 0..16 { node = json!({"kind":"object","properties":{"child":node}}); }
-    assert!(hitslop_core::schema_key(&node.to_string()).is_ok(), "depth 16");
+    assert!(accepts(&node), "depth 16");
     let wide = |n: usize| json!({"kind":"object","properties":(0..n).map(|i| (format!("f{i}"), json!({"kind":"boolean"}))).collect::<serde_json::Map<_, _>>()});
-    assert!(hitslop_core::schema_key(&wide(1024).to_string()).is_ok(), "1024 fields");
-    assert!(hitslop_core::schema_key(&wide(1025).to_string()).is_err(), "1025 fields");
+    assert!(accepts(&wide(1024)), "1024 fields");
+    assert!(!accepts(&wide(1025)), "1025 fields");
     for key in ["constructor", "prototype"] {
         let schema = json!({"kind":"object","properties":{key:{"kind":"string"}}});
-        assert!(hitslop_core::schema_key(&schema.to_string()).is_err(), "{key}");
+        assert!(!accepts(&schema), "{key}");
     }
 }
 

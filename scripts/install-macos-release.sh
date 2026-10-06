@@ -13,9 +13,11 @@ install_stage="$(dirname -- "$destination")/.hitSlop.installing.$$"
 backup="$stage_dir/previous-hitSlop.app"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
+# Bundled starter templates are read-only, so each removal restores write access first.
+remove() { /bin/chmod -R u+w "$1" 2>/dev/null; /bin/rm -rf "$1"; }
 cleanup() {
-  /bin/rm -rf "$stage_dir"
-  if [ -e "$install_stage" ]; then /bin/rm -rf "$install_stage"; fi
+  remove "$stage_dir"
+  if [ -e "$install_stage" ]; then remove "$install_stage"; fi
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -25,6 +27,7 @@ case "$build_arch" in
 esac
 
 echo "Building development-signed hitSlop Release for ${build_arch}…"
+/usr/bin/env xcodegen generate --spec "$repo_root/apps/apple/project.yml" --quiet
 /usr/bin/xcodebuild \
   -skipPackagePluginValidation \
   -skipMacroValidation \
@@ -53,7 +56,7 @@ done
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 
 echo "Installing ${destination}…"
-if [ -e "$install_stage" ]; then /bin/rm -rf "$install_stage"; fi
+if [ -e "$install_stage" ]; then remove "$install_stage"; fi
 /usr/bin/ditto "$app" "$install_stage"
 if [ -e "$destination" ]; then "$lsregister" -u "$destination" >/dev/null 2>&1 || true; fi
 if [ -e "$destination" ]; then /bin/mv "$destination" "$backup"; fi
@@ -63,13 +66,16 @@ if ! /bin/mv "$install_stage" "$destination"; then
   exit 73
 fi
 if ! /usr/bin/codesign --verify --deep --strict --verbose=2 "$destination"; then
-  /bin/rm -rf "$destination"
+  remove "$destination"
   if [ -e "$backup" ]; then /bin/mv "$backup" "$destination"; fi
   echo "Installed app failed verification; restored the previous app." >&2
   exit 74
 fi
 
 "$lsregister" -f "$destination"
+# Launch Services alone leaves the replaced app's Quick Look extensions unregistered, so
+# Finder would show the generic .slop icon until something else registered them.
+for extension in "$destination"/Contents/PlugIns/*.appex; do /usr/bin/pluginkit -a "$extension" || true; done
 /usr/bin/qlmanage -r >/dev/null 2>&1 || true
 /usr/bin/qlmanage -r cache >/dev/null 2>&1 || true
 /usr/bin/killall Finder >/dev/null 2>&1 || true

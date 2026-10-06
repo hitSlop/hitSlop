@@ -5,35 +5,29 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { appConfig, virtualEntry } from "./vite";
-import { discoverEntry } from "./entry";
+import { discoverEntry, entryFiles } from "./entry";
 import { previewFrame } from "./preview";
 import { cliRoot, shellDirectory } from "./paths";
+import { metadataFiles, stageWorker } from "./build";
 
 export async function startDev(source: string, port = 0, signal?: AbortSignal) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
-  const out = join(temporary, "preview.slop");
+  const out = join(temporary, "preview");
   const graph = join(temporary, "dependencies.json");
   let child: { kill(): void } | undefined;
   let closed = false;
   let server: ViteDevServer | undefined;
   let dependencies = new Set(
-    ["schema.ts", "initial.ts", "theme.ts", "manifest.json"].map((file) => join(source, file)),
+    metadataFiles.map((file) => join(source, file)),
   );
   let metadataFailed = false;
   const metadata = async () => {
     if (closed) return;
-    const worker = Bun.spawn(
-      [process.execPath, join(cliRoot, "src/metadata-worker.ts"), source, out, graph],
-      {
-        stdout: "ignore",
-        stderr: "pipe",
-      },
-    );
+    const worker = stageWorker([source, out, "--deps", graph], "Metadata evaluation failed");
     child = worker;
     try {
-      const [error, code] = await Promise.all([new Response(worker.stderr).text(), worker.exited]);
-      if (code) throw new Error(error || "Metadata evaluation failed");
+      await worker.done;
       const next = new Set<string>(JSON.parse(await readFile(graph, "utf8")));
       // Vite watches the source itself; only files outside it are watched for metadata.
       const outside = (file: string) => !file.startsWith(source + "/");
@@ -104,11 +98,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
       "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:* https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'";
     const page =
       '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module" src="/@vite/client"></script></head><body><script type="module" src="/__shell__/boot.js"></script></body></html>';
-    const conventional = new Set(
-      ["main.ts", "App.svelte", "styles.css", "Export.svelte", "Icon.svelte"].map((file) =>
-        join(source, file),
-      ),
-    );
+    const conventional = new Set(entryFiles.map((file) => join(source, file)));
     const host: Plugin = {
       name: "hitslop-preview-host",
       configureServer(current) {
@@ -127,9 +117,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
             let content: string | Buffer | undefined;
             let type = "application/json";
             if (path === "/") {
-              content = previewFrame(
-                JSON.parse(await readFile(join(out, "manifest.json"), "utf8")),
-              );
+              content = previewFrame(JSON.parse(await readFile(join(out, "app.json"), "utf8")).manifest);
               type = "text/html";
             } else if (path === "/__preview__/resize.js") {
               content = Buffer.from(previewResizeScript);
@@ -146,15 +134,8 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
               }
               content = await readFile(file);
               type = file.endsWith(".wasm") ? "application/wasm" : "text/javascript";
-            } else if (
-              [
-                "/manifest.json",
-                "/state.schema.json",
-                "/initial.json",
-                "/assets/theme.json",
-              ].includes(path)
-            ) {
-              content = await readFile(join(out, path));
+            } else if (path === "/app.json") {
+              content = await readFile(join(out, "app.json"));
             }
             if (content === undefined) {
               next();

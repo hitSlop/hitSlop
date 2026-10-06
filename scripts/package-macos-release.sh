@@ -22,11 +22,12 @@ output_dir=${HITSLOP_OUTPUT_DIR:-"$repo_root/dist/macos"}
 sparkle_version=${SPARKLE_VERSION:-2.9.6}
 feed_prefix=${HITSLOP_DOWNLOAD_URL_PREFIX:-}
 
+# The project-wide build settings own the version the app and its extensions share.
 read_macos_setting() {
   /usr/bin/awk -v setting="$1" '
-    $0 == "  hitSlop-macOS:" { in_target = 1; next }
-    in_target && /^  [^ ]/ { in_target = 0 }
-    in_target && $1 == setting ":" { gsub(/"/, "", $2); print $2; exit }
+    $0 == "settings:" { in_settings = 1; next }
+    in_settings && /^[^ ]/ { in_settings = 0 }
+    in_settings && $1 == setting ":" { gsub(/"/, "", $2); print $2; exit }
   ' "$project_yml"
 }
 
@@ -61,7 +62,17 @@ if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -F "$iden
 fi
 
 stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-package.XXXXXX")
-cleanup() { /bin/rm -rf "$stage_dir"; }
+stage_dir=$(CDPATH= cd -- "$stage_dir" && pwd -P)
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# Builds register with Launch Services as they appear; only an installed app should claim
+# .slop, so the exported copy and Xcode's archive copies are unregistered on the way out.
+cleanup() {
+  "$lsregister" -dump 2>/dev/null \
+    | /usr/bin/sed -n 's/^path: *\(.*hitSlop\.app\) (0x[0-9a-f]*)$/\1/p' \
+    | /usr/bin/grep -E "^${stage_dir}/|/ArchiveIntermediates/" \
+    | while IFS= read -r app; do "$lsregister" -u "$app" >/dev/null 2>&1 || true; done
+  /bin/rm -rf "$stage_dir"
+}
 trap cleanup EXIT HUP INT TERM
 
 auth_args=
@@ -148,7 +159,7 @@ if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
     cd "$repo_root"
     HITSLOP_APP_BINARY="$app/Contents/MacOS/hitSlop" \
       HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
-      bun scripts/native-crash.ts
+      bun scripts/crash-matrix.ts --host
     # Every released document still reads, renders and edits with the signed helper.
     HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" bun scripts/compat-replay.ts --installed
   )

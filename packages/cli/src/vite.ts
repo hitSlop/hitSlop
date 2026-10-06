@@ -31,13 +31,15 @@ function checkAppBundle(inputs: string[], script: string, css: string) {
       "Apps must not need remote stylesheets, fonts or scripts to start; copy them into assets/",
     );
 }
-export const entry = "/assets/app.js";
+const entry = "/assets/app.js";
 /** The module ID of the generated entry; dev invalidates it when components change. */
 export const virtualEntry = "\0hitslop-app";
 
 // App compilation is independent of metadata evaluation and package publication.
 export async function appConfig(source: string): Promise<InlineConfig> {
   source = resolve(source);
+  // slop.ts declares the app's row for the build; the app itself never loads it.
+  const metadata = join(source, "slop.ts");
   const app: Plugin = {
     name: "hitslop-app",
     enforce: "pre",
@@ -59,6 +61,10 @@ export async function appConfig(source: string): Promise<InlineConfig> {
       if (id.startsWith("/assets/")) return join(source, decodeURIComponent(id.slice(1)));
     },
     async load(id) {
+      if (id.split(/[?#]/, 1)[0] === metadata)
+        throw new Error(
+          "slop.ts is build-only; move values the app shares into their own module, as shape-lab's variant.ts does",
+        );
       if (id !== virtualEntry) return;
       const discovered = await discoverEntry(source);
       return discovered.code.replace(/(["'])\.\/([^"']+)\1/g, (_, quote, path) =>

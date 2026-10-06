@@ -5,19 +5,13 @@
 // Gap: publications.rs peers are `Document`s and can only make valid edits.
 mod support;
 use hitslop_core::Document;
-use support::{Edit, View};
+use support::{Edit, View, fixture, next, snapshot};
 use loro::{
     Container, ExportMode, LoroDoc, LoroList, LoroMap, LoroMovableList, LoroText,
     ValueOrContainer,
 };
 use serde_json::{json, Value};
 
-fn fixture() -> Value {
-    serde_json::from_str(include_str!("../fixtures/checklist.json")).unwrap()
-}
-fn snapshot(d: &Document) -> Value {
-    serde_json::from_str(&d.snapshot().unwrap()).unwrap()
-}
 fn peer_of(d: &Document) -> LoroDoc {
     let peer = LoroDoc::new();
     peer.import(&d.checkpoint().unwrap()).unwrap();
@@ -45,7 +39,7 @@ fn row(list: &LoroMovableList, i: usize) -> Option<LoroMap> {
 
 #[test]
 fn other_roots_do_not_enter_the_projection() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let mut projected = View::of(&d);
     let peer = peer_of(&d);
@@ -58,7 +52,7 @@ fn other_roots_do_not_enter_the_projection() {
 
 #[test]
 fn plain_lists_publish_exactly_on_later_updates() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut d = Document::create(&f["schema"].to_string(), &f["initial"].to_string()).unwrap();
     let mut projected = View::of(&d);
     for target in ["extra", "rows"] {
@@ -85,7 +79,7 @@ fn plain_lists_publish_exactly_on_later_updates() {
 
 #[test]
 fn collection_anomalies_survive_publication_and_reopen() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/collections.json")).unwrap();
+    let f: Value = fixture("collections");
     let schema = f["schema"].to_string();
     let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
     let mut projected = View::of(&d);
@@ -148,12 +142,6 @@ fn collection_anomalies_survive_publication_and_reopen() {
     }
 }
 
-fn next(rng: &mut u64) -> u64 {
-    *rng ^= *rng << 13;
-    *rng ^= *rng >> 7;
-    *rng ^= *rng << 17;
-    *rng
-}
 /// One raw edit a well-behaved `Document` would refuse or never produce.
 fn chaos(rng: &mut u64, peer: &LoroDoc, serial: &mut u64) {
     let data = peer.get_map("data");
@@ -267,7 +255,7 @@ fn chaos(rng: &mut u64, peer: &LoroDoc, serial: &mut u64) {
 
 #[test]
 fn seeded_chaos_peer_imports_publish_exactly() {
-    let f = fixture();
+    let f = fixture("checklist");
     let mut rng = 0xc4a05u64;
     let mut serial = 0u64;
     for _round in 0..support::workload("HITSLOP_CHAOS_ROUNDS", 300) {
@@ -316,7 +304,7 @@ fn seeded_chaos_peer_imports_publish_exactly() {
 // list exactly, be flagged, and leave later local and remote edits exact.
 #[test]
 fn nested_duplicate_row_ids_publish_exactly_and_are_flagged() {
-    let f: Value = serde_json::from_str(include_str!("../fixtures/nested.json")).unwrap();
+    let f: Value = fixture("nested");
     let schema = f["schema"].to_string();
     let mut d = Document::create(&schema, &f["initial"].to_string()).unwrap();
     let mut projected = View::of(&d);

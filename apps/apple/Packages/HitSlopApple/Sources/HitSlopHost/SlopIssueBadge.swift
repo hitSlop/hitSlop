@@ -74,14 +74,8 @@ extension SlopDocumentWindowController {
     refreshIssueBadge()
   }
 
-  private func reloadForIssue() {
-    Task {
-      do { try await session.reloadInterface() } catch {
-        guestIssue = SlopPageIssue(message: error.localizedDescription, isOperation: false)
-        refreshIssueBadge()
-      }
-    }
-  }
+  /// Reloading is a command: the app runs it after any command in progress.
+  private func reloadForIssue() { request(.retry) }
 }
 
 final class SlopIssueBadgePanel: NSPanel {

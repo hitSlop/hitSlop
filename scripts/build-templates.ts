@@ -1,14 +1,28 @@
+import { repository } from "./runtime-artifacts";
 import { buildTemplate } from "../packages/cli/src/template";
 import { join, resolve, relative } from "node:path";
-import { mkdir, writeFile, rm, rename } from "node:fs/promises";
-import { repository, discoverTemplates, templateInventory } from "./templates";
+import { mkdir, writeFile } from "node:fs/promises";
+import { discoverTemplates, templateInventory } from "./templates";
 import { sharedTemplateInputs, TemplateCache } from "./template-cache";
+import { debugHelper } from "./helper";
+import { publishFolder } from "./runtime-artifacts";
 
-export async function buildTemplates(
-  output = join(repository, "generated/templates"),
-  slugs?: string[],
-) {
-  const renderer = join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
+/** The template cache (`HITSLOP_TEMPLATE_CACHE_DIR`, or `.hitslop/template-cache`), keyed by
+ * what every build reads; `folder` keeps a separate set of entries there. */
+export async function templateCache(folder = "") {
+  const discovered = await discoverTemplates();
+  return new TemplateCache(
+    join(resolve(process.env.HITSLOP_TEMPLATE_CACHE_DIR ?? join(repository, ".hitslop/template-cache")), folder),
+    await sharedTemplateInputs(
+      repository,
+      discovered.map((template) => relative(repository, template.source)),
+    ),
+  );
+}
+
+/** Builds `slugs` (every discovered template by default) into `output`, through the
+ * template cache. */
+export async function buildTemplates(output = join(repository, "generated/templates"), slugs?: string[]) {
   const discovered = await discoverTemplates();
   const templates = slugs
     ? slugs.map((slug) => {
@@ -17,22 +31,14 @@ export async function buildTemplates(
         return template;
       })
     : discovered;
-  const cache = new TemplateCache(
-    resolve(process.env.HITSLOP_TEMPLATE_CACHE_DIR ?? join(repository, ".hitslop/template-cache")),
-    await sharedTemplateInputs(
-      repository,
-      discovered.map((template) => relative(repository, template.source)),
-    ),
-  );
+  const cache = await templateCache();
   const started = performance.now();
   let hits = 0;
-  const stage = output + ".building-" + crypto.randomUUID();
-  await mkdir(stage, { recursive: true });
-  try {
+  await publishFolder(output, async (stage) => {
     for (const [index, template] of templates.entries()) {
       const start = performance.now();
       const destination = join(stage, template.slug + ".slop");
-      const build = () => buildTemplate(template.source, [renderer], destination);
+      const build = () => buildTemplate(template.source, [debugHelper], destination);
       console.log(`Preparing template ${index + 1}/${templates.length}: ${template.slug}`);
       const status = await cache.build(template.source, template.slug, destination, build);
       if (status === "hit") hits++;
@@ -46,12 +52,8 @@ export async function buildTemplates(
         join(stage, "inventory.json"),
         JSON.stringify(templateInventory(templates), null, 2) + "\n",
       );
-    await rm(output, { recursive: true, force: true });
-    await rename(stage, output);
-    if (!slugs) await cache.prune(templates.map((template) => template.slug));
-  } finally {
-    await rm(stage, { recursive: true, force: true });
-  }
+  });
+  if (!slugs) await cache.prune(templates.map((template) => template.slug));
   const seconds = (performance.now() - started) / 1000;
   console.log(
     `Templates: ${hits} cache hits, ${templates.length - hits} built in ${seconds.toFixed(1)}s`,

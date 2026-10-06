@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { digest } from "./runtime-artifacts";
-import { repository } from "./templates";
+import { digest, fileDigest, repository } from "./runtime-artifacts";
 import type { Release } from "./compat";
 
 /** Fingerprint producing inputs, excluding the corpus-only commit and build outputs. */
@@ -19,11 +18,18 @@ export async function sourceFingerprint(root = repository): Promise<string> {
   ).sort();
   const hash = createHash("sha256");
   for (const path of inputs) {
+    // A tracked file deleted in the working tree is not an input.
+    const bytes = await readFile(join(root, path)).catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!bytes) continue;
     hash.update(JSON.stringify(path));
-    hash.update(createHash("sha256").update(await readFile(join(root, path))).digest());
+    hash.update(createHash("sha256").update(bytes).digest());
   }
   return hash.digest("hex");
 }
+
 
 /** Path + bytes, never tar timestamps or compression metadata. */
 export async function archiveDigest(archive: string): Promise<string> {
@@ -45,7 +51,7 @@ export async function corpusFiles(root: string): Promise<Record<string, string>>
       for (const name of (await readdir(path)).sort()) await visit(relative ? `${relative}/${name}` : name);
     } else {
       assert.ok(info.isFile(), `Invalid corpus file: ${relative}`);
-      if (relative !== "release.json") files[relative] = createHash("sha256").update(await readFile(path)).digest("hex");
+      if (relative !== "release.json") files[relative] = await fileDigest(path);
     }
   }
   await visit("");
@@ -56,7 +62,7 @@ export async function verifyCorpus(root: string, release: Release) {
   assert.deepEqual(await corpusFiles(root), release.files, `${release.release}: corpus files changed or are missing`);
   assert.ok(Object.keys(release.storage).length > 0, "No saved documents");
   for (const name of Object.keys(release.storage)) {
-    for (const path of [`documents/${name}.slop/state/document.sqlite`, `expected/${name}.json`, `scenarios/${name}.json`])
+    for (const path of [`documents/${name}.slop`, `expected/${name}.json`, `scenarios/${name}.json`])
       assert.ok(release.files[path], `${release.release}: missing ${path}`);
     if (name !== "conformance-anomalies") assert.ok(release.files[`pages/${name}.json`], `Missing page scenario: ${name}`);
   }
@@ -64,16 +70,16 @@ export async function verifyCorpus(root: string, release: Release) {
     assert.ok(release.storage[name], `Missing required conformance case: ${name}`);
   for (const path of ["cli/transcript.json", "cli/install/package.json", "cli/install/bun.lock"])
     assert.ok(release.files[path], `Missing ${path}`);
-  for (const [slug, hash] of Object.entries(release.packages))
-    assert.equal(await digest(join(root, "packages", `${slug}.slop`)), hash, `Changed package: ${slug}`);
+  for (const [slug, hash] of Object.entries(release.templates))
+    assert.equal(await fileDigest(join(root, "templates", `${slug}.slop`)), hash, `Changed template: ${slug}`);
 }
 
 /** Only the release being published must match current producing inputs. */
 export async function verifyCandidate(root: string, release: Release) {
   assert.equal(await sourceFingerprint(), release.inputs, "Release inputs changed after compatibility capture; capture a new candidate");
-  for (const [slug, hash] of Object.entries(release.packages)) {
+  for (const [slug, hash] of Object.entries(release.templates)) {
     if (slug === "conformance" || slug.startsWith("fixture-")) continue;
-    assert.equal(await digest(join(repository, "generated/templates", `${slug}.slop`)), hash, `Captured template differs from candidate: ${slug}`);
+    assert.equal(await fileDigest(join(repository, "generated/templates", `${slug}.slop`)), hash, `Captured template differs from candidate: ${slug}`);
   }
   for (const [file, hash] of Object.entries(release.archives))
     assert.equal(await archiveDigest(join(repository, "generated/npm", file)), hash, `Captured npm contents differ from candidate: ${file}`);

@@ -24,6 +24,9 @@ export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type CaptureMode = "preview" | "export" | "icon";
 
 export interface SlopApp {
+  /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
+   * shell refuses to mount it on a document of another. */
+  readonly descriptor?: object;
   mount(ctx: SlopContext, target: HTMLElement): SlopView | Promise<SlopView>;
 }
 /** `rendered` resolves after pending framework updates reach the DOM. */
@@ -74,8 +77,6 @@ export interface CaptureTarget {
 }
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
-  /** Schema key; an app refuses a document of another schema. */
-  readonly key: string;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). One observer at a time. */

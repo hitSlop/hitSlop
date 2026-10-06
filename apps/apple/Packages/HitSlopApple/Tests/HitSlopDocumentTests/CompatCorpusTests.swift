@@ -11,7 +11,7 @@ import WebKit
 /// result that release recorded. `HITSLOP_COMPAT_RECORD=<entry>` records that entry's
 /// results instead (`bun run compat:capture`); a frozen entry is never recorded again.
 @Suite(.serialized) struct CompatCorpusTests {
-  static let corpus = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ROOT"] ?? (#filePath.components(separatedBy: "/apps/apple/")[0] + "/tests/compat"))
+  static let corpus = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ROOT"] ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
   /// Every page scenario: `<entry>/pages/<document>.json`.
@@ -33,14 +33,14 @@ import WebKit
     let pageURL = entry.appendingPathComponent("pages/\(parts[1]).json")
     var page = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: pageURL)) as? [String: Any])
     let release = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: entry.appendingPathComponent("release.json"))) as? [String: Any])
-    if Self.recording != nil && release["frozen"] as? Bool == true { throw failure("Cannot record a frozen compatibility entry") }
+    if Self.recording != nil && release["frozen"] as? Bool == true { throw SlopFailure("Cannot record a frozen compatibility entry") }
     if Self.recording == nil { #expect(!(page["value"] is NSNull), "No recorded result for \(name)") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
     try FileManager.default.copyItem(at: entry.appendingPathComponent("documents/\(parts[1]).slop"), to: root)
     defer { try? FileManager.default.removeItem(at: root) }
     let before = try await value(root)
 
-    let session = try await DocumentSession.open(packageURL: root)
+    let session = try await DocumentSession.open(url: root)
     session.webView.configuration.userContentController.addUserScript(WKUserScript(
       source: Self.pinned(clock: release["clock"] as? Double ?? 0), injectionTime: .atDocumentStart, forMainFrameOnly: true))
     session.load()
@@ -52,19 +52,17 @@ import WebKit
           "return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
         #expect(passed == true, "\(name): the old app's contract test failed")
         // An agent's edit to the open document reaches the old app's page.
-        _ = try await command("apply", url: root, operation: Data(#"{"type":"set","path":["title"],"value":"Live ✓"}"#.utf8))
-        var shown = false
-        for _ in 0..<100 where !shown {
-          shown = try await session.webView.callAsyncJavaScript(
+        _ = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["title"],"value":"Live ✓"}]"#])
+        let shown = try await eventually(timeout: .seconds(2)) {
+          try await session.webView.callAsyncJavaScript(
             "return document.body.textContent.includes('Live ✓')", arguments: [:], in: nil, contentWorld: .page) as? Bool == true
-          if !shown { try await Task.sleep(for: .milliseconds(20)) }
         }
         #expect(shown, "\(name): a live CLI edit did not reach the page")
       case "actions":
         let actions = try #require(page["actions"] as? [[String: Any]])
         #expect(!actions.isEmpty, "No actions for \(name)")
         _ = try await session.webView.callAsyncJavaScript(Self.actions, arguments: ["actions": actions], in: nil, contentWorld: .page)
-      default: throw failure("Unknown page scenario for \(name)")
+      default: throw SlopFailure("Unknown page scenario for \(name)")
       }
       _ = try await session.webView.callAsyncJavaScript(
         "await globalThis.__slop.flush(); return true", arguments: [:], in: nil, contentWorld: .page)
@@ -82,8 +80,8 @@ import WebKit
   }
 
   @MainActor private func value(_ root: URL) async throws -> Any {
-    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    let state = try JSONSerialization.jsonObject(with: Data(await owner.state().utf8)) as! [String: Any]
+    let owner = try DocumentOwner(url: root)
+    let state = try Fixtures.object(await owner.state())
     try await owner.close()
     return state["value"] as Any
   }

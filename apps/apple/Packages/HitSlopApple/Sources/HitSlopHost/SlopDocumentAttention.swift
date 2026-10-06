@@ -13,8 +13,7 @@ extension SlopDocumentWindowController {
       let diagnostic = (error as? any SlopDiagnosticProviding)?.diagnostic
         ?? SlopFailureContext(reason: session.failureReason ?? .presentation)
       telemetry.send(.breadcrumb(.renderer, .failed))
-      let context = diagnostic
-      if !reportedSaveFailure || context.reason == .webContentTerminated { telemetry.send(.failed(.renderer, context)) }
+      if !reportedSaveFailure || diagnostic.reason == .webContentTerminated { telemetry.send(.failed(.renderer, diagnostic)) }
     }
     updatePageFailure(error.localizedDescription)
   }
@@ -30,20 +29,17 @@ extension SlopDocumentWindowController {
     refreshIssueBadge()
   }
   public func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
-    let context = storageFailure
     telemetry.send(.breadcrumb(.save, .failed))
-    telemetry.send(.failed(.save, context))
+    telemetry.send(.failed(.save, storageFailure))
   }
 
   public func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     recordSaveStatus(saveStatus)
     switch saveStatus {
     case .failed(let failure):
-      attentionMessage = failure.localizedDescription
       attentionFailure = failure
       showDocumentAttention()
     case .saved:
-      attentionMessage = nil
       attentionFailure = nil
       if let panel = documentAttention {
         window?.endSheet(panel, returnCode: .abort)
@@ -78,7 +74,7 @@ extension SlopDocumentWindowController {
   /// The save-failure sheet: unsaved work is at risk, so it blocks the window. Issues that
   /// leave the slop running show as the issue badge instead.
   private func showDocumentAttention() {
-    guard let message = attentionMessage else { return }
+    guard let message = attentionFailure?.localizedDescription else { return }
     let invalidated = attentionFailure == .invalidated
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
@@ -121,7 +117,7 @@ extension SlopDocumentWindowController {
       window?.endSheet(panel)
       panel.orderOut(nil)
       documentAttention = nil
-      attentionMessage = nil
+      attentionFailure = nil
     }
     let overlay = NSHostingView(
       rootView: FailureOverlay(message: message, retry: { [weak self] in self?.request(.retry) }))
