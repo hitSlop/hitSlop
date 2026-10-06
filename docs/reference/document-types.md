@@ -8,12 +8,16 @@ decides:
 - which handle methods, bindings and CLI operations exist.
 
 The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
-(`packages/document`) only gives it types and handles.
+(`packages/document`) gives authors types and adapters; the private shell implements
+the handles and immutable snapshots.
 
 `defineDocument` produces a plain object-root descriptor. Build validation calls the
 same Rust rules as native editing; the small TypeScript schema module is metadata and
-types, not a second validator. A rejected write exposes `OperationRejectedError.reason`
-and, for a batch, `opIndex`. Uncertain outcomes are separate errors: inspect recovered
+types, not a second validator. Catch document errors with `isDocumentError(error)`
+and semantic refusals with `isRejected(error)`; these guards work across the separately
+bundled app and shell. Transaction handles expose writes only: `preview()` and
+assignable `.value` belong to live handles. A rejected write exposes `DocumentError.reason`
+and, for a batch, `opIndex`. Uncertain outcomes have distinct error codes: inspect recovered
 state before deciding on a new edit.
 
 ```ts
@@ -95,9 +99,9 @@ Trees and rich text are not implemented; no slop uses them.
 saves. Close, quit and export do the same first. A failed save keeps every edit.
 
 **Undo.** `await doc.undo()` and `doc.redo()` are Edit ▸ Undo and Redo, after sending
-what the person sees. They step back through the person's changes and an agent's (CLI)
-edits, including an agent's edits made while the document was closed. A typing run in one
-field, and an agent's consecutive edits, are each one step.
+what the person sees. They step back through the changes made since the document
+opened, the person's and an agent's (CLI). A typing run in one field, and an agent's
+consecutive edits, are each one step.
 
 **Import.** The CLI's `replace` operation (`slop import`) makes any value, or the whole
 document, equal a JSON value by writing only the differences: rows match by `$id`, and
@@ -131,8 +135,9 @@ the rules: a wrong type, a value out of bounds, an unknown enum value, a bad key
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
-imported), `invalid_shape` (a manifest window shape) and `engine_error` (an unexpected
-Loro failure).
+imported), `invalid_shape` (a manifest window shape), `requires_update` (a package,
+storage or document layout newer than this build) and `engine_error` (an unexpected Loro
+failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
 
 **Paths** walk the schema from the root. Commands and issues use the same segments; an
 issue names a row by its effective `$id` (the one `doc.current` shows, derived for a row
@@ -209,8 +214,15 @@ so concurrent increments all count.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
-- **Merge:** two replicas that create the same unset optional object or text at once keep
-  one of them whole.
+- **Merge:**
+  - Two replicas that create the same unset object or text at once share one value: its
+    fields resolve one by one, last writer wins; text, lists and rows keep both sides;
+    counter starting values add.
+  - `set` on an object that is already set writes only the fields that change, so a
+    concurrent edit to another field survives.
+  - `clear` hides concurrent edits to the cleared value. It removes what this replica has
+    seen; an edit it has not seen reappears if a replica that has not seen it either sets
+    the value again.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
@@ -275,8 +287,8 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** Replacing an object entry that holds text or
   a list is refused (`exists`).
-- **Merge:** concurrent puts of one key keep one whole entry; edits to different fields of
-  an existing object entry both survive.
+- **Merge:** as for optional fields: concurrent puts of one key share one entry, and edits
+  to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
   - `{"type":"set","path":["checkins","2026-09-23"],"value":1}`;
@@ -286,7 +298,8 @@ widths by column. Values are scalars or objects.
 ## Async patterns
 
 - **Don't read a value and write it back** (`set(qty + 1)`): the snapshot may be a moment
-  old. Use `increment` on a counter, or read and write inside one `change`.
+  old. Use `increment` on a counter, or await the earlier writes before reading. A
+  `change` makes its writes atomic, but reads the same snapshot.
 - **Don't write in `$effect` or on mount.** Put defaults in `initial.ts`. If an effect must
   create something, guard it so it runs once, because it can rerun before the write is
   accepted.
@@ -295,9 +308,48 @@ widths by column. Values are scalars or objects.
 - **Await writes whose failure you handle**, and read `doc.current` only after the write
   resolves.
 
+## Storage layout
+
+How kinds map to Loro containers is a persisted contract: every saved document records
+its layout in the root map `meta` (`{"layout": 1}`), written with the initial values.
+A build reads every layout it knows, or migrates one losslessly, and refuses a newer one
+with `requires_update` ([engineering contract](../engineering-contract.md#compatibility)).
+
+Layout 1:
+
+| Kind | Stored as |
+|---|---|
+| the document | the root map `data`, one entry per field |
+| `s.text()` | a `LoroText` |
+| `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
+| `s.number()` | an f64 value; integral values project as integers |
+| `s.integer()` | an i64 value |
+| `s.counter()` | a `LoroMap` of writer (Loro peer ID) to that writer's integer total; the snapshot is their sum |
+| `s.optional(inner)` | the inner kind's representation, or no entry when unset |
+| `s.object({...})` | a `LoroMap` |
+| `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
+| `s.list(scalar)` | a `LoroMovableList` of values |
+| `s.record(value)` | a `LoroMap` of key to the value's representation |
+
+A container whose path from its nearest row (or the document) passes an optional field or
+a record entry can be created by more than one replica. It is created with Loro's
+`ensure_mergeable_*`, so its identity comes from its parent, key and kind, and concurrent
+creations share it. Every other container is created once, with its row or the document,
+by `insert_container`. Every replica derives the same choice from the descriptor.
+
+Loro keeps a mergeable container after its key is removed, including in history-trimmed
+snapshots. So removing a value, removing a row that holds one, and undoing either first
+empty the mergeable containers inside, and creating one empties it again before filling
+it. Each mergeable container ever created stays in the document, empty, at about 19
+bytes.
+
+Agent (CLI and socket) commits carry the commit message `agent`. Effective row IDs for
+rows without a unique stored `$id` are derived from container identity by a frozen
+function (`identity.rs`).
+
 ## Not supported
 
 Trees, rich text, `optional(list)`, `optional(record)` and `optional(counter)`, and
 `move` on scalar lists are not implemented; no slop needs them. Schema evolution is
 deferred: changing a descriptor makes a new document type. Each new kind lands in the
-core, the SDK and a fixture together.
+core, the SDK and a fixture together, and raises the package/runtime requirements.

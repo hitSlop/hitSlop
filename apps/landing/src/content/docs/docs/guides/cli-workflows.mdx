@@ -58,7 +58,7 @@ bun run build
 bun run register
 ```
 
-Build writes `dist/weekend-kit.slop`. Register builds it and adds it to the Mac app's template catalog. Existing documents keep their app version.
+Build writes `dist/weekend-kit.slop` on macOS or Linux. Register, on a Mac, builds it with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
 From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
 
@@ -114,9 +114,11 @@ bunx @hitslop/cli theme get My.slop
 bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad"}'
 bunx @hitslop/cli theme reset My.slop --token accent
 bunx @hitslop/cli theme reset My.slop
+bunx @hitslop/cli theme export My.slop --output Purple.json
+bunx @hitslop/cli theme import Other.slop Purple.json
 ```
 
-`theme get` reports defaults, overrides, and effective values. Set only tokens declared by the app. Reset one token with `--token`, or omit it to reset all overrides. The open window and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for authoring theme tokens.
+`theme get` reports the template's colors, the document's changes, and the effective palette. Set only colors the app declares, as lowercase `#rrggbb` or `#rrggbbaa`. Reset one color with `--token`, or omit it to reset them all. `theme export` prints the full palette as a theme file, or writes it with `--output`; `theme import` replaces the palette with a file made for the same template. The open window, its theme panel and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for declaring a theme.
 
 ## Work with attachments
 
@@ -158,10 +160,10 @@ slop skills install --all --scope project
 
 Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Through `bunx` or a project's own CLI, `skills install` and `skills repair` stop and ask for the global install instead, because links into those copies would go stale.
 
-Every command you run with the global `slop` first repairs global hitSlop skill links that are broken or point somewhere else, so you rarely need to repair them yourself. Project links are repaired on request:
+Upgrading the global CLI updates linked skills in place. If a link breaks or points somewhere else, repair it; add `--scope project` for project links:
 
 ```sh
-slop skills repair --scope project
+slop skills repair
 ```
 
 To install skills for a new agent, run `skills install` again.
@@ -183,3 +185,11 @@ Install the compatible hitSlop Mac app before upgrading authoring packages. With
 Update the global CLI with `bun install -g @hitslop/cli@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
 
 Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
+
+The CLI and native owner use the same generated socket contract. Socket requests
+carry the document path and, for mutations, the owner's epoch. Correlation IDs are
+not part of this contract; each request receives its reply on its own exchange.
+
+`apply` submits one operation through the same batch path as `batch`. Both read modes
+use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
+schema, sequence, version, value, and issues.

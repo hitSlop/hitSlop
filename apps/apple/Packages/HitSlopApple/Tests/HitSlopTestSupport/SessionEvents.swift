@@ -13,6 +13,7 @@ import WebKit
   public var failure: ((Error) -> Void)?
   public var recovered: (() -> Void)?
   public var resize: ((CGSize) throws -> CGSize)?
+  public var theme: ((SlopThemeState) -> Void)?
   public init(next: DocumentSessionDelegate? = nil) { self.next = next }
 
   public func pageSessionDidBecomeReady(_ session: DocumentSession) { next?.pageSessionDidBecomeReady(session) }
@@ -24,6 +25,9 @@ import WebKit
   }
   public func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
     next?.pageSession(session, storageFailure: storageFailure)
+  }
+  public func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState) {
+    if let observe = self.theme { observe(theme) } else { next?.pageSession(session, themeChanged: theme) }
   }
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
     if let report = self.issue { report(issue) } else { next?.pageSession(session, didReport: issue) }

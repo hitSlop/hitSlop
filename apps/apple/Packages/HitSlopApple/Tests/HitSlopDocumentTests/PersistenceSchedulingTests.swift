@@ -47,7 +47,9 @@ final class StorageGate: @unchecked Sendable {
   func savedHits(_ root: URL) throws -> Int? {
     let package = try SlopPackage(rootURL: root)
     let core = try NativeStore.open(root: root.path, mode: .snapshot)
-      .document(schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self))
+      .document(
+        schemaKey: package.schemaKey, initialJson: String(decoding: Data(contentsOf: package.initialURL), as: UTF8.self),
+        themeDefaultsJson: package.themeDefaults)
     let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
     return (frame["value"] as? [String: Any])?["hits"] as? Int
   }
@@ -69,9 +71,9 @@ final class StorageGate: @unchecked Sendable {
     let mutations = Locked(0)
     let mutationCode = Locked<SocketReplyCode?>(nil)
     let server = try SocketServer { request, _ in
-      if request.method == .apply { mutations.modify { $0 += 1 } }
+      if request.method == .batch { mutations.modify { $0 += 1 } }
       let reply = await owner.request(request)
-      if request.method == .apply { mutationCode.modify { $0 = try? decodeReply(reply).code } }
+      if request.method == .batch { mutationCode.modify { $0 = try? decodeReply(reply).code } }
       return reply
     }
     defer { server.stop() }
@@ -122,14 +124,14 @@ final class StorageGate: @unchecked Sendable {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
-    let saved = Locked(false)
-    owner.onSaveStatus = { status in if case .saved = status { saved.modify { $0 = true } } }
     let start = ContinuousClock.now
-    while !saved.value, ContinuousClock.now - start < .seconds(3) {
+    while (try savedHits(root) ?? 0) == 0, ContinuousClock.now - start < .seconds(3) {
       try await edit(owner)
       try await Task.sleep(for: .milliseconds(50))
     }
-    #expect(saved.value)
+    // A completed write can leave newer edits pending, so `.saving` does not mean
+    // autosave failed. Check the durable bytes before close can flush them.
+    #expect((try savedHits(root) ?? 0) > 0)
     try await owner.close()
   }
 
@@ -219,9 +221,9 @@ final class StorageGate: @unchecked Sendable {
     try await owner.close()
   }
 
-  // Failure: an agent's edit to a closed document lived only in the CLI process's undo,
-  // so the next window could not undo it. Oracle: the saved bytes.
-  @Test func aClosedAgentEditIsUndoneFromTheNextSession() async throws {
+  // Undo covers the open session only: an agent's edit saved while the document was
+  // closed is where the next session starts. Oracle: the saved bytes.
+  @Test func aReopenedDocumentStartsWithNothingToUndo() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let agent = try DocumentOwner(package: SlopPackage(rootURL: root))
@@ -231,19 +233,15 @@ final class StorageGate: @unchecked Sendable {
     let states = Locked<[UndoAvailability]>([])
     owner.onUndoState = { state in states.modify { $0.append(state) } }
     owner.publishUndoState()
-    #expect(try savedHits(root) == 3)
     _ = try await owner.undo()
     try await owner.flush()
-    #expect(try savedHits(root) == 0)
-    _ = try await owner.undo(redo: true)
-    try await owner.flush()
     #expect(try savedHits(root) == 3)
-    #expect(states.value.first == UndoAvailability(canUndo: true, canRedo: false))
+    #expect(!states.value.contains { $0.canUndo }, "the window never offers Undo")
     try await owner.close()
   }
 
   // Failure: a document kept every edit it ever saw. Oracle: closing a session that
-  // edited a large document leaves its saved state smaller, holding only that session.
+  // edited a large document leaves its saved state smaller, holding no history.
   @Test func closingALargeEditedDocumentTrimsItsHistory() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -327,6 +325,29 @@ extension PersistenceSchedulingTests {
     try await owner.close()
   }
 
+  // Failure: a discard whose reload failed (a moved package) threw without publishing, so
+  // the coordinator, which leaves save failures to the save-failure sheet, showed nothing.
+  // Oracle: the failed reload is published as a save failure.
+  @Test func aFailedDiscardPublishesItsFailure() async throws {
+    final class Statuses: @unchecked Sendable {
+      let lock = NSLock()
+      var values: [DocumentSaveStatus] = []
+      func append(_ value: DocumentSaveStatus) { lock.withLock { values.append(value) } }
+    }
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    let statuses = Statuses()
+    owner.onSaveStatus = { status in statuses.append(status) }
+    try await edit(owner)
+    owner.testingPhase = { phase in if phase == "load" { throw CoreError.Moved } }
+    await #expect(throws: SaveFailure.moved) { try await owner.discardPending() }
+    owner.testingPhase = nil
+    #expect(statuses.lock.withLock { statuses.values.contains(.failed(.moved)) })
+    try await owner.discardPending()
+    try await owner.close()
+  }
+
   @Test func discardDoesNotPublishSaveFailure() async throws {
     final class Statuses: @unchecked Sendable {
       let lock = NSLock()
@@ -374,9 +395,9 @@ extension PersistenceSchedulingTests {
   @Test func flushDuringDiscardRestoreSettlesAsReplaced() async throws {
     final class Reply: @unchecked Sendable {
       let lock = NSLock()
-      var result: Result<PageResult, Error>?
+      var result: Result<PageOutcome, Error>?
       var continuation: CheckedContinuation<Void, Never>?
-      func set(_ value: Result<PageResult, Error>) {
+      func set(_ value: Result<PageOutcome, Error>) {
         lock.withLock { result = value; continuation?.resume(); continuation = nil }
       }
       func wait() async {

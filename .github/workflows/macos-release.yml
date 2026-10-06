@@ -61,6 +61,8 @@ jobs:
         run: bun run release:check ${{ github.event_name == 'push' && '--skip-app' || '' }}
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          # Tags require their frozen tests/compat entry.
+          HITSLOP_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
       - name: Import Developer ID certificate
         if: github.event_name == 'push'
         env:

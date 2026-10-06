@@ -1,0 +1,44 @@
+{
+  "actions" : [
+    {
+      "selector" : "[aria-label=\"Checklist title\"]",
+      "value" : "Checklist edited ✓"
+    }
+  ],
+  "script" : "actions",
+  "value" : {
+    "tasks" : [
+      {
+        "$id" : "jg7t77hqfaaa2vmsw4cd287ger",
+        "archived" : false,
+        "done" : false,
+        "text" : "Make a little room for the weekend"
+      },
+      {
+        "$id" : "qfmtwkkg273z91tjbfbdh194qm",
+        "archived" : false,
+        "done" : true,
+        "text" : "Send the first draft"
+      },
+      {
+        "$id" : "compat-1",
+        "archived" : true,
+        "done" : true,
+        "text" : "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id" : "dnfm3qer8vajy2j81txv7w708g",
+        "archived" : false,
+        "done" : false,
+        "text" : "Take a walk without my phone"
+      },
+      {
+        "$id" : "compat-2",
+        "archived" : false,
+        "done" : false,
+        "text" : "Replay 2 é 中文"
+      }
+    ],
+    "title" : "Checklist edited ✓"
+  }
+}

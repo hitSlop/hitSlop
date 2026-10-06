@@ -2,28 +2,30 @@ import Foundation
 import HitSlopCore
 import HitSlopDocument
 
-/// Runs one CLI document command by its socket method name, as `hitslop-native` does.
+/// Runs one CLI document command by its CLI operation name, as `hitslop-native` does.
 @MainActor public func command(
   _ method: String, url: URL, operation: Data? = nil, operations: Data? = nil,
-  themeValues: Data? = nil, themeToken: String? = nil, attachmentBytes: Data? = nil, attachmentID: String? = nil
+  themeValues: Data? = nil, themeToken: String? = nil, themeFile: Data? = nil, attachmentBytes: Data? = nil,
+  attachmentID: String? = nil
 ) async throws -> Data {
   let op = operation.map { String(decoding: $0, as: UTF8.self) }
   let ops = operations.map { String(decoding: $0, as: UTF8.self) }
   let values = try themeValues.map { try JSONSerialization.jsonObject(with: $0) as! [String: String] }
-  return try await DocumentCommand.run(url: url) { path in
-    let id = UUID().uuidString
+  let file = themeFile.map { String(decoding: $0, as: UTF8.self) }
+  return try await DocumentCommand.run(url: url, snapshot: method == "snapshot") { path in
     switch method {
-    case "apply": return .apply(.init(id: id, documentPath: path, epoch: "", op: op ?? ""))
-    case "batch": return .batch(.init(id: id, documentPath: path, epoch: "", ops: ops ?? ""))
-    case "compact": return .compact(.init(id: id, documentPath: path, epoch: ""))
-    case "snapshot": return .snapshot(.init(id: id, documentPath: path))
-    case "theme.get": return .themeGet(.init(id: id, documentPath: path))
-    case "theme.set": return .themeSet(.init(id: id, documentPath: path, epoch: "", values: values ?? [:]))
-    case "theme.reset": return .themeReset(.init(id: id, documentPath: path, epoch: "", token: themeToken))
-    case "attachments.list": return .attachmentsList(.init(id: id, documentPath: path))
-    case "attachments.read": return .attachmentsRead(.init(id: id, documentPath: path, attachmentID: attachmentID ?? ""))
-    case "attachments.put": return .attachmentsPut(.init(id: id, documentPath: path, epoch: "", bytes: attachmentBytes?.base64EncodedString() ?? ""))
-    default: return .get(.init(id: id, documentPath: path))
+    case "apply": return .batch(.init(documentPath: path, epoch: "", ops: "[" + (op ?? "") + "]"))
+    case "batch": return .batch(.init(documentPath: path, epoch: "", ops: ops ?? ""))
+    case "compact": return .compact(.init(documentPath: path, epoch: ""))
+    case "theme.get": return .themeGet(.init(documentPath: path))
+    case "theme.set": return .themeSet(.init(documentPath: path, epoch: "", values: values ?? [:]))
+    case "theme.reset": return .themeReset(.init(documentPath: path, epoch: "", token: themeToken))
+    case "theme.export": return .themeExport(.init(documentPath: path))
+    case "theme.import": return .themeImport(.init(documentPath: path, epoch: "", file: file ?? ""))
+    case "attachments.list": return .attachmentsList(.init(documentPath: path))
+    case "attachments.read": return .attachmentsRead(.init(documentPath: path, attachmentID: attachmentID ?? ""))
+    case "attachments.put": return .attachmentsPut(.init(documentPath: path, epoch: "", bytes: attachmentBytes?.base64EncodedString() ?? ""))
+    default: return .get(.init(documentPath: path))
     }
   }
 }

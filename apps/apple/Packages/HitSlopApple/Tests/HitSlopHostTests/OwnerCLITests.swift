@@ -10,6 +10,40 @@ import HitSlopTestSupport
 @testable import HitSlopDocument
 
 extension OwnerClientTests {
+  @Test(arguments: [false, true]) @MainActor func executableReadModesAndSingleEdits(live: Bool) async throws {
+    _ = NSApplication.shared
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = live ? try await SlopDocumentWindowController.open(packageURL: root) : nil
+    try await controller?.session.waitUntilReady()
+    do {
+      func run(_ args: [String]) async throws -> [String: Any] {
+        let result = try await cli(args)
+        try #require(result.0 == 0, "\(args): \(result.2)")
+        return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
+      }
+      let single = try await run(["apply", root.path, "--op", #"{"type":"set","path":["title"],"value":"Single edit"}"#])
+      #expect((single["value"] as? [String: Any])?["title"] as? String == "Single edit")
+      #expect(single["ids"] as? [String] == [])
+      #expect(single["sequence"] as? Int != nil)
+      let batch = try await run(["batch", root.path, "--ops", #"[{"type":"set","path":["title"],"value":"Batch edit"}]"#])
+      #expect((batch["value"] as? [String: Any])?["title"] as? String == "Batch edit")
+      let value = try await run(["get", root.path])
+      let snapshot = try await run(["get", root.path, "--snapshot"])
+      let state = try #require(snapshot["state"] as? [String: Any])
+      #expect(NSDictionary(dictionary: try #require(state["value"] as? [String: Any])) == NSDictionary(dictionary: value))
+      #expect(state["version"] is String)
+      #expect(state["sequence"] is Int)
+      #expect(state["issues"] is [Any])
+      let schema = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("state.schema.json"))) as! [String: Any]
+      #expect(NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema))
+      let injected = try await cli(["apply", root.path, "--op", #"{"type":"set","path":["title"],"value":"Injected"},{"type":"set","path":["title"],"value":"Second"}"#])
+      #expect(injected.0 != 0)
+      #expect(NSDictionary(dictionary: try await run(["get", root.path])) == NSDictionary(dictionary: value))
+      try await controller?.session.close()
+    } catch { try? await controller?.session.close(); throw error }
+  }
+
   @Test @MainActor func rejectedEditsPreserveSavedStateAndComposingDraft() async throws {
     let root = try captureFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -84,7 +118,7 @@ extension OwnerClientTests {
       ) as? Bool == true)
     let previous = try Data(contentsOf: pdf)
     _ = try await view.callAsyncJavaScript(
-      "globalThis.stopFailure=globalThis.__hitslopCapture.onPrepare(()=>{throw new Error('intentional capture failure')});return true",
+      "globalThis.stopFailure=globalThis.__slop.capture.onPrepare(()=>{throw new Error('intentional capture failure')});return true",
       arguments: [:], in: nil, contentWorld: .page)
     let failed = try await cli(["export", root.path, "--format", "pdf", "--output", pdf.path])
     #expect(failed.0 != 0)
@@ -116,8 +150,8 @@ extension OwnerClientTests {
     let before = try await command("get", url: root)
     let path = try DocumentCommand.liveSocket(for: documentRoot)
     let stale = try JSONSerialization.data(withJSONObject: [
-      "id": "stale", "method": "apply", "documentPath": documentRoot.path, "epoch": "old",
-      "op": String(decoding: setTitle("must not apply"), as: UTF8.self),
+      "method": "batch", "documentPath": documentRoot.path, "epoch": "old",
+      "ops": "[" + String(decoding: setTitle("must not apply"), as: UTF8.self) + "]",
     ])
     let response = try await Task.detached { try SocketClient.call(path: path, request: stale) }.value
     let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])

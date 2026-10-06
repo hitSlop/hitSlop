@@ -1,0 +1,91 @@
+{
+  "actions" : [
+    {
+      "selector" : "[aria-label=\"Sheet title\"]",
+      "value" : "Sheet edited ✓"
+    }
+  ],
+  "script" : "actions",
+  "value" : {
+    "cells" : {
+      "A1" : {
+        "input" : "Item"
+      },
+      "A2" : {
+        "input" : "Pizza",
+        "stamp" : "🍕"
+      },
+      "A3" : {
+        "input" : "Drinks"
+      },
+      "A4" : {
+        "input" : "Garlic knots"
+      },
+      "A5" : {
+        "input" : "Tip"
+      },
+      "A6" : {
+        "input" : "Total",
+        "tint" : "butter"
+      },
+      "A8" : {
+        "input" : "Friends"
+      },
+      "A9" : {
+        "input" : "Each pays",
+        "tint" : "mint"
+      },
+      "B1" : {
+        "input" : "Cost"
+      },
+      "B2" : {
+        "input" : "24"
+      },
+      "B3" : {
+        "input" : "18.50"
+      },
+      "B4" : {
+        "input" : "7.25"
+      },
+      "B5" : {
+        "input" : "=ROUND(SUM(B2:B4)*18%, 2)"
+      },
+      "B6" : {
+        "input" : "=SUM(B2:B5)",
+        "tint" : "butter"
+      },
+      "B8" : {
+        "input" : "4"
+      },
+      "B9" : {
+        "input" : "=ROUND(B6/B8, 2)",
+        "stamp" : "💸",
+        "tint" : "mint"
+      },
+      "C1" : {
+        "input" : "Paid by"
+      },
+      "C2" : {
+        "input" : "Sam"
+      },
+      "C3" : {
+        "input" : "Ari"
+      },
+      "C4" : {
+        "input" : "Sam"
+      },
+      "compat-1" : {
+        "input" : "compat 1"
+      },
+      "compat-2" : {
+        "input" : "compat 2"
+      }
+    },
+    "title" : "Sheet edited ✓",
+    "widths" : {
+      "A" : 128,
+      "compat-1" : 56,
+      "compat-2" : 56
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "koi-pond",
+  "title": "Koi Pond",
+  "description": "A little watercolor pond where your koi drift, nibble, and keep you company.",
+  "categories": [
+    "creative",
+    "games"
+  ],
+  "presentation": {
+    "width": 420,
+    "height": 420,
+    "shape": "50%",
+    "background": "transparent"
+  }
+}

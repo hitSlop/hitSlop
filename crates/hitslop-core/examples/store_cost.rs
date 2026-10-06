@@ -69,21 +69,21 @@ fn main() {
         let initial = json!({"title":"t","rows":items,"hits":0}).to_string();
         let key = hitslop_core::validate(&schema, &initial).unwrap();
         let store = Store::open(&root, Mode::Document).unwrap();
-        let mut doc = store.document(&key, &initial).unwrap();
+        let mut doc = store.document(&key, &initial, defaults).unwrap();
         let appends = fill_log(&store, &mut doc, rows, 0, 255);
         store.close().unwrap();
         let opens: Vec<f64> = (0..5)
             .map(|_| {
                 let started = Instant::now();
                 let store = Store::open(&root, Mode::Document).unwrap();
-                store.document(&key, &initial).unwrap();
+                store.document(&key, &initial, defaults).unwrap();
                 let elapsed = ms(started);
                 store.close().unwrap();
                 elapsed
             })
             .collect();
         let store = Store::open(&root, Mode::Document).unwrap();
-        let mut doc = store.document(&key, &initial).unwrap();
+        let mut doc = store.document(&key, &initial, defaults).unwrap();
         // Every sample replaces a full log, as a real checkpoint does; the first uses the
         // log saved before reopening.
         let (mut exports, mut writes, mut compactions) = (vec![], vec![], vec![]);
@@ -101,8 +101,11 @@ fn main() {
         let themes: Vec<f64> = (0..7)
             .map(|i| {
                 let values = format!(r##"{{"accent":"#{i:06}"}}"##);
+                // A theme change is held in memory; this times the theme-only save job.
                 let started = Instant::now();
-                store.theme(defaults, Change::Set(&values)).unwrap();
+                store.theme(Change::Set(&values)).unwrap();
+                let job = store.job(&mut doc, false).unwrap().expect("a theme-only job");
+                store.write(&job).unwrap();
                 ms(started)
             })
             .collect();

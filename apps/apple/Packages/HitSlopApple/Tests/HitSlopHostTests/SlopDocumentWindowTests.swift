@@ -62,7 +62,7 @@ private func documentWindowFixture(resizable: Bool) throws -> URL {
     try Data("{}".utf8).write(to: root.appendingPathComponent("assets/theme.json"))
     try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true)
     let resizableJSON = resizable ? "true" : "false"
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author","url":"https://example.com"},"slug":"miniwindow-fixture","title":"Miniwindow Fixture","description":"Tests document miniaturize chrome.","categories":["utilities"],"presentation":{"width":320,"height":240,"resizable":\#(resizableJSON)}}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
     let skill = root.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
     try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)

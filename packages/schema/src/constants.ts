@@ -12,6 +12,9 @@ export const SlopCategories = [
   "education",
   "business",
   "personal",
+  "health",
+  "creative",
+  "music",
   "other",
 ] as const;
 /** Manifest text fields: lengths in UTF-16 units, and patterns they must match. */
@@ -30,13 +33,33 @@ export const AttachmentLimits = { file: 10 * 1024 * 1024, total: 100 * 1024 * 10
 export const base64Length = (bytes: number) => 4 * Math.ceil(bytes / 3);
 /** An attachment's ID: the SHA-256 of its bytes, in lowercase hex. */
 export const AttachmentIdPattern = "^[a-f0-9]{64}$";
-/** Theme token names and values: values in UTF-16 units, and the token prefix the host
- * reserves for window geometry. */
-export const ThemeTokenRule = { name: "^[a-zA-Z][a-zA-Z0-9-]*$", valueLength: 4096, reservedPrefix: "window-" } as const;
+/** A theme is a palette: token names, their longest length, and colors as lowercase
+ * `#rrggbb` or `#rrggbbaa` with one spelling per color (opaque colors omit `ff`). The
+ * host reserves the `window-` prefix for window geometry. */
+export const ThemeTokenRule = {
+  name: "^[a-zA-Z][a-zA-Z0-9-]{0,63}$",
+  nameLength: 64,
+  value: "^#[0-9a-f]{6}(?:[0-9a-e][0-9a-f]|f[0-9a-e])?$",
+  reservedPrefix: "window-",
+  tokens: 256,
+} as const;
+/** A package's immutable entries (everything but `state/`): one file's bytes, the entry
+ * count and total bytes. Images a package carries or a capture emits are at most `imageSide`
+ * pixels on a side and `imagePixels` in all. The authoring build and native open both check them. */
+export const PackageLimits = {
+  file: 25 * 1024 * 1024,
+  entries: 256,
+  bytes: 50 * 1024 * 1024,
+  imageSide: 16_384,
+  imagePixels: 24_000_000,
+} as const;
 /** A document's saved checkpoint plus updates: bytes, and update rows. */
 export const StorageLimits = { bytes: 32 * 1024 * 1024, rows: 4096 } as const;
 /** Effective theme JSON, in UTF-8 bytes. */
 export const ThemeLimit = 64 * 1024;
+/** A theme file: the largest effective theme plus its template and wrapper, in UTF-8
+ * bytes, so every export can be imported again. */
+export const ThemeFileLimit = ThemeLimit + 1024;
 /** Diagnostic text a page reports to the host, in UTF-16 units. */
 export const ErrorTextLimit = 4096;
 /** The `Symbol.for` key on document errors (refusals and owner outcomes). The page's
@@ -57,11 +80,21 @@ export const RowIdRule = {
   mintAlphabet: "0123456789abcdefghjkmnpqrstvwxyz",
 } as const;
 export const IssueCodes = ["type_mismatch", "out_of_range", "unknown_field", "invalid_key", "invalid_id", "duplicate_id"] as const;
+/** Codes may grow; apps treat an unfamiliar one as a refusal they cannot name. */
 export const CoreErrorCodes = [
   "type_mismatch", "out_of_range", "path_not_found", "invalid_key", "exists", "duplicate_id",
   "invalid_request", "invalid_id", "invalid_path", "invalid_schema", "too_large", "stale_base",
   "invalid_version", "invalid_bytes", "missing_dependencies", "engine_error", "invalid_shape",
+  "requires_update",
 ] as const;
+/** Persisted package syntax (manifest, resources and descriptor encoding). */
+export const PackageFormat = 1;
+/** App-facing ctx behavior. Independent of package syntax and storage layout. */
+export const RuntimeABI = 1;
+/** The native helper's command line (`hitslop-native`): the version a CLI speaks, and the
+ * oldest one a helper still serves. App updates keep serving every version in the range,
+ * so a CLI keeps working until the minimum passes it. */
+export const HelperProtocol = { version: 1, minimum: 1 } as const;
 export const PageErrorCodes = [
   "rejected",
   "owner_replaced",

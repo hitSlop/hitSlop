@@ -1,26 +1,32 @@
 import { OperationErrorBrand } from "@hitslop/schema/constants";
-/** Marks a document error so an unhandled rejection is reported as an operation issue. */
-const brand = (error: Error) =>
-  Object.defineProperty(error, Symbol.for(OperationErrorBrand), { value: true });
-/** Expected rejection before an edit is accepted. Uncaught rejections get host UI. */
-export class OperationRejectedError extends Error {
-  readonly code = "hitslop_operation_rejected";
-  constructor(message: string, readonly reason?: import("@hitslop/schema/owner").CoreErrorCode, readonly opIndex?: number) {
+import type { CoreErrorCode } from "@hitslop/schema/core";
+import type { PageErrorCode } from "@hitslop/schema/page";
+const brand = Symbol.for(OperationErrorBrand);
+/** A document operation outcome. Use the guards across independently bundled apps.
+ * Codes and reasons may grow: an app built before a code existed still recognizes the
+ * outcome, and sees the new code as an unfamiliar string. */
+export class DocumentError extends Error {
+  readonly code: PageErrorCode | (string & {});
+  readonly reason?: CoreErrorCode | (string & {});
+  readonly opIndex?: number;
+  constructor(code: PageErrorCode, message: string, reason?: CoreErrorCode, opIndex?: number) {
     super(message);
-    this.name = "OperationRejectedError";
-    brand(this);
+    this.name = "DocumentError";
+    this.code = code;
+    this.reason = reason;
+    this.opIndex = opIndex;
+    Object.defineProperty(this, brand, { value: true });
   }
 }
-/** A page request outcome. `rejected`, `owner_replaced` and `closing` were not applied. */
-export class OwnerError extends Error {
-  constructor(readonly code: import("@hitslop/schema/owner").PageErrorCode, message: string) {
-    super(message);
-    this.name = "OwnerError";
-    brand(this);
-  }
+export function isDocumentError(error: unknown): error is DocumentError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as any)[brand] === true &&
+    typeof (error as any).code === "string"
+  );
 }
-
 /** Definite semantic refusal: no mutation was accepted. */
-export function isOperationRejection(error: unknown): boolean {
-  return error instanceof OperationRejectedError;
+export function isRejected(error: unknown): error is DocumentError & { code: "rejected" } {
+  return isDocumentError(error) && error.code === "rejected";
 }

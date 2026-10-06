@@ -13,7 +13,4 @@ export default defineTheme({
   border: "#343b3e",
   onAccent: "#172006",
   danger: "#ff9393",
-  font: '"Avenir Next", -apple-system, BlinkMacSystemFont, sans-serif',
-  headingFont: '"Training Condensed", "Arial Narrow", sans-serif',
-  mono: '"SF Mono", Menlo, ui-monospace, monospace',
 });

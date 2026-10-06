@@ -1,0 +1,92 @@
+{
+  "script" : "contractTest",
+  "value" : {
+    "attachment" : "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
+    "cells" : {
+      "A1" : {
+        "input" : "43",
+        "width" : 10
+      },
+      "compat-1" : {
+        "input" : "Compat 1 ✓ café 🦊"
+      },
+      "compat-2" : {
+        "input" : "Replay 2 é 中文"
+      }
+    },
+    "checkins" : {
+      "2026-10-02" : 2,
+      "compat-1" : 1,
+      "compat-2" : 2
+    },
+    "colors" : [
+      "#111111",
+      "#eeeeee"
+    ],
+    "count" : 42,
+    "done" : false,
+    "epoch" : 2,
+    "hits" : 8,
+    "label" : "Undo me",
+    "lane" : "doing",
+    "memo" : "Memo ✎",
+    "place" : {
+      "name" : "Café",
+      "visits" : 2
+    },
+    "ratio" : 0.75,
+    "rows" : [
+      {
+        "$id" : "compat-1",
+        "done" : true,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id" : "compat-2",
+        "done" : false,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Replay 2 é 中文"
+      },
+      {
+        "$id" : "minted-1",
+        "done" : true,
+        "notes" : {
+          "k" : "w"
+        },
+        "tags" : [
+          "y",
+          "z"
+        ],
+        "text" : "First ✓"
+      },
+      {
+        "$id" : "minted-2",
+        "done" : true,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Added"
+      }
+    ],
+    "settings" : {
+      "muted" : true,
+      "volume" : 7
+    },
+    "title" : "Live ✓",
+    "version" : "compat 2"
+  }
+}

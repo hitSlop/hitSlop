@@ -41,7 +41,7 @@ Without `Icon.svelte`, build prints a notice and the host uses its generic icon.
 
 ## Design an icon at 512 × 512
 
-The native icon canvas is 512 × 512, and the host centers the artwork in it. Give the design breathing room; for example, a tile around 456 pixels wide. Prefer a recognizable silhouette and a few strong marks over tiny text or a screenshot of every control. The icon may summarize current content. Keep its theme tokens aligned with the editor.
+The native icon canvas is 512 × 512, and the host centers the artwork in it. Give the design breathing room; for example, a tile around 456 pixels wide. Prefer a recognizable silhouette and a few strong marks over tiny text or a screenshot of every control. The icon may summarize current content. Use the same theme colors as the editor, so a person's palette carries into the icon.
 
 The artwork can be rectangular or another shape; only the canvas must be square. Size the artwork to fit within the canvas, including its shadows. For example, a square tile can use:
 
@@ -91,6 +91,6 @@ An app without `defineSlop` registers capture views itself with `ctx.capture.reg
 
 ## QuickLook and Finder artwork
 
-Native build/registration captures initial artwork into `QuickLook/Preview.png` and, when declared, `QuickLook/Icon.png`. Closing a writable document refreshes both images from its saved contents and theme, and installs the same icon image as its Finder custom icon. Recents reads the updated PNG, so its icons follow the document too. Template masters keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
+Registration, or `slop build --artwork native`, captures initial artwork into `QuickLook/Preview.png` and, when declared, `QuickLook/Icon.png`; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme, and installs the same icon image as its Finder custom icon. Recents reads the updated PNG, so its icons follow the document too. Template masters keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, live selected views, and closed exports. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

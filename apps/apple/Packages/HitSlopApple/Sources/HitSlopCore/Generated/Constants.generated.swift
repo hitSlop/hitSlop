@@ -9,7 +9,19 @@ public enum AttachmentLimits {
 }
 extension SlopCategory {
   /// The manifest schema's order, which the catalog lists categories in.
-  public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "other")!]
+  public static let schemaOrder: [SlopCategory] = [SlopCategory(rawValue: "productivity")!, SlopCategory(rawValue: "utilities")!, SlopCategory(rawValue: "finance")!, SlopCategory(rawValue: "media")!, SlopCategory(rawValue: "games")!, SlopCategory(rawValue: "developer-tools")!, SlopCategory(rawValue: "education")!, SlopCategory(rawValue: "business")!, SlopCategory(rawValue: "personal")!, SlopCategory(rawValue: "health")!, SlopCategory(rawValue: "creative")!, SlopCategory(rawValue: "music")!, SlopCategory(rawValue: "other")!]
+}
+/// The platform level this build runs; a package above it needs a newer app.
+public enum PackageFormat {
+  public static let level = 1
+}
+public enum RuntimeABI {
+  public static let level = 1
+}
+/// The helper's command-line protocol: the version it speaks and the oldest it serves.
+public enum HelperProtocol {
+  public static let version = 1
+  public static let minimum = 1
 }
 public enum WindowBounds {
   public static let minWidth = 240
@@ -22,16 +34,21 @@ public enum Limits {
   /// A document's saved checkpoint plus updates, in bytes, and its update rows.
   public static let storageBytes = 33554432
   public static let storageRows = 4096
-  /// Effective theme JSON, in UTF-8 bytes.
+  /// Effective theme JSON, and a theme file, in UTF-8 bytes.
   public static let theme = 65536
+  public static let themeFile = 66560
   /// Diagnostic text a page reports, in UTF-16 units.
   public static let errorText = 4096
-  /// The `Symbol.for` key that marks the page's document errors as operation issues.
-  public static let operationErrorBrand = "hitslop.operation-error"
   /// Pushes buffered for one page before a gap forces a fresh snapshot.
   public static let pushItems = 256
   public static let pushBytes = 4194304
   /// Socket requests: every method, and attachment uploads.
   public static let socketRequest = 1048576
   public static let socketAttachment = 16777216
+  /// A package's immutable entries: one file, the entry count and total bytes; image size.
+  public static let packageFile = 26214400
+  public static let packageEntries = 256
+  public static let packageBytes = 52428800
+  public static let imageSide = 16384
+  public static let imagePixels = 24000000
 }

@@ -1,3 +1,6 @@
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 @keyframes kf0 {
   0% {
     transform: scale(0.92);
@@ -664,7 +667,7 @@
 }
 
 :root {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   color-scheme: dark;
   font-synthesis: none;
 }

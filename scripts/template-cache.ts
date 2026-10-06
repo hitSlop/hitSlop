@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { parseManifest } from "../packages/schema/src/manifest";
+import { parsePackageManifest } from "../packages/schema/src/manifest";
 import { localImports } from "../packages/cli/src/imports";
 import { validateDocument, validateTheme } from "../packages/cli/src/core";
 import { digest } from "./runtime-artifacts";
@@ -69,6 +69,8 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
     "packages/cli/skills/hitslop-document",
     "tsconfig.json",
     "packages/document/src",
+    "packages/shell/src",
+    "packages/shell/package.json",
     "packages/document/package.json",
     "packages/schema/src",
     "packages/schema/package.json",
@@ -144,7 +146,7 @@ export async function validateTemplate(path: string, slug: string) {
   for (const name of await readdir(path))
     if (!allowed.has(name)) throw new Error(`Unexpected template content: ${slug}/${name}`);
   const checksum = await digest(path); // Rejects symlinks and special files throughout the package.
-  const manifest = parseManifest(JSON.parse(await readFile(join(path, "manifest.json"), "utf8")));
+  const manifest = parsePackageManifest(JSON.parse(await readFile(join(path, "manifest.json"), "utf8")));
   if (manifest.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
   await validateDocument(
     JSON.parse(await readFile(join(path, "state.schema.json"), "utf8")),

@@ -11,7 +11,7 @@ fn main() {
     let mut files = vec![root.join("Cargo.toml"), root.join("build.rs"), root.join("../../Cargo.lock")];
     // Native validators compile these files into the core. Include them even in WASM
     // builds so both adapters identify the same rules, regardless of enabled features.
-    for name in ["manifest", "socket-request", "socket-reply", "socket-discovery", "bridge"] {
+    for name in ["manifest", "package-manifest", "socket-request", "socket-reply", "socket-discovery", "page-request"] {
         files.push(root.join(format!("../../packages/schema/generated/{name}.schema.json")));
     }
     visit(&root.join("src"), &mut files);

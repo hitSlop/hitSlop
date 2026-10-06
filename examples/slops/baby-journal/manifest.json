@@ -1,0 +1,16 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "baby-journal",
+  "title": "Little Days",
+  "description": "A gentle baby journal for feedings, diaper changes, sleep, and little memories, with a name beside every act of care.",
+  "categories": [
+    "personal"
+  ],
+  "presentation": {
+    "width": 900,
+    "height": 640
+  }
+}

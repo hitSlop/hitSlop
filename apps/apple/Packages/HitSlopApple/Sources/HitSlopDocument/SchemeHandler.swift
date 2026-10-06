@@ -22,11 +22,14 @@ import WebKit
     "json": "application/json", "css": "text/css",
     "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "svg": "image/svg+xml",
     "webp": "image/webp", "gif": "image/gif",
-    "woff": "font/woff", "woff2": "font/woff2", "ttf": "font/ttf", "mp3": "audio/mpeg",
-    "mp4": "video/mp4",
+    "woff": "font/woff", "woff2": "font/woff2", "ttf": "font/ttf", "otf": "font/otf",
+    "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg", "mp4": "video/mp4",
+    "webm": "video/webm", "mjs": "text/javascript", "wasm": "application/wasm",
   ]
+  /// Scripts only from the package and the shell; WebAssembly may compile (MilkDrop presets
+  /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.
   private static let contentSecurityPolicy =
-    "default-src 'none'; script-src slop:; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
+    "default-src 'none'; script-src slop: 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop: 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop: data:"
   private static let reads = DispatchQueue(label: "hitslop.scheme", qos: .userInitiated, attributes: .concurrent)
   let root: URL
   let shell: URL
@@ -43,26 +46,42 @@ import WebKit
     let id = ObjectIdentifier(task), token = nextToken
     tasks[id] = (token, task)
     let url = task.request.url, root = root, shell = shell
+    let range = task.request.value(forHTTPHeaderField: "Range")
     Self.reads.async { [weak self] in
       let result = Result { try Self.resource(url, root: root, shell: shell) }
-      Task { @MainActor in self?.finish(id, token: token, url: url, result) }
+      Task { @MainActor in self?.finish(id, token: token, url: url, range: range, result) }
     }
   }
   func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {
     tasks[ObjectIdentifier(task)] = nil
   }
-  private func finish(_ id: ObjectIdentifier, token: Int, url: URL?, _ result: Result<(Data, String), Error>) {
+  private func finish(_ id: ObjectIdentifier, token: Int, url: URL?, range: String?, _ result: Result<(Data, String), Error>) {
     guard let entry = tasks[id], entry.token == token else { return }
     tasks[id] = nil
     switch result {
     case .success(let (data, fileExtension)):
-      let headers = [
+      var headers = [
         "Content-Type": Self.mimeTypes[fileExtension] ?? "application/octet-stream",
         "Cache-Control": "no-store", "Content-Security-Policy": Self.contentSecurityPolicy,
+        "Accept-Ranges": "bytes",
       ]
+      // WebKit's media loader asks for byte ranges and fails without a 206 answer.
+      var status = 200, body = data
+      switch range.map({ ByteRange($0, length: data.count) }) ?? .whole {
+      case .whole: break
+      case .part(let bounds):
+        status = 206
+        body = data.subdata(in: bounds)
+        headers["Content-Range"] = "bytes \(bounds.lowerBound)-\(bounds.upperBound - 1)/\(data.count)"
+      case .unsatisfiable:
+        status = 416
+        body = Data()
+        headers["Content-Range"] = "bytes */\(data.count)"
+      }
+      headers["Content-Length"] = String(body.count)
       entry.task.didReceive(
-        HTTPURLResponse(url: url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!)
-      entry.task.didReceive(data)
+        HTTPURLResponse(url: url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!)
+      entry.task.didReceive(body)
       entry.task.didFinish()
     case .failure(let error):
       NSLog("hitSlop resource failed: %@ — %@", url?.absoluteString ?? "", error.localizedDescription)
@@ -88,5 +107,29 @@ import WebKit
       throw failure("Resource not exposed")
     }
     return (isShell ? try shellFile(file, within: base) : try SlopFile.read(file, within: base), file.pathExtension)
+  }
+}
+
+/// What one `Range: bytes=…` header asks for: `first-last`, `first-` or `-suffix`. A header
+/// this does not parse, or one naming several ranges, gets the whole resource, which HTTP
+/// allows; a range that names nothing that exists is unsatisfiable (416).
+enum ByteRange: Equatable {
+  case whole, part(Range<Int>), unsatisfiable
+
+  init(_ header: String, length: Int) {
+    let spec = header.trimmingCharacters(in: .whitespaces)
+    guard spec.hasPrefix("bytes="), !spec.contains(",") else { self = .whole; return }
+    let parts = spec.dropFirst(6).split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+    guard parts.count == 2 else { self = .whole; return }
+    switch (Int(parts[0]), Int(parts[1])) {
+    case let (first?, last) where first >= 0 && (parts[1].isEmpty || last != nil):
+      if first >= length || (last.map { $0 < first } ?? false) { self = .unsatisfiable; return }
+      self = .part(first..<min(last.map { $0 + 1 } ?? length, length))
+    case let (nil, suffix?) where parts[0].isEmpty && suffix >= 0:
+      self = suffix == 0 || length == 0 ? .unsatisfiable : .part(max(0, length - suffix)..<length)
+    default:
+      self = .whole
+    }
   }
 }

@@ -10,7 +10,7 @@ private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 10
 // Rust owns parsing; these tests exercise native path construction from its output.
 private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> SlopSilhouette {
   let object: [String: Any] = [
-    "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"],
+    "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"], "packageFormat": 1, "runtimeABI": 1,
     "presentation": ["width": max(240, width), "height": max(180, height),
       "shape": try JSONSerialization.jsonObject(with: JSONEncoder().encode(shape), options: .fragmentsAllowed)],
   ]
@@ -56,7 +56,7 @@ private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> Slo
 @Test func nativeManifestValidatorChecksViewBoxTupleMembers() throws {
   for box: [Any] in [[0, 100], [100, "bad"], [100, 20000]] {
     let manifest: [String: Any] = [
-      "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"],
+      "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"], "packageFormat": 1, "runtimeABI": 1,
       "presentation": ["width": 480, "height": 360, "shape": ["path": "M0 0H100V100Z", "viewBox": box]],
     ]
     let json = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)

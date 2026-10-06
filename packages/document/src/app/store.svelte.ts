@@ -26,6 +26,10 @@ export function defineSlop(App: Component, options: {
       if (ctx.document.key !== key) throw new Error("Host document/schema mismatch");
       const adapter = createAdapter(ctx.document);
       activate(ctx, options.schema, adapter.document);
+      const release = () => {
+        adapter.dispose();
+        deactivate(ctx);
+      };
       try {
         const app = mount(Root, { target, props: { App, Export: options.export, Icon: options.icon } });
         return {
@@ -34,14 +38,12 @@ export function defineSlop(App: Component, options: {
             try {
               await unmount(app);
             } finally {
-              adapter.dispose();
-              deactivate(ctx);
+              release();
             }
           },
         };
       } catch (error) {
-        adapter.dispose();
-        deactivate(ctx);
+        release();
         throw error;
       }
     },

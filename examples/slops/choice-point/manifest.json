@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "choice-point",
+  "title": "Choice Point",
+  "description": "Russ Harris\u2019s ACT Choice Point: notice what hooks you, map away and towards moves, and pick one towards move.",
+  "categories": [
+    "personal",
+    "education"
+  ],
+  "presentation": {
+    "width": 760,
+    "height": 860
+  }
+}

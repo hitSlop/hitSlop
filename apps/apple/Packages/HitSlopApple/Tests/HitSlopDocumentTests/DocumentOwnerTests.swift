@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import SQLite3
 import HitSlopCoreBinding
 import Testing
 import HitSlopTestSupport
@@ -46,14 +47,14 @@ import HitSlopTestSupport
           operation: method == "apply" ? Data(#"{"type":"increment","path":["hits"],"by":3}"#.utf8) : nil)
         Issue.record("Accepted owner without core identity")
       } catch {
-        #expect(error.localizedDescription.contains("different document cores"))
+        #expect(error.localizedDescription.contains("Quit and reopen hitSlop"))
       }
     }
     let output = root.appendingPathComponent("should-not-exist.png")
     do {
       try await DocumentCommand.exportLive(root: package.rootURL, socket: server.path, format: .png, output: output)
       Issue.record("Accepted export from owner without matching core identity")
-    } catch { #expect(error.localizedDescription.contains("different document cores")) }
+    } catch { #expect(error.localizedDescription.contains("Quit and reopen hitSlop")) }
     #expect(!FileManager.default.fileExists(atPath: output.path))
     #expect(forwarded.value == 0)
     #expect((try await value(owner)["value"] as? [String: Any])?["hits"] as? Int == 0)
@@ -98,7 +99,7 @@ import HitSlopTestSupport
       try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
       defer { try? FileManager.default.removeItem(at: root) }
       let store = try NativeStore.open(root: root.path, mode: .document)
-      let core = try store.document(schemaKey: schema, initialJson: json(scenario["initial"] ?? f["initial"]!))
+      let core = try store.document(schemaKey: schema, initialJson: json(scenario["initial"] ?? f["initial"]!), themeDefaultsJson: "{}")
       let before = try core.state()
       let batch = try json(["intents": scenario["intents"]!])
       if let expected = scenario["error"] as? String {
@@ -113,7 +114,7 @@ import HitSlopTestSupport
         // The saved update replays to the same value; a batch that changed nothing saves nothing.
         if let job = try core.saveJob(store: store, forceCheckpoint: false) { try store.write(job: job) }
         try store.close()
-        let reopened = try NativeStore.open(root: root.path, mode: .snapshot).document(schemaKey: schema, initialJson: "{}")
+        let reopened = try NativeStore.open(root: root.path, mode: .snapshot).document(schemaKey: schema, initialJson: "{}", themeDefaultsJson: "{}")
         let replay = try JSONSerialization.jsonObject(with: Data(reopened.state().utf8)) as! [String: Any]
         #expect(try json(replay["value"]!) == json(scenario["after"]!))
       }
@@ -137,6 +138,26 @@ import HitSlopTestSupport
       _ = try await reopened.apply(batch: self.increment, epoch: owner.epoch)
     }
     try await reopened.close()
+  }
+
+  // A document a newer hitSlop saved asks for an update from every owner mode, through
+  // the binding, and its database is left exactly as that build wrote it.
+  @Test func newerStorageAsksForAnUpdateAndIsLeftUnchanged() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    _ = try await owner.apply(batch: increment)
+    try await owner.close()
+    let database = root.appendingPathComponent("state/document.sqlite")
+    var connection: OpaquePointer?
+    #expect(sqlite3_open(database.path, &connection) == SQLITE_OK)
+    #expect(sqlite3_exec(connection, "PRAGMA user_version=2", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(connection)
+    let before = try Data(contentsOf: database)
+    for mode in [StorageMode.document, .snapshot] {
+      #expect(throws: SlopRequiresUpdate.self) { _ = try DocumentOwner(package: SlopPackage(rootURL: root), mode: mode) }
+    }
+    #expect(try Data(contentsOf: database) == before)
   }
 
   // Failure: a lost commit acknowledgement must retain both the original edit and edits
@@ -187,9 +208,11 @@ import HitSlopTestSupport
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     let first = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
+    try await owner.flush()
     let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
     _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#333333"}"##))
-    #expect(try await snapshot.loadTheme() == first.overrides)
+    try await owner.flush()
+    #expect(try await snapshot.loadTheme().state.effective == first.effective)
     await #expect(throws: (any Error).self) { _ = try await snapshot.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##)) }
     await #expect(throws: (any Error).self) { _ = try await snapshot.putAttachment(base64: "AQ==") }
     try await snapshot.close()
@@ -321,16 +344,88 @@ import HitSlopTestSupport
     let set = { (values: [String: String]) in
       ThemeChange.set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
     }
-    _ = try await owner.applyTheme(set(["accent": "var(--slop-accent)"]))
+    _ = try await owner.applyTheme(set(["accent": "#abcdef"]))
     for values in [
-      ["missing": "blue"], ["accent": " "], ["accent": "red;display:none"], ["accent": "}"],
-      ["accent": String(repeating: "😀", count: 2049)], ["accent": "var(--slop-unknown)"],
+      ["missing": "#000000"], ["accent": " "], ["accent": "red"], ["accent": "#fff"], ["accent": "#ABCDEF"],
+      ["accent": "#abcdefff"], ["accent": "var(--slop-accent)"], ["accent": "#000000;display:none"],
     ] {
       await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(set(values)) }
     }
     await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(.reset(token: "missing")) }
-    #expect(try await owner.loadTheme() == #"{"accent":"var(--slop-accent)"}"#)
+    #expect(try await accent(owner) == "#abcdef")
     try await owner.close()
+  }
+
+  func accent(_ owner: DocumentOwner) async throws -> String? {
+    try JSONDecoder().decode([String: String].self, from: Data(try await owner.loadTheme().state.effective.utf8))["accent"]
+  }
+  /// The saved accent, read without the owner (snapshot mode takes no lock).
+  func savedAccent(_ root: URL) async throws -> String? {
+    let snapshot = try DocumentOwner(package: SlopPackage(rootURL: root), mode: .snapshot)
+    defer { Task { try? await snapshot.close() } }
+    return try await accent(snapshot)
+  }
+
+  // A theme change is an edit: accepted in memory, saved by the owner's jobs, waited for
+  // by flush and close, and kept for a retry when its save fails.
+  @Test func themeChangesAreSavedLikeEdits() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.testingPhase = { phase in
+      if phase.hasPrefix("theme:") {
+        throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Disk unavailable"])
+      }
+    }
+    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).changed)
+    #expect(try await accent(owner) == "#111111")
+    await #expect(throws: (any Error).self) { try await owner.flush() }
+    #expect(try await savedAccent(root) == "#335577")
+    owner.testingPhase = nil
+    try await owner.flush()
+    #expect(try await savedAccent(root) == "#111111")
+    // Setting the template's color changes nothing; a later change is saved by close.
+    #expect(try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##)).changed == false)
+    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#222222"}"##))
+    try await owner.close()
+    #expect(try await savedAccent(root) == "#222222")
+  }
+
+  // Failure: export serialized the palette in memory, so it succeeded while the save
+  // that should back it was pending or failing.
+  @Test func themeExportWaitsForTheSave() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    owner.testingPhase = { phase in
+      if phase.hasPrefix("theme:") {
+        throw NSError(domain: "StorageFault", code: 1, userInfo: [NSLocalizedDescriptionKey: "Disk unavailable"])
+      }
+    }
+    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#444444"}"##))
+    await #expect(throws: (any Error).self) { _ = try await owner.exportTheme() }
+    owner.testingPhase = nil
+    #expect(try await owner.exportTheme().contains("#444444"))
+    #expect(try await savedAccent(root) == "#444444")
+    try await owner.close()
+  }
+
+  @Test func themeImportReplacesOverridesForItsTemplateOnly() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
+    _ = try await owner.applyTheme(.set(valuesJson: ##"{"accent":"#111111"}"##))
+    let file = try await owner.exportTheme()
+    #expect(file.contains(#""template":"runtime-conformance""#))
+    _ = try await owner.applyTheme(.reset(token: nil))
+    let other = file.replacingOccurrences(of: "runtime-conformance", with: "habit-heatmap")
+    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(owner.importTheme(other)) }
+    await #expect(throws: (any Error).self) { _ = try await owner.applyTheme(owner.importTheme("not a theme")) }
+    #expect(try await accent(owner) == "#335577")
+    #expect(try await owner.applyTheme(owner.importTheme(file)).changed)
+    #expect(try await accent(owner) == "#111111")
+    try await owner.close()
+    #expect(try await savedAccent(root) == "#111111")
   }
 
   // Spike S-D. Failure: work queued by a replaced page, or captured before a discard,
@@ -392,9 +487,9 @@ extension DocumentOwnerTests {
         values.append(reply["sequence"] as? Int ?? -1)
         if values.count == 2 { continuation.resume(returning: values) }
       }
-      owner.admitPage(["id": "first-edit", "view": "first", "method": "apply",
+      admitPage(owner, ["method": "apply",
         "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])], reply: receive)
-      owner.admitPage(["id": "second-edit", "view": "first", "method": "text",
+      admitPage(owner, ["method": "text",
         "request": json(["base": base, "path": ["title"], "from": title, "to": title + "!",
           "selectionStart": title.utf16.count + 1, "selectionEnd": title.utf16.count + 1])], reply: receive)
     }
@@ -402,7 +497,7 @@ extension DocumentOwnerTests {
     owner.attach(view: "second")
     for method in ["open", "flush"] {
       let code: String? = await withCheckedContinuation { continuation in
-        owner.admitPage(["id": method, "view": "first", "method": method]) {
+        admitPage(owner, ["method": method]) {
           continuation.resume(returning: $0["code"] as? String)
         }
       }
@@ -420,18 +515,20 @@ extension DocumentOwnerTests {
     owner.attach(view: "page")
     let increment = json(["intents": [["type": "increment", "path": ["hits"], "by": 1]]])
     let requests: [([String: Any], String)] = [
-      (["id": "a", "view": "page", "method": "apply"], "invalid_request"),
-      (["id": "b", "view": "page", "method": "apply", "batch": increment, "extra": true], "invalid_request"),
-      (["id": "c", "view": "page", "method": "flush", "batch": increment], "invalid_request"),
-      (["id": "d", "view": "", "method": "apply", "batch": increment], "invalid_request"),
-      (["id": "e", "view": "page", "method": "apply", "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
-      (["id": "f", "view": "page", "method": "text", "request": json(["base": "x"])], "invalid_request"),
-      (["id": "h", "view": "page", "method": "apply", "batch": ["intents": []]], "invalid_request"),
-      (["id": "g", "view": "page", "method": "apply", "batch": json(["intents": [["type": "set", "path": ["title"], "value": String(repeating: "x", count: 4 * 1024 * 1024)]]])], "too_large"),
+      (["method": "apply"], "invalid_request"),
+      (["method": "apply", "batch": increment, "extra": true], "invalid_request"),
+      (["method": "flush", "batch": increment], "invalid_request"),
+      (["view": "", "method": "apply", "batch": increment], "invalid_request"),
+      (["method": "apply", "batch": json(["intents": [["type": "increment", "path": ["hits"], "by": 1, "extra": 1]]])], "invalid_request"),
+      (["method": "text", "request": json(["base": "x"])], "invalid_request"),
+      (["method": "apply", "batch": ["intents": []]], "invalid_request"),
+      (["method": "apply", "batch": json(["intents": [["type": "set", "path": ["title"], "value": String(repeating: "x", count: 4 * 1024 * 1024)]]])], "too_large"),
+      // UTF-8 bytes, rather than characters, bound opaque document payloads.
+      (["method": "text", "request": String(repeating: "😀", count: 1_048_577)], "too_large"),
     ]
     for (request, reason) in requests {
       let reply: [String?] = await withCheckedContinuation { continuation in
-        owner.admitPage(request) { continuation.resume(returning: [$0["code"] as? String, $0["reason"] as? String]) }
+        admitPage(owner, request, view: "page") { continuation.resume(returning: [$0["code"] as? String, $0["reason"] as? String]) }
       }
       #expect(reply == ["rejected", reason])
     }
@@ -443,4 +540,12 @@ extension DocumentOwnerTests {
 /// A page payload, as the page sends it: JSON text.
 private func json(_ value: Any) -> String {
   String(decoding: try! JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+}
+
+// Exercise the same validated envelope and owner admission used by DocumentSession.
+@MainActor private func admitPage(_ owner: DocumentOwner, _ args: [String: Any], view: String = "first",
+  reply: @escaping @MainActor @Sendable ([String: Any]) -> Void
+) {
+  do { owner.admitPage(try PageRequest(args), view: view, reply: reply) }
+  catch { reply(DocumentOwner.pageFailure(error)) }
 }

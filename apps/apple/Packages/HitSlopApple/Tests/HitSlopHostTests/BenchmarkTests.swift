@@ -29,6 +29,79 @@ private final class PublicationTimes: @unchecked Sendable {
 }
 
 @Suite(.serialized) struct BenchmarkTests {
+  /// A color drag in the theme panel: 120 changes at 60 Hz through the owner, timed from
+  /// each change to the page's style and to the next frame after it. Coalesced deliveries
+  /// count from the earliest change they cover.
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_THEME"] == "1")) @MainActor
+  func themeDragCost() async throws {
+    _ = NSApplication.shared
+    let repository = String(#filePath.components(separatedBy: "/apps/apple/")[0])
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitslop-theme-bench-" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    var records: [[String: Any]] = []
+    for rows in [10, 1000] {
+      let root = folder.appendingPathComponent("\(rows).slop")
+      try FileManager.default.copyItem(at: URL(fileURLWithPath: repository + "/generated/native-fixtures/quick-checklist.slop"), to: root)
+      try JSONSerialization.data(withJSONObject: [
+        "title": "Theme drag",
+        "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
+      ]).write(to: root.appendingPathComponent("initial.json"))
+      // A shown window, so WebKit paints frames as it would for the person dragging.
+      let controller = try await SlopDocumentWindowController.open(packageURL: root)
+      controller.showWindow(nil)
+      await controller.waitForPresentation()
+      let session = controller.session
+      do {
+        _ = try await session.webView.callAsyncJavaScript("""
+          globalThis.__themeLog = [];
+          new MutationObserver(() => {
+            const entry = { value: document.documentElement.style.getPropertyValue('--slop-accent'),
+              styled: performance.timeOrigin + performance.now() };
+            globalThis.__themeLog.push(entry);
+            requestAnimationFrame(() => { entry.frame = performance.timeOrigin + performance.now(); });
+          }).observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+          return true
+          """, arguments: [:], in: nil, contentWorld: .page)
+        var sent: [(value: String, at: Double)] = []
+        for step in 0..<120 {
+          let value = String(format: "#%02x%02x%02x", step * 2, 255 - step * 2, 128)
+          sent.append((value, Date().timeIntervalSince1970 * 1000))
+          session.changeTheme(.set(["accent": value]))
+          try await Task.sleep(for: .milliseconds(16))
+        }
+        try await session.flush()
+        try await Task.sleep(for: .milliseconds(100))
+        let log = try await session.webView.callAsyncJavaScript("return globalThis.__themeLog", arguments: [:], in: nil, contentWorld: .page) as? [[String: Any]] ?? []
+        var styled: [Double] = [], framed: [Double] = []
+        var next = 0
+        for entry in log {
+          guard let value = entry["value"] as? String, let index = sent.firstIndex(where: { $0.value == value }),
+            index >= next, let at = (entry["styled"] as? NSNumber)?.doubleValue else { continue }
+          styled.append(at - sent[next].at)
+          // A frame arrives only while WebKit paints the window; a background test window may not.
+          if let frame = (entry["frame"] as? NSNumber)?.doubleValue { framed.append(frame - sent[next].at) }
+          next = index + 1
+        }
+        func summary(_ values: [Double]) -> [String: Double] {
+          let sorted = values.sorted()
+          guard !sorted.isEmpty else { return [:] }
+          return ["p50": sorted[sorted.count / 2], "p95": sorted[min(sorted.count - 1, sorted.count * 95 / 100)], "max": sorted.last!]
+        }
+        records.append([
+          "rows": rows, "changes": sent.count, "deliveries": styled.count,
+          "changeToStyleMS": summary(styled), "changeToFrameMS": summary(framed),
+          "lastValueShown": (log.last?["value"] as? String) == sent.last?.value,
+        ])
+        try await controller.closeDocument()
+      } catch { try? await controller.closeDocument(); throw error }
+    }
+    let output = URL(fileURLWithPath: repository + "/.hitslop/evidence/theme-drag.json")
+    try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: ["measurements": records], options: [.prettyPrinted, .sortedKeys]).write(to: output)
+    print("theme drag:", records)
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_CAPTURE"] == "1")) @MainActor
   func previewCaptureCost() async throws {
     _ = NSApplication.shared
@@ -60,9 +133,9 @@ private final class PublicationTimes: @unchecked Sendable {
           let measurement = try await session.webView.callAsyncJavaScript("""
             const token = crypto.randomUUID(), start = performance.now();
             try {
-              const box = await globalThis.__hitslopCapture.begin(token, "preview");
+              const box = await globalThis.__slop.capture.begin(token, "preview");
               return {preview_prepare_ms: performance.now() - start, height_css_px: box.height, dedicated: box.dedicated};
-            } finally { await globalThis.__hitslopCapture.restore(token); }
+            } finally { await globalThis.__slop.capture.restore(token); }
             """, arguments: [:], in: nil, contentWorld: .page) as! [String: Any]
           if sample > 0 { preparation.append(measurement) }
         }
@@ -178,7 +251,7 @@ private final class PublicationTimes: @unchecked Sendable {
           let notifyMS = 0, last = 0;
           doc.subscribe(() => { last = performance.now(); });
           // Push path: arrival, synchronous receive/notify, and when the main thread is next free.
-          const events = globalThis.__hitslop, publication = events.publish;
+          const events = globalThis.__slop, publication = events.publish;
           const phases = [], arrivals = [];
           let editStart = 0, measuring = true;
           events.publish = (p) => {

@@ -20,6 +20,10 @@ const report: Record<string, unknown> = {
   stages: [],
 };
 const stages = report.stages as { command: string; code: number; seconds: number }[];
+// A tag build must ship its own frozen compatibility corpus entry, and run every frozen
+// release's CLI against this helper.
+const version = process.env.HITSLOP_RELEASE_TAG?.replace(/^macos-v/, "");
+report.compatRelease = version ?? null;
 try {
   if (process.platform !== "darwin") throw new Error("The complete release gate requires macOS");
   for (const command of [
@@ -31,8 +35,9 @@ try {
     "swift:test",
     "test:native",
     "test:render",
-    "test:native-helper",
     "packages:pack",
+    version ? `test:compat --release ${version} --installed` : "test:compat",
+    "test:native-helper",
     "test:packed --native",
     "landing:check",
     "landing:build",

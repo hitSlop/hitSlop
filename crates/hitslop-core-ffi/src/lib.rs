@@ -79,27 +79,45 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for CoreError {
     }
 }
 
-/// Validates a package's descriptor and initial value; returns the schema key.
+/// Validates a template's descriptor and initial value; returns the schema key.
 #[uniffi::export]
 pub fn validate_document(schema_json: String, initial_json: String) -> Result<String, CoreError> {
     hitslop_core::validate(&schema_json, &initial_json).map_err(rejected)
 }
+/// Parses a package's descriptor; returns its schema key. Opening a document needs only
+/// this: `initial.json` is creation-only and is checked when storage is created.
 #[uniffi::export]
-pub fn validate_theme_defaults(json: String) -> Result<(), CoreError> {
-    hitslop_core::theme::validate_defaults(&json).map_err(rejected)
+pub fn document_schema_key(schema_json: String) -> Result<String, CoreError> {
+    hitslop_core::schema_key(&schema_json).map_err(rejected)
 }
-/// A theme command; see `hitslop_core::theme::apply`.
+/// A declared theme color.
+#[derive(uniffi::Record)]
+pub struct ThemeToken {
+    pub name: String,
+    pub value: String,
+}
+/// A package's declared colors, in the order the author wrote them.
+#[uniffi::export]
+pub fn validate_theme_defaults(json: String) -> Result<Vec<ThemeToken>, CoreError> {
+    let tokens = hitslop_core::theme::validate_defaults(&json).map_err(rejected)?;
+    Ok(tokens.into_iter().map(|(name, value)| ThemeToken { name, value }).collect())
+}
+/// A theme command; see `hitslop_core::theme::Change`.
 #[derive(uniffi::Enum)]
 pub enum ThemeChange {
     Get,
     Set { values_json: String },
     Reset { token: Option<String> },
+    /// Replaces the overrides with a theme file made for `template`.
+    Import { template: String, file_json: String },
 }
 #[derive(uniffi::Record)]
 pub struct ThemeState {
     pub defaults: String,
     pub overrides: String,
     pub effective: String,
+    /// Whether the command changed the overrides.
+    pub changed: bool,
 }
 
 /// The platform envelopes whose generated contracts the core evaluates.
@@ -108,7 +126,7 @@ pub enum EnvelopeKind {
     SocketRequest,
     SocketReply,
     SocketDiscovery,
-    BridgeRequest,
+    PageRequest,
 }
 /// Whether `json` is a well-formed envelope of this kind.
 #[uniffi::export]
@@ -119,7 +137,7 @@ pub fn envelope_is_valid(kind: EnvelopeKind, json: Vec<u8>) -> bool {
             EnvelopeKind::SocketRequest => Envelope::SocketRequest,
             EnvelopeKind::SocketReply => Envelope::SocketReply,
             EnvelopeKind::SocketDiscovery => Envelope::SocketDiscovery,
-            EnvelopeKind::BridgeRequest => Envelope::BridgeRequest,
+            EnvelopeKind::PageRequest => Envelope::PageRequest,
         },
         &json,
     )
@@ -363,27 +381,32 @@ impl NativeStore {
     pub fn doc_id(&self) -> String {
         self.0.doc_id().into()
     }
-    /// The saved document, or `initial_json` saved as its first checkpoint. Also the
-    /// reload after discarding unsaved edits.
-    pub fn document(&self, schema_key: String, initial_json: String) -> Result<Arc<NativeDocument>, CoreError> {
-        let core = catch_unwind(AssertUnwindSafe(|| self.0.document(&schema_key, &initial_json)))
+    /// The saved document, or `initial_json` saved as its first checkpoint, with its
+    /// palette over `theme_defaults_json`. Also the reload after discarding unsaved edits.
+    pub fn document(&self, schema_key: String, initial_json: String, theme_defaults_json: String) -> Result<Arc<NativeDocument>, CoreError> {
+        let core = catch_unwind(AssertUnwindSafe(|| self.0.document(&schema_key, &initial_json, &theme_defaults_json)))
             .map_err(|_| invalidated("engine_panic: open failed"))??;
         Ok(Arc::new(NativeDocument { inner: Mutex::new(Some(core)) }))
     }
     pub fn write(&self, job: Arc<SaveJob>) -> Result<(), CoreError> {
         Ok(self.0.write(&job.0)?)
     }
-    /// Runs a theme command against the stored overrides; changes are saved under
-    /// ownership, and a snapshot refuses them.
-    pub fn theme(&self, defaults_json: String, change: ThemeChange) -> Result<ThemeState, CoreError> {
+    /// Runs a theme command against the palette in memory. Runs on the edit queue; the
+    /// next save job writes a change, and a snapshot refuses changes.
+    pub fn theme(&self, change: ThemeChange) -> Result<ThemeState, CoreError> {
         use hitslop_core::theme::Change;
         let change = match &change {
             ThemeChange::Get => Change::Get,
             ThemeChange::Set { values_json } => Change::Set(values_json),
             ThemeChange::Reset { token } => Change::Reset(token.as_deref()),
+            ThemeChange::Import { template, file_json } => Change::Import { template, file: file_json },
         };
-        let state = self.0.theme(&defaults_json, change)?;
-        Ok(ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective })
+        let (state, changed) = self.0.theme(change)?;
+        Ok(ThemeState { defaults: state.defaults, overrides: state.overrides, effective: state.effective, changed })
+    }
+    /// The full palette as a theme file for `template`.
+    pub fn export_theme(&self, template: String) -> Result<String, CoreError> {
+        Ok(self.0.export_theme(&template)?)
     }
     /// Fails once the package moved, or, with `writable`, once the store owns nothing.
     pub fn check(&self, writable: bool) -> Result<(), CoreError> {
@@ -435,12 +458,12 @@ mod tests {
         let root = std::env::temp_dir().join(format!("hitslop-ffi-{}.slop", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let store = NativeStore::open(root.to_string_lossy().into(), StoreMode::Document).unwrap();
-        let owner = store.document(schema.into(), r#"{"done":false}"#.into()).unwrap();
+        let owner = store.document(schema.into(), r#"{"done":false}"#.into(), "{}".into()).unwrap();
         let result: Result<(), _> = owner.call(|_| panic!("injected unwind at the FFI boundary"));
         assert!(matches!(result, Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.state(), Err(CoreError::Invalidated { .. })));
         assert!(matches!(owner.save_job(store.clone(), true), Err(CoreError::Invalidated { .. })));
-        let restored = store.document(schema.into(), r#"{"done":true}"#.into()).unwrap();
+        let restored = store.document(schema.into(), r#"{"done":true}"#.into(), "{}".into()).unwrap();
         assert!(restored.state().unwrap().contains("\"done\":false"));
         store.close().unwrap();
         std::fs::remove_dir_all(root).unwrap();

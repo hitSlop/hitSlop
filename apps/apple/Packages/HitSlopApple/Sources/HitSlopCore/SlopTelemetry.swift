@@ -8,17 +8,20 @@ public enum SlopTelemetryEvent: Equatable, Sendable {
     public enum TemplateSource: String, Sendable { case bundled, installed }
     public enum Failure: String, Sendable {
         case create, open, save, export, renderer, duplicate, close, quit, recovery, catalog, artwork
+        case themeImport, themeExport
         // Explicit identifiers are persistent Crashlytics grouping keys. Never renumber.
         public var code: Int {
             switch self {
             case .create: 1; case .open: 2; case .save: 3; case .export: 4
             case .renderer: 5; case .duplicate: 6; case .close: 7; case .quit: 8
             case .recovery: 9; case .catalog: 10; case .artwork: 11
+            case .themeImport: 12; case .themeExport: 13
             }
         }
     }
     public enum Phase: String, Sendable { case started, completed, cancelled, failed, recovered }
     case launched, opened, duplicated
+    case themeEditorOpened, themeImported, themeExported
     case created(TemplateSource)
     case exported(ExportFormat)
     case failed(Failure, SlopFailureContext = .init())
@@ -33,7 +36,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     public enum Reason: String, Sendable {
         case unknown, storage, webContentTerminated, navigation, startup, presentation
         case invalidPackage, missingFile, permission, diskFull, busy
-        case authoredException, operationRejected, preview, icon, destinationExists
+        case authoredException, operationRejected, preview, icon, destinationExists, requiresUpdate
         var code: Int {
             switch self {
             case .unknown: 0; case .storage: 1; case .webContentTerminated: 2
@@ -43,6 +46,7 @@ public struct SlopFailureContext: Equatable, Sendable {
             case .authoredException: 12; case .operationRejected: 13
             // 16 was retired; codes are never reused.
             case .preview: 14; case .icon: 15; case .destinationExists: 17
+            case .requiresUpdate: 18
             }
         }
     }

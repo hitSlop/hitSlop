@@ -80,8 +80,8 @@ import Testing
     #expect(throws: (any Error).self) { _ = try SlopPackage(rootURL: destination) }
 }
 
-// Nothing has shipped: a manifest is valid exactly when it matches the contract. Unknown
-// fields and values are refused like malformed known ones.
+// A package at a supported platform level is valid exactly when it matches the contract:
+// unknown fields and values are refused like malformed known ones.
 @Test func manifestsAreStrict() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
     try extendManifest(root)
@@ -128,6 +128,19 @@ import Testing
     manifest["categories"] = [String(repeating: "x", count: 65)]
     try JSONSerialization.data(withJSONObject: manifest).write(to: url)
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+}
+
+// A package built for a newer platform asks for an update, whatever fields it adds, and
+// is never reported as damaged.
+@Test func aNewerPackageAsksForAnUpdate() throws {
+    let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let url = root.appendingPathComponent("manifest.json")
+    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    manifest["runtimeABI"] = RuntimeABI.level + 1
+    manifest["lineage"] = ["template": "future"]
+    try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+    #expect(throws: SlopRequiresUpdate.self) { _ = try SlopPackage(rootURL: root) }
+    #expect(SlopFailureContext.classify(SlopRequiresUpdate()).reason == .requiresUpdate)
 }
 
 /// Every optional field the contract allows, with non-default values.
@@ -191,7 +204,9 @@ private func extendManifest(_ root: URL) throws {
 // Failure: a package without theme defaults opened, and its theme commands then failed.
 @Test func packagesRequireThemeDefaults() throws {
     let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
-    _ = try SlopPackage(rootURL: root)
+    try Data(##"{"paper":"#ffffff","accent":"#335577"}"##.utf8).write(to: root.appendingPathComponent("assets/theme.json"))
+    // The panel lists colors in the order the author declared them.
+    #expect(try SlopPackage(rootURL: root).themeTokens.map(\.name) == ["paper", "accent"])
     try FileManager.default.removeItem(at: root.appendingPathComponent("assets/theme.json"))
     #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
 }
@@ -205,7 +220,7 @@ private func fixture(skin: Bool = false) throws -> URL {
     try Data("{}".utf8).write(to: root.appendingPathComponent("initial.json"))
     try Data("{}".utf8).write(to: root.appendingPathComponent("assets/theme.json"))
     let presentation = skin ? #"{"width":320,"height":240,"skin":"assets/skin.png"}"# : #"{"width":320,"height":240}"#
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation)}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"tiny-counter","title":"Tiny Counter","description":"Counts things.","categories":["utilities"],"presentation":\#(presentation),"packageFormat":1,"runtimeABI":1}"#
     try Data(manifest.utf8).write(to: root.appendingPathComponent("manifest.json"))
     try writeCanonicalDocumentSkill(to: root)
     if skin { try FileManager.default.createDirectory(at: root.appendingPathComponent("assets"), withIntermediateDirectories: true); try writeSkin(to: root.appendingPathComponent("assets/skin.png"), width: 320, height: 240) }

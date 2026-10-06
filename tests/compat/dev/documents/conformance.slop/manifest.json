@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop"
+  },
+  "slug": "abi-svelte-consumer",
+  "title": "ABI Svelte consumer",
+  "description": "Frozen Svelte adapter consumer of the runtime ABI.",
+  "categories": [
+    "utilities"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 480
+  },
+  "packageFormat": 1,
+  "runtimeABI": 1
+}

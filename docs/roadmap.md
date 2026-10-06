@@ -14,24 +14,24 @@ from using a slop to changing it gentle:
 
 ```text
 use ──▶ tweak ──▶ ask ──▶ remix ──▶ author
- ✓      CLI only  CLI only  missing    ✓
+ ✓        ✓       CLI only  missing    ✓
 ```
 
 In order, with the reasoning in [ideas](ideas.md):
 
-1. [Tweak panel](ideas.md#tweak-panel): theme tokens in the window.
-2. [Ask from the window](ideas.md#ask-from-the-window): the person's agent, launched
+1. [Ask from the window](ideas.md#ask-from-the-window): the person's agent, launched
    from the toolbar, editing the open document.
-3. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
+2. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
    who made it. Edit ▸ Undo already reverts an agent's edits.
-4. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
+3. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
    reach slops without a shell.
-5. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
+4. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
    Both change the engineering contract and need a decision before work starts.
 
 ## Open now
 
-- Restore the templates in `archive/slops` as their document kinds land.
+- At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
+  entry; from then on every released document stays openable.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
@@ -39,6 +39,27 @@ In order, with the reasoning in [ideas](ideas.md):
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles. The window
   benchmarks record footprints only and make no leak claim.
+- Text drafts that can't be saved are reported and dropped, in two cases. One case is a draft
+  whose outcome is unknown when its field unmounts, which includes a draft that became
+  unresolved earlier. The other is a draft sent from a version a live `slop compact` trimmed,
+  to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
+  shows the saved text. The fix to plan is a recoverable draft with an explicit discard.
+  Holding the close barrier instead made windows impossible to close.
+- Each removed optional value or record entry that held a container, and each removed
+  row holding one, leaves an empty mergeable container of about 19 bytes in trimmed
+  documents, because Loro retains them by identity
+  ([storage layout](reference/document-types.md#storage-layout)). Churning 1,000 such rows
+  or unique record keys leaves about 37 KB. If that becomes material, ask Loro to drop
+  inactive, empty mergeable containers from shallow snapshots; no layout change is needed.
+
+## Next
+
+- **CLI document editing off macOS.** Authoring already runs on Linux; document
+  commands still run in the Swift helper. Move them into a Rust `slop-engine` binary
+  (closed documents under the writer lock, live ones through the owner's socket), ship it
+  inside the app and as npm platform packages, and have the CLI prefer the app's copy on
+  a Mac so it never writes a format the installed app can't read. The Swift helper keeps
+  screenshot, export and open.
 
 ## Later
 
@@ -56,8 +77,9 @@ with other replicas (it already imports and exports them), authenticate in Swift
 persist opaque updates remotely. Each replica keeps one writer and local SQLite storage.
 Frontier version tokens and stateless text edits already work across replicas: a page's
 text request names the history it saw, and the core merges it with whatever arrived
-since. Closing trims history to the last editing session at most, so sync will need a
-retention policy compatible with offline replicas.
+since. Values more than one replica can create (optional values, record entries) already
+merge when created concurrently. Closing a large document trims all history, so sync will
+need a retention policy compatible with offline replicas.
 Remote edits would arrive as imports. Selective undo that preserves remote changes is
 still needed: today a raw replica import clears the local undo/redo history.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than
@@ -75,4 +97,4 @@ Media import, account UI/Auth/App Check, a document history UI, schema evolution
 iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
-There is no migration of documents from earlier builds.
+Pre-launch documents are not migrated.

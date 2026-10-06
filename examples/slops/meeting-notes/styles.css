@@ -1,9 +1,14 @@
+:root {
+  --rule: color-mix(in srgb, var(--slop-ink) 14%, transparent);
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --headingFont: Georgia, "Times New Roman", serif;
+}
 * {
   box-sizing: border-box;
 }
 :root {
   color-scheme: light;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-synthesis: none;
 }
 html,
@@ -120,7 +125,7 @@ button:focus-visible,
   padding: 2px 0;
   color: var(--slop-letterheadInk);
   background: transparent;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 26px;
   font-weight: 700;
   line-height: 1.2;
@@ -272,7 +277,7 @@ button:focus-visible,
   grid-template-columns: 16px minmax(0, 1fr) 80px 22px;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--slop-rule);
+  border: 1px solid var(--rule);
   border-radius: 6px;
   padding: 6px 8px;
   background: var(--slop-paperSoft);
@@ -446,7 +451,7 @@ button:focus-visible,
   justify-content: space-between;
   gap: 12px;
   margin-top: auto;
-  border-top: 1px solid var(--slop-rule);
+  border-top: 1px solid var(--rule);
   padding: 10px 26px;
   color: var(--slop-muted);
   background: var(--slop-paperSoft);

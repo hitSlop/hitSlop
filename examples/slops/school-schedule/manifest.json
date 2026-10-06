@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "school-schedule",
+  "title": "School Schedule",
+  "description": "Your week in color: classes, rooms, bell times, and after-class plans with a live now and next readout.",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "presentation": {
+    "width": 880,
+    "height": 640
+  }
+}

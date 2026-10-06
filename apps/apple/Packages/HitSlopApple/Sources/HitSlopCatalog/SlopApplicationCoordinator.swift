@@ -34,6 +34,12 @@ import SwiftUI
             $0.catalogClient = presentsWindows ? catalogServices.client : .empty
             $0.documentClient = native.client
         }
+        native.routing = { [weak self] id in
+            SlopDocumentRouting(
+                command: { command in self?.send(.command(command), to: id) },
+                pageReady: { self?.catalogWindow?.window?.orderOut(nil) },
+                closed: { self?.documentObservations.removeValue(forKey: id) })
+        }
         native.onOpened = { [weak self] id, controller in self?.connect(id, controller: controller) }
         observation = observe { [weak self] in
             guard let self else { return }
@@ -43,7 +49,7 @@ import SwiftUI
             if self.presentsWindows, let alert = self.store.alert {
                 self.alerts.enqueue(alert, window: NSApp.keyWindow ?? self.catalogWindow?.window, isCurrent: { [weak self] in
                     self?.store.alert?.id == alert.id
-                }, dismiss: { [weak self] in self?.store.send(.alert(.dismiss)) })
+                }, dismiss: { [weak self] action in self?.dismissAlert(action) { self?.store.send(.alert(.dismiss)) } })
             }
         }
     }
@@ -54,7 +60,9 @@ import SwiftUI
         guard let id = activeID else { return false }
         return store.documents[id: id]?.acceptsCommands == true && native.controllers[id]?.isContentReady == true
     }
-    public var isActiveDocumentPinned: Bool { activeID.flatMap { store.documents[id: $0]?.isPinned } ?? false }
+    public var isActiveDocumentPinned: Bool { activeID.flatMap { native.controllers[$0]?.isPinned } ?? false }
+    public var isActiveDocumentThemeShown: Bool { activeID.flatMap { native.controllers[$0]?.isThemeShown } ?? false }
+    public var canEditActiveDocumentTheme: Bool { activeID.flatMap { native.controllers[$0]?.session.canEditTheme } ?? false }
     private var activeID: UUID? {
         // Resolve from AppKit at invocation; modal panels cannot retarget an existing operation.
         let candidate = NSApp.keyWindow ?? NSApp.mainWindow
@@ -110,25 +118,29 @@ import SwiftUI
     }
     public func requestQuit() { store.send(.quitRequested) }
 
+    /// Runs the app's update check. The app installs it; Sparkle lives in the app target.
+    public var checkForUpdates: @MainActor () -> Void = {}
+    /// Store state stays authoritative: the chosen button's work runs here, then the alert
+    /// is dismissed like any other.
+    private func dismissAlert(_ action: ErrorAlertAction?, _ dismiss: () -> Void) {
+        switch action {
+        case .checkForUpdates: checkForUpdates()
+        case nil: break
+        }
+        dismiss()
+    }
     private func send(_ action: DocumentFeature.Action, to id: UUID) {
         guard store.documents[id: id] != nil else { return }
         store.send(.documents(.element(id: id, action: action)))
     }
     private func connect(_ id: UUID, controller: SlopDocumentWindowController) {
-        controller.onCommand = { [weak self] command in self?.send(.command(command), to: id) }
-        controller.onPageReady = { [weak self] in
-            self?.catalogWindow?.window?.orderOut(nil)
-            self?.send(.pageReady, to: id)
-        }
-        controller.onPageFailure = { [weak self] message in self?.send(.pageFailed(message), to: id) }
-        controller.onClose = { [weak self] in self?.documentObservations.removeValue(forKey: id) }
         if let document = store.scope(state: \.documents[id: id], action: \.documents[id: id]) {
             documentObservations[id] = observe { [weak self, weak controller] in
-                controller?.updatePresentation(pinned: document.isPinned, commandsEnabled: document.acceptsCommands, pageError: document.pageError)
+                controller?.setCommandsEnabled(document.acceptsCommands)
                 if self?.presentsWindows == true, let alert = document.alert {
                     self?.alerts.enqueue(alert, window: controller?.window, isCurrent: { [weak self] in
                         self?.store.documents[id: id]?.alert?.id == alert.id
-                    }, dismiss: { [weak self] in self?.send(.alert(.dismiss), to: id) })
+                    }, dismiss: { [weak self] action in self?.dismissAlert(action) { self?.send(.alert(.dismiss), to: id) } })
                 }
             }
         }
@@ -143,6 +155,8 @@ import SwiftUI
     init(templatesURL: URL, presentsWindows: Bool, telemetry: SlopTelemetry) { self.templatesURL = templatesURL; self.presentsWindows = presentsWindows; self.telemetry = telemetry }
     var controllers: [UUID: SlopDocumentWindowController] = [:]
     private var preparingURLs: [UUID: URL] = [:]
+    /// Sends a document's window commands to the coordinator, which runs them in order.
+    var routing: ((UUID) -> SlopDocumentRouting)?
     var onOpened: ((UUID, SlopDocumentWindowController) -> Void)?
     var client: DocumentClient {
         DocumentClient(
@@ -152,9 +166,15 @@ import SwiftUI
                 catch { await telemetry.failure(.open, error: error); throw error }
             },
             focus: { [self] id in await focus(id) },
-            perform: { [self] id, command in try await perform(id, command: command) },
-            prepareToQuit: { [self] id in try await prepareToQuit(id) },
-            finishQuit: { [self] id in try await finishQuit(id) },
+            perform: { [self] id, command in
+                do { return try await perform(id, command: command) } catch { throw SlopDocumentFailure(command: error) }
+            },
+            prepareToQuit: { [self] id in
+                do { try await prepareToQuit(id) } catch { throw SlopDocumentFailure(command: error) }
+            },
+            finishQuit: { [self] id in
+                do { try await finishQuit(id) } catch { throw SlopDocumentFailure(command: error) }
+            },
             cancelQuit: { [self] id in await cancelQuit(id) },
             finishAssetRefreshes: { await SlopDocumentWindowController.finishAssetRefreshesForTermination() },
             replyToQuit: { allowed in await MainActor.run { NSApp.reply(toApplicationShouldTerminate: allowed) } }
@@ -171,7 +191,9 @@ import SwiftUI
         try Task.checkCancellation()
         preparingURLs[id] = url
         defer { preparingURLs[id] = nil }
-        let controller = try await SlopDocumentWindowController.open(packageURL: url, presentsWindow: presentsWindows, telemetry: telemetry)
+        guard let routing = routing?(id) else { throw SlopPackageError.invalid("Document windows need a coordinator.") }
+        let controller = try await SlopDocumentWindowController.open(
+            packageURL: url, routing: routing, presentsWindow: presentsWindows, telemetry: telemetry)
         controllers[id] = controller
         onOpened?(id, controller)
         if presentsWindows {

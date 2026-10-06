@@ -13,7 +13,7 @@ bun run test
 bun run swift:test
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM, with the core's `BUILD_ID`) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (native XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 
@@ -24,7 +24,8 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `apps/apple` | macOS entry point, project configuration, signing, and Sparkle |
 | `crates` | `hitslop-core` (Rust on Loro) document semantics, plus its UniFFI and WASM adapters |
 | `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Runtime, Host, TCA Features, Catalog, telemetry, and NativeCLI |
-| `packages/document` | Page shell and SDK: snapshot store, typed handles, bindings, Svelte adapter, themes, and capture (no CRDT) |
+| `packages/document` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
+| `packages/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
 | `packages/schema` | TypeBox manifest, bridge, owner and socket contracts |
 | `packages/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
 | `examples/slops` | Active authored templates and the bundled selection |

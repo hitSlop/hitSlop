@@ -40,7 +40,7 @@ layout, typography, palette, and controls to the requested object.
 - Make controls feel responsive through visible pressed, selected, and focused
   states. Depth and brief motion should explain operation; decorative knobs,
   fake window chrome, and unreadable display effects add no useful character.
-- Implement the expression with plain CSS, declared theme tokens, and styled
+- Implement the expression with plain CSS, declared theme colors, and styled
   Bits UI primitives. Use spacing, rules, gradients, borders, and restrained
   shadows before reaching for image skins; reserve PNG skins for meaningful
   silhouettes as described in the presentation reference.
@@ -89,14 +89,18 @@ and PDF behavior.
   (`--slop-surface`, `--slop-accent`, `--slop-ink`). This ensures each slop retains its
   authentic physical personality (Paper, Instrument, Skin) while remaining effortless
   to restyle or re-theme at runtime.
-- Keep structural styles in plain `styles.css`, imported by the generated entry. Define public
-  tokens in `theme.ts` using `defineTheme` from `@hitslop/document`.
+- Keep structural styles in plain `styles.css`, imported by the generated entry. Declare the
+  colors a person may change in `theme.ts` using `defineTheme` from `@hitslop/document`:
+  lowercase `#rrggbb`, or `#rrggbbaa` when translucent. Only colors belong there; fonts,
+  sizes and colors derived with `color-mix(… var(--slop-ink) …)` go in `styles.css`.
   The builder emits defaults in `assets/theme.json`; the runtime applies them before
-  mounting the app. Use `var(--slop-TOKEN)` in CSS.
+  mounting the app. Use `var(--slop-TOKEN)` in CSS. The window's theme panel lists every
+  declared color in the order written, so declare the ones worth changing.
 - Group base rules, states, descendants, and responsive rules together. Use
   app-prefixed classes, including explicit classes on Bits UI portal content.
   Read [references/css.md](references/css.md) for the authoring pattern.
-- Owners inspect and change declared tokens through `slop theme get/set/reset`.
+- Owners change declared colors in the window's theme panel or through
+  `slop theme get/set/reset/export/import`.
   The host saves overrides in the document's database; never edit it or compiled assets
   directly. Layout changes require authoring source and a rebuild.
 - Keep exportable content in normal flow. Without an `Export.svelte`, mark

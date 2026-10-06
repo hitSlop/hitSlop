@@ -1,7 +1,8 @@
 import { access, constants } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { coreBuildId } from "./core";
+import { HelperProtocol } from "@hitslop/schema/constants";
+import { parseHelperProtocol } from "@hitslop/schema/helper";
 
 async function executable(path: string): Promise<boolean> {
   try {
@@ -34,19 +35,35 @@ export async function findNative(): Promise<string> {
   );
 }
 
-export async function runNative(args: string[]) {
-  const binary = await findNative();
-  const identity = Bun.spawn([binary, "--core-build"], {
+/** Refuses a helper that no longer serves, or does not yet serve, this CLI's protocol.
+ * Any compatible app build works: app updates keep serving older protocols. */
+export function checkProtocol(reported: string) {
+  let served: { version?: unknown; minimum?: unknown } | undefined;
+  try {
+    served = JSON.parse(reported);
+  } catch {}
+  const { version, minimum } = parseHelperProtocol(served);
+  if (HelperProtocol.version < minimum)
+    throw new Error("hitSlop.app no longer supports this @hitslop/cli; update @hitslop/cli");
+  if (HelperProtocol.version > version)
+    throw new Error("This @hitslop/cli needs a newer hitSlop.app; update hitSlop");
+}
+
+/** The helper's arguments for this CLI's protocol, once the helper confirms it serves it. */
+export async function negotiate(binary: string): Promise<string[]> {
+  const probe = Bun.spawn([binary, "--protocol"], {
     stdin: "ignore", stdout: "pipe", stderr: "inherit",
   });
-  const [id, status] = await Promise.all([
-    new Response(identity.stdout).text(), identity.exited,
+  const [reported, status] = await Promise.all([
+    new Response(probe.stdout).text(), probe.exited,
   ]);
   if (status) process.exit(status);
-  if (!id.trim() || id.trim() !== await coreBuildId()) {
-    throw new Error("hitSlop.app and @hitslop/cli embed different document cores; install matching versions");
-  }
-  const child = Bun.spawn([binary, ...args], {
+  checkProtocol(reported);
+  return [binary, "--client-protocol", String(HelperProtocol.version)];
+}
+
+export async function runNative(args: string[]) {
+  const child = Bun.spawn([...(await negotiate(await findNative())), ...args], {
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

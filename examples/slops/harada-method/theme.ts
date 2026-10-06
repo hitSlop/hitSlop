@@ -12,7 +12,4 @@ export default defineTheme({
   onAccent: "#f2f1ff",
   danger: "#b3261e",
   placeholder: "#9aa0b4",
-  font: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-  display: 'ui-sans-serif, -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif',
-  mono: 'ui-monospace, "SFMono-Regular", Menlo, monospace',
 });

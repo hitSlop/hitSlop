@@ -32,6 +32,14 @@ tempfile = "3"
 name = "store"
 required-features = ["storage"]
 
+[[test]]
+name = "compat"
+required-features = ["storage"]
+
 [[example]]
 name = "store_cost"
+required-features = ["storage"]
+
+[[example]]
+name = "compat_anomalies"
 required-features = ["storage"]

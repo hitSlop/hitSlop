@@ -24,13 +24,18 @@ import HitSlopCoreBinding
         stop("hold")
         return
       }
+      let initial = String(decoding: try SlopFile.read(package.initialURL, within: root), as: UTF8.self)
+      let core = try store.document(schemaKey: package.schemaKey, initialJson: initial, themeDefaultsJson: package.themeDefaults)
       if phase.hasPrefix("theme:") {
+        // A theme change is saved by a theme-only job.
+        _ = try store.theme(change: .set(valuesJson: ##"{"accent":"#112233"}"##))
         store.setPhases(phases: PhaseHook(stop))
-        _ = try store.theme(defaultsJson: package.themeDefaults, change: .set(valuesJson: ##"{"accent":"#112233"}"##))
+        guard let job = try core.saveJob(store: store, forceCheckpoint: false) else {
+          throw failure("Probe theme change produced nothing to save")
+        }
+        try store.write(job: job)
         return
       }
-      let initial = String(decoding: try SlopFile.read(package.initialURL, within: root), as: UTF8.self)
-      let core = try store.document(schemaKey: package.schemaKey, initialJson: initial)
       let frame = try JSONSerialization.jsonObject(with: Data(core.state().utf8)) as! [String: Any]
       let title = (frame["value"] as? [String: Any])?["title"] as? String ?? ""
       let edit = ["intents": [["type": "set", "path": ["title"], "value": "Crash edit " + title]]]

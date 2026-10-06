@@ -43,6 +43,19 @@ extension OwnerClientTests {
     await #expect(throws: (any Error).self) {
       _ = try await command("theme.set", url: root, themeValues: Data("{\"unknown\":\"red\"}".utf8))
     }
+    // A shared theme file round-trips through the live owner and restyles the page.
+    let shared = try await command("theme.export", url: root)
+    _ = try await command("theme.reset", url: root)
+    _ = try await command("theme.import", url: root, themeFile: shared)
+    try await controller.session.flush()
+    let imported = try await controller.session.webView.callAsyncJavaScript(
+      "return getComputedStyle(document.documentElement).getPropertyValue('--slop-accent').trim()",
+      arguments: [:], in: nil, contentWorld: .page)
+    #expect(imported as? String == "#654321")
+    let foreign = String(decoding: shared, as: UTF8.self).replacingOccurrences(of: #""template" : ""#, with: #""template" : "other-"#)
+    await #expect(throws: (any Error).self) {
+      _ = try await command("theme.import", url: root, themeFile: Data(foreign.utf8))
+    }
     do {
       _ = try await command("apply", url: root,
         operation: Data(#"{"type":"set","path":["missing"],"value":1}"#.utf8))
@@ -80,6 +93,9 @@ extension OwnerClientTests {
     _ = try await command("theme.reset", url: root, themeToken: "accent")
     let reset = try await command("theme.get", url: root)
     #expect(try JSONSerialization.jsonObject(with: reset) as? NSDictionary == JSONSerialization.jsonObject(with: baseline) as? NSDictionary)
+    // A closed document imports through the owner the command opens.
+    _ = try await command("theme.import", url: root, themeFile: shared)
+    #expect(try await command("theme.get", url: root) == theme)
   }
 
   // Failure: every CLI command ran a page close barrier that made the page inert, blurring
@@ -279,6 +295,37 @@ extension OwnerClientTests {
       String(decoding: try await command("get", url: root), as: UTF8.self)
         .contains("Recovered edit"))
   }
+
+  // Failure: a close stopped by a failed save showed the save-failure sheet and a second,
+  // generic alert. Oracle: the close fails as a save failure, which the coordinator leaves
+  // to the window, and the window shows one sheet, the one that offers Discard.
+  @Test @MainActor func aCloseStoppedByAFullDocumentShowsOneSheet() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(packageURL: root)
+    try await controller.session.waitUntilReady()
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    controller.session.owner.testingPhase = { phase in
+      if phase == "append:uncommitted" || phase == "checkpoint:uncommitted" { throw CoreError.Full }
+    }
+    await #expect(throws: (any Error).self) {
+      _ = try await command("apply", url: root, operation: setTitle("Unsaved"))
+    }
+    var failure: SlopDocumentFailure?
+    do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
+    #expect(failure == .save)
+    #expect(window.sheets.count == 1)
+    #expect(controller.attentionFailure == .full)
+    let sheet = try #require(window.attachedSheet)
+    window.endSheet(sheet, returnCode: .abort)
+    sheet.orderOut(nil)
+    controller.session.owner.testingPhase = nil
+    try await controller.session.flush()
+    try await controller.finishClose()
+  }
   #endif
 }
 
@@ -314,7 +361,7 @@ extension OwnerClientTests {
     let controller = try await SlopDocumentWindowController.open(packageURL: root)
     await controller.waitForPresentation()
     controller.pageSession(controller.session, didReport: SlopPageIssue(
-      message: "OperationRejectedError: out_of_range", isOperation: true))
+      message: "DocumentError: out_of_range", isOperation: true))
     #expect(controller.issueBadge != nil)
     #expect(controller.window?.attachedSheet == nil)
     controller.pageSession(controller.session, saveStatus: .failed(.busy))

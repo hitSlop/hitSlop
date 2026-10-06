@@ -72,4 +72,4 @@ Use optional `Icon.svelte` alongside `App.svelte`. It mounts
 only for capture, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
 Finder metadata on close; the published `QuickLook/Icon.png` remains immutable.
-Build and inspect the generated QuickLook images, then verify native exports.
+Build with `--artwork native` (or register) and inspect the generated QuickLook images, then verify native exports.

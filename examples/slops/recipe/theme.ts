@@ -6,7 +6,6 @@ export default defineTheme({
   paperSoft: "#f1f4ff",
   ink: "#182338",
   muted: "#586279",
-  rule: "color-mix(in srgb, var(--slop-ink) 16%, transparent)",
   accent: "#2448c8",
   accentInk: "#ffffff",
   accentSoft: "#e7edff",
@@ -15,8 +14,5 @@ export default defineTheme({
   cook: "#142452",
   cookSoft: "#223665",
   cookMuted: "#c5cee5",
-  font: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-  headingFont: '"Recipe Fraunces", Georgia, serif',
   tomato: "#c83c29",
-  mono: 'ui-monospace, "SFMono-Regular", Menlo, monospace',
 });

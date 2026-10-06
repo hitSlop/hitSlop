@@ -6,7 +6,7 @@ if (!native) {
   await buildShell();
 }
 if (native) await (await import("./native-fixtures")).prepareNativeFixtures();
-const files = [...new Bun.Glob("packages/{document,cli,schema}/tests/**/*.test.ts").scanSync(".")]
+const files = [...new Bun.Glob("packages/{document,shell,cli,schema}/tests/**/*.test.ts").scanSync(".")]
   .filter((file) => file.endsWith(".native.test.ts") === native)
   .sort();
 const child = Bun.spawn([process.execPath, "test", ...files.map((f) => "./" + f)], {

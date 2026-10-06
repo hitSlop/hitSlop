@@ -1,10 +1,22 @@
 import { cp, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { parseManifest } from "@hitslop/schema";
+import { parseManifest, PackageFormat, RuntimeABI } from "@hitslop/schema";
 import { validateDocument, validateTheme, validateWindowShape } from "./core";
 import { assertReplaceable, defaultOutput, exists } from "./fs";
 import { cliRoot } from "./paths";
 import type { AppCompiler } from "./vite";
+/** The runtime ABI comes from the project SDK, independently of the builder format. */
+async function runtimeABI(source: string): Promise<number> {
+  const sdk = await import(Bun.resolveSync("@hitslop/document/abi", source)).catch(() => {
+    throw new Error("Install @hitslop/document in the project before building");
+  });
+  if (!Number.isInteger(sdk.RuntimeABI)) throw new Error("Update the project's @hitslop/document to build with this CLI");
+  if (sdk.RuntimeABI < 1) throw new Error("Invalid SDK runtime ABI");
+  // This CLI validates and previews only the runtimes it knows.
+  if (sdk.RuntimeABI > RuntimeABI)
+    throw new Error(`The project's @hitslop/document needs runtimeABI ${sdk.RuntimeABI}; this @hitslop/cli supports ${RuntimeABI}. Update @hitslop/cli`);
+  return sdk.RuntimeABI;
+}
 export async function buildProject(source: string, destination?: string) {
   source = resolve(source);
   const child = Bun.spawn(
@@ -26,6 +38,7 @@ export async function buildProjectInBun(
 ) {
   source = resolve(source);
   const manifest = parseManifest(JSON.parse(await readFile(join(source, "manifest.json"), "utf8")));
+  const abi = await runtimeABI(source);
   if (!("skin" in manifest.presentation)) await validateWindowShape(manifest.presentation);
   const out = destination ? resolve(destination) : defaultOutput(source, manifest.slug);
   await assertReplaceable(out, source);
@@ -43,7 +56,7 @@ export async function buildProjectInBun(
     await cp(join(source, "assets"), join(stage, "assets"), { recursive: true });
   try {
     await compileApp?.(source, stage);
-    await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest, null, 2));
+    await writeFile(join(stage, "manifest.json"), JSON.stringify({ ...manifest, packageFormat: PackageFormat, runtimeABI: abi }, null, 2));
     await writeFile(join(stage, "state.schema.json"), JSON.stringify(descriptor, null, 2));
     await writeFile(join(stage, "initial.json"), JSON.stringify(initial, null, 2));
     await writeFile(join(stage, "assets/theme.json"), JSON.stringify(theme.defaults));

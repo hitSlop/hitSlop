@@ -61,7 +61,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public private(set) var failureReason: SlopFailureContext.Reason?
   public private(set) var failureClassification: SlopFailureContext.Classification = .platform
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
-  public var capturing = false
+  /// While a capture reads the page, accepted theme changes wait to restyle it.
+  public var capturing = false {
+    didSet { if oldValue && !capturing { refreshTheme() } }
+  }
   public var allowsFileSelection = true {
     didSet { if !allowsFileSelection { filePicker.cancel(); fileSaver.cancel() } }
   }
@@ -91,8 +94,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   nonisolated private let pushes = PushQueue()
   private var closeTask: Task<Void, Error>?
   /// The manifest presentation as the page's `config` reply carries it.
-  private lazy var presentation: Any = (try? JSONSerialization.jsonObject(
-    with: JSONEncoder().encode(package.manifest.presentation))) ?? [:]
+  private lazy var presentation: [String: Any] = (try? JSONSerialization.jsonObject(
+    with: JSONEncoder().encode(package.manifest.presentation))) as? [String: Any] ?? [:]
   private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
   private let webViewResources: URL
 
@@ -129,13 +132,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     owner.onPublication = { [weak self] publication in
       self?.push(#"{"type":"publication","publication":"# + publication + "}")
     }
-    // Theme commands from the CLI restyle the open page; the page only applies values.
-    owner.onTheme = { [weak self] overrides in
+    // Theme changes from the panel or the CLI restyle the open page; the page only
+    // applies values.
+    owner.onTheme = { [weak self] in
       Task { @MainActor [weak self] in
-        guard let self, self.isReady, !self.rendererDead, let webView = self.liveWebView else { return }
-        _ = try? await webView.callAsyncJavaScript(
-          "globalThis.__slop?.applyTheme?.(JSON.parse(overrides)); return true",
-          arguments: ["overrides": overrides], in: nil, contentWorld: .page)
+        self?.themeDirty = true
+        self?.refreshTheme()
       }
     }
     owner.onUndoState = { [weak self] state in
@@ -148,6 +150,68 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         self.delegate?.pageSession(self, saveStatus: status)
       }
     }
+  }
+
+  private var themeDirty = true
+  private var themeDelivery: Task<Void, Never>?
+  private var settlingTheme = false
+  /// Delivers the latest effective palette, serializing deliveries and retaining changes
+  /// made while the page opens. A stale page can never restyle its replacement. Waits
+  /// while a capture reads the page, except to settle before it.
+  private func refreshTheme() {
+    guard themeDelivery == nil else { return }
+    themeDelivery = Task { [weak self] in
+      await self?.deliverTheme()
+      self?.themeDelivery = nil
+    }
+  }
+  private func deliverTheme() async {
+    while themeDirty, isReady, !rendererDead, !capturing || settlingTheme, let webView = liveWebView {
+      themeDirty = false
+      do {
+        let read = try await owner.loadTheme()
+        guard webView === liveWebView else { themeDirty = true; continue }
+        _ = try await webView.callAsyncJavaScript(
+          "globalThis.__slop.applyTheme(JSON.parse(values)); return true",
+          arguments: ["values": read.state.effective], in: nil, contentWorld: .page)
+        delegate?.pageSession(self, themeChanged: try SlopThemeState(read))
+      } catch { themeDirty = true; return }
+    }
+  }
+  /// Every accepted theme change has reached the page, so a capture shows it.
+  private func settleTheme() async throws {
+    settlingTheme = true
+    defer { settlingTheme = false }
+    await themeDelivery?.value
+    if themeDirty {
+      refreshTheme()
+      await themeDelivery?.value
+    }
+    if themeDirty { throw failure("Theme could not be applied to the page") }
+  }
+
+  // MARK: Theme panel
+
+  /// Whether this window may change its document's palette.
+  public var canEditTheme: Bool { isReady && !rendererDead && !closing && !closed && owner.mode == .document }
+  /// The palette now; later changes arrive through `pageSession(_:themeChanged:)`.
+  public func currentTheme() async throws -> SlopThemeState {
+    try SlopThemeState(try await owner.loadTheme())
+  }
+  /// Applies a panel change in the order changes are made. It is accepted in memory,
+  /// restyles the page, and is saved like an edit. `reply` reports the owner's theme
+  /// revision once the change is accepted (unchanged when it changed nothing), or the
+  /// refusal.
+  public func changeTheme(_ change: SlopThemeChange, reply: @escaping @MainActor (Result<Int, Error>) -> Void = { _ in }) {
+    guard !closing, !closed else { return reply(.failure(failure("Document is closing"))) }
+    owner.enqueueTheme(change) { result in
+      Task { @MainActor in reply(result.map(\.revision)) }
+    }
+  }
+  /// The full palette as a theme file, formatted like `slop theme export`.
+  public func exportTheme() async throws -> Data {
+    let file = try JSONSerialization.jsonObject(with: Data(try await owner.exportTheme().utf8))
+    return try DocumentCommand.formatted(file) + Data("\n".utf8)
   }
 
   /// Called on the owner queue, so pushes enter `pushes` in owner order. One drain at a
@@ -173,7 +237,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         #if DEBUG
         try testingDeliveryFailure?()
         #endif
-        _ = try await webView.callAsyncJavaScript("globalThis.__hitslop?.publish(JSON.parse(payload)); return true",
+        _ = try await webView.callAsyncJavaScript("globalThis.__slop?.publish(JSON.parse(payload)); return true",
           arguments: ["payload": "[" + batch.items.joined(separator: ",") + "]"], in: nil, contentWorld: .page)
         pushes.acknowledge(batch)
         retryMS = 100
@@ -240,6 +304,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   private func makeWebView() {
     // Each page gets its own view token; requests from a replaced page are refused.
     closePrepared = false
+    themeDirty = true
     view = UUID().uuidString
     pushes.configure(view: view)
     owner.attach(view: view)
@@ -259,18 +324,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
             if (document.documentElement) hideControls();
             else document.addEventListener('DOMContentLoaded', hideControls, {once: true});
           })();
-          // An unhandled document error (a refused write) is an operation issue, not an
-          // authored failure. WebKit's `stack` lists only frames, so the message leads.
-          for (const type of ['error','unhandledrejection']) addEventListener(type,e=> {
+          // This listener survives a failure to load the shell itself.
+          addEventListener('error', e => {
             const source = e.target?.src;
-            const shellResource = typeof source === 'string' && source.startsWith('slop://app/__shell__/');
-            const reason = type === 'error' ? e.error : e.reason;
-            const operation = reason?.[Symbol.for('\(Limits.operationErrorBrand)')] === true;
-            const head = reason instanceof Error ? reason.name + ': ' + reason.message : String(reason ?? e.message);
-            const stack = reason instanceof Error && reason.stack ? reason.stack : '';
-            const detail = stack.startsWith(head) ? stack : stack ? head + '\\n' + stack : head;
-            const error = (shellResource ? 'Could not load page shell resource: ' + source : detail).slice(0,\(Limits.errorText));
-            webkit.messageHandlers.hitslop.postMessage(shellResource ? {method:'failed',error} : {method:'pageError',kind:operation ? 'operation' : 'application',error}).catch(()=>{});
+            if (typeof source !== 'string' || !source.startsWith('slop://app/__shell__/')) return;
+            const error = ('Could not load page shell resource: ' + source).slice(0,\(Limits.errorText));
+            webkit.messageHandlers.hitslop.postMessage({method:'failed',error}).catch(()=>{});
           }, true);
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     if renderTargetsEnabled { markRenderTarget(configuration) }
@@ -332,31 +391,45 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       message.frameInfo.securityOrigin.host == "app",
       let args = message.body as? [String: Any]
     else {
-      replyHandler(nil, "Invalid bridge request")
+      replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Invalid page request")), nil)
       return
     }
-    if let method = args["method"] as? String, ["open", "apply", "text", "flush", "undo", "redo"].contains(method) {
-      owner.admitPage(args) { replyHandler($0, nil) }
-      return
-    }
-    guard let request = BridgeRequest(args) else {
-      replyHandler(nil, "Invalid bridge request")
-      return
-    }
+    let request: PageRequest
+    do { request = try PageRequest(args) }
+    catch { replyHandler(DocumentOwner.pageFailure(error), nil); return }
     switch request.method {
+    case .open, .apply, .text, .flush, .undo, .redo:
+      owner.admitPage(request, view: view) { replyHandler($0, nil) }
     case .config:
-      replyHandler([
-        "epoch": epoch, "view": view, "documentID": owner.documentID,
-        "readOnly": owner.mode == .snapshot, "presentation": presentation,
-      ], nil)
+      let page = message.webView
+      Task { @MainActor [weak self] in
+        guard let self else { return replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Page unavailable")), nil) }
+        do {
+          // A queued request from a replaced page cannot consume the new page's
+          // dirty flag. Changes arriving during the read set it again.
+          guard page === liveWebView else { throw OwnerReplaced() }
+          themeDirty = false
+          let theme: [String: String]
+          do {
+            let values = try JSONSerialization.jsonObject(with: Data(try await owner.loadTheme().state.effective.utf8))
+            guard let values = values as? [String: String] else { throw failure("Invalid effective theme") }
+            theme = values
+          } catch {
+            if page === liveWebView { themeDirty = true }
+            throw error
+          }
+          replyHandler(PageResult.config(.init(
+            runtimeABI: package.manifest.runtimeABI, readOnly: owner.mode == .snapshot, presentation: presentation, theme: theme)).json, nil)
+        } catch { replyHandler(DocumentOwner.pageFailure(error), nil) }
+      }
     case .windowResize:
       do {
         guard package.isResizable, let delegate, !capturing, !closing, !closed,
           let width = args["width"] as? Double, let height = args["height"] as? Double
         else { throw failure("Window resizing unavailable") }
         let size = try delegate.pageSession(self, resizeContentTo: CGSize(width: width, height: height))
-        replyHandler(["width": size.width, "height": size.height], nil)
-      } catch { replyHandler(nil, error.localizedDescription) }
+        replyHandler(PageResult.windowResize(.init(width: Double(size.width), height: Double(size.height))).json, nil)
+      } catch { replyHandler(DocumentOwner.pageFailure(error), nil) }
     case .ready:
       switch phase {
       case .active(.opening): phase = .active(.ready)
@@ -364,15 +437,16 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       // into a renderer failure.
       case .closing(.opening, let prepared): phase = .closing(.ready, prepared: prepared)
       default:
-        replyHandler(nil, "Document page is not opening")
+        replyHandler(DocumentOwner.pageFailure(OwnerError.rejected("Document page is not opening")), nil)
         return
       }
+      refreshTheme()
       completeWaiters(.success(()))
       delegate?.pageSessionDidBecomeReady(self)
-      replyHandler([:], nil)
+      replyHandler(PageResult.ready.json, nil)
     case .pageRecovered:
       delegate?.pageSessionRecovered(self)
-      replyHandler([:], nil)
+      replyHandler(PageResult.pageRecovered.json, nil)
     case .failed, .pageError:
       let error = args["error"] as? String ?? "Runtime error"
       if request.method == .pageError && isReady {
@@ -382,8 +456,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         failOpening(error, reason: authored ? .authoredException : .startup,
                     classification: authored ? .authored : .platform)
       }
-      replyHandler([:], nil)
-    case .attachmentsPut, .attachmentsRead, .themeLoad:
+      replyHandler((request.method == .failed ? PageResult.failed : .pageError).json, nil)
+    case .attachmentsPut, .attachmentsRead:
       servePageStorage(request, reply: replyHandler)
     }
   }
@@ -410,6 +484,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     } catch { return SocketReply(ok: false, epoch: epoch, error: error.localizedDescription, code: .failed).encoded() }
   }
 
+  /// Saves every accepted edit and theme change, and settles the palette on the page,
+  /// before an export, a duplicate or a close reads it.
   public func flush() async throws {
     guard isReady, !rendererDead, !closed else { throw failure("Document renderer unavailable") }
     do {
@@ -419,6 +495,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       if let failure = try? await owner.currentSaveFailure() { throw failure }
       throw error
     }
+    try await settleTheme()
   }
 
   /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
@@ -692,4 +769,3 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     view.setValue(value, forKey: "drawsBackground")
   }
 }
-

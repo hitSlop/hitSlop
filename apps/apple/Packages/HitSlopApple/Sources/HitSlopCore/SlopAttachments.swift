@@ -21,7 +21,6 @@ public enum SlopAttachmentError: SlopRejection, Equatable {
 public struct AttachmentRef: Codable, Sendable, Equatable {
   public let id: String
   public let byteLength: Int
-  public var json: [String: Any] { ["id": id, "byteLength": byteLength] }
 }
 
 /// Opaque immutable blobs. Mutations must run under the package's writer lease.

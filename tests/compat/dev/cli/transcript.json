@@ -1,0 +1,783 @@
+{
+  "document": "conformance",
+  "commands": [
+    {
+      "args": [
+        "schema",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": {
+        "kind": "object",
+        "properties": {
+          "title": {
+            "kind": "text"
+          },
+          "version": {
+            "kind": "string"
+          },
+          "epoch": {
+            "kind": "integer"
+          },
+          "done": {
+            "kind": "boolean"
+          },
+          "hits": {
+            "kind": "counter"
+          },
+          "rows": {
+            "kind": "list",
+            "item": {
+              "kind": "object",
+              "properties": {
+                "text": {
+                  "kind": "text"
+                },
+                "done": {
+                  "kind": "boolean"
+                },
+                "tags": {
+                  "kind": "list",
+                  "item": {
+                    "kind": "string"
+                  }
+                },
+                "notes": {
+                  "kind": "record",
+                  "value": {
+                    "kind": "string"
+                  }
+                }
+              }
+            }
+          },
+          "label": {
+            "kind": "string",
+            "maxLength": 40
+          },
+          "ratio": {
+            "kind": "number",
+            "min": 0,
+            "max": 1
+          },
+          "count": {
+            "kind": "integer",
+            "min": 0,
+            "max": 100
+          },
+          "lane": {
+            "kind": "enum",
+            "values": [
+              "todo",
+              "doing",
+              "done"
+            ]
+          },
+          "note": {
+            "kind": "optional",
+            "inner": {
+              "kind": "string"
+            }
+          },
+          "memo": {
+            "kind": "optional",
+            "inner": {
+              "kind": "text"
+            }
+          },
+          "place": {
+            "kind": "optional",
+            "inner": {
+              "kind": "object",
+              "properties": {
+                "name": {
+                  "kind": "string"
+                },
+                "visits": {
+                  "kind": "integer",
+                  "min": 0
+                }
+              }
+            }
+          },
+          "settings": {
+            "kind": "object",
+            "properties": {
+              "volume": {
+                "kind": "integer",
+                "min": 0,
+                "max": 10
+              },
+              "muted": {
+                "kind": "boolean"
+              }
+            }
+          },
+          "colors": {
+            "kind": "list",
+            "item": {
+              "kind": "string"
+            }
+          },
+          "checkins": {
+            "kind": "record",
+            "value": {
+              "kind": "integer",
+              "min": 0
+            }
+          },
+          "cells": {
+            "kind": "record",
+            "value": {
+              "kind": "object",
+              "properties": {
+                "input": {
+                  "kind": "text"
+                },
+                "width": {
+                  "kind": "optional",
+                  "inner": {
+                    "kind": "integer",
+                    "min": 0
+                  }
+                }
+              }
+            }
+          },
+          "attachment": {
+            "kind": "optional",
+            "inner": {
+              "kind": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "args": [
+        "get",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": {
+        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "cells": {
+          "compat-1": {
+            "input": "Compat 1 ✓ café 🦊"
+          },
+          "compat-2": {
+            "input": "Replay 2 é 中文"
+          }
+        },
+        "checkins": {
+          "compat-1": 1,
+          "compat-2": 2
+        },
+        "colors": [
+          "compat 2",
+          "compat 1"
+        ],
+        "count": 2,
+        "done": false,
+        "epoch": 2,
+        "hits": 5,
+        "label": "compat 2",
+        "lane": "done",
+        "memo": "Replay 2 é 中文",
+        "note": "compat 2",
+        "place": {
+          "name": "compat 1",
+          "visits": 1
+        },
+        "ratio": 0.5,
+        "rows": [
+          {
+            "$id": "compat-1",
+            "done": true,
+            "notes": {},
+            "tags": [],
+            "text": "Compat 1 ✓ café 🦊"
+          },
+          {
+            "$id": "compat-2",
+            "done": false,
+            "notes": {},
+            "tags": [],
+            "text": "Replay 2 é 中文"
+          }
+        ],
+        "settings": {
+          "muted": false,
+          "volume": 2
+        },
+        "title": "Replay 2 é 中文",
+        "version": "compat 2"
+      }
+    },
+    {
+      "args": [
+        "get",
+        "{document}",
+        "--snapshot"
+      ],
+      "code": 0,
+      "stdout": {
+        "schema": {
+          "kind": "object",
+          "properties": {
+            "attachment": {
+              "inner": {
+                "kind": "string"
+              },
+              "kind": "optional"
+            },
+            "cells": {
+              "kind": "record",
+              "value": {
+                "kind": "object",
+                "properties": {
+                  "input": {
+                    "kind": "text"
+                  },
+                  "width": {
+                    "inner": {
+                      "kind": "integer",
+                      "min": 0
+                    },
+                    "kind": "optional"
+                  }
+                }
+              }
+            },
+            "checkins": {
+              "kind": "record",
+              "value": {
+                "kind": "integer",
+                "min": 0
+              }
+            },
+            "colors": {
+              "item": {
+                "kind": "string"
+              },
+              "kind": "list"
+            },
+            "count": {
+              "kind": "integer",
+              "max": 100,
+              "min": 0
+            },
+            "done": {
+              "kind": "boolean"
+            },
+            "epoch": {
+              "kind": "integer"
+            },
+            "hits": {
+              "kind": "counter"
+            },
+            "label": {
+              "kind": "string",
+              "maxLength": 40
+            },
+            "lane": {
+              "kind": "enum",
+              "values": [
+                "todo",
+                "doing",
+                "done"
+              ]
+            },
+            "memo": {
+              "inner": {
+                "kind": "text"
+              },
+              "kind": "optional"
+            },
+            "note": {
+              "inner": {
+                "kind": "string"
+              },
+              "kind": "optional"
+            },
+            "place": {
+              "inner": {
+                "kind": "object",
+                "properties": {
+                  "name": {
+                    "kind": "string"
+                  },
+                  "visits": {
+                    "kind": "integer",
+                    "min": 0
+                  }
+                }
+              },
+              "kind": "optional"
+            },
+            "ratio": {
+              "kind": "number",
+              "max": 1,
+              "min": 0
+            },
+            "rows": {
+              "item": {
+                "kind": "object",
+                "properties": {
+                  "done": {
+                    "kind": "boolean"
+                  },
+                  "notes": {
+                    "kind": "record",
+                    "value": {
+                      "kind": "string"
+                    }
+                  },
+                  "tags": {
+                    "item": {
+                      "kind": "string"
+                    },
+                    "kind": "list"
+                  },
+                  "text": {
+                    "kind": "text"
+                  }
+                }
+              },
+              "kind": "list"
+            },
+            "settings": {
+              "kind": "object",
+              "properties": {
+                "muted": {
+                  "kind": "boolean"
+                },
+                "volume": {
+                  "kind": "integer",
+                  "max": 10,
+                  "min": 0
+                }
+              }
+            },
+            "title": {
+              "kind": "text"
+            },
+            "version": {
+              "kind": "string"
+            }
+          }
+        },
+        "state": {
+          "issues": [],
+          "value": {
+            "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+            "cells": {
+              "compat-1": {
+                "input": "Compat 1 ✓ café 🦊"
+              },
+              "compat-2": {
+                "input": "Replay 2 é 中文"
+              }
+            },
+            "checkins": {
+              "compat-1": 1,
+              "compat-2": 2
+            },
+            "colors": [
+              "compat 2",
+              "compat 1"
+            ],
+            "count": 2,
+            "done": false,
+            "epoch": 2,
+            "hits": 5,
+            "label": "compat 2",
+            "lane": "done",
+            "memo": "Replay 2 é 中文",
+            "note": "compat 2",
+            "place": {
+              "name": "compat 1",
+              "visits": 1
+            },
+            "ratio": 0.5,
+            "rows": [
+              {
+                "$id": "compat-1",
+                "done": true,
+                "notes": {},
+                "tags": [],
+                "text": "Compat 1 ✓ café 🦊"
+              },
+              {
+                "$id": "compat-2",
+                "done": false,
+                "notes": {},
+                "tags": [],
+                "text": "Replay 2 é 中文"
+              }
+            ],
+            "settings": {
+              "muted": false,
+              "volume": 2
+            },
+            "title": "Replay 2 é 中文",
+            "version": "compat 2"
+          }
+        }
+      }
+    },
+    {
+      "args": [
+        "apply",
+        "{document}",
+        "--op",
+        "{\"type\":\"set\",\"path\":[\"label\"],\"value\":\"From the CLI\"}"
+      ],
+      "code": 0,
+      "stdout": {
+        "ids": [],
+        "value": {
+          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+          "cells": {
+            "compat-1": {
+              "input": "Compat 1 ✓ café 🦊"
+            },
+            "compat-2": {
+              "input": "Replay 2 é 中文"
+            }
+          },
+          "checkins": {
+            "compat-1": 1,
+            "compat-2": 2
+          },
+          "colors": [
+            "compat 2",
+            "compat 1"
+          ],
+          "count": 2,
+          "done": false,
+          "epoch": 2,
+          "hits": 5,
+          "label": "From the CLI",
+          "lane": "done",
+          "memo": "Replay 2 é 中文",
+          "note": "compat 2",
+          "place": {
+            "name": "compat 1",
+            "visits": 1
+          },
+          "ratio": 0.5,
+          "rows": [
+            {
+              "$id": "compat-1",
+              "done": true,
+              "notes": {},
+              "tags": [],
+              "text": "Compat 1 ✓ café 🦊"
+            },
+            {
+              "$id": "compat-2",
+              "done": false,
+              "notes": {},
+              "tags": [],
+              "text": "Replay 2 é 中文"
+            }
+          ],
+          "settings": {
+            "muted": false,
+            "volume": 2
+          },
+          "title": "Replay 2 é 中文",
+          "version": "compat 2"
+        }
+      }
+    },
+    {
+      "args": [
+        "batch",
+        "{document}",
+        "--ops",
+        "[{\"type\":\"increment\",\"path\":[\"hits\"],\"by\":4},{\"type\":\"insert\",\"path\":[\"colors\"],\"value\":\"#abcdef\"}]"
+      ],
+      "code": 0,
+      "stdout": {
+        "ids": [],
+        "value": {
+          "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+          "cells": {
+            "compat-1": {
+              "input": "Compat 1 ✓ café 🦊"
+            },
+            "compat-2": {
+              "input": "Replay 2 é 中文"
+            }
+          },
+          "checkins": {
+            "compat-1": 1,
+            "compat-2": 2
+          },
+          "colors": [
+            "compat 2",
+            "compat 1",
+            "#abcdef"
+          ],
+          "count": 2,
+          "done": false,
+          "epoch": 2,
+          "hits": 9,
+          "label": "From the CLI",
+          "lane": "done",
+          "memo": "Replay 2 é 中文",
+          "note": "compat 2",
+          "place": {
+            "name": "compat 1",
+            "visits": 1
+          },
+          "ratio": 0.5,
+          "rows": [
+            {
+              "$id": "compat-1",
+              "done": true,
+              "notes": {},
+              "tags": [],
+              "text": "Compat 1 ✓ café 🦊"
+            },
+            {
+              "$id": "compat-2",
+              "done": false,
+              "notes": {},
+              "tags": [],
+              "text": "Replay 2 é 中文"
+            }
+          ],
+          "settings": {
+            "muted": false,
+            "volume": 2
+          },
+          "title": "Replay 2 é 中文",
+          "version": "compat 2"
+        }
+      }
+    },
+    {
+      "args": [
+        "apply",
+        "{document}",
+        "--op",
+        "{\"type\":\"set\",\"path\":[\"count\"],\"value\":1000}"
+      ],
+      "code": 1,
+      "stdout": ""
+    },
+    {
+      "args": [
+        "theme",
+        "get",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": {
+        "defaults": {
+          "accent": "#335577"
+        },
+        "effective": {
+          "accent": "#123456"
+        },
+        "overrides": {
+          "accent": "#123456"
+        }
+      }
+    },
+    {
+      "args": [
+        "theme",
+        "set",
+        "{document}",
+        "--values",
+        "{\"accent\":\"#204060\"}"
+      ],
+      "code": 0,
+      "stdout": {
+        "defaults": {
+          "accent": "#335577"
+        },
+        "effective": {
+          "accent": "#204060"
+        },
+        "overrides": {
+          "accent": "#204060"
+        }
+      }
+    },
+    {
+      "args": [
+        "attachments",
+        "import",
+        "{document}",
+        "{attachment}"
+      ],
+      "code": 0,
+      "stdout": {
+        "byteLength": 28,
+        "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
+        "mimeType": "text/plain",
+        "name": "attachment.txt"
+      }
+    },
+    {
+      "args": [
+        "attachments",
+        "export",
+        "{document}",
+        "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418",
+        "--output",
+        "{output}"
+      ],
+      "code": 0,
+      "stdout": "{output}",
+      "outputHash": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418"
+    },
+    {
+      "args": [
+        "attachments",
+        "list",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": [
+        {
+          "byteLength": 36,
+          "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610"
+        },
+        {
+          "byteLength": 28,
+          "id": "b4972f98ef7a8ab5b08a44f6f958e2ba91600863203341702ab3a5415e1a3418"
+        }
+      ]
+    },
+    {
+      "args": [
+        "compact",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": {
+        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "cells": {
+          "compat-1": {
+            "input": "Compat 1 ✓ café 🦊"
+          },
+          "compat-2": {
+            "input": "Replay 2 é 中文"
+          }
+        },
+        "checkins": {
+          "compat-1": 1,
+          "compat-2": 2
+        },
+        "colors": [
+          "compat 2",
+          "compat 1",
+          "#abcdef"
+        ],
+        "count": 2,
+        "done": false,
+        "epoch": 2,
+        "hits": 9,
+        "label": "From the CLI",
+        "lane": "done",
+        "memo": "Replay 2 é 中文",
+        "note": "compat 2",
+        "place": {
+          "name": "compat 1",
+          "visits": 1
+        },
+        "ratio": 0.5,
+        "rows": [
+          {
+            "$id": "compat-1",
+            "done": true,
+            "notes": {},
+            "tags": [],
+            "text": "Compat 1 ✓ café 🦊"
+          },
+          {
+            "$id": "compat-2",
+            "done": false,
+            "notes": {},
+            "tags": [],
+            "text": "Replay 2 é 中文"
+          }
+        ],
+        "settings": {
+          "muted": false,
+          "volume": 2
+        },
+        "title": "Replay 2 é 中文",
+        "version": "compat 2"
+      }
+    },
+    {
+      "args": [
+        "get",
+        "{document}"
+      ],
+      "code": 0,
+      "stdout": {
+        "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "cells": {
+          "compat-1": {
+            "input": "Compat 1 ✓ café 🦊"
+          },
+          "compat-2": {
+            "input": "Replay 2 é 中文"
+          }
+        },
+        "checkins": {
+          "compat-1": 1,
+          "compat-2": 2
+        },
+        "colors": [
+          "compat 2",
+          "compat 1",
+          "#abcdef"
+        ],
+        "count": 2,
+        "done": false,
+        "epoch": 2,
+        "hits": 9,
+        "label": "From the CLI",
+        "lane": "done",
+        "memo": "Replay 2 é 中文",
+        "note": "compat 2",
+        "place": {
+          "name": "compat 1",
+          "visits": 1
+        },
+        "ratio": 0.5,
+        "rows": [
+          {
+            "$id": "compat-1",
+            "done": true,
+            "notes": {},
+            "tags": [],
+            "text": "Compat 1 ✓ café 🦊"
+          },
+          {
+            "$id": "compat-2",
+            "done": false,
+            "notes": {},
+            "tags": [],
+            "text": "Replay 2 é 中文"
+          }
+        ],
+        "settings": {
+          "muted": false,
+          "volume": 2
+        },
+        "title": "Replay 2 é 中文",
+        "version": "compat 2"
+      }
+    }
+  ]
+}

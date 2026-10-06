@@ -173,10 +173,12 @@ impl ListState {
 /// Indexes every movable list reachable from the document root. O(document), open only.
 pub(super) fn index_all(doc: &LoroDoc) -> HashMap<ContainerID, ListState> {
     let mut out = HashMap::new();
-    walk(doc, &Container::Map(doc.get_map("data")), &mut out);
+    walk(doc, &Container::Map(doc.get_map("data")), &mut out, &mut HashSet::new());
     out
 }
-fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, ListState>) {
+/// Indexes every row list under `container`, replacing what the index held: a mergeable
+/// list keeps its identity when its value is cleared and created again.
+fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, ListState>, seen: &mut HashSet<ContainerID>) {
     let mut children = vec![];
     match container {
         Container::Map(map) => map.for_each(|_, v| {
@@ -185,8 +187,8 @@ fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, Lis
             }
         }),
         Container::MovableList(list) => {
-            // A list inside a new container is indexed once, by the outermost walk.
-            if out.contains_key(&list.id()) {
+            // A list inside several new containers is indexed once.
+            if !seen.insert(list.id()) {
                 return;
             }
             out.insert(list.id(), ListState::build(doc, list));
@@ -204,7 +206,7 @@ fn walk(doc: &LoroDoc, container: &Container, out: &mut HashMap<ContainerID, Lis
         _ => {}
     }
     for child in &children {
-        walk(doc, child, out);
+        walk(doc, child, out, seen);
     }
 }
 
@@ -363,9 +365,10 @@ pub(super) fn publish(
             }
         }
     }
+    let mut seen = HashSet::new();
     for cid in &fresh {
         if let Some(container) = doc.get_container(cid.clone()) {
-            walk(doc, &container, lists);
+            walk(doc, &container, lists, &mut seen);
         }
     }
     finish_fallbacks(doc, schema, lists, &mut out)?;

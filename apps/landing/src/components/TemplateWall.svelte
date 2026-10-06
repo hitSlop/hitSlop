@@ -9,8 +9,8 @@
 
   const labels: Record<string, string> = {
     productivity: "✅ Get things done", personal: "🌱 Just for you", education: "🎓 School",
-    finance: "💰 Money", utilities: "🧰 Handy tools", business: "💼 Work", media: "🎧 Music & media",
-    games: "🎮 Games", "developer-tools": "🛠️ For developers", other: "✨ Other",
+    finance: "💰 Money", utilities: "🧰 Handy tools", business: "💼 Work", media: "🎧 Media",
+    games: "🎮 Games", health: "🫀 Health", creative: "🎨 Creative", music: "🎵 Music", "developer-tools": "🛠️ For developers", other: "✨ Other",
   };
   const categories = $derived(
     [...new Set(templates.flatMap((template) => template.categories))]

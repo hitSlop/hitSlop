@@ -1,5 +1,6 @@
-import { DefaultWindowRadius, StorageLimits, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
-import { variants, Segment, Anchor, TextHunk, editTextFields, CoreErrorCodes, RowIdRule, IssueCodes, PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/owner";
+import { DefaultWindowRadius, PackageFormat, RuntimeABI, StorageLimits, ThemeFileLimit, ThemeLimit, ThemeTokenRule } from "../packages/schema/src/constants";
+import { ThemeFileSchema } from "../packages/schema/src/values";
+import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, TextHunkSchema as TextHunk, editTextFields, CoreErrorCodes, RowIdRule, IssueCodes, OwnerPatchOpSchema as PatchOp, OwnerIssueSchema, OwnerStateSchema, OwnerPublicationSchema } from "../packages/schema/src/core";
 
 // The deliberately small generator fails on unsupported types. It generates the
 // Rust deserialization envelope; descriptor interpretation stays inside the core.
@@ -49,12 +50,18 @@ ${CoreErrorCodes.map(code => `        Self::${pascal(code)} => "${code}",`).join
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(self.as_str()) }
 }
+/// The platform level this build runs; a package above it needs a newer app.
+pub const PACKAGE_FORMAT: u64 = ${PackageFormat};
+pub const RUNTIME_ABI: u64 = ${RuntimeABI};
 /// The CSS \`border-radius\` of a window whose manifest names no shape.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "${DefaultWindowRadius}";
-/// Effective theme JSON, in UTF-8 bytes.
+/// Effective theme JSON, and a theme file, in UTF-8 bytes.
 pub(crate) const THEME_LIMIT: usize = ${ThemeLimit};
-/// A theme value, in UTF-16 units, and the token prefix the host reserves.
-pub(crate) const THEME_VALUE_LIMIT: usize = ${ThemeTokenRule.valueLength};
+pub(crate) const THEME_FILE_LIMIT: usize = ${ThemeFileLimit};
+/// The longest theme token name, the most tokens a palette declares, and the token
+/// prefix the host reserves.
+pub(crate) const THEME_NAME_LIMIT: usize = ${ThemeTokenRule.nameLength};
+pub(crate) const THEME_TOKENS: usize = ${ThemeTokenRule.tokens};
 pub(crate) const THEME_RESERVED_PREFIX: &str = "${ThemeTokenRule.reservedPrefix}";
 /// The lowercase Crockford alphabet of minted and derived row IDs.
 pub(crate) const ID_ALPHABET: &[u8] = b"${RowIdRule.mintAlphabet}";
@@ -108,6 +115,12 @@ ${Object.keys(variants)
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Batch { pub intents: Vec<Intent> }
+/// A shared theme file: the template it was made for and its palette.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeFile { ${Object.entries(ThemeFileSchema.properties)
+  .map(([key, schema]) => `pub ${key}: ${key === "values" ? "std::collections::BTreeMap<String, String>" : rust(schema)}`)
+  .join(", ")} }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]

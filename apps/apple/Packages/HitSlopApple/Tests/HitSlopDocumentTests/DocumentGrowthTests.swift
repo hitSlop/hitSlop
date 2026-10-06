@@ -43,7 +43,7 @@ import Testing
         "candidate": "Working tree measurement; harness and concurrent changes may be uncommitted",
         "requestedDays": days, "complete": records.count == 3,
         "releaseBlocked": records.contains { $0["fullAtDay"] != nil || $0["stoppedError"] != nil },
-        "method": "Seed 120029. Synthetic heavy use; accelerated idle periods end with owner.flush, normal checkpoint thresholds unchanged. Each day is one session: the daily close trims history as the app does (a document over 4 MiB keeps that session's history when it fits 4 MiB, else none), and reopen checks exact values. Day samples are taken before the close; closedBytes after it. Bytes are measured, lifetimes beyond the run are estimates. No forced compaction or limit changes. UI/preview rendering is excluded.",
+        "method": "Seed 120029. Synthetic heavy use; accelerated idle periods end with owner.flush, normal checkpoint thresholds unchanged. Each day is one session: the daily close trims history as the app does (a document over 4 MiB keeps none), and reopen checks exact values. Day samples are taken before the close; closedBytes after it. Bytes are measured, lifetimes beyond the run are estimates. No forced compaction or limit changes. UI/preview rendering is excluded.",
         "workloads": [
           "doodle-board": "100 strokes/day, 100 pointer samples/stroke through authored StrokeSamples and strokePath; one insert of the final geometry per stroke, as the app writes at stroke end, flush per stroke; clear every 25, flush clear. The stroke in progress is local, not a document commit.",
           "pixel-art": "20 repaints/day of all 256 cells, one 256-intent drag batch and flush per repaint; rotating palette prevents no-op writes.",

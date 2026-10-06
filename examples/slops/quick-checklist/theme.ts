@@ -14,6 +14,4 @@ export default defineTheme({
   successBorder: "#6c354b",
   filed: "#fff5e9",
   controlBorder: "#d8c0af",
-  font: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-  headingFont: 'Georgia, "Times New Roman", serif',
 });

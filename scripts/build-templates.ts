@@ -32,7 +32,7 @@ export async function buildTemplates(
     for (const [index, template] of templates.entries()) {
       const start = performance.now();
       const destination = join(stage, template.slug + ".slop");
-      const build = () => buildTemplate(template.source, renderer, destination);
+      const build = () => buildTemplate(template.source, [renderer], destination);
       console.log(`Preparing template ${index + 1}/${templates.length}: ${template.slug}`);
       const status = await cache.build(template.source, template.slug, destination, build);
       if (status === "hit") hits++;

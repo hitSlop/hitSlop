@@ -15,6 +15,9 @@ extension SlopCategory {
         case .education: "🎓"
         case .business: "📊"
         case .personal: "💖"
+        case .health: "🫀"
+        case .creative: "🎨"
+        case .music: "🎵"
         case .other: "🎲"
         }
     }

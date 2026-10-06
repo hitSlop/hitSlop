@@ -82,7 +82,7 @@ extension OwnerClientTests {
       controller.refreshToolbarHover(point: NSPoint(x: window.frame.midX, y: window.frame.midY),
                                      front: window.windowNumber, now: 1)
       let toolbar = try #require(NSApp.windows.first { $0 !== window && controller.owns($0) })
-      controller.updatePresentation(pinned: true, commandsEnabled: true, pageError: nil)
+      controller.setPinned(true)
       let cover = NSWindow(contentRect: toolbar.frame.union(window.frame), styleMask: [.borderless],
                            backing: .buffered, defer: false)
       cover.isReleasedWhenClosed = false

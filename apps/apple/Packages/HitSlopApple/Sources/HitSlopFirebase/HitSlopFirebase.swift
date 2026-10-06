@@ -25,6 +25,9 @@ public enum HitSlopFirebase {
         case .launched: Analytics.logEvent("app_launched", parameters: nil)
         case .opened: Analytics.logEvent("document_opened", parameters: nil)
         case .duplicated: Analytics.logEvent("document_duplicated", parameters: nil)
+        case .themeEditorOpened: Analytics.logEvent("theme_editor_opened", parameters: nil)
+        case .themeImported: Analytics.logEvent("theme_imported", parameters: nil)
+        case .themeExported: Analytics.logEvent("theme_exported", parameters: nil)
         case .created(let source):
             Analytics.logEvent("document_created", parameters: ["source": source.rawValue])
         case .exported(let format):

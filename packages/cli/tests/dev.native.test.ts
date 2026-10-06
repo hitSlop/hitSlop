@@ -21,7 +21,6 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     await page.goto(dev.url);
     const frame = page.frameLocator("iframe");
     await frame.getByRole("heading", { name: "Revision zero" }).waitFor();
-    const id = await frame.locator("body").getAttribute("data-document-id");
     await frame.getByRole("button", { name: "Add row", exact: true }).click();
     await frame.locator("[data-count]").filter({ hasText: "4" }).waitFor();
     const rows = await frame.locator("[data-row-ids]").textContent();
@@ -30,7 +29,6 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     const app = await readFile(join(source, "App.svelte"), "utf8");
     await writeFile(join(source, "App.svelte"), app.replace("Revision zero", "Hot revision"));
     await frame.getByRole("heading", { name: "Hot revision" }).waitFor();
-    expect(await frame.locator("body").getAttribute("data-document-id")).toBe(id);
     expect(await frame.locator("[data-row-ids]").textContent()).toBe(rows);
     expect(await frame.locator("[data-title]").textContent()).toBe("Accepted title");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
@@ -44,7 +42,6 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
       .waitForFunction(
         () => getComputedStyle(document.querySelector("h1")!).color === "rgb(80, 100, 120)",
       );
-    expect(await frame.locator("body").getAttribute("data-document-id")).toBe(id);
     await writeFile(join(source, "App.svelte"), "<script>let = ;</script>");
     await frame.locator("vite-error-overlay").waitFor();
     await writeFile(join(source, "App.svelte"), app.replace("Revision zero", "Recovered"));
@@ -57,7 +54,6 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
       initial.replace("A little room to think", "Reset seed"),
     );
     await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
-    expect(await frame.locator("body").getAttribute("data-document-id")).not.toBe(id);
     expect(await frame.locator("[data-count]").textContent()).toBe("3");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const main = await readFile(join(source, "main.ts"), "utf8");
@@ -67,13 +63,13 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
       .find((frame) => frame.url().includes("/app.html"))!
       .waitForFunction(
         () =>
-          document.querySelector("[data-probe]") && !document.body.hasAttribute("data-document-id"),
+          document.querySelector("[data-probe]") && !document.body.hasAttribute("data-fixture-mounted"),
       );
     await writeFile(join(source, "main.ts"), main);
     await page
       .frames()
       .find((frame) => frame.url().includes("/app.html"))!
-      .waitForFunction(() => Boolean(document.body.dataset.documentId));
+      .waitForFunction(() => Boolean(document.body.dataset.fixtureMounted));
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const response = await fetch(new URL("/@fs/etc/passwd", dev.url));
     expect(response.status).toBe(403);

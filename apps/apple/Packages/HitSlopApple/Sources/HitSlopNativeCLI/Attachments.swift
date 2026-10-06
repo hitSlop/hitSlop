@@ -12,7 +12,7 @@ struct AttachmentList: AsyncParsableCommand {
   static let configuration = CommandConfiguration(commandName: "list")
   @Argument(transform: URL.init(fileURLWithPath:)) var document: URL
   @MainActor func run() async throws {
-    try await printDocument(document) { .attachmentsList(.init(id: $0, documentPath: $1)) }
+    try await printDocument(document) { .attachmentsList(.init(documentPath: $0)) }
   }
 }
 struct AttachmentImport: AsyncParsableCommand {
@@ -27,7 +27,7 @@ struct AttachmentImport: AsyncParsableCommand {
     }
     let bytes = try SlopFile.read(source, within: source.deletingLastPathComponent(), maximumBytes: AttachmentLimits.file).base64EncodedString()
     let data = try await DocumentCommand.run(url: document) {
-      .attachmentsPut(.init(id: UUID().uuidString, documentPath: $0, epoch: "", bytes: bytes))
+      .attachmentsPut(.init(documentPath: $0, epoch: "", bytes: bytes))
     }
     var ref = try JSONSerialization.jsonObject(with: data) as! [String: Any]
     ref["name"] = source.lastPathComponent
@@ -47,7 +47,7 @@ struct AttachmentExport: AsyncParsableCommand {
     }
     let id = id
     let response = try await DocumentCommand.run(url: document) {
-      .attachmentsRead(.init(id: UUID().uuidString, documentPath: $0, attachmentID: id))
+      .attachmentsRead(.init(documentPath: $0, attachmentID: id))
     }
     guard let value = try JSONSerialization.jsonObject(with: response) as? [String: String],
       let encoded = value["bytes"], let bytes = Data(base64Encoded: encoded) else {

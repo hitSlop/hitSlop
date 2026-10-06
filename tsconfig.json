@@ -6,14 +6,19 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["bun"],
+    "types": [
+      "bun"
+    ],
     "allowImportingTsExtensions": true
   },
   "include": [
     "packages/document/**/*.ts",
     "packages/cli/src/**/*.ts",
     "packages/schema/src/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "packages/shell/**/*.ts"
   ],
-  "exclude": ["**/dist/**"]
+  "exclude": [
+    "**/dist/**"
+  ]
 }

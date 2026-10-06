@@ -1,3 +1,9 @@
+:root {
+  --rule: color-mix(in srgb, var(--slop-ink) 16%, transparent);
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --headingFont: "Recipe Fraunces", Georgia, serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
 @font-face {
   font-family: "Recipe Fraunces";
   src: url("./assets/fonts/Fraunces.ttf") format("truetype");
@@ -16,7 +22,7 @@ input, textarea {
 }
 :root {
   color-scheme: light;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-synthesis: none;
 }
 html, body, #app {
@@ -79,7 +85,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   display: grid;
   grid-template-columns: minmax(0, 1fr) 180px;
   min-height: 244px;
-  border-bottom: 1px solid var(--slop-rule);
+  border-bottom: 1px solid var(--rule);
 }
 @container (max-width: 560px) {
 .hero {
@@ -105,7 +111,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   justify-content: flex-end;
   gap: 14px;
   color: var(--slop-muted);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .15em;
@@ -121,7 +127,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   padding: 5px 10px 5px 11px;
   color: var(--slop-accent);
   background: var(--slop-accentSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .08em;
@@ -132,7 +138,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   z-index: 70;
   min-width: var(--bits-select-anchor-width);
   overflow: hidden;
-  border: 1px solid var(--slop-rule);
+  border: 1px solid var(--rule);
   border-radius: 10px;
   padding: 4px;
   background: var(--slop-paper);
@@ -166,7 +172,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   resize: none;
   overflow: hidden;
   background: transparent;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(34px, 7cqw, 48px);
   font-weight: 600;
   line-height: 1.04;
@@ -175,7 +181,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .titleText {
   color: var(--slop-accent);
   margin: auto 0 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(34px, 7cqw, 48px);
   font-weight: 600;
   line-height: 1.04;
@@ -222,7 +228,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 }
 .stats label > span:first-child, .stats > div > span:first-child {
   color: var(--slop-muted);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .12em;
@@ -345,13 +351,13 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   gap: 2px;
 }
 .launchCopy strong {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-size: 16px;
   font-weight: 700;
 }
 .launchCopy small {
   color: var(--slop-onAccent);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .09em;
@@ -411,14 +417,14 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 }
 .sectionTitle span {
   color: var(--slop-accent);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
 }
 .sectionTitle h2 {
   margin: 0;
   color: var(--slop-accent);
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 22px;
   font-weight: 600;
   letter-spacing: -.02em;
@@ -448,7 +454,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   min-width: 0;
   min-height: 44px;
   padding: 5px 0;
-  border-bottom: 1px solid var(--slop-rule);
+  border-bottom: 1px solid var(--rule);
 }
 .ingredientRow:last-child {
   border-bottom: 0;
@@ -502,7 +508,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   min-width: 0;
   min-height: 62px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--slop-rule);
+  border-bottom: 1px solid var(--rule);
 }
 .stepRow:last-child {
   border-bottom: 0;
@@ -521,7 +527,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   border-radius: 50%;
   color: var(--slop-onAccent);
   background: var(--slop-accent);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
 }
@@ -535,13 +541,13 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   padding: 4px 0 1px;
   color: var(--slop-ink);
   background: transparent;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-size: 14px;
   font-weight: 600;
 }
 .stepTitleText {
   margin: 0;
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -573,7 +579,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   gap: 2px;
   margin-top: 1px;
   color: var(--slop-muted);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   text-transform: uppercase;
 }
@@ -587,7 +593,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .stepTime input {
   width: 24px;
   border: 0;
-  border-bottom: 1px solid var(--slop-rule);
+  border-bottom: 1px solid var(--rule);
   padding: 3px 0;
   color: var(--slop-accent);
   text-align: right;
@@ -699,7 +705,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 }
 .cookHeader span {
   color: var(--slop-herb);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .13em;
@@ -707,7 +713,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .cookHeader strong {
   overflow: hidden;
   color: var(--slop-cookMuted);
-  font-family: var(--slop-font);
+  font-family: var(--font);
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -754,7 +760,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .stepKicker {
   margin: 0 0 13px;
   color: var(--slop-herb);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .15em;
@@ -762,7 +768,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .cookStage h2 {
   max-width: 590px;
   margin: 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(2.4rem, 8vw, 5rem);
   font-weight: 600;
   line-height: 1.04;
@@ -809,7 +815,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   z-index: 1;
   grid-column: 1;
   color: var(--slop-cookMuted);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .13em;
@@ -822,7 +828,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   z-index: 1;
   grid-column: 1;
   color: var(--slop-accentSoft);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 48px;
   font-variant-numeric: tabular-nums;
   letter-spacing: .04em;
@@ -903,7 +909,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 }
 .untimedStep strong {
   color: var(--slop-cookMuted);
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 14px;
   font-weight: 600;
 }
@@ -946,7 +952,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 }
 .cookNav > span {
   color: var(--slop-cookMuted);
-  font-family: var(--slop-mono);
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .08em;
@@ -1011,7 +1017,7 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
 .cookFinished h2 {
   max-width: 590px;
   margin: 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(2.4rem, 8vw, 5rem);
   font-weight: 600;
   line-height: 1.04;
@@ -1080,7 +1086,7 @@ html[data-slop-capture="static"] input, html[data-slop-capture="static"] textare
 }
 .cookingTitle {
   margin: 0;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: clamp(36px, 8vw, 64px);
   font-weight: 600;
   line-height: 1.04;

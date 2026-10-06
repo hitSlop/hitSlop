@@ -7,7 +7,7 @@ not apply to live slop demos or documentation.
 ## Template wall data
 
 `src/data/templates.json` and `public/assets/templates/` are generated from every
-manifest in `examples/slops` and `archive/slops` (all of them ship in the app):
+manifest in `examples/slops` (all of them ship in the app):
 
 ```sh
 bun apps/landing/scripts/templates.ts

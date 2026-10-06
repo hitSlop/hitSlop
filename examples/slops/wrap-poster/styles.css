@@ -1,0 +1,68 @@
+@font-face {
+  font-family: "Poster Lora";
+  src: url("./assets/fonts/Lora.ttf") format("truetype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+:root {
+  --font: ui-rounded, "SF Pro Rounded", "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  color-scheme: light;
+  font-family: var(--font);
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; width: 100%; height: 100%; }
+body { background: var(--slop-desk); color: var(--slop-ink); overflow: hidden; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: default; opacity: 0.4; }
+:is(button, input, textarea, [role="button"]):focus-visible { outline: 3px solid var(--slop-mustard); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.desk { position: relative; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: radial-gradient(circle at 50% 0%, #3d352f, var(--slop-desk) 70%); }
+.stage { display: grid; place-items: center; overflow: hidden; min-height: 0; }
+.fit { position: relative; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45); }
+.scale { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+
+/* The poster itself. Lines are placed by Pretext; the font and sizes must match fonts.svelte.ts. */
+.page { position: relative; overflow: hidden; background: var(--slop-paper); color: var(--slop-ink); font-family: "Poster Lora", Georgia, serif; }
+.line { position: absolute; white-space: pre; font: 400 17px/26px "Poster Lora", Georgia, serif; }
+.line.head { font: 700 46px/52px "Poster Lora", Georgia, serif; }
+.shape { position: absolute; padding: 0; border: 0; touch-action: none; }
+.shape[data-kind="circle"] { border-radius: 50%; }
+.shape[data-kind="square"] { border-radius: 6px; }
+.shape[data-tone="tomato"] { background: var(--slop-tomato); }
+.shape[data-tone="cobalt"] { background: var(--slop-cobalt); }
+.shape[data-tone="mustard"] { background: var(--slop-mustard); }
+button.shape { cursor: grab; }
+button.shape:active { cursor: grabbing; }
+.shape[data-selected="true"] { outline: 3px dashed var(--slop-ink); outline-offset: 5px; }
+.export { width: 520px; }
+.export .page { box-shadow: none; }
+
+.bar { padding: 8px 12px 12px; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+.group { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 5px; border-radius: 999px; background: var(--slop-glass); }
+.chip {
+  min-height: 44px; min-width: 44px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 999px; background: transparent; font-size: 14px; font-weight: 700; color: var(--slop-ink);
+}
+.chip.icon { padding: 0; }
+.chip[aria-pressed="true"] { background: var(--slop-accent); color: var(--slop-onAccent); }
+.swatch { width: 44px; height: 44px; border-radius: 50%; border: 0; background: transparent; position: relative; }
+.swatch::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; box-shadow: inset 0 0 0 2px #0003; }
+.swatch[data-tone="tomato"]::after { background: var(--slop-tomato); }
+.swatch[data-tone="cobalt"]::after { background: var(--slop-cobalt); }
+.swatch[data-tone="mustard"]::after { background: var(--slop-mustard); }
+.swatch[aria-pressed="true"]::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; border: 2px solid var(--slop-ink); }
+.warn { flex-basis: 100%; margin: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--slop-mustard); }
+
+.sheet { position: absolute; left: 12px; right: 12px; bottom: 76px; padding: 12px; border-radius: 16px; background: var(--slop-glass); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); display: grid; gap: 8px; }
+.sheet input, .sheet textarea { width: 100%; padding: 8px 10px; border: 2px solid #1f1b1633; border-radius: 10px; background: #fff9; font-family: "Poster Lora", Georgia, serif; font-size: 16px; resize: none; }
+.title-input { font-weight: 700; min-height: 44px; }
+
+.icon-surface { width: 100%; height: 100%; display: grid; place-items: center; background: var(--slop-desk); }
+.icon-page { position: relative; width: 66%; aspect-ratio: 0.74; padding: 9%; display: grid; align-content: start; gap: 7%; background: var(--slop-paper); border-radius: 5%; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.4); overflow: hidden; }
+.icon-circle { position: absolute; right: -8%; top: 26%; width: 46%; aspect-ratio: 1; border-radius: 50%; background: var(--slop-tomato); }
+.icon-title { display: block; width: 62%; height: 9%; background: var(--slop-ink); border-radius: 2px; }
+.icon-page u { display: block; height: 4%; background: #1f1b1655; border-radius: 2px; text-decoration: none; }

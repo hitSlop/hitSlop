@@ -1,9 +1,11 @@
 import { test, expect } from "bun:test";
 import { buildProject } from "../src/build";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { readdir, mkdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { readdir, mkdir, symlink } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
+import { parseManifest, parsePackageManifest, PackageFormat, RuntimeABI } from "@hitslop/schema";
+import { buildTemplate } from "../src/template";
 // Built apps import nothing from the runtime and reach the host only through ctx.
 test("apps contain no runtime code and cannot reach the engine, bridge or remote boot resources", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
@@ -32,6 +34,25 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
   }
 }, 60000);
 
+// A theme is the colors a person may override; fonts and derived colors belong in CSS.
+test("build refuses a theme that is not a palette of hex colors", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    for (const [name, theme, error] of [
+      ["font", `{ font: '"Avenir Next", sans-serif' }`, "theme.ts: out_of_range: Theme color font must be lowercase"],
+      ["opaque", `{ accent: "#aabbccff" }`, "theme.ts: out_of_range: Theme color accent"],
+      ["derived", `{ rule: "color-mix(in srgb, var(--slop-ink) 14%, transparent)" }`, "Theme color rule"],
+    ] as const) {
+      const source = join(root, name);
+      await copySourceFixture("examples/slops/quick-checklist", source);
+      await writeFile(join(source, "theme.ts"), `export default { defaults: ${theme} };`);
+      await expect(buildProject(source, join(root, name + ".slop"))).rejects.toThrow(error);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
 test("init creates a buildable source and refuses to overwrite it", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "starter");
@@ -46,7 +67,12 @@ test("init creates a buildable source and refuses to overwrite it", async () => 
     const metadata = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
     expect(metadata.dependencies["@hitslop/document"]).not.toContain("__HITSLOP");
     const built = await buildProject(source, join(root, "starter.slop"));
-    expect(JSON.parse(await readFile(join(built, "manifest.json"), "utf8")).slug).toBeTruthy();
+    const manifest = JSON.parse(await readFile(join(built, "manifest.json"), "utf8"));
+    expect(manifest.slug).toBeTruthy();
+    // The built package names the level it needs, so an older app refuses it up front.
+    expect(manifest.packageFormat).toBe(PackageFormat);
+    expect(() => parseManifest(manifest)).toThrow();
+    expect(parsePackageManifest(manifest).packageFormat).toBe(PackageFormat);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -177,5 +203,102 @@ test("custom main owns registration and conventional capture discovery is exact-
     await buildProject(source, join(root, "lowercase.slop"));
   } finally {
     await rm(root, {recursive: true, force: true});
+  }
+}, 60000);
+
+/** A minimal RGBA (colour type 6) PNG header: enough for the build's checks. */
+function pngHeader(width: number, height: number, colorType = 6) {
+  const bytes = Buffer.alloc(33);
+  Buffer.from("89504e470d0a1a0a0000000d49484452", "hex").copy(bytes);
+  bytes.writeUInt32BE(width, 16);
+  bytes.writeUInt32BE(height, 20);
+  bytes[24] = 8;
+  bytes[25] = colorType;
+  return bytes;
+}
+
+// Authoring builds on any platform: artwork is supplied or absent, and no helper runs.
+test("a portable build copies supplied artwork and needs no helper", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  const previous = process.env.HITSLOP_NATIVE_CLI;
+  // A helper lookup would fail on this path.
+  process.env.HITSLOP_NATIVE_CLI = join(root, "missing-helper");
+  try {
+    const source = join(root, "source");
+    await copySourceFixture("examples/slops/quick-checklist", source);
+    const bare = await buildTemplate(source, undefined, join(root, "bare.slop"));
+    expect(await readdir(bare)).not.toContain("QuickLook");
+    await mkdir(join(source, "artwork"));
+    await writeFile(join(source, "artwork/preview.png"), pngHeader(640, 480));
+    await writeFile(join(source, "artwork/icon.png"), pngHeader(512, 512));
+    const output = await buildTemplate(source, undefined, join(root, "art.slop"));
+    expect((await readdir(join(output, "QuickLook"))).sort()).toEqual(["Icon.png", "Preview.png"]);
+    expect(await readFile(join(output, "QuickLook/Icon.png"))).toEqual(pngHeader(512, 512));
+  } finally {
+    if (previous === undefined) delete process.env.HITSLOP_NATIVE_CLI;
+    else process.env.HITSLOP_NATIVE_CLI = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
+// Without the native open that rendering used to run, the build applies its package rules.
+test("a portable build refuses packages the app would refuse and keeps the previous output", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    const fixture = join(root, "fixture");
+    await copySourceFixture("examples/slops/quick-checklist", fixture);
+    const output = await buildTemplate(fixture, undefined, join(root, "out.slop"));
+    const before = await readFile(join(output, "assets/app.js"));
+    const cases: [string, (source: string) => Promise<unknown>, string][] = [
+      ["artwork", async (source) => {
+        await mkdir(join(source, "artwork"));
+        await writeFile(join(source, "artwork/preview.png"), "not a png");
+      }, "QuickLook/Preview.png must be a valid PNG"],
+      ["symlink", async (source) => {
+        await mkdir(join(source, "assets"), { recursive: true });
+        await symlink("/etc/hosts", join(source, "assets/hosts"));
+      }, "without symlinks"],
+      ["forbidden", (source) => mkdir(join(source, "assets/node_modules"), { recursive: true }), "cannot contain node_modules"],
+      ["entries", async (source) => {
+        await mkdir(join(source, "assets/many"), { recursive: true });
+        for (let index = 0; index < 260; index++) await writeFile(join(source, "assets/many", `${index}.txt`), "");
+      }, "exceeds 256 entries"],
+      ["skin", async (source) => {
+        const manifest = JSON.parse(await readFile(join(source, "manifest.json"), "utf8"));
+        const { width, height } = manifest.presentation;
+        await writeFile(join(source, "manifest.json"), JSON.stringify({ ...manifest, presentation: { width, height, skin: "assets/skin.png" } }));
+        await mkdir(join(source, "assets"), { recursive: true });
+        await writeFile(join(source, "assets/skin.png"), pngHeader(width + 1, height));
+      }, "window skin must be exactly"],
+    ];
+    for (const [name, damage, error] of cases) {
+      const source = join(root, name);
+      await copySourceFixture(fixture, source);
+      await damage(source);
+      await expect(buildTemplate(source, undefined, output)).rejects.toThrow(error);
+      expect(await readFile(join(output, "assets/app.js"))).toEqual(before);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 120000);
+
+// The CLI validates and previews only the runtimes it knows, so it refuses a newer SDK
+// before building anything.
+test("build refuses a project SDK that needs a newer runtime than this CLI", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    const source = join(root, "source");
+    await copySourceFixture("examples/slops/quick-checklist", source);
+    const sdk = join(source, "node_modules/@hitslop/document");
+    await mkdir(sdk, { recursive: true });
+    await writeFile(join(sdk, "package.json"), JSON.stringify({ name: "@hitslop/document", type: "module", exports: { ".": "./index.js", "./abi": "./abi.js" } }));
+    await writeFile(join(sdk, "index.js"), `export * from ${JSON.stringify(resolve("packages/document/src/schema.ts"))};`);
+    await writeFile(join(sdk, "abi.js"), `export const RuntimeABI = ${RuntimeABI + 1};`);
+    const output = join(root, "out.slop");
+    await expect(buildProject(source, output)).rejects.toThrow("Update @hitslop/cli");
+    expect(await readdir(root)).toEqual(["source"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 }, 60000);

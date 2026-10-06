@@ -1,11 +1,11 @@
 # @hitslop/schema
 
-TypeBox definitions and validation for hitSlop manifests, bridge and socket envelopes, and the owner wire. They generate the Rust wire types, Swift contracts and JSON schemas.
+TypeBox definitions and validation for hitSlop manifests, page and socket envelopes, and core payloads. They generate the Rust wire types, Swift contracts and JSON schemas.
 
-Socket types are exported from `@hitslop/schema/socket`; bridge requests and method-specific
-successful replies come from `@hitslop/schema/bridge`. Shared limits, categories and codes
+Socket types are exported from `@hitslop/schema/socket`; page requests and method-specific
+results come from `@hitslop/schema/page`; core payloads come from `@hitslop/schema/core`. Shared limits, categories and codes
 come from `@hitslop/schema/constants`, which needs no schema library. `bun run schema:generate` emits the
-Swift socket models and bridge method enum alongside the existing native validators.
+Swift socket models, page method enum and page result encoders alongside the existing native validators.
 Validate untrusted Foundation dictionaries before mapping them into generated types.
 Native code checks envelopes; the Rust core parses operations and document state.
 

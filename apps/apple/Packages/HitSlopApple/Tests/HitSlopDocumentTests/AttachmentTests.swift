@@ -110,7 +110,7 @@ import HitSlopTestSupport
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(package: SlopPackage(rootURL: root))
     let request = try SocketRequest(json: [
-      "id": UUID().uuidString, "method": "attachments.read", "documentPath": root.path,
+      "method": "attachments.read", "documentPath": root.path,
       "attachmentID": String(repeating: "a", count: 64),
     ])
     let reply = try decodeReply(await owner.request(request))

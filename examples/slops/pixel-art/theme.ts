@@ -20,5 +20,4 @@ export default defineTheme({
   onPurple: "#f6f1ff",
   danger: "#7b2630",
   focus: "#5b3d96",
-  font: '"Avenir Next", "Helvetica Neue", sans-serif',
 });

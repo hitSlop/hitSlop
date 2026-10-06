@@ -25,7 +25,7 @@ Never replace an existing identity-bearing list through a containing object. Use
 
 The native app hosts the Rust Loro core, which also owns document storage; WebViews receive snapshots and patches. Browser development uses the same Rust core compiled to WASM. Do not embed the engine into app bundles or expose a second JSON writer. Build emits state.schema.json (a descriptor), initial.json, assets (including the app module assets/app.js, generated from App.svelte and styles.css) and document guidance. The host owns the page; apps reach it only through the document SDK. Never include state/, stores/, source, dependencies or caches in templates.
 
-Start anywhere with `bunx @hitslop/cli init NAME`, then `cd NAME` and `bun install`. Use the generated `bun run check/dev/build/register` scripts. Bun is the only JavaScript runtime required; build/register need the compatible installed hitSlop Mac app, not Swift or Xcode. Preview state is disposable; rerun dev to rebuild source. Create a writable document from a built/registered template with `slop create --from TEMPLATE --output PATH` before editing. Agents use schema/get/apply/batch/compact. Supply an explicit `id` to address an inserted row from later CLI commands. After an unknown outcome, inspect current state before another edit; never blindly replay the insertion.
+Start anywhere with `bunx @hitslop/cli init NAME`, then `cd NAME` and `bun install`. Use the generated `bun run check/dev/build/register` scripts. Bun is the only JavaScript runtime required. check/dev/build run on macOS or Linux; register, `build --artwork native` and document commands need the compatible installed hitSlop Mac app, not Swift or Xcode. Preview state is disposable; rerun dev to rebuild source. Create a writable document from a built/registered template with `slop create --from TEMPLATE --output PATH` before editing. Agents use schema/get/apply/batch/compact. Supply an explicit `id` to address an inserted row from later CLI commands. After an unknown outcome, inspect current state before another edit; never blindly replay the insertion.
 
 For an agent already doing the work, use `init NAME --yes --brief 'What to build'`,
 optionally with `--author`, `--title`, `--description`, and one or two `--category`
@@ -44,9 +44,9 @@ Bare `skills` means install; use `skills repair` to repair installed links. The
 guides copied into a new project's `.agents/skills` are portable files, not
 managed links, and must be reviewed manually when upgrading the project.
 
-Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS and defineTheme tokens and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
+Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, defineTheme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
 
-Use `App.svelte` for the editor, optional `Export.svelte` for preview/PNG/PDF, and optional `Icon.svelte` for Finder artwork. The CLI discovers them and `defineSlop` mounts the editor boundary automatically. An authored `main.ts` takes precedence and must register its own components with `defineSlop(App, { schema, export: Export, icon: Icon })`, where `schema` is schema.ts's default export. Capture components mount only during capture; Export receives `mode: "preview" | "export"`. Build/register generate Quick Look artwork through the native helper, without bundling Loro. Register backs up and replaces an existing stateless master only after a successful complete build.
+Use `App.svelte` for the editor, optional `Export.svelte` for preview/PNG/PDF, and optional `Icon.svelte` for Finder artwork. The CLI discovers them and `defineSlop` mounts the editor boundary automatically. An authored `main.ts` takes precedence and must register its own components with `defineSlop(App, { schema, export: Export, icon: Icon })`, where `schema` is schema.ts's default export. Capture components mount only during capture; Export receives `mode: "preview" | "export"`. Quick Look artwork comes from `artwork/preview.png` and `artwork/icon.png` when present; otherwise register (or `build --artwork native`) renders it through the native helper, without bundling Loro, and a plain build ships none. Register backs up and replaces an existing stateless master only after a successful complete build.
 
 Child components `import doc from "./schema"` for the same document; in long lists, pass rows and handles as props instead.
 
@@ -63,3 +63,9 @@ Keep high-frequency or transient values (drag positions, playback, timers) in lo
 Counter values read `number | null`: `null` flags invalid stored contributions or merged overflow; render it as unavailable and disable increments.
 
 `slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. Schema, initial data, theme and manifest changes (including their imports) reset disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. Adding/removing conventional entry files reloads the preview.
+
+The author SDK is `@hitslop/document`; the private `@hitslop/shell` runtime is host-owned.
+Catch semantic refusals with `isRejected(error)` and other document outcomes with
+`isDocumentError(error)`, not `instanceof`. Transaction handles collect writes only;
+use live handles for previews and bound `.value` assignments. Explicit `flush()`
+remains available.

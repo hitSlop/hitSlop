@@ -23,6 +23,7 @@ async function writePackage(output: string, slug = "quick-checklist") {
     author: { name: "hitSlop" },
     categories: ["utilities"],
     presentation: { width: 320, height: 240 },
+    packageFormat: 1, runtimeABI: 1,
   };
   const files = {
     "manifest.json": manifest,
@@ -226,6 +227,8 @@ test("template artwork is keyed on compiler and copied guidance, not CLI routing
     "packages/cli/src/vite.ts",
     "packages/cli/src/entry.ts",
     "packages/document/src",
+    "packages/shell/src",
+    "packages/shell/package.json",
     "packages/cli/shell",
     "packages/cli/skills/hitslop-document",
     "tsconfig.json",

@@ -9,8 +9,10 @@ import WebKit
   /// A reloaded interface mounted again.
   func pageSessionRecovered(_ session: DocumentSession)
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus)
-  /// An attachment or theme request failed in storage.
+  /// An attachment request failed in storage.
   func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext)
+  /// The page now shows this palette, after a change from the panel, the CLI or an agent.
+  func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState)
   /// An issue the app or a document operation reported; the page keeps running.
   func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue)
   /// The page could not open, or its renderer stopped. The error carries its diagnostic.

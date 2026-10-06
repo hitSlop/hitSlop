@@ -6,10 +6,10 @@
     "slop": "src/cli.ts"
   },
   "dependencies": {
-    "@crustjs/core": "0.4.1",
-    "@crustjs/extensions": "0.4.1",
-    "@crustjs/prompts": "0.2.3",
-    "@crustjs/skills": "0.4.1",
+    "@crustjs/core": "0.5.4",
+    "@crustjs/extensions": "0.5.4",
+    "@crustjs/prompts": "0.2.6",
+    "@crustjs/skills": "0.5.4",
     "@hitslop/document": "4.0.0",
     "@hitslop/schema": "4.0.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",

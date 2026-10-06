@@ -1,7 +1,7 @@
 import { defineTheme } from "@hitslop/document";
 
 export default defineTheme({
-  surface: "transparent",
+  surface: "#00000000",
   ink: "#eaffb3",
   lime: "#caff42",
   limeSoft: "#e6ff9d",
@@ -10,6 +10,4 @@ export default defineTheme({
   violetBright: "#b47aff",
   screen: "#0a0d07",
   plate: "#16190c",
-  font: '"Chakra Petch", "Avenir Next", Avenir, sans-serif',
-  displayFont: '"Righteous", "Avenir Next", sans-serif',
 });

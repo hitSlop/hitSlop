@@ -162,7 +162,7 @@ private func writeTemplate(named slug: String, in directory: URL, fileName: Stri
     try Data(#"{"kind":"object","properties":{}}"#.utf8).write(to: package.appendingPathComponent("state.schema.json"))
     try Data("{}".utf8).write(to: package.appendingPathComponent("initial.json"))
     try Data("{}".utf8).write(to: package.appendingPathComponent("assets/theme.json"))
-    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","author":{"name":"Fixture Author","url":"https://example.com"},"slug":"\#(slug)","title":"Tiny Counter","description":"Counts a very small thing.","categories":["utilities","personal"],"presentation":{"width":320,"height":240}}"#
+    let manifest = #"{"$schema":"https://api.hitslop.com/schemas/manifest.schema.json","packageFormat":1,"runtimeABI":1,"author":{"name":"Fixture Author","url":"https://example.com"},"slug":"\#(slug)","title":"Tiny Counter","description":"Counts a very small thing.","categories":["utilities","personal"],"presentation":{"width":320,"height":240}}"#
     try Data(manifest.utf8).write(to: package.appendingPathComponent("manifest.json"))
     let skill = package.appendingPathComponent(".agents/skills/hitslop-document/SKILL.md")
     try FileManager.default.createDirectory(at: skill.deletingLastPathComponent(), withIntermediateDirectories: true)

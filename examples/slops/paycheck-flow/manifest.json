@@ -1,0 +1,17 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "paycheck-flow",
+  "title": "Paycheck Flow",
+  "description": "See where one month of income goes: money in on the left, flowing into rent, food, savings and the rest, with what's left over in gold.",
+  "categories": [
+    "finance"
+  ],
+  "presentation": {
+    "width": 560,
+    "height": 780
+  }
+}

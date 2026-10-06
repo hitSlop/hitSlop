@@ -6,12 +6,6 @@ async function loadBinding() {
 }
 let binding: ReturnType<typeof loadBinding> | undefined;
 
-/** The core build this CLI's WASM embeds, recorded when it was built, so native commands
- * compare identities without compiling the WASM. */
-export async function coreBuildId(): Promise<string> {
-  return (await Bun.file(new URL("../shell/core/BUILD_ID", import.meta.url)).text()).trim();
-}
-
 /** Runs one core check, reporting a core refusal as `code: message`. */
 async function check(label: string, run: (core: any) => void): Promise<void> {
   const core = await (binding ??= loadBinding());

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "loop-lab",
+  "title": "Loop Lab",
+  "description": "Layer loops written in Strudel's mini-notation: type a pattern like bd*2 sd, shape its sound, and let the tracks play together.",
+  "categories": [
+    "music",
+    "creative"
+  ],
+  "presentation": {
+    "width": 560,
+    "height": 720
+  }
+}

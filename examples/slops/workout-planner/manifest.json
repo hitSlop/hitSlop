@@ -8,8 +8,8 @@
   "title": "Workout Planner",
   "description": "A dark training console for logging individual sets, following your routine, and timing rest.",
   "categories": [
-    "personal",
-    "utilities"
+    "health",
+    "personal"
   ],
   "presentation": {
     "width": 440,

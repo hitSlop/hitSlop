@@ -13,12 +13,27 @@ public enum SlopPackageError: LocalizedError {
   }
 }
 
+/// A package, its storage or its document needs a newer hitSlop. Nothing was read past the
+/// marker that said so, and nothing was written.
+public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
+  public init() {}
+  public var diagnostic: SlopFailureContext { .init(.rejection, reason: .requiresUpdate) }
+  public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
+  /// Whether the core refused for this reason.
+  public static func matches(_ error: Error) -> Bool {
+    if case let CoreError.Rejected(code, _, _) = error { return code == CoreErrorCode.requires_update.rawValue }
+    return false
+  }
+}
+
 public struct SlopPackage: Sendable {
   public let rootURL: URL
   private var validatedSkin: (url: URL, image: CGImage)?
   public let schemaKey: String
-  /// `assets/theme.json`, validated: every theme token and its default value.
+  /// `assets/theme.json`, validated: every theme color and its default value.
   public let themeDefaults: String
+  /// The declared colors in the order the author wrote them.
+  public let themeTokens: [ThemeToken]
   public let manifest: SlopManifest
   public let silhouette: SlopSilhouette
   /// Every regular file in the package, state included, in bytes.
@@ -38,9 +53,11 @@ public struct SlopPackage: Sendable {
         guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
         return value
       }
-      schemaKey = try validateDocument(schemaJson: utf8("state.schema.json", maximum: 1_048_576), initialJson: utf8("initial.json", maximum: SlopFile.maximumBytes))
+      // `initial.json` is creation-only: storage creation and `validateAsTemplate` check
+      // it, so a later, stricter rule never refuses a saved document.
+      schemaKey = try documentSchemaKey(schemaJson: utf8("state.schema.json", maximum: 1_048_576))
       themeDefaults = try utf8("assets/theme.json", maximum: Limits.theme)
-      try validateThemeDefaults(json: themeDefaults)
+      themeTokens = try validateThemeDefaults(json: themeDefaults)
     } catch let CoreError.Rejected(_, message, _) {
       throw SlopPackageError.invalid(message)
     } catch let CoreError.Invalidated(message) {
@@ -105,7 +122,7 @@ public struct SlopPackage: Sendable {
             }
             immutableBytes += size
           }
-          guard immutableCount <= 256, immutableBytes <= 50 * 1024 * 1024 else {
+          guard immutableCount <= Limits.packageEntries, immutableBytes <= Limits.packageBytes else {
             throw SlopPackageError.invalid("immutable package exceeds 256 entries or 50 MiB")
           }
         }
@@ -173,6 +190,17 @@ public struct SlopPackage: Sendable {
 
   public func validateAsTemplate() throws {
     try validateDocumentSkill(strict: true)
+    do {
+      func read(_ file: String, _ maximum: Int) throws -> String {
+        let bytes = try SlopFile.read(rootURL.appendingPathComponent(file), within: rootURL, maximumBytes: maximum)
+        guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
+        return value
+      }
+      _ = try validateDocument(
+        schemaJson: read("state.schema.json", 1_048_576), initialJson: read("initial.json", SlopFile.maximumBytes))
+    } catch let CoreError.Rejected(_, message, _) {
+      throw SlopPackageError.invalid(message)
+    }
     if FileManager.default.fileExists(atPath: stateURL.path) {
       throw SlopPackageError.invalid("templates cannot contain state")
     }
@@ -197,8 +225,8 @@ public struct SlopPackage: Sendable {
     guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
       let imageWidth = properties[kCGImagePropertyPixelWidth] as? Int,
       let imageHeight = properties[kCGImagePropertyPixelHeight] as? Int,
-      imageWidth > 0, imageHeight > 0, imageWidth <= 16_384, imageHeight <= 16_384,
-      imageWidth * imageHeight <= 24_000_000
+      imageWidth > 0, imageHeight > 0, imageWidth <= Limits.imageSide, imageHeight <= Limits.imageSide,
+      imageWidth * imageHeight <= Limits.imagePixels
     else {
       throw SlopPackageError.invalid("\(label) exceeds the PNG dimension limit")
     }
@@ -240,8 +268,8 @@ public struct SlopPackage: Sendable {
     return try decodeManifest(try SlopFile.read(url, within: root, maximumBytes: 64 * 1024))
   }
 
-  /// The manifest must match the current contract exactly: nothing has shipped, so
-  /// there is no tolerant reader for older or newer fields.
+  /// The core refuses a package above this build's platform level before judging its
+  /// other fields; a package at a supported level must match the contract exactly.
   private static func decodeManifest(_ data: Data) throws -> (manifest: SlopManifest, silhouette: WindowSilhouette) {
     guard let json = String(data: data, encoding: .utf8) else {
       throw SlopPackageError.invalid("manifest.json must be UTF-8")
@@ -249,6 +277,8 @@ public struct SlopPackage: Sendable {
     do {
       let silhouette = try validateManifest(manifestJson: json)
       return (try JSONDecoder().decode(SlopManifest.self, from: data), silhouette)
+    } catch let error where SlopRequiresUpdate.matches(error) {
+      throw SlopRequiresUpdate()
     } catch let CoreError.Rejected(_, message, _) {
       throw SlopPackageError.invalid(message)
     } catch {

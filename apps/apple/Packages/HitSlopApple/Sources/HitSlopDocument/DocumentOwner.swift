@@ -3,8 +3,9 @@ import HitSlopCore
 import HitSlopCoreBinding
 
 /// Document ownership. `queue` owns the core and every field below. The Rust store owns
-/// SQLite, the writer lock and the save policy; every store call but `saveJob` runs on
-/// `storageQueue`, one at a time, so a slow write never blocks edits. Loro bytes never
+/// SQLite, the writer lock and the save policy; every store call but `saveJob` and the
+/// in-memory `theme` runs on `storageQueue`, one at a time, so a slow write never blocks
+/// edits. Loro bytes never
 /// reach Swift. Renderer lifetimes never determine the lifetime of this object or its
 /// writer lock.
 public final class DocumentOwner: @unchecked Sendable {
@@ -29,18 +30,23 @@ public final class DocumentOwner: @unchecked Sendable {
   private let epochLock = NSLock()
   private var storedEpoch = UUID().uuidString
   public var epoch: String { epochLock.withLock { storedEpoch } }
-  public let documentID: String
   var onPublication: (@Sendable (String) -> Void)?
   /// Save status for the window: the edited mark and the save-failure sheet.
   var onSaveStatus: (@Sendable (DocumentSaveStatus) -> Void)?
-  /// New theme overrides (JSON) after a theme command changed them.
-  var onTheme: (@Sendable (String) -> Void)?
+  /// Signals an accepted theme change; sessions read the latest effective values.
+  var onTheme: (@Sendable () -> Void)?
   /// Whether Edit ▸ Undo and Redo have anything to do, sent when that changes.
   var onUndoState: (@Sendable (UndoAvailability) -> Void)?
   private var undoAvailability = UndoAvailability()
   /// The core's publication sequence, and the last one the durable state covers.
   private var sequence = 0
   private var savedSequence = 0
+  /// Accepted theme changes, and the last one the durable state covers. A theme change is
+  /// held in memory like an edit and saved by the same jobs. The revision only grows, so
+  /// the window can tell which palette came after its own change.
+  private var themeRevision = 0
+  private var savedThemeRevision = 0
+  private var unsaved: Bool { sequence > savedSequence || themeRevision > savedThemeRevision }
   private var autosave: DispatchWorkItem?
   /// When the oldest edit not yet handed to a write was accepted; autosave waits at most
   /// `autosaveMaximumMS` after it, so continuous typing still saves.
@@ -59,6 +65,7 @@ public final class DocumentOwner: @unchecked Sendable {
 
   private struct Waiter {
     let target: Int
+    let themeTarget: Int
     let checkpoint: Bool
     let resume: @Sendable (Result<Void, Error>) -> Void
   }
@@ -81,7 +88,6 @@ public final class DocumentOwner: @unchecked Sendable {
     if mode == .document { try? FileManager.default.removeItem(at: package.discoveryURL) }
     do {
       core = try Self.saved(package, store)
-      documentID = store.docId()
       sequence = Int(try core.sequence())
       savedSequence = sequence
     } catch {
@@ -95,7 +101,9 @@ public final class DocumentOwner: @unchecked Sendable {
   /// until the owner queue installs it.
   private static func saved(_ package: SlopPackage, _ store: NativeStore) throws -> NativeDocument {
     let initial = String(decoding: try SlopFile.read(package.initialURL, within: package.rootURL), as: UTF8.self)
-    return try storeCall { try store.document(schemaKey: package.schemaKey, initialJson: initial) }
+    return try storeCall {
+      try store.document(schemaKey: package.schemaKey, initialJson: initial, themeDefaultsJson: package.themeDefaults)
+    }
   }
 
   private func enqueue<T: Sendable>(allowInvalidated: Bool = false, _ action: @escaping @Sendable () throws -> T) async throws -> T {
@@ -216,7 +224,7 @@ public final class DocumentOwner: @unchecked Sendable {
   /// Enqueues admission synchronously in bridge arrival order. Flush retains its
   /// completion without blocking subsequent edits behind the persistence queue.
   func enqueuePage(_ command: PageCommand, view: String,
-    reply: @escaping @Sendable (Result<PageResult, Error>) -> Void
+    reply: @escaping @Sendable (Result<PageOutcome, Error>) -> Void
   ) {
     queue.async {
       do {
@@ -248,11 +256,21 @@ public final class DocumentOwner: @unchecked Sendable {
     try await enqueue(allowInvalidated: true) { self.saveFailure }
   }
   private func didEdit(_ publication: String, sequence next: Int) {
+    let wasSaved = !unsaved
     sequence = next
     onPublication?(publication)
+    scheduleSave(wasSaved: wasSaved)
+  }
+  private func didChangeTheme() {
+    let wasSaved = !unsaved
+    themeRevision += 1
+    onTheme?()
+    scheduleSave(wasSaved: wasSaved)
+  }
+  private func scheduleSave(wasSaved: Bool) {
     // Status changes once when the document becomes dirty, not on every keystroke.
-    if sequence == savedSequence + 1 { publishStatus(.saving) }
-    // Each edit restarts the short delay, but never past the maximum wait.
+    if wasSaved { publishStatus(.saving) }
+    // Each change restarts the short delay, but never past the maximum wait.
     autosave?.cancel()
     let now = DispatchTime.now(), since = unsavedSince ?? now
     unsavedSince = since
@@ -272,21 +290,24 @@ public final class DocumentOwner: @unchecked Sendable {
   private func pump() {
     guard !writing, !discarding, (try? admit()) != nil else { return }
     let forceCheckpoint = waiters.contains { $0.checkpoint }
-    guard sequence > savedSequence || forceCheckpoint else { return settle(checkpointed: false) }
+    guard unsaved || forceCheckpoint else { return settle(checkpointed: false) }
     saveRequested = false
     unsavedSince = nil
     do {
       guard let job = try storeCall({ try core.saveJob(store: store, forceCheckpoint: forceCheckpoint) }) else {
         // The durable state already covers these edits.
         savedSequence = sequence
+        savedThemeRevision = themeRevision
         publishStatus(.saved)
         return settle(checkpointed: false)
       }
       writing = true
-      let epoch = self.epoch, target = sequence
+      let epoch = self.epoch, target = sequence, themeTarget = themeRevision
       storageQueue.async {
         let result = Result { try storeCall { try self.store.write(job: job) } }
-        self.queue.async { self.finish(epoch: epoch, target: target, checkpoint: job.isCheckpoint(), result) }
+        self.queue.async {
+          self.finish(epoch: epoch, target: target, themeTarget: themeTarget, checkpoint: job.isCheckpoint(), result)
+        }
       }
     } catch {
       checkPoisoned(error)
@@ -295,32 +316,35 @@ public final class DocumentOwner: @unchecked Sendable {
     }
   }
   /// The store re-reads its sizes after a failure, so the next write chooses correctly.
-  private func finish(epoch: String, target: Int, checkpoint: Bool, _ result: Result<Void, Error>) {
+  private func finish(epoch: String, target: Int, themeTarget: Int, checkpoint: Bool, _ result: Result<Void, Error>) {
     guard epoch == self.epoch else { return }
     writing = false
     switch result {
     case .success:
       savedSequence = max(savedSequence, target)
+      savedThemeRevision = max(savedThemeRevision, themeTarget)
       saveFailure = nil
-      publishStatus(sequence > savedSequence ? .saving : .saved)
+      publishStatus(unsaved ? .saving : .saved)
       settle(checkpointed: checkpoint)
-    case .failure(let error): fail(SaveFailure(error), upTo: target)
+    case .failure(let error): fail(SaveFailure(error), upTo: target, themeTarget: themeTarget)
     }
     // After a failure, retry only for work that arrived during the write; never spin.
     if saveRequested || !waiters.isEmpty { pump() }
   }
-  /// Resumes waiters whose edits (and requested checkpoint) are durable.
+  /// Resumes waiters whose edits, theme changes (and requested checkpoint) are durable.
   private func settle(checkpointed: Bool) {
     waiters.removeAll { waiter in
-      guard waiter.target <= savedSequence, !waiter.checkpoint || checkpointed else { return false }
+      guard waiter.target <= savedSequence, waiter.themeTarget <= savedThemeRevision,
+        !waiter.checkpoint || checkpointed
+      else { return false }
       waiter.resume(.success(()))
       return true
     }
   }
-  private func fail(_ failure: SaveFailure, upTo target: Int) {
+  private func fail(_ failure: SaveFailure, upTo target: Int, themeTarget: Int = .max) {
     publishStatus(.failed(failure))
     waiters.removeAll { waiter in
-      guard waiter.target <= target else { return false }
+      guard waiter.target <= target, waiter.themeTarget <= themeTarget else { return false }
       waiter.resume(.failure(failure))
       return true
     }
@@ -331,7 +355,7 @@ public final class DocumentOwner: @unchecked Sendable {
   private func addWaiter(checkpoint: Bool, _ resume: @escaping @Sendable (Result<Void, Error>) -> Void) {
     do { try admit() } catch { return resume(.failure(error)) }
     if discarding { return resume(.failure(OwnerReplaced())) }
-    waiters.append(Waiter(target: sequence, checkpoint: checkpoint, resume: resume))
+    waiters.append(Waiter(target: sequence, themeTarget: themeRevision, checkpoint: checkpoint, resume: resume))
     pump()
   }
   private func rejectWaiters(_ error: Error) {
@@ -384,14 +408,20 @@ public final class DocumentOwner: @unchecked Sendable {
         self.view = nil
         self.sequence = sequence
         self.savedSequence = sequence
+        // The reload read the saved theme too.
+        self.savedThemeRevision = self.themeRevision
         self.discarding = false
         self.publishStatus(.saved)
+        self.onTheme?()
         self.pump()
       }
     } catch {
       try await enqueue(allowInvalidated: true) {
         self.discarding = false
         self.writing = false
+        // The save-failure sheet presents every save failure, so a failed reload is
+        // published like a failed write; an invalidated owner publishes nothing else.
+        self.publishStatus(.failed(self.invalidated ? .invalidated : SaveFailure(error)))
         self.pump()
       }
       throw error
@@ -429,23 +459,57 @@ public final class DocumentOwner: @unchecked Sendable {
       return try SlopAttachments.put(bytes, in: root)
     }
   }
-  /// The stored theme overrides as JSON (`{}` when none are stored).
-  func loadTheme() async throws -> String {
-    try await applyTheme(.get).overrides
+  /// A palette and the owner's theme revision when it was read or changed.
+  struct ThemeRead: Sendable {
+    let state: ThemeState
+    let revision: Int
   }
-  /// Runs a theme command in the store, under the core's one rule set; page and CLI
-  /// writes both land here, so the same values are accepted whether or not a window is
-  /// open. A snapshot answers from the theme it read with its document.
+  /// The palette, validated and merged by the core.
+  func loadTheme() async throws -> ThemeRead {
+    try await enqueue { try self.themeOnQueue(.get) }
+  }
+  /// A theme command, under the core's one rule set. A change is accepted in memory on the
+  /// edit queue like an edit, restyles the page through `onTheme`, and is saved by the
+  /// same jobs, so flush, close and retry cover it. Page panel and CLI changes both land
+  /// here; a snapshot answers from the theme it read and refuses changes.
   func applyTheme(_ change: ThemeChange) async throws -> ThemeState {
-    let changes: Bool = if case .get = change { false } else { true }
-    if changes {
-      guard mode == .document else { throw OwnerError.readOnly }
-      try await requireWritable()
+    try await enqueue { try self.themeOnQueue(change).state }
+  }
+  /// Enqueues a panel change synchronously, so changes apply in the order they are made.
+  func enqueueTheme(_ change: SlopThemeChange, reply: @escaping @Sendable (Result<ThemeRead, Error>) -> Void) {
+    queue.async {
+      do {
+        try self.admit()
+        let core: ThemeChange
+        switch change {
+        case .set(let values):
+          core = .set(valuesJson: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
+        case .resetAll: core = .reset(token: nil)
+        case .importFile(let file): core = self.importTheme(file)
+        }
+        reply(.success(try self.themeOnQueue(core)))
+      } catch {
+        self.checkPoisoned(error)
+        reply(.failure(error))
+      }
     }
-    let store = store, defaults = package.themeDefaults
-    let state = try await persist { try storeCall { try store.theme(defaultsJson: defaults, change: change) } }
-    if changes { onTheme?(state.overrides) }
-    return state
+  }
+  /// Replaces the theme with a theme file made for this document's template.
+  func importTheme(_ file: String) -> ThemeChange {
+    .import(template: package.manifest.slug, fileJson: file)
+  }
+  /// The full palette as a theme file for this document's template, once it is saved:
+  /// export is behind the same barrier as close, so a failing save fails the export.
+  func exportTheme() async throws -> String {
+    let file = try await enqueue { try storeCall { try self.store.exportTheme(template: self.package.manifest.slug) } }
+    try await flush()
+    return file
+  }
+  private func themeOnQueue(_ change: ThemeChange) throws -> ThemeRead {
+    if case .get = change {} else { try requireEditable() }
+    let state = try storeCall { try store.theme(change: change) }
+    if state.changed { didChangeTheme() }
+    return ThemeRead(state: state, revision: themeRevision)
   }
   /// Refuses new edits, writes everything accepted, then releases the lock. A failed
   /// final write keeps ownership and the live state so the window can retry.

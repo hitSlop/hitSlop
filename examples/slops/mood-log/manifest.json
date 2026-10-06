@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "mood-log",
+  "title": "Mood Log",
+  "description": "A gentle color journal for recording daily mood, energy, and a short reflection without pressure.",
+  "categories": [
+    "health",
+    "personal"
+  ],
+  "presentation": {
+    "width": 480,
+    "height": 620
+  }
+}

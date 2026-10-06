@@ -24,13 +24,18 @@ export type TextHandle<M extends Mode = "live"> = {
   /** Replace the whole field with `value`, as the text is when the owner applies it. */
   set(value: string): Write<M>;
 };
+type LiveOnly<M extends Mode, T> = M extends "live" ? T : unknown;
 type ScalarWrites<V, M extends Mode> = {
   /** Live: shows `value` at once and resolves when it is accepted; a refusal reverts it. */
   set(value: V): Write<M>;
-  /** Show `value` locally without writing history (for drags and drawing). The next
-   * `set`, `flush`, close or export commits it. */
-  preview(value: V): void;
-};
+} & LiveOnly<
+  M,
+  {
+    /** Show `value` locally without writing history (for drags and drawing). The next
+     * `set`, `flush`, close or export commits it. */
+    preview(value: V): void;
+  }
+>;
 /** For Svelte `bind:`. Reading gives the shown value; assigning shows it at once and
  * commits it once it settles (a refused value reverts and is reported). */
 type Bindable<V, M extends Mode> = M extends "live" ? { value: V } : unknown;
@@ -41,12 +46,10 @@ export type ScalarListHandle<V, M extends Mode = "live"> = {
   /** Inserts at `index` (default: the end). */
   insert(value: V, index?: number): Write<M>;
   set(index: number, value: V): Write<M>;
-  /** Shows `value` at `index` locally until `set`, `flush`, close or export. */
-  preview(index: number, value: V): void;
   remove(index: number, count?: number): Write<M>;
   /** Rewrites the list, keeping unchanged positions. */
   replace(values: V[]): Write<M>;
-};
+} & LiveOnly<M, { preview(index: number, value: V): void }>;
 type ValueHandle<N extends Node, M extends Mode> =
   N extends ObjectNode<infer P>
     ? { readonly [K in keyof P]: Handle<P[K], M> }
@@ -71,7 +74,11 @@ type ValueHandle<N extends Node, M extends Mode> =
             delete(key: string): Write<M>;
           }
         : N extends CounterNode
-          ? { /** Adds `by` (default 1); a negative `by` subtracts. */ increment(by?: number): Write<M> }
+          ? {
+              /** Adds `by` (default 1); a negative `by` subtracts. */ increment(
+                by?: number,
+              ): Write<M>;
+            }
           : N extends Text
             ? TextHandle<M>
             : N extends Scalar

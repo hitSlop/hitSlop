@@ -78,7 +78,7 @@ Run commands with `bunx @hitslop/cli@4.0.0`, or install it with `bun install -g 
 | Make a writable document | `create --from TEMPLATE --output DOCUMENT`, then `open DOCUMENT` |
 | Inspect and edit a writable document | `schema`, `get`, `apply`, `batch` |
 | Move data between documents | `get`, then one `batch` of `insert` operations |
-| Customize colors and manage files | `theme get/set/reset`, `attachments list/import/export` |
+| Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/import/export` |
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
 | Install agent guidance | `bun install -g @hitslop/cli`, then `slop skills install`; skills update with the global CLI |
 
@@ -86,7 +86,7 @@ Document commands work through the installed Mac app, even while it's closed. Ca
 
 ## Where it's going
 
-Next, we want changing a slop to be as easy as using it: theme tweaks in the window, asking your agent from the toolbar, seeing who changed what and undoing an agent's change, and remixing a slop someone sent you. See [direction](docs/roadmap.md) and [ideas](docs/ideas.md).
+Next, we want changing a slop to be as easy as using it. Its colors already change from the window's theme panel; next come asking your agent from the toolbar, seeing who changed what and undoing an agent's change, and remixing a slop someone sent you. See [direction](docs/roadmap.md) and [ideas](docs/ideas.md).
 
 ## Why Svelte?
 
@@ -153,7 +153,7 @@ export default { title: "Tiny wins today", wins: 0 };
 
 ### 3. Pick its colors
 
-`theme.ts` declares tokens available as CSS variables. The window, icon, and export use these colors. Your agent can change them through hitSlop's theme commands while the document is open, without rebuilding. Overrides stay with that document; the template keeps its defaults.
+`theme.ts` declares the colors people can change, available as CSS variables; fonts and other styling stay in your CSS. The window, icon, and export use these colors. Anyone can change them from the window's theme panel, and share them as a theme file, and your agent can change them through hitSlop's theme commands, all without rebuilding. Changes stay with that document; the template keeps its defaults.
 
 ```ts
 import { defineTheme } from "@hitslop/document";
@@ -208,7 +208,7 @@ export default defineTheme({
 - `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop captures the editor; mark controls with `data-slop-export="hide"` to leave them out.
 - `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, hitSlop uses its generic icon.
 
-Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Build/register generate the template's initial artwork from starting values.
+Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Register renders the template's initial artwork from starting values.
 
 See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 
@@ -258,8 +258,8 @@ bun run dev       # Try it in the browser; preview data resets on refresh
 The preview reloads as you edit. Stop it before continuing.
 
 ```sh
-bun run build     # Create dist/tiny-wins.slop, including preview and icon artwork
-bun run register  # Add Tiny Wins to your local template catalog
+bun run build     # Create dist/tiny-wins.slop (works on Linux too)
+bun run register  # Render its preview and icon, then add Tiny Wins to your catalog
 ```
 
 In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins.slop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.

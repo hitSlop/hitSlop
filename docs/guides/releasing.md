@@ -5,10 +5,11 @@ Launch includes the signed/notarized Apple silicon Mac app and matching `@hitslo
 ## CLI-only release
 
 A CLI-only release keeps the shipped SDK packages and Mac app. Publish only the
-CLI; keep SDK versions and Mac tags unchanged. This is supported only when the CLI
-WASM core build ID is unchanged and matches the installed helper and live app. A core
-change requires a matching Mac release. Identity equality does not replace the
-installed-consumer smoke checks below.
+CLI; keep SDK versions and Mac tags unchanged. This is supported while the shipped
+app's helper serves the CLI's command protocol (`hitslop-native --protocol`) and can
+read the package format emitted by the builder and run the project's SDK runtime ABI.
+An unsupported requirement needs a compatible Mac release first: publish the app before an SDK or CLI that raises `runtimeABI`, `packageFormat` or the command protocol. A compatible protocol does not replace the installed-consumer smoke
+checks below.
 
 1. Update the CLI version, lockfile, and user-facing commands. Generated projects
    must pin the CLI's exact document dependency independently of the CLI version.
@@ -39,10 +40,11 @@ dependency pins must match the released SDK packages.
 ## Coordinated release sequence
 
 1. Finish release preparation and commit a clean tree. Check package versions, dependency pins and Apple version/build together. Confirm the intended npm versions and Mac tag have not already shipped.
-2. Run the complete local gate below on that final commit and record manual acceptance results. A report from a dirty checkout or another commit does not validate the release candidate.
-3. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-vVERSION` and push the tag; this triggers `.github/workflows/macos-release.yml`.
-4. Monitor signing, notarization, Gatekeeper verification, and GitHub Release publication. Verify downloaded artifacts and complete signed-install/Sparkle acceptance. Retain the release record and checksums.
-5. Download and verify the release's tested npm tarballs, then publish schema, document, and CLI in that order using the procedure below. Finish with fresh registry consumer checks.
+2. Capture the release's [compatibility corpus](../testing.md#compatibility-corpus) entry from that clean candidate with `bun run compat:capture VERSION --frozen`, adding `--templates` for templates that exercise what the release changed. The first public release's entry passes every template in `examples/slops/bundled.json` (`--templates "$(jq -r 'join(",")' examples/slops/bundled.json)"`), so every document it can create is in the corpus; the pre-launch `dev` entry is never frozen. Commit the entry (`tests/compat/VERSION`). Capture builds its own inputs, stages scenarios, records producing-input and artifact digests, and freezes only after successful recording. The entry is permanent from then on. The tag workflow refuses a missing or stale entry; only the corpus commit may differ from the producing candidate.
+3. Run the complete local gate below on that final commit and record manual acceptance results. A report from a dirty checkout or another commit does not validate the release candidate.
+4. Push `master` and wait for `fast`, `native`, and the full-history secret scan to pass for the exact commit. Optionally run the Release macOS workflow manually on `master` as a dry run of the complete gate. Tag that commit `macos-vVERSION` and push the tag; this triggers `.github/workflows/macos-release.yml`.
+5. Monitor signing, notarization, Gatekeeper verification, and GitHub Release publication. Verify downloaded artifacts and complete signed-install/Sparkle acceptance. Retain the release record and checksums.
+6. Download and verify the release's tested npm tarballs, then publish schema, document, and CLI in that order using the procedure below. Finish with fresh registry consumer checks.
 
 If a gate fails, fix and validate the candidate before publication. Never move a published release tag or overwrite released artifacts. After partial npm publication, verify registry state and resume only missing packages.
 
@@ -60,7 +62,7 @@ bun run release:check
 
 `bun run hygiene` runs only repository hygiene and does not establish release readiness.
 
-The complete gate checks hygiene; builds the page shell, helper, and all active templates; verifies generated contracts, types, and skills; runs JS and native tests with presentation fixtures; exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
+The complete gate checks hygiene; builds the page shell, helper, and all active templates; verifies generated contracts, types, and skills; runs JS and native tests with presentation fixtures; replays the compatibility corpus (on a tag, it requires the release's frozen entry and runs every frozen release's own npm CLI); exercises relocated helper editing/export and storage crashes; packs/tests npm artifacts outside the checkout without Node; checks/builds the public site; builds/verifies the Apple app; and exercises native process death. Any failure stops the gate. Partial or non-macOS checks are not a complete release gate.
 
 Bundled selection comes from `examples/slops/bundled.json`. Every selected package must be present in the app with no unexpected stale starters. Every package is checked for matching build bytes, valid manifest/schema/initial data, immutable contents, and preview/icon artwork. Installed create/schema/get/reopen/PNG/PDF checks run on Quick Checklist. Set `HITSLOP_TEMPLATE_EXHAUSTIVE=1` to run those installed checks on every bundled template. Schema-specific mutation/crash probes use known fixtures separately. Packed consumer tests also compile the public getting-started tutorial; its code is an executable contract.
 
@@ -88,7 +90,7 @@ bun scripts/release-artifact.ts /path/to/hitSlop.app
 
 Embedding ships the native executable and its HitSlopDocument resource bundle. Verification checks matching host/helper runtime catalogs and exercises installed helpers with a system-only PATH, including PNG/PDF. Native editing needs no checkout, Node, or Bun. `HITSLOP_NATIVE_CLI` selects an explicit matching helper for authoring verification.
 
-Developer ID, notarization, provisioning, App Store Connect, and Sparkle private keys remain outside Git. The tagged GitHub workflow runs the gate once (`release:check --skip-app`), then archives one Release app. `package-macos-release.sh` runs host-crash acceptance on that signed app before notarizing (it needs the Debug helper from `bun run build`; `HITSLOP_SKIP_ACCEPTANCE=1` skips it). The workflow then verifies DMG/ZIP artifacts and publishes the Mac release. It does not publish npm packages. Release the exact tested commit.
+Developer ID, notarization, provisioning, App Store Connect, and Sparkle private keys remain outside Git. The tagged GitHub workflow runs the gate once (`release:check --skip-app`), then archives one Release app. `package-macos-release.sh` runs host-crash acceptance and the compatibility corpus replay with the signed app's helper before notarizing (it needs the Debug helper from `bun run build`; `HITSLOP_SKIP_ACCEPTANCE=1` skips it). The workflow then verifies DMG/ZIP artifacts and publishes the Mac release. It does not publish npm packages. Release the exact tested commit.
 
 The workflow checks these repository secrets before installing/building: `MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`, `KEYCHAIN_PASSWORD`, `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_P8`, and `SPARKLE_PRIVATE_KEY`. Their presence does not establish certificate validity or account access; signing and notarization must succeed. Temporary certificate/keychain files are cleaned up even after failure. The `release-evidence` workflow artifact retains the gate report, render evidence, packaging log, and any completed release record/checksums.
 
@@ -115,7 +117,7 @@ Use a disposable Release validation build to verify representative Analytics eve
 
 `bun run packages:pack` writes tarballs under `generated/npm`. `bun run test:packed --native` installs those exact artifacts into a temporary directory with spaces and verifies initialization, authoring, registration, themes, exports, preview resources, and durable installed skill links after package-cache removal. It derives versions from package manifests. Consumer-only overrides connect unpublished tarballs; shipped manifests contain registry versions, never workspace/file dependencies.
 
-Keep the tested artifacts from the release commit. Confirm package versions and dependency pins agree, and make the compatible signed Mac app available first. Download the three npm tarballs, `SHA256SUMS`, and `release-record.json` from the matching GitHub Release. Verify each tarball against its checksum and confirm the record identifies the tagged commit. The workflow retains the exact artifacts exercised by `test:packed --native`; do not repack them locally.
+Keep the tested artifacts from the release commit. Confirm package versions and dependency pins agree, and make the compatible signed Mac app available first. Download the three npm tarballs, `SHA256SUMS`, and `release-record.json` from the matching GitHub Release. Verify each tarball against its checksum and confirm the record identifies the tagged commit. The workflow verifies package contents against the capture and retains its exact frozen npm tarballs, which archived-CLI replay tested; do not repack them locally.
 
 Authenticate locally with `npm login --registry=https://registry.npmjs.org`, then check the account with `npm whoami`. Keep credentials in your user configuration outside the repository. Publication may require an interactive 2FA challenge; Bun supports browser authentication and `--otp` for supported OTP challenges. See [npm authentication](https://docs.npmjs.com/accessing-npm-using-2fa/) and [Bun publishing](https://bun.sh/docs/pm/cli/publish). Never put tokens or OTPs in Git.
 

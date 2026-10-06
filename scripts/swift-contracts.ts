@@ -28,7 +28,7 @@ export function swiftContracts(
   request: TSchema,
   reply: TSchema,
   discovery: TSchema,
-  bridgeMethods: string[],
+  pageResults: Record<string, TSchema>,
 ) {
   const declarations: string[] = [];
   function checkKeys(schema: Schema, path: string) {
@@ -48,6 +48,7 @@ export function swiftContracts(
       "maximum",
       "minItems",
       "maxItems",
+      "maxProperties",
       "uniqueItems",
       "description",
       "title",
@@ -68,6 +69,12 @@ export function swiftContracts(
     return name;
   }
   function fieldType(schema: Schema, name: string, path: string): { type: string; enum: boolean } {
+    // A union of closed objects (the manifest presentation) crosses as JSON; its owner
+    // validates the members.
+    if (schema.anyOf) {
+      if (!schema.anyOf.every((member) => member.type === "object")) unsupported(path);
+      return { type: "[String: Any]", enum: false };
+    }
     // Unknown annotations must not hide an unsupported structural construct.
     checkKeys(schema, path);
     if (schema.enum) return { type: enumeration(name, schema.enum, path), enum: true };
@@ -100,7 +107,8 @@ export function swiftContracts(
     }
     return unsupported(path);
   }
-  function structure(name: string, schema: Schema, method?: string) {
+  /** `decode: false` for shapes Swift only sends (page results). */
+  function structure(name: string, schema: Schema, method?: string, decode = true) {
     checkKeys(schema, name);
     if (schema.type !== "object" || !schema.properties || schema.additionalProperties !== false)
       unsupported(name);
@@ -123,46 +131,45 @@ export function swiftContracts(
       `\n  public init(${fields.map((f) => `${f.name}: ${f.type}${f.optional ? "? = nil" : ""}`).join(", ")}) {`,
     );
     for (const f of fields) lines.push(`    self.${f.name} = ${f.name}`);
-    lines.push(
-      "  }",
-      "\n  /// Validate the envelope with Envelope.valid before mapping it.",
-      "  public init(json: [String: Any]) throws {",
-    );
-    for (const f of fields) {
-      const access = `json[${quote(f.key)}]`;
-      const expression = f.enum
-        ? `(${access} as? String).flatMap(${f.type}.init(rawValue:))`
-        : f.type === "Any"
-          ? access
-          : `${access} as? ${f.type}`;
-      if (f.optional) {
-        lines.push(`    if let value = ${access} {`);
-        const converted = f.enum
-          ? `(value as? String).flatMap(${f.type}.init(rawValue:))`
-          : `value as? ${f.type}`;
-        lines.push(
-          ...(f.type === "Any"
-            ? [`      self.${f.name} = value`]
-            : [
-                `      guard let mapped = ${converted} else { throw ContractMappingError.field(${quote(name + "." + f.key)}) }`,
-                `      self.${f.name} = mapped`,
-              ]),
-          "    } else {",
-          `      self.${f.name} = nil`,
-          "    }",
-        );
-      } else {
-        lines.push(
-          `    guard let ${f.name} = ${expression} else { throw ContractMappingError.field(${quote(name + "." + f.key)}) }`,
-          `    self.${f.name} = ${f.name}`,
-        );
+    lines.push("  }");
+    if (decode) {
+      lines.push(
+        "\n  /// Validate the envelope with Envelope.valid before mapping it.",
+        "  public init(json: [String: Any]) throws {",
+      );
+      for (const f of fields) {
+        const access = `json[${quote(f.key)}]`;
+        const expression = f.enum
+          ? `(${access} as? String).flatMap(${f.type}.init(rawValue:))`
+          : f.type === "Any"
+            ? access
+            : `${access} as? ${f.type}`;
+        if (f.optional) {
+          lines.push(`    if let value = ${access} {`);
+          const converted = f.enum
+            ? `(value as? String).flatMap(${f.type}.init(rawValue:))`
+            : `value as? ${f.type}`;
+          lines.push(
+            ...(f.type === "Any"
+              ? [`      self.${f.name} = value`]
+              : [
+                  `      guard let mapped = ${converted} else { throw ContractMappingError.field(${quote(name + "." + f.key)}) }`,
+                  `      self.${f.name} = mapped`,
+                ]),
+            "    } else {",
+            `      self.${f.name} = nil`,
+            "    }",
+          );
+        } else {
+          lines.push(
+            `    guard let ${f.name} = ${expression} else { throw ContractMappingError.field(${quote(name + "." + f.key)}) }`,
+            `    self.${f.name} = ${f.name}`,
+          );
+        }
       }
+      lines.push("  }");
     }
-    lines.push(
-      "  }",
-      "\n  public var json: [String: Any] {",
-      "    var result: [String: Any] = [:]",
-    );
+    lines.push("\n  public var json: [String: Any] {", "    var result: [String: Any] = [:]");
     if (method !== undefined) lines.push(`    result["method"] = ${quote(method)}`);
     for (const f of fields) {
       if (f.optional)
@@ -249,7 +256,37 @@ export function swiftContracts(
   declarations.push(lines.join("\n"));
   structure("SocketReply", reply as Schema);
   structure("SocketDiscovery", discovery as Schema);
-  enumeration("BridgeMethod", bridgeMethods, "BridgeMethods");
+  enumeration("PageMethod", Object.keys(pageResults), "PageMethods");
+  // One case per page method; a result with fields carries its generated structure.
+  const results = Object.entries(pageResults).map(([method, schema]) => {
+    const name = "Page" + title(method) + "Result";
+    const empty = !Object.keys((schema as Schema).properties ?? {}).length;
+    return {
+      method,
+      name,
+      empty,
+      sendable: empty || structure(name, schema as Schema, undefined, false),
+    };
+  });
+  const page = [
+    "/// A successful page reply. `json` adds `ok`; failures use `DocumentOwner.pageFailure`.",
+    `public enum PageResult${results.every((r) => r.sendable) ? ": Sendable" : ""} {`,
+    ...results.map((r) => `  case ${identifier(r.method)}${r.empty ? "" : `(${r.name})`}`),
+    "\n  public var json: [String: Any] {",
+    "    var result: [String: Any]",
+    "    switch self {",
+    ...results.map((r) =>
+      r.empty
+        ? `    case .${identifier(r.method)}: result = [:]`
+        : `    case .${identifier(r.method)}(let value): result = value.json`,
+    ),
+    "    }",
+    '    result["ok"] = true',
+    "    return result",
+    "  }",
+    "}",
+  ];
+  declarations.push(page.join("\n"));
   return (
     "// Generated by bun run schema:generate. Do not edit.\nimport Foundation\n\nprivate enum ContractMappingError: Error { case field(String) }\n\n" +
     declarations.join("\n\n") +

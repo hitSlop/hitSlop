@@ -1,9 +1,13 @@
+:root {
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --headingFont: Georgia, "Times New Roman", serif;
+}
 * {
   box-sizing: border-box;
 }
 
 :root {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   color-scheme: light;
   font-synthesis: none;
 }
@@ -129,7 +133,7 @@ button {
   padding: 0;
   margin: 0;
   background: transparent;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 34px;
   line-height: 1.12;
   letter-spacing: -0.045em;
@@ -364,7 +368,7 @@ div.checklist-task-text {
 }
 
 .checklist-grow.title::after {
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 34px;
   line-height: 1.12;
   letter-spacing: -0.045em;
@@ -567,7 +571,7 @@ div.checklist-task-text {
 .checklist-empty h2 {
   margin: 14px 0 5px;
   color: var(--slop-ink);
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 23px;
   font-weight: 400;
 }

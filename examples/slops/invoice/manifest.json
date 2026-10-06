@@ -1,0 +1,18 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "invoice",
+  "title": "Invoice",
+  "description": "A warm paper invoice for parties, line items, tax, and payment status.",
+  "categories": [
+    "business",
+    "finance"
+  ],
+  "presentation": {
+    "width": 640,
+    "height": 640
+  }
+}

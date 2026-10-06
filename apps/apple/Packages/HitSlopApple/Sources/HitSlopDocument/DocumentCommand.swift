@@ -6,8 +6,9 @@ import HitSlopCore
 @MainActor public enum DocumentCommand {
   /// One command for the document at `url`: forwarded to its live owner, or run by an
   /// owner opened here under the writer lock. `make` builds the request for the package's
-  /// path; `hello` supplies the epoch a mutation needs. Returns the output as JSON.
-  public static func run(url: URL, _ make: @escaping @Sendable (_ documentPath: String) -> SocketRequest) async throws -> Data {
+  /// path; `hello` supplies the epoch a mutation needs. Reads return the projected value
+  /// unless `snapshot` requests the complete schema and owner frame. Returns JSON.
+  public static func run(url: URL, snapshot: Bool = false, _ make: @escaping @Sendable (_ documentPath: String) -> SocketRequest) async throws -> Data {
     let deadline = ContinuousClock.now + .seconds(2)
     // The package is validated once per command, off MainActor; retries reuse it.
     let package = try await SlopPreparation.run {
@@ -22,7 +23,7 @@ import HitSlopCore
     try validate(request)
     while true {
       do {
-        return try await attempt(request, package: package, admissionDeadline: deadline)
+        return try await attempt(request, package: package, admissionDeadline: deadline, snapshot: snapshot)
       } catch let retry as AdmissionRetry {
         guard ContinuousClock.now < deadline else {
           throw failure(retry.message)
@@ -46,7 +47,6 @@ import HitSlopCore
     // Operations are JSON text the core parses; only their outer shape is checked here.
     let shaped: Bool
     switch request {
-    case .apply(let r): shaped = (try? JSONSerialization.jsonObject(with: Data(r.op.utf8))) is [String: Any]
     case .batch(let r): shaped = (try? JSONSerialization.jsonObject(with: Data(r.ops.utf8))) is [Any]
     default: shaped = true
     }
@@ -54,7 +54,7 @@ import HitSlopCore
   }
 
   private static func attempt(
-    _ request: SocketRequest, package: SlopPackage, admissionDeadline: ContinuousClock.Instant
+    _ request: SocketRequest, package: SlopPackage, admissionDeadline: ContinuousClock.Instant, snapshot: Bool
   ) async throws -> Data {
     let root = package.rootURL
     let connection: Connection
@@ -63,7 +63,7 @@ import HitSlopCore
     case .live(let socket): connection = .socket(socket)
     }
     do {
-      let hello = SocketRequest.hello(.init(id: UUID().uuidString, documentPath: root.path))
+      let hello = SocketRequest.hello(.init(documentPath: root.path))
       let opening = try await send(hello, over: connection)
       if opening.code == .closing { throw AdmissionRetry(reply: opening) }
       let current = try checkedEpoch(opening)
@@ -81,10 +81,15 @@ import HitSlopCore
       guard let state = reply.state else { throw failure("Missing document state in response") }
       // Edits also report the inserted row IDs (minted IDs are new on every run) and the
       // owner sequence, so an agent can address new rows without another read.
-      let output: Any = request.method == .apply || request.method == .batch
-        ? ["ids": reply.ids ?? [], "sequence": reply.sequence ?? 0, "value": state] : state
-      let data = try JSONSerialization.data(
-        withJSONObject: output, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+      let output: Any
+      if request.method == .batch {
+        output = ["ids": reply.ids ?? [], "sequence": reply.sequence ?? 0, "value": state]
+      } else if request.method == .get, !snapshot {
+        guard let snapshot = state as? [String: Any], let frame = snapshot["state"] as? [String: Any], let value = frame["value"]
+        else { throw failure("Missing document value in response") }
+        output = value
+      } else { output = state }
+      let data = try formatted(output)
       try await connection.close()
       return data
     } catch {
@@ -142,11 +147,11 @@ import HitSlopCore
 
   public static func exportLive(root: URL, socket: String, format: ExportFormat, output: URL) async throws
   {
-    let base = SocketRequest.hello(.init(id: UUID().uuidString, documentPath: root.path))
+    let base = SocketRequest.hello(.init(documentPath: root.path))
     let hello = try await send(base, over: .socket(socket))
     let epoch = try checkedEpoch(hello)
     let request = SocketRequest.export(.init(
-      id: UUID().uuidString, documentPath: root.path, epoch: epoch, format: format, output: output.path))
+      documentPath: root.path, epoch: epoch, format: format, output: output.path))
     let reply: SocketReply
     do { reply = try await send(request, over: .socket(socket)) } catch {
       throw failure(
@@ -161,7 +166,8 @@ import HitSlopCore
   private static func checkedEpoch(_ hello: SocketReply) throws -> String {
     guard hello.ok else { throw failure(hello.error ?? "Cannot open session") }
     guard hello.coreBuildId == DocumentOwner.coreBuildID else {
-      throw failure("hitSlop.app and the native helper embed different document cores; install matching versions and reopen the app")
+      // The helper ships in the app bundle, so a mismatch means the running app predates an update.
+      throw failure("hitSlop was updated while this document was open. Quit and reopen hitSlop, then try again")
     }
     guard let epoch = hello.epoch else { throw failure("Cannot open session") }
     return epoch
@@ -197,6 +203,11 @@ import HitSlopCore
     return try SocketReply(json: object)
   }
 
+  /// Command output and theme files: pretty and key-sorted, so the same state is always
+  /// the same bytes.
+  nonisolated public static func formatted(_ object: Any) throws -> Data {
+    try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+  }
   private static func requestLimit(_ method: SocketRequest.Method) -> Int {
     method == .attachmentsPut ? Limits.socketAttachment : Limits.socketRequest
   }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://api.hitslop.com/schemas/manifest.schema.json",
+  "author": {
+    "name": "hitSlop",
+    "url": "https://hitslop.com"
+  },
+  "slug": "soma-amp",
+  "title": "SomaAmp",
+  "description": "A classic skin-compatible desktop receiver for eight listener-supported SomaFM stations.",
+  "categories": [
+    "music",
+    "media"
+  ],
+  "presentation": {
+    "width": 275,
+    "height": 470,
+    "resizable": false
+  }
+}

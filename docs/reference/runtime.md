@@ -8,10 +8,11 @@ limits, security, capture and telemetry.
 
 The page shell owns the page and the whole lifecycle: it opens the document, then
 imports the package's `assets/app.js` and calls `default.mount(ctx, target)`
-([abi.ts](../../packages/document/src/abi.ts)). `ctx` is the only thing an app may rely
+([abi.ts](../../packages/document/src/abi.ts)). The private `@hitslop/shell` package supplies the runtime; `@hitslop/document`
+contains only the author SDK. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`,
-`issues`), `bind.text`/`bind.value`, capture hooks, attachments, theme,
-`window.resize` and `reportError`. The returned view supplies `rendered()` (wait for
+`issues`), `bind.text`, capture hooks, attachments, `window.resize` and
+`reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view supplies `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.
 
@@ -32,8 +33,7 @@ The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Rec
 
 ## Package layout
 
-TypeBox defines the manifest and platform envelopes. The manifest requires author, slug, title, description, categories, and presentation; `$schema` is an optional editor hint.
-Readers tolerate unknown metadata and named enum values without rewriting manifest bytes; writers and known-field validation remain strict.
+TypeBox defines the manifest and platform envelopes. The authored manifest requires author, slug, title, description, categories, and presentation; `$schema` is an optional editor hint. `slop build` stamps `packageFormat` from the builder and `runtimeABI` from the project's resolved SDK. The host checks these independent requirements before package interpretation; package readers and app-facing context adapters dispatch on their own requirement. Native and browser page configuration carry the runtime ABI.
 
 ```text
 Example.slop/
@@ -41,7 +41,7 @@ Example.slop/
   assets/                       immutable compiled code, CSS, and resources
     app.js                      app module: export default { mount(ctx, target) }
     app.css                     compiled app styling
-    theme.json                  declared token defaults
+    theme.json                  declared theme colors (the palette's defaults)
   state.schema.json             root object descriptor, not JSON Schema
   initial.json                  immutable creation-only values
   .agents/skills/hitslop-document/SKILL.md
@@ -59,7 +59,7 @@ Templates contain no `state`, `stores`, source, dependencies, caches, or editabl
 
 The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. App bundles must not embed Loro or the document implementation. Preview serves the same shell plus the WASM core from the CLI, with disposable memory storage. No executable code is downloaded.
 
-Packages carry no runtime metadata: a package is valid when its manifest, descriptor, initial data and assets validate. Earlier 1.x builds are unsupported. Populated SQLite storage must carry the hitSlop application ID and supported storage version. Native commands require matching CLI/helper/live-owner core build identities; there is no negotiation or migration.
+A package is valid when its manifest, descriptor, initial data and assets validate at its package/runtime requirements. Populated SQLite storage must carry the hitSlop application ID and a storage version this build reads, and each document records its layout; newer ones are refused with `requires_update` and left unchanged ([compatibility](../engineering-contract.md#compatibility)). The CLI checks the helper's command protocol; the helper requires the live owner's exact core build.
 
 ## Persistence and ownership
 
@@ -75,7 +75,7 @@ Failed saves retain ownership and native retry UI; cancel-close restores editing
 
 Opaque imported attachments live at `state/attachments/<sha256>`, outside Loro. `attachments.import(file, (tx, ref) => …)` stores and fsyncs the bytes, then submits the collector's reference edits; the close and capture barriers wait for it, so a blob is never saved without its reference. The owner enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document), rejects links, and verifies hashes on read. Duplication copies attachments; runtime templates contain none. Unreferenced blobs remain until a future explicit garbage-collection policy.
 
-Theme overrides are bounded host presentation state, not a document projection: at most 64 KiB of declared tokens in `state/document.sqlite`, outside Loro, validated on write as [architecture](../architecture.md#themes-and-attachments) describes. The page shell applies defaults and overrides as CSS variables before mounting the app. Loading never validates; the browser ignores CSS it cannot parse. Arbitrary CSS override files are unsupported, and layout changes need authoring source and a rebuild.
+Theme overrides are bounded host presentation state, not a document projection: at most 256 declared colors in `state/document.sqlite`, outside Loro, validated when changed and saved with the document's edits as [architecture](../architecture.md#themes-and-attachments) describes. The page shell applies the effective palette as CSS variables before mounting the app, and again whenever it changes. Loading never validates. Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
 ## Opening and recovery
 
@@ -87,9 +87,9 @@ Application-render errors and save failures have separate recovery paths. Render
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates package isolation, symlinks, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes only the descriptor, initial values, immutable assets, and the bundled page shell. Databases and discovery files are not served. Decoded resource paths reject empty, dot and parent segments before normalization; the allowlist applies to the resolved path. Descriptor-relative no-follow reads reject nonregular files and enforce 25 MiB per resource. Immutable packages are limited to 256 entries and 50 MiB. Symlinks are rejected during opening and resource reads.
+The page shell synthesizes the page. The resource scheme exposes only the descriptor, initial values, immutable assets, and the bundled page shell. Databases and discovery files are not served. Decoded resource paths reject empty, dot and parent segments before normalization; the allowlist applies to the resolved path. Descriptor-relative no-follow reads reject nonregular files and enforce 25 MiB per resource. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for packaged audio and video. Immutable packages are limited to 256 entries and 50 MiB. Symlinks are rejected during opening and resource reads.
 
-CSP permits local scripts/WASM, local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
+CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`; Soma Amp's MilkDrop compiles its presets this way), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
@@ -133,7 +133,25 @@ Release validation requires actual Firebase delivery and symbolication; unit tes
 
 ## Schema identity
 
-A stored document opens only under an identical schema key: the canonical JSON of its
-descriptor, with keys sorted recursively, array order kept, no whitespace and
-JavaScript JSON number formatting. These rules are frozen by a golden vector in
-`packages/document/tests/schema.test.ts`. Schema evolution is deferred.
+Saved state belongs to the descriptor it was saved under. The store records the
+descriptor (the core's canonical serialization) with the checkpoint and compares it with
+the package's by meaning when it opens (`same_schema`): key order and number spelling
+never matter, any other difference refuses the saved state. Apps check a second key: the
+SDK compiled into each `app.js` computes the descriptor's canonical JSON (keys sorted
+recursively, array order kept, no whitespace, JavaScript number formatting) and refuses
+to mount under a shell that computes a different one. Every released app.js carries that
+algorithm, so it is frozen by golden vectors in `packages/document/tests/schema.test.ts`.
+Schema evolution is deferred.
+
+The native page protocol has one request/reply envelope for document edits and host
+services. TypeBox owns it in `@hitslop/schema/page`; core payloads are in
+`@hitslop/schema/core`. Requests carry no correlation ID or view token: WebKit
+correlates promises and Swift supplies lifecycle identity after checking the sender.
+The host enters the shell through `__slop` for publications, capture and lifecycle.
+Apps use the restricted `ctx.document` facade and its explicit durability barrier,
+`flush()`. Themes arrive as effective values; `defineTheme` exposes defaults and CSS
+variable references, while authored layout stays in CSS.
+
+Swift encodes replies with the generated `PageResult`, and Rust validates requests
+against the generated schemas. The shell checks only each reply's outcome envelope and
+does not bundle TypeBox.

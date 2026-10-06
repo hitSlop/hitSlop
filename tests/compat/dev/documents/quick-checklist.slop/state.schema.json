@@ -1,0 +1,25 @@
+{
+  "kind": "object",
+  "properties": {
+    "title": {
+      "kind": "text"
+    },
+    "tasks": {
+      "kind": "list",
+      "item": {
+        "kind": "object",
+        "properties": {
+          "text": {
+            "kind": "text"
+          },
+          "done": {
+            "kind": "boolean"
+          },
+          "archived": {
+            "kind": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

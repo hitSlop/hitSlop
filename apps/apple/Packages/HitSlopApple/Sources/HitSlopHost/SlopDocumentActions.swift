@@ -2,42 +2,31 @@ import AppKit
 import HitSlopCore
 import HitSlopDocument
 
-/// Toolbar and menu commands: pin, duplicate, export, reveal, open in editor, retry, close.
+/// Toolbar and menu commands: pin, theme, duplicate, export, reveal, open in editor, retry,
+/// close.
 extension SlopDocumentWindowController {
   func request(_ command: SlopDocumentCommand) {
     if !isContentReady {
       switch command {
-      case .exportPNG, .exportPDF, .duplicate: return
+      case .exportPNG, .exportPDF, .duplicate, .theme(true), .importTheme, .exportTheme: return
       default: break
       }
     }
-    if let onCommand {
-      onCommand(command)
-      return
-    }
-    Task {
-      do { _ = try await perform(command) } catch {
-        present("Could not complete command", error)
-      }
-    }
+    routing.command(command)
   }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
     switch command {
     case .pin(let pinned): setPinned(pinned)
+    case .theme(let shown): setThemeShown(shown)
+    case .importTheme: try await importTheme()
+    case .exportTheme: try await exportTheme()
     case .duplicate:
       let panel = NSSavePanel()
       panel.allowedContentTypes = [.slop]
       panel.nameFieldStringValue =
         packageURL.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
-      let response = await withCheckedContinuation { continuation in
-        if let window {
-          panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
-        } else {
-          panel.begin { continuation.resume(returning: $0) }
-        }
-      }
-      return try await duplicateDocument(to: response == .OK ? panel.url : nil)
+      return try await duplicateDocument(to: await runSheet(panel))
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
@@ -58,8 +47,24 @@ extension SlopDocumentWindowController {
         telemetry.send(.breadcrumb(.recovery, .completed))
       } catch { reportLifecycleFailure(.recovery, error: error); throw error }
     case .close: try await closeDocument()
+    case .retrySave: try await session.retrySave()
+    case .discardUnsaved:
+      try await session.discardPending()
+      try await session.retrySave()
     }
     return nil
+  }
+
+  /// A save or open panel as a sheet on the document window; nil when cancelled.
+  func runSheet(_ panel: NSSavePanel) async -> URL? {
+    let response = await withCheckedContinuation { continuation in
+      if let window {
+        panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+      } else {
+        panel.begin { continuation.resume(returning: $0) }
+      }
+    }
+    return response == .OK ? panel.url : nil
   }
 
   func duplicateDocument(to target: URL?) async throws -> URL? {
@@ -118,6 +123,16 @@ extension SlopDocumentWindowController {
     let directory = URL(fileURLWithPath: packageURL.path, isDirectory: true)
     _ = try await NSWorkspace.shared.open(
       [directory], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+  }
+}
+
+extension SlopDocumentFailure {
+  /// How the coordinator treats a failed window command. Flush and close report a failed
+  /// save as the owner's `SaveFailure`, which the save-failure sheet already shows.
+  public init(command error: Error) {
+    if error is SaveFailure { self = .save }
+    else if SlopFailureContext.isCancellation(error) { self = .cancelled }
+    else { self.init(error) }
   }
 }
 

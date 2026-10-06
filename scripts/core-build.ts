@@ -41,11 +41,6 @@ export async function buildCoreWasm() {
     "generated/core/wasm",
     "target/wasm32-unknown-unknown/release/hitslop_core_wasm.wasm",
   ]);
-  // The CLI compares this with the native helper's without compiling the WASM.
-  const output = join(root, "generated/core/wasm");
-  const core = await import(join(output, "hitslop_core_wasm.js"));
-  core.initSync({ module: await Bun.file(join(output, "hitslop_core_wasm_bg.wasm")).bytes() });
-  await Bun.write(join(output, "BUILD_ID"), core.coreBuildId() + "\n");
 }
 
 /** Native bindings are generated from the same locked core as the WASM binding. */

@@ -12,15 +12,14 @@ export type AppCompiler = (source: string, stage: string) => Promise<string[]>;
  * schema/theme helpers). The engine and host lifecycle ship with hitSlop; apps reach
  * them only through the ctx passed to mount.
  */
-const sdkSource = /(?:packages\/document|@hitslop\/document)\/src\/(.+)$/;
-const appSDK = /^(app\/.+|schema\.ts|descriptor\.ts|errors\.ts|theme\.ts)$/;
+const shellSource = /(?:packages\/shell|@hitslop\/shell)(?:\/|$)/;
 /** Reject engine code, host bridge access and remote resources needed to boot. */
 function checkAppBundle(inputs: string[], script: string, css: string) {
   for (const input of inputs) {
     // Vite adds cache/transform queries to installed dependency module IDs.
-    const sdk = sdkSource.exec(input.split(/[?#]/, 1)[0]!)?.[1];
+    const module = input.split(/[?#]/, 1)[0]!;
     // An app never embeds a document engine: the host's core owns the document.
-    if (/loro-crdt/.test(input) || (sdk && !appSDK.test(sdk)))
+    if (/loro-crdt/.test(input) || shellSource.test(module))
       throw new Error(`Embedded runtime code rejected: ${input}`);
   }
   if (/messageHandlers|__slop\b/.test(script))
@@ -55,7 +54,7 @@ export async function appConfig(source: string): Promise<InlineConfig> {
     },
     resolveId(id) {
       if (id === entry) return virtualEntry;
-      if (/^loro-crdt(\/|$)|^\/__shell__\//.test(id))
+      if (/^(?:loro-crdt|@hitslop\/shell)(\/|$)|^\/__shell__\//.test(id))
         throw new Error(`App code cannot import ${id}; use ctx from the document SDK`);
       if (id.startsWith("/assets/")) return join(source, decodeURIComponent(id.slice(1)));
     },

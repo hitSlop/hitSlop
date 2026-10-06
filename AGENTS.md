@@ -3,19 +3,16 @@
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
 Contracts: [engineering contract](docs/engineering-contract.md). Tests:
-[testing](docs/testing.md). `examples/slops/bundled.json` selects the bundled templates;
-slops not yet on the implemented document kinds are in `archive/slops`.
+[testing](docs/testing.md). `examples/slops/bundled.json` selects the bundled templates.
 
 ## Non-negotiable
 
-- **Start fresh: earlier 1.x builds are unsupported.** No legacy handling, migrations
-  or backwards-compatible readers. The app, helper, page shell and CLI are built from
-  one tree. The release markers are SQLite application/schema identity and the exact
-  core build identity checked between CLI, helper and live owner; no version negotiation.
+- **Every released slop stays openable.** See [Compatibility](#compatibility).
 - `hitslop-core` (Rust on Loro) owns document semantics and durable storage: SQLite,
   the writer lock and the save policy. The Swift `DocumentOwner` schedules saves and owns
   the socket and delivery to the page; Loro bytes never reach Swift. The page shell
-  holds no CRDT, and slops contain only their app.
+  (`packages/shell`) holds no CRDT; `packages/document` is the author SDK, and slops
+  contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or unlink `writer.lock`. Closed edits never
   start WebKit or run authored code.
@@ -31,6 +28,33 @@ slops not yet on the implemented document kinds are in `archive/slops`.
   document engine. The WASM core is for authoring validation, `slop dev` and tests only.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
+
+## Compatibility
+
+Before launch we start fresh: no legacy handling, migrations or backwards-compatible
+readers; pre-launch documents are unsupported and `tests/compat/dev` may be replaced.
+From the first public release, a newer hitSlop must open, render, edit, save and reopen
+every document a released build wrote. Downgrades are not supported.
+
+- The frozen corpus (`tests/compat/<release>/`, `"frozen": true`) passes in every build.
+  Never edit, regenerate or delete a frozen entry or its expectations; capture one per
+  release ([releasing](docs/guides/releasing.md)).
+- Persisted formats change only additively, or behind a marker the reader dispatches
+  on: the package's `packageFormat` and `runtimeABI` requirements, the SQLite storage version (forward migration
+  under the writer lock) or the document layout (read it, or migrate losslessly). The
+  markers are requirements, not release numbers; refactors never raise them. A build
+  refuses a newer marker with `requires_update` and writes nothing.
+- Package syntax changes raise `packageFormat`; app-facing behavior raises `runtimeABI`.
+  These requirements evolve independently. Checks that run on open are versioned by `packageFormat`, so tightening an
+  authoring rule never rejects a saved document; a security fix that must reject old
+  documents needs an assessment and a recovery path for their data.
+- Public boundaries grow additively: `ctx` and handle methods (new object-handle members
+  start with `$`; reserved field names never grow), error codes (apps treat unknown
+  ones as outcomes), `--slop-*`, `data-hitslop-root`, the embed relay, and the helper's
+  command protocol (`hitslop-native --protocol`). A change an old app cannot run raises
+  `runtimeABI` and keeps the old behavior through an adapter. Internals behind them are free.
+- Upgrade Loro (pinned exactly) only with the corpus passing. The helper and the live
+  owner ship in one bundle and keep their exact build check.
 
 ## Authoring
 

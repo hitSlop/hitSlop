@@ -158,7 +158,7 @@ async function globalCopy(bun: string) {
 
 const repositoryCli = resolve("packages/cli");
 
-test("agent skills link to the global CLI, follow its upgrades and are repaired by it", async () => {
+test("agent skills link to the global CLI and follow its upgrades", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-skill-global-"));
   try {
     const { home, project, bun, run } = await sandbox(root);
@@ -179,14 +179,6 @@ test("agent skills link to the global CLI, follow its upgrades and are repaired 
     await rm(cli, { recursive: true });
     await rename(upgraded, cli);
     expect(await readFile(join(link, "SKILL.md"), "utf8")).toContain('version: "9.9.9"');
-
-    // Any command from the global CLI re-points owned links that name another source.
-    const stray = join(home, ".hitslop/cli/4.0.0/skills/hitslop-cli");
-    await cp(join(packaged, "hitslop-cli"), stray, { recursive: true });
-    await rm(link);
-    await symlink(stray, link);
-    await run(cli, "schema", join(root, "missing.slop"));
-    expect(await readlink(link)).toBe(join(packaged, "hitslop-cli"));
 
     // Any copy may remove links; shared content is untouched.
     expect((await run(repositoryCli, "skills", "uninstall", "--all", "--scope", "global")).code).toBe(0);
@@ -213,29 +205,6 @@ test("copies outside the global install never install or repair agent skill link
     }
     expect(await lstat(join(home, ".agents")).catch(() => undefined)).toBeUndefined();
     expect(await lstat(join(project, ".agents")).catch(() => undefined)).toBeUndefined();
-
-    // Ordinary commands from a local copy leave existing links alone.
-    const link = join(home, ".agents/skills/hitslop-cli");
-    const stray = join(home, ".hitslop/cli/4.0.0/skills/hitslop-cli");
-    await mkdir(stray, { recursive: true });
-    await mkdir(join(home, ".agents/skills"), { recursive: true });
-    await symlink(stray, link);
-    await run(repositoryCli, "schema", join(root, "missing.slop"));
-    expect(await readlink(link)).toBe(stray);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("the global CLI stays quiet inside a project that keeps guide copies", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hsl-skill-quiet-"));
-  try {
-    const { project, bun, run } = await sandbox(root);
-    const cli = await globalCopy(bun);
-    await cp("packages/cli/skills", join(project, ".agents/skills"), { recursive: true });
-    const result = await run(cli, "schema", join(root, "missing.slop"));
-    expect(result.stderr).not.toContain("Skill conflict");
-    expect(await lstat(join(project, ".agents/skills/hitslop")).then((entry) => entry.isDirectory())).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

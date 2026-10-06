@@ -20,7 +20,7 @@ mod execute;
 mod replace;
 mod project;
 mod issues;
-pub use descriptor::{schema_key, validate};
+pub use descriptor::{same_schema, schema_key, validate};
 use descriptor::{Node, descriptor, valid_key, loro_scalar, unwrap_optional, utf16_len, is_scalar, holds_collections};
 use execute::{fill, put, resolve, execute, Rows};
 use identity::stored_id;
@@ -28,7 +28,7 @@ use project::{counter_sum, project, project_at};
 use issues::{issues, container_issues, scalar_issue};
 use publication::{Dirty, Events, ListState};
 use std::sync::Arc;
-pub use wire::{Code, STORAGE_BYTES, STORAGE_ROWS};
+pub use wire::{Code, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS};
 use wire::{valid_id, Anchor, Batch, Hunk, Intent, Segment, Issue, IssueCode, State, Publication, PatchOp};
 
 const MAX_BYTES: usize = wire::STORAGE_BYTES;
@@ -151,11 +151,11 @@ fn application_id() -> Result<String> {
     Ok(out)
 }
 
-/// This replica's counter key: its peer ID.
 /// Issues in one canonical order, by path then code, so every walk agrees.
 fn sort_issues(issues: &mut [Issue]) {
     issues.sort_by(|a, b| (&a.path, a.code).cmp(&(&b.path, b.code)));
 }
+/// This replica's counter key: its peer ID.
 fn writer(doc: &LoroDoc) -> String {
     doc.peer_id().to_string()
 }
@@ -171,6 +171,25 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 /// prove the app and its helper embed the same core.
 pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
 
+/// The document layout: how descriptor kinds map to Loro containers
+/// (docs/reference/document-types.md). A compatibility requirement, not a release number,
+/// written into each document's `meta` map when it is created. A build refuses a newer one.
+pub const LAYOUT: i64 = 1;
+const META: &str = "meta";
+/// Refuses a document whose layout this build cannot read, before interpreting it. Each
+/// layout a released build wrote keeps its arm: raising `LAYOUT` adds an arm that reads
+/// the new layout and leaves the old ones reading (or migrating losslessly in memory).
+fn check_layout(doc: &LoroDoc) -> Result<()> {
+    match doc.get_map(META).get("layout") {
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(1))) => Ok(()),
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(layout))) if layout > LAYOUT => Err(err(
+            Code::RequiresUpdate,
+            format!("This document uses layout {layout}; this hitSlop reads layout {LAYOUT}"),
+        )),
+        _ => Err(err(Code::InvalidBytes, "Document has no supported layout")),
+    }
+}
+
 /// Who made a change: the person in a window, or an agent (the CLI and socket). Both are
 /// undoable; an agent's consecutive batches are one undo step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,8 +197,7 @@ pub enum Origin {
     Page,
     Agent,
 }
-/// The commit message of agent edits. Messages are saved with the history, so a later
-/// session can find the agent's edits made while no window was open.
+/// The commit message of agent edits, saved with the history for attribution.
 const AGENT: &str = "agent";
 /// The undo step being extended: a typing run in one text field (its text and caret, in
 /// UTF-16, after the last edit), or a run of agent batches.
@@ -193,24 +211,8 @@ struct Step {
     before: Frontiers,
     after: Frontiers,
 }
-/// Includes the trailing agent edits found when opening, if any.
+/// Undo covers the open session only: a document opens with nothing to undo.
 const UNDO_STEPS: usize = 100;
-/// The version before the agent edits that end this document's history, within the
-/// history it keeps; none when the person's change is last.
-fn agent_tail(doc: &LoroDoc) -> Option<Frontiers> {
-    let trimmed = doc.shallow_since_vv().to_vv();
-    let mut at = doc.oplog_frontiers();
-    let mut moved = false;
-    while let Some(change) = at.as_single().and_then(|id| doc.get_change(id)) {
-        // Stop where the version before this change is no longer kept.
-        if change.message.as_deref() != Some(AGENT) || change.deps.is_empty() || change.deps.iter().any(|id| trimmed.includes_id(id)) {
-            break;
-        }
-        at = change.deps.clone();
-        moved = true;
-    }
-    moved.then_some(at)
-}
 
 /// A committed batch: its publication sequence, the IDs of inserted rows, and the
 /// publication to deliver, absent when the batch changed nothing.
@@ -260,7 +262,7 @@ impl Document {
         subscribe(&doc, &events);
         let mut this = Self {
             lists: publication::index_all(&doc),
-            undo: agent_tail(&doc).map(|before| Step { before, after: doc.oplog_frontiers() }).into_iter().collect(),
+            undo: VecDeque::new(),
             redo: vec![],
             run: None,
             doc,
@@ -280,7 +282,9 @@ impl Document {
         let initial: Value = parse(initial)?;
         schema.validate(&initial, false)?;
         let doc = LoroDoc::new();
-        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc))?;
+        doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
+        let lists = HashMap::new();
+        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc), false, &mut Rows::new(&lists))?;
         doc.commit();
         Self::from_doc(doc, schema, false)
     }
@@ -315,6 +319,7 @@ impl Document {
             }
             Ok(())
         })?;
+        check_layout(&doc)?;
         Self::from_doc(doc, schema, true)
     }
     /// Same result as `issues` over the full JSON value, without materializing it:
@@ -563,9 +568,9 @@ impl Document {
             return Ok(Applied { sequence: self.sequence, ids: vec![], publication: None });
         };
         let before = self.doc.state_frontiers();
-        if let Err(error) = self.doc.revert_to(&target) {
+        if let Err(error) = self.revert(&target) {
             self.abort(&before)?;
-            return Err(engine(error));
+            return Err(error);
         }
         self.doc.commit();
         let publication = self.publish_or_abort(&before)?;
@@ -577,6 +582,57 @@ impl Document {
         }
         self.run = None;
         Ok(Applied { sequence: self.sequence, ids: vec![], publication })
+    }
+    /// Makes the value what it was at `target`. Loro's revert only removes the key of a
+    /// mergeable value it hides, and when a later revert shows it again it rewrites the
+    /// content as if the container were new; a hidden container that still held content
+    /// would then show it twice. So, as a clear does, the mergeable values the revert hides
+    /// are emptied first, and the rows it deletes are released, while both are still
+    /// editable; the revert is then computed from that state.
+    fn revert(&mut self, target: &Frontiers) -> Result<()> {
+        use loro::event::{Diff, ListDiffItem};
+        let diff = self.doc.diff(&self.doc.state_frontiers(), target).map_err(engine)?;
+        let mut rows = Rows::new(&self.lists);
+        // Only containers that exist now can be hidden or deleted; the diff also names the
+        // containers the revert will create.
+        for (cid, change) in diff.iter() {
+            match (change, self.doc.get_container(cid.clone())) {
+                (Diff::Map(delta), Some(Container::Map(map))) => {
+                    for (key, value) in &delta.updated {
+                        if let (None, Some(ValueOrContainer::Container(child))) = (value, map.get(key)) {
+                            if child.id().is_mergeable() {
+                                execute::empty(&child, &mut rows)?;
+                            }
+                        }
+                    }
+                }
+                (Diff::List(items), Some(Container::MovableList(list))) => {
+                    let (mut index, mut deleted, mut moved) = (0, vec![], HashSet::new());
+                    for item in items {
+                        match item {
+                            ListDiffItem::Retain { retain } => index += retain,
+                            ListDiffItem::Delete { delete } => {
+                                deleted.extend((index..index + delete).filter_map(|i| list.get(i)));
+                                index += delete;
+                            }
+                            ListDiffItem::Insert { insert, .. } => moved.extend(insert.iter().filter_map(|v| match v {
+                                ValueOrContainer::Container(c) => Some(c.id()),
+                                ValueOrContainer::Value(_) => None,
+                            })),
+                        }
+                    }
+                    for row in deleted {
+                        if let ValueOrContainer::Container(row) = row {
+                            if !moved.contains(&row.id()) {
+                                execute::release(&row, &mut rows)?;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.doc.revert_to(target).map_err(engine)
     }
     /// Records only a successfully published edit. No-op edits and refusals preserve
     /// both the current run and redo. Extending a run keeps its original before-version.

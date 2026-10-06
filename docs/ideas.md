@@ -26,22 +26,12 @@ a person and their agent edit the same live document. What's missing is the slop
 | Rung | Today |
 | --- | --- |
 | Use a slop | The window |
-| Tweak its look | Theme tokens, through the CLI only |
+| Tweak its look | The theme panel in the window, and shared theme files |
 | Ask for a change to its data | An agent you run in a terminal |
 | Change the app | Only with its source project; a `.slop` you receive has none |
 | Make a new one | `slop init` and an agent |
 
 ## Build the slope
-
-### Tweak panel
-
-- **What:** a popover from the hover toolbar with a color or font picker for each declared
-  theme token, and Reset.
-- **Why:** the first rung without a terminal. Today the styling guide has to say "The Mac
-  app currently has no built-in theme picker".
-- **Builds on:** the store's `theme` function (`crates/hitslop-core/src/store.rs`)
-  already validates and saves get, set and reset. Open windows already apply overrides
-  live.
 
 ### Ask from the window
 
@@ -62,9 +52,10 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the manifesto's "who changed what", at the size of one document. Trust is what
   lets people hand an agent their things.
 - **Builds on:** Loro commit messages. Agent commits already carry the message `agent`,
-  and Edit ▸ Undo already reverts an agent's edits, including those made while the
-  document was closed. What remains is naming the agent, an optional message (`doc.change`
-  takes none today), and showing them in the window.
+  and Edit ▸ Undo already reverts an agent's edits made while the document is open. What
+  remains is naming the agent, an optional message (`doc.change` takes none today),
+  showing them in the window, and undoing an agent's edits made while it was closed,
+  which needs the kept history to reach them.
 
 ### `slop watch` and `slop mcp`
 
@@ -104,7 +95,10 @@ a person and their agent edit the same live document. What's missing is the slop
   Rust checks that the change is additive, and the document keeps its Loro state.
 - **Why:** remixing is a dead end if every schema change strands existing data.
 - **Builds on:** preserve-and-flag (merged anomalies are kept and reported, never
-  repaired), which already keeps unexpected values safe, and the canonical schema key.
+  repaired), which already keeps unexpected values safe; saved state compared with its
+  descriptor by meaning (`same_schema`), so "additive" is a comparison of two parsed
+  descriptors; and the [compatibility](engineering-contract.md#compatibility) markers
+  and corpus.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
   they were created with. This is the one deferral worth pulling forward.
 
@@ -150,7 +144,7 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
 - **History scrubber.** A timeline of the history a document keeps: all of it below
-  4 MiB, otherwise the last editing session at most. Restore applies an old version as a
+  4 MiB, otherwise only the open session's. Restore applies an old version as a
   new edit. A longer timeline needs a retention rule that bounds the cost of deleted
   content, which Loro keeps in the starting state of any cut before the latest version.
 - **Household sharing.** A family's grocery list as home-cooked software, through the
@@ -181,12 +175,6 @@ a person and their agent edit the same live document. What's missing is the slop
 - **The room is not an authority.** It may run hitslop-core compiled to WASM to check
   decoding, sizes and history-trimmed bytes, and to compact the log. Replicas keep
   preserve-and-flag for merged anomalies.
-- **Containers created concurrently.** Two replicas that first create a container at the
-  same map key (a record entry, or an optional object or text that was absent) get two
-  containers, and the map shows one; the other's content is hidden. Create those children
-  with Loro's `ensure_mergeable_*`, whose identity comes from the parent and key, so
-  concurrent creations merge. Rows are list items with their own identity and are
-  unaffected.
 - **Prerequisites:**
   - the invitee has the same template package (hosted catalog or a package hand-off);
   - capability links until accounts exist;

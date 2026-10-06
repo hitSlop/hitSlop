@@ -56,6 +56,26 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
 
 
 
+// A document that needs a newer hitSlop offers the update rather than a dead end.
+@Test @MainActor func openingADocumentThatNeedsANewerAppOffersTheUpdate() async {
+    let store = TestStore(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
+        $0.uuid = .constant(documentID)
+        $0.documentClient.open = { _, _ in throw SlopRequiresUpdate() }
+    }
+    store.exhaustivity = .off
+    await store.send(.openDocument(documentURL))
+    await store.receive(\.openFailed)
+    #expect(store.state.documents.isEmpty)
+    #expect(store.state.alert?.buttons.first?.action.action == .checkForUpdates)
+
+    // Other failures only acknowledge.
+    store.dependencies.documentClient.open = { _, _ in throw Failure() }
+    await store.send(.alert(.dismiss))
+    await store.send(.openDocument(documentURL))
+    await store.receive(\.openFailed)
+    #expect(store.state.alert?.buttons.map(\.action.action) == [nil])
+}
+
 @Test @MainActor func catalogSelectionFollowsSnapshotRemoval() async {
     let entry = CatalogEntry(id: "a", source: .local(documentURL), title: "Counter")
     let store = TestStore(initialState: CatalogFeature.State()) { CatalogFeature() }
@@ -260,7 +280,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let otherID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
     var initial = AppFeature.State()
     var first = DocumentFeature.State(id: documentID, url: documentURL); first.isOpening = false
-    var second = DocumentFeature.State(id: otherID, url: URL(fileURLWithPath: "/tmp/other.slop")); second.isOpening = false; second.isPinned = true
+    var second = DocumentFeature.State(id: otherID, url: URL(fileURLWithPath: "/tmp/other.slop")); second.isOpening = false; second.title = "Other"
     initial.documents = [first, second]
     let calls = LockIsolated<[UUID]>([])
     let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
@@ -309,7 +329,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
         $0.documentClient.replyToQuit = { reply.setValue($0) }
     }
-    await store.send(.documents(.element(id: documentID, action: .operationFailed(.close, "Save failed")))) {
+    await store.send(.documents(.element(id: documentID, action: .operationFailed(.close, .other("Save failed"))))) {
         $0.documents[id: documentID]?.operation = nil
         $0.documents[id: documentID]?.isQuitting = false
         $0.catalog.isQuitting = false; $0.quitPhase = .running; $0.alert = .operationFailure("Save failed")
@@ -354,7 +374,7 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     #expect(refreshCalls.value == 1)
 }
 
-@Test @MainActor func documentAlertsRemainUntilAcknowledgedAndRuntimeRetryKeepsNewFailures() async {
+@Test @MainActor func documentAlertsRemainUntilAcknowledgedAndRetryRuns() async {
     let gate = AsyncStream<Void>.makeStream()
     var state = DocumentFeature.State(id: documentID, url: documentURL); state.isOpening = false
     let store = TestStore(initialState: state) { DocumentFeature() } withDependencies: {
@@ -367,16 +387,101 @@ private struct Failure: LocalizedError { var errorDescription: String? { "Save f
     }
     await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
     await store.receive(\.operationFailed) { $0.operation = nil; $0.alert = .operationFailure("Save failed") }
-    await store.send(.pageFailed("Stopped")) { $0.pageError = "Stopped" }
     #expect(store.state.alert != nil)
     await store.send(.alert(.dismiss)) { $0.alert = nil }
-    await store.send(.command(.retry)) { $0.pageError = nil; $0.operation = .retry }
-    await store.send(.pageFailed("Failed again")) { $0.pageError = "Failed again" }
+    await store.send(.command(.retry)) { $0.operation = .retry }
     gate.continuation.yield(())
     await store.receive(\.operationFinished) { $0.operation = nil }
-    #expect(store.state.pageError == "Failed again")
-    await store.send(.pageReady) { $0.pageError = nil }
     await store.finish()
+}
+
+// Failure: a close that stopped on a failed save showed a generic alert on top of the
+// window's save-failure sheet. Oracle: a save failure leaves no alert and commands return.
+@Test @MainActor func aSaveFailureIsLeftToTheSaveFailureSheet() async {
+    var initial = DocumentFeature.State(id: documentID, url: documentURL); initial.isOpening = false
+    let store = TestStore(initialState: initial) { DocumentFeature() } withDependencies: {
+        $0.documentClient.perform = { _, _ in throw SlopDocumentFailure.save }
+    }
+    await store.send(.command(.close)) { $0.operation = .close }
+    await store.receive(\.operationFailed) { $0.operation = nil }
+    #expect(store.state.alert == nil)
+    #expect(store.state.acceptsCommands)
+}
+
+// Failure: the save-failure sheet ran its own recovery beside the command in progress.
+// Oracle: a recovery chosen during an export runs after it, before a queued close.
+// Failure: quit dropped every command, so Retry or Discard chosen on a save-failure sheet
+// while quit waited dismissed the sheet and did nothing. Oracle: the recovery runs after
+// the operation quit waits for, and quit prepares only after it.
+@Test @MainActor func aSaveRecoveryChosenDuringQuitRunsBeforeQuitPrepares() async {
+    let gate = AsyncStream<Void>.makeStream()
+    let events = LockIsolated<[String]>([])
+    var initial = AppFeature.State()
+    var document = DocumentFeature.State(id: documentID, url: documentURL); document.isOpening = false
+    initial.documents = [document]
+    let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+        $0.documentClient.perform = { _, command in
+            if command == .exportPNG { for await _ in gate.stream { break } }
+            events.withValue { $0.append("\(command)") }; return nil
+        }
+        $0.documentClient.finishQuit = { _ in }
+        $0.documentClient.cancelQuit = { _ in }
+        $0.documentClient.prepareToQuit = { _ in events.withValue { $0.append("prepared") } }
+        $0.documentClient.finishAssetRefreshes = {}
+        $0.documentClient.replyToQuit = { _ in }
+    }
+    await store.send(.documents(.element(id: documentID, action: .command(.exportPNG)))) { $0.documents[id: documentID]?.operation = .exportPNG }
+    await store.send(.quitRequested) { $0.quitPhase = .waiting; $0.catalog.isQuitting = true; $0.documents[id: documentID]?.isQuitting = true }
+    await store.send(.documents(.element(id: documentID, action: .command(.retrySave)))) { $0.documents[id: documentID]?.pendingRecovery = .retrySave }
+    gate.continuation.yield(())
+    await store.receive(\.documents) { $0.documents[id: documentID]?.operation = .retrySave; $0.documents[id: documentID]?.pendingRecovery = nil }
+    await store.receive(\.documents) { $0.documents[id: documentID]?.operation = nil; $0.quitPhase = .preparing }
+    await store.receive(\.quitDocumentClosed) { $0.documents.remove(id: documentID) }
+    await store.receive(\.quitFinished) { $0.quitPhase = .finished }
+    await store.finish()
+    #expect(events.value == ["exportPNG", "retrySave", "prepared"])
+}
+
+@Test @MainActor func aSaveRecoveryChosenDuringAnotherCommandRunsNext() async {
+    let gate = AsyncStream<Void>.makeStream()
+    let operations = LockIsolated<[SlopDocumentCommand]>([])
+    var initial = DocumentFeature.State(id: documentID, url: documentURL); initial.isOpening = false
+    let store = TestStore(initialState: initial) { DocumentFeature() } withDependencies: {
+        $0.documentClient.perform = { _, command in
+            operations.withValue { $0.append(command) }
+            if command == .exportPNG { for await _ in gate.stream { break } }
+            return nil
+        }
+    }
+    await store.send(.command(.exportPNG)) { $0.operation = .exportPNG }
+    await store.send(.command(.discardUnsaved)) { $0.pendingRecovery = .discardUnsaved }
+    await store.send(.command(.close)) { $0.closeRequested = true }
+    gate.continuation.yield(())
+    await store.receive(\.operationFinished) { $0.operation = .discardUnsaved; $0.pendingRecovery = nil }
+    await store.receive(\.operationFinished) { $0.operation = .close; $0.closeRequested = false }
+    await store.receive(\.operationFinished) { $0.operation = nil }
+    #expect(operations.value == [.exportPNG, .discardUnsaved, .close])
+}
+
+@Test @MainActor func aSaveFailureDuringQuitHasNoSecondAlert() async {
+    var initial = AppFeature.State()
+    var document = DocumentFeature.State(id: documentID, url: documentURL); document.isOpening = false
+    initial.documents = [document]
+    let reply = LockIsolated<Bool?>(nil)
+    let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+        $0.documentClient.cancelQuit = { _ in }
+        $0.documentClient.prepareToQuit = { _ in throw SlopDocumentFailure.save }
+        $0.documentClient.replyToQuit = { reply.setValue($0) }
+    }
+    await store.send(.quitRequested) {
+        $0.quitPhase = .preparing; $0.catalog.isQuitting = true; $0.documents[id: documentID]?.isQuitting = true
+    }
+    await store.receive(\.quitFailed) {
+        $0.quitPhase = .running; $0.catalog.isQuitting = false; $0.documents[id: documentID]?.isQuitting = false
+    }
+    await store.finish()
+    #expect(store.state.alert == nil)
+    #expect(reply.value == false)
 }
 
 @Test @MainActor func oneDocumentsAlertDoesNotDismissAnotherDocumentsAlert() async {

@@ -118,7 +118,7 @@ Prefer a change, or `increment` on a counter, over reading a value and writing i
 
 ## Save and recover
 
-Edit ▸ Undo and Redo (⌘Z and ⇧⌘Z, including inside text fields) step back through the person's changes and an agent's edits, including edits an agent made while the document was closed. A typing run in one field is one step, each `doc.change` is one step, and an agent's consecutive edits are one step, so write a gesture once when it ends rather than on every move. Call `doc.undo()` and `doc.redo()` for your own buttons.
+Edit ▸ Undo and Redo (⌘Z and ⇧⌘Z, including inside text fields) step back through the changes made since the document opened, the person's and an agent's. A typing run in one field is one step, each `doc.change` is one step, and an agent's consecutive edits are one step, so write a gesture once when it ends rather than on every move. Call `doc.undo()` and `doc.redo()` for your own buttons.
 
 The host autosaves, and `await doc.flush()` sends any unsent text, waits for pending writes, and saves. Close, quit and export do the same first. Failed saves keep every edit and offer native retry. Application errors are reported separately from save failures. A document keeps its edit history until it grows past 4 MiB. Then, when it closes, it keeps only the history of the session that just ended, or none if even that is large.
 
@@ -134,3 +134,14 @@ bunx @hitslop/cli apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>
 Edits print `{ids, sequence, value}` and are saved when the command succeeds. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
 
 Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).
+
+### Handling refused edits
+
+Use `isRejected(error)` from `@hitslop/document` when catching a semantic refusal;
+its `reason` and `opIndex` identify the core rule and operation. Use
+`isDocumentError(error)` to distinguish other document outcomes from application
+errors. Use these guards rather than `instanceof`. An unknown outcome does not prove
+an edit was refused; read current state before another edit.
+
+Previews and bound `.value` assignments belong to live handles. Inside `change`,
+use transaction write methods; previews are not part of the collector.

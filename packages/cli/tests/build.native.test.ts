@@ -6,8 +6,8 @@ import { compileAppWithVite } from "../src/vite";
 import { readdir, mkdir } from "node:fs/promises";
 import { copySourceFixture } from "./source-fixture";
 
-// Without the generated theme stylesheet, a missing or late runtime theme would
-// leave the first mounted view unstyled. Existing controller tests do not mount apps.
+// The shell applies theme defaults before mount, so the first view is never unstyled.
+// Existing controller tests do not mount apps.
 test("plain DOM adapter mounts with theme defaults and renders without Svelte or an embedded engine", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
@@ -49,7 +49,7 @@ test("plain DOM adapter mounts with theme defaults and renders without Svelte or
       process.cwd(),
       "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native",
     );
-    const output = await buildTemplate(source, renderer, join(root, "plain.slop"));
+    const output = await buildTemplate(source, [renderer], join(root, "plain.slop"));
     const png = await readFile(join(output, "QuickLook/Preview.png"));
     expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
   } finally {
@@ -93,7 +93,7 @@ test("discovered capture components share the document and receive preview/expor
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
-    const output = await buildTemplate(source, renderer, join(root, "probe.slop"));
+    const output = await buildTemplate(source, [renderer], join(root, "probe.slop"));
     for (const name of ["Preview", "Icon"]) {
       const png = await readFile(join(output, `QuickLook/${name}.png`));
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -123,7 +123,7 @@ test("native template assets are complete before replacing a registered master",
   try {
     const output = await buildTemplate(
       "examples/slops/quick-checklist",
-      renderer,
+      [renderer],
       join(root, "Checklist.slop"),
     );
     for (const name of ["Preview", "Icon"]) {
@@ -144,7 +144,7 @@ test("native template assets are complete before replacing a registered master",
     expect((await readdir(join(root, "template-backups"))).length).toBe(1);
     const before = await readFile(join(output, "QuickLook/Preview.png"));
     await expect(
-      buildTemplate("examples/slops/quick-checklist", "/usr/bin/false", output),
+      buildTemplate("examples/slops/quick-checklist", ["/usr/bin/false"], output),
     ).rejects.toThrow();
     expect(await readFile(join(output, "QuickLook/Preview.png"))).toEqual(before);
     await mkdir(join(master, "state"));
@@ -161,7 +161,7 @@ test("native template assets are complete before replacing a registered master",
     `,
     );
     await writeFile(join(badSource, "Icon.svelte"), '<script>function broken(){throw new Error("Authored icon failed");}</script><span>{broken()}</span>');
-    await expect(buildTemplate(badSource, renderer, output)).rejects.toThrow(
+    await expect(buildTemplate(badSource, [renderer], output)).rejects.toThrow(
       "Authored icon failed",
     );
     expect(await readFile(join(output, "QuickLook/Preview.png"))).toEqual(before);

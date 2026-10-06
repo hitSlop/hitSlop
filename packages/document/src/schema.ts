@@ -1,4 +1,5 @@
-export { OperationRejectedError } from "./errors";
+export type { DocumentError } from "./errors";
+export { isDocumentError, isRejected } from "./errors";
 export { defineTheme } from "./theme";
 export type { Issue, Scope } from "./abi";
 export type { InsertResult } from "./handle-types";
@@ -92,7 +93,7 @@ export type Input<N extends Node> =
           ? number
           : Value<N>;
 /** Field names and record keys, `{ id }` for a row, and `{ index }` for a scalar-list element. */
-export type Segment = string | { id: string } | { index: number };
+export type Segment = import("@hitslop/schema/core").Segment;
 export type Path = Segment[];
 export type Descriptor = ObjectNode;
 export type Definition<N extends ObjectNode> = { descriptor: N };

@@ -4,8 +4,10 @@ import { homedir } from "node:os";
 import { shellDirectory } from "./paths";
 import { buildTemplate, prepareRenderer, installTemplate } from "./template";
 
-export async function build(source: string) {
-  console.log(await buildTemplate(source, await prepareRenderer()));
+/** Builds anywhere; only `native` artwork needs the Mac app. */
+export async function build(source: string, artwork?: string) {
+  if (artwork !== undefined && artwork !== "native") throw new Error("--artwork accepts only native");
+  console.log(await buildTemplate(source, artwork ? await prepareRenderer() : undefined));
 }
 
 export async function register(source: string) {

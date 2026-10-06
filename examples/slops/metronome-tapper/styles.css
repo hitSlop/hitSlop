@@ -1,6 +1,9 @@
 :root {
+  --bodyFont: "Avenir Next", "Helvetica Neue", sans-serif;
+}
+:root {
   color-scheme: dark;
-  font-family: var(--slop-bodyFont);
+  font-family: var(--bodyFont);
   font-synthesis: none;
 }
 

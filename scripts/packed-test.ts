@@ -65,13 +65,7 @@ try {
   await run([process.execPath, "install"], coreRoot, noNode);
   const documentPackage = join(coreRoot, "node_modules/@hitslop/document");
   assert.ok(!(await readdir(documentPackage)).includes("test-support"));
-  const documentSource = await readdir(join(documentPackage, "src"));
-  // The page shell and owner client ship with the app, never in the npm SDK.
-  for (const internal of ["boot.ts", "owner", "view-lifecycle.ts", "bridge-client.ts", "page-handle.ts"])
-    assert.ok(
-      !documentSource.includes(internal),
-      `Engine or test implementation shipped in npm SDK: ${internal}`,
-    );
+  assert.equal(JSON.parse(await readFile(join(repository, "packages/shell/package.json"), "utf8")).private, true);
   await run(
     [
       process.execPath,
@@ -83,7 +77,7 @@ try {
     assert.equal(defineTheme({accent: "#123456"}).defaults.accent, "#123456");
     assert.throws(() => Bun.resolveSync("svelte", process.cwd()));
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
-    assert.throws(() => Bun.resolveSync("@hitslop/document/runtime", process.cwd()));
+    assert.throws(() => Bun.resolveSync("@hitslop/shell", process.cwd()));
   `,
     ],
     coreRoot,
@@ -96,11 +90,9 @@ try {
     `
     import type {SlopApp} from "@hitslop/document/abi";
     import type {SocketRequest} from "@hitslop/schema/socket";
-    import type {BridgeReply} from "@hitslop/schema/bridge";
     const app: SlopApp = {mount: (ctx, target) => (target.textContent = String(ctx.document.current), {})};
-    const read: SocketRequest = {id: "read", documentPath: "/doc", method: "get"};
-    const epoch: BridgeReply<"config">["epoch"] = "owner-epoch";
-    void app; void read; void epoch;
+    const read: SocketRequest = {documentPath: "/doc", method: "get"};
+    void app; void read;
   `,
   );
   await run(
@@ -194,12 +186,12 @@ try {
     );
     const document = join(root, "Document.slop");
     await run([process.execPath, cli, "create", "--from", built, "--output", document], root, noNode);
-    // Any global command re-points a hitSlop skill link that names another copy.
+    // The global CLI repairs a hitSlop skill link that names another copy.
     const stray = join(root, "stray/skills/hitslop-cli");
     await cp(join(packagedSkills, "hitslop-cli"), stray, { recursive: true });
     await rm(agentSkill("hitslop-cli"));
     await symlink(stray, agentSkill("hitslop-cli"));
-    await run([slop, "get", document], root, globalEnv);
+    await run([slop, "skills", "repair", "--scope", "global"], root, globalEnv);
     assert.equal(await realpath(agentSkill("hitslop-cli")), join(packagedSkills, "hitslop-cli"));
     await run(
       [process.execPath, cli, "theme", "set", document, "--values", '{"accent":"#123456"}'],

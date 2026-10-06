@@ -37,7 +37,11 @@ private struct UpdateSettingsView: View {
 }
 
 @MainActor final class HitSlopAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
-    private lazy var coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
+    private lazy var coordinator: SlopApplicationCoordinator = {
+        let coordinator = SlopApplicationCoordinator(templatesURL: SlopTemplateLocation.templatesRoot)
+        coordinator.checkForUpdates = { [updaterController] in updaterController.checkForUpdates(nil) }
+        return coordinator
+    }()
     private var recentMenu: NSMenu?
     private var settingsWindow: NSWindow?
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -107,6 +111,9 @@ private struct UpdateSettingsView: View {
     @objc private func exportPNG() { coordinator.sendToActiveDocument(.exportPNG) }
     @objc private func exportPDF() { coordinator.sendToActiveDocument(.exportPDF) }
     @objc private func togglePin() { coordinator.sendToActiveDocument(.pin(!coordinator.isActiveDocumentPinned)) }
+    @objc private func toggleTheme() { coordinator.sendToActiveDocument(.theme(!coordinator.isActiveDocumentThemeShown)) }
+    @objc private func importTheme() { coordinator.sendToActiveDocument(.importTheme) }
+    @objc private func exportTheme() { coordinator.sendToActiveDocument(.exportTheme) }
     @objc private func showSettings() {
         if settingsWindow == nil {
             let content = TabView {
@@ -160,6 +167,7 @@ private struct UpdateSettingsView: View {
         item(file, "Duplicate…", #selector(duplicateActive), "d")
         let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: ""), exportMenu = NSMenu(title: "Export"); export.submenu = exportMenu; file.addItem(export)
         item(exportMenu, "Export PNG…", #selector(exportPNG), ""); item(exportMenu, "Export PDF…", #selector(exportPDF), "")
+        item(file, "Import Theme…", #selector(importTheme), ""); item(file, "Export Theme…", #selector(exportTheme), "")
         file.addItem(.separator())
         file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
@@ -177,6 +185,7 @@ private struct UpdateSettingsView: View {
         windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windows.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         item(windows, "Always on Top", #selector(togglePin), "")
+        item(windows, "Theme", #selector(toggleTheme), "t").keyEquivalentModifierMask = [.command, .option]
         windows.addItem(.separator())
         windows.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
 
@@ -210,6 +219,13 @@ private struct UpdateSettingsView: View {
     @discardableResult private func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) -> NSMenuItem { let value = menu.addItem(withTitle: title, action: action, keyEquivalent: key); value.target = self; return value }
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if [#selector(duplicateActive), #selector(exportPNG), #selector(exportPDF), #selector(togglePin)].contains(menuItem.action) { if menuItem.action == #selector(togglePin) { menuItem.state = coordinator.isActiveDocumentPinned ? .on : .off }; return coordinator.canPerformDocumentCommands }
+        if menuItem.action == #selector(toggleTheme) {
+            menuItem.state = coordinator.isActiveDocumentThemeShown ? .on : .off
+            return coordinator.canPerformDocumentCommands && (coordinator.isActiveDocumentThemeShown || coordinator.canEditActiveDocumentTheme)
+        }
+        if [#selector(importTheme), #selector(exportTheme)].contains(menuItem.action) {
+            return coordinator.canPerformDocumentCommands && (menuItem.action == #selector(exportTheme) || coordinator.canEditActiveDocumentTheme)
+        }
         return true
     }
 }

@@ -17,7 +17,7 @@ extension OwnerClientTests {
     try await controller.session.waitUntilReady()
     let view = controller.session.webView
     _ = try await view.evaluateJavaScript("""
-      globalThis.stopResizeProbe = __hitslopCapture.onPrepare(() => new Promise(resolve => {
+      globalThis.stopResizeProbe = __slop.capture.onPrepare(() => new Promise(resolve => {
         globalThis.releaseResizeProbe = resolve;
       })); true
       """)
@@ -221,7 +221,7 @@ extension OwnerClientTests {
     try await session.waitUntilReady()
     #expect(try await SlopRenderer.iconPNGData(session: session) == nil)
     _ = try await session.webView.callAsyncJavaScript(
-      "globalThis.stopFailure=globalThis.__hitslopCapture.onPrepare(()=>{throw new Error('capture test failure')});return true",
+      "globalThis.stopFailure=globalThis.__slop.capture.onPrepare(()=>{throw new Error('capture test failure')});return true",
       arguments: [:], in: nil, contentWorld: .page)
     await #expect(throws: (any Error).self) {
       try await SlopRenderer.exportPNGData(session: session)
