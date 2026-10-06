@@ -63,7 +63,7 @@ fn set(title: &str) -> Request {
     }
 }
 fn state(owner: &Owner) -> Value {
-    let Reply::State { json } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let Reply::State { json, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
     serde_json::from_str(&json).unwrap()
 }
 fn close(owner: &Owner) {
@@ -465,7 +465,7 @@ fn a_theme_export_waits_for_the_save_of_its_palette() {
     assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
     lock.execute_batch("ROLLBACK").unwrap();
     drop(lock);
-    let Reply::State { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
+    let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
     assert!(json.contains("#111111"));
     close(&owner);
     let (saved, _) = open(&path, Mode::Snapshot);

@@ -70,7 +70,6 @@ export const PageResults = {
   undo: Strict({ sequence }),
   redo: Strict({ sequence }),
   config: Strict({
-    runtimeABI: T.Integer({ minimum: 1 }),
     readOnly: T.Boolean(),
     presentation: SlopPresentationSchema,
     /** The app's document descriptor, from the document file; the core validated it. */

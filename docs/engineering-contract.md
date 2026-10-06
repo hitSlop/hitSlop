@@ -18,7 +18,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | App behavior: `ctx`, handles, errors and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the range served (`{version, minimum}`) | Selects the adapter for the named protocol; omission means 1. Keeps serving every protocol from `minimum`, and refuses any other before touching the document (exit status 2, or `requires_update`) naming the side to update. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the range served (`{version, minimum}`) | Selects the adapter for the named protocol, which every document command names. Keeps serving every protocol from `minimum`, and refuses any other before touching the document (exit status 2, or `requires_update`) naming the side to update. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
 
 Markers are requirements, not release numbers: refactors never raise them, and app,
 CLI and SDK versions never stand for them. An additive `ctx` API still raises
@@ -26,9 +26,12 @@ CLI and SDK versions never stand for them. An additive `ctx` API still raises
 it has a real fallback. A syntax reader never caps `runtimeABI`: the supported runtime is
 checked before the reader is chosen. The build stamps `runtimeABI` from the project's
 SDK and refuses one this CLI cannot validate or preview. Raising one
-adds a reader and leaves every released one as it is: copy `validate_v1` (with the
-manifest schema it validates against), `createContextV1` or the protocol-1 command tree
-rather than editing it, and keep the old layout and storage arms. Every open reads
+adds a reader and leaves every released one as it is: before the change, move the current
+reader (`manifest::validate` with the manifest schema it validates against, the shell's
+`createContext`, or the protocol's command tree) under the released marker's name, then
+add the new one beside it; keep the old layout and storage arms. Until then, raising
+`packageFormat` or `runtimeABI` fails to build at its reader (an assertion in
+`manifest.rs` and `boot.ts`). Every open reads
 the markers (application ID, storage version, then `package_format` and `runtime_abi`)
 before it compares the exact tables, so a newer file is refused with `requires_update`
 even when its tables differ. Saved state belongs to the descriptor in its file's `app`

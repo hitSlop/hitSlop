@@ -4,6 +4,8 @@ import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findEngine } from "../src/engine";
+import { negotiate } from "../src/native";
+import { exec } from "../src/process";
 import { writeTemplate } from "./template-fixture";
 
 const engine = await findEngine();
@@ -47,7 +49,7 @@ test("document CLI exports never replace a file", async () => {
     const [root, other] = [join(parent, "Document.slop"), join(parent, "Other.slop")];
     // A document's first open saves its initial values; after that, reads write nothing.
     for (const output of [root, other]) {
-      expect(await Bun.spawn([engine, "create", "--from", source, "--output", output], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+      expect(await Bun.spawn([...negotiate(engine), "create", "--from", source, "--output", output], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
       expect((await cli("get", output)).code).toBe(0);
     }
     for (const output of [root, other]) {
@@ -75,7 +77,7 @@ test("document CLI rejects invalid files and malformed commands before mutation"
     expect(refused.error).toContain("not a hitSlop document");
     expect(await readFile(root, "utf8")).toBe(JSON.stringify({ slug: "not-a-slop" }));
     await rm(root);
-    const created = Bun.spawn([engine, "create", "--from", await template(parent), "--output", root], { stdout: "ignore", stderr: "pipe" });
+    const created = Bun.spawn([...negotiate(engine), "create", "--from", await template(parent), "--output", root], { stdout: "ignore", stderr: "pipe" });
     expect(await created.exited).toBe(0);
     expect((await cli("get", root)).code).toBe(0);
     const before = await readFile(root);
@@ -87,6 +89,32 @@ test("document CLI rejects invalid files and malformed commands before mutation"
   }
 }, 60000);
 
+// Every document command names its command protocol: one that names none is a usage error,
+// refused before the document is created or opened (a first open would save its initial
+// values). Oracle: the exit status, the files, and the same commands succeeding once named.
+test("engine document commands that name no protocol are refused before document access", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "hsl-protocol-"));
+  const document = join(parent, "Document.slop");
+  try {
+    const create = ["create", "--from", await template(parent), "--output", document];
+    const unnamed = await exec([engine, ...create]);
+    expect(unnamed.code).toBe(2);
+    expect(unnamed.stderr).toContain("Name the command protocol");
+    expect(existsSync(document)).toBe(false);
+    expect((await exec([...negotiate(engine), ...create])).code).toBe(0);
+    const before = await readFile(document);
+    const get = JSON.stringify({ method: "get", documentPath: document });
+    const refused = await exec([engine, "request"], { stdin: get });
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain("Name the command protocol");
+    expect(await readFile(document)).toEqual(before);
+    const named = await exec([...negotiate(engine), "request"], { stdin: get });
+    expect(named.code).toBe(0);
+    expect(JSON.parse(named.stdout).ok).toBe(true);
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+}, 60000);
 
 test("create makes parent folders and reports the new document path", async () => {
   const folder = await mkdtemp(join(tmpdir(), "hsl-create-"));

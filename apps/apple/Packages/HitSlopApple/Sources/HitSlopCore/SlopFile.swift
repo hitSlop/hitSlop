@@ -30,11 +30,13 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
   public init() {}
   public var diagnostic: SlopFailureContext { .init(.rejection, reason: .requiresUpdate) }
   public var errorDescription: String? { "This slop needs a newer version of hitSlop. Update hitSlop to open it." }
-  /// Whether the core refused for this reason.
-  public static func matches(_ error: Error) -> Bool {
-    if case CoreError.Rejected(let code, _, _) = error { return code == CoreErrorCode.requiresUpdate.rawValue }
-    return false
-  }
+}
+
+/// A failure the core reported, said for the person.
+extension OwnerFailure: LocalizedError {
+  public var errorDescription: String? { message }
+  /// The core error code a refusal names.
+  public var refusal: CoreErrorCode? { reason.flatMap(CoreErrorCode.init(rawValue:)) }
 }
 
 /// A hitSlop file, checked by the core: a template (the app its author built) or a document
@@ -44,8 +46,6 @@ public struct SlopFile: Sendable {
   /// The `.slop` file.
   public let url: URL
   public let kind: FileKind
-  /// What the app expects of `ctx`; the page shell adapts to it.
-  public let runtimeABI: Int
   /// The app's document descriptor (JSON), for the page and `slop schema`.
   public let descriptor: String
   /// The declared colors in the order the author wrote them.
@@ -68,7 +68,6 @@ public struct SlopFile: Sendable {
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root
     kind = opened.kind
-    runtimeABI = Int(opened.runtimeAbi)
     descriptor = opened.descriptorJson
     themeTokens = opened.themeTokens
     byteCount = Int64(opened.byteCount)
@@ -86,10 +85,13 @@ public struct SlopFile: Sendable {
   /// as `SlopError.invalid`. Storage failures, such as a busy writer lock or a missing
   /// file, pass through with their own message.
   public static func opening<T>(_ open: () throws -> T) throws -> T {
-    do { return try open() } catch let error where SlopRequiresUpdate.matches(error) {
-      throw SlopRequiresUpdate()
-    } catch let CoreError.Rejected(code, message, _) {
-      throw code == CoreErrorCode.isTemplate.rawValue ? SlopError.template : SlopError.invalid(message)
+    do { return try open() } catch CoreError.Failure(let failure) {
+      guard failure.kind == .rejected else { throw failure }
+      switch failure.refusal {
+      case .requiresUpdate: throw SlopRequiresUpdate()
+      case .isTemplate: throw SlopError.template
+      default: throw SlopError.invalid(failure.message)
+      }
     }
   }
 

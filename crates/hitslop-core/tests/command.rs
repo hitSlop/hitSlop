@@ -280,7 +280,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     assert_eq!(answer["code"], "unknown_outcome");
     assert!(!answer["error"].as_str().unwrap().contains("was accepted"));
     peer.join().unwrap();
-    let Reply::State { json } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reply::State { json, .. } = call(&owner, Request::State).unwrap() else { panic!() };
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 1);
     close(&owner);
     let saved = Store::open(&path, Mode::Snapshot).unwrap().document().unwrap();
@@ -298,7 +298,7 @@ fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
     let request = batch(&path);
     let client = std::thread::spawn(move || run(request));
     let hits = |owner: &Owner| {
-        let Reply::State { json } = call(owner, Request::State).unwrap() else { panic!() };
+        let Reply::State { json, .. } = call(owner, Request::State).unwrap() else { panic!() };
         serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"].clone()
     };
     // Accepted, and waiting for its save.
@@ -382,7 +382,7 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         );
     }
     assert_eq!(page_json(&page(&owner, "page", "not json"))["code"], "rejected");
-    let Reply::State { json } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reply::State { json, .. } = call(&owner, Request::State).unwrap() else { panic!() };
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
 }

@@ -130,8 +130,6 @@ impl PatchOp {
     } }
 }
 #[derive(Debug, Serialize)]
-pub struct State { pub sequence: u64, pub version: String, pub value: Value, pub theme: std::collections::BTreeMap<String, String> }
-#[derive(Debug, Serialize)]
 pub struct Publication { pub previous: u64, pub sequence: u64, pub version: String, pub ops: Vec<PatchOp>, #[serde(skip_serializing_if = "Option::is_none")] pub theme: Option<std::collections::BTreeMap<String, String>> }
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]

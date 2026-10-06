@@ -97,7 +97,10 @@ struct Rejected {
 fn success(result: SocketSuccess) -> String {
     crate::encode(&Success { ok: true, result })
 }
-pub(crate) fn failure(error: Failure, accepted: bool, saving: bool) -> String {
+/// A reply refusing with `error`: what its kind means for the caller. `accepted` once the
+/// owner took a mutation, whose outcome a later failure leaves unknown; `saving` while a
+/// save it waits for can fail.
+pub fn failure(error: Failure, accepted: bool, saving: bool) -> String {
     let code = match error.kind {
         FailureKind::Full | FailureKind::Busy | FailureKind::Moved | FailureKind::SaveFailed if saving => {
             OutcomeCode::SaveFailed
@@ -200,7 +203,7 @@ fn dispatch(
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
-                let Reply::State { json } = call(owner, Request::Read, deadline)? else {
+                let Reply::State { json, .. } = call(owner, Request::State, deadline)? else {
                     return Err(unexpected());
                 };
                 // The reading is one object; the app's descriptor and declared colors lead it.
@@ -239,7 +242,7 @@ fn dispatch(
             }
             SocketRequest::ThemeExport { .. } => {
                 saving = true;
-                let Reply::State { json } = call(owner, Request::ExportTheme, deadline)? else {
+                let Reply::ThemeFile { json } = call(owner, Request::ExportTheme, deadline)? else {
                     return Err(unexpected());
                 };
                 saving = false;
@@ -298,7 +301,7 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageRep
         .flatten();
     let (request, answer): (Request, Answer) = match request {
         Some(PageRequest::Open {}) => (Request::State, |reply| match reply {
-            Reply::State { json } => Some(json!({ "state": json })),
+            Reply::State { json, sequence } => Some(json!({ "state": crate::sequenced(sequence, &json) })),
             _ => None,
         }),
         Some(PageRequest::Apply { batch }) => {

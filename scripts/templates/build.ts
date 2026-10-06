@@ -1,5 +1,6 @@
 import { repository } from "../lib/artifacts";
 import { buildTemplate } from "../../packages/cli/src/template";
+import { negotiate } from "../../packages/cli/src/native";
 import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { discoverTemplates, templateInventory } from "./discover";
@@ -38,7 +39,7 @@ export async function buildTemplates(output = join(repository, "generated/templa
     for (const [index, template] of templates.entries()) {
       const start = performance.now();
       const destination = join(stage, template.slug + ".slop");
-      const build = () => buildTemplate(template.source, [debugHelper], destination);
+      const build = () => buildTemplate(template.source, negotiate(debugHelper), destination);
       console.log(`Preparing template ${index + 1}/${templates.length}: ${template.slug}`);
       const status = await cache.build(template.source, template.slug, destination, build);
       if (status === "hit") hits++;

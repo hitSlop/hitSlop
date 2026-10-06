@@ -83,7 +83,7 @@ public final class DocumentOwner: Sendable {
           facts.undo = state
           return (facts.listener, .undo(state))
         case .saveStatus(let status, let failure):
-          let failed = status == .failed ? failure.map(DocumentOwner.saveFailure) ?? .io("Saving failed") : nil
+          let failed = status == .failed ? failure.map(\.saveFailure) ?? .io("Saving failed") : nil
           facts.failure = failed
           let saveStatus: DocumentSaveStatus =
             if let failed { .failed(failed) } else if status == .saving { .saving } else { .saved }
@@ -98,27 +98,6 @@ public final class DocumentOwner: Sendable {
     init(_ reply: @escaping @Sendable (OwnerReply) -> Void) { self.reply = reply }
     func complete(reply: OwnerReply) { self.reply(reply) }
   }
-  private static func error(_ failure: OwnerFailure) -> Error {
-    switch failure.kind {
-    case .replaced: return OwnerReplaced()
-    case .closing: return OwnerError.closing
-    case .closed: return OwnerError.closed
-    case .readOnly: return OwnerError.readOnly
-    case .invalidated: return CoreError.Invalidated(message: failure.message)
-    case .locked: return DocumentLocked()
-    case .busy: return SaveFailure.busy
-    case .full: return SaveFailure.full
-    case .moved: return SaveFailure.moved
-    case .rejected:
-      return CoreError.Rejected(
-        code: failure.reason ?? "invalid_request", message: failure.message, opIndex: failure.opIndex)
-    case .saveFailed: return SaveFailure.io(failure.message)
-    case .failed: return SlopFailure(failure.message)
-    }
-  }
-  private static func saveFailure(_ failure: OwnerFailure) -> SaveFailure {
-    failure.kind == .invalidated ? .invalidated : SaveFailure(error(failure))
-  }
   /// `submit` admits synchronously, preserving bridge and panel arrival order. The callback
   /// runs after the Rust worker completes; no Swift task is involved in admission.
   private func submit(
@@ -128,7 +107,7 @@ public final class DocumentOwner: Sendable {
     native.submit(
       request: request, view: view,
       completion: Completion { result in
-        if case .failed(let failure) = result { reply(.failure(Self.error(failure))) } else { reply(.success(result)) }
+        if case .failed(let failure) = result { reply(.failure(failure.hostError)) } else { reply(.success(result)) }
       })
   }
   private func call(_ request: OwnerRequest, view: String? = nil) async throws -> OwnerReply {
@@ -160,10 +139,9 @@ public final class DocumentOwner: Sendable {
   }
   func attach(view: String) { native.attach(view: view) }
   /// One document request from the page `view`, as JSON. The owner checks and answers it;
-  /// `reply` gets the page's reply, and the owner's refusal when it refused.
-  func page(json: String, view: String, reply: @escaping @Sendable (String, Error?) -> Void) {
-    native.page(
-      json: json, view: view, completion: PageAnswer { answer, failure in reply(answer, failure.map(Self.error)) })
+  /// `reply` gets the page's reply, and the owner's failure when it refused.
+  func page(json: String, view: String, reply: @escaping @Sendable (String, OwnerFailure?) -> Void) {
+    native.page(json: json, view: view, completion: PageAnswer(reply))
   }
   private final class PageAnswer: PageCompletion {
     let reply: @Sendable (String, OwnerFailure?) -> Void
@@ -224,7 +202,7 @@ public final class DocumentOwner: Sendable {
     } catch { reply(.failure(error)) }
   }
   func exportTheme() async throws -> String {
-    guard case .state(let json) = try await call(.exportTheme) else { throw SlopFailure("Invalid theme export") }
+    guard case .themeFile(let json) = try await call(.exportTheme) else { throw SlopFailure("Invalid theme export") }
     return json
   }
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {

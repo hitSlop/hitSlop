@@ -75,7 +75,7 @@ identity. Shared limits and codes live in TypeBox-free
 | Layer | Where | Owns |
 |---|---|---|
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
-| File | `crates/hitslop-core/src/file.rs` (feature `storage`, native only) | The `.slop` file's layout and the checks every open runs; pack, create, copy; the app's assets and artwork |
+| File | `crates/hitslop-core/src/file/` (feature `storage`, native only) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
 | Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |

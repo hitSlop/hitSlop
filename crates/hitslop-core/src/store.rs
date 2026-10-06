@@ -14,11 +14,11 @@
 
 pub use crate::error::{Error, Result};
 use crate::error::{failed, rejected, sqlite};
-use crate::file::{self, Artwork, Kind, OpenedApp};
+use crate::file::{self, Artwork, Kind, OpenedApp, rows};
 use crate::registry::Lease;
 use crate::{Document, lock};
 use loro::{ExportMode, Frontiers, VersionVector};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -32,9 +32,6 @@ const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
 const TRIM_BYTES: i64 = 4 * 1024 * 1024;
 /// A checkpoint larger than this trims history while the session is still open.
 const SESSION_BYTES: usize = 16 * 1024 * 1024;
-/// The saved checkpoint, and the updates saved since, in order.
-const CHECKPOINT: &str = "SELECT bytes FROM checkpoint WHERE id=1";
-const UPDATES: &str = "SELECT bytes FROM updates ORDER BY seq";
 
 /// A core failure while loading: a document this build is too old for is a refusal the
 /// host names; anything else is a storage failure.
@@ -66,11 +63,8 @@ fn checkpoint_row(bytes: usize) -> i64 {
     bytes as i64 + 512
 }
 fn bounds(conn: &Connection) -> Result<Metadata> {
-    conn.prepare_cached(file::STATE_SIZES)
-        .and_then(|mut s| {
-            s.query_row([], |r| Ok(Metadata { rows: r.get(0)?, update_bytes: r.get(1)?, checkpoint_bytes: r.get(2)? }))
-        })
-        .map_err(sqlite("read metadata"))
+    let (rows, update_bytes, checkpoint_bytes) = rows::state_sizes(conn)?;
+    Ok(Metadata { rows, update_bytes, checkpoint_bytes })
 }
 /// The stored sizes, checked against the limits. Read before any blob is.
 fn checked_bounds(conn: &Connection) -> Result<Metadata> {
@@ -178,7 +172,7 @@ fn trimmed(doc: &mut Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool
 /// copying them.
 fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)> {
     let meta = checked_bounds(conn)?;
-    let mut saved = conn.prepare_cached(CHECKPOINT).map_err(sqlite("read"))?;
+    let mut saved = conn.prepare_cached(rows::CHECKPOINT).map_err(sqlite("read"))?;
     let mut saved = saved.query([]).map_err(sqlite("read"))?;
     // Every open checked the file holds exactly one checkpoint (`file::state`).
     let row = saved
@@ -187,11 +181,11 @@ fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)>
         .ok_or_else(|| failed("The file has no saved state; keep it for recovery"))?;
     let checkpoint =
         row.get_ref(0).ok().and_then(|bytes| bytes.as_blob().ok()).ok_or_else(|| failed("Invalid checkpoint bytes"))?;
-    let mut rows = conn.prepare_cached(UPDATES).map_err(sqlite("read updates"))?;
-    let mut rows = rows.query([]).map_err(sqlite("read updates"))?;
+    let mut updates = conn.prepare_cached(rows::UPDATES).map_err(sqlite("read updates"))?;
+    let mut updates = updates.query([]).map_err(sqlite("read updates"))?;
     let doc = Document::open_with(app, checkpoint, load_failure, |import| {
         loop {
-            match rows.next().map_err(sqlite("read updates"))? {
+            match updates.next().map_err(sqlite("read updates"))? {
                 None => return Ok(()),
                 Some(row) => import(
                     row.get_ref(0).ok().and_then(|v| v.as_blob().ok()).ok_or_else(|| failed("Invalid update bytes"))?,
@@ -385,18 +379,14 @@ impl Store {
     }
     /// Dropping the guard rolls back: on any error, after a failed COMMIT, or in a panic.
     fn transaction(&self, conn: &Connection, job: &SaveJob) -> Result<Metadata> {
-        let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("begin"))?;
+        let tx = file::immediate(conn, "begin")?;
         let meta = match &job.rows {
             Rows::Checkpoint(bytes) => {
                 if !within(0, checkpoint_row(bytes.len())) {
                     return Err(Error::Full);
                 }
-                tx.prepare_cached(
-                    "INSERT INTO checkpoint VALUES(1,?) ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes",
-                )
-                .and_then(|mut s| s.execute([bytes]))
-                .map_err(sqlite("checkpoint"))?;
-                tx.execute_batch("DELETE FROM updates").map_err(sqlite("checkpoint"))?;
+                rows::put_checkpoint(&tx, bytes)?;
+                rows::clear_updates(&tx)?;
                 Metadata { rows: 0, update_bytes: 0, checkpoint_bytes: bytes.len() as i64 }
             }
             Rows::Append(bytes) => {
@@ -406,9 +396,7 @@ impl Store {
                 if !within(meta.rows + 1, meta.stored() + size) {
                     return Err(Error::Full);
                 }
-                tx.prepare_cached("INSERT INTO updates(bytes) VALUES(?)")
-                    .and_then(|mut s| s.execute([bytes]))
-                    .map_err(sqlite("append"))?;
+                rows::append_update(&tx, bytes)?;
                 Metadata { rows: meta.rows + 1, update_bytes: meta.update_bytes + size, ..meta }
             }
         };
@@ -453,16 +441,11 @@ impl Store {
         Ok(Attachment { id, bytes: bytes.len() as u64 })
     }
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
-        let tx =
-            Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("store attachment"))?;
+        let tx = file::immediate(conn, "store attachment")?;
         // The same bytes are already stored only if the stored copy is intact; damage is
         // refused, never repaired in passing, so a successful import is always readable.
         if stored_attachment(&tx, id)?.is_none() {
-            let (count, total): (i64, i64) = tx
-                .query_row("SELECT count(*), coalesce(sum(length(bytes)),0) FROM attachments", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
-                .map_err(sqlite("store attachment"))?;
+            let (count, _, total) = rows::attachment_sizes(&tx)?;
             if !file::attachments_fit(count + 1, bytes.len() as i64, total + bytes.len() as i64) {
                 return Err(rejected(
                     crate::Code::TooLarge,
@@ -473,8 +456,7 @@ impl Store {
                     ),
                 ));
             }
-            tx.execute("INSERT INTO attachments VALUES(?,?)", params![id, bytes])
-                .map_err(sqlite("store attachment"))?;
+            rows::put_attachment(&tx, id, bytes)?;
         }
         tx.commit().map_err(sqlite("store attachment"))
     }
@@ -490,7 +472,7 @@ impl Store {
     /// One artwork image, through this store's own connection.
     pub fn artwork(&self, name: Artwork) -> Result<Option<Vec<u8>>> {
         self.check(false)?;
-        self.read(|conn| file::read_artwork(conn, name))
+        self.read(|conn| rows::read_artwork(conn, name))
     }
     /// Writes the document's artwork through the writer's connection: a
     /// window renders it from the open document as it closes. Checked as `pack` checks it,
@@ -500,14 +482,9 @@ impl Store {
         self.check(true)?;
         let optimized = optimized_artwork(artwork)?;
         self.connected(&mut lock(&self.backing).conn, |conn| {
-            let tx =
-                Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("write artwork"))?;
+            let tx = file::immediate(conn, "write artwork")?;
             for (name, png) in &optimized {
-                tx.execute(
-                    "INSERT INTO artwork VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png",
-                    params![name, png],
-                )
-                .map_err(sqlite("write artwork"))?;
+                rows::put_artwork(&tx, *name, png)?;
             }
             tx.commit().map_err(sqlite("write artwork"))
         })
@@ -515,15 +492,8 @@ impl Store {
     /// Every stored attachment, by identity.
     pub fn attachments(&self) -> Result<Vec<Attachment>> {
         self.check(false)?;
-        self.read(|conn| {
-            let mut statement = conn
-                .prepare("SELECT id, length(bytes) FROM attachments ORDER BY id")
-                .map_err(sqlite("list attachments"))?;
-            let rows = statement
-                .query_map([], |r| Ok(Attachment { id: r.get(0)?, bytes: r.get::<_, i64>(1)? as u64 }))
-                .map_err(sqlite("list attachments"))?;
-            rows.collect::<rusqlite::Result<_>>().map_err(sqlite("list attachments"))
-        })
+        let stored = self.read(rows::attachment_list)?;
+        Ok(stored.into_iter().map(|(id, bytes)| Attachment { id, bytes }).collect())
     }
     /// Runs a read on the store's connection: the writer's, or a snapshot's reader.
     fn read<T>(&self, f: impl Fn(&Connection) -> Result<T>) -> Result<T> {
@@ -568,8 +538,7 @@ impl Store {
             return Ok(0);
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {
-            let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
-                .map_err(sqlite("reclaim attachments"))?;
+            let tx = file::immediate(conn, "reclaim attachments")?;
             let deleted = delete_unreferenced(&tx, None, &self.app.spec)?;
             tx.commit().map_err(sqlite("reclaim attachments"))?;
             Ok(deleted)
@@ -596,22 +565,20 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
     if !within(0, checkpoint_row(state.len())) {
         return Err(Error::Full);
     }
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("clean copy"))?;
-    tx.execute("UPDATE checkpoint SET bytes=? WHERE id=1", [&state]).map_err(sqlite("clean copy"))?;
-    tx.execute_batch("DELETE FROM updates; DELETE FROM artwork").map_err(sqlite("clean copy"))?;
+    let tx = file::immediate(conn, "clean copy")?;
+    rows::put_checkpoint(&tx, &state)?;
+    rows::clear_updates(&tx)?;
+    rows::clear_artwork(&tx)?;
     delete_unreferenced(&tx, Some(&doc), app)?;
     for (name, png) in artwork {
-        tx.execute("INSERT INTO artwork VALUES(?,?)", params![name, png]).map_err(sqlite("clean copy"))?;
+        rows::put_artwork(&tx, *name, png)?;
     }
     tx.commit().map_err(sqlite("clean copy"))
 }
 /// Deletes the attachments `doc`, or the saved state when none is given, does not
 /// reference (`Document::attachment_references`), inside the caller's transaction.
 fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::AppSpec) -> Result<usize> {
-    let stored: Vec<String> = conn
-        .prepare("SELECT id FROM attachments")
-        .and_then(|mut s| s.query_map([], |r| r.get(0))?.collect())
-        .map_err(sqlite("list attachments"))?;
+    let stored: Vec<String> = rows::attachment_list(conn)?.into_iter().map(|(id, _)| id).collect();
     if stored.is_empty() {
         return Ok(0);
     }
@@ -626,7 +593,7 @@ fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::A
     let referenced = doc.attachment_references(&stored);
     let mut deleted = 0;
     for id in stored.iter().filter(|id| !referenced.contains(*id)) {
-        deleted += conn.execute("DELETE FROM attachments WHERE id=?", [id]).map_err(sqlite("delete attachment"))?;
+        deleted += rows::delete_attachment(conn, id)?;
     }
     Ok(deleted)
 }
@@ -643,10 +610,7 @@ fn attachment_id(bytes: &[u8]) -> String {
 /// A stored attachment's bytes, verified against their identity: damage is an error, never
 /// served.
 fn stored_attachment(conn: &Connection, id: &str) -> Result<Option<Vec<u8>>> {
-    let bytes: Option<Vec<u8>> = conn
-        .prepare_cached("SELECT bytes FROM attachments WHERE id=?")
-        .and_then(|mut s| s.query_row([id], |r| r.get(0)).optional())
-        .map_err(sqlite("read attachment"))?;
+    let bytes = rows::read_attachment(conn, id)?;
     if bytes.as_deref().is_some_and(|bytes| attachment_id(bytes) != id) {
         return Err(failed("Attachment checksum mismatch; keep the file for recovery"));
     }

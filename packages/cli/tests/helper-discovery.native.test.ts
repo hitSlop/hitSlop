@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { HelperProtocol } from "@hitslop/schema/constants";
 
-test("native protocol selection defaults to 1 and refuses unknown versions before document access", async () => {
+test("the helper reports its protocol and refuses unknown or unnamed protocols before document access", async () => {
   const helper = process.env.HITSLOP_NATIVE_CLI!;
   const run = async (args: string[]) => {
     const child = Bun.spawn([helper, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -18,6 +18,10 @@ test("native protocol selection defaults to 1 and refuses unknown versions befor
   expect(rejected.code).not.toBe(0);
   expect(rejected.stderr).toContain("Unsupported command protocol 2");
   expect(rejected.stderr).not.toContain("Missing");
+  // A document command that names no protocol is a usage error, refused before its request is read.
+  const unnamed = await run(["export"]);
+  expect(unnamed.code).not.toBe(0);
+  expect(unnamed.stderr).toContain("Name the command protocol");
 });
 
 // The CLI runs the document engine, which passes an export to the selected helper.

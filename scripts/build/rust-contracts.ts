@@ -3,7 +3,7 @@ import { SocketRequestSchema, SocketSuccessSchema, SocketFailureSchema } from ".
 import { PageRequestSchema } from "../../packages/schema/src/page";
 import { ThemeChangesSchema, ThemeFileSchema } from "../../packages/schema/src/values";
 import { AppRowSchema } from "../../packages/schema/src/manifest";
-import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, SelectionSchema as Selection, TextHunkSchema as TextHunk, BatchSchema, OwnerPatchOpSchema as PatchOp, OwnerStateSchema, OwnerPublicationSchema } from "../../packages/schema/src/core";
+import { variants, SegmentSchema as Segment, AnchorSchema as Anchor, SelectionSchema as Selection, TextHunkSchema as TextHunk, BatchSchema, OwnerPatchOpSchema as PatchOp, OwnerPublicationSchema } from "../../packages/schema/src/core";
 
 // The deliberately small generator fails on unsupported types. It generates the
 // Rust deserialization envelope; descriptor interpretation stays inside the core.
@@ -155,7 +155,6 @@ impl PatchOp {
 ${PatchOp.anyOf.map(schema => `        Self::${upper(schema.properties.type.const)} { path, .. } => path,`).join("\n")}
     } }
 }
-${record("State", OwnerStateSchema, { sequence: "u64", theme: "std::collections::BTreeMap<String, String>" })}
 ${record("Publication", OwnerPublicationSchema, { previous: "u64", sequence: "u64", ops: "Vec<PatchOp>", theme: "std::collections::BTreeMap<String, String>" })}
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]

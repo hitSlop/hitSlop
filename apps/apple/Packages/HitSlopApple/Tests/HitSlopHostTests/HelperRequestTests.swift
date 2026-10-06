@@ -175,6 +175,23 @@ extension HostTests {
     try await holder.close()
   }
 
+  // Failure: a closed document a newer hitSlop wrote failed to export with an unknown
+  // outcome, where every other command asks for an update. Oracle: the refusal's code and
+  // reason, and no output.
+  @Test func aClosedExportOfANewerDocumentAsksForAnUpdate() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Fixtures.sql(root, "UPDATE app SET runtime_abi = \(RuntimeABI.level + 1)")
+    let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
+    let reply = try await request([
+      "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+    ])
+    #expect(reply["ok"] as? Bool == false)
+    #expect(reply["code"] as? String == "rejected", "\(reply)")
+    #expect(reply["reason"] as? String == "requires_update")
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+  }
+
   // Failure: an engine of another build sent the live app a request it could not read,
   // and the refusal did not say which side to update. Oracle: the code and saved value.
   @Test @MainActor func aRequestInAnUnservedProtocolIsRefusedByTheLiveOwner() async throws {

@@ -28,19 +28,13 @@ public enum SlopRegistry {
   }
 }
 
-/// Runs a call into the Rust store, rethrowing its storage failures as host errors.
+/// Runs a call into the Rust store, rethrowing its failure in the host's terms.
 func storeCall<T>(_ body: () throws -> T) throws -> T {
   _ = SlopRegistry.prepared
-  do { return try body() } catch let error as CoreError {
+  do { return try body() } catch {
     switch error {
-    case .Locked: throw DocumentLocked()
-    case .Busy: throw SaveFailure.busy
-    case .Full: throw SaveFailure.full
-    case .Moved: throw SaveFailure.moved
-    case .Closed: throw OwnerError.closed
-    case .Failed(let message): throw SlopFailure(message)
-    case .Rejected where SlopRequiresUpdate.matches(error): throw SlopRequiresUpdate()
-    case .Rejected, .Invalidated: throw error
+    case CoreError.Failure(let failure), let failure as OwnerFailure: throw failure.hostError
+    default: throw error
     }
   }
 }

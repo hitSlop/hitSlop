@@ -66,10 +66,8 @@ impl From<store::Error> for Failure {
 }
 type Result<T> = std::result::Result<T, Failure>;
 pub enum Request {
-    /// The page's state, publication sequence included.
+    /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
-    /// What an agent reads: the state without the sequence (`Document::reading`).
-    Read,
     Apply {
         batch_json: String,
         origin: Origin,
@@ -111,7 +109,13 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Reply {
     Unit,
+    /// A page leads `json` with `sequence` (`crate::sequenced`); an agent reads it as it is.
     State {
+        json: String,
+        sequence: u64,
+    },
+    /// A theme file, the bytes every export writes.
+    ThemeFile {
         json: String,
     },
     /// `text` answers the page's text edit.
@@ -572,8 +576,7 @@ impl Actor {
     ) -> Result<Option<Reply>> {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
         let reply = match request {
-            Request::State => Reply::State { json: self.core.state()? },
-            Request::Read => Reply::State { json: self.core.reading()? },
+            Request::State => Reply::State { json: self.core.reading()?, sequence: self.core.sequence() },
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;
                 let result = self.core.apply_batch(&batch_json, origin)?;
@@ -593,7 +596,7 @@ impl Actor {
             }
             Request::ExportTheme => {
                 let json = self.core.export_theme()?;
-                self.wait(callback, AfterSave::Reply(Reply::State { json }))?;
+                self.wait(callback, AfterSave::Reply(Reply::ThemeFile { json }))?;
                 return Ok(None);
             }
             Request::Copy { destination, preview, icon } => {

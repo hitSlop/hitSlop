@@ -36,9 +36,8 @@ declares author, title, description, categories and presentation, the project fo
 name is the slug, and the stored manifest refuses any other field. `slop build` stages the app with `packageFormat`
 from the builder and `runtimeABI` from the project's resolved SDK, and the file engine
 stores them as columns beside the manifest. The host checks these independent
-requirements before reading anything else; readers and app-facing context adapters
-dispatch on their own requirement. Native and browser page configuration carry the
-runtime ABI.
+requirements before reading anything else, so a page never opens an app that needs a
+newer runtime ABI.
 
 ```text
 app          one row: package_format, runtime_abi, manifest, descriptor (not JSON Schema),

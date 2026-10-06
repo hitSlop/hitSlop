@@ -347,7 +347,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     _ controller: WKUserContentController, didReceive message: WKScriptMessage,
     replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
-    let invalid = { replyHandler(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil) }
+    let invalid = { replyHandler(pageFailure(OwnerError.rejected("Invalid page request")), nil) }
     guard !closed, message.webView === liveWebView, message.frameInfo.isMainFrame,
       message.frameInfo.securityOrigin.protocol == "slop",
       message.frameInfo.securityOrigin.host == "app",
@@ -366,7 +366,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
     case .config:
       let page = message.webView
       Task { @MainActor [weak self] in
-        guard let self else { return replyHandler(RequestOutcome.page(OwnerError.rejected("Page unavailable")), nil) }
+        guard let self else { return replyHandler(pageFailure(OwnerError.rejected("Page unavailable")), nil) }
         do {
           guard page === liveWebView else { throw OwnerReplaced() }
           guard let descriptor = try JSONSerialization.jsonObject(with: Data(file.descriptor.utf8)) as? [String: Any]
@@ -374,10 +374,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
           replyHandler(
             PageResult.config(
               .init(
-                runtimeABI: file.runtimeABI, readOnly: owner.mode == .snapshot, presentation: presentation,
-                descriptor: descriptor)
+                readOnly: owner.mode == .snapshot, presentation: presentation, descriptor: descriptor)
             ).json, nil)
-        } catch { replyHandler(RequestOutcome.page(error), nil) }
+        } catch { replyHandler(pageFailure(error), nil) }
       }
     case .windowResize(let r):
       do {
@@ -385,7 +384,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
         else { throw SlopFailure("Window resizing unavailable") }
         let size = try delegate.pageSession(self, resizeContentTo: CGSize(width: r.width, height: r.height))
         replyHandler(PageResult.windowResize(.init(width: Double(size.width), height: Double(size.height))).json, nil)
-      } catch { replyHandler(RequestOutcome.page(error), nil) }
+      } catch { replyHandler(pageFailure(error), nil) }
     case .ready:
       switch phase {
       case .active(.opening): phase = .active(.ready)
@@ -393,7 +392,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       // into a renderer failure.
       case .closing(.opening, let prepared): phase = .closing(.ready, prepared: prepared)
       default:
-        replyHandler(RequestOutcome.page(OwnerError.rejected("Document page is not opening")), nil)
+        replyHandler(pageFailure(OwnerError.rejected("Document page is not opening")), nil)
         return
       }
       completeWaiters(.success(()))

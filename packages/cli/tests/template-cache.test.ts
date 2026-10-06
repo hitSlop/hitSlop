@@ -128,7 +128,7 @@ test("failed builds never publish cache entries; cached templates are template f
   }
 });
 
-test.each(["crates/hitslop-core/src/file.rs", "bun.lock"])(
+test.each(["crates/hitslop-core/src/file/mod.rs", "bun.lock"])(
   "changing shared input %s rebuilds every cached template",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "hitslop-shared-input-"));
@@ -140,8 +140,8 @@ test.each(["crates/hitslop-core/src/file.rs", "bun.lock"])(
         await writeFile(path, "export {};");
       }
       await mkdir(join(root, "examples/slops"), { recursive: true });
-      await mkdir(join(root, "crates/hitslop-core/src"), { recursive: true });
-      await writeFile(join(root, "crates/hitslop-core/src/file.rs"), "// original format");
+      await mkdir(join(root, "crates/hitslop-core/src/file"), { recursive: true });
+      await writeFile(join(root, "crates/hitslop-core/src/file/mod.rs"), "// original format");
       await writeFile(join(root, "bun.lock"), "{}");
       const paths = await sharedTemplatePaths(root, []);
       for (const path of paths) {

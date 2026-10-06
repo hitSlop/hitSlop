@@ -6,30 +6,29 @@ import HitSlopDocument
 import HitSlopHost
 
 @main struct NativeCLI: AsyncParsableCommand {
-  /// Select the public adapter before ArgumentParser can execute any document command.
-  /// Unversioned callers retain protocol 1 even when a later adapter is introduced.
+  /// Every command names its caller's protocol first (`--client-protocol N`), checked
+  /// before ArgumentParser runs it; only the helper's own flags need none.
   static func main() async {
     do {
       var arguments = Array(CommandLine.arguments.dropFirst())
-      var version = 1
       if arguments.first == "--client-protocol" {
-        guard arguments.count >= 2, let selected = Int(arguments[1]), selected >= 1 else {
+        guard arguments.count >= 2, let version = Int(arguments[1]), version >= 1 else {
           throw ValidationError("--client-protocol requires a positive integer")
         }
-        version = selected
+        guard (HelperProtocol.minimum...HelperProtocol.version).contains(version) else {
+          throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+        }
+        clientProtocol = version
         arguments.removeFirst(2)
       }
-      clientProtocol = version
-      switch version {
-      case 1:
-        var command = try parseAsRoot(arguments)
-        if var asynchronous = command as? AsyncParsableCommand {
-          try await asynchronous.run()
-        } else {
-          try command.run()
-        }
-      default:
-        throw ValidationError("Unsupported command protocol \(version); update hitSlop or the calling CLI")
+      var command = try parseAsRoot(arguments)
+      guard command is NativeCLI || clientProtocol != nil else {
+        throw ValidationError("Name the command protocol with --client-protocol N")
+      }
+      if var asynchronous = command as? AsyncParsableCommand {
+        try await asynchronous.run()
+      } else {
+        try command.run()
       }
     } catch { exit(withError: error) }
   }
@@ -54,9 +53,8 @@ import HitSlopHost
   }
 }
 
-/// The command protocol the caller named, set once before any command runs; unversioned
-/// callers speak protocol 1.
-nonisolated(unsafe) var clientProtocol = 1
+/// The command protocol the caller named, set once before any command runs.
+nonisolated(unsafe) var clientProtocol: Int?
 
 /// One export from slop-engine: its `SocketRequest` (JSON) on standard input, and its
 /// `SocketReply` on standard output. An open document's owner renders it; a closed one's
@@ -79,7 +77,10 @@ struct Export: AsyncParsableCommand {
       return FileHandle.standardOutput.write(SocketReply.failure(refusal).encoded() + [10])
     }
     bootstrapApp()
-    let reply = await DocumentCommand.run(json: input, protocol: clientProtocol, export: Self.exportClosed)
+    guard let version = clientProtocol else {
+      throw ValidationError("Name the command protocol with --client-protocol N")
+    }
+    let reply = await DocumentCommand.run(json: input, protocol: version, export: Self.exportClosed)
     FileHandle.standardOutput.write(reply + [10])
   }
   @MainActor private static func exportClosed(

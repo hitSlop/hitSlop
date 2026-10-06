@@ -63,9 +63,6 @@ impl NativeSocketServer {
     pub fn start(owner: Arc<NativeOwner>, exporter: Box<dyn NativeExportHandler>) -> Result<Arc<Self>, CoreError> {
         Ok(Arc::new(Self(hitslop_core::socket::Server::start(owner.0.clone(), Arc::new(Exporter(exporter)))?)))
     }
-    pub fn path(&self) -> String {
-        self.0.path().to_string_lossy().into_owned()
-    }
     pub fn publish(&self) -> Result<(), CoreError> {
         Ok(self.0.publish()?)
     }
@@ -75,6 +72,12 @@ impl NativeSocketServer {
     pub fn stop(&self) {
         self.0.stop();
     }
+}
+/// A page or socket reply refusing with `failure`, encoded as the core encodes its own: the
+/// one place a failure's kind becomes the outcome a caller reads.
+#[uniffi::export]
+pub fn failure_reply(failure: Failure) -> String {
+    core::failure(failure, false, false)
 }
 /// A request written in command `protocol`, as the engine runs it.
 #[uniffi::export]

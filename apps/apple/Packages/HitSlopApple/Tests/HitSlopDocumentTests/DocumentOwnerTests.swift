@@ -313,20 +313,20 @@ import Testing
     owner.attach(view: "first")
     owner.attach(view: "second")
     #expect(await page(owner, #"{"method":"open"}"#, view: "second") == nil)
-    #expect(await page(owner, #"{"method":"open"}"#, view: "first") is OwnerReplaced)
+    #expect(await page(owner, #"{"method":"open"}"#, view: "first")?.kind == .replaced)
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
     _ = try await owner.apply(batch: increment, view: "second")
     try await owner.discardPending()
     owner.attach(view: "third")
     await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
-    #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second") is OwnerReplaced)
+    #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second")?.kind == .replaced)
     #expect(try await hits(owner) == 0)
     try await owner.close()
   }
-  /// A page request from `view`; the owner's refusal, if any.
-  func page(_ owner: DocumentOwner, _ json: String, view: String) async -> Error? {
+  /// A page request from `view`; the owner's failure, if it refused.
+  func page(_ owner: DocumentOwner, _ json: String, view: String) async -> OwnerFailure? {
     await withCheckedContinuation { done in
-      owner.page(json: json, view: view) { _, error in done.resume(returning: error) }
+      owner.page(json: json, view: view) { _, failure in done.resume(returning: failure) }
     }
   }
 }

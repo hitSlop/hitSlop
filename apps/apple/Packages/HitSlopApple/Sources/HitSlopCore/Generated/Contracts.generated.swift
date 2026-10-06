@@ -1180,13 +1180,11 @@ public struct PageRedoResult: Sendable {
 }
 
 public struct PageConfigResult {
-  public var `runtimeABI`: Int
   public var `readOnly`: Bool
   public var `presentation`: [String: Any]
   public var `descriptor`: [String: Any]
 
-  public init(`runtimeABI`: Int, `readOnly`: Bool, `presentation`: [String: Any], `descriptor`: [String: Any]) {
-    self.`runtimeABI` = `runtimeABI`
+  public init(`readOnly`: Bool, `presentation`: [String: Any], `descriptor`: [String: Any]) {
     self.`readOnly` = `readOnly`
     self.`presentation` = `presentation`
     self.`descriptor` = `descriptor`
@@ -1194,7 +1192,6 @@ public struct PageConfigResult {
 
   public var json: [String: Any] {
     var result: [String: Any] = [:]
-    result["runtimeABI"] = `runtimeABI`
     result["readOnly"] = `readOnly`
     result["presentation"] = `presentation`
     result["descriptor"] = `descriptor`

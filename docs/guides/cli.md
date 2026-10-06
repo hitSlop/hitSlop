@@ -90,8 +90,8 @@ through another binary.
 The CLI and Mac app update separately. The CLI names its command protocol on every
 engine call (`--client-protocol VERSION`), and the engine names it in every request to a
 live owner. An engine, helper or owner that does not serve it refuses before document
-access, with exit status 2 or `requires_update`, and says which side to update;
-unversioned calls mean protocol 1. Each executable reports the range it serves with
+access, with exit status 2 or `requires_update`, and says which side to update; a
+document command that names no protocol is a usage error. Each executable reports the range it serves with
 `--protocol` (`{"version":N,"minimum":M}`). The app bundles its engine, helper and owner
 built from one core; `slop-engine --build-id` and `hitslop-native --core-build` print it.
 A CLI-only release may reuse an installed app while the protocol and

@@ -19,7 +19,7 @@ final class NativeExports: NativeExportHandler {
         try await render(
           URL(fileURLWithPath: request.documentPath), format, URL(fileURLWithPath: request.output), deadline)
         completion.complete(outcome: .success(output: request.output))
-      } catch { completion.complete(outcome: .failure(failure: RequestOutcome.native(error))) }
+      } catch { completion.complete(outcome: .failure(failure: OwnerFailure(error))) }
     }
   }
 }

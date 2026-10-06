@@ -31,7 +31,7 @@ pub use wire::{
     ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, Code,
     IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
 };
-use wire::{Anchor, Batch, Hunk, Intent, PatchOp, Publication, Segment, State, valid_id};
+use wire::{Anchor, Batch, Hunk, Intent, PatchOp, Publication, Segment, valid_id};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize =
@@ -89,6 +89,10 @@ fn hex(bytes: &[u8]) -> String {
         out.push(DIGITS[(b & 15) as usize] as char);
     }
     out
+}
+/// A page's state: `reading` (a JSON object) led by the publication `sequence`.
+pub(crate) fn sequenced(sequence: u64, reading: &str) -> String {
+    format!("{{\"sequence\":{sequence},{}", &reading[1..])
 }
 /// Version tokens name at most 1,024 frontier IDs of 12 bytes each.
 const MAX_TOKEN_BYTES: usize = 12 * 1024;
@@ -425,18 +429,14 @@ impl Document {
     pub fn value(&self) -> String {
         encode(&self.projected())
     }
-    /// `{sequence, version, value, theme}` for a page or a reader, computed from the full
-    /// stored value: the oracle that publications replayed on a page are tested against.
+    /// `{sequence, version, value, theme}` for a page: the reading, led by the publication
+    /// sequence that orders the page's stream. The oracle that publications replayed on a
+    /// page are tested against.
     pub fn state(&self) -> Result<String> {
-        Ok(encode(&State {
-            version: self.version(),
-            value: self.projected(),
-            sequence: self.sequence,
-            theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))?,
-        }))
+        Ok(sequenced(self.sequence, &self.reading()?))
     }
-    /// `{version, value, theme}` for an agent, computed like `state`: the page's state
-    /// without the publication sequence that orders its stream.
+    /// `{version, value, theme}`: the document as it reads, computed from the full stored
+    /// value.
     pub fn reading(&self) -> Result<String> {
         #[derive(Serialize)]
         struct Reading {

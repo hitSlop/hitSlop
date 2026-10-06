@@ -53,7 +53,6 @@ import Testing
     #expect(file.backdrop == .window && file.isResizable && !file.isSkinned)
     // The panel lists colors in the order the author declared them.
     #expect(file.themeTokens.map(\.name) == ["paper", "accent"])
-    #expect(file.runtimeABI == RuntimeABI.level)
     #expect(file.byteCount == (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init))
   }
 }

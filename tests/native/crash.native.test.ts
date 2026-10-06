@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { debugHelper, documentFromStage, engineRequest } from "../../scripts/lib/native";
 import { engine } from "../../packages/cli/src/engine";
+import { negotiate } from "../../packages/cli/src/native";
 import { run } from "../../packages/cli/src/process";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
 useTestRegistry();
@@ -27,7 +28,7 @@ afterAll(() => rm(folder, { recursive: true, force: true }));
 
 /** One engine request, killed after `killAfter` milliseconds unless it has answered. */
 async function request(body: Record<string, unknown>, killAfter: number) {
-  const child = Bun.spawn([documentEngine, "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn([...negotiate(documentEngine), "request"], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   child.stdin.write(JSON.stringify(body));
   await child.stdin.end();
   setTimeout(() => child.kill("SIGKILL"), killAfter);

@@ -16,25 +16,24 @@ extension DocumentSession {
   /// failed in storage is also the window's to report.
   func servePage(_ body: [String: Any], storage: Bool, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
     guard let json = try? JSONSerialization.data(withJSONObject: body) else {
-      return reply(RequestOutcome.page(OwnerError.rejected("Invalid page request")), nil)
+      return reply(pageFailure(OwnerError.rejected("Invalid page request")), nil)
     }
-    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { [weak self] answer, error in
+    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { [weak self] answer, failure in
       DispatchQueue.main.async {
-        if storage, let error, let self { self.reportStorage(error) }
+        if storage, let failure, let self { self.reportStorage(failure) }
         reply(try? JSONSerialization.jsonObject(with: Data(answer.utf8)), nil)
       }
     }
   }
 
-  /// Only persistence failures are storage failures; a closing, replaced or invalidated
-  /// owner is reported through its own lifecycle.
-  private func reportStorage(_ error: Error) {
-    switch RequestOutcome(error) {
-    case .saveFailed, .unknown:
-      guard !SlopFailureContext.isCancellation(error) else { return }
-      let diagnostic = SlopFailureContext.classify(error)
+  /// Only persistence failures are storage failures: a refusal changed nothing, and a
+  /// closing, replaced or invalidated owner is reported through its own lifecycle.
+  private func reportStorage(_ failure: OwnerFailure) {
+    switch failure.kind {
+    case .locked, .busy, .full, .moved, .saveFailed, .failed:
+      let diagnostic = SlopFailureContext.classify(failure.hostError)
       delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown ? .init(reason: .storage) : diagnostic)
-    case .rejected, .replaced, .closing, .invalidated: break
+    case .rejected, .readOnly, .replaced, .closing, .closed, .invalidated: break
     }
   }
 }

@@ -1,8 +1,9 @@
 // Building a project: what a built app may contain and how the build's output depends on
 // its source. slop.ts is covered in slop-ts.test.ts, portable builds in portable.test.ts.
 import { test, expect } from "bun:test";
-import { engine, findEngine } from "../src/engine";
-import { exec } from "../src/process";
+import { findEngine } from "../src/engine";
+import { negotiate } from "../src/native";
+import { exec, run } from "../src/process";
 import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { overrideSlop, stage } from "./source-fixture";
@@ -11,9 +12,10 @@ import { buildTemplate } from "../src/template";
 /** What a new document of a built template holds: created and read by the engine. */
 async function initialValue(template: string) {
   const document = join(template + ".created", "Document.slop");
-  await engine(["create", "--from", template, "--output", document]);
+  const named = negotiate(await findEngine());
+  await run([...named, "create", "--from", template, "--output", document]);
   try {
-    const { stdout } = await exec([await findEngine(), "request"], { stdin: JSON.stringify({ method: "get", documentPath: document }) });
+    const { stdout } = await exec([...named, "request"], { stdin: JSON.stringify({ method: "get", documentPath: document }) });
     return JSON.parse(stdout).state.value;
   } finally {
     await rm(template + ".created", { recursive: true, force: true });

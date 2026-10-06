@@ -32,6 +32,9 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
+- Give that entry boundary documents: limits at their maximums, every descriptor kind and
+  every window shape form. The parsers and limits an open applies aren't separate readers
+  per `packageFormat`, so the corpus is what keeps them from tightening.
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.

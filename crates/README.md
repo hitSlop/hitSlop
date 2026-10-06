@@ -42,7 +42,8 @@ Generated XCFramework and Swift bindings are disposable and excluded from Git. T
 run `bun run schema:generate`, never edit `wire.generated.rs` manually.
 
 The core's `file` owns the `.slop` file (one SQLite database holding the app and its
-saved state) and the checks every open runs; its `store` persists the checkpoint, the
-update log, theme overrides and attachments, and its `registry` owns the writer lock. The
-Swift owner only schedules saves.
+saved state), every statement on its tables (every write in `file::rows`) and the checks
+every open runs; its `store` decides what a save writes (the checkpoint, the update log, theme
+overrides and attachments), its `owner` schedules saves, and its `registry` owns the
+writer lock. Swift's `DocumentOwner` is the owner's façade.
 See [the architecture](../docs/architecture.md).

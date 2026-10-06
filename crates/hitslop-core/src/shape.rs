@@ -20,12 +20,14 @@ pub enum Segment {
     Cubic { x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64 },
     Close,
 }
+/// A window's shape, as the host draws it (it crosses to Swift as it is).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Silhouette {
-    /// CSS `border-radius` order: top-left, top-right, bottom-right, bottom-left.
-    Radii { horizontal: [Length; 4], vertical: [Length; 4] },
-    /// `view_box` is the coordinate space the segments are drawn in.
-    Path { segments: Vec<Segment>, view_box: [f64; 2], even_odd: bool },
+    /// Four lengths per axis, in CSS `border-radius` order: top-left, top-right,
+    /// bottom-right, bottom-left.
+    Radii { horizontal: Vec<Length>, vertical: Vec<Length> },
+    /// The view box is the coordinate space the segments are drawn in.
+    Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
 }
 
 use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
@@ -85,7 +87,13 @@ fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
                 Some("evenodd") => true,
                 Some(_) => return Err(invalid()),
             };
-            Ok(Silhouette::Path { segments: Parser::new(&shape.path)?.parse()?, view_box, even_odd })
+            let [view_box_width, view_box_height] = view_box;
+            Ok(Silhouette::Path {
+                segments: Parser::new(&shape.path)?.parse()?,
+                view_box_width,
+                view_box_height,
+                even_odd,
+            })
         }
     }
 }
@@ -99,18 +107,18 @@ fn radii(input: &str) -> Result<Silhouette> {
     if !(1..=2).contains(&halves.len()) {
         return Err(invalid());
     }
-    let side = |text: &str| -> Result<[Length; 4]> {
+    let side = |text: &str| -> Result<Vec<Length>> {
         let items = text.split_ascii_whitespace().map(length).collect::<Result<Vec<_>>>()?;
         Ok(match items.as_slice() {
-            [a] => [*a, *a, *a, *a],
-            [a, b] => [*a, *b, *a, *b],
-            [a, b, c] => [*a, *b, *c, *b],
-            [a, b, c, d] => [*a, *b, *c, *d],
+            [a] => vec![*a, *a, *a, *a],
+            [a, b] => vec![*a, *b, *a, *b],
+            [a, b, c] => vec![*a, *b, *c, *b],
+            [a, b, c, d] => vec![*a, *b, *c, *d],
             _ => return Err(invalid()),
         })
     };
     let horizontal = side(halves[0])?;
-    let vertical = if halves.len() == 2 { side(halves[1])? } else { horizontal };
+    let vertical = if halves.len() == 2 { side(halves[1])? } else { horizontal.clone() };
     Ok(Silhouette::Radii { horizontal, vertical })
 }
 /// `0`, or a nonnegative decimal with `px` or `%`. No exponents or other units.

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { buildTemplate } from "../src/template";
-import { request } from "../src/native";
+import { negotiate, request } from "../src/native";
 
 /** The helper `bun run verify native` names, which renders native artwork. */
 const renderer = process.env.HITSLOP_NATIVE_CLI!;
@@ -41,7 +41,7 @@ test("generated Svelte app mounts with theme defaults before native capture", as
       </script>
       <main bind:this={root} style="background:var(--slop-accent)">{doc.current.title}</main>
     `);
-    const output = await buildTemplate(source, [renderer], join(root, "svelte.slop"));
+    const output = await buildTemplate(source, negotiate(renderer), join(root, "svelte.slop"));
     const png = artwork(output, "preview");
     expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
   } finally {
@@ -81,7 +81,7 @@ test("discovered capture components share the document and receive preview/expor
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
-    const output = await buildTemplate(source, [renderer], join(root, "probe.slop"));
+    const output = await buildTemplate(source, negotiate(renderer), join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -104,7 +104,7 @@ test("native artwork is complete before a rebuild replaces a registered template
     // Registering builds into the template folder, replacing an earlier build.
     const templates = join(root, "templates");
     const master = join(templates, "quick-checklist.slop");
-    await buildTemplate("examples/slops/quick-checklist", [renderer], master);
+    await buildTemplate("examples/slops/quick-checklist", negotiate(renderer), master);
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(master, name);
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -113,7 +113,7 @@ test("native artwork is complete before a rebuild replaces a registered template
         expect(png.readUInt32BE(20)).toBe(512);
       }
     }
-    await buildTemplate("examples/slops/quick-checklist", [renderer], master);
+    await buildTemplate("examples/slops/quick-checklist", negotiate(renderer), master);
     const before = await readFile(master);
     await expect(
       buildTemplate("examples/slops/quick-checklist", ["/usr/bin/false"], master),
@@ -131,13 +131,13 @@ test("native artwork is complete before a rebuild replaces a registered template
     `,
     );
     await writeFile(join(badSource, "Icon.svelte"), '<script>function broken(){throw new Error("Authored icon failed");}</script><span>{broken()}</span>');
-    await expect(buildTemplate(badSource, [renderer], master)).rejects.toThrow(
+    await expect(buildTemplate(badSource, negotiate(renderer), master)).rejects.toThrow(
       "Authored icon failed",
     );
     expect(await readFile(master)).toEqual(before);
     // A build never replaces a document.
     const document = join(root, "Document.slop");
-    const created = Bun.spawn([join(dirname(renderer), "slop-engine"), "create", "--from", master, "--output", document], { stdout: "ignore", stderr: "pipe" });
+    const created = Bun.spawn([...negotiate(join(dirname(renderer), "slop-engine")), "create", "--from", master, "--output", document], { stdout: "ignore", stderr: "pipe" });
     expect(await created.exited).toBe(0);
     const saved = await readFile(document);
     await expect(buildTemplate("examples/slops/quick-checklist", undefined, document)).rejects.toThrow("Refusing to replace a document");

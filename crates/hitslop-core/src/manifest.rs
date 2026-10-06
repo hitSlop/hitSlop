@@ -1,6 +1,6 @@
 //! Native acceptance of a stored manifest: the authored contract, TypeBox-generated. The
-//! document's package format and runtime ABI are columns beside it, checked before this runs;
-//! the package format chooses the rules.
+//! document's package format and runtime ABI are columns beside it, checked before this runs
+//! (`file::requirements`).
 use crate::{Code, Result, err, shape};
 
 #[jsonschema::validator(
@@ -22,20 +22,18 @@ pub struct Window {
     pub skin: Option<String>,
 }
 
-pub fn validate(input: &str, package_format: u64) -> Result<Window> {
+// Every package format the core admits is read here. Raising it fails to compile: keep this
+// reader, with the schema it validates against, for the released format and dispatch on the
+// file's (docs/engineering-contract.md).
+const _: () = assert!(crate::PACKAGE_FORMAT == 1, "keep the released package format's reader beside the new one");
+
+pub fn validate(input: &str) -> Result<Window> {
     if input.len() > crate::wire::MANIFEST_BYTES {
         return Err(err(Code::TooLarge, format!("The manifest exceeds {} KiB", crate::wire::MANIFEST_BYTES >> 10)));
     }
     let value: serde_json::Value =
         serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "The manifest must be valid JSON"))?;
-    match package_format {
-        1 => validate_v1(&value),
-        _ => Err(err(Code::InvalidRequest, "Invalid package format")),
-    }
-}
-
-fn validate_v1(value: &serde_json::Value) -> Result<Window> {
-    Manifest::validate(value).map_err(|e| {
+    Manifest::validate(&value).map_err(|e| {
         let path = e.instance_path().as_str();
         err(Code::InvalidRequest, format!("Invalid manifest at {}", if path.is_empty() { "/" } else { path }))
     })?;

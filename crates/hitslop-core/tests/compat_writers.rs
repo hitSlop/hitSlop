@@ -46,10 +46,18 @@ fn run(engine: &Path, args: &[&str]) -> String {
     assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
     String::from_utf8(output.stdout).unwrap()
 }
+/// The command protocol the entry's release speaks, as it recorded it.
+fn released_protocol(entry: &Path) -> String {
+    let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
+    release["markers"]["protocol"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{}: no protocol marker", entry.display()))
+        .to_string()
+}
 /// One request in the released engine's protocol, and its reply.
-fn request(engine: &Path, body: Value) -> Value {
+fn request(engine: &Path, protocol: &str, body: Value) -> Value {
     let mut child = Command::new(engine)
-        .arg("request")
+        .args(["--client-protocol", protocol, "request"])
         .env("HITSLOP_TEST_REGISTRY", support::registry_folder())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -58,8 +66,8 @@ fn request(engine: &Path, body: Value) -> Value {
     child.stdin.take().unwrap().write_all(body.to_string().as_bytes()).unwrap();
     serde_json::from_slice(&child.wait_with_output().unwrap().stdout).unwrap()
 }
-fn released_value(engine: &Path, document: &Path) -> Value {
-    let reply = request(engine, json!({"method":"get","documentPath":document}));
+fn released_value(engine: &Path, protocol: &str, document: &Path) -> Value {
+    let reply = request(engine, protocol, json!({"method":"get","documentPath":document}));
     assert_eq!(reply["ok"], true, "the released engine cannot read its own document: {reply}");
     reply["state"]["value"].clone()
 }
@@ -80,28 +88,30 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
     let mut cases = 0;
     for entry in sorted(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
         let dir = tempfile::tempdir().unwrap();
-        let engine = released_engine(&entry, dir.path());
+        let (engine, protocol) = (released_engine(&entry, dir.path()), released_protocol(&entry));
         for template in sorted(&entry.join("templates")) {
             let slug = template.file_stem().unwrap().to_string_lossy().into_owned();
             for seed in 1..=seeds {
                 let label = format!("{}/{slug}, seed {seed}", entry.file_name().unwrap().to_string_lossy());
                 let document = dir.path().join(format!("{slug}-{seed}.slop"));
-                run(&engine, &["create", "--from", template.to_str().unwrap(), "--output", document.to_str().unwrap()]);
+                let (template, output) = (template.to_str().unwrap(), document.to_str().unwrap());
+                run(&engine, &["--client-protocol", &protocol, "create", "--from", template, "--output", output]);
                 let descriptor: Value =
                     serde_json::from_str(&run(&engine, &["schema", document.to_str().unwrap()])).unwrap();
                 let (mut rng, mut serial) = (seed as u64 * 0x9e3779b1 + 11, 0);
                 for _ in 0..steps {
-                    let current = released_value(&engine, &document);
+                    let current = released_value(&engine, &protocol, &document);
                     let ops: Vec<Value> = (0..1 + next(&mut rng) % 3)
                         .map(|_| intent(&mut rng, &mut serial, &descriptor, &current))
                         .collect();
                     // A deliberately invalid value is refused, changing nothing.
                     request(
                         &engine,
+                        &protocol,
                         json!({"method":"batch","documentPath":document,"ops":Value::Array(ops).to_string()}),
                     );
                 }
-                let released = released_value(&engine, &document);
+                let released = released_value(&engine, &protocol, &document);
                 assert_eq!(
                     value_here(&document),
                     released,

@@ -10,7 +10,7 @@ fn path(source: &str) -> Result<Vec<Segment>, String> {
         Err(error) => Err(error.code.as_str().to_owned()),
     }
 }
-fn radius(value: &str) -> Result<([Length; 4], [Length; 4]), String> {
+fn radius(value: &str) -> Result<(Vec<Length>, Vec<Length>), String> {
     match silhouette(Some(&json!(value)), 100.0, 100.0) {
         Ok(Silhouette::Radii { horizontal, vertical }) => Ok((horizontal, vertical)),
         Ok(other) => panic!("expected radii, got {other:?}"),
@@ -64,16 +64,16 @@ fn radius_grammar_follows_css_border_radius() {
     // One to four values expand in CSS order; a single axis applies to both.
     assert_eq!(
         radius("1px 2% 3px").unwrap(),
-        ([PX(1.0), PC(2.0), PX(3.0), PC(2.0)], [PX(1.0), PC(2.0), PX(3.0), PC(2.0)])
+        (vec![PX(1.0), PC(2.0), PX(3.0), PC(2.0)], vec![PX(1.0), PC(2.0), PX(3.0), PC(2.0)])
     );
-    assert_eq!(radius("4px 6px / 50%").unwrap(), ([PX(4.0), PX(6.0), PX(4.0), PX(6.0)], [PC(50.0); 4]));
+    assert_eq!(radius("4px 6px / 50%").unwrap(), (vec![PX(4.0), PX(6.0), PX(4.0), PX(6.0)], vec![PC(50.0); 4]));
 }
 
 #[test]
 fn omitted_shape_is_the_default_rounded_window() {
     assert_eq!(
         silhouette(None, 480.0, 620.0).unwrap(),
-        Silhouette::Radii { horizontal: [PX(22.0); 4], vertical: [PX(22.0); 4] }
+        Silhouette::Radii { horizontal: vec![PX(22.0); 4], vertical: vec![PX(22.0); 4] }
     );
 }
 
@@ -180,13 +180,13 @@ fn path_options_and_resource_limits() {
     let shape = json!({"path": "M0 0H10V10Z", "viewBox": [20, 40], "fillRule": "evenodd"});
     assert!(matches!(
         silhouette(Some(&shape), 100.0, 100.0).unwrap(),
-        Silhouette::Path { view_box: [20.0, 40.0], even_odd: true, .. }
+        Silhouette::Path { view_box_width: 20.0, view_box_height: 40.0, even_odd: true, .. }
     ));
     // The view box defaults to the window's logical size.
     let default = json!({"path": "M0 0H10V10Z"});
     assert!(matches!(
         silhouette(Some(&default), 480.0, 620.0).unwrap(),
-        Silhouette::Path { view_box: [480.0, 620.0], even_odd: false, .. }
+        Silhouette::Path { view_box_width: 480.0, view_box_height: 620.0, even_odd: false, .. }
     ));
     for bad in [
         json!({"path": "M0 0Z", "viewBox": [0, 10]}),

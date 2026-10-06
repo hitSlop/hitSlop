@@ -281,7 +281,7 @@ const release: Release = {
   markers: {
     packageFormat: PackageFormat,
     runtimeABI: RuntimeABI,
-    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/file.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
+    storage: Number((await readFile(join(repository, "crates/hitslop-core/src/file/mod.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
     layout: Number((await readFile(join(repository, "crates/hitslop-core/src/lib.rs"), "utf8")).match(/pub const LAYOUT: i64 = (\d+);/)![1]),
     protocol: HelperProtocol.version,
   },

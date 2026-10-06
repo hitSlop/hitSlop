@@ -261,7 +261,7 @@ code. Refactoring adapters raises no format or ABI marker.
 
 Publishing is a new native owner operation. It writes a new file and never mutates the
 original. Send File and Duplicate use the same operation
-([clean copies](sqlite-format-review.md#1-clean-copies)), so no copy that leaves the
+([clean copies](../archive/plans/sqlite-format-review.md#1-clean-copies)), so no copy that leaves the
 owner carries history or removed attachments; only captures keep the plain backup.
 
 - **State without history.** Export a checkpoint at the latest frontiers
@@ -273,7 +273,7 @@ owner carries history or removed attachments; only captures keep the plain backu
     `AttachmentIdPattern`) appears inside any string in the current state, including
     within longer text such as markdown. The scan reads materialized values, not
     bytes. Close-time reclamation uses the same
-    [attachment scan](sqlite-format-review.md#attachment-scan).
+    [attachment scan](../archive/plans/sqlite-format-review.md#attachment-scan).
   - A false inclusion would need the exact SHA-256 of a stored attachment. An app that
     stores a transformed ID loses that image in the recipient's copy, which breaks
     the image but leaks nothing.
