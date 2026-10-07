@@ -17,19 +17,17 @@ export async function packPackages() {
   try {
     const commit = (await new Response(Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout).text()).trim();
     await stageEngines(engines, resolve("generated/engines"), cargoOutput("slop-engine"), commit);
-    for (const name of ["hitslop"]) {
-      const directory = resolve("packages", name);
-      const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-      for (const value of Object.values(metadata.dependencies ?? {}))
-        if (String(value).startsWith("workspace:") || String(value).startsWith("file:"))
-          throw new Error("Local dependency in published package");
-      const child = Bun.spawn([process.execPath, "pm", "pack", "--destination", output], {
-        cwd: directory,
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      if (await child.exited) throw new Error(`Cannot pack ${name}`);
-    }
+    const directory = resolve("packages/hitslop");
+    const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
+    for (const value of Object.values(metadata.dependencies ?? {}))
+      if (String(value).startsWith("workspace:") || String(value).startsWith("file:"))
+        throw new Error("Local dependency in published package");
+    const child = Bun.spawn([process.execPath, "pm", "pack", "--destination", output], {
+      cwd: directory,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (await child.exited) throw new Error("Cannot pack hitslop");
   } finally {
     await rm(engines, { recursive: true, force: true });
   }

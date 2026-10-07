@@ -4,7 +4,7 @@ import type { SlopContext } from "../sdk/abi";
 import type { OwnerDocument } from "./owner/document";
 import { preview } from "./preview";
 
-export function ownerAttachments(doc: OwnerDocument<any>): SlopContext["attachments"] {
+export function ownerAttachments(doc: Pick<OwnerDocument<import("../sdk/schema").ObjectNode>, "admit">): SlopContext["attachments"] {
   const url = (id: string) => {
     if (!new RegExp(AttachmentIdPattern).test(id)) throw new Error("Invalid attachment ID");
     return preview.host ? preview.host.attachmentURL(id) : new URL(`/attachments/${id}`, location.href).href;

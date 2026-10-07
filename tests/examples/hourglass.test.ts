@@ -25,10 +25,10 @@ test("the first minutes of fallen sand already heap into a visible pile", () => 
 
 test("the readout counts days for a long wait and a clock under a day", () => {
   const hour = 3_600_000;
-  expect(read({ title: "", start: 0, end: 0 }, 5).state).toBe("unset");
-  const clock = read({ title: "", start: 0, end: hour }, 1000);
+  expect(read({ start: 0, end: 0 }, 5).state).toBe("unset");
+  const clock = read({ start: 0, end: hour }, 1000);
   expect(clock).toMatchObject({ state: "running", value: "59:59", unit: "to go" });
-  expect(read({ title: "", start: 0, end: 30 * hour }, 0)).toMatchObject({ value: "1", unit: "day to go", remaining: 1 });
-  expect(read({ title: "", start: 0, end: 300 * hour }, 24 * hour)).toMatchObject({ value: "11", unit: "days to go" });
-  expect(read({ title: "", start: 0, end: hour }, hour)).toMatchObject({ state: "done", remaining: 0 });
+  expect(read({ start: 0, end: 30 * hour }, 0)).toMatchObject({ value: "1", unit: "day to go", remaining: 1 });
+  expect(read({ start: 0, end: 300 * hour }, 24 * hour)).toMatchObject({ value: "11", unit: "days to go" });
+  expect(read({ start: 0, end: hour }, hour)).toMatchObject({ state: "done", remaining: 0 });
 });

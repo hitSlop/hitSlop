@@ -16,8 +16,8 @@ export function stageWorker(source: string, stage: string, failure: string) {
   const { done, kill } = start([process.execPath, join(cliRoot, "src/cli/stage-worker.ts"), resolve(source), resolve(stage), result], { cwd: cliRoot, failure });
   return {
     kill,
-    done: done.then(async (): Promise<{ input: BuildInput; dependencies: { ui: string[]; definition: string[] } }> => {
-      try { return JSON.parse(await readFile(result, "utf8")); }
+    done: done.then(async (): Promise<Awaited<ReturnType<typeof stageProjectInBun>>> => {
+      try { return JSON.parse(await readFile(result, "utf8")) as Awaited<ReturnType<typeof stageProjectInBun>>; }
       finally { await rm(result, { force: true }); }
     }),
   };

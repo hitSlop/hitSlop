@@ -12,7 +12,7 @@ export function fromDescriptor(input: Descriptor): Definition<ObjectNode> {
   freeze(descriptor);
   return Object.freeze({ descriptor: descriptor as ObjectNode });
 }
-function freeze(value: any) {
+function freeze(value: unknown) {
   if (value && typeof value === "object") {
     Object.values(value).forEach(freeze);
     Object.freeze(value);

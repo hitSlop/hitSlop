@@ -35,7 +35,7 @@ export function evaluate<R>(request: CommandInput, command: (ctx: CommandContext
     let active = true;
     const collect: Collector = (intent) => {
       if (!active) throw new Error("A transaction handle escaped its command");
-      intents.push(JSON.parse(JSON.stringify(intent)));
+      intents.push(JSON.parse(JSON.stringify(intent)) as OwnerIntent);
     };
     const fill = (bytes: Uint8Array) => {
       for (let i = 0; i < bytes.length; i += 4) {
@@ -69,7 +69,7 @@ export function evaluate<R>(request: CommandInput, command: (ctx: CommandContext
     } finally {
       active = false;
     }
-    if (result && typeof (result as any).then === "function") throw new Error("Commands are synchronous");
+    if (result && (typeof result === "object" || typeof result === "function") && "then" in result && typeof result.then === "function") throw new Error("Commands are synchronous");
     // Only JSON results cross hosts. Detect unsupported values instead of silently losing them.
     const json = JSON.stringify(result === undefined ? null : result, (_key, value) => {
       if (typeof value === "bigint" || typeof value === "function" || typeof value === "symbol" || (typeof value === "number" && !Number.isFinite(value))) throw new Error("Commands return JSON values");

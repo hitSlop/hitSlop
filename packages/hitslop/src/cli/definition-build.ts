@@ -128,7 +128,9 @@ globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describ
       stdin:JSON.stringify({runtimeABI:RuntimeABI,mode:"definition",bundle:new TextDecoder().decode(program.bytes),request:"{}"}),
     });
     if (evaluated.code) throw new Error(`Definition evaluator failed: ${evaluated.stderr}`);
-    const reply = JSON.parse(evaluated.stdout);
+    const reply = JSON.parse(evaluated.stdout) as
+      | { ok: true; declaration: ReturnType<typeof import("../sdk/app-definition").describeApp> }
+      | { ok: false; error: string };
     if (reply.ok !== true) throw new Error(`Definition initialization failed: ${reply.error}`);
     const {artwork = {}, ...declaration} = reply.declaration;
     const hasCommands = declaration.commands.length > 0;

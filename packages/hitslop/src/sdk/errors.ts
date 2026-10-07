@@ -22,8 +22,8 @@ export function isDocumentError(error: unknown): error is DocumentError {
   return (
     typeof error === "object" &&
     error !== null &&
-    (error as any)[brand] === true &&
-    typeof (error as any).code === "string"
+    brand in error && error[brand] === true &&
+    "code" in error && typeof error.code === "string"
   );
 }
 /** Definite semantic refusal: no mutation was accepted. */

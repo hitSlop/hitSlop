@@ -19,7 +19,7 @@ import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 
-const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.hitslop);
+const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop);
 /** Reports a page error to the host, or to the console in the browser preview. */
 const report = (native: boolean, kind: "application" | "operation", error: unknown) => {
   if (native) void call({ method: "pageError", kind, error: describe(error) }).catch(() => {});

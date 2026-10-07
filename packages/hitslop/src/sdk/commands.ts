@@ -21,7 +21,7 @@ export type CommandSpec<N extends ObjectNode, A extends Arguments, R> = {
 const brand = Symbol.for("hitslop.command");
 export type CommandInfo = { definition: object; spec: CommandSpec<any, Arguments, unknown>; name?: string };
 export function commandInfo(value: unknown): CommandInfo | undefined {
-  return typeof value === "function" ? (value as any)[brand] : undefined;
+  return typeof value === "function" ? (value as { [brand]?: CommandInfo })[brand] : undefined;
 }
 export function bindCommands(commands: Record<string, unknown>, definition: object) {
   const seen = new Set<CommandInfo>();

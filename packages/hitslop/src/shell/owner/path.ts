@@ -3,13 +3,14 @@ import type { Node } from "../../sdk/schema";
 import { unwrap } from "../../sdk/internal";
 
 // Snapshot arrays are immutable, so one `$id → index` map per array serves every reader.
-export const rowIndexes = new WeakMap<readonly any[], Map<string, number>>();
-export function indexOf(rows: readonly any[], id: string): number {
+export const rowIndexes = new WeakMap<readonly unknown[], Map<string, number>>();
+export function indexOf(rows: readonly unknown[], id: string): number {
   let index = rowIndexes.get(rows);
   if (!index) {
     index = new Map();
     rows.forEach((row, i) => {
-      if (typeof row?.$id === "string" && !index!.has(row.$id)) index!.set(row.$id, i);
+      if (row && typeof row === "object" && "$id" in row && typeof row.$id === "string" && !index!.has(row.$id))
+        index!.set(row.$id, i);
     });
     rowIndexes.set(rows, index);
   }

@@ -18,7 +18,7 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
     const output = join(root, "built");
     const app = await stageProject(source, output);
     expect(app.declaration.metadata.slug).toBe("quick-checklist");
-    expect(app.declaration.initial.title).toBe(sentinel);
+    expect(app.declaration.initial).toMatchObject({ title: sentinel });
     expect(await readFile(join(output, "resources/ui.js"), "utf8")).not.toContain(sentinel);
     for (const [name, fields, statements, error] of [
       ["unknown", { lineage: '"future"' }, "", "unknown field"],

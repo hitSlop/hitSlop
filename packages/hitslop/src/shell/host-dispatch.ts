@@ -5,7 +5,11 @@ import type { SlopPageHandle } from "./page-handle";
 export function hostDispatcher(page: Pick<SlopPageHandle, "publish"> & Partial<SlopPageHandle>) {
   return async (request: HostRequest): Promise<true | HostCaptureResult> => {
     switch (request.method) {
-      case "publish": page.publish(JSON.parse(request.payload)); break;
+      case "publish": {
+        const pushes: unknown = JSON.parse(request.payload);
+        page.publish(pushes);
+        break;
+      }
       case "capture.begin": {
         if (!page.capture) throw new Error("Document capture is not ready");
         return await page.capture.begin(request.token, request.mode);

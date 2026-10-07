@@ -14,7 +14,9 @@ async function initialValue(template: string) {
   const document = join(template + ".created", "Document.slop");
   await execute({ method: "create", from: template, output: document });
   try {
-    return (await execute({ method: "get", documentPath: document })).state.value;
+    const value = (await execute({ method: "get", documentPath: document })).state.value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object snapshot");
+    return value as Record<string, unknown>;
   } finally {
     await rm(template + ".created", { recursive: true, force: true });
   }

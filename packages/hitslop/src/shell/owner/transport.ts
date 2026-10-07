@@ -22,7 +22,7 @@ export function nativeTransport(
   let receiver: (pushes: PagePush[]) => void = () => {};
   return {
     readOnly,
-    open: async () => JSON.parse((await call({ method: "open" })).state),
+    open: async () => JSON.parse((await call({ method: "open" })).state) as OwnerState,
     runCommand: (name, args) => call({ method: "commands.run", name, args }),
     apply: (batch) => call({ method: "apply", batch }),
     flush: async () => {

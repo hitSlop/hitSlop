@@ -24,7 +24,7 @@ afterAll(() => {
 function terminal() {
   const tty = createPromptIO();
   const output = Object.assign(new PassThrough(), { isTTY: true });
-  output.pipe(tty.io.output);
+  output.on("data", (chunk: Buffer) => tty.io.output.write(chunk.toString()));
   function shown(label: string) {
     return new Promise<void>((resolve) => {
       const onData = (chunk: Buffer) => {

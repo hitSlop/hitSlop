@@ -8,9 +8,13 @@ import { fileDigest } from "../lib/artifacts";
 import { advancesBuild, appcastBuild, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
 
 const directory = "dist/macos";
-const tag = process.env.GITHUB_REF_NAME;
-if (!tag || !/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error("Expected a vX.Y.Z release tag");
+const releaseTag = process.env.GITHUB_REF_NAME;
+if (!releaseTag || !/^v\d+\.\d+\.\d+$/.test(releaseTag)) throw new Error("Expected a vX.Y.Z release tag");
+const tag = releaseTag;
 const version = tag.slice(1);
+const releaseCommit = process.env.GITHUB_SHA;
+if (!releaseCommit) throw new Error("GITHUB_SHA is required");
+const commit = releaseCommit;
 const repository = process.env.GITHUB_REPOSITORY;
 if (!repository) throw new Error("GITHUB_REPOSITORY is required");
 const gh = (args: string[]) => run(["gh", ...args]);
@@ -30,7 +34,7 @@ async function asset(id: number) {
   return Buffer.from(bytes);
 }
 async function check(record: ReleaseRecord) {
-  validateRecord(record, tag!, process.env.GITHUB_SHA!);
+  validateRecord(record, tag, commit);
   await verifyArtifacts(record, directory);
 }
 async function record() { return JSON.parse(await readFile(join(directory, "release-record.json"), "utf8")) as ReleaseRecord; }
@@ -60,14 +64,15 @@ if (action === "resume") {
   const remote = await remoteRelease();
   const manifest = remote?.assets.find(a => a.name === "release-record.json");
   let resumed = false;
-  if (manifest) {
+  if (remote && manifest) {
     const bytes = await asset(manifest.id);
     const saved: ReleaseRecord = JSON.parse(bytes.toString());
-    validateRecord(saved, tag, process.env.GITHUB_SHA!);
+    validateRecord(saved, tag, commit);
     const names = [...Object.keys(saved.artifacts), "SHA256SUMS"];
-    if (names.every(name => remote!.assets.some(asset => asset.name === name))) {
+    const assets = names.map(name => remote.assets.find(asset => asset.name === name));
+    if (assets.every(asset => asset !== undefined)) {
       await writeFile(join(directory, "release-record.json"), bytes);
-      for (const name of names) await writeFile(join(directory, name), await asset(remote!.assets.find(a => a.name === name)!.id));
+      for (const entry of assets) await writeFile(join(directory, entry.name), await asset(entry.id));
     } else {
       // Recover interrupted uploads from the complete candidate retained before staging.
       await gh(["run", "download", saved.run, "--name", "release-candidate", "--dir", directory]);
@@ -99,8 +104,9 @@ if (action === "resume") {
     await gh(["release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${version}`, "--notes-file", notes]);
     remote = await remoteRelease();
   }
+  if (!remote) throw new Error("Draft release was not found after creation");
   for (const name of ["release-record.json", ...Object.keys(saved.artifacts), "SHA256SUMS"]) {
-    const existing = remote!.assets.find(a => a.name === name);
+    const existing = remote.assets.find(a => a.name === name);
     if (existing) {
       const expected = await fileDigest(join(directory, name));
       const actual = existing.digest?.startsWith("sha256:") ? existing.digest.slice(7) : createHash("sha256").update(await asset(existing.id)).digest("hex");

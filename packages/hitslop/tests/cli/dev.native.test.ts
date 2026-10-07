@@ -130,7 +130,7 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     expect(result.sandbox).toBe("sandbox"); expect(result.nosniff).toBe("nosniff");
     expect(result.bytes).toBe("imported media"); expect(result.rangeStatus).toBe(206); expect(result.range).toBe("impo");
     expect(result.missing).toBe(404);
-    const sorted = result.times.toSorted((a, b) => a - b);
+    const sorted = [...result.times].sort((a, b) => a - b);
     console.log(`Native preview command latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
     const [owner] = await dev.diagnostics(); expect(owner).toBeDefined();
     process.kill(owner!.pid, "SIGKILL");

@@ -31,7 +31,7 @@ export function describeEnd(end: number, now: number): string {
 
 /** What the glass shows at `now`: how much sand is left (0 to 1) and the readout. Days for a
  * long wait; a clock under a day. */
-export function read({ start, end }: Hourglass, now: number): Reading {
+export function read({ start, end }: Pick<Hourglass, "start" | "end">, now: number): Reading {
   if (!end || end <= start) return { state: "unset", remaining: 0 };
   const until = describeEnd(end, now);
   const left = end - now;

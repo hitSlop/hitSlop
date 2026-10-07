@@ -1,3 +1,4 @@
+import { json } from "./json";
 import { HelperProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
 import type { EngineRequest, EngineRequestFor, EngineMethod, EngineReply, EngineReplyFor, EngineSuccess } from "../wire/engine";
 import { join } from "node:path";
@@ -58,8 +59,7 @@ export async function request(body: EngineRequest, { binary, ...options }: Engin
   });
   if (code === 2) throw new ExitStatus(2, withRemedy(stderr.trim()));
   if (code) throw new Error([stderr.trim() || `Engine exited with status ${code}`, unknown].join("\n"));
-  let reply: unknown;
-  try { reply = JSON.parse(stdout); } catch {}
+  const reply = json(stdout);
   const message = `Invalid engine reply. ${unknown}`;
   if (!acknowledged(reply, body.method)) throw new Error(message);
   return reply;

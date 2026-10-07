@@ -34,7 +34,7 @@
     "shape:lab": "bun scripts/dev/shape-lab.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.4.0",
     "playwright": "1.63.0",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",

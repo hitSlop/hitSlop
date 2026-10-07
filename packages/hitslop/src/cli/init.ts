@@ -107,7 +107,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
   slop = setField(slop, "description", JSON.stringify(description));
   slop = setField(slop, "author", `{ name: ${JSON.stringify(author)} }`);
   slop = setField(slop, "categories", JSON.stringify(categories));
-  const project = JSON.parse(
+  const project: Record<string, unknown> = JSON.parse(
     await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"),
   );
   project.name = slug;

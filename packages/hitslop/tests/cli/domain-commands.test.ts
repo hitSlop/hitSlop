@@ -36,13 +36,17 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
     const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });
     const describe = async () => (await execute({ method: "describe", documentPath: document })).state;
     const first = await describe();
-    expect(first.commands.addTask.args.properties.text.type).toBe("string");
-    expect(first.fields.find((field: any) => field.path[0] === "title").description).toBeTruthy();
+    expect(first.commands.addTask.args).toMatchObject({ properties: { text: { type: "string" } } });
+    expect(first.fields.find(field => field.path[0] === "title")?.description).toBeTruthy();
     const added = await run("addTask", { text: "From command" });
     expect(added.ok, JSON.stringify(added)).toBe(true);
-    expect(added.ids).toEqual([added.result.id]);
+    if (!added.ok) throw new Error(added.error);
+    expect(added.ids).toHaveLength(1);
+    expect(added.result).toMatchObject({ id: added.ids[0] });
     const before = await describe();
-    expect(before.value.tasks.at(-1).text).toBe("From command");
+    expect(before.value).toHaveProperty("tasks");
+    const tasks = (before.value as { tasks: unknown[] }).tasks;
+    expect(tasks.at(-1)).toMatchObject({ text: "From command" });
     for (const [name, args, error] of [
       ["addTask", { text: 7 }, "Invalid arguments"],
       ["addTask", { text: "x", unexpected: true }, "Invalid arguments"],
@@ -51,10 +55,13 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
     ] as const) {
       const reply = await run(name, args);
       expect(reply.ok).toBe(false);
+      if (reply.ok) throw new Error(`Expected ${name} to be refused`);
       expect(reply.error).toContain(error);
       expect((await describe()).value).toEqual(before.value);
     }
-    expect((await run("ambient", {})).result).toEqual(["undefined", "undefined", "undefined"]);
+    const ambient = await run("ambient", {});
+    if (!ambient.ok) throw new Error(ambient.error);
+    expect(ambient.result).toEqual(["undefined", "undefined", "undefined"]);
     expect((await run("archiveFinished", {})).ok).toBe(true);
     // Unsupported authoring shapes are rejected before replacing the previous build.
     const old = await readFile(template);

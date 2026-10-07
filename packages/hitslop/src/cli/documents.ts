@@ -1,3 +1,4 @@
+import { json } from "./json";
 import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../wire/engine";
 // Document commands. Each is one `SocketRequest` the document engine sends to the
 // document's live owner, or to an owner it opens; files the command names are read and
@@ -59,13 +60,7 @@ async function publish(output: string, bytes: string | Uint8Array) {
   });
   console.log(resolve(output));
 }
-const json = (value: string): unknown => {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-};
+
 
 export async function get(document: string, snapshot: boolean) {
   const { state } = await send({ method: "get", ...at(document) });
@@ -96,12 +91,11 @@ export async function describe(document: string, machine = false) {
 /** Preserve numeric tokens until Rust validates them; JavaScript must not round CLI input. */
 export function batchIntents(ops: string): Batch["intents"] {
   // Bun supports source-aware revivers and rawJSON; the workspace TS lib predates them.
-  const numericJSON = JSON as unknown as {
-    parse(text: string, revive: (key: string, value: unknown, context: { source: string }) => unknown): unknown;
-    rawJSON(text: string): unknown;
-  };
-  const intents = numericJSON.parse(ops, (_key, value, context) =>
-    typeof value === "number" ? numericJSON.rawJSON(context.source) : value);
+  const intents = JSON.parse(ops, (_key, value, context) => {
+    if (typeof value !== "number") return value;
+    if (context.source === undefined) throw new Error("Bun must support source-aware JSON parsing");
+    return JSON.rawJSON(context.source);
+  });
   if (!Array.isArray(intents)) throw new Error("--ops must be a JSON array of operations");
   // Shape and value acceptance belong to Rust, including raw numeric tokens.
   return intents as Batch["intents"];

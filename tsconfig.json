@@ -13,12 +13,9 @@
   },
   "include": [
     "packages/hitslop/src/**/*.ts",
-    "packages/hitslop/tests/sdk/**/*.ts",
-    "packages/hitslop/tests/shell/**/*.ts",
+    "packages/hitslop/tests/**/*.ts",
     "scripts/**/*.ts",
-    "tests/native/**/*.ts",
-    "tests/packed/**/*.ts",
-    "tests/verification/**/*.ts"
+    "tests/**/*.ts"
   ],
   "exclude": [
     "**/node_modules/**",

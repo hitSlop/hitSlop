@@ -1,4 +1,4 @@
-import type { OwnerDocument } from "./owner/document";
+import type { SlopPageHandle } from "./page-handle";
 
 import type { SlopView } from "../sdk/abi";
 
@@ -29,7 +29,7 @@ export async function fontsSettled(page: Document) {
 /** The visible page's lifecycle, called by the native host through `globalThis.__slop`. */
 export async function mountViewLifecycle(options: {
   mount(): DocumentView | Promise<DocumentView>;
-  document: Pick<OwnerDocument<any>, "flush" | "undo" | "redo" | "prepareClose" | "cancelClose">;
+  document: Pick<SlopPageHandle, "flush" | "undo" | "redo" | "prepareClose" | "cancelClose">;
   target: HTMLElement;
   recovered?: () => Promise<unknown>;
 }) {

@@ -5,7 +5,7 @@
     "": {
       "name": "hitslop",
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "1.4.0",
         "hitslop": "workspace:*",
         "playwright": "1.63.0",
         "svelte": "5.57.1",

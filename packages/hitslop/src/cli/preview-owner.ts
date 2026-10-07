@@ -10,7 +10,7 @@ type Session = {
   path: string;
   token: string;
   resource(id: string, offset: number, length: number): Promise<{info: {size: number; mimeType: string} | null; /** Base64. */ bytes: string | null; error?: string}>;
-  send(frame: unknown): void;
+  send(frame: PreviewRequest): void;
   close(): Promise<void>;
 };
 
@@ -111,7 +111,7 @@ export class PreviewOwners {
       });
       const resourceToken = crypto.randomUUID();
       let resourceID = 0;
-      const reads = new Map<number, {resolve: (value:any) => void; reject: (error:unknown) => void; timer:ReturnType<typeof setTimeout>}>();
+      const reads = new Map<number, {resolve: (value: Awaited<ReturnType<Session["resource"]>>) => void; reject: (error:unknown) => void; timer:ReturnType<typeof setTimeout>}>();
       let closing: Promise<void> | undefined;
       let ended = false;
       const pending = new Set<number>();
@@ -175,7 +175,7 @@ export class PreviewOwners {
             catch (error) { reads.delete(id); clearTimeout(timer); reject(error); }
           });
         },
-        send(frame: any) {
+        send(frame: PreviewRequest) {
           if (ended || pending.size >= 64 || pending.has(frame.id)) throw new Error("Preview disconnected or request queue full");
           pending.add(frame.id);
           child.stdin.write(JSON.stringify(frame) + "\n");

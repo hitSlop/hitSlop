@@ -7,7 +7,12 @@ import { preview } from "./preview";
 export async function call<M extends PageMethod>(request: PageRequest<M>): Promise<PageResult<M>> {
   let reply: unknown;
   try {
-    reply = preview.host ? await preview.host.request(request) : await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request));
+    if (preview.host) reply = await preview.host.request(request);
+    else {
+      const handler = globalThis.webkit?.messageHandlers?.hitslop;
+      if (!handler) throw new Error("Native document bridge is unavailable");
+      reply = await handler.postMessage(JSON.stringify(request));
+    }
   } catch (error) {
     throw new DocumentError("unknown_outcome", String(error));
   }
@@ -37,19 +42,15 @@ export async function call<M extends PageMethod>(request: PageRequest<M>): Promi
 }
 
 // Safari 18.2+ has native base64 on Uint8Array; the fallbacks avoid per-byte callbacks.
-const native = Uint8Array as unknown as {
-  fromBase64?: (text: string) => Uint8Array;
-  prototype: { toBase64?: () => string };
-};
 const encode = (bytes: Uint8Array) => {
-  if (native.prototype.toBase64) return (bytes as any).toBase64() as string;
+  if (bytes.toBase64) return bytes.toBase64();
   const chunks: string[] = [];
   for (let offset = 0; offset < bytes.length; offset += 16_384)
     chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 16_384)));
   return btoa(chunks.join(""));
 };
 const decode = (text: string) => {
-  if (native.fromBase64) return native.fromBase64(text);
+  if (Uint8Array.fromBase64) return Uint8Array.fromBase64(text);
   const binary = atob(text);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
