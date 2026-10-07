@@ -5,7 +5,7 @@ import { PushLimits } from "../../src/schema/constants";
 import { Store } from "../../src/shell/owner/store";
 import { DocumentError } from "../../src/sdk/internal";
 import { defineDocument, s } from "hitslop";
-import * as wasm from "../../../../generated/core/wasm/hitslop_core_wasm.js";
+const wasm = await import(new URL("../../../../generated/core/wasm/hitslop_core_wasm.js", import.meta.url).href);
 wasm.initSync({ module: await Bun.file(new URL("../../../../generated/core/wasm/hitslop_core_wasm_bg.wasm", import.meta.url)).bytes() });
 // The store's stall, retry and deadline timers run on fake time, advanced by `elapsing`.
 beforeEach(() => jest.useFakeTimers());

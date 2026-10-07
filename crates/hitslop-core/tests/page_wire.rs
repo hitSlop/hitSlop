@@ -1,3 +1,4 @@
+#![cfg(feature = "storage")]
 //! The Rust boundary owns request shapes and limits; Swift carries only typed host actions.
 use hitslop_core::page_wire::{CaptureMode, HostCaptureResult, HostReply, HostRequest, PageRequest};
 use serde_json::json;

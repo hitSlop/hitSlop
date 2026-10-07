@@ -11,10 +11,10 @@
     "@crustjs/prompts": "0.2.6",
     "@crustjs/skills": "0.5.4",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
-    "svelte": "5.57.1",
+    "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "typescript": "5.9.2",
-    "vite": "8.3.1"
+    "vite": "8.3.3"
   },
   "publishConfig": {
     "access": "public"

@@ -148,8 +148,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       case .themeChanged:
         // The ordered document publications restyle the page. This only refreshes the panel.
         Task { @MainActor [weak self] in
-          guard let self, let theme = try? await currentTheme() else { return }
-          delegate?.pageSession(self, themeChanged: theme)
+          guard let self, let theme = try? await self.currentTheme() else { return }
+          self.delegate?.pageSession(self, themeChanged: theme)
         }
       case .undo(let state):
         DispatchQueue.main.async { self?.undoAvailability = state }
@@ -443,7 +443,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the
   /// editor barrier; the independent copy remains alive even if this window then closes.
-  public func withCaptureSnapshot<T>(trace: SlopCloseTrace? = nil, _ render: (URL) async throws -> T) async throws -> T
+  public func withCaptureSnapshot<T>(trace: SlopCloseTrace? = nil, _ render: @MainActor (URL) async throws -> T)
+    async throws -> T
   {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -464,7 +465,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// Serializes source acquisition in an editor or rendering in a disposable page.
   /// The flag stays set across queued acquisitions so close cannot release the source.
-  public func withCapture<T>(_ body: () async throws -> T) async rethrows -> T {
+  public func withCapture<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
     if capturing { await withCheckedContinuation { captureQueue.append($0) } }
     capturing = true
     defer {

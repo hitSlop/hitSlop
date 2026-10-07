@@ -123,8 +123,11 @@ test("agent skills link to the global CLI and follow its upgrades", async () => 
     await rename(upgraded, cli);
     expect(await readFile(join(link, "SKILL.md"), "utf8")).toContain('version: "9.9.9"');
 
-    // Any copy may remove links; shared content is untouched.
-    expect((await run(repositoryCli, "skills", "uninstall", "--all", "--scope", "global")).code).toBe(0);
+    // A non-global package may remove links; shared content is untouched.
+    const local = join(root, "local");
+    await cp(cli, local, { recursive: true, verbatimSymlinks: true });
+    const removed = await run(local, "skills", "uninstall", "--all", "--scope", "global");
+    expect(removed.code, removed.stderr).toBe(0);
     expect(await lstat(link).catch(() => undefined)).toBeUndefined();
     expect(await Bun.file(join(packaged, "hitslop-cli/SKILL.md")).exists()).toBe(true);
   } finally {

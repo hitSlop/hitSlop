@@ -130,7 +130,7 @@ import WebKit
   /// preview and icon; no editor focus, frame or input state is involved.
   private static func withCapture<T>(
     _ session: DocumentSession,
-    _ body: (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
+    _ body: @MainActor (_ view: WKWebView, _ token: String, _ originalFrame: CGRect) async throws -> T
   ) async throws -> T {
     try await session.withCapture {
       try Task.checkCancellation()
