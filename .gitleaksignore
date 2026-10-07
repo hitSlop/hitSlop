@@ -10,3 +10,10 @@ de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/
 de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:discord-api-token:59
 de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:discord-api-token:239
 de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:generic-api-key:918
+
+# The same byte-identical benchmark inventory at its pre-archive path, exposed by
+# scanning merge diffs. These are the same four file hashes described above.
+1b4f6c6cedbeb9440b0fe24d7aa44cf7525f2a88:spikes/boundary-simplification/evidence/baseline.json:generic-api-key:19
+1b4f6c6cedbeb9440b0fe24d7aa44cf7525f2a88:spikes/boundary-simplification/evidence/baseline.json:discord-api-token:59
+1b4f6c6cedbeb9440b0fe24d7aa44cf7525f2a88:spikes/boundary-simplification/evidence/baseline.json:discord-api-token:239
+1b4f6c6cedbeb9440b0fe24d7aa44cf7525f2a88:spikes/boundary-simplification/evidence/baseline.json:generic-api-key:918
