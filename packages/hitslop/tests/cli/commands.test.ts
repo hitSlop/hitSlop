@@ -1,3 +1,4 @@
+import { exec } from "../../../../scripts/lib/test-process";
 import { test, expect } from "bun:test";
 import { cp, mkdtemp, rm, symlink, readFile, lstat, writeFile } from "node:fs/promises";
 import { stageProject } from "../../src/cli/build";
@@ -14,16 +15,10 @@ async function run(
   env: Record<string, string> = {},
   cli = "packages/hitslop/src/cli/cli.ts",
 ) {
-  const child = Bun.spawn([process.execPath, cli, ...args], {
+  const result = await exec([process.execPath, cli, ...args], {
     env: { ...process.env, ...env },
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+  const { stdout, stderr, code } = result;
   return { stdout, stderr, code };
 }
 
@@ -187,7 +182,7 @@ test("invalid input fails before opening documents or building source", async ()
     ["theme", "set", "missing.slop"],
     ["attachments", "export", "missing.slop", "id"],
     ["export", "missing.slop", "--format", "jpeg", "--output", "x"],
-    ...["0", "65536", "1.5", "NaN"].map((port) => ["dev", "missing-source", "--port", port]),
+    ...["-1", "65536", "1.5", "NaN"].map((port) => ["dev", "missing-source", "--port", port]),
   ]) {
     const result = await run(args, { HITSLOP_NATIVE_CLI: "/nonexistent" });
     expect(result.code).not.toBe(0);

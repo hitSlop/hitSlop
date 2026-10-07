@@ -10,7 +10,7 @@ fn decode(value: Value) -> Result<SocketRequest, hitslop_core::Error> {
     SocketRequest::decode(&value.to_string())
 }
 fn batch() -> Value {
-    json!({"protocol":1,"method":"batch","documentPath":"/tmp/doc.slop","ops":"[]"})
+    json!({"protocol":1,"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}})
 }
 
 #[test]
@@ -20,12 +20,12 @@ fn requests_check_routing_but_leave_intents_to_the_owner() {
     }
     assert!(decode(json!({"protocol":1,"method":"export","documentPath":"/tmp/doc.slop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());
     let mut request = batch();
-    request["ops"] = "[{\"type\":\"unknown-operation\"}]".into();
-    assert!(decode(request).is_ok());
+    request["batch"]["intents"] = json!([{"type":"unknown-operation"}]);
+    assert!(decode(request).is_err());
     for request in [
         json!({"protocol":1,"method":"unknown","documentPath":"/tmp/doc.slop"}),
         json!({"protocol":1,"method":"get","documentPath":"/tmp/doc.slop","output":"/tmp/doc.pdf"}),
-        json!({"method":"batch","documentPath":"/tmp/doc.slop","ops":"[]"}),
+        json!({"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}}),
         json!({"protocol":1,"method":"export","documentPath":"/tmp/doc.slop","format":"html","output":"/tmp/doc.html"}),
     ] {
         assert!(decode(request.clone()).is_err(), "{request}");
@@ -36,7 +36,7 @@ fn requests_check_routing_but_leave_intents_to_the_owner() {
 fn request_constraints_survive_the_schema_removal() {
     for (field, values) in [
         ("documentPath", vec![json!(""), json!("x".repeat(4097)), Value::Null]),
-        ("ops", vec![json!(""), json!("x".repeat(1_048_577)), json!({}), Value::Null]),
+        ("batch", vec![json!(""), json!("x".repeat(1_048_577)), json!({}), Value::Null]),
         ("command", vec![json!("rename")]),
         ("base", vec![Value::Null, json!(true)]),
         ("ifVersion", vec![Value::Null, json!(true)]),
@@ -47,7 +47,11 @@ fn request_constraints_survive_the_schema_removal() {
     ] {
         for value in values {
             let mut request = batch();
-            request[field] = value;
+            if matches!(field, "base" | "ifVersion") {
+                request["batch"][field] = value;
+            } else {
+                request[field] = value;
+            }
             assert!(decode(request).is_err(), "{field}");
         }
     }

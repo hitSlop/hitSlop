@@ -101,6 +101,14 @@ fn dispatch(request: EngineRequest) -> String {
                 file::validate_app(app.get(), Path::new(&stage))?;
                 EngineSuccess::ValidateApp { ok: True }
             }
+            EngineRequest::ArtworkExport { file: path, target, output } => {
+                let name = match target {
+                    hitslop_core::engine::ArtworkTarget::Icon => file::Artwork::Icon,
+                    hitslop_core::engine::ArtworkTarget::Preview => file::Artwork::Preview,
+                };
+                let present = file::export_artwork(Path::new(&path), name, Path::new(&output))?;
+                EngineSuccess::ArtworkExport { ok: True, output: present.then_some(output) }
+            }
             EngineRequest::Inspect { file: path } => {
                 let path = Path::new(&path);
                 EngineSuccess::Inspect { ok: True, info: file::inspect(path)? }
@@ -139,7 +147,7 @@ fn request(input: &str, protocol: u64) -> String {
             let evaluator = std::env::current_exe()
                 .ok()
                 .and_then(|path| hitslop_runner::Evaluator::new(path, vec!["--evaluate-command".into()]).ok());
-            command::request_with_evaluator(input, protocol, None, evaluator)
+            command::request_with_evaluator(request, protocol, None, evaluator)
         }
         _ => dispatch(request),
     }

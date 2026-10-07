@@ -30,7 +30,7 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |
 
-The three npm packages are publishable. The repository root, examples workspace, and landing application are private. TypeScript belongs in packages; Apple implementation belongs in the app-local Swift package.
+The `hitslop` npm package is publishable. The repository root, examples workspace, and landing application are private. TypeScript belongs in packages; Apple implementation belongs in the app-local Swift package.
 
 `slop dev SOURCE` serves the browser preview on `127.0.0.1` only. The native helper has no `open-dev` command.
 

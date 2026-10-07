@@ -67,7 +67,10 @@ extension HostTests {
     do {
       let edit = try await request([
         "method": "batch", "documentPath": root.path,
-        "ops": #"[{"type":"set","path":["title"],"value":"Batch edit"}]"#,
+        "batch": [
+          "intents": try JSONSerialization.jsonObject(
+            with: Data((#"[{"type":"set","path":["title"],"value":"Batch edit"}]"#).utf8))
+        ],
       ])
       #expect(edit["ok"] as? Bool == true)
       #expect(edit["ids"] as? [String] == [])
@@ -108,7 +111,10 @@ extension HostTests {
       """, arguments: [:], in: nil, contentWorld: .page)
     let rejected = try await request([
       "method": "batch", "documentPath": root.path,
-      "ops": #"[{"type":"set","path":["missing"],"value":true}]"#,
+      "batch": [
+        "intents": try JSONSerialization.jsonObject(
+          with: Data((#"[{"type":"set","path":["missing"],"value":true}]"#).utf8))
+      ],
     ])
     #expect(rejected["ok"] as? Bool == false)
     #expect(rejected["code"] as? String == "rejected" && rejected["reason"] as? String == "path_not_found")
@@ -233,7 +239,10 @@ extension HostTests {
     let documentPath = try #require(advertised["documentPath"] as? String)
     let newer = try JSONSerialization.data(withJSONObject: [
       "protocol": HelperProtocol.version + 1, "method": "batch", "documentPath": documentPath,
-      "ops": #"[{"type":"set","path":["title"],"value":"must not apply"}]"#,
+      "batch": [
+        "intents": try JSONSerialization.jsonObject(
+          with: Data((#"[{"type":"set","path":["title"],"value":"must not apply"}]"#).utf8))
+      ],
     ])
     let response = try await Task.detached { try SocketClient.call(path: path, request: newer) }.value
     let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])

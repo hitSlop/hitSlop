@@ -15,7 +15,7 @@ pub enum PageRequest {
     },
     Open {},
     Apply {
-        batch: String,
+        batch: super::Batch,
     },
     Flush {},
     Undo {},
@@ -58,14 +58,14 @@ impl PageRequest {
         Ok(request)
     }
     pub fn check(&self) -> Result<()> {
-        if matches!(self, Self::Apply { batch } if batch.len() > super::PAGE_PAYLOAD) {
-            return Err(err(Code::TooLarge, "Page payload is too large"));
+        if let Self::Apply { batch } = self {
+            batch.check_size(super::PAGE_PAYLOAD)?;
         }
         let valid = match self {
             Self::CommandsRun { name, args } => {
                 super::engine::valid_command_name(name) && crate::encode(args).len() <= super::PAGE_PAYLOAD
             }
-            Self::Apply { batch } => (2..=super::PAGE_PAYLOAD).contains(&batch.len()),
+            Self::Apply { .. } => true,
             Self::AttachmentsPut { bytes } => bytes.len() <= super::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4,
             Self::WindowResize { width, height } => {
                 (super::WINDOW_MIN_WIDTH..=super::WINDOW_MAX).contains(width)

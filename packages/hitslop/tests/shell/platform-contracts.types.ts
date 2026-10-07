@@ -6,7 +6,7 @@ import { call } from "../../src/shell/bridge";
 
 function contracts(handle: SlopPageHandle) {
   // @ts-expect-error An edit without lifetime identity is unsafe.
-  const missingEpoch: SocketRequest = { documentPath: "/doc", method: "batch", ops: "[]" };
+  const missingEpoch: SocketRequest = { documentPath: "/doc", method: "batch", batch: { intents: [] } };
   const error: PageRequest<"pageError"> = { method: "pageError", kind: "application", error: "x" };
   // @ts-expect-error A runtime error names its kind.
   const missingKind: PageRequest<"pageError"> = { method: "pageError", error: "x" };

@@ -32,7 +32,7 @@ test("native refusals and transport failures retain distinct outcomes", async ()
           },
         },
       };
-      const error = await call({ method: "apply", batch: '{"intents":[]}' }).catch(
+      const error = await call({ method: "apply", batch: { intents: [] } }).catch(
         (error) => error,
       );
       expect(isDocumentError(error)).toBe(true);
@@ -81,13 +81,13 @@ test("native bridge carries JSON text and correlates a successful reply", async 
   try {
     root.webkit = { messageHandlers: { hitslop: { postMessage: async (json: string) => {
       expect(typeof json).toBe("string");
-      expect(JSON.parse(json)).toEqual({ method: "apply", batch: '{"intents":[]}' });
+      expect(JSON.parse(json)).toEqual({ method: "apply", batch: { intents: [] } });
       return JSON.stringify({ ok: true, method: "apply", sequence: 2, ids: ["row"] });
     } } } };
-    expect(await call({ method: "apply", batch: '{"intents":[]}' })).toEqual({ sequence: 2, ids: ["row"] });
+    expect(await call({ method: "apply", batch: { intents: [] } })).toEqual({ sequence: 2, ids: ["row"] });
     for (const malformed of ["{", { ok: true, method: "apply" }]) {
       root.webkit.messageHandlers.hitslop.postMessage = async () => malformed;
-      await expect(call({ method: "apply", batch: '{"intents":[]}' })).rejects.toMatchObject({ code: "unknown_outcome" });
+      await expect(call({ method: "apply", batch: { intents: [] } })).rejects.toMatchObject({ code: "unknown_outcome" });
     }
   } finally { root.webkit = before; }
 });

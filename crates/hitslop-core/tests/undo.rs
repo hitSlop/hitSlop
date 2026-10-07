@@ -6,6 +6,7 @@
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
+use support::ApplyJson;
 use support::{View, app, fixture, type_text, value};
 
 const ROW: &str = "00000000000000000000000000000001";
@@ -28,13 +29,20 @@ fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
     for title in ["First command", "Second command"] {
         let batch =
             json!({"ifVersion":d.version(),"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
-        let publication = d.apply_command(&batch, Origin::Agent, "rename").unwrap().publication.unwrap();
+        let publication = d
+            .apply_command(hitslop_core::Batch::decode(&batch).unwrap(), Origin::Agent, "rename")
+            .unwrap()
+            .publication
+            .unwrap();
         view.publish(&publication);
     }
     let latest = value(&d);
     let stale =
         json!({"ifVersion":old_version,"intents":[{"type":"set","path":["title"],"value":"Lost edit"}]}).to_string();
-    assert_eq!(d.apply_command(&stale, Origin::Agent, "rename").unwrap_err().code, hitslop_core::Code::StaleBase);
+    assert_eq!(
+        d.apply_command(hitslop_core::Batch::decode(&stale).unwrap(), Origin::Agent, "rename").unwrap_err().code,
+        hitslop_core::Code::StaleBase
+    );
     assert_eq!(value(&d), latest);
     assert!(undo(&mut d, &mut view));
     assert_eq!(value(&d)["title"], "First command");
@@ -50,7 +58,7 @@ fn only_the_owner_names_a_command_step() {
     for origin in [Origin::Page, Origin::Agent] {
         let forged =
             json!({"command":"rename","intents":[{"type":"set","path":["title"],"value":"Forged"}]}).to_string();
-        assert_eq!(d.apply_batch(&forged, origin).unwrap_err().code, hitslop_core::Code::InvalidRequest);
+        assert_eq!(d.apply_json(&forged, origin).unwrap_err().code, hitslop_core::Code::InvalidRequest);
     }
 }
 fn batch(intents: Value) -> String {
@@ -61,7 +69,7 @@ fn set(path: Value, value: Value) -> String {
 }
 /// Applies a change and shows its publication to the page.
 fn apply(d: &mut Document, view: &mut View, batch: &str, origin: Origin) {
-    if let Some(publication) = d.apply_batch(batch, origin).unwrap().publication {
+    if let Some(publication) = d.apply_json(batch, origin).unwrap().publication {
         view.publish(&publication);
     }
 }
@@ -210,7 +218,7 @@ fn undoing_a_removal_restores_the_row_and_its_id() {
 fn an_agents_refused_batch_keeps_the_persons_undo() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    let refused = d.apply_batch(
+    let refused = d.apply_json(
         &batch(json!([
             {"type":"increment","path":["hits"],"by":1},
             {"type":"set","path":["missing"],"value":1},
@@ -229,7 +237,7 @@ fn a_refused_page_batch_keeps_undo_and_redo() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
     assert!(
-        d.apply_batch(
+        d.apply_json(
             &batch(json!([
                 {"type":"increment","path":["hits"],"by":1},
                 {"type":"set","path":["missing"],"value":1},
@@ -242,7 +250,7 @@ fn a_refused_page_batch_keeps_undo_and_redo() {
     assert!(undo(&mut d, &mut view), "the earlier step survives the refusal");
     let before = d.state().unwrap();
     assert!(
-        d.apply_batch(
+        d.apply_json(
             &batch(json!([
                 {"type":"increment","path":["hits"],"by":1},
                 {"type":"set","path":["missing"],"value":1},
@@ -272,7 +280,7 @@ fn an_agent_batch_that_changes_nothing_leaves_the_next_change_the_persons() {
 fn session(checkpoint: &[u8], batches: &[(String, Origin)]) -> Vec<u8> {
     let mut d = Document::open(&app(schema()), checkpoint, &[]).unwrap();
     for (batch, origin) in batches {
-        d.apply_batch(batch, *origin).unwrap();
+        d.apply_json(batch, *origin).unwrap();
     }
     d.checkpoint().unwrap()
 }
@@ -426,7 +434,7 @@ fn noops_and_refusals_preserve_runs_and_redo_but_new_edits_clear_redo() {
     apply(&mut d, &mut view, &increase, Origin::Agent);
     apply(&mut d, &mut view, &set(json!(["title"]), json!("abc")), Origin::Page);
     assert!(
-        d.apply_batch(
+        d.apply_json(
             &batch(json!([
                 {"type":"increment","path":["hits"],"by":1},
                 {"type":"set","path":["missing"],"value":1},

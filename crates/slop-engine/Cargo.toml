@@ -12,9 +12,7 @@ workspace = true
 [dependencies]
 hitslop-core = { path = "../hitslop-core", features = ["storage"] }
 serde_json.workspace = true
-serde.workspace = true
 hitslop-runner = { path = "../hitslop-runner" }
-getrandom = "0.2"
 libc = "0.2"
 data-encoding = { version = "=2.11.1" }
 

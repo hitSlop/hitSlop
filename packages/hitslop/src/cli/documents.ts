@@ -7,7 +7,7 @@ import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "../schema/constants";
 import type { SocketFailure } from "../wire/socket";
 import type { OutcomeCode } from "../schema/values";
-import type { PaletteIntent } from "../schema/core";
+import type { PaletteIntent, Batch } from "../schema/core";
 
 type ExportFormat = (typeof ExportFormats)[number];
 /** What a failed edit means for the next one. */
@@ -93,19 +93,31 @@ export async function describe(document: string, machine = false) {
   lines.push("", "Value (rows retain their $id)", JSON.stringify(state.value, null, 2));
   console.log(lines.join("\n"));
 }
-/** An atomic batch. `ops` stays the text given, so numbers keep their spelling. Its text
+/** Preserve numeric tokens until Rust validates them; JavaScript must not round CLI input. */
+export function batchIntents(ops: string): Batch["intents"] {
+  // Bun supports source-aware revivers and rawJSON; the workspace TS lib predates them.
+  const numericJSON = JSON as unknown as {
+    parse(text: string, revive: (key: string, value: unknown, context: { source: string }) => unknown): unknown;
+    rawJSON(text: string): unknown;
+  };
+  const intents = numericJSON.parse(ops, (_key, value, context) =>
+    typeof value === "number" ? numericJSON.rawJSON(context.source) : value);
+  if (!Array.isArray(intents)) throw new Error("--ops must be a JSON array of operations");
+  // Shape and value acceptance belong to Rust, including raw numeric tokens.
+  return intents as Batch["intents"];
+}
+/** An atomic batch. Numeric tokens keep their spelling. Its text
  * sets merge from `base` when given. The `attach` files are stored in the same request,
  * before the operations that reference them (`attachmentsRef` prints a reference). */
 export async function batch(document: string, ops: string, base?: string, attach: string[] = []) {
-  if (!Array.isArray(json(ops))) throw new Error("--ops must be a JSON array of operations");
+  const intents = batchIntents(ops);
   const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
   if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
     throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
   const { ids } = await send({
     method: "batch",
     ...at(document),
-    ops,
-    ...(base === undefined ? {} : { base }),
+    batch: { intents, ...(base === undefined ? {} : { base }) },
     ...(attachments.length ? { attachments } : {}),
   });
   print({ ids });
@@ -136,7 +148,7 @@ async function palette(document: string) {
 }
 /** One palette intent, as an atomic batch, then the palette it left. */
 async function changeTheme(document: string, intent: PaletteIntent) {
-  await send({ method: "batch", ...at(document), ops: JSON.stringify([intent]) });
+  await send({ method: "batch", ...at(document), batch: { intents: [intent] } });
   print(await palette(document));
 }
 export async function themeGet(document: string) {

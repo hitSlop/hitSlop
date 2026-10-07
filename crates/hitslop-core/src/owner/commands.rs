@@ -2,7 +2,7 @@
 use super::*;
 use crate::engine::{False, True};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) struct Invocation {
@@ -34,7 +34,7 @@ pub(super) struct Work {
 pub(super) struct Evaluation {
     #[serde(rename = "ok")]
     _ok: True,
-    intents: Vec<Value>,
+    intents: Vec<crate::Intent>,
     result: Value,
 }
 #[derive(Deserialize)]
@@ -47,7 +47,7 @@ struct Refusal {
 /// The intents a command built for `abi` returns, in the core's current vocabulary. ABI 1's
 /// are today's. A later ABI that changes the vocabulary translates an older one here; the
 /// core never loosens what it accepts to admit them.
-fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<Value>> {
+fn current_intents(abi: u64, intents: Vec<crate::Intent>) -> Result<Vec<crate::Intent>> {
     match abi {
         1 => Ok(intents),
         _ => Err(rejected("Unsupported command runtime ABI")),
@@ -133,10 +133,24 @@ impl Actor {
         let prepare = || -> Result<(Arc<String>, String)> {
             let app = self.store.app();
             let bundle = app.commands.clone().ok_or_else(|| rejected("This app has no command program"))?;
-            let input = json!({"name":invocation.name,"args":invocation.args,"now":invocation.now,"seed":invocation.seed,
-                "value":self.core.projected(),
-                "descriptor":serde_json::from_str::<Value>(app.app.document_json()).map_err(rejected)?});
-            Ok((bundle, input.to_string()))
+            #[derive(serde::Serialize)]
+            struct Input<'a> {
+                name: &'a str,
+                args: &'a Value,
+                now: u64,
+                seed: [u32; 4],
+                value: Value,
+                descriptor: &'a serde_json::value::RawValue,
+            }
+            let input = Input {
+                name: &invocation.name,
+                args: &invocation.args,
+                now: invocation.now,
+                seed: invocation.seed,
+                value: self.core.projected(),
+                descriptor: app.app.document_raw(),
+            };
+            Ok((bundle, crate::encode(&input)))
         };
         let (bundle, input) = match prepare() {
             Ok(input) => input,
@@ -175,8 +189,8 @@ impl Actor {
             }
             let output = result?;
             let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
-            let batch = json!({"intents":intents,"ifVersion":invocation.version}).to_string();
-            let accepted = self.edited(|core| core.apply_command(&batch, invocation.origin, &invocation.name))?;
+            let batch = crate::Batch { intents, ifVersion: Some(invocation.version.clone()), base: None };
+            let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
             Ok(Reply::Command {
                 sequence: accepted.sequence,

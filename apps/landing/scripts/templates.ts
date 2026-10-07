@@ -2,35 +2,16 @@
 // repository root after bun run build:templates:
 //   bun apps/landing/scripts/templates.ts
 // Outputs are committed: the Cloudflare build installs only apps/landing and never
-// builds templates. Each template's manifest, theme and artwork come from its file.
+// builds templates. Metadata and stored artwork are read through the Rust engine.
 /// <reference types="bun" />
-import { Database } from "bun:sqlite";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { execute } from "../../../packages/hitslop/src/cli/engine";
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { repository } from "../../../scripts/lib/artifacts";
 import { builtTemplates } from "../../../scripts/templates/discover";
 
 const landing = fileURLToPath(new URL("..", import.meta.url));
-/** What the wall shows of a built template, read from its file's app row and artwork. */
-function read(file: string) {
-  const database = new Database(file, { readonly: true });
-  try {
-    const app = database.query("SELECT manifest, theme FROM app").get() as { manifest: string; theme: string };
-    const artwork = (name: "icon" | "preview") =>
-      (database.query("SELECT png FROM artwork WHERE name = ?").get(name) as { png: Uint8Array } | null)?.png;
-    return {
-      manifest: JSON.parse(app.manifest),
-      theme: JSON.parse(app.theme) as Record<string, string>,
-      artwork: { icon: artwork("icon"), preview: artwork("preview") },
-    };
-  } finally {
-    database.close();
-  }
-}
-const publicDir = join(landing, "public/assets/templates");
-const output = join(landing, "src/data/templates.json");
-
 // A hand-picked sticker for every template; new templates fall back to a sparkle.
 const emoji: Record<string, string> = {
   "alien-radio": "👽", "ambient-sound-mixer": "🌧️", "assignment-tracker": "📖", "baby-journal": "🍼",
@@ -83,44 +64,75 @@ function luminance(hex: string): number {
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 }
 
-await rm(publicDir, { recursive: true, force: true });
-const templates: Template[] = [];
-const missingPreview: string[] = [];
-for (const { slug } of (await builtTemplates()).templates) {
-  // Developer acceptance workload; never advertise it as a product template.
-  if (slug === "shape-lab") continue;
-  const { manifest, theme: colors, artwork } = read(join(repository, "generated/templates", `${slug}.slop`));
-  const background = pick(colors, backgroundKeys, "#f4efff");
-  const accent = pick(colors, accentKeys, "#6c16ed");
-  let ink = pick(colors, inkKeys, luminance(background) > 0.35 ? "#10132c" : "#ffffff");
-  // Guard against a theme whose "ink" is meant for a different panel.
-  if (Math.abs(luminance(ink) - luminance(background)) < 0.3) ink = luminance(background) > 0.35 ? "#10132c" : "#ffffff";
-  const presentation = manifest.presentation;
-  const template: Template = {
-    slug,
-    title: manifest.title,
-    description: manifest.description,
-    categories: manifest.categories,
-    shape: presentation.shape === "50%" ? "ellipse" :
-      presentation.skin || typeof presentation.shape === "object" ? "rectangle" : "rounded",
-    width: presentation.width,
-    height: presentation.height,
-    emoji: emoji[slug] ?? "✨",
-    colors: { background, accent, ink, ...tileOverrides[slug] },
-  };
-  for (const key of ["icon", "preview"] as const) {
-    const png = artwork[key];
-    if (!png) continue;
-    const to = join(publicDir, slug, `${key}.png`);
-    await mkdir(dirname(to), { recursive: true });
-    await writeFile(to, png);
-    template[key] = `/assets/templates/${slug}/${key}.png`;
+export async function generateTemplates(sources: { slug: string; file: string }[], destination = landing) {
+  const publicDir = join(destination, "public/assets/templates");
+  const output = join(destination, "src/data/templates.json");
+  await mkdir(destination, { recursive: true });
+  const stage = await mkdtemp(join(destination, ".templates-"));
+  try {
+    const templates: Template[] = [];
+    const missingPreview: string[] = [];
+    for (const { slug, file } of sources) {
+      // Developer acceptance workload; never advertise it as a product template.
+      if (slug === "shape-lab") continue;
+      const { info } = await execute({ method: "inspect", file });
+      if (info.metadata.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
+      const { metadata: manifest, defaults: colors, window: presentation } = info;
+      const background = pick(colors, backgroundKeys, "#f4efff");
+      const accent = pick(colors, accentKeys, "#6c16ed");
+      let ink = pick(colors, inkKeys, luminance(background) > 0.35 ? "#10132c" : "#ffffff");
+      // Guard against a theme whose "ink" is meant for a different panel.
+      if (Math.abs(luminance(ink) - luminance(background)) < 0.3) ink = luminance(background) > 0.35 ? "#10132c" : "#ffffff";
+      const template: Template = {
+        slug,
+        title: manifest.title,
+        description: manifest.description,
+        categories: manifest.categories,
+        shape: presentation.kind === "standard" && presentation.shape === "50%" ? "ellipse" :
+          presentation.kind === "skin" || (presentation.kind === "standard" && typeof presentation.shape === "object") ? "rectangle" : "rounded",
+        width: presentation.width,
+        height: presentation.height,
+        emoji: emoji[slug] ?? "✨",
+        colors: { background, accent, ink, ...tileOverrides[slug] },
+      };
+      for (const key of ["icon", "preview"] as const) {
+        const to = join(stage, slug, `${key}.png`);
+        await mkdir(dirname(to), { recursive: true });
+        const { output: image } = await execute({ method: "artwork.export", file, target: key, output: to });
+        if (!image) continue;
+        template[key] = `/assets/templates/${slug}/${key}.png`;
+      }
+      if (!template.preview) missingPreview.push(slug);
+      templates.push(template);
+    }
+    templates.sort((a, b) => a.title.localeCompare(b.title));
+    await writeFile(join(stage, "templates.json"), JSON.stringify(templates, null, 2) + "\n");
+    // All reads and generation succeeded. Publish assets before the JSON that refers to them.
+    for (const template of templates) {
+      for (const role of ["icon", "preview"] as const) {
+        if (!template[role]) continue;
+        const to = join(publicDir, template.slug, `${role}.png`);
+        await mkdir(dirname(to), { recursive: true });
+        await rename(join(stage, template.slug, `${role}.png`), to);
+      }
+    }
+    await mkdir(dirname(output), { recursive: true });
+    await rename(join(stage, "templates.json"), output);
+    // Only remove obsolete artwork after the new inventory has been published.
+    for (const entry of await readdir(publicDir, { withFileTypes: true }).catch(() => [])) {
+      const template = templates.find(template => template.slug === entry.name);
+      if (!template) await rm(join(publicDir, entry.name), { recursive: true, force: true });
+      else for (const role of ["icon", "preview"] as const)
+        if (!template[role]) await rm(join(publicDir, entry.name, `${role}.png`), { force: true });
+    }
+    console.log(`${templates.length} templates → ${output}`);
+    if (missingPreview.length) console.log(`No template artwork (emoji tile used): ${missingPreview.length} — their builds have no preview artwork.`);
+  } finally {
+    await rm(stage, { recursive: true, force: true });
   }
-  if (!template.preview) missingPreview.push(slug);
-  templates.push(template);
 }
-templates.sort((a, b) => a.title.localeCompare(b.title));
-await mkdir(dirname(output), { recursive: true });
-await writeFile(output, JSON.stringify(templates, null, 2) + "\n");
-console.log(`${templates.length} templates → ${output}`);
-if (missingPreview.length) console.log(`No template artwork (emoji tile used): ${missingPreview.length} — their builds have no preview artwork.`);
+
+if (import.meta.main) {
+  const { templates } = await builtTemplates();
+  await generateTemplates(templates.map(({ slug }) => ({ slug, file: join(repository, "generated/templates", `${slug}.slop`) })));
+}

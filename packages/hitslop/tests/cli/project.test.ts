@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { exec } from "../../src/cli/process";
+import { exec } from "../../../../scripts/lib/test-process";
 import metadata from "../../package.json";
 
 test("cwd cannot redirect document commands; only an explicit project prefix delegates", async () => {

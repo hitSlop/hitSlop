@@ -1,14 +1,14 @@
 # Shared document core
 
-The document semantics every host uses: the Swift app and helper natively, and
-`slop dev` and Bun tests through WASM. The original spike is archived in
+The document semantics every host uses: the Swift app, helper and `slop dev` use the
+native Rust engine. Bun SDK tests use the WASM adapter. The original spike is archived in
 `archive/spikes/hitslop-core`.
 
 - `hitslop-core`: descriptor interpretation, Loro operations, publications and bytes; with
   `storage`, the `.slop` file, its writer lock and the save policy.
 - `hitslop-core-ffi`: UniFFI adapter used by the Apple host, its Quick Look extensions and
   the native helper.
-- `hitslop-core-wasm`: wasm-bindgen adapter for browser development and Bun tests.
+- `hitslop-core-wasm`: wasm-bindgen adapter for SDK tests; not used by browser development.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
   `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with

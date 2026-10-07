@@ -122,9 +122,12 @@ through a `copy` socket request. Publication adds only:
   - Keep offline Send File.
   - **Open in hitSlop** from the web passes the share ID to the app, which downloads
     and opens a new document.
-- **Capabilities.** If [slop capabilities](slop-capabilities.md) lands first, its
-  per-code consent applies before third-party slops are distributed, and native-only
-  capabilities need explicit browser behavior.
+- **Capabilities.** The first [slop capabilities](slop-capabilities.md) release adds
+  camera/microphone declarations without per-slop consent. A separate per-code consent
+  and revocation design must land before hosted links distribute capture-capable slops.
+  Camera/microphone access needs explicit policy delegation to isolated browser app
+  frames and browser permission tests; future native-only capabilities need explicit
+  unavailable behavior in the browser.
 - **Decisions to settle first:** account provider, metadata store, container host,
   upload limits and retention.
 

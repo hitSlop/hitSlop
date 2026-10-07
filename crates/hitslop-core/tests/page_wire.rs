@@ -3,12 +3,12 @@ use hitslop_core::page_wire::{CaptureMode, HostCaptureResult, HostReply, HostReq
 use serde_json::json;
 
 #[test]
-fn page_requests_are_strict_and_document_payloads_are_opaque() {
+fn page_requests_and_nested_batches_are_strict() {
     for value in [
         json!({"method":"open"}),
         json!({"method":"config"}),
         json!({"method":"flush"}),
-        json!({"method":"apply", "batch":"{}"}),
+        json!({"method":"apply", "batch":{"intents":[]}}),
         json!({"method":"commands.run", "name":"addTask", "args":{"text":"task"}}),
         json!({"method":"window.resize", "width":240, "height":180}),
         json!({"method":"window.resize", "width":4096, "height":4096}),
@@ -44,8 +44,15 @@ fn page_requests_are_strict_and_document_payloads_are_opaque() {
 
 #[test]
 fn requests_are_bounded_before_their_payloads_are_interpreted() {
-    assert!(PageRequest::Apply { batch: " ".repeat(4 * 1024 * 1024) }.check().is_ok());
-    assert!(PageRequest::Apply { batch: " ".repeat(4 * 1024 * 1024 + 1) }.check().is_err());
+    let batch = |value| {
+        serde_json::from_value::<hitslop_core::Batch>(
+            json!({"intents":[{"type":"set","path":["title"],"value":value}]}),
+        )
+        .unwrap()
+    };
+    let overhead = serde_json::to_string(&batch(String::new())).unwrap().len();
+    assert!(PageRequest::Apply { batch: batch("x".repeat(4 * 1024 * 1024 - overhead)) }.check().is_ok());
+    assert!(PageRequest::Apply { batch: batch("x".repeat(4 * 1024 * 1024 - overhead + 1)) }.check().is_err());
     let limit = (10_usize * 1024 * 1024).div_ceil(3) * 4;
     assert!(PageRequest::AttachmentsPut { bytes: "A".repeat(limit) }.check().is_ok());
     assert!(PageRequest::AttachmentsPut { bytes: "A".repeat(limit + 1) }.check().is_err());

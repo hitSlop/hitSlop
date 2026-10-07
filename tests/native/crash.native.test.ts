@@ -55,8 +55,8 @@ test("an engine killed at any point of an edit leaves the document as it was or 
   for (let round = 0; round < rounds; round++) {
     // Large enough that its save takes measurable time; the kill moves later each round.
     const value = `Round ${round} ${"x".repeat(16 * 1024)}`;
-    const ops = JSON.stringify([{ type: "set", path: ["title"], value }]);
-    const { reply, code } = await request({ method: "batch", documentPath: root, ops }, round * 10);
+    const batch = { intents: [{ type: "set", path: ["title"], value }] };
+    const { reply, code } = await request({ method: "batch", documentPath: root, batch }, round * 10);
     const acknowledged = code === 0 && reply?.ok === true;
     if (!acknowledged) interrupted++;
     // Reading the document also takes its lock: the killed engine's died with it.

@@ -34,7 +34,9 @@ fn main() {
             for sample in 0..6 {
                 let mut document = Document::create(&app, &initial).unwrap();
                 let start = Instant::now();
-                std::hint::black_box(document.apply_batch(&batch, Origin::Agent).unwrap());
+                std::hint::black_box(
+                    document.apply_batch(hitslop_core::Batch::decode(&batch).unwrap(), Origin::Agent).unwrap(),
+                );
                 let elapsed = start.elapsed().as_secs_f64() * 1000.0;
                 if sample > 0 {
                     samples.push(elapsed);

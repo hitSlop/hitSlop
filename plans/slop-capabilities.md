@@ -1,559 +1,250 @@
-# Slop capabilities: microphone, camera, speech-to-text and AI
+# Slop capabilities: devices, speech, AI and integrations
 
-Status: planned (2026-10-05). Not started. Nothing is committed without asking.
+Status: design direction, updated 2026-10-07. Not implemented. Camera and microphone
+are the first implementation slice; the rest preserves the broader ideas. API examples
+are proposed, not available today.
 
-## Why
+## What this enables
 
-Slops are third-party web apps that run at `slop://app` in a WKWebView owned by
-`DocumentSession`. Today they cannot reach any device or host intelligence:
+Slops should be able to use the device and services around them: record a voice note,
+take a photo, transcribe an interview, generate flashcards, control music, or schedule a
+reminder.
 
-- `apps/apple/App/macOS/hitSlop.entitlements` is an empty `<dict/>`, and the app runs
-  with the hardened runtime. Without `device.audio-input` or `device.camera`, macOS's
-  privacy system (TCC) never prompts and capture fails.
-- `apps/apple/App/macOS/Info.plist` has no usage strings.
-- `DocumentSession` does not implement `requestMediaCapturePermissionFor`. WebKit's
-  default is to deny.
-- The manifest is `Strict` (`additionalProperties: false`), so an author cannot declare
-  anything.
-- WKWebView has no Web Speech recognition, no Web Notifications and no on-device model.
+Use standard web APIs where they fit. Add typed host services where native frameworks,
+credentials, or shared infrastructure make the capability more useful. Camera/mic is
+the first useful milestone, not the boundary of the capabilities design.
 
-Goal: slops can use the mic and webcam through standard web APIs. They also get
-speech-to-text and AI text generation, including structured output, as host services.
-AI runs on-device first and falls back to Firebase AI Logic. One `capabilities`
-declaration grows to cover later capabilities (image generation, notifications and so
-on).
-
-## Decisions
-
-- **Declare to use.** A slop lists capabilities in `slop.ts`. A declared capability is
-  granted.
-- **No consent UI and no grant store in this pass.** macOS still shows its own one-time
-  privacy prompt per app. A consent store keyed by code hash
-  ([ideas](../docs/ideas.md#permissions-bound-to-the-apps-code)) must land before
-  sharing or a hosted catalog.
-- **Mic and camera use the web platform.** That means `getUserMedia` and
-  `MediaRecorder`, so web audio libraries such as Tone, Strudel and Webamp work
-  unchanged.
-- **Speech and AI are host services on `ctx`,** over the existing page bridge.
-- **Structured output uses the `s.*` vocabulary authors already use,** not raw JSON
-  Schema. The Rust core owns the mapping and the check.
-- **Pre-launch, so the markers stay where they are:** `packageFormat` 1 and
-  `runtimeABI` 1, with no migrations.
-- **The proof is a Swift fixture and probe.** Example slops stay untouched: only
-  `quick-checklist` and `shape-lab` are active, and the rest wait in
-  `examples/archive`.
-
-## Already verified
-
-- `slop://app` is a secure context. The shell's `crypto.subtle.digest` already works
-  there (`packages/hitslop/src/shell/attachments.ts:23`), so `navigator.mediaDevices` should
-  exist. Phase 6 asserts this.
-- The installed Xcode 27 SDK includes FoundationModels. The deployment target is macOS
-  15.2 (`apps/apple/project.yml`), so model code needs `@available(macOS 26, *)`.
-- `firebase-ios-sdk` is pinned to 12.18.0 and ships the `FirebaseAILogic` and
-  `FirebaseAppCheck` products.
-- Firebase enforces App Check for AI Logic from 2026-11-02. Gemini 2.5 models shut down
-  in October 2026, so use `gemini-3.8-flash`.
-
-## Author experience
+Authors declare the capabilities their slop uses:
 
 ```ts
-// slop.ts
 export default defineSlop({
-  title: "Flashcards",
-  // …
-  capabilities: ["microphone", "speech", "ai"],
+  // Existing app fields…
+  capabilities: ["microphone", "camera", "speech", "ai"],
 });
 ```
 
-```svelte
-<script lang="ts">
-  import { s, isDocumentError } from "hitslop";
-  import { ai, speech } from "hitslop/svelte";
-  import doc from "./schema";
+Only implemented capabilities become accepted declaration values. Initially, declared
+capabilities pass hitSlop's admission check without a separate hitSlop permission
+prompt. OS/browser permission still applies. Once macOS allows hitSlop access, another
+declaring slop can request capture without a per-slop prompt. Per-slop consent and
+remembered grants remain future work.
 
-  let topic = $state("");
-  let notice = $state("");
+## Camera and microphone
 
-  // Structured output: typed from the node, ready to insert.
-  async function generate() {
-    try {
-      const { cards } = await ai.generate({
-        prompt: `10 flashcards about ${topic}`,
-        output: s.object({ cards: s.list(s.object({ front: s.string(), back: s.string() })) }),
-      });
-      await doc.change((tx) => { for (const c of cards) tx.fields.cards.insert(c); });
-    } catch (e) {
-      notice = isDocumentError(e) && e.code === "unavailable" ? "AI isn't available on this Mac" : String(e);
-    }
-  }
-
-  // Microphone through the web platform, transcription through the host.
-  let recorder: MediaRecorder | undefined;
-  async function record() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const chunks: Blob[] = [];
-    recorder = new MediaRecorder(stream);
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      topic = await speech.transcribe(new Blob(chunks, { type: recorder!.mimeType }));
-    };
-    recorder.start();
-  }
-</script>
-```
-
-Other forms:
-
-- `ai.generate({ prompt })` returns plain text.
-- `output: s.enum(["positive", "negative"])` classifies and returns the chosen string.
-- `instructions` sets the system prompt.
-
-## Phase 1: the manifest's `capabilities`
-
-**Files**
-
-- `packages/hitslop/src/schema/constants.ts`: add
-  `export const SlopCapabilities = ["microphone", "camera", "speech", "ai"] as const;`
-  next to `SlopCategories`.
-- `packages/hitslop/src/schema/manifest.ts`: add this to `manifestFields`:
-
-  ```ts
-  capabilities: Type.Optional(
-    Type.Array(Type.Enum(SlopCapabilities, { title: "SlopCapability" }), {
-      uniqueItems: true,
-      maxItems: SlopCapabilities.length,
-    }),
-  ),
-  ```
-
-- Run `bun run schema:generate`. It regenerates
-  `packages/hitslop/generated/manifest.schema.json`,
-  `HitSlopCore/Generated/SlopManifest.generated.swift` (`capabilities:
-  [SlopCapability]?`) and the contracts. Never edit generated files.
-
-**These follow with no edits**
-
-- The `Slop` type behind `defineSlop` is `Omit<SlopManifest, …>`
-  (`packages/hitslop/src/sdk/slop.ts`).
-- `normalizeApp` spreads the remaining `slop.ts` fields into `parseManifest`
-  (`packages/hitslop/src/cli/build.ts:84-92`).
-- The Rust open-time check compiles the generated schema
-  (`crates/hitslop-core/src/manifest.rs`, the `jsonschema::validator` macro).
-- Swift `SlopFile.manifest` (`HitSlopCore/SlopFile.swift:44`) is the generated type.
-
-**Tests**
-
-- `packages/hitslop/tests/schema/manifest.test.ts` accepts each known value and rejects an
-  unknown value, a duplicate and a non-array.
-- `crates/hitslop-core/tests/manifest.rs` checks that the native check agrees, both on
-  a manifest with `capabilities` and on one without.
-
-## Phase 2: microphone and camera
-
-Everything here is in
-`apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/DocumentSession.swift`
-unless noted.
-
-1. **One admission rule.** The same guard appears three times today: in the open panel
-   (~l.718), in downloads (~l.731) and in `decidePolicyFor` (~l.755). It checks:
-   - `webView === liveWebView`
-   - `allowsFileSelection`, `!capturing`, `isReady`, `!closing`, `!closed` and
-     `!rendererDead`
-   - the frame is the main frame, with origin `slop://app`
-
-   Extract it once, use it in those three places and in every new handler, and keep it
-   the single owner of the rule:
-
-   ```swift
-   private func admitsPageRequest(from frame: WKFrameInfo) -> Bool
-   ```
-
-   `allowsFileSelection` already means "interactive": it is `purpose == .interactive`
-   (~l.263), so background renders and the CLI helper's screenshot and export are
-   refused. Consider renaming it to `interactive`.
-2. **Declaration check.**
-
-   ```swift
-   func declares(_ c: SlopCapability) -> Bool {
-     file.manifest.capabilities?.contains(c) == true
-   }
-   ```
-
-3. **A new `WKUIDelegate` method**,
-   `webView(_:requestMediaCapturePermissionFor:initiatedByFrame:type:decisionHandler:)`:
-
-   ```swift
-   nonisolated static func mediaDecision(
-     _ type: WKMediaCaptureType, declared: Set<SlopCapability>, admitted: Bool
-   ) -> WKPermissionDecision {
-     guard admitted else { return .deny }
-     let needed: Set<SlopCapability> = switch type {
-       case .microphone: [.microphone]
-       case .camera: [.camera]
-       case .cameraAndMicrophone: [.camera, .microphone]
-       @unknown default: [.camera, .microphone, .speech, .ai] // unknown: never granted
-     }
-     return needed.isSubset(of: declared) ? .grant : .deny
-   }
-   ```
-
-   - It never returns `.prompt`, because WebKit's own prompt would name `slop://app`.
-   - Embedded HTTPS frames such as YouTube are never admitted.
-   - Tighten the `@unknown default` so it always denies.
-4. **Entitlements** (`apps/apple/App/macOS/hitSlop.entitlements`):
-   `com.apple.security.device.audio-input` and `com.apple.security.device.camera`.
-   The app stays unsandboxed.
-5. **Info.plist** (`apps/apple/App/macOS/Info.plist`):
-   - `NSMicrophoneUsageDescription`: "A document you opened wants to use the
-     microphone."
-   - `NSCameraUsageDescription`: "A document you opened wants to use the camera."
-   - `NSSpeechRecognitionUsageDescription`: "A document you opened wants to transcribe
-     speech."
-6. **No change to the page policy.** A MediaStream is not a URL, and playing back a
-   recording uses `blob:`, which `media-src` already allows. Leave
-   `SchemeHandler.swift` (CSP) and `packages/hitslop/src/cli/dev.ts` alone. In `slop dev`, the
-   browser shows its own prompt.
-7. **Check xcodegen.** `project.yml` already points `CODE_SIGN_ENTITLEMENTS` and
-   `INFOPLIST_FILE` at these files, so it should need no edit. Verify that
-   `xcodegen generate` leaves the project as it is.
-
-## Phase 3: host services on the page bridge
-
-### Wire (`packages/hitslop/src/schema/page.ts`)
-
-Requests stay flat strings and numbers, because `PageRequest.init`
-(`HitSlopDocument/PageRequest.swift`) rejects anything else.
+Use `getUserMedia`, `MediaRecorder`, Web Audio and canvas. Streams stay in the page;
+there is no reason to send live audio/video through Rust or invent `ctx.camera` and
+`ctx.microphone` wrappers.
 
 ```ts
-"ai.generate": Strict({
-  method: T.Literal("ai.generate"),
-  prompt: T.String({ minLength: 1, maxLength: AILimits.prompt }),
-  instructions: T.Optional(T.String({ maxLength: AILimits.instructions })),
-  output: T.Optional(T.String({ minLength: 2, maxLength: AILimits.output })), // node JSON
-}),
-"speech.transcribe": Strict({
-  method: T.Literal("speech.transcribe"),
-  bytes: AttachmentBytesSchema,                      // base64 audio, as attachments.put
-  locale: T.Optional(T.String({ maxLength: 35 })),   // BCP 47
-}),
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: true,
+  video: true,
+});
 ```
 
-The results go in `PageResults`:
+This opens up voice recorders, camera journals, instrument tuners, audio visualizers
+and photo tools before any speech or AI provider exists. Completed photos and recordings
+can become document attachments through the existing `attachments.import` API. Live
+streams, playback position and recording buffers remain transient.
 
-- `ai.generate`: `{ text: string }`. When `output` is given, `text` is the canonical JSON
-  that the core checked.
-- `speech.transcribe`: `{ text: string }`.
+Authors should start devices from an explicit action, show capture state, handle normal
+browser errors, and stop tracks when finished. The host admits capture only from the
+interactive slop page, not embedded third-party frames or export/background renderers.
 
-Other changes:
+## Speech and AI
 
-- `constants.ts`: add
-  `AILimits = { prompt: 32 * 1024, instructions: 8 * 1024, output: 16 * 1024 }`.
-- `PageErrorCodes`: add `"unavailable"`. Error codes grow additively, and apps treat
-  unknown ones as outcomes. It means one of:
-  - the OS can't run the model,
-  - no provider is configured,
-  - the browser preview, which has no host.
+Speech turns recorded audio into text:
 
-  These cases use the existing `rejected` code with a message:
-  - the capability is not declared,
-  - a request is already in flight,
-  - the page is capturing or closing,
-  - an answer still doesn't fit its shape after the retry.
-- Run `bun run schema:generate`. The exhaustive Swift switch over `PageMethod` then
-  requires the two new cases.
+```ts
+import { speech } from "hitslop/svelte";
 
-### Host (`DocumentSession.swift`, the switch at ~l.399)
-
-Add a new file, `HitSlopDocument/SlopHostServices.swift`:
-
-```swift
-public protocol SlopHostServices: Sendable {
-  /// `schema` is the core's provider-neutral JSON Schema (Phase 3a), or nil for text.
-  func generate(prompt: String, instructions: String?, schema: String?) async throws -> String
-  func transcribe(audio: Data, locale: String?) async throws -> String
-}
-public enum SlopHostServiceError: Error { case unavailable(String) }
+const transcript = await speech.transcribe(recording, {
+  locale: "en-US",
+});
 ```
 
-- `DocumentSession` gains `public static var services: (any SlopHostServices)?`. The
-  app sets it at launch, and tests inject fakes. The CLI helper (`hitslop-native`)
-  never sets it, so it answers `unavailable`.
-- Each case follows the `.config` pattern (~l.402): `let page = message.webView`, then a
-  `Task { @MainActor }` that drops the reply if `page !== liveWebView`. In order:
-  1. Admit the request with `admitsPageRequest(from: message.frameInfo)`.
-  2. Require `declares(.ai)` or `declares(.speech)`.
-  3. Allow one request in flight per session per service; a second gets `rejected`
-     ("busy"). This is a cheap abuse limit while there is no consent.
-  4. For `output`, ask the core for the schema (Phase 3a).
-  5. Call the provider.
-  6. Check the answer with the core, and retry once if it doesn't fit.
-  7. Reply.
-- Keep the in-flight `Task`s on the session. Cancel them in `close`/`finishClose` and in
-  `replaceWebView`/`destroyWebView`, as the file picker is cancelled today.
-- **Errors.** `SlopHostServiceError.unavailable` maps to the page code `unavailable`.
-  Everything else maps to `rejected` with the provider's message, trimmed to
-  `Limits.errorText`. Extend `DocumentOwner.pageFailure` / `OwnerError`
-  (`OwnerError.swift`) with that one case; don't add a parallel mapper.
+Start with recorded clips; live dictation could follow. Local recognition is attractive,
+but a promise of on-device processing must mean no silent network fallback. An
+unsupported device or language needs an understandable unavailable result.
 
-### Shell and SDK
+AI supports both plain text and typed structured output:
 
-- `packages/hitslop/src/sdk/abi.ts` adds two members to `SlopContext`:
+```ts
+import { s } from "hitslop";
+import { ai } from "hitslop/svelte";
+import doc from "./schema";
 
-  ```ts
-  readonly ai: {
-    generate(request: { prompt: string; instructions?: string }): Promise<string>;
-    generate<N extends Node>(request: { prompt: string; instructions?: string; output: N }): Promise<Input<N>>;
-  };
-  readonly speech: {
-    transcribe(audio: Blob, options?: { locale?: string }): Promise<string>;
-  };
-  ```
+const summary = await ai.generate({
+  prompt: transcript,
+  instructions: "Summarize the main decisions.",
+});
 
-- `packages/hitslop/src/shell/boot.ts`, `createContextV1`, implements both through `call()`:
-  - `output` is sent as `JSON.stringify(node)`, and structured replies are parsed with
-    `JSON.parse(text)`.
-  - Audio is base64-encoded the same way `attachments.put` does it
-    (`packages/hitslop/src/shell/attachments.ts:49`). Share that helper; don't copy it.
-  - In the browser preview, both reject with a `DocumentError` whose code is
-    `unavailable`.
-- Author helpers go in `packages/hitslop/src/sdk/app/ai.ts` and `speech.ts`. Each forwards
-  to `current().ai` and `current().speech`, the same way `attachments.ts` does. Export
-  them from wherever `attachments` is exported (`./svelte`).
-- Tests:
-  - Update `packages/hitslop/tests/shell/platform-contracts.types.ts`: both overloads, and
-    `Input<N>` inference for objects, lists and enums.
-  - Shell tests: the preview rejects with `unavailable`, structured replies are parsed,
-    and the audio is encoded.
+const { cards } = await ai.generate({
+  prompt: `Create flashcards from: ${transcript}`,
+  output: s.object({
+    cards: s.list(s.object({
+      front: s.string(),
+      back: s.string(),
+    })),
+  }),
+});
 
-## Phase 3a: structured output (`s.*`, checked by the core)
-
-**Why not raw JSON Schema**
-
-- One vocabulary has one owner. Authors already write `s.*`
-  (`packages/hitslop/src/sdk/schema.ts:107`).
-- The core already checks node shapes (`Node::check`) and values (`Node::validate`)
-  (`crates/hitslop-core/src/descriptor.rs:89,162`).
-- The result type comes free from `Input<N>`.
-- Gemini silently ignores unsupported keywords, and Apple's `DynamicGenerationSchema`
-  is narrower still. Raw JSON Schema would mislead authors and need a second validator.
-
-**Rust** (`crates/hitslop-core/src/descriptor.rs`). These are public, exported through
-`crates/hitslop-core-ffi/src/lib.rs`, and have no WASM export, since the preview has no
-host.
-
-- `pub fn output_schema(node: &str) -> Result<String>`:
-  1. Parse the node, run `check(0)` and enforce `AILimits.output`.
-  2. Map it to the JSON Schema subset both providers accept:
-
-     | node | schema |
-     | --- | --- |
-     | `object` | `{type: object, properties, required}` |
-     | `list` | `{type: array, items}` |
-     | `string` | `{type: string, maxLength?}` (a hint) |
-     | `text` | `{type: string}` |
-     | `boolean` | `{type: boolean}` |
-     | `number` | `{type: number, minimum?, maximum?}` (hints) |
-     | `integer`, `counter` | `{type: integer, minimum?, maximum?}` (hints) |
-     | `enum` | `{type: string, enum}` |
-     | `optional` | the inner node, left out of `required` |
-     | `record` | refused (`InvalidSchema`): a model can't be held to dynamic keys |
-
-  3. A root that is not an object is wrapped as `{value: …}`, because providers want an
-     object root.
-- `pub fn check_output(node: &str, json: &str) -> Result<String>`:
-  1. Unwrap the root wrapper.
-  2. Run `Node::validate`, which enforces the bounds the providers treated as hints.
-  3. Return canonical JSON (`$id` stays absent; inserting assigns it).
-- Rust tests cover:
-  - the mapping table,
-  - `record` being refused,
-  - outputs that are out of range, missing a field, or carrying an unknown field,
-  - the enum and scalar-root wrapper round trip,
-  - the size and depth limits.
-
-**Swift adapters.** Each provider translates the subset mechanically:
-
-- **Firebase:** `GenerationConfig(responseMIMEType: "application/json", responseSchema:
-  Schema…)`. Firebase AI Logic treats every field as required unless it is listed in
-  `optionalProperties`, which matches `s.optional`.
-- **FoundationModels:** `DynamicGenerationSchema` (object properties, arrays, an anyOf
-  of strings for enums) plus `GenerationSchema(root:dependencies:)`. Read the answer
-  from `GeneratedContent`'s JSON.
-
-**Retry.** If `check_output` fails, the host retries once and appends the core's message
-to the prompt. If the answer still doesn't fit, it returns `rejected` ("The answer
-didn't fit the requested shape").
-
-## Phase 4: on-device providers (new SwiftPM target `HitSlopIntelligence`)
-
-- `apps/apple/Packages/HitSlopApple/Package.swift`: add the `HitSlopIntelligence`
-  target, depending on `HitSlopDocument`, and link it into the app the way
-  `HitSlopFirebase` is (`project.yml`).
-- **Text** (`OnDeviceTextGenerator`), `@available(macOS 26, *)`:
-  - Throw `.unavailable` unless `SystemLanguageModel.default.availability ==
-    .available`.
-  - Create a `LanguageModelSession(instructions:)`, then call `respond(to:)` or
-    `respond(to:schema:)`.
-  - Map a context-window overflow or a guardrail refusal to `rejected` with the
-    message.
-- **Speech** (`OnDeviceTranscriber`):
-  1. Write the bytes to a temp file and delete it afterwards.
-  2. Call `SFSpeechRecognizer.requestAuthorization` once. This is the OS prompt.
-  3. Run `SFSpeechRecognizer(locale:)` with an `SFSpeechURLRecognitionRequest`. Set
-     `requiresOnDeviceRecognition` when `supportsOnDeviceRecognition`.
-  4. Throw `.unavailable` when no recognizer is available for the locale.
-
-  Moving to SpeechAnalyzer/SpeechTranscriber on macOS 26 is a follow-up.
-- **Routing** (`RoutedHostServices(onDevice:cloud:)`):
-  - AI uses on-device when it is available, otherwise the cloud provider, otherwise
-    `.unavailable`.
-  - Speech is on-device only.
-- **Launch.** Set `DocumentSession.services` where the app calls
-  `HitSlopFirebase.configure()`.
-
-## Phase 5: Firebase AI Logic as the cloud provider (can ship separately)
-
-- `Package.swift`: add the `FirebaseAILogic` and `FirebaseAppCheck` products to the
-  `HitSlopFirebase` target.
-- Add `FirebaseTextGenerator: SlopHostServices`:
-
-  ```swift
-  FirebaseAI.firebaseAI(backend: .googleAI())
-    .generativeModel(
-      modelName: Self.model,
-      generationConfig: …,
-      systemInstruction: instructions.map { ModelContent(role: "system", parts: $0) })
-    .generateContent(prompt)
-  ```
-
-  `Self.model` is `"gemini-3.8-flash"`. Keep the model name in one constant.
-- `HitSlopFirebase.configure()` currently skips `FirebaseApp.configure()` in DEBUG
-  (l.11). AI needs the app to be configured:
-  - Configure it in every run except tests.
-  - Keep Analytics and Crashlytics collection release-only.
-  - Install App Check before configuring. It is mandatory from 2026-11-02. Use
-    `AppCheckDebugProvider` in DEBUG, and App Attest (or DeviceCheck) in release.
-    **Verify it works for the Developer ID build that Sparkle ships.**
-- These steps are the user's, in the Firebase console. They are outward-facing, so they
-  aren't done from here:
-  - enable AI Logic (Gemini Developer API),
-  - enforce App Check,
-  - set per-user quotas and a budget alert,
-  - register the App Check debug token.
-- This provider is also the path to image generation later (`gemini-3.1-flash-image` or
-  Imagen).
-
-## Phase 6: proof
-
-**`apps/apple/Packages/HitSlopApple/Tests/HitSlopDocumentTests/CapabilityTests.swift`**
-follows `PagePolicyProbeTests.swift`: `Fixtures.stage()`, `Fixtures.updateManifest`,
-and a window so WebKit treats the page as visible.
-
-- **Page probe:**
-  - `isSecureContext` is true.
-  - `typeof navigator.mediaDevices?.getUserMedia === "function"`.
-  - Record what `MediaRecorder.isTypeSupported('audio/mp4')` and `'audio/webm'` return,
-    as evidence.
-- **`mediaDecision` table:**
-  - nothing declared: deny;
-  - mic declared: mic granted, camera denied;
-  - camera plus mic: both must be declared;
-  - a frame that isn't admitted: deny.
-- **The bridge, end to end** (`callAsyncJavaScript` → `ctx.ai` / `ctx.speech`), with a
-  fake `SlopHostServices`:
-  - Declared returns the fake text; undeclared returns `rejected`.
-  - `services == nil` returns `unavailable`.
-  - While `capturing`, it returns `rejected`.
-  - A second concurrent call returns `rejected` ("busy").
-  - A reply after `replaceWebView` is dropped, and the task is cancelled.
-  - Structured output: a bad answer and then a good one resolves to the typed value;
-    two bad answers end in `rejected`.
-
-Phases 1, 3 and 3a list their own schema, Rust and shell tests. A regression test must
-fail before its fix for the intended reason. Tests don't cover private call sequences.
-
-## Phase 7: docs
-
-- `docs/reference/runtime.md:95`: replace "Camera/microphone grants are not part of this
-  release" with the declare-to-use rule, and say plainly that consent is not yet asked.
-- Landing guides:
-  - `apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx`: the
-    `capabilities` field.
-  - `files-and-web.mdx`: mic and camera, `ctx.speech`, `ctx.ai` (text and `output`),
-    and fallbacks for `unavailable`.
-  - Keep repository internals out.
-- The authoring skill references under `packages/hitslop/skills/`, then run
-  `bun run skills:build`.
-- `docs/ideas.md`:
-  - Update "Permissions bound to the app's code": declaration has landed, and the
-    consent and grant store is next. It is required before sharing or a hosted catalog,
-    because a declared capability is granted without asking and cloud AI spends money.
-  - Add a "More capabilities" entry:
-    - notifications (UNUserNotificationCenter, scheduled so they fire after the window
-      closes),
-    - element fullscreen and screen wake,
-    - MIDI (CoreMIDI),
-    - screen capture,
-    - location,
-    - the share sheet,
-    - OCR and translation (Vision, Translation),
-    - image generation,
-    - streamed AI output,
-    - live dictation,
-    - an `into:` shortcut, where `ai.generate({ prompt, into: doc.fields.cards })`
-      derives `output` from the handle's node and inserts the result.
-- `docs/roadmap.md`: list this under "Open now".
-
-## Order
-
-Phase 1 comes first; every later phase needs it. Phases 2 and 3 are independent. Phase
-3a depends on 3, Phase 4 on 3 and 3a, and Phase 5 on 4. Phase 6 is written alongside
-each phase. Phase 7 comes last.
-
-## Verification
-
-```sh
-bun run schema:generate && bun run schema:check
-bun run check && bun run test
-cargo test --locked --workspace
-bun run build && bun run swift:test && bun run test:native
+await doc.change(tx => {
+  for (const card of cards) tx.fields.cards.insert(card);
+});
 ```
 
-Manual, in a built app:
+The intended overloads remain:
 
-1. Make a copy of a fixture slop that declares `microphone` and `camera`.
-   `getUserMedia` succeeds after the macOS prompt.
-2. Remove the declaration. `getUserMedia` is now rejected.
-3. Check that `slop export` (PNG and PDF) and the CLI screenshot never prompt.
-4. Check that an embedded HTTPS frame cannot get the mic.
-5. On macOS 26 with Apple Intelligence on, `ctx.ai.generate` returns on-device text and
-   a structured `output`.
-6. With on-device off and Firebase set up, the same calls return Gemini answers.
-7. A recorded clip transcribes.
+```ts
+generate(request: {
+  prompt: string;
+  instructions?: string;
+}): Promise<string>;
 
-## Risks and open checks
+generate<N extends Node>(request: {
+  prompt: string;
+  instructions?: string;
+  output: N;
+}): Promise<Input<N>>;
+```
 
-- **TCC attribution.** When the app runs from Xcode, TCC attributes the prompt to Xcode.
-  Test the privacy prompts with a signed build.
-- **WebKit capture in a custom scheme.** Phase 6's probe confirms that `mediaDevices`
-  exists at `slop://app`. If it doesn't, stop and reassess before Phase 2 lands.
-- **`MediaRecorder` output format.** WKWebView most likely produces `audio/mp4` (AAC).
-  `SFSpeechURLRecognitionRequest` reads it, but confirm with the probe.
-- **App Attest under Developer ID.** If it is not supported, use DeviceCheck.
-- **Cost and abuse.** Any slop that declares `ai` can spend quota without asking. The
-  in-flight limit, App Check and per-user quotas contain it until consent lands.
-- **Sending data off the Mac.** Cloud fallback sends prompts off the device. Document it
-  in the runtime reference; the consent work decides whether to ask first.
+Scalar outputs such as `s.enum(["positive", "negative"])` should also be useful.
+Generation returns a value; saving it remains an explicit document edit. A later
+`into:` convenience could derive the shape from a destination handle and insert the
+result, for example `ai.generate({ prompt, into: doc.fields.cards })`.
 
-## Out of scope
+### Structured output belongs in the core
 
-- Consent UI and the grant store
-- Notifications, fullscreen and screen wake
-- Image generation
-- Streaming AI output and live dictation
-- The `into:` shortcut
-- Raw JSON Schema output
-- Porting archived slops
-- Raising the markers
+Keep the original `s.*` design. Authors already use this vocabulary and get an inferred
+result type from `Input<N>`. Raw JSON Schema should not become a second author-facing
+schema language or validator.
+
+The intended flow is:
+
+1. Rust checks the requested descriptor.
+2. Rust projects a supported provider schema.
+3. A provider generates against that projection.
+4. Rust validates the returned value, including constraints the provider does not enforce.
+5. Only a checked value reaches the author.
+
+The earlier `output_schema(node)` and `check_output(node, json)` functions remain
+useful sketches. JSON Schema here is an output for providers, just as it is a projection
+for existing tool clients; it is not the stored document contract.
+
+Useful mapping ideas to retain:
+
+| Descriptor | Generation shape |
+| --- | --- |
+| `object` | Named properties and required fields |
+| `list` | Array with a checked item shape |
+| `string`, `text` | String |
+| `number` | Number |
+| `integer`, `counter` | Integer |
+| `boolean` | Boolean |
+| `enum` | One of the declared strings |
+| `optional` | An optional property where the provider supports it |
+| `record` | Initially exclude; dynamic keys need a separate decision |
+
+Share projection machinery with existing descriptor tooling where appropriate, while
+keeping provider restrictions separate from document semantics. Settle the supported
+subset, optional values and scalar-root wrapping when implementing this slice. Generated
+values should not carry row identities; insertion assigns `$id` through the normal
+edit path. The output check must enforce that distinction rather than assume a provider
+will omit IDs.
+
+A bounded retry with the core's validation feedback is worth keeping. The original idea
+was one retry, then a clear refusal if the answer still does not fit. Requests also need
+cancellation, sensible input/output limits, and understandable unavailable/provider
+errors. Those details belong with the service implementation rather than the camera/mic
+milestone.
+
+### Providers
+
+FoundationModels is the native text/structured-generation candidate. Native speech
+frameworks are the transcription candidate. Providers can be unavailable because of the
+OS, device, language, configuration or model availability; apps need useful fallbacks.
+
+Firebase AI Logic remains a cloud-provider candidate. Preserve the idea of shared
+host-managed generation, but decide cloud opt-in, routing, spending controls and failure
+behavior separately. On-device-first with cloud fallback is one possible policy, not a
+requirement to silently send prompts off the device.
+
+Provider adapters translate the supported schema projection and return results for Rust
+to check. Model names, SDK requirements, App Check support in the signed Developer ID
+build, and service setup should be verified when that work begins instead of frozen in
+this design note.
+
+## How it fits the current architecture
+
+Rust owns capability declarations, acceptance, wire types and shared limits. TypeScript
+comes from ts-rs, and UniFFI carries native types to Swift. `bun run schema:generate`
+remains the generation workflow; the old TypeBox manifest and Swift JSON-decoding
+approach is gone.
+
+Declarations flow through the Rust build input, stored app definition and accepted app
+model. The SDK's declaration projection must carry capabilities separately from catalog
+metadata. Generated types carry the declaration to authors and the native host.
+
+Camera/microphone requests use WebKit's permission delegate. Speech and AI would use
+Rust-decoded page requests and typed host actions, with Swift supplying providers. The
+SDK can expose `ctx.ai` / `ctx.speech` and matching `hitslop/svelte` helpers. Responses
+return through the same typed boundary; Swift does not become another app/schema parser.
+
+Keep provider calls tied to the requesting page's lifetime so a replaced or closed page
+does not receive a stale reply. External effects stay outside the synchronous, retryable
+document command evaluator. A page can call a service and then submit an ordinary edit.
+
+`slop dev` already has a native Rust document owner, with the browser rendering the UI.
+That does not automatically provide Apple services: each service needs an explicit
+preview route or a clear unavailable result. The durable [browser host](browser-host.md)
+is separate work. Reuse author-facing APIs where possible, with explicit availability
+and frame permissions; a native capability need not exist in every host.
+
+## Start with camera and microphone
+
+First prove capture at `slop://app` in a signed Mac build. Then add declarations, native
+admission, the required entitlements/usage strings, and declaration-based browser policy
+in `slop dev`. There is no per-slop consent UI or grant store in this slice.
+
+Build a small, initially unbundled Capture Notebook example:
+
+- Camera preview and **Take Photo**.
+- **Record Audio** and **Stop and Keep**.
+- Taking a photo keeps it immediately; stopping a recording imports the completed clip.
+- Saved photos and audio are available after reopening.
+- Clear recording state, errors and device cleanup.
+
+Use the existing attachment storage and limits. An unfinished recording is transient;
+make that understandable rather than adding a new recording-recovery system to this
+first example. Export views render saved content without requesting devices.
+
+Checks should cover declarations, capture admission, native and development-preview
+behavior, attachment round trips, and prompt-free exports. Use deterministic fixtures
+for automation and signed-app manual checks for actual hardware and OS prompts.
+
+As speech and AI land, add tests for typed output inference, descriptor projection and
+validation, invalid answers and retry, unavailable providers, and cancellation on page
+replacement/close. Follow the existing `bun run verify` workflow and run
+`bun run verify --native` when native/FFI work lands. Update authoring guidance alongside
+each implemented capability; examples here are not documentation of shipped APIs.
+
+## Keep exploring
+
+- **More intelligence:** OCR, translation, image generation, streamed responses and
+  live dictation.
+- **Device features:** notifications, MIDI, screen capture, location, fullscreen,
+  screen wake and the native share sheet. Scheduled notifications could remain useful
+  after a document window closes.
+- **Spotify and other services:** host-managed accounts and credentials, with narrow
+  operations exposed to slops. Documents carry useful references, never credentials.
+  Check provider access constraints before committing to an integration.
+- **Permissions:** grants tied to immutable app code, revocation and clear capability
+  descriptions before [hosted distribution](share-links.md). The future store lives
+  outside documents; duplicated or shared files do not transport grants.
+- **Browser hosting:** explicit camera/microphone policy delegation to isolated app
+  frames, plus availability behavior for services that only exist natively.
+
+These ideas can become separate implementation slices as real slops need them. The
+capabilities declaration should grow with working features, without committing now to
+a generic plugin system or an arbitrary native-method bridge.

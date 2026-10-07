@@ -210,11 +210,11 @@ export const app = new Crust("slop", {
           name: "port",
           type: "number",
           default: 5173,
-          description: "HTTP port (1–65535)",
+          description: "HTTP port (0–65535; 0 chooses an available port)",
         })
         .action(async ({ args, flags }) => {
-          if (!Number.isInteger(flags.port) || flags.port < 1 || flags.port > 65535)
-            throw new Error("Port must be an integer from 1 to 65535");
+          if (!Number.isInteger(flags.port) || flags.port < 0 || flags.port > 65535)
+            throw new Error("Port must be an integer from 0 to 65535 (0 chooses an available port)");
           await (await import("./authoring")).dev(args.source, flags.port);
         }),
     ),

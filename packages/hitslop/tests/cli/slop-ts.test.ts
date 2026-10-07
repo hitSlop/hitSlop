@@ -1,3 +1,4 @@
+import { exec } from "../../../../scripts/lib/test-process";
 // slop.ts declares the app's row: evaluated by the build and by `slop check`, never shipped.
 import { test, expect } from "bun:test";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
@@ -66,8 +67,7 @@ test("slop check reports slop.ts errors a build would refuse", async () => {
     const source = join(root, "checked");
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     const check = async () => {
-      const child = Bun.spawn([process.execPath, "packages/hitslop/src/cli/cli.ts", "check", source], { stdout: "ignore", stderr: "pipe" });
-      const [stderr, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+      const {stderr, code} = await exec([process.execPath, "packages/hitslop/src/cli/cli.ts", "check", source], {timeout: 60_000});
       return { stderr, code };
     };
     expect((await check()).code).toBe(0);

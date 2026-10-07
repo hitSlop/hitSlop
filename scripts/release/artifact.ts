@@ -90,8 +90,7 @@ try {
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
   await createDocument(resolve("generated/templates/quick-checklist.slop"), mutation, placement);
-  const ops = JSON.stringify([{ type: "set", path: ["title"], value: "Installed engine verified" }]);
-  await engineRequest({ method: "batch", documentPath: mutation, ops }, placement);
+  await engineRequest({ method: "batch", documentPath: mutation, batch: { intents: [{ type: "set", path: ["title"], value: "Installed engine verified" }] } }, placement);
   assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));
   console.log(
     "PASS packaged starters, matching page shells, installed editing and export without Bun/Node",

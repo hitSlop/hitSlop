@@ -1,4 +1,5 @@
 mod support;
+use support::ApplyJson;
 use support::{Edit, View, app, apply_patches, fixture, snapshot, type_text, updates_since};
 // Failure: the core accepts a wrong edit or publishes part of a rejected batch.
 // Oracle: literal fixtures for identity and atomicity cases, with Unicode results
@@ -93,7 +94,7 @@ fn minted_ids_are_application_ids_and_survive_reopen() {
     let f = fixture("checklist");
     let mut d = Document::create(&app(f["schema"].to_string()), r#"{"title":"abc","hits":0,"rows":[]}"#).unwrap();
     let applied = d
-        .apply_batch(
+        .apply_json(
             r#"{"intents":[{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]}"#,
             Origin::Page,
         )

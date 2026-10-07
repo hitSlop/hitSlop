@@ -171,13 +171,7 @@ fn call_inner(owner: &Owner, request: owner::Request, deadline: Instant, admissi
 }
 /// A request as it arrives: its protocol first, then its envelope.
 fn parse(input: &str) -> Result<SocketRequest> {
-    let request = SocketRequest::decode(input).map_err(Failure::from)?;
-    if let SocketRequest::Batch { ops, .. } = &request
-        && !serde_json::from_str::<serde_json::Value>(ops).is_ok_and(|v| v.is_array())
-    {
-        return Err(invalid("Operations must be an array"));
-    }
-    Ok(request)
+    SocketRequest::decode(input).map_err(Failure::from)
 }
 /// Serves one request that arrived on `owner`'s socket.
 pub fn serve(owner: &Owner, input: &str, exporter: Option<&Arc<dyn ExportHandler>>, deadline: Instant) -> String {
@@ -219,11 +213,11 @@ fn dispatch(
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
-                let Reply::State { json, .. } = call(owner, Request::State, deadline)? else {
+                let Reply::State { reading, .. } = call(owner, Request::State, deadline)? else {
                     return Err(unexpected());
                 };
                 let app = &owner.app().app;
-                let mut state: serde_json::Value = serde_json::from_str(&json).map_err(|e| invalid(e.to_string()))?;
+                let mut state = serde_json::to_value(reading).map_err(|e| invalid(e.to_string()))?;
                 state["schema"] = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
                 SocketSuccess::Describe {
                     state: fragment(crate::describe::describe(
@@ -237,21 +231,26 @@ fn dispatch(
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
-                let Reply::State { json, .. } = call(owner, Request::State, deadline)? else {
+                let Reply::State { reading, .. } = call(owner, Request::State, deadline)? else {
                     return Err(unexpected());
                 };
-                // The reading is one object; the app's descriptor and declared colors lead it.
+                #[derive(Serialize)]
+                struct Get<'a> {
+                    schema: &'a RawValue,
+                    defaults: std::collections::BTreeMap<String, String>,
+                    #[serde(flatten)]
+                    reading: crate::Reading,
+                }
                 let app = &owner.app().app;
                 SocketSuccess::Get {
-                    state: raw(format!(
-                        "{{\"schema\":{},\"defaults\":{},{}",
-                        app.document_json(),
-                        app.theme_json(),
-                        &json[1..]
-                    ))?,
+                    state: fragment(Get {
+                        schema: app.document_raw(),
+                        defaults: app.spec().theme_tokens().iter().cloned().collect(),
+                        reading,
+                    })?,
                 }
             }
-            SocketRequest::Batch { ops, base, ifVersion, attachments, .. } => {
+            SocketRequest::Batch { batch, attachments, .. } => {
                 // The blobs first, in this one request: their reference edits follow, so
                 // no close can find a blob waiting for its reference. A refused batch
                 // leaves only blobs nothing references, which its close reclaims.
@@ -263,17 +262,8 @@ fn dispatch(
                         return Err(unexpected());
                     };
                 }
-                // `ops` was checked to be an array; the core parses the batch.
-                let mut batch = json!({"intents": serde_json::from_str::<serde_json::Value>(&ops).map_err(|e| invalid(e.to_string()))?});
-                if let Some(base) = base {
-                    batch["base"] = base.into();
-                }
-                if let Some(version) = ifVersion {
-                    batch["ifVersion"] = version.into();
-                }
-                let batch_json = batch.to_string();
                 let Reply::Applied { ids, .. } =
-                    call(owner, Request::Apply { batch_json, origin: crate::Origin::Agent }, deadline)?
+                    call(owner, Request::Apply { batch, origin: crate::Origin::Agent }, deadline)?
                 else {
                     return Err(unexpected());
                 };
@@ -371,14 +361,14 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDis
         PageRequest::Open {} => (
             Request::State,
             Box::new(|reply| match reply {
-                Reply::State { json, sequence } => {
-                    Some(Success::Open { ok: True, state: crate::sequenced(sequence, &json) })
+                Reply::State { reading, sequence } => {
+                    Some(Success::Open { ok: True, state: crate::encode(&reading.sequenced(sequence)) })
                 }
                 _ => None,
             }),
         ),
         PageRequest::Apply { batch } => (
-            Request::Apply { batch_json: batch, origin: crate::Origin::Page },
+            Request::Apply { batch, origin: crate::Origin::Page },
             Box::new(|reply| match reply {
                 Reply::Applied { sequence, ids, text } => Some(Success::Apply {
                     ok: True,
@@ -488,30 +478,58 @@ pub fn is_export(input: &str) -> bool {
     serde_json::from_str::<Method>(input).is_ok_and(|request| request.method == "export")
 }
 /// A client's request in `protocol`, naming its document by its resolved path.
-fn prepare(input: &str, protocol: u64) -> Result<SocketRequest> {
-    if input.len() > MAX_REQUEST_BYTES {
-        return Err(invalid("Oversized document command"));
-    }
-    let mut value: serde_json::Value = serde_json::from_str(input).map_err(|_| invalid("Invalid document command"))?;
-    let path = value["documentPath"].as_str().ok_or_else(|| invalid("Invalid document command"))?;
-    let path = file::resolve(Path::new(path))?;
-    registry::identity(&path)?;
-    value["documentPath"] = path.to_string_lossy().into_owned().into();
-    value["protocol"] = protocol.into();
-    parse(&value.to_string())
+fn prepare(request: wire::engine::EngineRequest, protocol: u64) -> Result<SocketRequest> {
+    use wire::engine::EngineRequest as E;
+    let path = |path: String| -> Result<String> {
+        let path = file::resolve(Path::new(&path))?;
+        registry::identity(&path)?;
+        Ok(path.to_string_lossy().into_owned())
+    };
+    let request = match request {
+        E::Get { document_path } => SocketRequest::Get { protocol, documentPath: path(document_path)? },
+        E::Describe { document_path } => SocketRequest::Describe { protocol, documentPath: path(document_path)? },
+        E::Call { document_path, command, args } => {
+            SocketRequest::Call { protocol, documentPath: path(document_path)?, command, args }
+        }
+        E::Batch { document_path, batch, attachments } => {
+            SocketRequest::Batch { protocol, documentPath: path(document_path)?, batch, attachments }
+        }
+        E::ThemeExport { document_path } => SocketRequest::ThemeExport { protocol, documentPath: path(document_path)? },
+        E::AttachmentsList { document_path } => {
+            SocketRequest::AttachmentsList { protocol, documentPath: path(document_path)? }
+        }
+        E::AttachmentsRead { document_path, attachment_id } => {
+            SocketRequest::AttachmentsRead { protocol, documentPath: path(document_path)?, attachmentID: attachment_id }
+        }
+        E::Export { document_path, format, output } => {
+            SocketRequest::Export { protocol, documentPath: path(document_path)?, format, output }
+        }
+        _ => return Err(invalid("Not a document command")),
+    };
+    request.check().map_err(invalid)?;
+    Ok(request)
 }
 /// Engine entry point, for a request written in `protocol`. A closed owner is created only
 /// after taking the writer lock; discovery is consulted only when that lock is busy.
 /// Exports alone may use a snapshot.
 pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandler>>) -> String {
-    request_with_evaluator(input, protocol, exporter, None)
+    if let Some(message) = protocol_mismatch(protocol) {
+        return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
+    }
+    match wire::engine::EngineRequest::parse(input) {
+        Ok(request) => request_with_evaluator(request, protocol, exporter, None),
+        Err(error) => failure(invalid(error.to_string()), false, false),
+    }
 }
 pub fn request_with_evaluator(
-    input: &str,
+    input: wire::engine::EngineRequest,
     protocol: u64,
     exporter: Option<Arc<dyn ExportHandler>>,
     evaluator: Option<owner::Evaluator>,
 ) -> String {
+    if let Some(message) = protocol_mismatch(protocol) {
+        return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
+    }
     let request = match prepare(input, protocol) {
         Ok(r) => r,
         Err(mut e) => {

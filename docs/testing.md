@@ -42,18 +42,32 @@ bun run release:check          # verify --release: every tier, the shipped build
 | Tier | Runs | Typical (M1) |
 |---|---|---|
 | `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently | 5 s |
-| `bun` | Package and example tests over the WASM core, in parallel (`bun test --parallel`) | 25 s |
+| `bun` | SDK, shell, example, release and runner tests; up to four isolated file workers | — |
+| `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline | — |
 | `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests | 30 s after an edit |
 | `landing` | The site's type check (and build, on release) | — |
 | `packed` | `tests/packed`, when what the npm packages ship changes (their sources, starter, skills, page shell or packing) | 20 s |
-| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, balanced by recorded durations; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests | 75 s |
+| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, bounded by available CPUs and balanced by full test identities; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests | 75 s |
 | `native` | `*.native.test.ts` against the debug helper | 60 s |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
 build whose inputs did not change rewrites nothing, so nothing downstream recompiles: a
-repeated `bun run build` takes seconds. Durations and outcomes go to
-`.hitslop/evidence/verify.json` (`release-check.json` for a release); a tier slower than
-its budget says so.
+repeated `bun run build` takes seconds. Each invocation retains commands, logs, inventory, toolchain identity and outcomes in
+`.hitslop/evidence/runs/<run-id>/`. The latest report is also written to
+`.hitslop/evidence/verify.json` (`release-check.json` for a release). Build and test
+execution durations are separate; a tier slower than its execution budget says so.
+A filtered retry never deletes the original full-run report. Filtered and reused-build
+runs are marked and never update the full-tier pass cache.
+
+One verifier may run per checkout; the lock is released by the OS even after a crash.
+Use a separate checkout for simultaneous runs. Each run has its own temporary directory
+and writer registry (an explicit registry override is preserved). Test-process helpers
+bound subprocess lifetimes, drain diagnostics and stop descendants on cancellation.
+The packed preview uses an OS-assigned port and waits for its reported URL.
+
+Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs both `bun`
+and `cli`; `verify bun` now covers only the lightweight group. Discovery rejects
+unclassified test files rather than silently leaving them out.
 
 While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo clippy
 --workspace --all-targets`), run `cargo fmt --all`, then run `bun run verify` before
@@ -61,7 +75,7 @@ calling the step done. While changing Swift, iterate with `bun run verify swift 
 and run `bun run swift:format` before the full run. Run
 `bun run verify --native` once at the end when Swift, the FFI surface or the helper
 changed. `bun run check`, `bun run test`, `bun run core:test`, `bun run swift:test` and
-`bun run test:native` remain as names for single tiers.
+`bun run test:native` remain as aliases (`test` covers both Bun tiers).
 
 On a Mac, let the terminal skip the first-launch check of every freshly linked test
 binary (seconds each under load): run `sudo spctl developer-mode enable-terminal`, then
@@ -211,9 +225,9 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 
 | Job | Runs |
 |---|---|
-| `fast` (macOS) | `verify --all`: every tier but the native ones, including frozen corpus hygiene and the Rust corpus replay |
-| `native` (macOS) | `verify swift,native`, when the change touches what they cover (verify's tier table decides) |
-| `linux-smoke` (Ubuntu) | The core as WASM builds it (no storage) and the CLI's file engine with bundled SQLite |
+| `fast` (Ubuntu 24.04) | Hygiene, generated contracts, types, Bun, CLI, installed-package and landing checks |
+| `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
+| `linux-smoke` (Ubuntu 24.04) | Full Rust workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `release-templates` (master) | builds and caches the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | `release:check` (`verify --release`, including the Rust suite), sign, notarize, publish |
 
@@ -221,7 +235,16 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 repeat PR checks. `native` always reports; it skips its tools when the change touches no
 native tier. Branch protection requires `fast`, `native` and `linux-smoke`. The full
 `release:check` runs only in the Release macOS workflow. Reports live in
-`.hitslop/evidence/` and are uploaded even on failure.
+`.hitslop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
+limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
+separate from Cargo artifacts and dependency downloads. CI does not cache successful
+verification results or retry failed tests automatically.
+
+For a scheduling or CI change, compare identical source/test inventories with one cold
+and three warm CI runs. Record build, test and job wall time separately. Completion
+requires three consecutive full warm runs without retries and one successful cold run;
+isolated retries are debugging evidence, not a passing full suite. Template restoration
+continues through the existing full-corpus master/manual/release flow.
 
 ## Writing tests
 

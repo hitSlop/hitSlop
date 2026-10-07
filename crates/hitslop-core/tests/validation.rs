@@ -1,5 +1,7 @@
+mod support;
 use hitslop_core::{AppSpec, Document};
 use serde_json::{Value, json};
+use support::ApplyJson;
 
 /// Whether authoring accepts the descriptor, with initial values that fit it, so only the
 /// descriptor can refuse.
@@ -61,7 +63,7 @@ fn string_bounds_count_code_points_on_create_edit_and_reopen() {
             assert!(Document::create(&app, &json!({"text":invalid}).to_string()).is_err());
             assert!(
                 document
-                    .apply_batch(
+                    .apply_json(
                         &json!({"intents":[{"type":"set","path":["text"],"value":invalid}]}).to_string(),
                         Origin::Page
                     )
@@ -69,7 +71,7 @@ fn string_bounds_count_code_points_on_create_edit_and_reopen() {
             );
             assert_eq!(document.state().unwrap(), before);
         }
-        document.apply_batch(r#"{"intents":[{"type":"set","path":["text"],"value":"😀😀"}]}"#, Origin::Page).unwrap();
+        document.apply_json(r#"{"intents":[{"type":"set","path":["text"],"value":"😀😀"}]}"#, Origin::Page).unwrap();
         let opened = Document::open(&app, &document.checkpoint().unwrap(), &[]).unwrap();
         let state: Value = serde_json::from_str(&opened.state().unwrap()).unwrap();
         assert_eq!(state["value"]["text"], "😀😀");

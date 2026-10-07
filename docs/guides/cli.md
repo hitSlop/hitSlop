@@ -72,10 +72,10 @@ and Linux. A checkout uses `target/release/slop-engine` (or `HITSLOP_CARGO_PROFI
 `HITSLOP_ENGINE` selects an explicit engine. File markers protect saved documents;
 the exact command protocol protects communication with a live owner or rendering helper.
 
-The CLI runs only the document engine. What needs AppKit or WebKit (`open`, `export`,
-`build --artwork native` and `register`) the engine passes, unchanged, to the app's
-rendering helper, so those require macOS and hitSlop.app; document creation and editing
-do not. The engine finds the helper in `/Applications/hitSlop.app`, then
+The CLI sends `open`, `screenshot`, and `export` through the engine to the app's
+rendering helper. `register` and `build --artwork native` are TypeScript flows that call
+`screenshot` for rendering. These native operations require macOS and hitSlop.app;
+document creation and editing do not. The engine finds the helper in `/Applications/hitSlop.app`, then
 `~/Applications/hitSlop.app`. `HITSLOP_NATIVE_CLI` independently selects an explicit helper.
 The app contains its linked core and renderer; the engine ships only in npm.
 Missing or non-executable overrides fail, and an executed tool is never retried
@@ -150,3 +150,6 @@ applies no collected edits; an unknown outcome is never automatically replayed.
 The runner retries one definite stale snapshot conflict using the original clock and
 random seed. A second conflict returns `stale_base`. Commands have their own undo steps;
 `apply`, `batch`, handles and `change()` remain available for other edits.
+
+For an OS-assigned preview port, use `slop dev <source> --port 0` and read the URL
+printed at startup. Omitting `--port` still uses 5173.

@@ -77,18 +77,23 @@ pub enum ThemeChange {
 }
 pub fn theme_request(change: ThemeChange) -> Request {
     let intent = match change {
-        ThemeChange::Set { values } => crate::json!({"type":"setTheme","values":values}),
-        ThemeChange::ResetAll => crate::json!({"type":"setTheme","values":{},"replace":true}),
-        ThemeChange::ImportFile { file } => crate::json!({"type":"importTheme","file":file}),
+        ThemeChange::Set { values } => {
+            crate::Intent::SetTheme { values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(), replace: None }
+        }
+        ThemeChange::ResetAll => crate::Intent::SetTheme { values: Default::default(), replace: Some(true) },
+        ThemeChange::ImportFile { file } => crate::Intent::ImportTheme { file },
     };
-    Request::Apply { batch_json: crate::json!({"intents":[intent]}).to_string(), origin: Origin::Window }
+    Request::Apply {
+        batch: crate::Batch { intents: vec![intent], base: None, ifVersion: None },
+        origin: Origin::Window,
+    }
 }
 
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
     Apply {
-        batch_json: String,
+        batch: crate::Batch,
         origin: Origin,
     },
     Undo {
@@ -138,9 +143,9 @@ pub enum Reply {
         result_json: String,
     },
     Unit,
-    /// A page leads `json` with `sequence` (`crate::sequenced`); an agent reads it as it is.
+    /// One reading and its publication sequence.
     State {
-        json: String,
+        reading: crate::Reading,
         sequence: u64,
     },
     /// A theme file, the bytes every export writes.
@@ -672,10 +677,10 @@ impl Actor {
                 self.begin_command(name, args_json, origin, view, deadline, callback)?;
                 return Ok(None);
             }
-            Request::State => Reply::State { json: self.core.reading()?, sequence: self.core.sequence() },
-            Request::Apply { batch_json, origin } => {
+            Request::State => Reply::State { reading: self.core.reading()?, sequence: self.core.sequence() },
+            Request::Apply { batch, origin } => {
                 self.mutation()?;
-                let result = self.edited(|core| core.apply_batch(&batch_json, origin))?;
+                let result = self.edited(|core| core.apply_batch(batch, origin))?;
                 self.accepted(result.sequence, result.publication, result.theme_changed);
                 Reply::Applied { sequence: result.sequence, ids: result.ids, text: result.text }
             }

@@ -49,7 +49,7 @@ pub use wire::{
     ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, Code,
     IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
 };
-pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Segment, Selection, ThemeFile};
+pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Reading, Segment, Selection, ThemeFile};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize =
@@ -119,10 +119,6 @@ fn hex(bytes: &[u8]) -> String {
         out.push(DIGITS[(b & 15) as usize] as char);
     }
     out
-}
-/// A page's state: `reading` (a JSON object) led by the publication `sequence`.
-pub(crate) fn sequenced(sequence: u64, reading: &str) -> String {
-    format!("{{\"sequence\":{sequence},{}", &reading[1..])
 }
 /// Version tokens name at most 1,024 frontier IDs of 12 bytes each.
 const MAX_TOKEN_BYTES: usize = 12 * 1024;
@@ -509,22 +505,16 @@ impl Document {
     /// sequence that orders the page's stream. The oracle that publications replayed on a
     /// page are tested against.
     pub fn state(&self) -> Result<String> {
-        Ok(sequenced(self.sequence, &self.reading()?))
+        Ok(encode(&self.reading()?.sequenced(self.sequence)))
     }
     /// `{version, value, theme}`: the document as it reads, computed from the full stored
     /// value.
-    pub fn reading(&self) -> Result<String> {
-        #[derive(Serialize)]
-        struct Reading {
-            version: String,
-            value: Value,
-            theme: BTreeMap<String, String>,
-        }
-        Ok(encode(&Reading {
+    pub fn reading(&self) -> Result<Reading> {
+        Ok(Reading {
             version: self.version(),
             value: self.projected(),
             theme: self.app.theme.effective(&self.doc.get_map(theme::ROOT))?,
-        }))
+        })
     }
     /// Rebuilds the owner at the pre-call version after a partial mutation. This also
     /// handles one replace that failed after changing an earlier field. The history
@@ -565,17 +555,17 @@ impl Document {
         self.app.theme.export(&self.doc.get_map(theme::ROOT))
     }
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
-    pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
+    pub fn apply_batch(&mut self, batch: Batch, origin: Origin) -> Result<Applied> {
         self.apply(batch, origin, None)
     }
     /// A command's intents: one undo step, labeled by the app-declared command the owner
     /// evaluated. No wire names a command for a batch.
-    pub fn apply_command(&mut self, batch: &str, origin: Origin, command: &str) -> Result<Applied> {
+    pub fn apply_command(&mut self, batch: Batch, origin: Origin, command: &str) -> Result<Applied> {
         self.apply(batch, origin, Some(command))
     }
-    fn apply(&mut self, batch: &str, origin: Origin, command: Option<&str>) -> Result<Applied> {
+    fn apply(&mut self, batch: Batch, origin: Origin, command: Option<&str>) -> Result<Applied> {
         self.intact()?;
-        let batch: Batch = parse(batch)?;
+        batch.check_size(wire::PAGE_PAYLOAD)?;
         if let Some(expected) = &batch.ifVersion
             && *expected != self.version()
         {

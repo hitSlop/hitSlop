@@ -80,7 +80,10 @@ impl WasmDocument {
     #[wasm_bindgen(js_name = themeSet)]
     pub fn theme_set(&mut self, values_json: &str) -> Result<ApplyResult, JsValue> {
         let batch = format!(r#"{{"intents":[{{"type":"setTheme","values":{values_json}}}]}}"#);
-        self.inner.apply_batch(&batch, Origin::Window).map(applied).map_err(error)
+        hitslop_core::Batch::decode(&batch)
+            .and_then(|batch| self.inner.apply_batch(batch, Origin::Window))
+            .map(applied)
+            .map_err(error)
     }
     /// The owner's current state, as a page opens it, computed from the full stored value.
     pub fn state(&self) -> Result<String, JsValue> {
@@ -89,7 +92,10 @@ impl WasmDocument {
     /// A page's batch, part of the person's undo.
     #[wasm_bindgen(js_name = applyBatch)]
     pub fn apply_batch(&mut self, batch_json: &str) -> Result<ApplyResult, JsValue> {
-        self.inner.apply_batch(batch_json, Origin::Page).map(applied).map_err(error)
+        hitslop_core::Batch::decode(batch_json)
+            .and_then(|batch| self.inner.apply_batch(batch, Origin::Page))
+            .map(applied)
+            .map_err(error)
     }
     pub fn undo(&mut self) -> Result<ApplyResult, JsValue> {
         self.inner.undo().map(applied).map_err(error)

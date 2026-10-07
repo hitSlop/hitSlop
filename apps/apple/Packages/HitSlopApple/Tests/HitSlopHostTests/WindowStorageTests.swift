@@ -53,7 +53,14 @@ extension HostTests {
     let foreignFile = String(decoding: try JSONSerialization.data(withJSONObject: foreign), as: UTF8.self)
     #expect(try await themeCommand(["type": "importTheme", "file": foreignFile], url: root).code == .rejected)
     // A coded rejection is known not to have applied.
-    let refused = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["missing"],"value":1}]"#])
+    let refused = try await command(
+      "batch", url: root,
+      [
+        "batch": [
+          "intents": try JSONSerialization.jsonObject(
+            with: Data((#"[{"type":"set","path":["missing"],"value":1}]"#).utf8))
+        ]
+      ])
     #expect(refused.code == .rejected)
     try await controller.session.reloadInterface()
     #expect(try await savedValue(root)?["title"] as? String == "Preserved through interface reload")

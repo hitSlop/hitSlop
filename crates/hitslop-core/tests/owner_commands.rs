@@ -107,7 +107,7 @@ fn command(args: Value) -> Request {
 }
 fn edit(title: &str) -> Request {
     Request::Apply {
-        batch_json: json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(),
+        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
         origin: Origin::Page,
     }
 }
@@ -115,7 +115,8 @@ fn accepted(title: &str) -> Value {
     json!({"ok":true,"intents":[{"type":"set","path":["title"],"value":title}],"result":title})
 }
 fn title(owner: &Owner) -> Value {
-    let Reply::State { json, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let json = serde_json::to_string(&reading).unwrap();
     serde_json::from_str::<Value>(&json).unwrap()["value"]["title"].clone()
 }
 fn close(owner: &Owner) {

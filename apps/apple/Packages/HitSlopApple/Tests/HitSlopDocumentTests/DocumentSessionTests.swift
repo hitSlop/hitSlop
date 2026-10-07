@@ -8,6 +8,24 @@ import WebKit
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentSessionTests {
+  @Test @MainActor func shellImportFailureReachesNativeSession() async throws {
+    let root = try Fixtures.document()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    let events = SessionEvents()
+    var reported: Error?
+    events.failure = { reported = $0 }
+    session.delegate = events
+    // Execute the real boot module from the page URL: its relative index.js import
+    // is absent there. The caught resource failure must reach the native session.
+    let boot = try String(contentsOf: DocumentSession.pageShell().appendingPathComponent("boot.js"), encoding: .utf8)
+    _ = try await session.webView.callAsyncJavaScript(boot, arguments: [:], in: nil, contentWorld: .page)
+    #expect(reported != nil)
+    try await session.close()
+  }
+
   // The production shell must open and execute document operations under the page CSP.
   @Test @MainActor func shellStartupAndOperationsRespectCSP() async throws {
     let root = try Fixtures.document()

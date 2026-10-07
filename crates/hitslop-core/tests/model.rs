@@ -3,6 +3,7 @@
 mod support;
 use hitslop_core::Document;
 use serde_json::{Value, json};
+use support::ApplyJson;
 use support::generate::{intent, targets, value};
 use support::{View, app, next, snapshot, type_text};
 
@@ -58,7 +59,7 @@ fn run(name: &str, fixture: &str) {
                         }
                         batch["base"] = json!(read);
                     }
-                    doc.apply_batch(&batch.to_string(), origin).map(|a| a.publication)
+                    doc.apply_json(&batch.to_string(), origin).map(|a| a.publication)
                 }
                 5 => {
                     let mut all = vec![];
@@ -67,7 +68,7 @@ fn run(name: &str, fixture: &str) {
                         Some((node, _, path)) => json!({"type":"replace","path":path,"value":value(node, n)}),
                         None => json!({"type":"replace","path":[],"value":value(&f["schema"], n)}),
                     };
-                    doc.apply_batch(&json!({"intents":[op]}).to_string(), Origin::Agent).map(|a| a.publication)
+                    doc.apply_json(&json!({"intents":[op]}).to_string(), Origin::Agent).map(|a| a.publication)
                 }
                 6 | 7 => {
                     let fields = text_fields(&f["schema"], &before["value"]);
@@ -158,7 +159,7 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             // This CLI prefix arrives while the page is typing against its older base.
             let prefixed = format!("A{from}");
             let agent = doc
-                .apply_batch(
+                .apply_json(
                     &json!({"intents":[
                         {"type":"set","path":["text"],"value":prefixed},
                         {"type":"increment","path":["hits"],"by":1},
@@ -177,7 +178,7 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             assert_eq!(snapshot(&doc)["value"]["hits"], step + 1);
             let accepted = snapshot(&doc);
             // An earlier valid mutation in a refused batch must roll back too.
-            assert!(doc.apply_batch(r#"{"intents":[{"type":"set","path":["text"],"value":"partial"},{"type":"increment","path":["hits"],"by":0}]}"#, Origin::Agent).is_err());
+            assert!(doc.apply_json(r#"{"intents":[{"type":"set","path":["text"],"value":"partial"},{"type":"increment","path":["hits"],"by":0}]}"#, Origin::Agent).is_err());
             assert_eq!(snapshot(&doc), accepted);
             view.publish(&doc.undo().unwrap().publication.unwrap());
             view.check(&doc, "undo delayed typing");

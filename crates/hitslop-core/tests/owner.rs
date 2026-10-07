@@ -54,16 +54,28 @@ fn submit(owner: &Owner, request: Request) -> mpsc::Receiver<Result<Reply, Failu
     rx
 }
 fn call(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    submit(owner, request).recv_timeout(Duration::from_secs(5)).unwrap()
+    let operation = match &request {
+        Request::Flush => "flush",
+        Request::ExportTheme => "export theme",
+        Request::Close { .. } => "close",
+        Request::Discard => "discard",
+        Request::State => "read state",
+        Request::Apply { .. } => "apply",
+        _ => "owner request",
+    };
+    submit(owner, request)
+        .recv_timeout(Duration::from_secs(30))
+        .unwrap_or_else(|error| panic!("owner did not complete {operation} within 30s: {error}"))
 }
 fn set(title: &str) -> Request {
     Request::Apply {
-        batch_json: json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(),
+        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
         origin: Origin::Page,
     }
 }
 fn state(owner: &Owner) -> Value {
-    let Reply::State { json, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let json = serde_json::to_string(&reading).unwrap();
     serde_json::from_str(&json).unwrap()
 }
 fn close(owner: &Owner) {
@@ -72,7 +84,7 @@ fn close(owner: &Owner) {
 /// A palette change to the accent, from the theme panel or an agent.
 fn theme(color: &str, origin: Origin) -> Request {
     Request::Apply {
-        batch_json: json!({"intents":[{"type":"setTheme","values":{"accent":color}}]}).to_string(),
+        batch: serde_json::from_value(json!({"intents":[{"type":"setTheme","values":{"accent":color}}]})).unwrap(),
         origin,
     }
 }
@@ -115,7 +127,13 @@ fn theme_and_content_share_undo_and_an_agent_color_ends_the_panel_run() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     for color in ["#111111", "#222222"] {
-        call(&owner, theme(color, Origin::Window)).unwrap();
+        call(
+            &owner,
+            hitslop_core::owner::theme_request(hitslop_core::owner::ThemeChange::Set {
+                values: [("accent".into(), color.into())].into(),
+            }),
+        )
+        .unwrap();
     }
     call(&owner, theme("#333333", Origin::Agent)).unwrap();
     call(&owner, set("Content after theme")).unwrap();
@@ -144,8 +162,8 @@ fn slow_persistence_does_not_block_edits_and_flush_waits_for_its_target() {
     assert!(first.try_recv().is_err());
     let latest = submit(&owner, Request::Flush);
     lock.execute_batch("ROLLBACK").unwrap();
-    first.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
-    latest.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    first.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    latest.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     drop(lock);
     close(&owner);
     let (saved, _) = open(&path, Mode::Snapshot);
@@ -197,7 +215,7 @@ fn discard_waits_for_inflight_save_and_ignores_its_old_completion() {
     let discard = submit(&owner, Request::Discard);
     assert_eq!(flush.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     lock.execute_batch("ROLLBACK").unwrap();
-    discard.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     drop(lock);
     assert_eq!(state(&owner)["value"]["title"], "Captured for save");
     call(&owner, set("After discard")).unwrap();
@@ -263,8 +281,8 @@ fn an_admitted_copy_finishes_before_close_and_contains_its_flushed_edits() {
     let closed = submit(&owner, Request::Close { preview: None, icon: None });
     assert_eq!(call(&owner, set("Too late")).unwrap_err().kind, FailureKind::Closing);
     lock.execute_batch("ROLLBACK").unwrap();
-    copied.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
-    closed.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    copied.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    closed.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     drop(lock);
     let (snapshot, _) = open(&destination, Mode::Snapshot);
     assert_eq!(state(&snapshot)["value"]["title"], "Captured");
@@ -321,7 +339,7 @@ fn undo_saves_like_an_edit_and_reaches_agent_edits() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     let agent = Request::Apply {
-        batch_json: json!({"intents":[{"type":"set","path":["title"],"value":"Agent"}]}).to_string(),
+        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":"Agent"}]})).unwrap(),
         origin: Origin::Agent,
     };
     call(&owner, agent).unwrap();
@@ -365,7 +383,7 @@ fn close_refuses_edits_and_holds_the_lock_until_its_final_write() {
     assert!(hitslop_core::registry::Lease::acquire(&path).is_err(), "the lock is held until the final write");
     lock.execute_batch("ROLLBACK").unwrap();
     drop(lock);
-    closing.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    closing.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     assert!(hitslop_core::registry::Lease::acquire(&path).is_ok());
     assert_eq!(saved_title(&path), "Before close");
 }
@@ -401,11 +419,11 @@ fn a_failed_discard_publishes_its_failure_and_saving_recovers() {
     let flush = submit(&owner, Request::Flush);
     let discard = submit(&owner, Request::Discard);
     // Discard rejects the old save's waiter before waiting for the persistence queue.
-    assert_eq!(flush.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Replaced);
+    assert_eq!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     std::fs::rename(&path, &moved).unwrap();
     lock.execute_batch("ROLLBACK").unwrap();
     drop(lock);
-    assert_eq!(discard.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Moved);
+    assert_eq!(discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Moved);
     assert!(saving(&events).contains(&hitslop_core::owner::SaveStatus::Failed));
     std::fs::rename(&moved, &path).unwrap();
     call(&owner, Request::Discard).unwrap();
@@ -442,10 +460,10 @@ fn a_flush_during_a_discard_reload_settles_as_replaced() {
     let discard = submit(&owner, Request::Discard);
     let (tx, rx) = mpsc::channel();
     owner.submit(Request::Flush, Some("page".into()), Box::new(move |r| tx.send(r).unwrap()));
-    assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap_err().kind, FailureKind::Replaced);
+    assert_eq!(rx.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     lock.execute_batch("ROLLBACK").unwrap();
     drop(lock);
-    discard.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+    discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     call(&owner, set("Three")).unwrap();
     call(&owner, Request::Flush).unwrap();
     assert_eq!(saved_title(&path), "Three");

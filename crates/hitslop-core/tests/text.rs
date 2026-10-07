@@ -5,6 +5,7 @@
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
+use support::ApplyJson;
 use support::{Edit, app, fixture, snapshot, trimmed, type_text, typed};
 
 const ROW: &str = "00000000000000000000000000000001";
@@ -55,14 +56,14 @@ impl Binding {
     }
     /// Sends `to` with the caret at a UTF-16 offset; adopts the reply like the page does.
     fn edit(&mut self, d: &mut Document, to: &str, caret: usize) -> Reply {
-        let reply = Reply::of(d.apply_batch(&self.request(to, caret), Origin::Page).unwrap());
+        let reply = Reply::of(d.apply_json(&self.request(to, caret), Origin::Page).unwrap());
         self.base = reply.authored.clone();
         self.text = to.to_owned();
         reply
     }
     fn refused(&self, d: &mut Document, to: &str) -> String {
         let before = snapshot(d);
-        let code = d.apply_batch(&self.request(to, utf16(to)), Origin::Page).unwrap_err().code.as_str();
+        let code = d.apply_json(&self.request(to, utf16(to)), Origin::Page).unwrap_err().code.as_str();
         assert_eq!(snapshot(d), before, "a refused edit changed the document");
         code.to_owned()
     }
@@ -159,7 +160,7 @@ fn caret_only_moves_publish_nothing() {
     let mut d = setup();
     let page = Binding::new(&d, json!(["title"]));
     let before = snapshot(&d);
-    let reply = Reply::of(d.apply_batch(&page.request("abc", 1), Origin::Page).unwrap());
+    let reply = Reply::of(d.apply_json(&page.request("abc", 1), Origin::Page).unwrap());
     assert_eq!(snapshot(&d), before);
     assert_eq!(reply.authored, page.base);
     assert!(reply.publication.is_none());
@@ -265,7 +266,7 @@ fn an_agents_set_from_its_read_keeps_what_the_person_typed_since() {
     let mut page = Binding::new(&d, json!(["title"]));
     page.edit(&mut d, "Buy milk and eggs", 17);
     let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":"Buy oat milk"}]});
-    d.apply_batch(&agent.to_string(), Origin::Agent).unwrap();
+    d.apply_json(&agent.to_string(), Origin::Agent).unwrap();
     assert_eq!(title(&d), "Buy oat milk and eggs");
     d.undo().unwrap();
     assert_eq!(title(&d), "Buy milk and eggs", "undo reverts the agent's step alone");
@@ -284,7 +285,7 @@ fn a_based_batch_refused_after_its_merge_changes_nothing() {
     let batch = json!({"base":read,"intents":[
         {"type":"set","path":["title"],"value":"xyz"},
         {"type":"set","path":["rows",{"id":ROW},"done"],"value":"not a boolean"}]});
-    assert_eq!(d.apply_batch(&batch.to_string(), Origin::Agent).unwrap_err().op_index, Some(1));
+    assert_eq!(d.apply_json(&batch.to_string(), Origin::Agent).unwrap_err().op_index, Some(1));
     assert_eq!(snapshot(&d), before);
     splice(&mut d, 0, "R");
     let reopened = Document::open(&app(schema()), &d.checkpoint().unwrap(), &[]).unwrap();
@@ -297,7 +298,7 @@ fn text_set_fields_are_refused_where_they_do_not_apply() {
     let base = d.version();
     let before = snapshot(&d);
     let refused = |d: &mut Document, batch: Value| {
-        d.apply_batch(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned()
+        d.apply_json(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned()
     };
     // A text edit with a selection is its own batch: its reply answers that edit.
     let typing = json!({"type":"set","path":["title"],"value":"abcX","from":"abc","selection":{"start":4,"end":4}});
@@ -317,7 +318,7 @@ fn rewrite_beside_typing(from: &str, rewrite: &str, typed: &str) -> String {
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
     let read = d.version();
     let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":rewrite}]});
-    d.apply_batch(&agent.to_string(), Origin::Agent).unwrap();
+    d.apply_json(&agent.to_string(), Origin::Agent).unwrap();
     type_text(&mut d, &read, json!(["title"]), from, typed, utf16(typed)).unwrap();
     title(&d)
 }

@@ -42,7 +42,6 @@ test("document engine override is independent of the native renderer", async () 
 });
 
 test("a renderer never selects the document engine", async () => {
-  if (process.platform !== "darwin") return;
   const { findEngine } = await import("../../src/cli/engine");
   const root = await mkdtemp(join(tmpdir(), "hitslop-owner-sibling-")); roots.push(root);
   const helper = join(root, "hitslop-native"); await writeFile(helper, "#!/bin/sh\n", { mode: 0o755 });

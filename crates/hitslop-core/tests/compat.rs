@@ -6,6 +6,7 @@ use hitslop_core::store::{Mode, Store};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 mod support;
+use support::ApplyJson;
 
 fn corpus() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat")
@@ -56,7 +57,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             if let Some(scenario) = json_file(&entry.join(format!("scenarios/{name}.json"))) {
                 let store = Store::open(&root, Mode::Document).unwrap();
                 let mut doc = store.document().unwrap();
-                doc.apply_batch(&json!({"intents": scenario["ops"]}).to_string(), Origin::Agent)
+                doc.apply_json(&json!({"intents": scenario["ops"]}).to_string(), Origin::Agent)
                     .unwrap_or_else(|e| panic!("{label}: the recorded edit was refused: {e}"));
                 assert_eq!(
                     serde_json::from_str::<Value>(&doc.value()).unwrap(),

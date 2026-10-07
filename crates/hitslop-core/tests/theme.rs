@@ -2,6 +2,7 @@
 use hitslop_core::{AppSpec, Applied, Document, Origin};
 use serde_json::{Value, json};
 mod support;
+use support::ApplyJson;
 use support::{View, snapshot};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"hits":{"kind":"counter"}}}"#;
@@ -18,7 +19,7 @@ fn color(doc: &Document) -> Value {
 }
 fn palette(doc: &mut Document, values: Value, origin: Origin) -> Applied {
     let batch = json!({"intents":[{"type":"setTheme","values":values}]});
-    doc.apply_batch(&batch.to_string(), origin).unwrap()
+    doc.apply_json(&batch.to_string(), origin).unwrap()
 }
 /// A color panel step: the window sets the accent.
 fn set(doc: &mut Document, color: &str) -> Applied {
@@ -52,12 +53,12 @@ fn theme_only_edits_publish_under_the_document_sequence_and_reopen() {
 fn a_batch_reports_whether_it_changed_the_palette() {
     let mut doc = doc();
     let data = r#"{"intents":[{"type":"increment","path":["hits"],"by":1}]}"#;
-    assert!(!doc.apply_batch(data, Origin::Agent).unwrap().theme_changed);
+    assert!(!doc.apply_json(data, Origin::Agent).unwrap().theme_changed);
     let both = json!({"intents":[
         {"type":"set","path":["title"],"value":"Both"},
         {"type":"setTheme","values":{"paper":"#eeeeee"}},
     ]});
-    let applied = doc.apply_batch(&both.to_string(), Origin::Agent).unwrap();
+    let applied = doc.apply_json(&both.to_string(), Origin::Agent).unwrap();
     assert!(applied.theme_changed, "data and palette change atomically in one batch");
     assert!(doc.undo().unwrap().theme_changed);
     assert!(!palette(&mut doc, json!({ "paper": "#ffffff" }), Origin::Window).theme_changed, "a no-op");
@@ -67,7 +68,7 @@ fn a_batch_reports_whether_it_changed_the_palette() {
 fn theme_and_data_share_undo_without_replacement_touching_theme() {
     let mut doc = doc();
     set(&mut doc, "#123456");
-    doc.apply_batch(
+    doc.apply_json(
         r#"{"intents":[{"type":"replace","path":[],"value":{"title":"Replaced","hits":8}}]}"#,
         Origin::Agent,
     )
@@ -92,7 +93,7 @@ fn theme_and_data_share_undo_without_replacement_touching_theme() {
 fn palette_noops_and_refusals_preserve_sequence_redo_and_undo_group() {
     let mut doc = doc();
     let reset = r#"{"intents":[{"type":"setTheme","values":{},"replace":true}]}"#;
-    assert!(doc.apply_batch(reset, Origin::Window).unwrap().publication.is_none());
+    assert!(doc.apply_json(reset, Origin::Window).unwrap().publication.is_none());
     assert!(set(&mut doc, "#335577").publication.is_none());
     assert!(!doc.can_undo());
     set(&mut doc, "#123456");
@@ -100,7 +101,7 @@ fn palette_noops_and_refusals_preserve_sequence_redo_and_undo_group() {
     let before = snapshot(&doc);
     assert!(set(&mut doc, "#335577").publication.is_none());
     let refused = json!({"intents":[{"type":"setTheme","values":{"accent":"#111111","missing":"#000000"}}]});
-    assert!(doc.apply_batch(&refused.to_string(), Origin::Window).is_err());
+    assert!(doc.apply_json(&refused.to_string(), Origin::Window).is_err());
     assert_eq!(snapshot(&doc), before);
     assert!(doc.can_redo());
     doc.redo().unwrap();
@@ -122,7 +123,7 @@ fn a_run_of_window_changes_to_one_color_is_one_undo_step() {
     palette(&mut doc, json!({ "accent": null }), Origin::Window);
     set(&mut doc, "#555555");
     let file = json!({"template":"palette-test","values":{"accent":"#666666"}}).to_string();
-    doc.apply_batch(&json!({"intents":[{"type":"importTheme","file":file}]}).to_string(), Origin::Window).unwrap();
+    doc.apply_json(&json!({"intents":[{"type":"importTheme","file":file}]}).to_string(), Origin::Window).unwrap();
     for (accent, paper) in [
         ("#555555", "#eeeeee"),
         ("#335577", "#eeeeee"),
@@ -144,7 +145,7 @@ fn a_run_of_window_changes_to_one_color_is_one_undo_step() {
 fn data_between_color_updates_ends_the_theme_undo_run() {
     let mut doc = doc();
     set(&mut doc, "#111111");
-    doc.apply_batch(r#"{"intents":[{"type":"increment","path":["hits"],"by":2}]}"#, Origin::Agent).unwrap();
+    doc.apply_json(r#"{"intents":[{"type":"increment","path":["hits"],"by":2}]}"#, Origin::Agent).unwrap();
     set(&mut doc, "#222222");
     doc.undo().unwrap();
     assert_eq!(color(&doc), "#111111");

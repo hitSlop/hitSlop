@@ -1,3 +1,4 @@
+import { exec } from "../../../../scripts/lib/test-process";
 import { test, expect } from "bun:test";
 import {
   mkdtemp,
@@ -67,7 +68,7 @@ async function sandbox(root: string) {
   await mkdir(home);
   await mkdir(project);
   const run = async (cli: string, ...args: string[]) => {
-    const child = Bun.spawn([process.execPath, join(cli, "src/cli/cli.ts"), ...args], {
+    const result = await exec([process.execPath, join(cli, "src/cli/cli.ts"), ...args], {
       cwd: project,
       env: {
         ...process.env,
@@ -77,14 +78,8 @@ async function sandbox(root: string) {
         HITSLOP_NATIVE_CLI: "/nonexistent",
         PATH: "/usr/bin:/bin",
       },
-      stdout: "pipe",
-      stderr: "pipe",
     });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
+    const { stdout, stderr, code } = result;
     return { stdout, stderr, code };
   };
   return { home, project, bun, run };

@@ -17,7 +17,8 @@
     "packages/hitslop/tests/shell/**/*.ts",
     "scripts/**/*.ts",
     "tests/native/**/*.ts",
-    "tests/packed/**/*.ts"
+    "tests/packed/**/*.ts",
+    "tests/verification/**/*.ts"
   ],
   "exclude": [
     "**/node_modules/**",

@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 mod support;
+use support::ApplyJson;
 use support::{App, app, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
@@ -73,7 +74,7 @@ fn title(doc: &Document) -> String {
     value["title"].as_str().unwrap().into()
 }
 fn set_title(doc: &mut Document, title: &str) {
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page)
+    doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string(), Origin::Page)
         .unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
@@ -246,8 +247,8 @@ fn a_session_too_large_to_keep_closes_with_no_history() {
         let (store, mut doc) = open(&path);
         opened = doc.version();
         for _ in 0..160 {
-            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
-            doc.apply_batch(
+            let applied = doc.apply_json(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
+            doc.apply_json(
                 &json!({"intents":[{"type":"remove","path":["rows"],"id":applied.ids[0]}]}).to_string(),
                 Origin::Page,
             )
@@ -320,21 +321,21 @@ fn undo_survives_compaction() {
 fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    doc.apply_batch(
+    doc.apply_json(
         &json!({"intents":[{"type":"insert","path":["rows"],"id":"row","value":{"text":"Saved row"}}]}).to_string(),
         Origin::Page,
     )
     .unwrap();
     save(&store, &mut doc);
     let with_row = doc.value();
-    doc.apply_batch(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
+    doc.apply_json(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
         .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
     assert_eq!(snapshot.document().unwrap().value(), with_row);
-    doc.apply_batch(
+    doc.apply_json(
         &json!({"intents":[{"type":"set","path":["rows",{"id":"row"},"text"],"value":"Edited after restoring"}]})
             .to_string(),
         Origin::Page,
@@ -391,7 +392,7 @@ fn a_stale_text_base_cannot_make_the_document_unopenable() {
     let store = Store::open(&path, Mode::Document).unwrap();
     let mut doc = store.document().unwrap();
     let base = doc.version();
-    doc.apply_batch(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
+    doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
     let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
@@ -415,9 +416,9 @@ fn doodle_like_use_stays_bounded() {
     for day in 0..8 {
         let (store, mut doc) = open(&path);
         for stroke in 0..40 {
-            let applied = doc.apply_batch(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
+            let applied = doc.apply_json(&json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":noise(&mut seed, 32 * 1024)}}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
-            doc.apply_batch(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string(), Origin::Page).unwrap();
+            doc.apply_json(&json!({"intents":[{"type":"set","path":["rows",{"id":applied.ids[0]},"text"],"value":noise(&mut seed, 32 * 1024)}]}).to_string(), Origin::Page).unwrap();
             save(&store, &mut doc);
             if stroke % 25 == 24 {
                 let ids: Vec<Value> = serde_json::from_str::<Value>(&doc.value()).unwrap()["rows"]
@@ -426,7 +427,7 @@ fn doodle_like_use_stays_bounded() {
                     .iter()
                     .map(|row| json!({"type":"remove","path":["rows"],"id":row["$id"]}))
                     .collect();
-                doc.apply_batch(&json!({"intents":ids}).to_string(), Origin::Page).unwrap();
+                doc.apply_json(&json!({"intents":ids}).to_string(), Origin::Page).unwrap();
             }
         }
         let value = doc.value();
@@ -595,7 +596,7 @@ fn checkpoints_reclaim_free_pages() {
     }
     assert!(std::fs::metadata(&path).unwrap().len() > 3 * 1024 * 1024);
     for _ in 0..48 {
-        doc.apply_batch(
+        doc.apply_json(
             &json!({"intents":[{"type":"insert","path":["rows"],"value":{"text":"row"}}]}).to_string(),
             Origin::Page,
         )
@@ -642,7 +643,7 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
         {"type":"set","path":["cover"],"value":cover},
         {"type":"set","path":["notes"],"value":format!("![photo](attachment/{inline}) and more")},
     ]});
-    doc.apply_batch(&reference.to_string(), Origin::Page).unwrap();
+    doc.apply_json(&reference.to_string(), Origin::Page).unwrap();
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     store.copy_clean(&copy, &[]).unwrap();
@@ -675,7 +676,7 @@ fn saved_accent(path: &Path) -> String {
 }
 /// Applies one palette intent from the window; whether it changed the document.
 fn palette(doc: &mut Document, intent: Value) -> Result<bool, hitslop_core::Error> {
-    doc.apply_batch(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window)
+    doc.apply_json(&json!({ "intents": [intent] }).to_string(), hitslop_core::Origin::Window)
         .map(|a| a.publication.is_some())
 }
 fn set_accent(doc: &mut Document, color: &str) -> bool {
@@ -951,7 +952,7 @@ fn a_save_retried_after_a_lost_reply_counts_once() {
     let mut expected = 0;
     for checkpoint in [false, true] {
         let (store, mut doc) = open(&path);
-        doc.apply_batch(r#"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#, Origin::Page).unwrap();
+        doc.apply_json(r#"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#, Origin::Page).unwrap();
         expected += 3;
         let job = store.job(&mut doc, checkpoint).unwrap().unwrap();
         assert_eq!(job.is_checkpoint(), checkpoint);

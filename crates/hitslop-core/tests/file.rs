@@ -8,6 +8,7 @@ use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 mod support;
+use support::ApplyJson;
 use support::{App, isolate_registry, registry_folder, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
@@ -719,6 +720,15 @@ fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
         "a build without an icon falls back to its preview"
     );
     assert_eq!(file::artwork(&doc, &[Artwork::Icon]).unwrap(), None);
+    let before = fs::read(&doc).unwrap();
+    let output = dir.path().join("preview.png");
+    assert!(!file::export_artwork(&doc, Artwork::Icon, &output).unwrap());
+    assert!(!output.exists());
+    assert!(file::export_artwork(&doc, Artwork::Preview, &output).unwrap());
+    assert_eq!(fs::read(&output).unwrap(), preview);
+    assert!(file::export_artwork(&doc, Artwork::Preview, &output).is_err());
+    assert_eq!(fs::read(&doc).unwrap(), before);
+
     let holder = raw(&doc);
     holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
     assert!(matches!(file::artwork(&doc, &[Artwork::Preview]), Err(Error::Busy)));
@@ -815,17 +825,17 @@ fn an_open_document_copies_through_its_owner() {
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();
     let mut state = store.document().unwrap();
-    state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
+    state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let photo = store.put_attachment(b"photo").unwrap().id;
     let reference = format!(r#"{{"intents":[{{"type":"set","path":["title"],"value":"Shared {photo}"}}]}}"#);
-    state.apply_batch(&reference, Origin::Page).unwrap();
+    state.apply_json(&reference, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
     store.copy_clean(&copy, &[(Artwork::Preview, &png(640, 480, 6))]).unwrap();
     assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
-    state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
+    state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert!(copied.document().unwrap().value().contains("Shared"));
@@ -1187,7 +1197,7 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     assert_eq!(store.artwork(Artwork::Preview).unwrap(), None);
     let mut state = store.document().unwrap();
-    state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
+    state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
     store.close().unwrap();
     let reopened = Store::open(&doc, Mode::Snapshot).unwrap();

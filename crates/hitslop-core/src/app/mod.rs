@@ -185,6 +185,9 @@ impl AppDefinition {
 
     /// Original descriptor representation for the bundled SDK's mount check. Never
     /// serialize the parsed Node here: that would discard descriptions.
+    pub fn document_raw(&self) -> &serde_json::value::RawValue {
+        &self.stored.document
+    }
     pub fn document_json(&self) -> &str {
         self.stored.document.get()
     }

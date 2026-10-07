@@ -13,24 +13,24 @@
  *   --keep-going  run every selected tier even after one fails
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
-import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
+import { availableParallelism, tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { testInventory, checkoutLease, atomicJson, retainReport, type Preparation } from "./lib/verification";
+import { exec as testExec, verificationAbort } from "./lib/test-process";
 import { exec, run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftFormat } from "./lib/swift-format";
 import { swiftTests } from "./lib/swift-tests";
-import { buildCoreWasm, buildEngine } from "./build/core";
-import { buildShell } from "./build/shell";
-import { buildNative } from "./build/build";
-import { buildTemplates } from "./templates/build";
 
 type Build = "web" | "native" | "templates" | "packages" | "app";
 type Tier = {
   name: string;
   /** Runs the tier; `args` are a single-tier run's own arguments. */
-  run: (args: string[]) => Promise<void>;
+  run: (args: string[], prepare: Preparation) => Promise<void>;
   /** Changed paths that select it. */
   inputs: RegExp[];
   /** The builds it needs, each done once per run, just before the first tier needing it. */
@@ -63,38 +63,53 @@ const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
 if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
+const scratch = mkdtempSync(join(tmpdir(), "hitslop-verify-"));
+process.env.HITSLOP_TEST_REGISTRY ||= join(scratch, "registry");
+process.env.TMPDIR = scratch;
+process.once("exit", () => rmSync(scratch, { recursive: true, force: true }));
 useTestRegistry();
+const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
+let runDirectory = "";
+const commands: { command: string[]; log: string; seconds: number; code: number }[] = [];
+let commandNumber = 0;
+async function logged(command: string[], options: { env?: Record<string, string | undefined>; cwd?: string; echo?: boolean } = {}) {
+  const log = `${String(++commandNumber).padStart(3, "0")}-${command[0]!.split("/").at(-1)}.log`;
+  const started = performance.now();
+  let code = 1;
+  try {
+    const result = await testExec(command, { cwd: options.cwd ?? repository, env: { ...environment, ...options.env },
+      echo: options.echo, log: join(runDirectory, log), timeout: 30 * 60_000 });
+    code = result.code;
+    return result;
+  } finally { commands.push({ command, log, seconds: (performance.now() - started) / 1000, code }); }
+}
 /** The environment tiers run in, as this runner started: what an in-process build changes
  * (Vite sets NODE_ENV=production, which turns off Svelte's hot reload) never reaches a test. */
 const environment = { ...process.env };
 
 /** `command`, its output shared with this process; a failure throws. */
 async function sh(command: string[], options: { env?: Record<string, string | undefined>; cwd?: string } = {}) {
-  const { code } = await exec(command, { cwd: options.cwd ?? repository, env: { ...environment, ...options.env }, inherit: ["stdout", "stderr"] });
+  const { code } = await logged(command, { ...options, echo: true });
   if (code) throw new Error(`${command.join(" ")} exited with ${code}`);
 }
 /** `command`, its output returned with its status: quick tiers print theirs when done. */
 async function quiet(command: string[]) {
-  const { code, stdout, stderr } = await exec(command, { cwd: repository, env: environment });
+  const { code, stdout, stderr } = await logged(command);
   const output = (stdout + stderr).trim();
   if (code) throw new Error(`${command.join(" ")} exited with ${code}${output ? `\n${output}` : ""}`);
   return output;
 }
 
-/** Test files under the Bun runner: native ones (`*.native.test.ts`) or the rest. */
-function bunTests(native: boolean): string[] {
-  return ["packages/hitslop/tests/**/*.test.ts", "tests/{examples,native,release}/**/*.test.ts"]
-    .flatMap((pattern) => [...new Bun.Glob(pattern).scanSync(repository)])
-    .filter((file) => file.endsWith(".native.test.ts") === native)
-    .sort();
-}
+const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts"]
+  .flatMap(pattern => [...new Bun.Glob(pattern).scanSync(repository)]));
+
 /** `bun test` over `files`: positional `args` narrow them by path, options pass through. */
 async function bunTest(files: string[], args: string[], env: Record<string, string | undefined> = {}) {
   const filters = args.filter((arg) => !arg.startsWith("-"));
   const options = args.filter((arg) => arg.startsWith("-"));
   const selected = filters.length ? files.filter((file) => filters.some((filter) => file.includes(filter))) : files;
   if (!selected.length) throw new Error(`No test files match ${filters.join(" ")}`);
-  await sh([process.execPath, "test", ...options, ...selected.map((file) => "./" + file)], { env });
+  await sh([process.execPath, "test", ...(ci ? ["--reporter=junit", `--reporter-outfile=${join(runDirectory, `bun-${commandNumber + 1}.xml`)}`] : []), ...options, ...selected.map((file) => "./" + file)], { env });
 }
 
 const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^\.cargo\/config\.toml$/, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
@@ -150,7 +165,12 @@ const tiers: Tier[] = [
     budget: 30,
     needs: ["web"],
     inputs: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\//, /^examples\/slops\//],
-    run: (args) => bunTest(bunTests(false), ["--parallel", ...args]),
+    run: (args) => bunTest(inventory.bun, [`--parallel=${Math.min(4, availableParallelism())}`, ...args]),
+  },
+  {
+    name: "cli", budget: 120, needs: ["web"],
+    inputs: [...rustInputs, /^packages\//, /^tests\/(fixtures|compat)\//, /^scripts\//, /^examples\/slops\//],
+    run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=30000", ...args]),
   },
   {
     name: "rust",
@@ -158,14 +178,22 @@ const tiers: Tier[] = [
     inputs: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
     // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
-    run: async (args) => {
-      if (!args.length) {
+    run: async (args, prepare) => {
+      if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "fmt", "--all", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
         await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
-      }
+        await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
+      });
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
+      if (!args.length && process.platform === "linux") {
+        await prepare("Linux Rust configurations", async () => {
+          await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
+          await quiet(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", "--no-run"]);
+        });
+        await sh(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : [])]);
+      }
     },
   },
   {
@@ -182,9 +210,9 @@ const tiers: Tier[] = [
     budget: 60,
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
-    inputs: [/^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/build\/(packages|engines|shell)\.ts$/, /^tests\/packed\//],
+    inputs: [...rustInputs, /^examples\/slops\//, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/build\/(packages|engines|shell)\.ts$/, /^tests\/packed\//],
     // A release installs the packages against the native helper too.
-    run: (args) => sh([process.execPath, "test", "./tests/packed/packed.test.ts", ...args], { env: release ? { HITSLOP_PACKED_NATIVE: "1" } : {} }),
+    run: (args) => bunTest(inventory.packed, args, release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
   },
   {
     name: "swift",
@@ -194,16 +222,17 @@ const tiers: Tier[] = [
     inputs: nativeInputs,
     // A full run checks formatting first; a filtered one (`verify swift --filter X`) is for
     // iterating, so it runs only the tests.
-    run: async (args) => {
+    run: async (args, prepare) => {
       if (!args.length) await swiftFormat("lint");
-      const fixtures = await prepareNativeFixtures();
+      const fixtures = await prepare("Native fixtures", prepareNativeFixtures);
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();
       await swiftTests({
         ...environment,
+        HITSLOP_TEST_EVIDENCE: runDirectory,
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
         HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
-      }, args);
+      }, args, prepare);
     },
   },
   {
@@ -222,7 +251,7 @@ const tiers: Tier[] = [
     needs: ["native"],
     inputs: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
     run: (args) =>
-      bunTest(bunTests(true), args, {
+      bunTest(inventory.native, args, {
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
@@ -260,11 +289,17 @@ async function snapshot(): Promise<Record<string, string>> {
   return files;
 }
 /** Inputs of every tier: how checks run, and the toolchain. */
-const shared = [/^scripts\/verify\.ts$/, /^package\.json$/, /^bun\.lock$/, /^rust-toolchain\.toml$/];
+const shared = [/^scripts\/lib\/(verification|test-process|artifacts)\.ts$/, /^tests\/verification\//, /^scripts\/verify\.ts$/, /^package\.json$/, /^bun\.lock$/, /^rust-toolchain\.toml$/];
 const inputsOf = (tier: Tier, files: Record<string, string>) =>
   Object.keys(files).filter((path) => [...shared, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
+// A base/named listing does not consult the local pass cache. A default listing must
+// use the same toolchain identity as an actual run.
+const toolchains = flag("--list") && (option("--base") || named) ? { rust: "not queried", swift: null } : {
+  rust: await run(["rustc", "--version"]).then(s => s.trim()),
+  swift: process.platform === "darwin" ? await run(["swift", "--version"]).then(s => s.trim()) : null,
+};
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, process.arch, inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([Bun.version, toolchains, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -273,6 +308,8 @@ const summary = (paths: string[]) => (paths.length > 3 ? `${paths.slice(0, 3).jo
 /** What passed on this machine: each tier's input digest, and the snapshot it passed on. */
 type Passed = { tiers: Record<string, { digest: string; snapshot: string; at: string }>; snapshots: Record<string, Record<string, string>> };
 const passedFile = join(repository, ".hitslop/verify/passed.json");
+const releaseLease = flag("--list") ? undefined : await checkoutLease(join(repository, ".hitslop/verify"));
+if (releaseLease) process.once("exit", releaseLease);
 const history: Passed = await Bun.file(passedFile).json().catch(() => ({ tiers: {}, snapshots: {} }));
 const current = await snapshot();
 let recording = Promise.resolve();
@@ -287,7 +324,7 @@ async function writePass(tier: Tier) {
   const used = new Set(Object.values(history.tiers).map(({ snapshot }) => snapshot));
   for (const key of Object.keys(history.snapshots)) if (!used.has(key)) delete history.snapshots[key];
   await mkdir(join(repository, ".hitslop/verify"), { recursive: true });
-  await writeFile(passedFile, JSON.stringify(history) + "\n");
+  await atomicJson(passedFile, history);
 }
 
 async function mergeBase(ref: string): Promise<string> {
@@ -343,7 +380,16 @@ if (flag("--list") || !selection.length) {
   process.exit(0);
 }
 
+runDirectory = join(repository, ".hitslop/evidence/runs", runId);
+await mkdir(runDirectory, { recursive: true });
 const report = {
+  runId, directory: runDirectory, command: process.argv.slice(2),
+  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
+  partial: tierArgs.length > 0,
+  reusedBuild: flag("--no-build") || flag("--built"),
+  certifiesDefaultRun: !tierArgs.length && !flag("--no-build") && !flag("--built"),
+  inventory, commands, toolchains,
+  cancelled: false,
   mode: release ? "release" : flag("--all") ? "all" : selection.every(({ reason }) => reason === "named") ? "named" : "affected",
   commit: (await run(["git", "rev-parse", "HEAD"], { cwd: repository })).trim(),
   dirty: (await run(["git", "status", "--porcelain"], { cwd: repository })).trim().length > 0,
@@ -351,10 +397,10 @@ const report = {
   platform: process.platform,
   arch: process.arch,
   bun: Bun.version,
-  ...(release ? { reusedBuild: flag("--built"), skippedApp: flag("--skip-app"), compatRelease: releaseTag ?? null } : {}),
+  ...(release ? { skippedApp: flag("--skip-app"), compatRelease: releaseTag ?? null } : {}),
   passed: false,
-  builds: [] as { name: Build; seconds: number }[],
-  tiers: [] as { name: string; reason: string; code: number; seconds: number; budget: number; output?: string }[],
+  builds: [] as { name: string; seconds: number }[],
+  tiers: [] as { name: string; reason: string; code: number; seconds: number; buildSeconds: number; budget: number; output?: string }[],
   error: undefined as string | undefined,
 };
 
@@ -366,9 +412,13 @@ function build(name: Build): Promise<void> {
   if (!done.has(name))
     done.set(name, (async () => {
       const started = performance.now();
-      if (name === "web") await Promise.all([buildCoreWasm().then(buildShell), buildEngine()]);
-      if (name === "native") await buildNative();
-      if (name === "templates") await buildTemplates();
+      if (name === "web") {
+        await sh([process.execPath, "scripts/build/core.ts", "--wasm"]);
+        await sh([process.execPath, "scripts/build/shell.ts"]);
+        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
+      }
+      if (name === "native") await sh([process.execPath, "scripts/build/build.ts"]);
+      if (name === "templates") await sh([process.execPath, "scripts/templates/build.ts"]);
       if (name === "packages") await sh([process.execPath, "scripts/build/packages.ts"]);
       if (name === "app") await sh([process.execPath, "scripts/build/apple.ts"]);
       report.builds.push({ name, seconds: (performance.now() - started) / 1000 });
@@ -379,16 +429,32 @@ function build(name: Build): Promise<void> {
 const seconds = (since: number) => (performance.now() - since) / 1000;
 async function runTier({ tier, reason, args }: Selection[number], capture = false) {
   const started = performance.now();
+  let testsStarted = started;
+  let buildSeconds = 0;
+  let built = false;
+  let preparationSeconds = 0;
+  const prepare: Preparation = async (name, action) => {
+    const start = performance.now();
+    try { return await action(); }
+    finally {
+      const duration = seconds(start);
+      preparationSeconds += duration;
+      report.builds.push({ name, seconds: duration });
+    }
+  };
   try {
     if (!capture) console.log(`\n▶ ${tier.name} (${reason})`);
     for (const need of tier.needs ?? []) await build(need);
-    await tier.run(args);
+    built = true;
+    buildSeconds = seconds(started);
+    testsStarted = performance.now();
+    await tier.run(args, prepare);
     // A partial run (a filter, an option) proves nothing about the whole tier.
-    if (!args.length) await recordPass(tier);
-    report.tiers.push({ name: tier.name, reason, code: 0, seconds: seconds(started), budget: tier.budget });
+    if (!args.length && !flag("--no-build") && !flag("--built")) await recordPass(tier);
+    report.tiers.push({ name: tier.name, reason, code: 0, seconds: seconds(testsStarted) - preparationSeconds, buildSeconds: buildSeconds + preparationSeconds, budget: tier.budget });
     return true;
   } catch (error) {
-    report.tiers.push({ name: tier.name, reason, code: 1, seconds: seconds(started), budget: tier.budget, output: String(error) });
+    report.tiers.push({ name: tier.name, reason, code: 1, seconds: built ? seconds(testsStarted) - preparationSeconds : 0, buildSeconds: (built ? buildSeconds : seconds(started)) + preparationSeconds, budget: tier.budget, output: String(error) });
     console.error(`✗ ${tier.name}: ${error instanceof Error ? error.message : error}`);
     return false;
   }
@@ -409,18 +475,22 @@ try {
     passed = (await Promise.all(quick.map((entry) => runTier(entry, true)))).every(Boolean);
   }
   for (const entry of selection.filter(({ tier }) => !tier.quick)) {
+    if (verificationAbort.signal.aborted) throw new Error("Verification cancelled; remaining tiers were not run");
     if (!passed && !flag("--keep-going")) break;
     passed = (await runTier(entry)) && passed;
   }
   report.passed = passed;
+  report.certifiesDefaultRun &&= passed && !named;
 } catch (error) {
   report.error = String(error);
+  report.certifiesDefaultRun = false;
   passed = false;
 } finally {
+  report.cancelled = verificationAbort.signal.aborted;
   const evidence = join(repository, ".hitslop/evidence");
   await mkdir(evidence, { recursive: true });
   const file = join(evidence, release ? "release-check.json" : "verify.json");
-  await writeFile(file, JSON.stringify(report, null, 2) + "\n");
+  await retainReport(runDirectory, file, report);
   console.log("");
   for (const { name, seconds } of report.builds) console.log(`  build ${name.padEnd(9)} ${seconds.toFixed(1)}s`);
   for (const { name, code, seconds, budget } of report.tiers)

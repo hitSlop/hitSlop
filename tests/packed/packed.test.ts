@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, cp, realpath } from "
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { exec, testProcess } from "../../scripts/lib/test-process";
 import { debugHelper } from "../../scripts/lib/native";
 
 const native = process.env.HITSLOP_PACKED_NATIVE === "1";
@@ -39,7 +39,7 @@ afterAll(async () => {
 
 /** `args` in `cwd`, which must succeed: its stdout. */
 async function run(args: string[], cwd: string, overrides: Record<string, string> = {}) {
-  const { stdout, stderr, code } = await exec(args, { cwd, env: { ...env, ...overrides } });
+  const { stdout, stderr, code } = await exec(args, { cwd, env: { ...env, ...overrides }, timeout: 120_000 });
   assert.equal(code, 0, `${args[1] === "-e" ? "SDK import probe" : args.slice(1).join(" ")}: ${stdout}${stderr}`);
   return stdout;
 }
@@ -164,43 +164,36 @@ test.if(native)("the global CLI registers, links agent skills, follows upgrades 
 }, minutes(5));
 
 test("the installed CLI previews the project with its own page shell and core", async () => {
-  const preview = Bun.spawn([process.execPath, cli(), "dev", project(), "--port", "5197"], {
+  let startup = "";
+  const preview = testProcess([process.execPath, cli(), "dev", project(), "--port", "0"], {
     cwd: root,
     env: { ...env, ...noNode },
-    stdout: "pipe",
-    stderr: "pipe",
+    timeout: 240_000,
+    onOutput: text => { startup += text; },
   });
-  const previewOutput = new Response(preview.stdout).text();
-  const previewError = new Response(preview.stderr).text();
   let previewExited = false;
-  void preview.exited.then(() => (previewExited = true));
-  async function stopPreview() {
-    const timeout = setTimeout(() => preview.kill("SIGKILL"), 5_000);
-    try {
-      preview.kill("SIGINT");
-      await preview.exited;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
+  void preview.output.then(() => (previewExited = true), () => (previewExited = true));
+  const stopPreview = () => preview.stop();
   try {
     let frame: Response | undefined;
-    const deadline = Date.now() + 180_000;
+    const deadline = Date.now() + 120_000;
+    let origin = "";
     while (Date.now() < deadline && !previewExited) {
-      const response = await fetch("http://127.0.0.1:5197/", { signal: AbortSignal.timeout(2_000) }).catch(() => undefined);
+      origin = startup.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0] ?? "";
+      const response = origin ? await fetch(origin + "/", { signal: AbortSignal.timeout(2_000) }).catch(() => undefined) : undefined;
       if (response?.ok) {
         frame = response;
         break;
       }
       await Bun.sleep(50);
     }
-    if (!frame) throw new Error("Packed preview failed: " + (await stopPreview().then(() => previewError)) + (await previewOutput));
+    if (!frame) { await stopPreview(); throw new Error("Packed preview failed: " + startup); }
     expect(await frame.text()).toContain('src="/app.html"');
-    const app = await fetch("http://127.0.0.1:5197/app.html");
+    const app = await fetch(origin + "/app.html");
     expect(app.status).toBe(200);
     expect(await app.text()).toContain("/__preview__/native.js?token=");
-    expect(await (await fetch("http://127.0.0.1:5197/__preview__/native.js")).text()).toContain("/__shell__/boot.js");
-    expect((await fetch("http://127.0.0.1:5197/__shell__/index.js")).status).toBe(200);
+    expect(await (await fetch(origin + "/__preview__/native.js")).text()).toContain("/__shell__/boot.js");
+    expect((await fetch(origin + "/__shell__/index.js")).status).toBe(200);
     expect(await Bun.file(join(root, "node_modules/hitslop/shell/core/hitslop_core_wasm_bg.wasm")).exists()).toBe(false);
     if (native) {
       const { webkit } = await import("playwright");
@@ -215,7 +208,7 @@ test("the installed CLI previews the project with its own page shell and core", 
           if (response.status() >= 400)
             console.error("Packed preview response:", response.url(), await fetch(response.url()).then((r) => r.text()).catch(String));
         });
-        await page.goto("http://127.0.0.1:5197/");
+        await page.goto(origin + "/");
         const frame = page.frameLocator("iframe");
         await frame.getByRole("textbox", { name: "List title", exact: true }).fill("Installed SDK works");
         expect(await frame.locator("[data-hitslop-root]").count()).toBe(1);

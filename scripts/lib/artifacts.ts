@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { brotliDecompressSync } from "node:zlib";
@@ -10,7 +11,11 @@ export const repository = resolve(import.meta.dir, "../..");
  * `~/.hitslop/live`. Debug hosts and the file engine honor it; release builds never do. */
 export function useTestRegistry() {
   process.env.HITSLOP_EVALUATOR ||= join(repository, "target", process.env.HITSLOP_CARGO_PROFILE || "release", "hitslop-evaluator");
-  process.env.HITSLOP_TEST_REGISTRY ||= join(tmpdir(), "hitslop-test-registry");
+  if (!process.env.HITSLOP_TEST_REGISTRY) {
+    const registry = mkdtempSync(join(tmpdir(), "hitslop-test-registry-"));
+    process.env.HITSLOP_TEST_REGISTRY = registry;
+    process.once("exit", () => rmSync(registry, { recursive: true, force: true }));
+  }
 }
 /** The page shell the host injects: the app bundles it; the CLI serves the same shell over its native preview bridge. */
 export const shellDestinations = {

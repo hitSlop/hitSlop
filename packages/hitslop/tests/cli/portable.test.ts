@@ -1,3 +1,4 @@
+import { exec } from "../../../../scripts/lib/test-process";
 // Portable builds: a template file from any platform, with no helper, packed by the rules
 // the app opens files with; and the starter project `slop init` creates.
 import { test, expect } from "bun:test";
@@ -25,11 +26,7 @@ test("init creates a buildable source and refuses to overwrite it", async () => 
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "starter");
   try {
-    const run = () =>
-      Bun.spawn([process.execPath, "packages/hitslop/src/cli/cli.ts", "init", source], {
-        stdout: "ignore",
-        stderr: "ignore",
-      }).exited;
+    const run = async () => (await exec([process.execPath, "packages/hitslop/src/cli/cli.ts", "init", source])).code;
     expect(await run()).toBe(0);
     expect(await run()).toBe(1);
     const metadata = JSON.parse(await readFile(join(source, "package.json"), "utf8"));

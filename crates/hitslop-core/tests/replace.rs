@@ -5,6 +5,7 @@
 mod support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{Value, json};
+use support::ApplyJson;
 use support::{View, app, fixture, type_text, value};
 
 const A: &str = "00000000000000000000000000000001";
@@ -20,7 +21,7 @@ fn replace(path: Value, value: Value) -> String {
     json!({"intents":[{"type":"replace","path":path,"value":value}]}).to_string()
 }
 fn apply(d: &mut Document, view: &mut View, batch: &str) -> Applied {
-    let applied = d.apply_batch(batch, Origin::Agent).unwrap();
+    let applied = d.apply_json(batch, Origin::Agent).unwrap();
     if let Some(publication) = &applied.publication {
         view.publish(publication);
     }
@@ -28,7 +29,7 @@ fn apply(d: &mut Document, view: &mut View, batch: &str) -> Applied {
 }
 fn refused(d: &mut Document, batch: &str) -> Code {
     let before = d.state().unwrap();
-    let code = d.apply_batch(batch, Origin::Agent).unwrap_err().code;
+    let code = d.apply_json(batch, Origin::Agent).unwrap_err().code;
     assert_eq!(d.state().unwrap(), before, "a refused replace changes nothing");
     code
 }

@@ -42,8 +42,8 @@ async function refused(body: Parameters<typeof engineReply>[0], why: string) {
 }
 const value = async () =>
   (await engineRequest({ method: "get", documentPath: document }, placement)).state.value as { title: string; tasks: Task[] };
-async function batch(path: string, ops: unknown[], refusal?: string) {
-  const body = { method: "batch" as const, documentPath: path, ops: JSON.stringify(ops) };
+async function batch(path: string, ops: import("../../packages/hitslop/src/schema/core").Batch["intents"], refusal?: string) {
+  const body = { method: "batch" as const, documentPath: path, batch: { intents: ops } };
   if (refusal) await refused(body, refusal);
   else await engineRequest(body, placement);
 }

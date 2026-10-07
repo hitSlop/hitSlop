@@ -285,7 +285,7 @@ fn stalled_preview(close_input: bool) {
     }
     // Keep stdout open but unread. This publication exceeds the pipe buffer.
     let title = "saved despite a stalled reader".repeat(8192);
-    let batch = json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
+    let batch = json!({"intents":[{"type":"set","path":["title"],"value":title}]});
     let mut input = child.0.stdin.take().unwrap();
     writeln!(input, "{}", json!({"type":"page","id":1,"request":{"method":"apply","batch":batch}})).unwrap();
     let input = (!close_input).then_some(input);

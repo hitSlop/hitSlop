@@ -39,16 +39,16 @@ test("document commands send one request and print its reply", async () => {
     const { args, body } = JSON.parse(await Bun.file(sent).text());
     expect(args).toEqual(selection);
     // The operation reaches the core as written, inside the batch.
-    expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), ops: `[${op}]` });
+    expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), batch: { intents: [JSON.parse(op)] } });
     // `--base` names the version the agent read; its text sets merge from there.
     const based = await run(["batch", "a file.slop", "--ops", `[${op}]`, "--base", "v1"], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(based.code).toBe(0);
-    expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).base).toBe("v1");
+    expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).batch.base).toBe("v1");
     const data = join(root, "new data.json");
-    await writeFile(data, '{"n": 1.50}');
+    await writeFile(data, '{"n": 1.50, "wide": 9007199254740993}');
     const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
     expect(imported.code).toBe(0);
-    expect(JSON.parse(JSON.parse(await Bun.file(sent).text()).body).ops).toBe('[{"type":"replace","path":["rows"],"value":{"n": 1.50}}]');
+    expect(JSON.parse(await Bun.file(sent).text()).body).toContain('"value":{"n":1.50,"wide":9007199254740993}');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

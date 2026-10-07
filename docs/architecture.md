@@ -119,7 +119,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
    `value` also shows at once as a local preview over the snapshot; acceptance settles
    it and a refusal reverts it. Assigned values commit after 150 ms without another
    assignment, or at the next barrier.
-2. **Host.** The page posts `apply {batch}`, the batch as JSON text. The native session checks
+2. **Host.** The page posts `apply {batch}`, with a nested batch object. The native session checks
    the sending WebView, frame and origin and hands the request, with its view token, to
    the core's page dispatcher, which checks the envelope and the token before calling
    `apply_batch`. The reply is `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
@@ -389,10 +389,13 @@ history keeps nothing alive.
 
 Tests live at the boundary that owns the behavior; see [testing](testing.md).
 
-Performance evidence is in [`evidence/`](evidence/). At 1,000 rows a window opens in under
-a second and a checkbox is accepted in about 12 to 14 ms (p95); see
+Performance evidence is in [`evidence/`](evidence/). The following measurements describe
+the September 30–October 2 builds recorded in those files, before the October 4 owner
+and storage simplification; they are historical baselines, not current-build results.
+In those builds, at 1,000 rows a window opened in under
+a second and a checkbox was accepted in about 12 to 14 ms (p95); see
 `release-window-measurements-2026-09-30.json`. Publication cost from owner commit to page
 at 1,000 and 5,000 rows is in `codebase-pass-phase2-2026-10-01.json`, edit latency at
 5,000 rows in `edit-latency-2026-10-01.json`, and core keystroke cost at 10,000 and
 100,000 characters (core only, not a system IME) in `long-text-2026-09-30.json`. A theme
-panel color drag reaches the page within a frame at 1,000 rows (`theme-drag-2026-10-02.json`).
+panel color drag reached the page within a frame at 1,000 rows (`theme-drag-2026-10-02.json`).

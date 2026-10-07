@@ -120,7 +120,16 @@ extension HostTests {
     _ = try await webView.callAsyncJavaScript(
       "const input = \(field); input.focus(); input.setSelectionRange(input.value.length, input.value.length); document.execCommand('insertText', false, 'XYZ'); await globalThis.__slop.flush(); return true",
       arguments: [:], in: nil, contentWorld: .page)
-    #expect(try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":3}]"#]).ok)
+    #expect(
+      try await command(
+        "batch", url: root,
+        [
+          "batch": [
+            "intents": try JSONSerialization.jsonObject(
+              with: Data((#"[{"type":"increment","path":["hits"],"by":3}]"#).utf8))
+          ]
+        ]
+      ).ok)
     func saved() async throws -> [String: Any] { try await savedValue(root) as? [String: Any] ?? [:] }
     #expect(try await saved()["title"] as? String == "abcXYZ")
     await eventually(timeout: .seconds(1)) { window.undoManager?.canUndo == true }

@@ -10,7 +10,7 @@ pub enum Segment {
     Index { index: usize },
 }
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "core.generated.ts"))]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum Anchor {
     Before { before: String },
@@ -79,7 +79,7 @@ pub struct Publication {
     pub theme: Option<std::collections::BTreeMap<String, String>>,
 }
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "core.generated.ts"))]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Intent {
     Set {
@@ -145,17 +145,61 @@ impl Intent {
     }
 }
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "core.generated.ts"))]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(non_snake_case)]
 pub struct Batch {
+    #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
     pub ifVersion: Option<String>,
+    #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
     pub base: Option<String>,
     pub intents: Vec<Intent>,
 }
+impl Batch {
+    /// JSON adapters decode at their boundary; the owner carries this typed value.
+    pub fn decode(input: &str) -> crate::Result<Self> {
+        crate::parse(input)
+    }
+    pub(crate) fn check_size(&self, limit: usize) -> crate::Result<()> {
+        check_json_size(self, limit)
+    }
+}
+
+/// Counts encoded bytes without allocating a second payload or decoding it again.
+pub(crate) fn check_json_size(value: &impl Serialize, limit: usize) -> crate::Result<()> {
+    struct Budget(usize);
+    impl std::io::Write for Budget {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self.0.checked_sub(bytes.len()).ok_or_else(|| std::io::Error::other("JSON exceeds size limit"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    serde_json::to_writer(Budget(limit), value)
+        .map_err(|_| crate::err(crate::Code::TooLarge, "JSON exceeds size limit"))
+}
+
+/// The immutable reading shared by page, native, and command responses.
+#[derive(Debug, Serialize)]
+pub struct Reading {
+    pub version: String,
+    pub value: Value,
+    pub theme: std::collections::BTreeMap<String, String>,
+}
+impl Reading {
+    pub fn to_json(&self) -> String {
+        crate::encode(self)
+    }
+    pub fn sequenced(self, sequence: u64) -> OwnerState {
+        OwnerState { sequence, version: self.version, value: self.value, theme: self.theme }
+    }
+}
+
 /// A text selection in UTF-16 offsets.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "core.generated.ts"))]
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     pub start: usize,

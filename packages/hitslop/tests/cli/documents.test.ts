@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findEngine, execute } from "../../src/cli/engine";
 import { negotiate } from "../../src/cli/engine";
-import { exec } from "../../src/cli/process";
+import { exec } from "../../../../scripts/lib/test-process";
 import { writeTemplate } from "./template-fixture";
 
 const engine = await findEngine();
@@ -13,16 +13,9 @@ const engine = await findEngine();
 const template = (folder: string) => writeTemplate(join(folder, "Template.slop"));
 
 const run = async (args: string[], env: Record<string, string> = {}) => {
-  const p = Bun.spawn([process.execPath, "packages/hitslop/src/cli/cli.ts", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
+  const { stdout: out, stderr: error, code } = await exec([process.execPath, "packages/hitslop/src/cli/cli.ts", ...args], {
     env: { ...process.env, HITSLOP_ENGINE: engine, ...env },
   });
-  const [out, error, code] = await Promise.all([
-    new Response(p.stdout).text(),
-    new Response(p.stderr).text(),
-    p.exited,
-  ]);
   return { out, error, code };
 };
 const cli = (command: string, file: string, ...args: string[]) => run([command, file, ...args]);

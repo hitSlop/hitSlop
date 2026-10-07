@@ -16,6 +16,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 mod support;
+use support::ApplyJson;
 use support::generate::intent;
 use support::next;
 
@@ -102,7 +103,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                     request(
                         &engine,
                         &protocol,
-                        json!({"method":"batch","documentPath":document,"ops":Value::Array(ops).to_string()}),
+                        json!({"method":"batch","documentPath":document,"batch":{"intents":ops}}),
                     );
                 }
                 let released = released_value(&engine, &protocol, &document);
@@ -118,7 +119,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                 let mut edited = None;
                 for _ in 0..16 {
                     let op = intent(&mut rng, &mut serial, &descriptor, &released);
-                    if doc.apply_batch(&json!({"intents":[op]}).to_string(), Origin::Agent).is_ok() {
+                    if doc.apply_json(&json!({"intents":[op]}).to_string(), Origin::Agent).is_ok() {
                         let value = serde_json::from_str::<Value>(&doc.value()).unwrap();
                         // An accepted edit can leave the value as it was (clearing an absent key).
                         if value != released {

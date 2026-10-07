@@ -1,5 +1,12 @@
 name: Prepare checks
 description: Install pinned tools; checks run through `bun run verify`
+inputs:
+  bindings:
+    description: "Binding generators: native, portable, or none"
+    default: native
+  nextest:
+    description: Install cargo-nextest
+    default: "true"
 runs:
   using: composite
   steps:
@@ -10,27 +17,45 @@ runs:
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version: "1.4.2"
-    - run: bun install --frozen-lockfile
-      shell: bash
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-          generated/core-tools
-        key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
-        restore-keys: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+        key: rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        restore-keys: rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.bindings != 'none'
+      with:
+        path: generated/core-tools
+        key: core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.127-uniffi-0.32.2
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'apps/landing/bun.lock') }}
+        restore-keys: bun-downloads-${{ runner.os }}-${{ runner.arch }}-
+    - run: bun install --frozen-lockfile
+      shell: bash
     - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+      if: inputs.nextest == 'true'
       with:
         tool: cargo-nextest@0.9.146
     # The core's bindings generators, pinned to the library versions in Cargo.lock.
     - name: Prepare shared Rust core toolchain
       shell: bash
+      env:
+        BINDINGS: ${{ inputs.bindings }}
       run: |
         rustup show active-toolchain
         rustup target add wasm32-unknown-unknown
-        cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools
-        if [ "$RUNNER_OS" = macOS ]; then
-          cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen
+        if [ "$BINDINGS" != none ]; then
+          if [ "$(generated/core-tools/bin/wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen 0.2.127" ]; then
+            cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools --force
+          fi
+        fi
+        if [ "$BINDINGS" = native ] && [ "$RUNNER_OS" = macOS ]; then
+          if [ "$(generated/core-tools/bin/uniffi-bindgen --version 2>/dev/null || true)" != "uniffi-bindgen 0.32.2" ]; then
+            cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen --force
+          fi
         fi

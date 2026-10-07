@@ -20,17 +20,20 @@ env:
   # replaced. Manual runs compare with nothing and check everything.
   CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
-  # Every tier but the native ones (docs/testing.md): hygiene, contracts, types, Rust, Bun,
-  # the packed npm packages and the site. macOS, because the app links its SQLite.
+  # Portable authoring and SDK coverage. Rust runs alongside it in linux-smoke.
   fast:
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
+        with:
+          bindings: portable
+          nextest: "false"
       - run: bun install --cwd apps/landing --frozen-lockfile
-      - run: bun run verify --all --ci --keep-going
+      - run: bun run verify --ci --keep-going hygiene,contracts,types,bun,cli,packed,landing
         env:
           # Frozen tests/compat entries are compared with what this change builds on.
           HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
@@ -44,6 +47,7 @@ jobs:
   # change touches what they cover. Always reports, so branch protection can require it.
   native:
     runs-on: macos-15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,8 +59,8 @@ jobs:
         id: select
         run: |
           bun install --frozen-lockfile
-          bun scripts/verify.ts --list ${CHANGE_BASE:+--base "$CHANGE_BASE"} swift,native | tee selection.txt
-          echo "run=$(grep -qE '^(swift|native) ' selection.txt && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          bun scripts/verify.ts --list ${CHANGE_BASE:+--base "$CHANGE_BASE"} rust,cli,packed,swift,native | tee selection.txt
+          echo "run=$(grep -qE '^(rust|cli|packed|swift|native) ' selection.txt && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/prepare-checks
         if: steps.select.outputs.run == 'true'
       - uses: ./.github/actions/native-cache
@@ -67,36 +71,37 @@ jobs:
         if: steps.select.outputs.run == 'true'
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-        run: bun run verify --ci --keep-going ${CHANGE_BASE:+--base "$CHANGE_BASE"} swift,native
+        run: bun run verify --ci --keep-going ${CHANGE_BASE:+--base "$CHANGE_BASE"} rust,cli,packed,swift,native
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && steps.select.outputs.run == 'true'
         with:
           name: native-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  # The core as WASM builds it (no storage), and the CLI's file engine with bundled SQLite:
-  # what the published CLI runs on Linux.
+  # Full portable Rust semantics plus both SQLite configurations. Retain the required
+  # check name; Darwin storage, sandbox, and old-writer replay also run in native.
   linux-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**') }}
-          restore-keys: rust-smoke-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
-      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
         with:
-          tool: cargo-nextest@0.9.146
-      - run: cargo clippy --locked -p hitslop-core --no-default-features --tests -- -D warnings
-      - run: cargo nextest run --locked --profile ci -p slop-engine --features bundled-sqlite
+          bindings: none
+      - run: bun run verify --ci --keep-going rust
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: linux-rust-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
   # Tag runs can only restore caches saved on the default branch, so master keeps the
   # full template corpus warm for the next release. Manual runs can also profile
   # the complete render corpus without signing or publishing. Not a required check.
   release-templates:
+    timeout-minutes: 60
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.render_corpus)
     runs-on: macos-15
     steps:

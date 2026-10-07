@@ -28,7 +28,9 @@ import Testing
   /// A CLI batch replacing the probe's title.
   func setTitle(_ text: String) throws -> [String: Any] {
     let op = try JSONSerialization.data(withJSONObject: [["type": "set", "path": ["title"], "value": text]])
-    return ["ops": String(decoding: op, as: UTF8.self)]
+    return [
+      "batch": ["intents": try JSONSerialization.jsonObject(with: Data((String(decoding: op, as: UTF8.self)).utf8))]
+    ]
   }
   /// The document's value, as `slop get` prints it.
   @MainActor func savedValue(_ root: URL) async throws -> NSDictionary? {

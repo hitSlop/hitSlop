@@ -23,7 +23,12 @@ import HitSlopDocument
   let id = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
   let ops = String(
     decoding: try JSONSerialization.data(withJSONObject: [["type": "set", "path": path, "value": id]]), as: UTF8.self)
-  let reply = try await command("batch", url: url, ["ops": ops, "attachments": [bytes.base64EncodedString()]])
+  let reply = try await command(
+    "batch", url: url,
+    [
+      "batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))],
+      "attachments": [bytes.base64EncodedString()],
+    ])
   guard reply.ok else { throw SlopFailure(reply.error ?? "Attach failed") }
   return id
 }
@@ -37,7 +42,8 @@ import HitSlopDocument
 /// One palette intent (`setTheme` or `importTheme`), as an agent's batch.
 @MainActor public func themeCommand(_ intent: [String: Any], url: URL) async throws -> DecodedReply {
   let ops = String(decoding: try JSONSerialization.data(withJSONObject: [intent]), as: UTF8.self)
-  return try await command("batch", url: url, ["ops": ops])
+  return try await command(
+    "batch", url: url, ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))]])
 }
 /// The effective palette, as `get` reports it.
 @MainActor public func effectiveTheme(url: URL) async throws -> [String: String] {

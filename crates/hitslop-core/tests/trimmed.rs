@@ -6,6 +6,7 @@ use hitslop_core::Origin;
 use hitslop_core::{Code, Document};
 use loro::{ExportMode, LoroDoc};
 use serde_json::json;
+use support::ApplyJson;
 use support::{Edit, View, app, trimmed, value};
 
 /// A document's full checkpoint and the same document trimmed to its latest version.
@@ -14,7 +15,7 @@ fn trimmed_document() -> (String, Vec<u8>, Vec<u8>) {
     let mut source = Document::create(&app(&schema), r#"{"title":"initial"}"#).unwrap();
     for i in 0..20 {
         source
-            .apply_batch(
+            .apply_json(
                 &json!({"intents":[{"type":"set","path":["title"],"value":format!("edit {i}")}]}).to_string(),
                 Origin::Page,
             )

@@ -31,11 +31,7 @@ pub enum SocketRequest {
     Batch {
         protocol: u64,
         documentPath: String,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        ifVersion: Option<String>,
-        ops: String,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        base: Option<String>,
+        batch: super::Batch,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
@@ -59,13 +55,19 @@ impl SocketRequest {
         Ok(request)
     }
     pub fn check(&self) -> Result<(), &'static str> {
+        let limit = if matches!(self, Self::Batch { attachments: Some(_), .. }) {
+            super::SOCKET_ATTACHMENT
+        } else {
+            super::SOCKET_REQUEST
+        };
+        super::check_json_size(self, limit).map_err(|_| "Oversized socket request")?;
         check_path(self.path())?;
         match self {
             Self::Call { command, .. } if !super::engine::valid_command_name(command) => Err("Invalid command name"),
             Self::AttachmentsRead { attachmentID, .. } if !super::valid_attachment_id(attachmentID) => {
                 Err("Invalid attachment ID")
             }
-            Self::Batch { ops, attachments, .. } => check_batch(ops, attachments.as_deref()),
+            Self::Batch { batch, attachments, .. } => check_batch(batch, attachments.as_deref()),
             Self::Export { output, .. } => check_path(output),
             _ => Ok(()),
         }

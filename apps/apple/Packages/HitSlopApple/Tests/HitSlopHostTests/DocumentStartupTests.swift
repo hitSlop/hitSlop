@@ -71,7 +71,10 @@ extension HostTests {
       }
       // Seed in a separate engine process so preparing saved bytes cannot warm this WebKit.
       let json = String(decoding: try JSONSerialization.data(withJSONObject: operations), as: UTF8.self)
-      let seeded = try await request(["method": "batch", "documentPath": root.path, "ops": json])
+      let seeded = try await request([
+        "method": "batch", "documentPath": root.path,
+        "batch": ["intents": try JSONSerialization.jsonObject(with: Data((json).utf8))],
+      ])
       try #require(seeded["ok"] as? Bool == true, "\(seeded)")
       for sample in 0..<samples {
         let start = ContinuousClock.now

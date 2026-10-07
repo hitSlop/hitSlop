@@ -142,7 +142,7 @@ public final class DocumentOwner: Sendable {
     public let ids: [String]
   }
   public func apply(batch: String, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
-    guard case .applied(let sequence, let ids) = try await call(.apply(batchJson: batch, origin: origin), view: view)
+    guard case .applied(let sequence, let ids) = try await call(.apply(batch: batch, origin: origin), view: view)
     else { throw SlopFailure("Invalid apply response") }
     return Applied(sequence: Int(sequence), ids: ids)
   }
@@ -205,7 +205,7 @@ public final class DocumentOwner: Sendable {
       case .resetAll: .resetAll
       case .importFile(let file): .importFile(file: file)
       }
-    submit(themeRequest(change: native)) { result in
+    submit(.changeTheme(change: native)) { result in
       reply(
         result.flatMap { value in
           guard case .applied(let sequence, _) = value else { return .failure(SlopFailure("Invalid theme response")) }

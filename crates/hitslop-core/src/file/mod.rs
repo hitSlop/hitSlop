@@ -504,6 +504,22 @@ pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Ve
 pub fn kind(path: &Path) -> Result<Kind> {
     Ok(summary(path)?.kind)
 }
+/// Copies existing cosmetic artwork without running the app or changing its file.
+/// A caller provides a fresh output path; existing files are never overwritten.
+pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool> {
+    use std::io::Write;
+    let Some((_, png)) = artwork(path, &[name])? else {
+        return Ok(false);
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .map_err(|e| failed(format!("Create artwork output: {e}")))?;
+    file.write_all(&png).map_err(|e| failed(format!("Write artwork output: {e}")))?;
+    Ok(true)
+}
+
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
 pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
@@ -538,6 +554,7 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
         views: opened.app.views(),
         assets: list("SELECT key, size FROM assets ORDER BY key")?,
         artwork: list("SELECT name, length(png) FROM artwork ORDER BY name")?,
+        defaults: opened.app.spec().theme_tokens().iter().cloned().collect(),
         attachments: AttachmentTotals { count: size(attachments)?, bytes: size(attachment_bytes)? },
         state: StateSizes {
             checkpoint_bytes: size(checkpoint_bytes)?,

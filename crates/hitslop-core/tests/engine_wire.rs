@@ -14,10 +14,10 @@ fn engine_request_shapes_are_closed_and_optionals_are_not_nullable() {
         json!({"method":"get","documentPath":"x","protocol":1}),
         json!({"method":"get"}),
         json!({"method":"future"}),
-        json!({"method":"batch","documentPath":"x","ops":"[]","ifVersion":null}),
-        json!({"method":"batch","documentPath":"x","ops":"[]","base":null}),
-        json!({"method":"batch","documentPath":"x","ops":"[]","command":"rename"}),
-        json!({"method":"batch","documentPath":"x","ops":"[]","attachments":null}),
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[],"ifVersion":null}}),
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[],"base":null}}),
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"command":"rename"}),
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":null}),
         json!({"method":"screenshot","documentPath":"x","output":"y","target":"other","ifPresent":false}),
         json!({"method":"screenshot","documentPath":"x","output":"y","target":"icon","ifPresent":1}),
     ] {
@@ -43,7 +43,7 @@ fn paths_and_command_names_keep_their_bounds() {
     }
     for name in ["", "Add", "a-b", "a_b", "aé", &"a".repeat(81)] {
         assert!(!accepts(json!({"method":"call","documentPath":"x","command":name,"args":{}})));
-        assert!(!accepts(json!({"method":"batch","documentPath":"x","command":name,"ops":"[]"})));
+        assert!(!accepts(json!({"method":"batch","documentPath":"x","command":name,"batch":{"intents":[]}})));
     }
 }
 
@@ -53,14 +53,29 @@ fn attachment_identity_and_payload_limits_are_explicit() {
     for id in ["a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)] {
         assert!(!accepts(json!({"method":"attachments.read","documentPath":"x","attachmentID":id})));
     }
-    assert!(!accepts(json!({"method":"batch","documentPath":"x","ops":"[]","attachments":[]})));
+    assert!(!accepts(json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":[]})));
     let max = hitslop_core::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4;
-    assert!(accepts(json!({"method":"batch","documentPath":"x","ops":"[]","attachments":["a".repeat(max)]})));
-    assert!(!accepts(json!({"method":"batch","documentPath":"x","ops":"[]","attachments":["a".repeat(max+1)]})));
-    for ops in ["".to_owned(), "x".to_owned(), "x".repeat(1_048_577)] {
-        assert!(!accepts(json!({"method":"batch","documentPath":"x","ops":ops})));
+    assert!(accepts(
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":["a".repeat(max)]})
+    ));
+    assert!(!accepts(
+        json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":["a".repeat(max+1)]})
+    ));
+    for attachments in [None, Some(vec!["YWJj"])] {
+        let request = |value: String| {
+            json!({"method":"batch","documentPath":"x",
+            "batch":{"intents":[{"type":"set","path":["title"],"value":value}]},
+            "attachments": attachments})
+        };
+        let mut small = request("😀".repeat(100));
+        let mut large = request("😀".repeat(262_144));
+        if attachments.is_none() {
+            small.as_object_mut().unwrap().remove("attachments");
+            large.as_object_mut().unwrap().remove("attachments");
+        }
+        assert!(accepts(small));
+        assert!(!accepts(large));
     }
-    assert!(accepts(json!({"method":"batch","documentPath":"x","ops":"x".repeat(1_048_576)})));
     assert!(EngineRequest::parse(&" ".repeat(hitslop_core::command::MAX_REQUEST_BYTES + 1)).is_err());
 }
 

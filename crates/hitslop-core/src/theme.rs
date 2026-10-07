@@ -224,7 +224,9 @@ mod tests {
         }
         /// Applies one palette intent (JSON text); whether it changed anything.
         fn apply(&mut self, intent: &str) -> Result<bool> {
-            self.0.apply_batch(&format!(r#"{{"intents":[{intent}]}}"#), Origin::Window).map(|a| a.publication.is_some())
+            self.0
+                .apply_batch(crate::Batch::decode(&format!(r#"{{"intents":[{intent}]}}"#))?, Origin::Window)
+                .map(|a| a.publication.is_some())
         }
         fn set(&mut self, values: &str) -> Result<bool> {
             self.apply(&format!(r#"{{"type":"setTheme","values":{values}}}"#))
@@ -321,8 +323,8 @@ mod tests {
     fn the_page_cannot_change_the_palette() {
         let mut theme = theme();
         let batch = r##"{"intents":[{"type":"setTheme","values":{"ink":"#000000"}}]}"##;
-        assert_eq!(code(theme.0.apply_batch(batch, Origin::Page)), Code::InvalidRequest);
-        theme.0.apply_batch(batch, Origin::Agent).unwrap();
+        assert_eq!(code(theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Page)), Code::InvalidRequest);
+        theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Agent).unwrap();
         assert_eq!(theme.overrides(), r##"{"ink":"#000000"}"##);
     }
 

@@ -77,12 +77,7 @@ pub enum EngineRequest {
     #[serde(rename = "batch")]
     Batch {
         document_path: String,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        if_version: Option<String>,
-        /// Intents as JSON text that only the core parses.
-        ops: String,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        base: Option<String>,
+        batch: super::Batch,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
@@ -94,6 +89,8 @@ pub enum EngineRequest {
     Create { from: String, output: String },
     #[serde(rename = "inspect")]
     Inspect { file: String },
+    #[serde(rename = "artwork.export")]
+    ArtworkExport { file: String, target: ArtworkTarget, output: String },
     #[serde(rename = "schema")]
     Schema { file: String },
     #[serde(rename = "pack")]
@@ -170,6 +167,7 @@ impl EngineRequest {
             Self::Templates { .. } => "templates",
             Self::Create { .. } => "create",
             Self::Inspect { .. } => "inspect",
+            Self::ArtworkExport { .. } => "artwork.export",
             Self::Schema { .. } => "schema",
             Self::Pack { .. } => "pack",
             Self::ValidateApp { .. } => "validateApp",
@@ -196,9 +194,9 @@ impl EngineRequest {
                     return Err("Invalid attachment ID");
                 }
             }
-            Self::Batch { document_path, ops, attachments, .. } => {
+            Self::Batch { document_path, batch, attachments, .. } => {
                 check_path(document_path)?;
-                check_batch(ops, attachments.as_deref())?;
+                check_batch(batch, attachments.as_deref())?;
             }
             Self::Call { document_path, command, .. } => {
                 check_path(document_path)?;
@@ -206,7 +204,9 @@ impl EngineRequest {
                     return Err("Invalid command name");
                 }
             }
-            Self::Export { document_path, output, .. } | Self::Screenshot { document_path, output, .. } => {
+            Self::Export { document_path, output, .. }
+            | Self::Screenshot { document_path, output, .. }
+            | Self::ArtworkExport { file: document_path, output, .. } => {
                 check_path(document_path)?;
                 check_path(output)?;
             }
@@ -227,10 +227,8 @@ impl EngineRequest {
 }
 
 /// Constraints shared by the socket and engine request boundaries.
-pub(super) fn check_batch(ops: &str, attachments: Option<&[String]>) -> Result<(), &'static str> {
-    if !(2..=super::SOCKET_REQUEST).contains(&ops.chars().count()) {
-        return Err("Invalid operations length");
-    }
+pub(super) fn check_batch(batch: &super::Batch, attachments: Option<&[String]>) -> Result<(), &'static str> {
+    batch.check_size(super::SOCKET_REQUEST).map_err(|_| "Batch exceeds size limit")?;
     if let Some(blobs) = attachments {
         let max = super::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4;
         if blobs.is_empty() || blobs.iter().any(|bytes| bytes.chars().count() > max) {
@@ -339,6 +337,7 @@ pub struct InspectInfo {
     pub views: crate::app::Views,
     pub assets: Vec<NamedSize>,
     pub artwork: Vec<NamedSize>,
+    pub defaults: ThemeValues,
     pub attachments: AttachmentTotals,
     pub state: StateSizes,
 
@@ -406,6 +405,12 @@ pub enum EngineSuccess {
     Create { ok: True, document_path: String },
     #[serde(rename = "inspect")]
     Inspect { ok: True, info: InspectInfo },
+    #[serde(rename = "artwork.export")]
+    ArtworkExport {
+        ok: True,
+        #[serde(deserialize_with = "required_option")]
+        output: Option<String>,
+    },
     #[serde(rename = "schema")]
     Schema {
         ok: True,

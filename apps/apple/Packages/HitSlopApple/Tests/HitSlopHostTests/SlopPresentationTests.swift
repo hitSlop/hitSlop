@@ -100,7 +100,11 @@ extension HostTests {
         let current = try #require(await savedValue(session.file.url)?["count"] as? Int)
         let failing = kind == "export" ? -1001 : -2001
         let ops = try Fixtures.json([["type": "increment", "path": ["count"], "by": failing - current]])
-        #expect(try await command("batch", url: session.file.url, ["ops": ops]).ok)
+        #expect(
+          try await command(
+            "batch", url: session.file.url,
+            ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))]]
+          ).ok)
         await #expect(throws: (any Error).self) {
           if kind == "icon" {
             _ = try await SlopRenderer.iconPNGData(session: session)

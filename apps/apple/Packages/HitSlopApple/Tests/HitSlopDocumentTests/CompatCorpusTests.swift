@@ -62,7 +62,14 @@ import WebKit
             "return await globalThis.contractTest()", arguments: [:], in: nil, contentWorld: .page) as? Bool
         #expect(passed == true, "\(name): the old app's contract test failed")
         // An agent's edit to the open document reaches the old app's page.
-        _ = try await command("batch", url: root, ["ops": #"[{"type":"set","path":["title"],"value":"Live ✓"}]"#])
+        _ = try await command(
+          "batch", url: root,
+          [
+            "batch": [
+              "intents": try JSONSerialization.jsonObject(
+                with: Data((#"[{"type":"set","path":["title"],"value":"Live ✓"}]"#).utf8))
+            ]
+          ])
         let shown = try await eventually(timeout: .seconds(2)) {
           try await session.webView.callAsyncJavaScript(
             "return document.body.textContent.includes('Live ✓')", arguments: [:], in: nil, contentWorld: .page)

@@ -145,7 +145,10 @@ extension HostTests {
         ["type": "set", "path": ["tasks", ["id": $0["$id"]!], field], "value": true] as [String: Any]
       }
       let text = String(decoding: try JSONSerialization.data(withJSONObject: ops), as: UTF8.self)
-      #expect(try await command("batch", url: root, ["ops": text]).ok)
+      #expect(
+        try await command(
+          "batch", url: root, ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((text).utf8))]]
+        ).ok)
     }
     try await batch("done")
     let completedIcon = try #require(
@@ -188,7 +191,12 @@ extension HostTests {
       controller.showWindow(nil)
       await controller.waitForPresentation()
       #expect(controller.isContentReady)
-      if let ops { #expect(try await command("batch", url: root, ["ops": ops]).ok) }
+      if let ops {
+        #expect(
+          try await command(
+            "batch", url: root, ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))]]
+          ).ok)
+      }
       try await controller.finishClose()
     }
     // A document without artwork gets a preview at its first close.
@@ -225,7 +233,10 @@ extension HostTests {
       ]
     }
     let ops = String(decoding: try JSONSerialization.data(withJSONObject: tasks), as: UTF8.self)
-    #expect(try await command("batch", url: root, ["ops": ops]).ok)
+    #expect(
+      try await command(
+        "batch", url: root, ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))]]
+      ).ok)
     // Full length at 2x exceeds the PNG raster limit; the preview must not.
     let preview = try #require(NSBitmapImageRep(data: try await SlopRenderer.previewPNGData(url: root)))
     #expect(preview.pixelsWide == 960 && preview.pixelsHigh == 960 * 3)  // 480pt wide at 2x, capped at 3:1

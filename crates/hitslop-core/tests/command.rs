@@ -36,14 +36,15 @@ fn request(path: &Path, method: &str) -> Value {
 }
 fn batch(path: &Path) -> Value {
     let mut r = request(path, "batch");
-    r["ops"] = r#"[{"type":"increment","path":["hits"],"by":1}]"#.into();
+    r["batch"] = json!({"intents":[{"type":"increment","path":["hits"],"by":1}]});
     r
 }
 fn checked(text: String) -> Value {
     assert!(serde_json::from_str::<hitslop_core::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
-fn run(value: Value) -> Value {
+fn run(mut value: Value) -> Value {
+    value.as_object_mut().unwrap().remove("protocol");
     checked(command::request(&value.to_string(), PROTOCOL, None))
 }
 fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
@@ -77,6 +78,8 @@ impl ExportHandler for NoExport {
 
 #[test]
 fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
+    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1, None));
+    assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
@@ -118,13 +121,13 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     // An agent's edit reports the rows it inserted; it reads state with `get`.
     assert_eq!(run(batch(&path)), json!({"ok":true,"method":"batch","ids":[]}));
     let mut theme = request(&path, "batch");
-    theme["ops"] = r##"[{"type":"setTheme","values":{"accent":"#123456"}}]"##.into();
+    theme["batch"] = json!({"intents":[{"type":"setTheme","values":{"accent":"#123456"}}]});
     assert_eq!(run(theme)["method"], "batch");
     // A blob arrives with the batch that references it, here inside text.
     const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     let stored = || run(request(&path, "attachments.list"))["state"].as_array().unwrap().len();
     let mut attach = request(&path, "batch");
-    attach["ops"] = format!(r#"[{{"type":"set","path":["title"],"value":"Cover: {ABC}"}}]"#).into();
+    attach["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":format!("Cover: {ABC}")}]});
     attach["attachments"] = json!(["YWJj"]);
     assert_eq!(run(attach)["method"], "batch");
     let mut read = request(&path, "attachments.read");
@@ -132,13 +135,13 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     assert_eq!(run(read)["state"]["bytes"], "YWJj");
     // A refused batch's blob is stored first, then reclaimed as its command closes.
     let mut refused = request(&path, "batch");
-    refused["ops"] = r#"[{"type":"set","path":["missing"],"value":1}]"#.into();
+    refused["batch"] = json!({"intents":[{"type":"set","path":["missing"],"value":1}]});
     refused["attachments"] = json!(["ZGVm"]);
     assert_eq!(run(refused)["ok"], false);
     assert_eq!(stored(), 1);
     // Once nothing references it, a blob is reclaimed at the next close.
     let mut removed = request(&path, "batch");
-    removed["ops"] = r#"[{"type":"set","path":["title"],"value":"No cover"}]"#.into();
+    removed["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"No cover"}]});
     run(removed);
     assert_eq!(stored(), 0);
     // A command that only reads writes nothing, even beside a blob nothing references.
@@ -243,7 +246,7 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
     BufReader::new(stream).read_line(&mut reply).unwrap();
     assert_eq!(checked(reply)["method"], "get");
     let mut huge = batch(&path);
-    huge["ops"] = format!("[{}]", " ".repeat(1024 * 1024 + 1)).into();
+    huge["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"x".repeat(1024 * 1024 + 1)}]});
     assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
     let mut partial = Vec::new();
     for _ in 0..16 {
@@ -344,7 +347,8 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     assert_eq!(answer["code"], "unknown_outcome");
     assert!(!answer["error"].as_str().unwrap().contains("was accepted"));
     peer.join().unwrap();
-    let Reply::State { json, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reply::State { reading, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let json = serde_json::to_string(&reading).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 1);
     close(&owner);
     let saved = Store::open(&path, Mode::Snapshot).unwrap().document().unwrap();
@@ -362,7 +366,8 @@ fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
     let request = batch(&path);
     let client = std::thread::spawn(move || run(request));
     let hits = |owner: &Owner| {
-        let Reply::State { json, .. } = call(owner, Request::State).unwrap() else { panic!() };
+        let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!() };
+        let json = serde_json::to_string(&reading).unwrap();
         serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"].clone()
     };
     // Accepted, and waiting for its save.
@@ -403,7 +408,7 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(opened["ok"], true);
     let state: Value = serde_json::from_str(opened["state"].as_str().unwrap()).unwrap();
     assert_eq!(state["value"]["hits"], 0);
-    let batch = |intent: Value| json!({"method":"apply","batch":json!({"intents":[intent]}).to_string()}).to_string();
+    let batch = |intent: Value| json!({"method":"apply","batch":json!({"intents":[intent]})}).to_string();
     let applied = page(&owner, "page", &batch(json!({"type":"increment","path":["hits"],"by":2})));
     assert!(matches!(applied, command::PageDispatch::Reply { failure: None, .. }));
     assert_eq!(page_json(&applied), json!({"ok":true,"method":"apply","sequence":1,"ids":[]}));
@@ -429,23 +434,26 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     ));
     // The core checks the envelope and parses the payload; either way a malformed or
     // oversized request is a definite refusal that applies nothing.
-    let increment = json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string();
+    let increment = json!({"intents":[{"type":"increment","path":["hits"],"by":1}]});
     for (refused, reason) in [
         (json!({"method":"surprise"}), "invalid_request"),
         (json!({"method":"apply"}), "invalid_request"),
         (json!({"method":"apply","batch":increment,"extra":true}), "invalid_request"),
         (json!({"method":"flush","batch":increment}), "invalid_request"),
         (json!({"view":"","method":"apply","batch":increment}), "invalid_request"),
-        (json!({"method":"apply","batch":{"intents":[]}}), "invalid_request"),
+        (json!({"method":"apply","batch":"{\"intents\":[]}"}), "invalid_request"),
         (
-            json!({"method":"apply","batch":json!({"intents":[{"type":"increment","path":["hits"],"by":1,"extra":1}]}).to_string()}),
+            json!({"method":"apply","batch":json!({"intents":[{"type":"increment","path":["hits"],"by":1,"extra":1}]})}),
             "invalid_request",
         ),
         // Text edits are batches now; there is no separate text request.
         (json!({"method":"text","request":json!({"base":"x"}).to_string()}), "invalid_request"),
-        (json!({"method":"apply","batch":json!({"base":"x","intents":[]}).to_string()}), "invalid_version"),
+        (json!({"method":"apply","batch":json!({"base":"x","intents":[]})}), "invalid_version"),
         // The core bounds opaque document payloads in UTF-8 bytes.
-        (json!({"method":"apply","batch":"😀".repeat(1_048_577)}), "too_large"),
+        (
+            json!({"method":"apply","batch":{"intents":[{"type":"set","path":["title"],"value":"😀".repeat(1_048_577)}]}}),
+            "too_large",
+        ),
     ] {
         let reply = page_json(&page(&owner, "page", &refused.to_string()));
         assert_eq!(
@@ -455,7 +463,8 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         );
     }
     assert_eq!(page_json(&page(&owner, "page", "not json"))["code"], "rejected");
-    let Reply::State { json, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reply::State { reading, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let json = serde_json::to_string(&reading).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
 }
@@ -467,9 +476,9 @@ fn a_based_batch_keeps_text_written_since_the_agents_read() {
     let (_dir, path) = document();
     let set = |title: &str, base: Option<&Value>| {
         let mut batch = request(&path, "batch");
-        batch["ops"] = json!([{"type":"set","path":["title"],"value":title}]).to_string().into();
+        batch["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":title}]});
         if let Some(base) = base {
-            batch["base"] = base.clone();
+            batch["batch"]["base"] = base.clone();
         }
         run(batch)
     };

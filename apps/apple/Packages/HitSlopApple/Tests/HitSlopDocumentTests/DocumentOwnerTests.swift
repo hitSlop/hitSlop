@@ -41,7 +41,10 @@ import Testing
       let ops =
         #"[{"type":"insert","path":["rows"],"value":{"text":""# + text
         + #"","done":false}},{"type":"increment","path":["hits"],"by":1}]"#
-      #expect(try await command("batch", url: root, ["ops": ops]).ok)
+      #expect(
+        try await command(
+          "batch", url: root, ["batch": ["intents": try JSONSerialization.jsonObject(with: Data((ops).utf8))]]
+        ).ok)
     }
     let live = try await commandState("get", url: root)
     #expect(live.count > 48 * 1024 * 1024)
@@ -98,6 +101,8 @@ import Testing
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
+    // Native JSON admission reports an ordinary refusal and leaves the owner usable.
+    await #expect(throws: OwnerFailure.self) { _ = try await owner.apply(batch: "{") }
     #expect(Fixtures.isLocked(root))
     _ = try await owner.apply(batch: increment)
     #expect(try await hits(owner) == 3)
@@ -170,7 +175,16 @@ import Testing
         return doc.current.rows[0].done;
         """, arguments: [:], in: nil, contentWorld: .page) as? Bool
     #expect(accepted == true)
-    #expect(try await command("batch", url: root, ["ops": #"[{"type":"increment","path":["hits"],"by":7}]"#]).ok)
+    #expect(
+      try await command(
+        "batch", url: root,
+        [
+          "batch": [
+            "intents": try JSONSerialization.jsonObject(
+              with: Data((#"[{"type":"increment","path":["hits"],"by":7}]"#).utf8))
+          ]
+        ]
+      ).ok)
     let published =
       try await session.webView.callAsyncJavaScript(
         """
@@ -200,8 +214,12 @@ import Testing
     let inserted = try await command(
       "batch", url: root,
       [
-        "ops":
-          #"[{"type":"increment","path":["hits"],"by":2},{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]"#
+        "batch": [
+          "intents": try JSONSerialization.jsonObject(
+            with: Data(
+              (#"[{"type":"increment","path":["hits"],"by":2},{"type":"insert","path":["rows"],"value":{"text":"new","done":false}}]"#)
+                .utf8))
+        ]
       ])
     let ids = try #require(inserted.ids)
     let saved = try JSONSerialization.jsonObject(with: await commandState("get", url: root)) as! [String: Any]

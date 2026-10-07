@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { buildTemplate } from "../../src/cli/template";
 import { execute, request } from "../../src/cli/engine";
 import { HelperProtocol } from "../../src/schema/constants";
-import { exec } from "../../src/cli/process";
+import { exec } from "../../../../scripts/lib/test-process";
 import { findEngine } from "../../src/cli/engine";
 import { stageProject } from "../../src/cli/build";
 

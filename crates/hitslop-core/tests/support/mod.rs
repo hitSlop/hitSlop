@@ -149,7 +149,7 @@ pub fn type_text(
     to: &str,
     caret: usize,
 ) -> Result<Applied, Error> {
-    d.apply_batch(&typed(base, path, from, to, caret), Origin::Page)
+    d.apply_json(&typed(base, path, from, to, caret), Origin::Page)
 }
 /// Whether `d` still accepts `version` as a text base: a no-change edit of `["title"]`
 /// (holding `text`) from it is refused as stale or invalid otherwise.
@@ -188,7 +188,7 @@ fn unchanged(publication: Option<String>) -> String {
 }
 impl Edit for Document {
     fn apply(&mut self, batch: &str) -> Result<String, Error> {
-        self.apply_batch(batch, Origin::Page).map(|applied| unchanged(applied.publication))
+        self.apply_json(batch, Origin::Page).map(|applied| unchanged(applied.publication))
     }
 }
 /// The page's view of a document: publications apply their ops, and replace the palette
@@ -267,5 +267,23 @@ pub fn apply_patches(value: &mut Value, ops: &Value) {
                 }
             }
         }
+    }
+}
+
+/// Test inputs exercise the JSON admission boundary before typed core application.
+pub trait ApplyJson {
+    fn apply_json(
+        &mut self,
+        json: &str,
+        origin: hitslop_core::Origin,
+    ) -> Result<hitslop_core::Applied, hitslop_core::Error>;
+}
+impl ApplyJson for hitslop_core::Document {
+    fn apply_json(
+        &mut self,
+        json: &str,
+        origin: hitslop_core::Origin,
+    ) -> Result<hitslop_core::Applied, hitslop_core::Error> {
+        hitslop_core::Batch::decode(json).and_then(|batch| self.apply_batch(batch, origin))
     }
 }

@@ -1,3 +1,4 @@
+import { exec } from "../../../../scripts/lib/test-process";
 // Registry I/O is replaced only in isolated subprocesses. Verify observable
 // machine output, interactive notices/cache reuse, and successful offline work.
 import { expect, test } from "bun:test";
@@ -22,7 +23,7 @@ test("update checks are interactive, cached, optional, and soft-failing", async 
         await app.execute({argv:[]});await app.execute({argv:[]});
         if(calls!==${["notice", "offline"].includes(scenario) ? 1 : 0})throw Error("Unexpected registry activity: "+calls);
       `;
-      const child = Bun.spawn([process.execPath, "-e", script], {
+      const result = await exec([process.execPath, "-e", script], {
         env: {
           ...process.env,
           HOME: home,
@@ -31,14 +32,8 @@ test("update checks are interactive, cached, optional, and soft-failing", async 
           CI: scenario === "ci" ? "1" : "",
           HITSLOP_NO_UPDATE_CHECK: scenario === "disabled" ? "1" : "0",
         },
-        stdout: "pipe",
-        stderr: "pipe",
       });
-      const [out, err, code] = await Promise.all([
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-        child.exited,
-      ]);
+      const { stdout: out, stderr: err, code } = result;
       expect(code).toBe(0);
       expect(out).toBe('{"ok":true}\n{"ok":true}\n');
       if (scenario === "notice") {

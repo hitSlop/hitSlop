@@ -14,7 +14,7 @@
     "build": "bun scripts/build/build.ts",
     "verify": "bun scripts/verify.ts",
     "check": "bun scripts/verify.ts contracts,types",
-    "test": "bun scripts/verify.ts bun",
+    "test": "bun scripts/verify.ts bun,cli",
     "swift:test": "bun scripts/verify.ts swift",
     "swift:format": "bun scripts/lib/swift-format.ts",
     "bench:windows": "HITSLOP_BENCH=1 bun run swift:test --filter BenchmarkTests",

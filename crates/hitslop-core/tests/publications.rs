@@ -5,6 +5,7 @@ mod support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use serde_json::{Value, json};
+use support::ApplyJson;
 use support::{Edit, View, app, fixture, next};
 fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
     let view: Value = serde_json::from_str(&d.state().unwrap()).unwrap();
@@ -107,7 +108,7 @@ fn a_batch_that_changes_nothing_publishes_nothing() {
     let f: Value = fixture("checklist");
     let mut d = Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap();
     let (sequence, version) = (d.sequence(), d.version());
-    let applied = d.apply_batch(r#"{"intents":[]}"#, Origin::Page).unwrap();
+    let applied = d.apply_json(r#"{"intents":[]}"#, Origin::Page).unwrap();
     assert!(applied.publication.is_none());
     assert_eq!((applied.sequence, d.sequence(), d.version()), (sequence, sequence, version));
 }
