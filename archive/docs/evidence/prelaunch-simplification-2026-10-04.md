@@ -41,12 +41,12 @@ when its publication queue overflows.
 
 ## Measurements
 
-- [Snapshot capture](capture-snapshot-2026-10-04.md): 741 ms paired added p95 at 5,000
+- Snapshot capture (`capture-snapshot-2026-10-04.md`; report not retained): 741 ms paired added p95 at 5,000
   rows across 20 captures, below the one-second gate.
-- [Document growth](document-growth-2026-10-04.md): a 30-day continuously open workload
+- Document growth (`document-growth-2026-10-04.md`; report not retained): a 30-day continuously open workload
   generated 84.7 MB across 3,120 commits. Sampled file size peaked at 16.4 MB and ended
   at 0.68 MB with the existing automatic retention policy.
-- [Synthetic theme gesture](theme-drag-2026-10-04.json): all 60 changes accepted and
+- [Synthetic theme gesture](../../../docs/evidence/theme-drag-2026-10-04.json): all 60 changes accepted and
   one Undo restored the starting palette at both 10 and 1,000 rows. At 1,000 rows,
   acceptance p95 was 0.27 ms and observed CSS p95 was 41.63 ms. This Debug measurement
   does not establish physical picker or paint latency.

@@ -1,6 +1,6 @@
 # Marker fire drill (2026-10-06)
 
-Spike A of the versioning plan (executed and archived 2026-10-07; its rules live in [the engineering contract](../engineering-contract.md#compatibility)).
+Spike A of the versioning plan (executed and archived 2026-10-07; its rules live in [the engineering contract](../../../docs/engineering-contract.md#compatibility)).
 No marker had ever been raised. Does today's format support the first bump of each one,
 while changing the format is still free? Run on the development M1. Data:
 [marker-drill-2026-10-06.json](marker-drill-2026-10-06.json).
@@ -82,6 +82,6 @@ step 2: how read-only paths read an old storage version, and when migration runs
 - **A4, layout 2.** Under the sync rules, layout 2 is reached only when sharing begins,
   from one shared starting snapshot. That's a value-preserving rewrite of the kind the
   2026-10-03 mergeable layout already did
-  ([evidence](mergeable-layout-2026-10-03.json)). Run it with the collaboration work.
+  (evidence (`mergeable-layout-2026-10-03.json`; report not retained)). Run it with the collaboration work.
 - The Quick Look extension itself, which opens through the same `open_file` path as
   `inspect`. Linux.

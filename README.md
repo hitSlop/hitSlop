@@ -31,7 +31,7 @@ With the window open, the count ticks up and the accent turns purple as each com
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
 
-hitSlop is built for tools with one clear job and a little character. It comes with starter apps to open and make your own: checklists, a kanban board, a habit heatmap, recipe cards, morning pages, a doodle board, an alien radio, Wordle, and more. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
+hitSlop is built for tools with one clear job and a little character. It comes with a checklist and an hourglass timer to open and make your own. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
 
 ## Keep the app. Keep the work.
 

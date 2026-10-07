@@ -70,6 +70,6 @@ This is not asserted to be the cause of the opening-only screenshot.
 The complete 16-stage release gate passed after the capture-restoration fix: 137 fast
 tests, 165 Swift tests, nine native CLI tests, template captures/reopens, packed CLI,
 landing build, matching app/helper resources and five crash-recovery phases. Separately,
-all 53 Rust tests passed. See [the release report](shape-lab-release-2026-09-30.json).
+all 53 Rust tests passed. See the release report (`shape-lab-release-2026-09-30.json`; report not retained).
 The production free-resize vector-hole lab was opened successfully; its manual
 cross-process click-through and shadow check remains awaiting maintainer observation.

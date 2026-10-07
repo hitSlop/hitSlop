@@ -16,7 +16,7 @@ browser document.
 
 `slop dev` now has a separate, approved native-owner direction in
 the app definition and packaging plan (executed and archived 2026-10-07), supported by the
-[native-dev spike](../docs/evidence/native-dev-owner.md). It retains Vite HMR over a
+[native-dev spike](../archive/docs/evidence/native-dev-owner.md). It retains Vite HMR over a
 disposable native SQLite document. That does not implement or prove this durable OPFS
 browser host; this plan remains deferred while packaging and native development land.
 
@@ -190,7 +190,7 @@ typical `.slop` is 70–200 KB on top.
 rusqlite on sqlite-wasm-rs with sqlite-wasm-vfs's `sahpool` VFS: the same rusqlite API on
 both targets keeps one implementation of the file and store code, and real SQLite C keeps
 the format identical byte for byte. The alternatives considered are in the
-[evidence](../docs/evidence/browser-storage-2026-10-06.md#libraries-considered).
+[evidence](../archive/docs/evidence/browser-storage-2026-10-06.md#libraries-considered).
 
 Versions, as decided 2026-10-06:
 
@@ -346,7 +346,7 @@ Then archive the spike harness.
 
 ## Spike results
 
-The [evidence](../docs/evidence/browser-storage-2026-10-06.md) has the measurements; the
+The [evidence](../archive/docs/evidence/browser-storage-2026-10-06.md) has the measurements; the
 harness is `spikes/browser-storage/`.
 
 - **It holds** in Chrome and WebKit: every native connection setting applies, the

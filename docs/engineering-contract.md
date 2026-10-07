@@ -43,7 +43,7 @@ in builds that know its new marker, so migrating only when needed keeps a file t
 Macs share openable on both for as long as possible.
 
 Markers are requirements, not release numbers: refactors never raise them, and app,
-CLI and SDK versions never stand for them. The Mac app and the npm packages share one
+CLI and SDK versions never stand for them. The Mac app and the npm package share one
 release version. A format change that an older build cannot read correctly raises a
 marker; a change without one is allowed only when older readers already handle it. An additive `ctx` API still raises
 `runtimeABI` once the SDK depends on it; an app may treat an API as optional only where

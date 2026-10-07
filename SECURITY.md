@@ -11,9 +11,9 @@ fix and disclosure timeline with the reporter.
 
 ## Supported versions
 
-Security fixes target the latest release on the default branch. The macOS app
-is currently `1.0.x`; the iOS app and npm packages are pre-1.0 and may change
-more quickly.
+Security fixes target the latest shared release of the macOS app and the `hitslop`
+npm package. The first shared release is 1.0.0. Saved-document compatibility follows
+the [engineering contract](docs/engineering-contract.md#compatibility).
 
 ## Secret handling
 

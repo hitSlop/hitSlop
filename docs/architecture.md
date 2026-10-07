@@ -100,6 +100,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | File | `crates/hitslop-core/src/file/` (feature `storage`, native only) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/{store,registry}.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
 | Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
+| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations and stored commands; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Owner | `crates/hitslop-core/src/owner.rs` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
@@ -120,8 +121,8 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
    it and a refusal reverts it. Assigned values commit after 150 ms without another
    assignment, or at the next barrier.
 2. **Host.** The page posts `apply {batch}`, with a nested batch object. The native session checks
-   the sending WebView, frame and origin and hands the request, with its view token, to
-   the core's page dispatcher, which checks the envelope and the token before calling
+   the sending WebView, frame and origin and supplies its own lifecycle view token
+   alongside the page's request to the core's page dispatcher, which checks the envelope and the token before calling
    `apply_batch`. The reply is `{sequence, ids}`. A batch that changes nothing publishes nothing and leaves the
    document clean.
 3. **Push.** The core's publication, `{previous, sequence, version, ops, theme?}`, is
@@ -251,7 +252,8 @@ snapshots or persistent undo records.
 Storage is `document(id)`, `checkpoint(bytes)` and `updates(seq, bytes)`. Creating a
 document atomically writes its identity and initial checkpoint before publishing the file. Saved updates without a checkpoint are
 refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
-4 MiB; the limits are 4,096 updates and 32 MiB (`StorageLimits`).
+4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
+[`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
 
 History is trimmed when nothing is editing. After its final save, a session that edited
 a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
@@ -389,13 +391,7 @@ history keeps nothing alive.
 
 Tests live at the boundary that owns the behavior; see [testing](testing.md).
 
-Performance evidence is in [`evidence/`](evidence/). The following measurements describe
-the September 30–October 2 builds recorded in those files, before the October 4 owner
-and storage simplification; they are historical baselines, not current-build results.
-In those builds, at 1,000 rows a window opened in under
-a second and a checkbox was accepted in about 12 to 14 ms (p95); see
-`release-window-measurements-2026-09-30.json`. Publication cost from owner commit to page
-at 1,000 and 5,000 rows is in `codebase-pass-phase2-2026-10-01.json`, edit latency at
-5,000 rows in `edit-latency-2026-10-01.json`, and core keystroke cost at 10,000 and
-100,000 characters (core only, not a system IME) in `long-text-2026-09-30.json`. A theme
-panel color drag reached the page within a frame at 1,000 rows (`theme-drag-2026-10-02.json`).
+Performance reports in [`evidence/`](evidence/) identify their producing build and
+measurement conditions. Older reports are historical baselines; they do not establish
+current startup, edit latency or memory behavior. Use the diagnostics in
+[testing](testing.md#native-macos) to measure the candidate being reviewed.

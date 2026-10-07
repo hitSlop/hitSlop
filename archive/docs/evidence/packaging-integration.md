@@ -1,6 +1,6 @@
 # Packaging integration
 
-Verified checkpoint for the app-definition and packaging plan (executed and archived 2026-10-07; open items moved to [the roadmap](../roadmap.md)).
+Verified checkpoint for the app-definition and packaging plan (executed and archived 2026-10-07; open items moved to [the roadmap](../../../docs/roadmap.md)).
 Changes are staged and remain uncommitted on `ready-ship`; HEAD remains `6557240e`.
 Linux qualification is deferred by request.
 

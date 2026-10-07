@@ -153,7 +153,8 @@ services. Text edits are batches: a binding's `apply` names its `base` and a `se
 `from` and `selection`, and the reply adds `authored` and the merged selection
 ([architecture](../architecture.md#text)). Rust owns it in `crates/hitslop-core/src/wire/page.rs`; core payloads are in
 `wire/core.rs`. Requests carry no correlation ID or view token: WebKit
-correlates promises and Swift supplies lifecycle identity after checking the sender.
+correlates promises and Swift supplies its own lifecycle view token alongside the
+request after checking the sender. The page never chooses that token.
 The host enters the shell through `__slop` for publications, capture and lifecycle.
 Apps use the restricted `ctx.document` facade and its explicit durability barrier,
 `flush()`. The initial owner state includes effective theme values, and ordered publications include

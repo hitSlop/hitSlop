@@ -30,7 +30,9 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |
 
-The `hitslop` npm package is publishable. The repository root, examples workspace, and landing application are private. TypeScript belongs in packages; Apple implementation belongs in the app-local Swift package.
+The `hitslop` npm package is publishable. The repository root, examples workspace, and landing application are private. The package exports TypeScript source, consumed by Bun and the supported Vite/Svelte
+authoring build; it does not ship a precompiled Node.js entry point. The installed-package
+tests check SDK types outside the workspace. Apple implementation belongs in the app-local Swift package.
 
 `slop dev SOURCE` serves the browser preview on `127.0.0.1` only. The native helper has no `open-dev` command.
 
@@ -53,12 +55,17 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 
 - `hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
 - `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), skills, package types, and discovered template types.
-- `bun` (`bun run test`): SDK, schema, and CLI tests over the WASM core, including the shared fixture replay.
+- `bun`: SDK and shell tests over WASM, examples, release tooling, and verification-runner tests.
+- `cli`: non-native CLI integration tests; `bun run test` runs both `bun` and `cli`.
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with two cached black-box apps and four presentation fixtures.
+- `app`: complete macOS app build and bundle acceptance; included in `release:check`.
 - `native` (`bun run test:native`): native CLI owners, the relocated helper, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
+
+Test locations, including `tests/release`, `tests/presentation`, `tests/verification`,
+`tests/native` and `apps/landing`, are listed in [testing](../testing.md).
 
 `bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 

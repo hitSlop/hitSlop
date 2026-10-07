@@ -4,7 +4,18 @@ The Mac app and the single `hitslop` npm package ship together under one `vX.Y.Z
 Their shared version labels a release; file markers and the exact command protocol decide
 compatibility. The first shared version is 1.0.0. Mac build numbers continue increasing.
 
-## Prepare and freeze
+## Merge-ready candidate
+
+Finish cleanup and commit the candidate on its working branch. Run `bun run verify`
+and `bun run verify --native`, then obtain Engines artifacts for that exact commit and
+run the frozen-lockfile installs and `bun run release:check` below without setting
+`HITSLOP_RELEASE_TAG`. Retain the commit and evidence report. This validates a candidate;
+it does not freeze 1.0.0 or prove signing, publishing, deployment or manual acceptance.
+
+After merge, any new commit needs matching Engines artifacts again. Branch cleanup,
+npm bootstrap/deprecations and public release changes are separate release work.
+
+## After merge: prepare and freeze
 
 1. Set the same version in root `package.json`, `packages/hitslop/package.json` and
    `apps/apple/project.yml`; increase `CURRENT_PROJECT_VERSION`. Update starter pins,
@@ -18,10 +29,15 @@ compatibility. The first shared version is 1.0.0. Mac build numbers continue inc
    attachments, page actions and stored commands. The entry records acceptance-rule
    hashes and producing inputs. Commit only the corpus. Frozen entries are permanent;
    the prelaunch `dev` entry may be replaced and is never frozen.
-4. Run `bun install --frozen-lockfile`, `bun install --cwd apps/landing --frozen-lockfile`
+4. Run Engines again on the corpus-only commit and replace the downloaded artifacts
+   with that commit's outputs. The corpus records producing source inputs, which a
+   corpus-only commit does not change; engine packaging requires the exact final commit.
+5. Run `bun install --frozen-lockfile`, `bun install --cwd apps/landing --frozen-lockfile`
    and `bun run release:check` on the final commit. Complete the manual acceptance below.
-5. Push and wait for CI, then tag that exact commit `vVERSION`. Never move a public tag.
-   A manual run of Release hitSlop checks the gate without publishing.
+6. Push and wait for CI, then tag that exact commit `vVERSION`. Never move a public tag.
+   Before tagging, run Release hitSlop manually on the final candidate. It checks the
+   gate but skips signing, notarization, publication and deployment; it cannot validate
+   their credentials or npm permissions.
 
 ## Publication and recovery
 
@@ -46,7 +62,21 @@ Before the first publication, configure ownership of `hitslop`, its npm trusted 
 for `macos-release.yml` with both publish and dist-tag permissions, the existing Apple
 signing/notarization/Sparkle secrets, and Cloudflare deployment credentials. The workflow
 uses npm 11.21.0 for OIDC dist-tag support; see [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-These are deployment prerequisites, not part of local builds.
+Configure a new trusted publisher close to publication: npm requires its first
+successful publish within two days. These are deployment prerequisites, not local builds.
+
+First-publication checklist, after merge:
+
+- Confirm ownership of `hitslop`. If a bootstrap publication is needed to configure
+  trusted publishing, publish it under a bootstrap dist-tag and explicitly accept that
+  its version remains part of npm history.
+- Configure the exact repository/workflow with both direct publish and dist-tag access;
+  confirm Apple, Sparkle and Cloudflare credentials independently of the dry run.
+- Retain the previous signed app and reachable appcast for Sparkle acceptance before
+  cleaning obsolete prerelease releases or tags. Keep Git history and increasing Mac builds.
+- Complete and record the manual acceptance below. Publish only the accepted commit.
+- Once `hitslop` is available, deprecate the superseded `@hitslop/*` packages with a
+  message pointing to it. Unpublication is not required for this release.
 
 ## Validate what ships
 

@@ -19,9 +19,11 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Standards for the templates in this repository | [Authoring templates](guides/authoring.md) |
 | Work on the repository or add templates | [Development](guides/development.md) |
 | Choose checks and write tests | [Testing](testing.md) |
-| Validate and release the app and npm packages | [Releasing](guides/releasing.md) |
+| Validate and release the app and npm package | [Releasing](guides/releasing.md) |
 
 Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/skills).
-Measurements live in [`evidence/`](evidence/). [`archive/`](../archive/) holds historical
+Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
+builds and environments named in each report, not current release acceptance. Superseded
+implementation studies live in [`archive/docs/evidence/`](../archive/docs/evidence/). [`archive/`](../archive/) holds historical
 material for provenance only; it is not a contract. The executed plans in `archive/docs`
 and the spikes in `archive/spikes` are tracked; the rest stays local.

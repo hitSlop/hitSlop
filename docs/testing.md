@@ -16,6 +16,11 @@ openable, so its frozen entries never change.
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Native tools | `tests/native`, `packages/hitslop/tests/cli/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
+| App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app; release native tests also exercise host process death |
+| Release tooling | `tests/release`, in `verify bun` | Artifact identity, publication recovery and promotion rules |
+| Presentation | `tests/presentation`, prepared for Swift/native tiers | Window shapes and capture fixtures |
+| Verification runner | `tests/verification`, in `verify bun` | Tier selection, evidence and subprocess lifecycle |
+| Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; release includes the build |
 | Examples | `tests/examples`, run with the package tests (`verify bun`, or `verify native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
 
@@ -39,16 +44,17 @@ bun run verify --list          # what would run, and why
 bun run release:check          # verify --release: every tier, the shipped builds, a report
 ```
 
-| Tier | Runs | Typical (M1) |
-|---|---|---|
-| `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently | 5 s |
-| `bun` | SDK, shell, example, release and runner tests; up to four isolated file workers | — |
-| `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline | — |
-| `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests | 30 s after an edit |
-| `landing` | The site's type check (and build, on release) | — |
-| `packed` | `tests/packed`, when what the npm packages ship changes (their sources, starter, skills, page shell or packing) | 20 s |
-| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, bounded by available CPUs and balanced by full test identities; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests | 75 s |
-| `native` | `*.native.test.ts` against the debug helper | 60 s |
+| Tier | Runs |
+|---|---|
+| `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently |
+| `bun` | SDK, shell, example, release and runner tests; up to four isolated file workers |
+| `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
+| `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `landing` | The site's type check (and build, on release) |
+| `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
+| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, bounded by available CPUs and balanced by full test identities; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
+| `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
+| `native` | `*.native.test.ts` against the debug helper |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
 build whose inputs did not change rewrites nothing, so nothing downstream recompiles: a
@@ -229,7 +235,7 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
 | `linux-smoke` (Ubuntu 24.04) | Full Rust workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `release-templates` (master) | builds and caches the full template corpus |
-| Release macOS (`v*` tag, or manual dry run) | `release:check` (`verify --release`, including the Rust suite), sign, notarize, publish |
+| Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
 `fast` runs on pull requests, master pushes and manual runs; feature-branch pushes don't
 repeat PR checks. `native` always reports; it skips its tools when the change touches no

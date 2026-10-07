@@ -75,7 +75,7 @@ host's.
   every browser copy.
 
 Before share links ship, rerun the
-[storage spike](../docs/evidence/browser-storage-2026-10-06.md)'s deferred cases against a
+[storage spike](../archive/docs/evidence/browser-storage-2026-10-06.md)'s deferred cases against a
 deployed harness on two domains: L1 and L2, mobile Safari and Android Chrome, private
 windows, `persist()`/`persisted()` per browser, and background-tab autosave. Add the
 **Use here** tab handoff.
