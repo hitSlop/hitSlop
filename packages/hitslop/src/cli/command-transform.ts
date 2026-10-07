@@ -2,8 +2,8 @@ import ts from "typescript";
 
 /** The UI bundle needs a command's name and arguments, never its body: the owner runs the
  * stored program. Parse source syntax, never regex-match bodies (strings, comments and
- * nested braces must remain harmless). A declaration this misses still works; only its
- * body's bytes reach the page. */
+ * nested braces must remain harmless). A declaration with `args` and `run` in any other
+ * shape is an error, so no body reaches the page unnoticed. */
 export function stripCommandBodies(source: string, fileName: string, declarationEntry = false) {
   let changed = false;
   const result = ts.transpileModule(source, {
@@ -37,8 +37,8 @@ export function stripCommandBodies(source: string, fileName: string, declaration
             ["document", "view", "export", "icon", "commands"].includes(p.name.text))), visit);
         }
         // A document command declaration: `<doc>.command({ description, args, run })`.
-        // Only that exact shape loses its body; any other `.command(...)` is not ours.
-        const spec = commandDeclaration(node);
+        // Only that exact shape loses its body; a `.command(...)` without `args` and `run` is not ours.
+        const spec = commandDeclaration(node, fileName);
         if (spec) {
           const run = spec.properties.find(p => propertyName(p) === "run")!;
           const body = ts.isMethodDeclaration(run) ? run : ts.isPropertyAssignment(run) ? run.initializer : undefined;
@@ -63,12 +63,13 @@ const propertyName = (p: ts.ObjectLiteralElementLike) =>
   p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : undefined;
 /** The spec of `x.command({ description, args, run })`: one object literal whose keys are
  * exactly those three. */
-function commandDeclaration(node: ts.Node) {
+function commandDeclaration(node: ts.Node, fileName: string) {
   if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) ||
     node.expression.name.text !== "command" || node.arguments.length !== 1) return;
   const spec = node.arguments[0]!;
   if (!ts.isObjectLiteralExpression(spec)) return;
   const names = spec.properties.map(propertyName);
-  if (names.length !== commandKeys.size || names.some(name => !name || !commandKeys.has(name)) || new Set(names).size !== names.length) return;
-  return spec;
+  if (names.length === commandKeys.size && names.every(name => name && commandKeys.has(name)) && new Set(names).size === names.length) return spec;
+  if (names.includes("args") && names.includes("run"))
+    throw new Error(`${fileName}: declare a command as <document>.command({ description, args, run }) with exactly those fields written out, no spread`);
 }

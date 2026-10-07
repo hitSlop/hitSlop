@@ -3,7 +3,7 @@ import Brand from "./Brand.svelte";
 import { checklistView } from "./model";
 import { ui } from "./ui.svelte";
 
-  import { bindText } from "hitslop/svelte";
+  import { EditableText } from "hitslop/svelte";
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
@@ -23,9 +23,6 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
   let notice = $state("");
   let openMenu = $state<string | null>(null);
   let menuAnchor = $state<HTMLElement | null>(null);
-  // Only the row being edited is a live textarea; the rest render as text (WebKit
-  // form controls are too expensive to mount by the thousand).
-  let editing = $state<{ id: string; caret: number | null } | null>(null);
 
 
   const menuIndex = $derived(openMenu ? visible.findIndex(task => task.$id === openMenu) : -1);
@@ -77,24 +74,6 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
     menuAnchor = button;
     openMenu = id;
   }
-  function startEditing(id: string, event?: MouseEvent) {
-    let caret: number | null = null;
-    const target = event?.currentTarget as HTMLElement | undefined;
-    const range = event && (document as any).caretRangeFromPoint?.(event.clientX, event.clientY);
-    if (target && range && target.contains(range.startContainer) && range.startContainer.nodeType === Node.TEXT_NODE) caret = range.startOffset;
-    editing = { id, caret };
-  }
-  function focusEditor(node: HTMLTextAreaElement, caret: number | null) {
-    node.focus();
-    const at = Math.min(caret ?? node.value.length, node.value.length);
-    node.setSelectionRange(at, at);
-  }
-  // CSS auto-grow: the wrapper's ::after mirrors the text, so no per-row measuring. Only
-  // the row being edited carries the mirror; a text row sizes itself.
-  function mirror(event: Event) {
-    const field = event.currentTarget as HTMLTextAreaElement;
-    field.parentElement!.dataset.value = field.value;
-  }
 
 </script>
 
@@ -109,16 +88,13 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
   >
     <div class="checklist-heading">
       <p class="checklist-eyebrow">A little less on your mind.</p>
-      <div class="checklist-grow title" data-value={doc.current.title}>
-        <textarea
-          class="checklist-title"
-          aria-label="Checklist title"
-          rows="1"
-          oninput={mirror}
-          use:bindText={doc.fields.title}
-          placeholder="Name your list"
-        ></textarea>
-      </div>
+      <EditableText
+        class="checklist-title"
+        handle={doc.fields.title}
+        text={doc.current.title}
+        label="Checklist title"
+        placeholder="Name your list"
+      />
       <div class="checklist-progress">
         <span aria-live="polite"
           >{visible.length && finished === visible.length
@@ -183,36 +159,14 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
                 />
                 {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
               </label>
-              <div class="checklist-grow task" data-value={editing?.id === task.$id ? task.text : undefined}>
-                {#if editing?.id === task.$id}
-                  <textarea
-                    class="checklist-task-text"
-                    aria-label={`Task ${index + 1}`}
-                    rows="1"
-                    oninput={mirror}
-                    use:bindText={row.text}
-                    use:focusEditor={editing.caret}
-                    onblur={() => { if (editing?.id === task.$id) editing = null; }}
-                    placeholder="Untitled task"
-                    onkeydown={(event) => {
-                      // An IME's Enter commits its composition, not the task.
-                      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-                        event.preventDefault();
-                        composer?.focus();
-                      }
-                    }}
-                  ></textarea>
-                {:else}
-                  <div
-                    class="checklist-task-text"
-                    role="textbox"
-                    tabindex="0"
-                    aria-label={`Task ${index + 1}`}
-                    onfocus={() => startEditing(task.$id)}
-                    onmousedown={(event) => { event.preventDefault(); startEditing(task.$id, event); }}
-                  >{#if task.text}{task.text}{:else}<span class="checklist-placeholder">Untitled task</span>{/if}</div>
-                {/if}
-              </div>
+              <EditableText
+                class="checklist-task-text"
+                handle={row.text}
+                text={task.text}
+                label={`Task ${index + 1}`}
+                placeholder="Untitled task"
+                onenter={() => composer?.focus()}
+              />
               <button
                 class="checklist-more"
                 aria-label={`Actions for ${task.text || "untitled task"}`}

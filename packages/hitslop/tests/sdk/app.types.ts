@@ -1,5 +1,6 @@
 import { defineDocument, defineSlop, s } from "../../src/sdk/schema";
 import type { Component } from "svelte";
+import { attachments } from "../../src/sdk/app/attachments";
 
 // The explicit declaration uses Rust's metadata/window types while document inputs
 // retain SDK inference. These functions are checked by tsc, never executed.
@@ -23,3 +24,16 @@ function declarations(view: Component) {
   defineSlop({ ...fields, categories: ["unknown"], window: { kind: "standard", width: 320, height: 320 } });
 }
 void declarations;
+
+// Collectors run synchronously; inside them writes collect into one batch.
+async function collectors(file: File) {
+  const doc = defineDocument({ title: s.string(), photo: s.optional(s.string()) });
+  const id: { id: string } = await doc.change(() => ({ id: "kept" }));
+  // @ts-expect-error A change() collector cannot be async.
+  await doc.change(async tx => { await tx.fields.title.set("Later"); });
+  await attachments.import<typeof doc.descriptor>(file, (tx, ref) => tx.fields.photo.set(ref.id));
+  // @ts-expect-error An attachment's reference collector cannot be async.
+  await attachments.import<typeof doc.descriptor>(file, async (tx, ref) => tx.fields.photo.set(ref.id));
+  return id;
+}
+void collectors;

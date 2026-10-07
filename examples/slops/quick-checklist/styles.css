@@ -18,8 +18,7 @@ body {
 }
 
 button,
-input,
-textarea {
+input {
   font: inherit;
   color: inherit;
 }
@@ -38,11 +37,6 @@ input:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--slop-accent);
   outline-offset: 3px;
-}
-
-textarea {
-  resize: none;
-  overflow: hidden;
 }
 
 button {
@@ -334,50 +328,9 @@ html[data-slop-capture] .checklist-row {
   stroke-linejoin: round;
 }
 
-/* Auto-growing textarea: the hidden ::after mirrors the text in the same grid cell. */
-.checklist-grow {
-  display: grid;
-  min-width: 0;
-}
-
-.checklist-grow > *,
-.checklist-grow[data-value]::after {
-  grid-area: 1 / 1;
-}
-
-.checklist-grow > textarea {
-  height: 100%;
-}
-
-div.checklist-task-text {
-  white-space: pre-wrap;
-  cursor: text;
-}
-
-.checklist-placeholder {
+.checklist-task-text [data-placeholder] {
   color: var(--slop-muted);
   opacity: 0.7;
-}
-
-.checklist-grow[data-value]::after {
-  content: attr(data-value) " ";
-  visibility: hidden;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding-inline-end: 2px;
-}
-
-.checklist-grow.title::after {
-  font-family: var(--headingFont);
-  font-size: 34px;
-  line-height: 1.12;
-  letter-spacing: -0.045em;
-}
-
-.checklist-grow.task::after {
-  min-height: 24px;
-  font-size: 14px;
-  line-height: 24px;
 }
 
 .checklist-row [data-checkbox-root] {

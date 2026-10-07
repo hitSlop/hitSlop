@@ -27,6 +27,14 @@ test("JSX modules are transformed like TypeScript", () => {
   expect(code).not.toContain("BODY");
 });
 
+test("a command declaration in another shape is an authoring error, not a shipped body", () => {
+  for (const source of [
+    `doc.command({ ...shared, args: {}, run() { return "BODY"; } });`,
+    `doc.command({ description: "x", args: {}, examples: [], run() { return "BODY"; } });`,
+    `doc.command({ args: {}, run() { return "BODY"; } });`,
+  ]) expect(() => strip(source)).toThrow("exactly those fields");
+});
+
 test("an asynchronous body is an authoring error", () => {
   expect(() => strip(`doc.command({ description: "x", args: {}, async run() {} });`)).toThrow("synchronous");
   expect(() => strip(`doc.command({ description: "x", args: {}, run: async () => 1 });`)).toThrow("synchronous");

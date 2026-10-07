@@ -11,3 +11,8 @@ function callers() {
   rename({ title: "Next", other: true });
   return result;
 }
+// Commands run synchronously in the owner; an awaited write would fall outside the batch.
+// @ts-expect-error run cannot be async.
+doc.command({ description: "Later", args: {}, async run({ tx }) { tx.fields.count.increment(); } });
+// @ts-expect-error run cannot return a promise.
+doc.command({ description: "Later", args: {}, run: () => Promise.resolve(1) });

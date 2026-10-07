@@ -6,6 +6,7 @@ import { findEngine } from "./engine";
 import { exec } from "./process";
 import { refuseHostImport, sveltePlugin, uiEntrySource, uiTransform } from "./app-vite";
 import { portableAssetURLs } from "./asset-url-transform";
+import { declaresModuleState, sharedStateIn } from "./capture-state";
 import type { BuildInput } from "../wire/app.generated";
 import { PackageFormat, RuntimeABI } from "../schema/constants";
 import { MediaTypes } from "../wire/media.generated";
@@ -33,6 +34,9 @@ export async function buildDefinition(source: string, stage: string, options: De
   const inputs = { ui: new Set<string>(), definition: new Set<string>() };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
+  // The UI's module graph, and the project's modules in it with top-level $state.
+  const uiImports = new Map<string, string[]>();
+  const statefulModules = new Set<string>();
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
@@ -44,7 +48,7 @@ export async function buildDefinition(source: string, stage: string, options: De
         async resolveId(id, importer) {
           if (id === virtualEntry) {
             const resolved = await this.resolve("hitslop", entry, { skipSelf: true });
-            if (!resolved) this.error("Cannot resolve the project's hitslop SDK");
+            if (!resolved) return this.error("Cannot resolve the project's hitslop SDK");
             sdk = dirname(resolved.id);
             return id;
           }
@@ -71,10 +75,19 @@ globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describ
           if (headless && clean.endsWith(".svelte"))
             return `export default Object.freeze(${JSON.stringify({"~hitslop":"component",id:relative(source,clean)})});`;
         },
-        transform(code, id) { if (!headless) return uiTransform(code, id, source, entry); },
+        transform(code, id) {
+          if (headless) return;
+          const clean = id.split("?", 1)[0]!;
+          // Only the project's own modules: a library's internal state is not editor state.
+          if (clean.startsWith(source + "/") && !clean.includes("/node_modules/") && declaresModuleState(code, clean))
+            statefulModules.add(clean);
+          return uiTransform(code, id, source, entry);
+        },
         generateBundle() {
+          const clean = (id: string) => id.split("?", 1)[0]!;
           for (const id of this.getModuleIds()) {
-            if (!id.startsWith("\0")) inputs[mode].add(id.split("?", 1)[0]!);
+            if (!id.startsWith("\0")) inputs[mode].add(clean(id));
+            if (!headless) uiImports.set(clean(id), [...this.getModuleInfo(id)?.importedIds ?? []].map(clean));
             // The host's own runtime, not an author folder that happens to be named shell.
             if (id.includes("/node_modules/loro-crdt/") || id.startsWith(join(dirname(sdk), "shell") + "/"))
               this.error(`Embedded host runtime rejected: ${id}`);
@@ -132,7 +145,15 @@ globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describ
       | { ok: true; declaration: ReturnType<typeof import("../sdk/app-definition").describeApp> }
       | { ok: false; error: string };
     if (reply.ok !== true) throw new Error(`Definition initialization failed: ${reply.error}`);
-    const {artwork = {}, ...declaration} = reply.declaration;
+    const {artwork = {}, components, ...declaration} = reply.declaration;
+    // Captures render saved state in a fresh page, so a module the editor sets shows only
+    // its initial value there. The editor itself as a capture renders that by design.
+    for (const role of ["export", "icon"]) {
+      const component = components[role];
+      if (!component || component === components.view) continue;
+      const shared = sharedStateIn(join(source, component), uiImports, statefulModules);
+      if (shared) throw new Error(`${component} (the ${role} view) imports ${relative(source, shared)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read doc.current there, and give a component shared with the editor that value as a prop.`);
+    }
     const hasCommands = declaration.commands.length > 0;
     const emittedKey = (url: unknown, role: string): string => {
       if (typeof url !== "string" || !url.startsWith("/assets/")) throw new Error(`${role} must reference an imported asset`);

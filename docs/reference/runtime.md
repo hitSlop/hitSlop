@@ -21,7 +21,7 @@ the builder emits `svelteApp` from the declaration's explicit `view`, `document`
 `export`, `icon` and `commands` references. Authors import styles themselves; filenames
 have no special role. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
-`ctx.document.observe`). `bindText`, `capture` and `attachments` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
+`ctx.document.observe`). `bindText`, `EditableText`, `capture` and `attachments` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 

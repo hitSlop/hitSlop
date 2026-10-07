@@ -47,6 +47,9 @@ export interface OptionalNode<S extends Scalar | Text | ObjectNode = Scalar | Te
   inner: S;
 }
 export type Description = { description?: string };
+/** What a collector or command `run` returns. A promise is refused: they run synchronously,
+ * and a write after an `await` would fall outside the batch. */
+export type Synchronous<R> = R extends PromiseLike<unknown> ? "This callback must be synchronous (no async or await)" : R;
 export type Node = Text | Scalar | CounterNode | ObjectNode | ListNode | RecordNode | OptionalNode;
 
 /** Compile-time provenance only; snapshots contain no symbols or schema data. */
@@ -141,7 +144,7 @@ export interface LiveDocument<N extends ObjectNode> {
    * a record entry. */
   readonly at: At;
   /** Collects synchronously; resolves after acceptance and local publication. */
-  change<R>(callback: (tx: Scope<N>) => R): Promise<R>;
+  change<R>(callback: (tx: Scope<N>) => Synchronous<R>): Promise<R>;
   /** Durability barrier: sends unsent text, waits for pending writes, then for storage. */
   flush(): Promise<void>;
   /** Edit ▸ Undo: the last step, the person's or an agent's. Resolves once `current`

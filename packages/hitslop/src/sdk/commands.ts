@@ -1,4 +1,4 @@
-import type { Input, ListNode, ObjectNode, OptionalNode, Scalar, Value } from "./schema";
+import type { Input, ListNode, ObjectNode, OptionalNode, Scalar, Synchronous, Value } from "./schema";
 import type { Scope } from "./abi";
 import { current, documentFor } from "./app/context";
 
@@ -16,7 +16,7 @@ export type Command<A extends Arguments, R> = ({} extends CommandInput<A> ? (arg
 export type CommandSpec<N extends ObjectNode, A extends Arguments, R> = {
   description: string;
   args: A;
-  run(ctx: CommandContext<N>, args: CommandInput<A>): R;
+  run(ctx: CommandContext<N>, args: CommandInput<A>): Synchronous<R>;
 };
 const brand = Symbol.for("hitslop.command");
 export type CommandInfo = { definition: object; spec: CommandSpec<any, Arguments, unknown>; name?: string };

@@ -9,6 +9,7 @@ import Root from "./Root.svelte";
 export type { SlopApp, SlopContext } from "../abi";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
 export { capture, type CaptureMode, type CaptureTarget } from "./capture";
+export { default as EditableText } from "./EditableText.svelte";
 
 /**
  * A Svelte app's entry: `export default svelteApp(App, { schema })`; the host mounts it.
@@ -78,7 +79,8 @@ function createAdapter(doc: SlopContext["document"]) {
 
 /** Svelte action for text fields: `use:bindText={doc.fields.title}`. It keeps what the
  * person types, merges edits made elsewhere, and survives IME composition. Scalars use
- * `bind:value={doc.fields.done.value}` instead. */
+ * `bind:value={doc.fields.done.value}` instead. For text in a list's rows, use
+ * `EditableText`, which mounts a field only while it is edited. */
 export function bindText(
   element: HTMLInputElement | HTMLTextAreaElement,
   handle: TextHandle,

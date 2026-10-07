@@ -3,9 +3,10 @@ import type { BuildDeclaration, ArtworkInput } from "../wire/app.generated";
 
 /** Plain declaration projection used in the restricted evaluator. Acceptance belongs
  * to Rust; these checks establish component/command registration, not metadata rules. */
-export function describeApp(app: any): BuildDeclaration & { artwork?: ArtworkInput } {
+export function describeApp(app: any): BuildDeclaration & { artwork?: ArtworkInput; components: Record<string, string> } {
   const { document, view, export: exportView, icon, commands = {}, theme, initial, window, artwork, ...metadata } = app;
-  for (const [role, component] of Object.entries({ view, export: exportView, icon })) {
+  const roles = { view, export: exportView, icon };
+  for (const [role, component] of Object.entries(roles)) {
     if (role !== "view" && component === undefined) continue;
     if (!component || (component as any)["~hitslop"] !== "component")
       throw new Error(`${role} must reference an imported Svelte component`);
@@ -22,5 +23,8 @@ export function describeApp(app: any): BuildDeclaration & { artwork?: ArtworkInp
     }),
     views: { export: exportView !== undefined, icon: icon !== undefined },
     artwork,
+    // Source files of the roles, for build checks; not part of the declaration.
+    components: Object.fromEntries(Object.entries(roles)
+      .filter(([, component]) => component !== undefined).map(([role, component]) => [role, component.id])),
   };
 }

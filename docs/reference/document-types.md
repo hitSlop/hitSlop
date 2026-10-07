@@ -154,6 +154,11 @@ neither side's typing is lost.
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
   binding sends its unsent text first.
+- **`EditableText`** (from `hitslop/svelte`) is that binding for text that repeats, such
+  as a field in every row: it shows the text and mounts a textarea only while edited,
+  since WebKit form controls are too expensive to mount by the thousand. It places the
+  caret where the person clicked, grows with its text, and leaves IME Enter to the
+  composition.
 - **`text.set(value)`** replaces the whole field as the owner holds it when it applies
   the set. It uses a minimal edit script, so typing still on its way from a binding
   merges with it; typing the owner already accepted is replaced unless `value` keeps it.

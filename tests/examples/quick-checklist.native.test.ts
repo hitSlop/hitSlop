@@ -40,6 +40,33 @@ test("Enter while composing keeps the task editor; Enter after composing moves t
     expect(await focused(page)).toBe("New task");
   }), 60000);
 
+// A row is text until edited: the caret lands where the person clicked, the field grows
+// with its text, and leaving it shows text again.
+test("a task edits in place at the clicked caret, grows, and returns to text", () =>
+  preview(async (page) => {
+    const frame = page.frameLocator("iframe");
+    const position = await app(page).evaluate(() => {
+      const text = document.querySelector('[role="textbox"][aria-label="Task 2"]')!;
+      const range = document.createRange();
+      range.setStart(text.firstChild!, 5);
+      range.setEnd(text.firstChild!, 6);
+      const character = range.getBoundingClientRect(), box = text.getBoundingClientRect();
+      return { x: character.left - box.left + 1, y: character.top - box.top + character.height / 2 };
+    });
+    await frame.getByRole("textbox", { name: "Task 2" }).click({ position });
+    const field = frame.locator('textarea[aria-label="Task 2"]');
+    await field.waitFor();
+    expect(await field.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(5);
+    const height = () => field.evaluate((element) => element.getBoundingClientRect().height);
+    const before = await height();
+    await field.press("End");
+    await field.pressSequentially(" and then along the river, past the bakery, over the bridge and back home again before dark");
+    expect(await height()).toBeGreaterThan(before);
+    await frame.getByRole("textbox", { name: "New task" }).click();
+    await expect(field.count()).resolves.toBe(0);
+    expect(await frame.getByRole("textbox", { name: "Task 2" }).textContent()).toContain("back home again");
+  }), 60000);
+
 // A fresh renderer starts with the default local view for both preview and export.
 test("fresh preview and export show the default active tasks", () =>
   preview(async (page) => {

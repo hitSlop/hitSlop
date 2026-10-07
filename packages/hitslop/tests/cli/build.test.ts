@@ -156,3 +156,19 @@ test("only explicit roles are built; unrelated filenames are ignored", async () 
     await expect(stage(source,join(root,"invalid"))).rejects.toThrow();
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
+test("a capture view cannot read state the editor sets", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  try {
+    const source = join(root,"source");
+    await cp("packages/hitslop/templates/checklist",source,{recursive:true});
+    await writeFile(join(source,"ui.svelte.ts"), `export const ui = $state({ tab: "tasks" });\n`);
+    await writeFile(join(source,"Tab.svelte"), `<script lang="ts">import { ui } from "./ui.svelte";</script><b>{ui.tab}</b>`);
+    await writeFile(join(source,"Export.svelte"), `<script lang="ts">import Tab from "./Tab.svelte";</script><Tab />`);
+    // The editor reads it, also when the editor itself renders captures.
+    await overrideSlop(source, { view: "Tab", export: "Tab" }, `import Tab from "./Tab.svelte";`);
+    await stage(source,join(root,"editor"));
+    // A capture view sees only the initial value, even through a shared component.
+    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
+    await expect(stage(source,join(root,"export"))).rejects.toThrow("fresh page");
+  } finally { await rm(root,{recursive:true,force:true}); }
+},60000);

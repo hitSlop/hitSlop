@@ -79,7 +79,7 @@ export interface SlopContext {
      * its reference; both are accepted together or the promise rejects. */
     import(
       file: File,
-      reference: (tx: Scope<ObjectNode>, ref: AttachmentRef) => void,
+      reference: (tx: Scope<ObjectNode>, ref: AttachmentRef) => void | undefined,
     ): Promise<AttachmentRef>;
     url(id: string): string;
     read(id: string): Promise<Blob>;
