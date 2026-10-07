@@ -9,6 +9,10 @@ on:
         description: Verify warm template reuse and profile every bundled/preserved render
         type: boolean
         default: false
+      cache_namespace:
+        description: Optional isolated cache prefix for cold/warm CI validation
+        type: string
+        default: ""
 permissions:
   contents: read
   pull-requests: read
@@ -16,38 +20,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 env:
+  CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
   # replaced. Manual runs compare with nothing and check everything.
   CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
-  # Portable authoring and SDK coverage. Rust runs alongside it in linux-smoke.
-  fast:
+  # No dependency installation or compilation: decide before allocating macOS.
+  select:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/prepare-checks
-        with:
-          bindings: portable
-          nextest: "false"
-      - run: bun install --cwd apps/landing --frozen-lockfile
-      - run: bun run verify --ci --keep-going hygiene,contracts,types,bun,cli,packed,landing
-        env:
-          # Frozen tests/compat entries are compared with what this change builds on.
-          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: fast-evidence
-          path: .hitslop/evidence
-          include-hidden-files: true
-  # The Swift suite and the native tests (helper, render, crash, corpus replay), when the
-  # change touches what they cover. Always reports, so branch protection can require it.
-  native:
-    runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 5
+    outputs:
+      fast: ${{ steps.select.outputs.fast }}
+      native: ${{ steps.select.outputs.native }}
+      rust: ${{ steps.select.outputs.rust }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,34 +40,92 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.4.2"
-      - name: Select native tiers
+      - name: Select affected tiers
         id: select
+        shell: bash
         run: |
-          bun install --frozen-lockfile
-          bun scripts/verify.ts --list ${CHANGE_BASE:+--base "$CHANGE_BASE"} rust,cli,packed,swift,native | tee selection.txt
-          echo "run=$(grep -qE '^(rust|cli|packed|swift|native) ' selection.txt && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          args=(--list --json --native)
+          if [[ -n "$CHANGE_BASE" ]]; then args+=(--base "$CHANGE_BASE"); else args+=(--all); fi
+          bun scripts/verify.ts "${args[@]}" > selection.json
+          jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
+          echo "fast=$(jq -r '[.tiers[].name | select(. == "hygiene" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-selection
+          path: selection.json
+  # Always reports: a failed/cancelled selector must never turn required checks green.
+  fast:
+    needs: select
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TIERS: ${{ needs.select.outputs.fast }}
+    steps:
+      - name: Require successful selection
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+        run: test "$SELECTION_RESULT" = success && test -n "$TIERS"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
-        if: steps.select.outputs.run == 'true'
+        with:
+          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli')) && 'portable' || 'none' }}
+          nextest: "false"
+          rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed') }}
+          dependencies: ${{ env.TIERS != 'hygiene' }}
+      - run: bun install --cwd apps/landing --frozen-lockfile
+        if: contains(env.TIERS, 'landing')
+      - run: bun run verify --ci --keep-going "$TIERS"
+        env:
+          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: fast-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
+  native:
+    needs: select
+    if: needs.select.outputs.native != ''
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      TIERS: ${{ needs.select.outputs.native }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          nextest: ${{ contains(env.TIERS, 'rust') }}
+          bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || contains(env.TIERS, 'cli') && 'portable' || 'none' }}
+          dependencies: ${{ env.TIERS != 'rust' }}
       - uses: ./.github/actions/native-cache
-        if: steps.select.outputs.run == 'true'
+        if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:
           templates: fixtures
       - name: Native tiers
-        if: steps.select.outputs.run == 'true'
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-        run: bun run verify --ci --keep-going ${CHANGE_BASE:+--base "$CHANGE_BASE"} rust,cli,packed,swift,native
+        run: bun run verify --ci --keep-going "$TIERS"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.select.outputs.run == 'true'
+        if: always()
         with:
           name: native-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  # Full portable Rust semantics plus both SQLite configurations. Retain the required
-  # check name; Darwin storage, sandbox, and old-writer replay also run in native.
+  # Full Rust semantics plus both SQLite configurations, when affected.
   linux-smoke:
+    needs: select
+    if: needs.select.outputs.rust != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      TIERS: ${{ needs.select.outputs.rust }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,7 +133,8 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           bindings: none
-      - run: bun run verify --ci --keep-going rust
+          dependencies: "false"
+      - run: bun run verify --ci --keep-going "$TIERS"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

@@ -41,6 +41,7 @@ bun run verify --native        # the same, with the native (macOS) tiers
 bun run verify --all           # every tier but the native ones (with --native: every tier)
 bun run verify rust store::    # one tier, with its own arguments (here a nextest filter)
 bun run verify --list          # what would run, and why
+bun run verify --list --json --native --base origin/master # CI selection; no builds/tools
 bun run release:check          # verify --release: every tier, the shipped builds, a report
 ```
 
@@ -231,26 +232,42 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 
 | Job | Runs |
 |---|---|
-| `fast` (Ubuntu 24.04) | Hygiene, generated contracts, types, Bun, CLI, installed-package and landing checks |
+| `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
+| `fast` (Ubuntu 24.04) | Hygiene on every change, plus affected generated-contract, type, Bun, CLI, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
-| `linux-smoke` (Ubuntu 24.04) | Full Rust workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
+| `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
+| `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `release-templates` (master) | builds and caches the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
 `fast` runs on pull requests, master pushes and manual runs; feature-branch pushes don't
-repeat PR checks. `native` always reports; it skips its tools when the change touches no
-native tier. Branch protection requires `fast`, `native` and `linux-smoke`. The full
+repeat PR checks. `native` and `linux-smoke` skip at job level when none of their tiers
+are affected, so an unrelated change allocates no Mac runner. Selection includes both
+paths of a rename and deleted files; CI infrastructure and shared verification/toolchain
+inputs select all tiers. Manual CI runs select all everyday tiers. Jobs execute exactly
+the selected tier names, without consulting the local pass cache. `fast` always reports
+and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
+Branch protection requires `fast`, `native`, `linux-smoke` and `Gitleaks`. The full
 `release:check` runs only in the Release macOS workflow. Reports live in
 `.hitslop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
 verification results or retry failed tests automatically.
 
+Secret scanning uses the PR merge base or the previous master commit through the
+checked-out commit. It scans every introduced commit, including a secret later removed
+in the same PR and merge-resolution changes. Scanner configuration changes trigger a
+full-history scan, even if reverted before the tip. Missing bases fail the check;
+new-branch pushes without a previous commit scan full history. CodeRabbit remains advisory.
+
 For a scheduling or CI change, compare identical source/test inventories with one cold
 and three warm CI runs. Record build, test and job wall time separately. Completion
 requires three consecutive full warm runs without retries and one successful cold run;
 isolated retries are debugging evidence, not a passing full suite. Template restoration
 continues through the existing full-corpus master/manual/release flow.
+For an isolated cold run, dispatch CI with a new `cache_namespace` (for example,
+`ci-validation-COMMIT-`), then dispatch three more runs of the same commit and namespace.
+The prefix applies to both cache keys and restore prefixes, leaving everyday caches intact.
 
 ## Writing tests
 

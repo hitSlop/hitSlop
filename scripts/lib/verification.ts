@@ -2,6 +2,14 @@
 import { Database } from "bun:sqlite";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { run } from "../../packages/hitslop/src/cli/process";
+
+/** Include both sides of renames, deletions and unusual filenames. Missing bases fail closed. */
+export async function changedPaths(cwd: string, ref: string) {
+  const base = (await run(["git", "merge-base", "HEAD", ref], { cwd })).trim();
+  const paths = (await run(["git", "diff", "--no-renames", "--name-only", "-z", base, "--"], { cwd })).split("\0").filter(Boolean);
+  return { base, paths };
+}
 
 export type Preparation = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 

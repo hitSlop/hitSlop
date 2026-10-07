@@ -7,6 +7,12 @@ inputs:
   nextest:
     description: Install cargo-nextest
     default: "true"
+  rust:
+    description: Prepare Rust tools and caches
+    default: "true"
+  dependencies:
+    description: Install workspace dependencies
+    default: "true"
 runs:
   using: composite
   steps:
@@ -18,31 +24,35 @@ runs:
       with:
         bun-version: "1.4.2"
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.rust == 'true'
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
-        restore-keys: rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+        key: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.bindings != 'none'
+      if: inputs.rust == 'true' && inputs.bindings != 'none'
       with:
         path: generated/core-tools
-        key: core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.127-uniffi-0.32.2
+        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.127-uniffi-0.32.2
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.dependencies == 'true'
       with:
         path: ~/.bun/install/cache
-        key: bun-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'apps/landing/bun.lock') }}
-        restore-keys: bun-downloads-${{ runner.os }}-${{ runner.arch }}-
+        key: ${{ env.CI_CACHE_NAMESPACE }}bun-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'apps/landing/bun.lock') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}bun-downloads-${{ runner.os }}-${{ runner.arch }}-
     - run: bun install --frozen-lockfile
+      if: inputs.dependencies == 'true'
       shell: bash
     - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
-      if: inputs.nextest == 'true'
+      if: inputs.rust == 'true' && inputs.nextest == 'true'
       with:
         tool: cargo-nextest@0.9.146
     # The core's bindings generators, pinned to the library versions in Cargo.lock.
     - name: Prepare shared Rust core toolchain
+      if: inputs.rust == 'true'
       shell: bash
       env:
         BINDINGS: ${{ inputs.bindings }}

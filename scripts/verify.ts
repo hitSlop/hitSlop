@@ -9,17 +9,19 @@
  *                                   (`verify rust store::`, `verify swift --filter Compat`)
  *
  *   --list        print the selection and why, without running it
+ *   --json        machine-readable --list output (including native tiers on Linux)
  *   --base REF    instead, the tiers a change touches against REF's merge base (CI)
  *   --keep-going  run every selected tier even after one fails
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
+import { tierInputs, sharedInputs, affectedTiers, type TierName } from "./lib/verification-inputs";
 import { lstat, mkdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { availableParallelism, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
-import { testInventory, checkoutLease, atomicJson, retainReport, type Preparation } from "./lib/verification";
+import { testInventory, checkoutLease, atomicJson, retainReport, changedPaths, type Preparation } from "./lib/verification";
 import { exec as testExec, verificationAbort } from "./lib/test-process";
-import { exec, run } from "../packages/hitslop/src/cli/process";
+import { run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
@@ -28,7 +30,7 @@ import { swiftTests } from "./lib/swift-tests";
 
 type Build = "web" | "native" | "templates" | "packages" | "app";
 type Tier = {
-  name: string;
+  name: TierName;
   /** Runs the tier; `args` are a single-tier run's own arguments. */
   run: (args: string[], prepare: Preparation) => Promise<void>;
   /** Changed paths that select it. */
@@ -58,6 +60,7 @@ const named = all[split]?.split(",");
 const tierArgs = all.slice(split + 1);
 const flag = (name: string) => argv.includes(name);
 const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
+if (flag("--json") && !flag("--list")) throw new Error("--json requires --list");
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
@@ -112,33 +115,13 @@ async function bunTest(files: string[], args: string[], env: Record<string, stri
   await sh([process.execPath, "test", ...(ci ? ["--reporter=junit", `--reporter-outfile=${join(runDirectory, `bun-${commandNumber + 1}.xml`)}`] : []), ...options, ...selected.map((file) => "./" + file)], { env });
 }
 
-const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^\.cargo\/config\.toml$/, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
-const nativeInputs = [
-  ...rustInputs,
-  /^apps\/apple\//,
-  /^packages\/hitslop\/(src\/(sdk|shell|schema)|generated|acceptance)\//,
-  /^tests\/(abi|presentation|fixtures|compat)\//,
-  /^examples\/slops\//,
-  /^scripts\/(lib|build|templates)\//,
-];
-
 const tiers: Tier[] = [
-  { name: "hygiene", quick: true, budget: 5, inputs: [/./], run: async () => console.log(await quiet([process.execPath, "scripts/hygiene.ts"])) },
+  { name: "hygiene", quick: true, budget: 5, inputs: tierInputs.hygiene, run: async () => console.log(await quiet([process.execPath, "scripts/hygiene.ts"])) },
   {
     name: "contracts",
     quick: true,
     budget: 15,
-    inputs: [
-      /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
-      /^crates\/hitslop-core\/(src\/|examples\/export_bindings\.rs|Cargo\.toml)/,
-      /^Cargo\.lock$/,
-      /^packages\/hitslop\/(skills\/|src\/cli\/(skills-build|app)\.ts$)/,
-      /^\.agents\/skills\//,
-      /^scripts\/build\/(generate|rust-bindings|skills)\.ts$/,
-      /^scripts\/build\/(acceptance|runner)\.ts$/,
-      /^packages\/hitslop\/src\/(sdk|shell)\//,
-      /\.generated\.(rs|swift)$/,
-    ],
+    inputs: tierInputs.contracts,
     run: async () => {
       const output = await Promise.all([
         quiet([process.execPath, "scripts/build/generate.ts", "--check"]),
@@ -151,7 +134,7 @@ const tiers: Tier[] = [
     name: "types",
     quick: true,
     budget: 20,
-    inputs: [/\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
+    inputs: tierInputs.types,
     run: async () => {
       const output = await Promise.all([
         quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]),
@@ -164,18 +147,18 @@ const tiers: Tier[] = [
     name: "bun",
     budget: 30,
     needs: ["web"],
-    inputs: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\//, /^examples\/slops\//],
+    inputs: tierInputs.bun,
     run: (args) => bunTest(inventory.bun, [`--parallel=${Math.min(4, availableParallelism())}`, ...args]),
   },
   {
     name: "cli", budget: 120, needs: ["web"],
-    inputs: [...rustInputs, /^packages\//, /^tests\/(fixtures|compat)\//, /^scripts\//, /^examples\/slops\//],
+    inputs: tierInputs.cli,
     run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=30000", ...args]),
   },
   {
     name: "rust",
     budget: 60,
-    inputs: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+    inputs: tierInputs.rust,
     // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
     run: async (args, prepare) => {
@@ -199,7 +182,7 @@ const tiers: Tier[] = [
   {
     name: "landing",
     budget: 40,
-    inputs: [/^apps\/landing\//],
+    inputs: tierInputs.landing,
     run: async () => {
       await sh([process.execPath, "run", "check"], { cwd: join(repository, "apps/landing") });
       if (release) await sh([process.execPath, "run", "build"], { cwd: join(repository, "apps/landing") });
@@ -210,7 +193,7 @@ const tiers: Tier[] = [
     budget: 60,
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
-    inputs: [...rustInputs, /^examples\/slops\//, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/build\/(packages|engines|shell)\.ts$/, /^tests\/packed\//],
+    inputs: tierInputs.packed,
     // A release installs the packages against the native helper too.
     run: (args) => bunTest(inventory.packed, args, release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
   },
@@ -219,7 +202,7 @@ const tiers: Tier[] = [
     native: true,
     budget: 90,
     needs: ["native"],
-    inputs: nativeInputs,
+    inputs: tierInputs.swift,
     // A full run checks formatting first; a filtered one (`verify swift --filter X`) is for
     // iterating, so it runs only the tests.
     run: async (args, prepare) => {
@@ -241,7 +224,7 @@ const tiers: Tier[] = [
     budget: 150,
     needs: ["app"],
     // Built only for a release: the native tier then kills the real app (the host crash case).
-    inputs: [],
+    inputs: tierInputs.app,
     run: async () => {},
   },
   {
@@ -249,7 +232,7 @@ const tiers: Tier[] = [
     native: true,
     budget: 120,
     needs: ["native"],
-    inputs: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
+    inputs: tierInputs.native,
     run: (args) =>
       bunTest(inventory.native, args, {
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
@@ -289,12 +272,11 @@ async function snapshot(): Promise<Record<string, string>> {
   return files;
 }
 /** Inputs of every tier: how checks run, and the toolchain. */
-const shared = [/^scripts\/lib\/(verification|test-process|artifacts)\.ts$/, /^tests\/verification\//, /^scripts\/verify\.ts$/, /^package\.json$/, /^bun\.lock$/, /^rust-toolchain\.toml$/];
 const inputsOf = (tier: Tier, files: Record<string, string>) =>
-  Object.keys(files).filter((path) => [...shared, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
+  Object.keys(files).filter((path) => [...sharedInputs, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
 // A base/named listing does not consult the local pass cache. A default listing must
 // use the same toolchain identity as an actual run.
-const toolchains = flag("--list") && (option("--base") || named) ? { rust: "not queried", swift: null } : {
+const toolchains = flag("--list") && (option("--base") || named || flag("--all") || release) ? { rust: "not queried", swift: null } : {
   rust: await run(["rustc", "--version"]).then(s => s.trim()),
   swift: process.platform === "darwin" ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
@@ -327,28 +309,20 @@ async function writePass(tier: Tier) {
   await atomicJson(passedFile, history);
 }
 
-async function mergeBase(ref: string): Promise<string> {
-  const { code, stdout } = await exec(["git", "merge-base", "HEAD", ref], { cwd: repository });
-  if (code) throw new Error(`Cannot compare with ${ref}`);
-  return stdout.trim();
-}
-
 type Selection = { tier: Tier; reason: string; args: string[] }[];
 /** CI: the `candidates` a pull request or push touches, against its base `ref`. A change to
  * CI itself touches every tier. */
 async function touched(ref: string, candidates: Tier[], args: string[]): Promise<{ selection: Selection; base: string }> {
-  const base = await mergeBase(ref);
-  const changed = (await run(["git", "diff", "--name-only", base], { cwd: repository })).split("\n").filter(Boolean);
-  const selection = candidates.flatMap((tier) => {
-    const hits = changed.filter((path) => [/^\.github\//, ...shared, ...tier.inputs].some((pattern) => pattern.test(path)));
-    return hits.length ? [{ tier, reason: summary(hits), args }] : [];
-  });
+  const { base, paths: changed } = await changedPaths(repository, ref);
+  const selection = affectedTiers(changed, candidates.map(tier => tier.name)).map(({ name, paths }) => ({
+    tier: candidates.find(tier => tier.name === name)!, reason: paths.length ? summary(paths) : "always", args,
+  }));
   return { selection, base };
 }
 async function select(): Promise<{ selection: Selection; base?: string }> {
   const ref = option("--base");
   if (named) {
-    const unknown = named.filter((name) => !tierNames.includes(name));
+    const unknown = named.filter((name) => !tierNames.some(tier => tier === name));
     if (unknown.length) throw new Error(`Unknown tier ${unknown.join(", ")}; tiers: ${tierNames.join(", ")}`);
     const chosen = tiers.filter((tier) => named.includes(tier.name));
     // With a base, only those of the named tiers the change touches (CI's native job).
@@ -372,13 +346,17 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
 }
 
 const { selection, base } = await select();
-if (selection.some(({ tier }) => tier.native) && process.platform !== "darwin") throw new Error("Native tiers require macOS");
 if (flag("--list") || !selection.length) {
+  if (flag("--json")) {
+    console.log(JSON.stringify({ base: base ?? null, tiers: selection.map(({ tier, reason }) => ({ name: tier.name, reason })) }));
+    process.exit(0);
+  }
   if (!selection.length)
     console.log(base ? `Nothing to verify: no tier's inputs changed against ${base}.` : "Nothing to verify: every tier already passed with these exact inputs. Run with --all to check everything anyway.");
   for (const { tier, reason, args } of selection) console.log(`${tier.name.padEnd(9)} ${reason}${args.length ? `  [${args.join(" ")}]` : ""}`);
   process.exit(0);
 }
+if (selection.some(({ tier }) => tier.native) && process.platform !== "darwin") throw new Error("Native tiers require macOS");
 
 runDirectory = join(repository, ".hitslop/evidence/runs", runId);
 await mkdir(runDirectory, { recursive: true });
