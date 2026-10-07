@@ -1,0 +1,17 @@
+# Four SHA-256 file hashes from the historical benchmark inventory. Exact values
+# plus the exact inventory path remain stable across GitHub's synthetic PR merges.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known benchmark file hashes, not credentials"
+targetRules = ["generic-api-key", "discord-api-token"]
+condition = "AND"
+paths = ['^(archive/)?spikes/boundary-simplification/evidence/baseline\.json$']
+regexTarget = "secret"
+regexes = [
+  '^3b87468b8225f6036a535c9b8464f3b9d16c3d66a03d83a359bd561ad27abfbe$',
+  '^e963c2482a7cca96e531d5d0c3c3f63cab317164571fb2d336f1d89dd7c3b287$',
+  '^4f7bb4d2145483bf79d3f3a75d54123739188b17d378a40291a9860ea4fb95b0$',
+  '^114f56084f10b6b4b2016941fcaea93695da540535ab229cad5f39dadef18e0a$',
+]
