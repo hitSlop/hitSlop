@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: >-
+  Be concise and specific. Explain the failing scenario and its impact, cite the
+  relevant code or contract, and suggest a focused fix. Avoid cosmetic nitpicks,
+  speculative refactors, and praise-only comments.
+
+reviews:
+  profile: chill
+  # CI remains the merge gate; the bot does not approve or request changes.
+  request_changes_workflow: false
+  fail_commit_status: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  poem: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Prioritize reproducible correctness, security, data-loss, and compatibility
+        problems. Use this branch's AGENTS.md and engineering contract to identify
+        the owner of document semantics, persistence, validation, and wire types;
+        follow those boundaries across Rust, Swift, and TypeScript where present.
+        Pay particular attention to writer-lock ownership, live-owner routing,
+        async write completion, immutable snapshots, row identity, failed saves,
+        and flush-before-close/export. Distinguish public-release compatibility
+        guarantees and frozen fixtures from explicitly unsupported prelaunch
+        documents; do not invent legacy readers or migrations for the latter.
+        Review changes to compatibility fixtures, lockfiles, generated contracts,
+        and release workflows for behavioral impact. Request regression tests at
+        the owning boundary only when they demonstrate a real failure; avoid
+        tests of private call sequences or cosmetic source strings.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/AGENTS.md"
+      - "docs/engineering-contract.md"
+      - "docs/testing.md"
