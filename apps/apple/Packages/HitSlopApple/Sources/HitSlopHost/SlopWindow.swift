@@ -6,6 +6,12 @@ import UniformTypeIdentifiers
 import WebKit
 
 private final class FramelessDocumentWindow: NSWindow {
+  override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    // AppKit can deliver a pending Dock restore after the save barrier hid the window.
+    // The controller's showWindow guard alone cannot intercept that native ordering.
+    if place != .out, (windowController as? SlopDocumentWindowController)?.isHiddenForClose == true { return }
+    super.order(place, relativeTo: otherWin)
+  }
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { true }
   override func performMiniaturize(_ sender: Any?) { miniaturize(sender) }
@@ -102,11 +108,15 @@ public struct SlopDocumentRouting {
   public var command: @MainActor (SlopDocumentCommand) -> Void
   /// The page is ready for the first time, or again after a recovery.
   public var pageReady: @MainActor () -> Void
+  /// The page drained and saved, and its window hid while the owner finishes closing.
+  public var closeHidden: @MainActor () -> Void
   public init(
-    command: @escaping @MainActor (SlopDocumentCommand) -> Void, pageReady: @escaping @MainActor () -> Void = {}
+    command: @escaping @MainActor (SlopDocumentCommand) -> Void, pageReady: @escaping @MainActor () -> Void = {},
+    closeHidden: @escaping @MainActor () -> Void = {}
   ) {
     self.command = command
     self.pageReady = pageReady
+    self.closeHidden = closeHidden
   }
 }
 
@@ -267,6 +277,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   public override func showWindow(_ sender: Any?) {
+    guard !isHiddenForClose, !closePrepared else { return }
     presentationRequested = true
     if isContentReady || presentedPageError != nil {
       openingProgress?.finish()
@@ -344,21 +355,37 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
 
   /// Saves and releases the document, writing artwork rendered from its saved state first, so
   /// Finder, Quick Look and the catalog show it as it closed. The window leaves the screen
-  /// at once; a failed close shows it again, open and editable.
+  /// after the save barrier; a failed close shows it again, open and editable.
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
     guard !closePrepared else { return }
+    // Some callers finish directly (including cancelled opens). Always establish the
+    // barrier here too; preparation is idempotent and quit may have done it already.
+    if closePreparation == .none { try await prepareToClose(operation: operation) }
+    let trace = closeTrace
+    defer {
+      trace?.finish()
+      closeTrace = nil
+    }
     let shown = window?.isVisible == true
     toolbar.hide()
+    isHiddenForClose = true
     window?.orderOut(nil)
+    if operation == .close, closePreparation == .saved { routing.closeHidden() }
     let artwork = await closingArtwork()
     do {
-      try await session.close(artwork: artwork)
-      if artwork != nil { SlopPreviewWriter.announce(url) }
+      try await session.close(artwork: artwork, trace: trace)
+      if artwork != nil {
+        let interval = trace?.begin("Artwork announcement")
+        SlopPreviewWriter.announce(url)
+        trace?.end("Artwork announcement", interval)
+      }
       closePrepared = true
       window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
     } catch {
-      if shown { window?.orderFront(nil) }
+      isHiddenForClose = false
+      closePreparation = .none
+      if shown { window?.makeKeyAndOrderFront(nil) }
       reportLifecycleFailure(operation, error: error)
       throw error
     }
@@ -370,23 +397,36 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
     guard edited || preview == nil else { return nil }
-    return await SlopRenderer.artwork(session: session, telemetry: telemetry)
+    return await SlopRenderer.artwork(session: session, telemetry: telemetry, trace: closeTrace)
   }
 
   public func windowDidMove(_ notification: Notification) { toolbar.relayout() }
   private var closePrepared = false
+  private enum ClosePreparation { case none, unavailable, saved }
+  private var closePreparation = ClosePreparation.none
+  public private(set) var isHiddenForClose = false
+  private var closeTrace: SlopCloseTrace?
   public override func close() {
     guard let window, windowShouldClose(window) else { return }
     super.close()
   }
   public func prepareToClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
+    guard closePreparation == .none else { return }
+    closeTrace = SlopCloseTrace()
+    let trace = closeTrace
+    let interval = trace?.begin("Save barrier")
+    defer { trace?.end("Save barrier", interval) }
     telemetry.send(.breadcrumb(operation, .started))
     loadingTask?.cancel()
     openingProgress?.finish()
-    if session.rendererDead || !session.isReady { return }
+    if session.rendererDead || !session.isReady {
+      closePreparation = .unavailable
+      return
+    }
     window?.makeFirstResponder(nil)
     do {
       try await session.prepareClose()
+      closePreparation = .saved
     } catch {
       reportLifecycleFailure(operation, error: error)
       await cancelPreparedClose()
@@ -394,6 +434,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
   public func cancelPreparedClose() async {
+    closePreparation = .none
+    closeTrace?.finish()
+    closeTrace = nil
     await session.cancelClose()
     if isLoading { startLoading() }
   }

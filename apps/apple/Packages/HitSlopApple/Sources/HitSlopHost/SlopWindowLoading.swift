@@ -90,8 +90,9 @@ extension SlopDocumentWindowController {
   }
 
   func revealReadyWindow() {
+    guard !isHiddenForClose else { return }
     super.showWindow(nil)
-    window?.deminiaturize(nil)
+    if window?.isMiniaturized == true { window?.deminiaturize(nil) }
     window?.makeKeyAndOrderFront(nil)
     refreshIssueBadge()
     if isContentReady {

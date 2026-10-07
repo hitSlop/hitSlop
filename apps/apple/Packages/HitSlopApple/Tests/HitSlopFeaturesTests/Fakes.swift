@@ -66,7 +66,7 @@ func url(_ id: UUID) -> URL { id == documentID ? documentURL : URL(fileURLWithPa
       replyToQuit: { self.calls.append(.reply($0)) },
       alert: { self.calls.append(.alert($0, $1)) },
       commandsEnabled: { self.enabled[$0] = $1 },
-      noDocumentsOpen: { self.calls.append(.noDocuments) })
+      showCatalog: { self.calls.append(.noDocuments) })
   }
 }
 

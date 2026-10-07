@@ -245,7 +245,9 @@ extension HostTests {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
+    var handedOff = false
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, routing: SlopDocumentRouting(command: { _ in }, closeHidden: { handedOff = true }))
     try await controller.session.waitUntilReady()
     controller.showWindow(nil)
     await controller.waitForPresentation()
@@ -255,6 +257,9 @@ extension HostTests {
     var failure: SlopDocumentFailure?
     do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
     #expect(failure == .save)
+    #expect(!handedOff)
+    #expect(window.isVisible)
+    #expect(!controller.isHiddenForClose)
     #expect(window.sheets.count == 1)
     #expect(controller.attentionFailure == .busy)
     let sheet = try #require(window.attachedSheet)

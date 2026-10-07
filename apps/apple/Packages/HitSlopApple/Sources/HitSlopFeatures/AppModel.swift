@@ -20,8 +20,8 @@ public struct AppClient {
   public var alert: @MainActor (AppAlert, UUID?) -> Void
   /// Whether a document takes operations now; its toolbar and menus follow.
   public var commandsEnabled: @MainActor (UUID, Bool) -> Void
-  /// The last document went away while the app keeps running.
-  public var noDocumentsOpen: @MainActor () -> Void
+  /// No document needs presentation; closing owners may still be finishing.
+  public var showCatalog: @MainActor () -> Void
 
   public init(
     open: @escaping @MainActor (UUID, URL) async throws -> Void,
@@ -33,7 +33,7 @@ public struct AppClient {
     replyToQuit: @escaping @MainActor (Bool) -> Void,
     alert: @escaping @MainActor (AppAlert, UUID?) -> Void,
     commandsEnabled: @escaping @MainActor (UUID, Bool) -> Void,
-    noDocumentsOpen: @escaping @MainActor () -> Void
+    showCatalog: @escaping @MainActor () -> Void
   ) {
     self.open = open
     self.focus = focus
@@ -44,7 +44,7 @@ public struct AppClient {
     self.replyToQuit = replyToQuit
     self.alert = alert
     self.commandsEnabled = commandsEnabled
-    self.noDocumentsOpen = noDocumentsOpen
+    self.showCatalog = showCatalog
   }
 }
 
@@ -57,6 +57,8 @@ public struct AppClient {
     public let id: UUID
     public let url: URL
     public internal(set) var isOpening = true
+    public internal(set) var isHiddenForClose = false
+    var reopenRequested = false
     var queue = CommandQueue()
   }
 
@@ -66,6 +68,7 @@ public struct AppClient {
   private let client: AppClient
   private let makeID: () -> UUID
   private let work = TaskSet()
+  private var catalogReturned = false
 
   public init(client: AppClient, catalog: CatalogModel, makeID: @escaping () -> UUID = UUID.init) {
     self.client = client
@@ -90,6 +93,14 @@ public struct AppClient {
     insert(url)
   }
 
+  /// The saved document's window has left the screen. Keep its owner and command until
+  /// close completes, but let the person use the catalog while artwork renders.
+  public func documentHiddenForClose(_ id: UUID) {
+    guard let index = index(id), documents[index].queue.running == .close else { return }
+    documents[index].isHiddenForClose = true
+    presentCatalogIfNeeded()
+  }
+
   /// Runs `command` now, or after the operation in progress when it is a close or an answer
   /// to the save-failure sheet. Quit takes no new operations, but a save recovery still
   /// runs: quit waits for it, as it waits for any operation.
@@ -107,6 +118,7 @@ public struct AppClient {
   public func requestQuit() {
     guard quitPhase == .running else { return }
     quitPhase = .waiting
+    for index in documents.indices { documents[index].reopenRequested = false }
     catalog.isQuitting = true
     refreshAll()
     advanceQuit()
@@ -125,7 +137,15 @@ public struct AppClient {
   /// Adds a document for `url` and starts opening it; an open one comes forward instead.
   /// Quit waits for a document added here.
   private func insert(_ url: URL) {
-    if let existing = documents.first(where: { $0.url == url }) { return client.focus(existing.id) }
+    if let index = documents.firstIndex(where: { $0.url == url }) {
+      if documents[index].queue.running == .close || documents[index].queue.closeRequested {
+        documents[index].reopenRequested = true
+      } else {
+        client.focus(documents[index].id)
+      }
+      return
+    }
+    catalogReturned = false
     let id = makeID()
     documents.append(Document(id: id, url: url))
     work.run { await self.finishOpening(id, url) }
@@ -177,7 +197,10 @@ public struct AppClient {
     switch result {
     case .success(let url):
       if command == .close {
-        remove(id)
+        let reopen = documents[index].reopenRequested && quitPhase == .running
+        let url = documents[index].url
+        documents.remove(at: index)
+        if reopen { insert(url) } else { presentCatalogIfNeeded() }
         return nil
       }
       let next = documents[index].queue.finish(failed: false)
@@ -187,6 +210,14 @@ public struct AppClient {
       return next
     case .failure(let failure):
       let next = documents[index].queue.finish(failed: true)
+      if documents[index].isHiddenForClose {
+        documents[index].isHiddenForClose = false
+        catalogReturned = false
+      }
+      if documents[index].reopenRequested {
+        documents[index].reopenRequested = false
+        client.focus(id)
+      }
       refresh(id)
       if command == .close, quitPhase == .waiting {
         cancelQuit(failure)
@@ -242,7 +273,15 @@ public struct AppClient {
 
   private func remove(_ id: UUID) {
     documents.removeAll { $0.id == id }
-    if documents.isEmpty, quitPhase == .running { client.noDocumentsOpen() }
+    presentCatalogIfNeeded()
+  }
+
+  private func presentCatalogIfNeeded() {
+    guard quitPhase == .running, !catalogReturned,
+      documents.allSatisfy({ $0.isHiddenForClose })
+    else { return }
+    catalogReturned = true
+    client.showCatalog()
   }
 
   private func refresh(_ id: UUID) {

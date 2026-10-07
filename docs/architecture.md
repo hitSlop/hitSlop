@@ -312,7 +312,17 @@ If the session changed the document, or the file has no preview, close captures 
 preview and optional icon from that saved source. The owner writes successful artwork
 through its writer connection and releases the lock. Finder's custom icon reflects the
 saved artwork. A failed capture keeps old artwork and does not stop close; a failed save
-keeps the window and ownership for retry. An attachment import stores the blob, then submits its reference through a
+keeps the window and ownership for retry. After a ready page's close barrier saves its
+edits, its window hides and the catalog returns if no other document is being presented
+or opened. Artwork and final close continue with the same owner and writer lock. The
+catalog initially shows existing artwork and refreshes when new artwork is written.
+Opening that document meanwhile queues one reopen after ownership is released; a failed
+close restores the retained window. Quit waits for these closes and cancels queued reopens.
+Local Instruments signposts in `com.hitslop` / `DocumentClose` separate the barrier,
+browser handoff, snapshot, rendering, owner close and artwork announcement, without
+recording document content or paths.
+
+An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
 refuses, leaves the blob unreferenced until the document closes.
 

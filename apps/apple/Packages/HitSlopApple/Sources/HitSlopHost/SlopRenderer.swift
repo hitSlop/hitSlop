@@ -23,15 +23,25 @@ import WebKit
 
   /// The artwork a closing window writes into its document: its preview and, when the
   /// app draws one, its icon. A capture that fails is reported and left out.
-  public static func artwork(session: DocumentSession, telemetry: SlopTelemetry) async -> SlopRenderedArtwork {
+  public static func artwork(session: DocumentSession, telemetry: SlopTelemetry, trace: SlopCloseTrace? = nil) async
+    -> SlopRenderedArtwork
+  {
     do {
-      return try await withSavedRenderer(session) { renderer in
+      return try await withSavedRenderer(session, trace: trace) { renderer in
         var preview: Data?
         var icon: Data?
-        do { preview = try await capture(session: renderer, output: .previewPNG) } catch {
+        do {
+          let interval = trace?.begin("Preview capture")
+          defer { trace?.end("Preview capture", interval) }
+          preview = try await capture(session: renderer, output: .previewPNG)
+        } catch {
           if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
         }
-        do { icon = try await captureIcon(session: renderer) } catch {
+        do {
+          let interval = trace?.begin("Icon capture")
+          defer { trace?.end("Icon capture", interval) }
+          icon = try await captureIcon(session: renderer)
+        } catch {
           if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) }
         }
         return SlopRenderedArtwork(preview: preview, icon: icon)
@@ -44,11 +54,12 @@ import WebKit
 
   private static func withSavedRenderer<T>(
     _ session: DocumentSession,
+    trace: SlopCloseTrace? = nil,
     _ capture: @MainActor (DocumentSession) async throws -> T
   ) async throws -> T {
     if session.isSnapshot { return try await capture(session) }
-    return try await session.withCaptureSnapshot { source in
-      try await withRenderSession(url: source, capture)
+    return try await session.withCaptureSnapshot(trace: trace) { source in
+      try await withRenderSession(url: source, trace: trace, capture)
     }
   }
 
@@ -56,14 +67,19 @@ import WebKit
   /// and never write to the file.
   static func withRenderSession<T>(
     url: URL,
+    trace: SlopCloseTrace? = nil,
     _ capture: @MainActor (DocumentSession) async throws -> T
   ) async throws -> T {
+    var startup = trace?.begin("Renderer startup")
+    defer { trace?.end("Renderer startup", startup) }
     let session = try await DocumentSession.open(url: url, storage: .snapshot)
     let window = hiddenWindow(session)
     let result: Result<T, Error>
     do {
       session.load()
       try await session.waitUntilReady()
+      trace?.end("Renderer startup", startup)
+      startup = nil
       try Task.checkCancellation()
       result = .success(try await capture(session))
     } catch { result = .failure(error) }

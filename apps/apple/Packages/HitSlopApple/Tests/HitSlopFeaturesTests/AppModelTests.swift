@@ -61,6 +61,30 @@ import Testing
 
 // MARK: Operations
 
+// A catalog or Dock open during close must wait for ownership to be released, then
+// reopen once; focusing the old window exposes an inert page that is about to disappear.
+@Test @MainActor func openingAClosingDocumentWaitsAndReopensOnce() async {
+  let native = Native()
+  let gate = Gate()
+  let model = await app(native, open: [documentID], ids: [otherID])
+  native.perform = { _, _ in
+    await gate.wait()
+    return nil
+  }
+  native.open = { _, opened in #expect(opened == documentURL) }
+  model.send(.close, to: documentID)
+  await until { native.performed == [.close] }
+  model.open(documentURL)
+  model.open(documentURL)
+  #expect(!native.calls.contains(.focus(documentID)))
+  #expect(model.documents.map(\.id) == [documentID])
+  gate.open()
+  await model.settled()
+  #expect(model.documents.map(\.id) == [otherID])
+  #expect(native.calls.filter { $0 == .open(otherID) }.count == 1)
+  #expect(!native.calls.contains(.noDocuments), "reopening must not refocus the catalog")
+}
+
 @Test @MainActor func closeWaitsForExportAndRunsOnlyOnce() async {
   let native = Native()
   let gate = Gate()

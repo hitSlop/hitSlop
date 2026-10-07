@@ -67,7 +67,7 @@ import SwiftUI
       catalogWindow = NSWindowController(window: window)
     }
     catalogWindow?.showWindow(nil)
-    catalogWindow?.window?.deminiaturize(nil)
+    if catalogWindow?.window?.isMiniaturized == true { catalogWindow?.window?.deminiaturize(nil) }
     catalogWindow?.window?.makeKeyAndOrderFront(nil)
     NSApp.activate()
   }
@@ -96,7 +96,11 @@ import SwiftUI
     }
   }
   public func revealDocuments() {
-    for controller in windows.controllers.values { controller.revealFromDock() }
+    let documents = model.documents.filter {
+      !$0.isHiddenForClose && windows.controllers[$0.id]?.isHiddenForClose != true
+    }
+    if documents.isEmpty { showCatalog() }
+    for document in documents { windows.focus(document.id) }
     NSApp.activate()
   }
   public func sendToActiveDocument(_ command: SlopDocumentCommand) {
@@ -158,7 +162,10 @@ import SwiftUI
       replyToQuit: { allowed in NSApp.reply(toApplicationShouldTerminate: allowed) },
       alert: { [self] alert, id in coordinator?.present(alert, for: id) },
       commandsEnabled: { [self] id, enabled in controllers[id]?.setCommandsEnabled(enabled) },
-      noDocumentsOpen: { [self] in coordinator?.showCatalog() }
+      showCatalog: { [self] in
+        coordinator?.showCatalog()
+        if presentsWindows { SlopCloseTrace.browserHandoff() }
+      }
     )
   }
   func controller(_ id: UUID) throws -> SlopDocumentWindowController {
@@ -169,7 +176,8 @@ import SwiftUI
     try Task.checkCancellation()
     let routing = SlopDocumentRouting(
       command: { [weak self] command in self?.coordinator?.model.send(command, to: id) },
-      pageReady: { [weak self] in self?.coordinator?.hideCatalog() })
+      pageReady: { [weak self] in self?.coordinator?.hideCatalog() },
+      closeHidden: { [weak self] in self?.coordinator?.model.documentHiddenForClose(id) })
     let progress = presentsWindows ? SlopOpeningProgress() : nil
     openings[id] = progress
     defer { openings[id] = nil }
@@ -187,7 +195,7 @@ import SwiftUI
     try await controller(id).finishClose(operation: .quit)
     controllers.removeValue(forKey: id)
   }
-  private func focus(_ id: UUID) {
+  func focus(_ id: UUID) {
     if presentsWindows {
       if let controller = controllers[id] { controller.revealFromDock() } else { openings[id]?.focus() }
       NSApp.activate()

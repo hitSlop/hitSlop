@@ -88,7 +88,7 @@ private struct UpdateSettingsView: View {
   }
   func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
     let menu = NSMenu()
-    let open = coordinator.documentControllers.sorted {
+    let open = coordinator.documentControllers.filter { !$0.isHiddenForClose }.sorted {
       $0.documentTitle.localizedStandardCompare($1.documentTitle) == .orderedAscending
     }
     for controller in open {

@@ -443,12 +443,15 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the
   /// editor barrier; the independent copy remains alive even if this window then closes.
-  public func withCaptureSnapshot<T>(_ render: (URL) async throws -> T) async throws -> T {
+  public func withCaptureSnapshot<T>(trace: SlopCloseTrace? = nil, _ render: (URL) async throws -> T) async throws -> T
+  {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let source = directory.appendingPathComponent("capture.slop")
     try await withCapture {
+      let interval = trace?.begin("Snapshot acquisition")
+      defer { trace?.end("Snapshot acquisition", interval) }
       guard !closed else { throw SlopFailure("Document closed") }
       if !closePrepared { try await flush() }
       try await owner.captureSource(to: source)
@@ -506,9 +509,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   }
 
   /// Saves, writes `artwork` and releases the document, then retires the page.
-  public func close(artwork: SlopRenderedArtwork? = nil) async throws {
+  public func close(artwork: SlopRenderedArtwork? = nil, trace: SlopCloseTrace? = nil) async throws {
     if let closeTask { return try await closeTask.value }
-    let task = Task { try await self.finishClose(artwork: artwork) }
+    let task = Task { try await self.finishClose(artwork: artwork, trace: trace) }
     closeTask = task
     do { try await task.value } catch {
       closeTask = nil
@@ -519,13 +522,17 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
 
   /// The barrier has refused new edits, so the owner saves and releases the document
   /// before the app unmounts; a failed close leaves the app mounted and editable.
-  private func finishClose(artwork: SlopRenderedArtwork?) async throws {
+  private func finishClose(artwork: SlopRenderedArtwork?, trace: SlopCloseTrace?) async throws {
     if closed { return }
     try await prepareClose()
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
-    do { try await owner.close(artwork: artwork) } catch {
+    do {
+      let interval = trace?.begin("Rust owner close")
+      defer { trace?.end("Rust owner close", interval) }
+      try await owner.close(artwork: artwork)
+    } catch {
       try? publishDiscovery()
       await cancelClose()
       throw error
