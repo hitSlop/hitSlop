@@ -3,14 +3,16 @@
 //! `create --from SLUG` share this rule.
 
 use super::places::TemplateSource;
-use super::{Kind, OpenedApp, open};
-use crate::error::{Result, failed, invalid};
+use super::{Kind, Summary, summary};
+use crate::error::{Result, invalid};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// A listed template: what its manifest says, its file, and the folder it was listed from.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "engine.generated.ts"))]
 pub struct Template {
     pub slug: String,
     pub title: String,
@@ -21,43 +23,37 @@ pub struct Template {
 }
 /// A template folder hosts list, whether or not it exists yet: `slop register` builds into
 /// the installed one.
-#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "engine.generated.ts"))]
 pub struct Folder {
     pub source: TemplateSource,
     pub path: PathBuf,
 }
 /// The template folders, the templates listed from them, and why each other `.slop` file
 /// in them was left out.
-#[derive(Debug, Default, serde::Serialize)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "engine.generated.ts"))]
 pub struct Catalog {
     pub folders: Vec<Folder>,
     pub templates: Vec<Template>,
     pub issues: Vec<String>,
 }
 
-/// What a listing shows of a checked manifest.
-#[derive(serde::Deserialize)]
-struct Manifest {
-    slug: String,
-    title: String,
-    description: String,
-    categories: Vec<String>,
-}
-fn template(path: &Path) -> Result<(OpenedApp, Manifest)> {
-    let opened = open(path, false)?;
-    if opened.kind != Kind::Template {
+fn template(path: &Path) -> Result<Summary> {
+    let summary = summary(path)?;
+    if summary.kind != Kind::Template {
         return Err(invalid("An installed template holds no document"));
     }
-    let manifest: Manifest = serde_json::from_str(&opened.manifest).map_err(failed)?;
-    if path.file_name() != Some(OsStr::new(&format!("{}.slop", manifest.slug))) {
+    if path.file_name() != Some(OsStr::new(&format!("{}.slop", summary.metadata.slug))) {
         return Err(invalid("An installed template's file name must be its slug"));
     }
-    Ok((opened, manifest))
+    Ok(summary)
 }
-/// Opens `path` for display as a listed template: a template, never a document, whose file
-/// is named for its slug.
-pub fn open_template(path: &Path) -> Result<OpenedApp> {
-    template(path).map(|(opened, _)| opened)
+/// Display summary, intentionally without accepting the recursive app or its resources.
+pub fn open_template(path: &Path) -> Result<Summary> {
+    template(path)
 }
 
 /// The templates in `roots`, in order, each folder's sorted by file name. Hidden files and
@@ -87,8 +83,16 @@ pub fn list_templates(roots: &[(TemplateSource, PathBuf)]) -> Catalog {
         for name in names {
             let path = root.join(&name);
             match template(&path) {
-                Ok((_, Manifest { slug, title, description, categories })) => {
-                    catalog.templates.push(Template { slug, title, description, categories, source: *source, path })
+                Ok(summary) => {
+                    let m = summary.metadata;
+                    catalog.templates.push(Template {
+                        slug: m.slug,
+                        title: m.title,
+                        description: m.description,
+                        categories: m.categories.into_iter().map(|c| c.name()).collect(),
+                        source: *source,
+                        path,
+                    })
                 }
                 Err(error) => catalog.issues.push(format!("{}: {error}", name.to_string_lossy())),
             }

@@ -10,6 +10,31 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
+  @Test func nativeWireCrossesFFIAsTypes() throws {
+    let request = try decodeNativeRequest(
+      input: Data(
+        #"{"method":"screenshot","documentPath":"x.slop","output":"x.png","target":"icon","ifPresent":true}"#.utf8))
+    guard case .screenshot(let path, let output, let target, let ifPresent) = request else {
+      Issue.record("Expected a typed screenshot request")
+      return
+    }
+    #expect(path == "x.slop" && output == "x.png" && target == .icon && ifPresent)
+    let reply = encodeNativeReply(reply: .screenshot(output: nil))
+    let fields = try #require(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
+    #expect(fields["ok"] as? Bool == true && fields["method"] as? String == "screenshot")
+    #expect(fields["output"] is NSNull)
+    do {
+      _ = try decodeNativeRequest(input: Data(#"{"method":"open","documentPath":""}"#.utf8))
+      Issue.record("An empty path must be refused before host work")
+    } catch NativeRefusal.Refused(let reply) {
+      guard case .failure(_, let code, let reason, _) = reply else {
+        Issue.record("Expected a classified failure")
+        return
+      }
+      #expect(code == .rejected && reason == .invalidRequest)
+    }
+  }
+
   /// One request as `slop` sends it (`slop-engine`), and its reply.
   func request(_ body: [String: Any]) async throws -> [String: Any] {
     let result = try await cli(input: try JSONSerialization.data(withJSONObject: body))
@@ -100,7 +125,7 @@ extension HostTests {
   @Test @MainActor func engineExportsSavedDefaultViewFromLiveAndClosedDocuments() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
-      let app = stage.appendingPathComponent("assets/app.js")
+      let app = stage.appendingPathComponent("assets/ui.js")
       let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
         of: "const doc = ctx.document;",
         with:

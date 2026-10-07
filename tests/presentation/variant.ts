@@ -1,2 +1,1 @@
-// scripts/lib/native-fixtures.ts replaces this for each window variant.
-export default { title: "Presentation fixture", presentation: { width: 320, height: 320 } };
+export default { slug: "presentation", title: "Presentation fixture", window: { kind: "standard" as const, width: 320, height: 320 } };

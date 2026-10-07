@@ -64,6 +64,6 @@ extension OwnerFailure {
 }
 
 /// The page's reply refusing with `error`, encoded as the core encodes its own.
-func pageFailure(_ error: Error) -> Any? {
-  try? JSONSerialization.jsonObject(with: Data(failureReply(failure: OwnerFailure(error)).utf8))
+func pageFailure(_ error: Error) -> String {
+  failureReply(failure: OwnerFailure(error))
 }

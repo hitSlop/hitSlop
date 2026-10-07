@@ -26,7 +26,7 @@ Fonts, sizes and colors derived from the palette belong in your CSS. A derived c
 
 ## Write ordinary CSS
 
-The generated Svelte entry includes `styles.css` automatically and emits a separate, minified `assets/app.css`. Styles ship as ordinary CSS.
+Import `styles.css` explicitly in `slop.ts`. Vite emits a separate, minified `ui.css`, including component styles and dependencies reached through CSS `@import` and `url()`. Styles ship as ordinary CSS.
 
 ```css title="styles.css"
 :root {

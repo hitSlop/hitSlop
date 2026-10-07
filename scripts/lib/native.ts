@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execute, request, findDocumentEngine } from "../../packages/hitslop/src/cli/engine";
-import type { EngineMethod, EngineRequestFor, EngineSuccess, EngineReplyFor } from "../../packages/hitslop/src/schema/engine";
+import type { EngineMethod, EngineRequestFor, EngineSuccess, EngineReplyFor } from "../../packages/hitslop/src/wire/engine";
 import { repository } from "./artifacts";
 
 /** The helper `bun run build` compiles, and this checkout's independent document engine. */
@@ -41,7 +41,7 @@ export async function documentFromStage(stage: string, document: string, options
   const folder = await mkdtemp(join(tmpdir(), "hitslop-fixture-"));
   try {
     const template = join(folder, "template.slop");
-    await engineRequest({ method: "pack", stage, file: template }, options);
+    await engineRequest({ method: "pack", stage, file: template, app: JSON.parse(await readFile(join(stage, "input.json"), "utf8")) }, options);
     return await createDocument(template, document, options);
   } finally {
     await rm(folder, { recursive: true, force: true });

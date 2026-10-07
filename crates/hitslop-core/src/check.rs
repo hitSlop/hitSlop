@@ -11,8 +11,9 @@ pub(super) fn scalar(node: &Node, value: &Value) -> Result<()> {
     };
     match (node, value) {
         (Node::Boolean {}, Value::Bool(_)) => Ok(()),
-        (Node::String { max_length }, Value::String(s)) => {
-            if max_length.is_some_and(|max| utf16_len(s) > max) {
+        (Node::String { min_length, max_length }, Value::String(s)) => {
+            let length = s.chars().count() as u64;
+            if min_length.is_some_and(|min| length < min) || max_length.is_some_and(|max| length > max) {
                 out_of_range()
             } else {
                 Ok(())
@@ -21,17 +22,27 @@ pub(super) fn scalar(node: &Node, value: &Value) -> Result<()> {
         (Node::Enum { values }, Value::String(s)) if values.iter().any(|v| v == s) => Ok(()),
         (Node::Number { min, max }, Value::Number(n)) => match n.as_f64() {
             Some(f) if f.is_finite() => bounded(f, *min, *max),
-            _ => Err(mismatch()),
+            _ => Err(mismatch(node)),
         },
-        (Node::Integer { min, max }, Value::Number(n)) => match n.as_i64().filter(|n| safe(*n)) {
+        (Node::Integer { min, max }, Value::Number(_)) => match integer(value) {
             Some(i) => bounded(i as f64, min.map(|m| m as f64), max.map(|m| m as f64)),
-            None => Err(mismatch()),
+            None => Err(mismatch(node)),
         },
-        _ => Err(mismatch()),
+        _ => Err(mismatch(node)),
     }
 }
-fn mismatch() -> Error {
-    err(Code::TypeMismatch, "Value does not match descriptor")
+fn mismatch(node: &Node) -> Error {
+    err(
+        Code::TypeMismatch,
+        match node {
+            Node::String { .. } => "must be a string",
+            Node::Boolean {} => "must be a boolean",
+            Node::Number { .. } => "must be a finite number",
+            Node::Integer { .. } => "must be a safe integer",
+            Node::Enum { .. } => "must be one of the declared values",
+            _ => "Value does not match descriptor",
+        },
+    )
 }
 
 /// The stored `value` (absent when `None`) against `node`, as containers: text in a text

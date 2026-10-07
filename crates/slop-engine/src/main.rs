@@ -1,16 +1,11 @@
-//! The private engine boundary: frozen protocol preflight on argv, one TypeBox JSON
+//! The private engine boundary: frozen protocol preflight on argv, one Rust-owned JSON
 //! request on bounded stdin, and one classified JSON reply on stdout. The core routes
 //! document operations to the live owner or acquires its lock and runs the same owner.
 //! AppKit operations forward the original JSON to the native helper. Only build/protocol
 //! queries and the exact restricted evaluator entry point are outside the JSON wire.
-use hitslop_core::{
-    EngineRequest, EngineSuccess, command,
-    envelope::{self, Envelope},
-    file, registry,
-};
-mod call;
-mod runner;
-use serde_json::{Value, json};
+use hitslop_core::{EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
+use serde_json::json;
+mod preview;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -46,16 +41,7 @@ fn unknown(error: impl std::fmt::Display) -> String {
     json!({"ok":false,"code":"unknown_outcome","error":error.to_string()}).to_string()
 }
 fn success(result: EngineSuccess) -> String {
-    #[derive(serde::Serialize)]
-    struct Reply {
-        ok: bool,
-        #[serde(flatten)]
-        result: EngineSuccess,
-    }
-    serde_json::to_string(&Reply { ok: true, result }).expect("serializable reply")
-}
-fn raw(value: impl serde::Serialize) -> Box<serde_json::value::RawValue> {
-    serde_json::value::to_raw_value(&value).expect("serializable result")
+    serde_json::to_string(&result).expect("serializable reply")
 }
 fn native(protocol: u64, method: &str, input: &str) -> String {
     let path = match helper() {
@@ -81,11 +67,13 @@ fn native(protocol: u64, method: &str, input: &str) -> String {
     if output.status.code() == Some(2) {
         return rejected("requires_update", String::from_utf8_lossy(&output.stderr).trim());
     }
-    if !output.status.success() || sent.is_err() || !envelope::is_valid(Envelope::NativeReply, &output.stdout) {
+    if !output.status.success() || sent.is_err() {
         return unknown("Native helper stopped without a valid reply; inspect the document and output before retrying");
     }
-    let reply: Value = serde_json::from_slice(&output.stdout).expect("validated reply");
-    if reply["ok"] == true && reply["method"] != method {
+    let Ok(reply) = serde_json::from_slice::<NativeReply>(&output.stdout) else {
+        return unknown("Native helper stopped without a valid reply; inspect the document and output before retrying");
+    };
+    if reply.method().is_some_and(|received| received != method) {
         return unknown("Native helper replied to another method; inspect the document and output before retrying");
     }
     String::from_utf8(output.stdout).expect("validated JSON")
@@ -94,30 +82,35 @@ fn dispatch(request: EngineRequest) -> String {
     let result = (|| -> Result<EngineSuccess, hitslop_core::store::Error> {
         Ok(match request {
             EngineRequest::Templates {} => {
-                EngineSuccess::Templates { catalog: raw(file::list_templates(&file::template_roots())) }
+                EngineSuccess::Templates { ok: True, catalog: file::list_templates(&file::template_roots()) }
             }
             EngineRequest::Create { from, output } => {
                 file::create_document(&file::template_source(&from)?, Path::new(&output))?;
                 let path = std::fs::canonicalize(&output).unwrap_or(PathBuf::from(output));
-                EngineSuccess::Create { documentPath: path.to_string_lossy().into_owned() }
+                EngineSuccess::Create { ok: True, document_path: path.to_string_lossy().into_owned() }
             }
-            EngineRequest::Pack { stage, file: path } => {
-                file::pack(Path::new(&stage), Path::new(&path))?;
-                EngineSuccess::Pack {}
+            EngineRequest::Pack { stage, file: path, app } => {
+                file::pack(app.get(), Path::new(&stage), Path::new(&path))?;
+                EngineSuccess::Pack { ok: True }
             }
-            EngineRequest::ValidateApp { app } => {
-                file::validate_app(app.get())?;
-                EngineSuccess::ValidateApp {}
+            EngineRequest::ValidateMetadata { metadata } => {
+                hitslop_core::app::validate_metadata(&metadata, hitslop_core::PACKAGE_FORMAT)
+                    .map_err(hitslop_core::store::Error::Rejected)?;
+                EngineSuccess::ValidateMetadata { ok: True }
+            }
+            EngineRequest::ValidateApp { app, stage } => {
+                file::validate_app(app.get(), Path::new(&stage))?;
+                EngineSuccess::ValidateApp { ok: True }
             }
             EngineRequest::Inspect { file: path } => {
                 let path = Path::new(&path);
                 let mut info = file::inspect(path)?;
                 info["live"] = registry::discovery(path)?.is_some().into();
-                EngineSuccess::Inspect { info: raw(info) }
+                EngineSuccess::Inspect { ok: True, info: serde_json::from_value(info).expect("core inspection shape") }
             }
             EngineRequest::Schema { file: path } => EngineSuccess::Schema {
-                schema: serde_json::value::RawValue::from_string(file::descriptor(Path::new(&path))?)
-                    .expect("valid descriptor"),
+                ok: True,
+                schema: serde_json::from_str(&file::descriptor(Path::new(&path))?).expect("valid descriptor"),
             },
             _ => unreachable!("routed before file dispatch"),
         })
@@ -135,14 +128,6 @@ fn request(input: &str, protocol: u64) -> String {
         Ok(request) => request,
         Err(error) => return rejected("invalid_request", error),
     };
-    // The generated decoder checks the closed envelope without interpreting RawValue.
-    // validateApp has no other fields to constrain: its core checks the markers before
-    // reading the app, even when a future payload contains numbers this JSON DOM cannot hold.
-    if !matches!(request, EngineRequest::ValidateApp { .. })
-        && !envelope::is_valid(Envelope::EngineRequest, input.as_bytes())
-    {
-        return rejected("invalid_request", "Invalid engine request");
-    }
     match request {
         EngineRequest::Open { .. } | EngineRequest::Screenshot { .. } | EngineRequest::Export { .. } => {
             native(protocol, request.method(), input)
@@ -151,11 +136,13 @@ fn request(input: &str, protocol: u64) -> String {
         | EngineRequest::Batch { .. }
         | EngineRequest::ThemeExport { .. }
         | EngineRequest::AttachmentsList { .. }
-        | EngineRequest::AttachmentsRead { .. } => command::request(input, protocol, None),
-        EngineRequest::Describe { documentPath } => call::describe(&documentPath, protocol).to_string(),
-        EngineRequest::Call { documentPath, command, args } => {
-            call::call(&json!({"documentPath":documentPath,"command":command,"args":args}).to_string(), protocol)
-                .to_string()
+        | EngineRequest::AttachmentsRead { .. }
+        | EngineRequest::Describe { .. }
+        | EngineRequest::Call { .. } => {
+            let evaluator = std::env::current_exe()
+                .ok()
+                .and_then(|path| hitslop_runner::Evaluator::new(path, vec!["--evaluate-command".into()]).ok());
+            command::request_with_evaluator(input, protocol, None, evaluator)
         }
         _ => dispatch(request),
     }
@@ -163,7 +150,7 @@ fn request(input: &str, protocol: u64) -> String {
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     if args.len() == 1 && args[0] == "--evaluate-command" {
-        runner::child();
+        hitslop_runner::child();
         return ExitCode::SUCCESS;
     }
     let mut args = args.into_iter().peekable();
@@ -190,13 +177,16 @@ fn main() -> ExitCode {
         println!("{}", hitslop_core::BUILD_ID);
         return ExitCode::SUCCESS;
     }
+    if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
+        let _ = registry::use_folder(Path::new(&folder));
+    }
+    if protocol.is_some() && args.len() == 2 && args[0] == "--preview-owner" {
+        return preview::serve(Path::new(&args[1]));
+    }
     let Some(protocol) = protocol.filter(|_| args.is_empty()) else {
         eprintln!("Use --client-protocol N and one JSON request on stdin");
         return ExitCode::from(2);
     };
-    if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
-        let _ = registry::use_folder(Path::new(&folder));
-    }
     let mut input = String::new();
     let reply = match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
         Ok(_) => request(&input, protocol),

@@ -2,7 +2,6 @@
 //! real socket loss and identity checks, not private call ordering.
 use hitslop_core::{
     command::{self, ExportCompletion, ExportHandler, ExportRequest},
-    envelope::{self, Envelope},
     file,
     owner::{Failure, Owner, Reply, Request},
     registry,
@@ -22,10 +21,10 @@ fn document() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
-    std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+    std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
     support::write_app(&stage, support::App::new(SCHEMA, r#"{"title":"Initial","hits":0}"#));
     let template = dir.path().join("template.slop");
-    file::pack(&stage, &template).unwrap();
+    support::pack(&stage, &template).unwrap();
     let path = dir.path().join("doc.slop");
     file::create_document(&template, &path).unwrap();
     (dir, path)
@@ -41,7 +40,7 @@ fn batch(path: &Path) -> Value {
     r
 }
 fn checked(text: String) -> Value {
-    assert!(envelope::is_valid(Envelope::SocketReply, text.as_bytes()), "invalid reply: {text}");
+    assert!(serde_json::from_str::<hitslop_core::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
 fn run(value: Value) -> Value {
@@ -96,6 +95,24 @@ fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
 }
 
 #[test]
+fn future_socket_protocol_is_refused_before_interpreting_its_payload() {
+    let (_dir, path) = document();
+    let owner = open(&path);
+    let before = std::fs::read(&path).unwrap();
+    // Valid JSON whose number is outside this build's value representation. It
+    // belongs to the future protocol, not to this build's request decoder.
+    let reply = checked(command::serve(
+        &owner,
+        r#"{"protocol":2,"method":"future.method","payload":1e999}"#,
+        None,
+        std::time::Instant::now() + Duration::from_secs(1),
+    ));
+    assert_eq!(reply["reason"], "requires_update");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    close(&owner);
+}
+
+#[test]
 fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     let (_dir, path) = document();
     // An agent's edit reports the rows it inserted; it reads state with `get`.
@@ -127,7 +144,7 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
     // A command that only reads writes nothing, even beside a blob nothing references.
     rusqlite::Connection::open(&path)
         .unwrap()
-        .execute("INSERT INTO attachments VALUES(?, x'00')", [&"f".repeat(64)])
+        .execute("INSERT INTO attachments VALUES(?, 'application/octet-stream', x'00')", [&"f".repeat(64)])
         .unwrap();
     let before = std::fs::read(&path).unwrap();
     assert_eq!(run(request(&path, "get"))["method"], "get");
@@ -366,13 +383,14 @@ fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
     close(&owner);
     server.stop();
 }
-fn page(owner: &Owner, view: &str, input: &str) -> command::PageReply {
+fn page(owner: &Owner, view: &str, input: &str) -> command::PageDispatch {
     let (tx, rx) = mpsc::channel();
     command::page(owner, view.into(), input, move |reply| tx.send(reply).unwrap());
     rx.recv_timeout(Duration::from_secs(5)).unwrap()
 }
-fn page_json(reply: &command::PageReply) -> Value {
-    serde_json::from_str(&reply.json).unwrap()
+fn page_json(reply: &command::PageDispatch) -> Value {
+    let command::PageDispatch::Reply { json, .. } = reply else { panic!("expected a JSON reply") };
+    serde_json::from_str(json).unwrap()
 }
 // The page's document requests run through the core: replies the page reads, refusals it
 // can act on, and the owner's failure for the host. Oracle: literal replies and the value.
@@ -387,24 +405,32 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(state["value"]["hits"], 0);
     let batch = |intent: Value| json!({"method":"apply","batch":json!({"intents":[intent]}).to_string()}).to_string();
     let applied = page(&owner, "page", &batch(json!({"type":"increment","path":["hits"],"by":2})));
-    assert!(applied.failure.is_none());
-    assert_eq!(page_json(&applied), json!({"ok":true,"sequence":1,"ids":[]}));
+    assert!(matches!(applied, command::PageDispatch::Reply { failure: None, .. }));
+    assert_eq!(page_json(&applied), json!({"ok":true,"method":"apply","sequence":1,"ids":[]}));
     let palette = page(&owner, "page", &batch(json!({"type":"setTheme","values":{"accent":"#123456"}})));
     assert_eq!(page_json(&palette)["reason"], "invalid_request", "the page cannot change the palette");
-    assert!(palette.failure.is_some());
+    assert!(matches!(palette, command::PageDispatch::Reply { failure: Some(_), .. }));
     let put = page_json(&page(&owner, "page", r#"{"method":"attachments.put","bytes":"YWJj"}"#));
     assert_eq!(put["byteLength"], 3);
-    let read = json!({"method":"attachments.read","attachmentID":put["id"]}).to_string();
-    assert_eq!(page_json(&page(&owner, "page", &read))["bytes"], "YWJj");
-    assert_eq!(page_json(&page(&owner, "page", r#"{"method":"flush"}"#)), json!({"ok":true}));
+    let reader = owner.resource_reader().unwrap();
+    assert_eq!(
+        reader.read_range(hitslop_core::file::ResourceRoute::Attachment, put["id"].as_str().unwrap(), 0, 3).unwrap(),
+        Some(b"abc".to_vec())
+    );
+    assert_eq!(page_json(&page(&owner, "page", r#"{"method":"flush"}"#)), json!({"ok":true,"method":"flush"}));
     let stale = page(&owner, "replaced", r#"{"method":"undo"}"#);
     assert_eq!(page_json(&stale)["code"], "owner_replaced");
-    assert_eq!(stale.failure.map(|f| f.kind), Some(hitslop_core::owner::FailureKind::Replaced));
+    assert!(matches!(
+        stale,
+        command::PageDispatch::Reply {
+            failure: Some(Failure { kind: hitslop_core::owner::FailureKind::Replaced, .. }),
+            ..
+        }
+    ));
     // The core checks the envelope and parses the payload; either way a malformed or
     // oversized request is a definite refusal that applies nothing.
     let increment = json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string();
     for (refused, reason) in [
-        (json!({"method":"ready"}), "invalid_request"),
         (json!({"method":"surprise"}), "invalid_request"),
         (json!({"method":"apply"}), "invalid_request"),
         (json!({"method":"apply","batch":increment,"extra":true}), "invalid_request"),
@@ -529,4 +555,34 @@ fn a_client_that_panics_frees_its_place() {
     assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
     close(&owner);
     server.stop();
+}
+
+#[test]
+fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::HostAction;
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
+    assert_eq!(config["ok"], true);
+    assert_eq!(config["readOnly"], false);
+    assert_eq!(config["window"]["kind"], "standard");
+    assert_eq!(config["descriptor"], serde_json::from_str::<Value>(SCHEMA).unwrap());
+    assert!(matches!(page(&owner, "page", r#"{"method":"ready"}"#), PageDispatch::Host { action: HostAction::Ready }));
+    assert!(matches!(
+        page(&owner, "page", r#"{"method":"window.resize","width":640,"height":480}"#),
+        PageDispatch::Host { action: HostAction::WindowResize { width: 640, height: 480 } }
+    ));
+    owner.attach("replacement".into());
+    for method in ["config", "ready", "pageRecovered"] {
+        let json = json!({"method":method}).to_string();
+        assert_eq!(page_json(&page(&owner, "page", &json))["code"], "owner_replaced");
+    }
+    close(&owner);
+    assert_eq!(page_json(&page(&owner, "replacement", r#"{"method":"ready"}"#))["code"], "closing");
+    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
+    snapshot.attach("capture".into());
+    assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
+    close(&snapshot);
 }

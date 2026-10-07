@@ -17,7 +17,9 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
   (`~/.hitslop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
-- **TypeBox owns the wire.** Run `bun run schema:generate`; never edit generated files.
+- **Rust owns wire types and shared limits; ts-rs generates TypeScript, and UniFFI
+  carries native types to Swift.** Rust also owns app acceptance; authors use `s.*` descriptors. JSON Schema is only a `describe` projection. Run
+  `bun run schema:generate`; never edit generated files.
 - **Writes are async.** They resolve after the snapshot updates. `change` collectors
   are synchronous. Reads come from immutable snapshots. Preserve `$id` identity. Every
   accepted operation keeps the document valid; invalid stored state is refused without
@@ -27,7 +29,7 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for `slop dev` and tests only; native engine validation owns authoring checks.
+  document engine. The WASM core is for tests only; `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
@@ -48,7 +50,7 @@ every document a released build wrote. Downgrades are not supported.
   not release numbers; refactors never raise them. A build refuses a newer marker with
   `requires_update` and writes nothing. The Mac app and the npm packages share one
   release version, which never stands for compatibility.
-- App format changes (the `app` row, assets, artwork) raise `packageFormat`; app-facing
+- Definition changes raise `packageFormat`; physical columns, tables and triggers raise the storage version; app-facing
   behavior raises `runtimeABI`. These requirements evolve independently. App limits and
   the checks that run on open are versioned by `packageFormat`; persistence limits
   (storage size and updates, attachments) by the storage version, never lowered for a

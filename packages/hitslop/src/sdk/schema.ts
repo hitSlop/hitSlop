@@ -1,10 +1,9 @@
-export { Type, type Static } from "typebox";
 export type { Command, CommandContext } from "./commands";
 import { makeCommand, type CommandSpec, type Command } from "./commands";
-import type { TSchema } from "typebox";
+import type { Arguments } from "./commands";
 export type { DocumentError } from "./errors";
 export { isDocumentError, isRejected } from "./errors";
-export { defineSlop, type Slop } from "./slop";
+export { defineSlop, type AppDeclaration } from "./slop";
 export type { Scope } from "./abi";
 export type { InsertResult } from "./handle-types";
 import type { Scope } from "./abi";
@@ -18,8 +17,8 @@ import { documentFor } from "./app/context";
  */
 export type Text = Description & { kind: "text" };
 export type BooleanNode = Description & { kind: "boolean" };
-/** Last writer wins. `maxLength` counts UTF-16 units. */
-export type StringNode = Description & { kind: "string"; maxLength?: number };
+/** Last writer wins. Length bounds count Unicode code points, not UTF-16 units. */
+export type StringNode = Description & { kind: "string"; minLength?: number; maxLength?: number };
 /** A finite number; bounds are inclusive. */
 export type NumberNode = Description & { kind: "number"; min?: number; max?: number };
 /** A safe integer; bounds are inclusive. */
@@ -110,7 +109,7 @@ const options = <T extends object>(base: T, extra: object | undefined) =>
 export const s = {
   text: (extra?: Description): Text => options({ kind: "text" }, extra),
   boolean: (extra?: Description): BooleanNode => options({ kind: "boolean" }, extra),
-  string: (extra?: Description & { maxLength?: number }): StringNode => options({ kind: "string" }, extra),
+  string: (extra?: Description & { minLength?: number; maxLength?: number }): StringNode => options({ kind: "string" }, extra),
   number: (extra?: Bounds): NumberNode => options({ kind: "number" }, extra),
   integer: (extra?: Bounds): IntegerNode => options({ kind: "integer" }, extra),
   enum: <const V extends readonly [string, ...string[]]>(values: V, extra?: Description): EnumNode<V> => options({
@@ -132,7 +131,7 @@ export type Handle<N extends Node> = ModeHandle<N, "live">;
 /** What `defineDocument` returns: the descriptor, and, once the app is mounted, the live
  * document. Components `import doc from "./schema"` and read `doc.current`. */
 export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocument<N> & {
-  command<A extends TSchema, R>(spec: CommandSpec<N, A, R>): Command<A, R>;
+  command<A extends Arguments, R>(spec: CommandSpec<N, A, R>): Command<A, R>;
 };
 export interface LiveDocument<N extends ObjectNode> {
   /** Immutable snapshot. Unchanged rows keep their identity. */
@@ -159,7 +158,7 @@ export function defineDocument<P extends Record<string, Node>>(
   const live = () => documentFor(definition) as Live;
   return Object.freeze(
     Object.defineProperties(definition, {
-      command: { value: (spec: CommandSpec<ObjectNode<P>, TSchema, unknown>) => makeCommand(definition, spec) },
+      command: { value: (spec: CommandSpec<ObjectNode<P>, Arguments, unknown>) => makeCommand(definition, spec) },
       current: { get: () => live().current },
       fields: { get: () => live().fields },
       at: { get: () => live().at },

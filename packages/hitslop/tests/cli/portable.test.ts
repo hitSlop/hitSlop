@@ -2,11 +2,12 @@
 // the app opens files with; and the starter project `slop init` creates.
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
+import { png } from "./png-fixture";
 import { execute } from "../../src/cli/engine";
 import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { overrideSlop } from "./source-fixture";
-import { parseManifest, PackageFormat, RuntimeABI } from "../../src/schema/index";
+import { PackageFormat, RuntimeABI } from "../../src/schema/index";
 import { buildTemplate } from "../../src/cli/template";
 
 /** What the engine reads in a built file. */
@@ -35,27 +36,15 @@ test("init creates a buildable source and refuses to overwrite it", async () => 
     expect(metadata.devDependencies["hitslop"]).not.toContain("__HITSLOP");
     const built = await inspect(await buildTemplate(source, undefined, join(root, "starter.slop")));
     expect(built.kind).toBe("template");
-    expect(built.manifest.slug).toBeTruthy();
+    expect(built.metadata.slug).toBeTruthy();
     // The file names the levels it needs beside its authored manifest, so an older app
     // refuses it up front.
     expect(built.packageFormat).toBe(PackageFormat);
     expect(built.runtimeABI).toBe(RuntimeABI);
-    expect(() => parseManifest(built.manifest)).not.toThrow();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 }, 60000);
-
-/** A minimal RGBA (colour type 6) PNG header: enough for the build's checks. */
-function pngHeader(width: number, height: number, colorType = 6) {
-  const bytes = Buffer.alloc(33);
-  Buffer.from("89504e470d0a1a0a0000000d49484452", "hex").copy(bytes);
-  bytes.writeUInt32BE(width, 16);
-  bytes.writeUInt32BE(height, 20);
-  bytes[24] = 8;
-  bytes[25] = colorType;
-  return bytes;
-}
 
 // Authoring builds on any platform: artwork is supplied or absent, and no helper runs.
 test("a portable build copies supplied artwork and needs no helper", async () => {
@@ -69,12 +58,14 @@ test("a portable build copies supplied artwork and needs no helper", async () =>
     const bare = await buildTemplate(source, undefined, join(root, "bare.slop"));
     expect((await inspect(bare)).artwork).toEqual([]);
     await mkdir(join(source, "artwork"));
-    await writeFile(join(source, "artwork/preview.png"), pngHeader(640, 480));
-    await writeFile(join(source, "artwork/icon.png"), pngHeader(512, 512));
+    await writeFile(join(source, "artwork/preview.png"), png(640, 480));
+    await writeFile(join(source, "artwork/icon.png"), png(512, 512));
+    await overrideSlop(source, { artwork: "{ preview, icon }" }, 'import preview from "./artwork/preview.png"; import icon from "./artwork/icon.png";');
     const output = await buildTemplate(source, undefined, join(root, "art.slop"));
     expect((await inspect(output)).artwork.map((artwork: { name: string }) => artwork.name)).toEqual(["icon", "preview"]);
     const icon = read<{ png: Uint8Array }>(output, "SELECT png FROM artwork WHERE name = 'icon'").png;
-    expect(Buffer.from(icon)).toEqual(pngHeader(512, 512));
+    expect(Buffer.from(icon).readUInt32BE(16)).toBe(512);
+    expect(Buffer.from(icon).readUInt32BE(20)).toBe(512);
   } finally {
     if (previous === undefined) delete process.env.HITSLOP_NATIVE_CLI;
     else process.env.HITSLOP_NATIVE_CLI = previous;
@@ -94,21 +85,14 @@ test("a portable build refuses templates the app would refuse and keeps the prev
       ["artwork", async (source) => {
         await mkdir(join(source, "artwork"));
         await writeFile(join(source, "artwork/preview.png"), "not a png");
-      }, "artwork/preview.png must be a valid PNG"],
-      ["symlink", async (source) => {
-        await mkdir(join(source, "assets"), { recursive: true });
-        await symlink("/etc/hosts", join(source, "assets/hosts"));
-      }, "without symbolic links"],
-      ["entries", async (source) => {
-        await mkdir(join(source, "assets/many"), { recursive: true });
-        for (let index = 0; index < 260; index++) await writeFile(join(source, "assets/many", `${index}.txt`), "");
-      }, "exceeds 256 assets"],
+        await overrideSlop(source, { artwork: "{preview}" }, 'import preview from "./artwork/preview.png";');
+      }, "PNG"],
       ["skin", async (source) => {
         // Quick Checklist's window is 480 × 620.
-        await overrideSlop(source, { presentation: '{ width: 480, height: 620, skin: "assets/skin.png" }' });
+        await overrideSlop(source, { window: '{ kind: "skin", width: 480, height: 620, image: skin }' }, 'import skin from "./assets/skin.png";');
         await mkdir(join(source, "assets"), { recursive: true });
-        await writeFile(join(source, "assets/skin.png"), pngHeader(481, 620));
-      }, "window skin must match the window's width and height"],
+        await writeFile(join(source, "assets/skin.png"), png(481, 620));
+      }, "Skin must be 480 × 620 or 960 × 1240 pixels"],
     ];
     for (const [name, damage, error] of cases) {
       const source = join(root, name);

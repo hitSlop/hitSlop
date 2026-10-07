@@ -103,7 +103,7 @@ builds into), each template found there, and an issue for each `.slop` file left
 folders and prints its resolved path; TEMPLATE is a template's path, or a listed slug when
 it is a bare name, and an installed template shadows a bundled one.
 
-`inspect` prints a file's kind, requirements, manifest, asset/artwork/attachment and
+`inspect` prints a file's kind, requirements, metadata, window and asset/artwork/attachment and
 saved-state sizes, and whether an owner published its socket. `schema` prints the
 stored descriptor. These two commands read the saved file; `request` routes through the
 live or in-process owner and waits for persistence where its method requires it.
@@ -144,7 +144,7 @@ to that install. Merely changing cwd never redirects document commands.
 `slop describe PATH` prints fields, allowed operations, named commands, values, row IDs
 and the snapshot version. Add `--json` for its complete structured representation.
 `slop call PATH NAME --args JSON` invokes the command stored inside that document, using
-TypeBox argument validation and one atomic owner batch. A success is durable. A refusal
+Rust descriptor argument validation and one atomic owner batch. A success is durable. A refusal
 applies no collected edits; an unknown outcome is never automatically replayed.
 
 The runner retries one definite stale snapshot conflict using the original clock and

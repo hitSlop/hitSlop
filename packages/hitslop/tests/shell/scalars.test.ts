@@ -12,7 +12,7 @@ wasm.initSync({
 
 const definition = defineDocument({
   currency: s.enum(["CAD", "USD", "EUR"]),
-  label: s.string({ maxLength: 4 }),
+  label: s.string({ minLength: 1, maxLength: 4 }),
   ratio: s.number({ min: 0, max: 1 }),
   rating: s.integer({ min: 1, max: 5 }),
   memo: s.optional(s.string()),
@@ -48,8 +48,9 @@ test("scalar, optional and optional-object handles write through the core", asyn
     const { id } = await doc.fields.rows.insert({ text: "Train", amount: 12.5 });
     await doc.fields.rows.item(id).note.set("work");
     await doc.fields.memo.clear();
+    await doc.fields.label.set("😀😀😀😀");
     expect(saved()).toEqual({
-      currency: "EUR", label: "ab", ratio: 0.25, rating: 5,
+      currency: "EUR", label: "😀😀😀😀", ratio: 0.25, rating: 5,
       photo: { id: "a", name: "renamed" },
       rows: [{ $id: "r1", text: "Coffee", amount: 475 }, { $id: id, text: "Train", amount: 12.5, note: "work" }],
     });
@@ -66,7 +67,8 @@ test("values outside a field's rules are refused and change nothing", async () =
   const { core, doc, saved } = await open();
   try {
     const before = saved();
-    await expect(doc.fields.label.set("😀😀😀")).rejects.toThrow("out_of_range");
+    await expect(doc.fields.label.set("😀😀😀😀😀")).rejects.toThrow("out_of_range");
+    await expect(doc.fields.label.set("")).rejects.toThrow("out_of_range");
     await expect(doc.fields.ratio.set(2)).rejects.toThrow("out_of_range");
     await expect(doc.fields.rating.set(1.5)).rejects.toThrow("type_mismatch");
     await expect(doc.fields.currency.set("GBP" as any)).rejects.toThrow("type_mismatch");

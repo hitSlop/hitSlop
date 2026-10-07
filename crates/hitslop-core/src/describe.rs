@@ -2,7 +2,7 @@
 //! intact; operations describe the actual storage kinds rather than another schema DSL.
 use serde_json::{Value, json};
 
-pub fn describe(manifest: Value, state: Value, commands: Value) -> Value {
+pub fn describe(metadata: Value, state: Value, commands: Value) -> Value {
     let mut fields = Vec::new();
     fn visit(node: &Value, path: Vec<Value>, fields: &mut Vec<Value>) {
         let kind = node["kind"].as_str().unwrap_or("");
@@ -43,5 +43,5 @@ pub fn describe(manifest: Value, state: Value, commands: Value) -> Value {
         }
     }
     visit(&state["schema"], vec![], &mut fields);
-    json!({"manifest":manifest,"schema":state["schema"],"version":state["version"],"value":state["value"],"theme":state["theme"],"fields":fields,"commands":commands})
+    json!({"metadata":metadata,"schema":state["schema"],"version":state["version"],"value":state["value"],"theme":state["theme"],"fields":fields,"commands":commands})
 }

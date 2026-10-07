@@ -8,7 +8,7 @@ import { publishFolder, repository, shellDestinations } from "../lib/artifacts";
  * validator; the core validates requests) fails the build. */
 const shellBudget = 64 * 1024;
 
-/** Builds the page shell once and installs it in the app and CLI (plus WASM for CLI dev). */
+/** Builds the page shell once and installs it in the app and CLI. */
 export async function buildShell() {
   const stage = await mkdtemp(join(tmpdir(), "hitslop-shell-"));
   try {
@@ -34,11 +34,9 @@ export async function buildShell() {
     const { size } = await stat(join(stage, "index.js"));
     if (size > shellBudget)
       throw new Error(`Page shell is ${size} bytes, over its ${shellBudget}-byte budget`);
-    for (const [consumer, destination] of Object.entries(shellDestinations))
+    for (const destination of Object.values(shellDestinations))
       await publishFolder(destination, async (ready) => {
         await cp(stage, ready, { recursive: true });
-        if (consumer === "cli")
-          await cp(join(repository, "generated/core/wasm"), join(ready, "core"), { recursive: true });
       });
   } finally {
     await rm(stage, { recursive: true, force: true });

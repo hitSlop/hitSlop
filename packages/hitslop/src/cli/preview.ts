@@ -1,9 +1,9 @@
-import type { SlopManifest } from "../schema/index";
+import type { WindowInput } from "../wire/app.generated";
 import { DefaultWindowRadius } from "../schema/constants";
 
 /** Stands in for the native window: manifest size, shape mask, and backing or skin chrome. */
-export function previewFrame(manifest: Pick<SlopManifest, "title" | "presentation">) {
-  const presentation = manifest.presentation;
+export function previewFrame(app: { title: string; window: WindowInput }) {
+  const presentation = app.window;
   const { width, height } = presentation;
   const escape = (value: string) => value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   const surface = [`width:${width}px`, `height:${height}px`];
@@ -11,10 +11,10 @@ export function previewFrame(manifest: Pick<SlopManifest, "title" | "presentatio
     resize = false,
     ratio = 0,
     shadow = false;
-  if ("skin" in presentation) {
+  if (presentation.kind === "skin") {
     surface.push(
       ...["background", "-webkit-mask", "mask"].map(
-        (property) => `${property}:url("/${presentation.skin}") 0 0/100% 100% no-repeat`,
+        (property) => `${property}:url("${presentation.image}") 0 0/100% 100% no-repeat`,
       ),
     );
   } else {
@@ -40,6 +40,6 @@ export function previewFrame(manifest: Pick<SlopManifest, "title" | "presentatio
       surface.push("clip-path:url(#window-shape)");
     }
   }
-  const title = escape(manifest.title);
+  const title = escape(app.title);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title} preview</title><style>html,body{margin:0;min-height:100%;height:100%}body{display:grid;place-items:center;background:#e4e4e4 repeating-conic-gradient(#d2d2d2 0 25%,#e4e4e4 0 50%) 0 0/24px 24px}.stage{position:relative;pointer-events:none;${shadow ? "filter:drop-shadow(0 18px 25px #0004)" : ""}}.window{pointer-events:auto;overflow:hidden;${surface.join(";")}}iframe{display:block;width:100%;height:100%;border:0}.resize-preview{position:absolute;right:-28px;bottom:-28px;width:28px;height:28px;pointer-events:auto;cursor:nwse-resize;touch-action:none;border:1px solid #777;background:white;border-radius:5px}.resize-preview:focus-visible{outline:3px solid #1957bd}</style></head><body>${definitions}<div class="stage" data-aspect="${ratio}"><div class="window"><iframe src="/app.html" title="${title}"></iframe></div>${resize ? '<button class="resize-preview" aria-label="Resize preview" title="Drag to resize; arrow keys adjust by 10px">↘</button>' : ""}</div><script src="/__preview__/resize.js"></script></body></html>`;
 }

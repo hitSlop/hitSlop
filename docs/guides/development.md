@@ -24,7 +24,7 @@ Before building the complete app, run `bun run build:templates` to prepare its b
 | `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, the app and catalog models (HitSlopFeatures), Catalog, telemetry, and NativeCLI |
 | `packages/hitslop/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter |
 | `packages/hitslop/src/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
-| `packages/hitslop/src/schema` | TypeBox manifest, bridge, owner and socket contracts |
+| `crates/hitslop-core/src/wire`, `src/app` | Serde wire types and package-format acceptance, exported with ts-rs and UniFFI |
 | `packages/hitslop/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
 | `examples/slops` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
@@ -52,7 +52,7 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 [Testing](../testing.md#running-tests) lists every tier.
 
 - `hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
-- `contracts` and `types` (`bun run check`): generated contract drift (change TypeBox source and regenerate rather than editing generated files), skills, package types, and discovered template types.
+- `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), skills, package types, and discovered template types.
 - `bun` (`bun run test`): SDK, schema, and CLI tests over the WASM core, including the shared fixture replay.
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with two cached black-box apps and four presentation fixtures.

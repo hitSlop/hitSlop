@@ -29,7 +29,7 @@ public enum HitSlopFirebase {
       case .created(let source):
         Analytics.logEvent("document_created", parameters: ["source": source.rawValue])
       case .exported(let format):
-        Analytics.logEvent("document_exported", parameters: ["format": format.rawValue])
+        Analytics.logEvent("document_exported", parameters: ["format": format.fileExtension])
       case .breadcrumb(let operation, let phase):
         Crashlytics.crashlytics().log("\(operation.rawValue).\(phase.rawValue)")
       case .failed(let operation, let context):

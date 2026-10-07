@@ -58,7 +58,7 @@ import Testing
   /// separate open reports. A file's header gives its kind, and a template is refused as a
   /// document before anything is written.
   @Test func ownersShowTheAppTheirOpenCheckedAndRefuseTemplates() async throws {
-    let stage = try Fixtures.minimalStage(theme: ##"{"paper":"#ffffff","accent":"#335577"}"##)
+    let stage = try Fixtures.minimalStage(theme: [("paper", "#ffffff"), ("accent", "#335577")])
     defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
     let template = try Fixtures.template(stage: stage)
     let root = try Fixtures.document(from: template)
@@ -69,7 +69,7 @@ import Testing
       #expect(owner.file.kind == .document)
       #expect(owner.file.descriptor == opened.descriptor)
       #expect(owner.file.themeTokens.map(\.name) == ["paper", "accent"])
-      #expect(owner.file.manifest.slug == opened.manifest.slug)
+      #expect(owner.file.metadata.slug == opened.metadata.slug)
       try await owner.close()
     }
     #expect(try SlopFile.kind(of: template) == .template)
@@ -257,7 +257,7 @@ import Testing
     try await withCheckedThrowingContinuation { done in owner.enqueueTheme(change) { done.resume(with: $0) } }
   }
   func accent(_ owner: DocumentOwner) async throws -> String? {
-    try JSONDecoder().decode([String: String].self, from: Data(try await owner.loadTheme().state.effective.utf8))[
+    try await owner.loadTheme().state.effective[
       "accent"]
   }
   /// The saved accent, read without the owner (snapshot mode takes no lock).
@@ -326,7 +326,13 @@ import Testing
   /// A page request from `view`; the owner's failure, if it refused.
   func page(_ owner: DocumentOwner, _ json: String, view: String) async -> OwnerFailure? {
     await withCheckedContinuation { done in
-      owner.page(json: json, view: view) { _, failure in done.resume(returning: failure) }
+      owner.page(json: json, view: view) { result in
+        if case .reply(_, let failure, _) = result {
+          done.resume(returning: failure)
+        } else {
+          done.resume(returning: nil)
+        }
+      }
     }
   }
 }

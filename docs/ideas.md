@@ -66,7 +66,7 @@ a person and their agent edit the same live document. What's missing is the slop
     export and theme as tools whose input schemas come from each document's descriptor.
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
   clients without a shell work on slops.
-- **Builds on:** the owner socket and its TypeBox envelopes in `packages/hitslop/src/schema`. The
+- **Builds on:** the owner socket and its serde types in `crates/hitslop-core/src/wire`. The
   socket takes one request per connection today, so streaming needs a new envelope.
 
 ### Gradient theme tokens

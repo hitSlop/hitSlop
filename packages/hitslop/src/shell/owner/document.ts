@@ -10,8 +10,6 @@ import { readPath, pathKey, atOrBeneath, mapPaths, type Locations } from "./path
 import { bindText as bindField } from "./text";
 import type { OwnerTransport } from "./transport";
 import { handleFactory, type Collector } from "./handles";
-import { evaluate } from "../commands";
-import type { CommandContext } from "../../sdk/commands";
 import { commitIntent, Previews, type Preview } from "./previews";
 export type { OwnerTransport } from "./transport";
 import type { Scope as OwnerScope } from "../../sdk/abi";
@@ -308,31 +306,18 @@ export class OwnerDocument<N extends ObjectNode> {
     }
     return this.submit(collected.intents, collected.result, { collected: true });
   }
-  async runCommand<R>(name: string, callback: (ctx: CommandContext<N>) => R): Promise<R> {
+  async runCommand<R>(name: string, args: unknown): Promise<R> {
     this.assertNotCollecting("Nested commands are not supported");
     const refusal = this.refusal();
     if (refusal) throw refusal;
-    const now = Date.now(), seed = Array.from(crypto.getRandomValues(new Uint32Array(4)));
     await this.drain();
     const blocked = this.refusal();
     if (blocked) throw blocked;
     const run = this.tail.then(async () => {
-      for (let attempt = 0; ; attempt++) {
-        this.store.assertWritable();
-        const { value, version } = this.store.state;
-        let collected;
-        this.collecting = true;
-        try { collected = evaluate({ value, descriptor: this.definition.descriptor, args: {}, now, seed }, callback); }
-        finally { this.collecting = false; }
-        try {
-          const reply = await this.transport.apply({ intents: collected.intents, ifVersion: version, command: name });
-          await this.store.reached(reply.sequence);
-          return collected.result;
-        } catch (error) {
-          if (attempt !== 0 || !isRejected(error) || error.reason !== "stale_base") throw error;
-          await this.store.resync();
-        }
-      }
+      this.store.assertWritable();
+      const reply = await this.transport.runCommand(name, args);
+      await this.store.reached(reply.sequence);
+      return reply.result as R;
     });
     this.tail = run.catch(() => {});
     return this.track(run);

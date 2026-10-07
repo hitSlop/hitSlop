@@ -1,4 +1,4 @@
-import type { SlopPresentation } from "../schema/index";
+import type { WindowInput } from "../wire/app.generated";
 import { DefaultWindowRadius } from "../schema/constants";
 
 /** Host-supplied initial geometry, not the current viewport or a live resize API. */
@@ -11,8 +11,8 @@ type PresentationStage = {
 };
 
 /** Maps a manifest presentation to the stage the native host would configure. */
-export function presentationStage(presentation: SlopPresentation): PresentationStage {
-  if ("skin" in presentation)
+export function presentationStage(presentation: WindowInput): PresentationStage {
+  if (presentation.kind === "skin")
     return {
       mode: "skin",
       width: presentation.width,

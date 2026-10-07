@@ -2,9 +2,7 @@
 //! through its socket, or take the writer lock and run the same owner here. A lost
 //! mutation reply is never replayed.
 use crate::{
-    Code,
-    envelope::{self, Envelope},
-    file, lock,
+    Code, file, lock,
     owner::{self, Failure, FailureKind, Owner},
     registry, socket, store,
     wire::{self, OutcomeCode, PageRequest, SocketFailure, SocketRequest, SocketSuccess},
@@ -32,25 +30,21 @@ pub fn protocol_mismatch(version: u64) -> Option<&'static str> {
         Less => Some("This hitSlop app needs a newer command line; update the hitSlop CLI"),
     }
 }
-/// Refuses a request written in another protocol, before its envelope or method is read: a
-/// request from any other build gets the same answer (docs/engineering-contract.md).
-fn check_protocol(request: &serde_json::Value) -> Result<()> {
-    let version = request["protocol"].as_u64().ok_or_else(|| invalid("Invalid socket request"))?;
-    match protocol_mismatch(version) {
-        None => Ok(()),
-        Some(message) => Err(Failure::rejected(Code::RequiresUpdate, message)),
-    }
-}
-
 /// The permanent preflight has no document path and never admits an operation.
 pub(crate) fn preflight(input: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(input).ok()?;
-    if value["method"] != "hello" {
+    #[derive(Deserialize)]
+    struct Method {
+        method: Box<RawValue>,
+    }
+    let method: Method = serde_json::from_str(input).ok()?;
+    if serde_json::from_str::<String>(method.method.get()).ok().as_deref() != Some("hello") {
         return None;
     }
-    Some(match check_protocol(&value) {
-        Err(error) => failure(error, false, false),
-        Ok(()) if input.len() <= 1024 && envelope::hello(&value) => json!({"ok": true, "method": "hello"}).to_string(),
+    Some(match wire::socket::check_protocol(input) {
+        Err(error) => failure(Failure::from(error), false, false),
+        Ok(()) if input.len() <= 1024 && serde_json::from_str::<wire::socket::Hello>(input).is_ok() => {
+            json!({"ok": true, "method": "hello"}).to_string()
+        }
         Ok(()) => failure(invalid("Invalid protocol preflight"), false, false),
     })
 }
@@ -62,7 +56,7 @@ fn invalid(message: impl Into<String>) -> Failure {
 #[derive(Clone, Debug)]
 pub struct ExportRequest {
     pub document_path: String,
-    pub format: String,
+    pub format: crate::engine::ExportFormat,
     pub output: String,
 }
 /// A native renderer completes this once, while its command is still active. It checks
@@ -177,16 +171,7 @@ fn call_inner(owner: &Owner, request: owner::Request, deadline: Instant, admissi
 }
 /// A request as it arrives: its protocol first, then its envelope.
 fn parse(input: &str) -> Result<SocketRequest> {
-    let value: serde_json::Value = serde_json::from_str(input).map_err(|_| invalid("Invalid socket request"))?;
-    check_protocol(&value)?;
-    if !envelope::is_valid(Envelope::SocketRequest, input.as_bytes()) {
-        return Err(invalid("Invalid socket request"));
-    }
-    let request: SocketRequest = serde_json::from_value(value).map_err(|_| invalid("Invalid socket request"))?;
-    // A batch carrying attachments may reach the attachment limit; anything else is small.
-    if input.len() > wire::SOCKET_REQUEST && !matches!(request, SocketRequest::Batch { attachments: Some(_), .. }) {
-        return Err(invalid("Oversized socket request"));
-    }
+    let request = SocketRequest::decode(input).map_err(Failure::from)?;
     if let SocketRequest::Batch { ops, .. } = &request
         && !serde_json::from_str::<serde_json::Value>(ops).is_ok_and(|v| v.is_array())
     {
@@ -215,6 +200,39 @@ fn dispatch(
         use owner::{Reply, Request};
         let unexpected = || Failure::new(FailureKind::Invalidated, "Unexpected owner result");
         Ok(match request {
+            SocketRequest::Call { command, args, .. } => {
+                let Reply::Command { ids, result_json, .. } = call(
+                    owner,
+                    Request::Command { name: command, args_json: args.to_string(), origin: crate::Origin::Agent },
+                    deadline,
+                )?
+                else {
+                    return Err(unexpected());
+                };
+                accepted = true;
+                saving = true;
+                call_after(owner, Request::Flush, deadline)?;
+                saving = false;
+                SocketSuccess::Call { ids, result: raw(result_json)? }
+            }
+            SocketRequest::Describe { .. } => {
+                saving = true;
+                call(owner, Request::Flush, deadline)?;
+                saving = false;
+                let Reply::State { json, .. } = call(owner, Request::State, deadline)? else {
+                    return Err(unexpected());
+                };
+                let app = &owner.app().app;
+                let mut state: serde_json::Value = serde_json::from_str(&json).map_err(|e| invalid(e.to_string()))?;
+                state["schema"] = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
+                SocketSuccess::Describe {
+                    state: fragment(crate::describe::describe(
+                        serde_json::to_value(app.metadata()).expect("metadata"),
+                        state,
+                        app.command_metadata(),
+                    ))?,
+                }
+            }
             SocketRequest::Get { .. } => {
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
@@ -225,7 +243,12 @@ fn dispatch(
                 // The reading is one object; the app's descriptor and declared colors lead it.
                 let app = &owner.app().app;
                 SocketSuccess::Get {
-                    state: raw(format!("{{\"schema\":{},\"defaults\":{},{}", app.descriptor, app.theme, &json[1..]))?,
+                    state: raw(format!(
+                        "{{\"schema\":{},\"defaults\":{},{}",
+                        app.document_json(),
+                        app.theme_json(),
+                        &json[1..]
+                    ))?,
                 }
             }
             SocketRequest::Batch { ops, base, ifVersion, command, attachments, .. } => {
@@ -275,7 +298,10 @@ fn dispatch(
                 let Reply::Attachments { items } = call(owner, Request::Attachments, deadline)? else {
                     return Err(unexpected());
                 };
-                let state: Vec<_> = items.into_iter().map(|v| json!({"id":v.id,"byteLength":v.bytes})).collect();
+                let state: Vec<_> = items
+                    .into_iter()
+                    .map(|v| json!({"id":v.id,"byteLength":v.bytes,"mimeType":v.media_type}))
+                    .collect();
                 SocketSuccess::AttachmentsList { state: fragment(state)? }
             }
             SocketRequest::AttachmentsRead { attachmentID, .. } => {
@@ -298,75 +324,142 @@ fn dispatch(
         Err(error) => failure(error, accepted, saving),
     }
 }
-/// A page request answered: the reply the page receives, and the owner's failure when it
-/// refused, which the host reports in its own terms (a storage failure, for instance).
-pub struct PageReply {
-    pub json: String,
-    pub failure: Option<Failure>,
+/// A page request is either answered by the owner or delivered as a typed host action.
+/// Only attachment persistence failures are also surfaced to the native storage UI.
+pub enum PageDispatch {
+    Reply { json: String, failure: Option<Failure>, storage: bool },
+    Host { action: wire::page::HostAction },
 }
-fn page_failure(error: Failure) -> PageReply {
-    PageReply { json: failure(error.clone(), false, true), failure: Some(error) }
+fn page_failure(error: Failure, storage: bool) -> PageDispatch {
+    PageDispatch::Reply { json: failure(error.clone(), false, true), failure: Some(error), storage }
 }
-/// Runs one document request from the page `view` and answers through `reply`. An edit
-/// replies once accepted, ahead of its save; `flush` waits for the save. The window's own
-/// requests (config, readiness, resizing, errors) are the host's.
-pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageReply) + Send + 'static) {
+fn page_success(result: wire::page::PageSuccess) -> PageDispatch {
+    PageDispatch::Reply { json: crate::encode(&result), failure: None, storage: false }
+}
+/// The page receives the original descriptor and authored geometry; native UI receives
+/// the normalized window through UniFFI. Neither side reparses the stored definition.
+fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
+    let app = owner.app();
+    Ok(wire::page::PageSuccess::Config {
+        ok: wire::engine::True,
+        runtime_abi: app.runtime_abi,
+        style: app.style,
+        read_only: owner.mode() == store::Mode::Snapshot,
+        window: app.app.page_window(),
+        descriptor: raw(app.app.document_json().into())?,
+    })
+}
+/// Runs one validated request from `view`. Edits answer on acceptance; flush waits for
+/// persistence. Host actions pass the same serial view/lifecycle fence before delivery.
+pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDispatch) + Send + 'static) {
     use owner::{Reply, Request};
-    type Answer = fn(Reply) -> Option<serde_json::Value>;
-    fn sequence(reply: Reply) -> Option<serde_json::Value> {
-        match reply {
-            Reply::Applied { sequence, .. } => Some(json!({ "sequence": sequence })),
-            _ => None,
-        }
-    }
-    let request = envelope::is_valid(Envelope::PageRequest, input.as_bytes())
-        .then(|| serde_json::from_str::<PageRequest>(input).ok())
-        .flatten();
+    use wire::engine::True;
+    use wire::page::{HostAction, PageSuccess as Success};
+    type Answer = Box<dyn FnOnce(Reply) -> Option<Success> + Send>;
+    let request = match PageRequest::decode(input) {
+        Ok(request) => request,
+        Err(error) => return reply(page_failure(error.into(), false)),
+    };
+    let storage = matches!(request, PageRequest::AttachmentsPut { .. });
     let (request, answer): (Request, Answer) = match request {
-        Some(PageRequest::Open {}) => (Request::State, |reply| match reply {
-            Reply::State { json, sequence } => Some(json!({ "state": crate::sequenced(sequence, &json) })),
-            _ => None,
-        }),
-        Some(PageRequest::Apply { batch }) => {
-            (Request::Apply { batch_json: batch, origin: crate::Origin::Page }, |reply| match reply {
-                Reply::Applied { sequence, ids, text: None, .. } => Some(json!({ "sequence": sequence, "ids": ids })),
-                Reply::Applied { sequence, ids, text: Some(text), .. } => Some(json!({
-                    "sequence": sequence, "ids": ids, "authored": text.authored,
-                    "selectionStart": text.selection[0], "selectionEnd": text.selection[1],
-                })),
-                _ => None,
-            })
-        }
-        Some(PageRequest::Flush {}) => (Request::Flush, |reply| matches!(reply, Reply::Unit).then(|| json!({}))),
-        Some(PageRequest::Undo {}) => (Request::Undo { redo: false }, sequence),
-        Some(PageRequest::Redo {}) => (Request::Undo { redo: true }, sequence),
-        Some(PageRequest::AttachmentsPut { bytes }) => match data_encoding::BASE64.decode(bytes.as_bytes()) {
-            Ok(bytes) => (Request::PutAttachment { bytes }, |reply| match reply {
-                Reply::Attachment { item } => Some(json!({ "id": item.id, "byteLength": item.bytes })),
+        PageRequest::CommandsRun { name, args } => (
+            Request::Command { name, args_json: args.to_string(), origin: crate::Origin::Page },
+            Box::new(|reply| match reply {
+                Reply::Command { sequence, ids, result_json } => {
+                    Some(Success::CommandsRun { ok: True, sequence, ids, result: raw(result_json).ok()? })
+                }
                 _ => None,
             }),
-            Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"))),
-        },
-        Some(PageRequest::AttachmentsRead { attachmentID }) => {
-            (Request::ReadAttachment { id: attachmentID }, |reply| match reply {
-                Reply::Bytes { bytes: Some(bytes) } => Some(json!({ "bytes": data_encoding::BASE64.encode(&bytes) })),
+        ),
+        PageRequest::Open {} => (
+            Request::State,
+            Box::new(|reply| match reply {
+                Reply::State { json, sequence } => {
+                    Some(Success::Open { ok: True, state: crate::sequenced(sequence, &json) })
+                }
                 _ => None,
-            })
+            }),
+        ),
+        PageRequest::Apply { batch } => (
+            Request::Apply { batch_json: batch, origin: crate::Origin::Page },
+            Box::new(|reply| match reply {
+                Reply::Applied { sequence, ids, text } => Some(Success::Apply {
+                    ok: True,
+                    sequence,
+                    ids,
+                    selection_start: text.as_ref().map(|t| t.selection[0]),
+                    selection_end: text.as_ref().map(|t| t.selection[1]),
+                    authored: text.map(|t| t.authored),
+                }),
+                _ => None,
+            }),
+        ),
+        PageRequest::Flush {} => {
+            (Request::Flush, Box::new(|reply| matches!(reply, Reply::Unit).then_some(Success::Flush { ok: True })))
         }
-        Some(_) => return reply(page_failure(invalid("Not a document request"))),
-        None => return reply(page_failure(invalid("Invalid page request"))),
+        PageRequest::Undo {} => (
+            Request::Undo { redo: false },
+            Box::new(|reply| match reply {
+                Reply::Applied { sequence, .. } => Some(Success::Undo { ok: True, sequence }),
+                _ => None,
+            }),
+        ),
+        PageRequest::Redo {} => (
+            Request::Undo { redo: true },
+            Box::new(|reply| match reply {
+                Reply::Applied { sequence, .. } => Some(Success::Redo { ok: True, sequence }),
+                _ => None,
+            }),
+        ),
+        PageRequest::AttachmentsPut { bytes } => match data_encoding::BASE64.decode(bytes.as_bytes()) {
+            Ok(bytes) => (
+                Request::PutAttachment { bytes },
+                Box::new(|reply| match reply {
+                    Reply::Attachment { item } => Some(Success::AttachmentsPut {
+                        ok: True,
+                        id: item.id,
+                        byte_length: item.bytes,
+                        mime_type: item.media_type,
+                    }),
+                    _ => None,
+                }),
+            ),
+            Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"), false)),
+        },
+        request => {
+            let dispatch = match request {
+                PageRequest::Config {} => page_config(owner).map(page_success),
+                PageRequest::WindowResize { width, height } => {
+                    Ok(PageDispatch::Host { action: HostAction::WindowResize { width, height } })
+                }
+                PageRequest::Ready {} => Ok(PageDispatch::Host { action: HostAction::Ready }),
+                PageRequest::PageRecovered {} => Ok(PageDispatch::Host { action: HostAction::PageRecovered }),
+                PageRequest::Failed { error } => Ok(PageDispatch::Host { action: HostAction::Failed { error } }),
+                PageRequest::PageError { kind, error } => {
+                    Ok(PageDispatch::Host { action: HostAction::PageError { kind, error } })
+                }
+                _ => unreachable!("document requests routed above"),
+            };
+            owner.admit_page(
+                view,
+                Box::new(move |admitted| {
+                    reply(match admitted.and(dispatch) {
+                        Ok(dispatch) => dispatch,
+                        Err(error) => page_failure(error, false),
+                    })
+                }),
+            );
+            return;
+        }
     };
     owner.submit(
         request,
         Some(view),
         Box::new(move |result| {
             reply(match result.map(answer) {
-                Ok(Some(mut value)) => {
-                    value["ok"] = true.into();
-                    PageReply { json: value.to_string(), failure: None }
-                }
-                Ok(None) => page_failure(Failure::new(FailureKind::Invalidated, "Unexpected owner result")),
-                Err(error) => page_failure(error),
+                Ok(Some(result)) => page_success(result),
+                Ok(None) => page_failure(Failure::new(FailureKind::Invalidated, "Unexpected owner result"), storage),
+                Err(error) => page_failure(error, storage),
             })
         }),
     );
@@ -383,17 +476,8 @@ fn header(json: &str) -> Result<Header> {
 fn discovery(path: &Path) -> Result<String> {
     let json = registry::discovery(path)?
         .ok_or_else(|| Failure::new(FailureKind::Locked, "Writer is busy without a ready session; retry later"))?;
-    if !envelope::is_valid(Envelope::SocketDiscovery, json.as_bytes()) {
-        return Err(invalid("Invalid live session discovery"));
-    }
-    #[derive(Deserialize)]
-    struct Discovery {
-        socket: String,
-        #[serde(rename = "documentPath")]
-        path: String,
-    }
-    let value: Discovery = serde_json::from_str(&json).map_err(|_| invalid("Invalid live session discovery"))?;
-    if Path::new(&value.path) != path {
+    let value = wire::socket::Discovery::decode(&json).map_err(Failure::from)?;
+    if Path::new(&value.document_path) != path {
         return Err(invalid("Invalid live session discovery"));
     }
     Ok(value.socket)
@@ -423,6 +507,14 @@ fn prepare(input: &str, protocol: u64) -> Result<SocketRequest> {
 /// after taking the writer lock; discovery is consulted only when that lock is busy.
 /// Exports alone may use a snapshot.
 pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandler>>) -> String {
+    request_with_evaluator(input, protocol, exporter, None)
+}
+pub fn request_with_evaluator(
+    input: &str,
+    protocol: u64,
+    exporter: Option<Arc<dyn ExportHandler>>,
+    evaluator: Option<owner::Evaluator>,
+) -> String {
     let request = match prepare(input, protocol) {
         Ok(r) => r,
         Err(mut e) => {
@@ -453,7 +545,7 @@ pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandle
                 }
             }
         } else {
-            match Owner::open(&path, store::Mode::Document, Arc::new(|_| {})) {
+            match Owner::open_with_evaluator(&path, store::Mode::Document, Arc::new(|_| {}), evaluator.clone()) {
                 Ok(owner) => Connection::Local(owner),
                 Err(error) if error.kind == FailureKind::Locked => match discovery(&path) {
                     Ok(socket) => Connection::Live(socket),

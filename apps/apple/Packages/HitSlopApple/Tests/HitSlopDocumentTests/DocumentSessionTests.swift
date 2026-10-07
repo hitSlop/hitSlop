@@ -35,16 +35,34 @@ import WebKit
     }
   }
 
-  // The native dispatch boundary must reject an oversized or unknown-field request
-  // before base64 decoding or touching SQLite.
-  @Test func bridgeRejectsOversizedPayloadsAndUnknownFields() {
-    #expect(PageRequest.checked(["method": "config"]) != nil)
-    #expect(PageRequest.checked(["method": "config", "extra": "unexpected"]) == nil)
-    #expect(PageRequest.checked(["method": "attachments.list"]) == nil)
-    #expect(PageRequest.checked(["method": "open"]) != nil)
-    #expect(PageRequest.checked(["method": "window.resize", "width": ["nested": 1], "height": 300]) == nil)
-    let oversized = String(repeating: "A", count: 15 * 1024 * 1024)
-    #expect(PageRequest.checked(["method": "attachments.put", "bytes": oversized]) == nil)
+  // Exercise the real WebKit boundary: invalid messages are definite refusals and
+  // neither a string nor an object request can bypass Rust's shape checks.
+  @Test @MainActor func bridgeRejectsOversizedPayloadsAndUnknownFields() async throws {
+    let root = try Fixtures.document()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    do {
+      try await session.waitUntilReady()
+      let refused = try await session.webView.callAsyncJavaScript(
+        """
+          const requests = [
+            {method: 'config', extra: 'unexpected'},
+            {method: 'attachments.list'},
+            {method: 'window.resize', width: {nested: 1}, height: 300},
+            {method: 'attachments.put', bytes: 'A'.repeat(15 * 1024 * 1024)},
+          ];
+          const post = async request => JSON.parse(await webkit.messageHandlers.hitslop.postMessage(request));
+          const replies = await Promise.all(requests.map(request => post(JSON.stringify(request))));
+          replies.push(await post({method: 'config'}));
+          return replies.every(reply => reply.ok === false && reply.code === 'rejected');
+        """, arguments: [:], in: nil, contentWorld: .page)
+      #expect(refused as? Bool == true)
+      try await session.close()
+    } catch {
+      try? await session.close()
+      throw error
+    }
   }
 
   // A theme can change after config is read but before the app finishes mounting.
@@ -83,8 +101,7 @@ import WebKit
       }
       #expect(try await accent() == "#123456")
       _ = try await session.owner.apply(batch: #"{"intents":[{"type":"setTheme","values":{"accent":null}}]}"#)
-      let expected = try JSONDecoder().decode(
-        [String: String].self, from: Data(try await session.owner.loadTheme().state.effective.utf8))["accent"]
+      let expected = try await session.owner.loadTheme().state.effective["accent"]
       for _ in 0..<100 {
         if try await accent() == expected { break }
         try await Task.sleep(for: .milliseconds(10))
@@ -119,8 +136,7 @@ import WebKit
     func saved() async throws -> String? {
       let snapshot = try DocumentOwner(url: root, mode: .snapshot)
       defer { Task { try? await snapshot.close() } }
-      return try JSONDecoder().decode(
-        [String: String].self, from: Data(try await snapshot.loadTheme().state.effective.utf8))["accent"]
+      return try await snapshot.loadTheme().state.effective["accent"]
     }
     do {
       try await session.waitUntilReady()
@@ -143,9 +159,7 @@ import WebKit
         try await session.flush()
         #expect(try await accent() == "#abcabc", "the editor remains live during snapshot rendering")
         let snapshot = try DocumentOwner(url: source, mode: .snapshot)
-        let effective = try JSONDecoder().decode(
-          [String: String].self,
-          from: Data(try await snapshot.loadTheme().state.effective.utf8))
+        let effective = try await snapshot.loadTheme().state.effective
         #expect(effective["accent"] == "#335577")
         try await snapshot.close()
       }
@@ -163,7 +177,8 @@ import WebKit
   // or a shell file: the document's other contents are not resources.
   @Test @MainActor func schemeRejectsEncodedTraversalAndServesOnlyAssets() async throws {
     let stage = try Fixtures.stage()
-    try Data("assets/test.js".utf8).write(to: stage.appendingPathComponent("assets/test.js"))
+    let assetURL = try Fixtures.addAsset(
+      stage, bytes: Data("assets/test.js".utf8), ext: "js", mediaType: "text/javascript")
     let root = try Fixtures.document(stage: stage)
     let shell = try Fixtures.folder()
     defer {
@@ -189,7 +204,7 @@ import WebKit
       #expect(task.data.isEmpty)
     }
     for (path, expected) in [
-      ("assets/test.js?v=1", "assets/test.js"), ("__shell__/loro/test.js", "shell/loro/test.js"),
+      (String(assetURL.dropFirst()) + "?v=1", "assets/test.js"), ("__shell__/loro/test.js", "shell/loro/test.js"),
     ] {
       let task = SchemeTask(URL(string: "slop://app/" + path)!)
       handler.webView(view, start: task)
@@ -198,10 +213,10 @@ import WebKit
       #expect(task.data == Data(expected.utf8))
     }
     // WebKit raises on a callback to a task it stopped; a stopped read is dropped.
-    let stopped = SchemeTask(URL(string: "slop://app/assets/test.js")!)
+    let stopped = SchemeTask(URL(string: "slop://app" + assetURL)!)
     handler.webView(view, start: stopped)
     handler.webView(view, stop: stopped)
-    let next = SchemeTask(URL(string: "slop://app/assets/test.js")!)
+    let next = SchemeTask(URL(string: "slop://app" + assetURL)!)
     handler.webView(view, start: next)
     await next.completion()
     for _ in 0..<10 { await Task.yield() }
@@ -213,7 +228,9 @@ import WebKit
   @Test(arguments: [false, true]) @MainActor
   func resizeBridgeHonorsManifest(resizable: Bool) async throws {
     let stage = try Fixtures.stage()
-    try Fixtures.updateManifest(stage) { $0["presentation"] = ["width": 480, "height": 480, "resizable": resizable] }
+    try Fixtures.updateApp(stage) {
+      $0["window"] = ["kind": "standard", "width": 480, "height": 480, "resizable": resizable]
+    }
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
@@ -229,7 +246,7 @@ import WebKit
       try await session.waitUntilReady()
       let resize = """
         try {
-          const size = await webkit.messageHandlers.hitslop.postMessage({method:'window.resize',width:600,height:500});
+          const size = JSON.parse(await webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method:'window.resize',width:600,height:500})));
           return size.width === 600 && size.height === 500;
         } catch { return false; }
         """
@@ -257,7 +274,9 @@ import WebKit
     let stage = try Fixtures.stage()
     try Data("<!doctype html><title>frame</title>".utf8).write(
       to: stage.appendingPathComponent("assets/frame.html"))
-    try Fixtures.updateManifest(stage) { $0["presentation"] = ["width": 480, "height": 480, "resizable": true] }
+    try Fixtures.updateApp(stage) {
+      $0["window"] = ["kind": "standard", "width": 480, "height": 480, "resizable": true]
+    }
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
@@ -281,10 +300,10 @@ import WebKit
         const bridge = frame.contentWindow?.webkit?.messageHandlers?.hitslop;
         let framed = 'unreachable';
         if (bridge) {
-          try { framed = (await bridge.postMessage(request)).ok ? 'accepted' : 'rejected'; } catch { framed = 'rejected'; }
+          try { framed = JSON.parse(await bridge.postMessage(JSON.stringify(request))).ok ? 'accepted' : 'rejected'; } catch { framed = 'rejected'; }
         }
         let main = 'rejected';
-        try { main = (await webkit.messageHandlers.hitslop.postMessage(request)).ok ? 'accepted' : 'rejected'; } catch {}
+        try { main = JSON.parse(await webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request))).ok ? 'accepted' : 'rejected'; } catch {}
         frame.remove();
         return {framed, main};
         """

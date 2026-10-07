@@ -64,7 +64,26 @@ impl From<store::Error> for Failure {
         Self::new(kind, e.to_string())
     }
 }
+mod commands;
+use commands::{Evaluation, Invocation, Work as EvaluationWork};
+pub use hitslop_runner::Evaluator;
+
 type Result<T> = std::result::Result<T, Failure>;
+/// Native theme controls use this typed adapter to the same batch path as page edits.
+pub enum ThemeChange {
+    Set { values: std::collections::HashMap<String, String> },
+    ResetAll,
+    ImportFile { file: String },
+}
+pub fn theme_request(change: ThemeChange) -> Request {
+    let intent = match change {
+        ThemeChange::Set { values } => crate::json!({"type":"setTheme","values":values}),
+        ThemeChange::ResetAll => crate::json!({"type":"setTheme","values":{},"replace":true}),
+        ThemeChange::ImportFile { file } => crate::json!({"type":"importTheme","file":file}),
+    };
+    Request::Apply { batch_json: crate::json!({"intents":[intent]}).to_string(), origin: Origin::Window }
+}
+
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
@@ -74,6 +93,11 @@ pub enum Request {
     },
     Undo {
         redo: bool,
+    },
+    Command {
+        name: String,
+        args_json: String,
+        origin: Origin,
     },
     Flush,
     Discard,
@@ -108,6 +132,11 @@ pub enum Request {
 }
 #[derive(Debug)]
 pub enum Reply {
+    Command {
+        sequence: u64,
+        ids: Vec<String>,
+        result_json: String,
+    },
     Unit,
     /// A page leads `json` with `sequence` (`crate::sequenced`); an agent reads it as it is.
     State {
@@ -179,12 +208,21 @@ fn take(callback: &mut Option<Completion>) -> Completion {
 /// A queue handle, independent of any page lifetime. Its store retains the writer lock
 /// until a successful close; a failed save never releases it.
 pub struct Owner {
+    mode: store::Mode,
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
 }
 impl Owner {
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
+        Self::open_with_evaluator(path, mode, listener, None)
+    }
+    pub fn open_with_evaluator(
+        path: &Path,
+        mode: store::Mode,
+        listener: Listener,
+        evaluator: Option<Evaluator>,
+    ) -> Result<Self> {
         let path = file::resolve(path)?;
         let store = Arc::new(store::Store::open(&path, mode)?);
         let core = store.document()?;
@@ -197,7 +235,15 @@ impl Owner {
             .name("hitslop.persistence".into())
             .spawn(move || persistence(disk, work, completion))
             .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
+        let (evaluate, evaluations) = mpsc::channel();
+        let completion = sender.clone();
+        std::thread::Builder::new()
+            .name("hitslop.commands".into())
+            .spawn(move || commands::worker(evaluator, evaluations, completion))
+            .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
         let actor = Actor {
+            evaluate,
+            evaluating: false,
             core,
             mode,
             store: store.clone(),
@@ -222,7 +268,19 @@ impl Owner {
             .name("hitslop.owner".into())
             .spawn(move || actor.run(receive))
             .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-        Ok(Self { sender, store, path })
+        Ok(Self { sender, store, path, mode })
+    }
+    pub fn mode(&self) -> store::Mode {
+        self.mode
+    }
+    /// Serial admission for host actions, including immutable page configuration.
+    /// The host still fences the WebView when the asynchronous result arrives.
+    pub(crate) fn admit_page(&self, view: String, callback: Completion) {
+        if let Err(mpsc::SendError(Message::PageAdmission { callback, .. })) =
+            self.sender.send(Message::PageAdmission { view, callback })
+        {
+            complete(callback, Err(closed()));
+        }
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -230,8 +288,8 @@ impl Owner {
     pub fn app(&self) -> &file::OpenedApp {
         self.store.app()
     }
-    pub fn asset_reader(&self) -> Result<file::AssetReader> {
-        Ok(self.store.asset_reader()?)
+    pub fn resource_reader(&self) -> Result<file::ResourceReader> {
+        Ok(self.store.resource_reader()?)
     }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
@@ -264,6 +322,10 @@ impl Drop for Owner {
 }
 
 enum Message {
+    Evaluated {
+        invocation: Invocation,
+        result: Result<Evaluation>,
+    },
     Request {
         request: Request,
         view: Option<String>,
@@ -271,6 +333,10 @@ enum Message {
         callback: Completion,
     },
     Attach(String),
+    PageAdmission {
+        view: String,
+        callback: Completion,
+    },
     Saved {
         generation: u64,
         target: u64,
@@ -405,6 +471,8 @@ struct Waiter {
     next: AfterSave,
 }
 struct Actor {
+    evaluate: mpsc::Sender<EvaluationWork>,
+    evaluating: bool,
     core: Document,
     store: Arc<store::Store>,
     mode: store::Mode,
@@ -457,19 +525,24 @@ impl Actor {
             };
             match message {
                 Message::Stop => break,
+                Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
                 Message::Attach(view) => self.view = Some(view),
+                Message::PageAdmission { view, callback } => {
+                    complete(callback, self.admit(false, Some(&view)).map(|()| Reply::Unit))
+                }
                 Message::Request { request, view, deadline, callback } => {
                     if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
                         complete(callback, Err(Failure::new(FailureKind::Closing, "Request expired before admission")));
                         continue;
                     }
                     let mut callback = Some(callback);
-                    let result = catch_unwind(AssertUnwindSafe(|| self.request(request, view, &mut callback)))
-                        .unwrap_or_else(|_| {
-                            self.invalidated = true;
-                            self.fail(poisoned(), u64::MAX);
-                            Err(poisoned())
-                        });
+                    let result =
+                        catch_unwind(AssertUnwindSafe(|| self.request(request, view, deadline, &mut callback)))
+                            .unwrap_or_else(|_| {
+                                self.invalidated = true;
+                                self.fail(poisoned(), u64::MAX);
+                                Err(poisoned())
+                            });
                     if let Some(callback) = callback {
                         complete(callback, result.map(|value| value.unwrap_or(Reply::Unit)));
                     }
@@ -572,10 +645,15 @@ impl Actor {
         &mut self,
         request: Request,
         view: Option<String>,
+        deadline: Option<Instant>,
         callback: &mut Option<Completion>,
     ) -> Result<Option<Reply>> {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
         let reply = match request {
+            Request::Command { name, args_json, origin } => {
+                self.begin_command(name, args_json, origin, view, deadline, callback)?;
+                return Ok(None);
+            }
             Request::State => Reply::State { json: self.core.reading()?, sequence: self.core.sequence() },
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;

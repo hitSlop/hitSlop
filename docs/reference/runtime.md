@@ -7,7 +7,7 @@ limits, security, capture and telemetry.
 ## Page shell and ctx
 
 The page shell owns the page and the whole lifecycle: it opens the document, then
-imports the app's `assets/app.js` and calls `default.mount(ctx, target)`
+imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell package supplies the runtime; `hitslop`
 contains only the author SDK. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
@@ -17,10 +17,9 @@ pending UI updates) and `unmount()`. Reload replaces only the view; flush, close
 native readiness, themes, attachments and capture coordination stay in the page shell.
 
 `hitslop/svelte` is the Svelte adapter compiled into each app:
-`svelteApp(App, { schema, export: Export, icon: Icon })` is the app's entry. The CLI
-passes `schema.ts`'s default export and discovers optional `Export.svelte`,
-`Icon.svelte`, and `styles.css` alongside `App.svelte`. Custom `main.ts` entries
-are refused. Once mounted, the schema's definition is the live document
+the builder emits `svelteApp` from the declaration's explicit `view`, `document`,
+`export`, `icon` and `commands` references. Authors import styles themselves; filenames
+have no special role. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
 `ctx.document.observe`). `bindText`, `capture` and `attachments` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
 
@@ -31,23 +30,20 @@ The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Rec
 ## File layout
 
 A `.slop` file is one SQLite database (application ID `0x48534C50`, "HSLP"; storage version in
-`user_version`). TypeBox defines the manifest and platform envelopes. `slop.ts`
-declares author, title, description, categories and presentation, the project folder's
-name is the slug, and the stored manifest refuses any other field. `slop build` stages the app with `packageFormat`
-from the builder and `runtimeABI` from the project's resolved SDK, and the file engine
-stores them as columns beside the manifest. The host checks these independent
-requirements before reading anything else, so a page never opens an app that needs a
-newer runtime ABI.
+`user_version`). Rust defines internal wires and package-format acceptance. `slop.ts`
+explicitly declares identity, window, ordered theme, document descriptor, initial values,
+views and commands. The build writes `packageFormat` and `runtimeABI`; readers check
+these markers before interpreting current-format fields. Swift receives typed UniFFI
+metadata/window/theme values, never a second JSON manifest decoder.
 
 ```text
-app          one row: package_format, runtime_abi, manifest, descriptor (not JSON Schema),
-             theme (the palette's defaults)
-assets       path → bytes: app.js (export default { descriptor, mount(ctx, target) }), app.css, fonts…
+app          one row: package_format, runtime_abi, catalog columns, definition_json
+assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js, media…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
 checkpoint   the saved Loro snapshot, including data and theme overrides (a template's holds the initial values)
 updates      saved Loro updates after the checkpoint
-attachments  sha256 → bytes: imported files
+attachments  sha256, sniffed media_type, bytes: imported files
 ```
 
 A template has no `document`, `updates` or `attachments` rows; it never
@@ -56,9 +52,12 @@ and atomically adds its identity. A template is immutable (`is_template` refuses
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
-The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges read from the file; nothing else in it is a resource, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell plus the WASM core from the CLI, with disposable memory storage. No executable code is downloaded.
+The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses commands.js. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. WASM is test-only. No executable code is downloaded.
 
-Every open checks the file before reading a value: the application ID, the storage version, the `packageFormat` and `runtimeABI` markers, the exact tables, one `app` row, the size of every value and asset, and asset paths. Opening a document to edit it, creating, packing and inspecting add SQLite's quick check; display-only opens (the catalog, Quick Look) leave it out. A template opened as a document is refused with `is_template`. A file a newer build wrote is refused with `requires_update` and left unchanged, as is a document whose layout is newer ([compatibility](../engineering-contract.md#compatibility)): connections never checkpoint when they close, and the writer is configured only after the checks pass, so a refused file keeps its bytes and its journal mode, including a newer build's WAL. The one write a read can cause is SQLite's own recovery: a crashed write's hot journal is rolled back first, restoring the last committed state. The CLI checks the selected engine or helper's command protocol; the shared Rust router requires a live owner's exact core build.
+Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
+
+Assets are inserted first and the single app row last. The app row seals assets: unconditional update/delete guards and an insert guard reject replacements, even by rowid. Attachments and artwork keep separate lifecycles. A later physical change belongs to the storage version; definition interpretation belongs to package format. Before launch the disposable corpus may be replaced; after release original corpus bytes and embedded programs must remain readable.
+
 
 ## Persistence and ownership
 
@@ -94,7 +93,7 @@ Embedded frames are third-party web content inside the document's window. They c
 
 A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK's `hitslop/embed` embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. It takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
 
-Bridge calls must originate in the main frame at `slop://app` and match generated TypeBox envelopes. Serialized requests are bounded to 48 MiB, with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
+Bridge calls must originate in the main frame at `slop://app` and decode into the Rust serde request types. Serialized requests are bounded to 48 MiB, with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
 
 An export never replaces the document it renders. Capture stages output and publishes by atomic rename before its deadline. Failures do not replace existing output. A lost acknowledgement leaves an uncertain outcome; inspect the destination before retrying.
 
@@ -152,14 +151,12 @@ shell refuses to mount an app on a document of another: key order never matters.
 The native page protocol has one request/reply envelope for document edits and host
 services. Text edits are batches: a binding's `apply` names its `base` and a `set` with
 `from` and `selection`, and the reply adds `authored` and the merged selection
-([architecture](../architecture.md#text)). TypeBox owns it in `packages/hitslop/src/schema/page.ts`; core payloads are in
-`packages/hitslop/src/schema/core.ts`. Requests carry no correlation ID or view token: WebKit
+([architecture](../architecture.md#text)). Rust owns it in `crates/hitslop-core/src/wire/page.rs`; core payloads are in
+`wire/core.rs`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies lifecycle identity after checking the sender.
 The host enters the shell through `__slop` for publications, capture and lifecycle.
 Apps use the restricted `ctx.document` facade and its explicit durability barrier,
 `flush()`. The initial owner state includes effective theme values, and ordered publications include
 them when they change (defaults come from `slop.ts`'s `theme`). Authored layout stays in CSS.
 
-Swift encodes replies with the generated `PageResult`, and Rust validates requests
-against the generated schemas. The shell checks only each reply's outcome envelope and
-does not bundle TypeBox.
+Rust decodes page messages once, routes them to owner replies or typed native host actions, and encodes replies. The shell checks the outcome envelope. Commands from page and CLI use the same restricted child evaluator; arguments and resulting intents are checked by Rust. The page context and evaluator prelude are dispatched by the stored runtime ABI.

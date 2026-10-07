@@ -147,7 +147,7 @@ extension SlopDocumentWindowController {
   private func export(_ format: ExportFormat) async throws {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
-    panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.rawValue
+    panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
     try await exportDocument(format: format, to: await runSheet(panel))
   }
 

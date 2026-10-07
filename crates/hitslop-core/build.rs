@@ -1,4 +1,4 @@
-//! Sets HITSLOP_CORE_BUILD_ID over core sources, compiled schemas and locked dependencies.
+//! Sets HITSLOP_CORE_BUILD_ID over core sources and locked dependencies.
 use std::{fs, path::Path};
 fn visit(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
     for entry in fs::read_dir(dir).unwrap() {
@@ -9,27 +9,6 @@ fn visit(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = vec![root.join("Cargo.toml"), root.join("build.rs"), root.join("../../Cargo.lock")];
-    // Native validators compile these files into the core. Include them even in WASM
-    // builds so both adapters identify the same rules, regardless of enabled features.
-    for name in [
-        "manifest",
-        "manifest-format-1",
-        "commands",
-        "commands-format-1",
-        "command-call",
-        "socket-request",
-        "engine-request",
-        "engine-reply",
-        "native-request",
-        "native-reply",
-        "socket-reply",
-        "socket-discovery",
-        "socket-hello",
-        "socket-hello-success",
-        "page-request",
-    ] {
-        files.push(root.join(format!("../../packages/hitslop/generated/{name}.schema.json")));
-    }
     visit(&root.join("src"), &mut files);
     files.sort();
     let mut hash: u64 = 0xcbf29ce484222325;

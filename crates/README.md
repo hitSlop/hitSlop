@@ -11,6 +11,9 @@ The document semantics every host uses: the Swift app and helper natively, and
 - `hitslop-core-wasm`: wasm-bindgen adapter for browser development and Bun tests.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
   `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
+- `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
+  no storage dependency. The engine re-executes itself with `--evaluate-command`; the
+  `hitslop-evaluator` binary provides the same child for native-host integration.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
 main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
@@ -38,8 +41,12 @@ LTO (about a fifth smaller, five times slower to rebuild): `HITSLOP_CARGO_PROFIL
 selects it, and the release gate, compatibility capture, the release workflow and the
 Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; a cache hit
 never substitutes for Cargo's dependency checks.
-Generated XCFramework and Swift bindings are disposable and excluded from Git. TypeBox owns wire types;
-run `bun run schema:generate`, never edit `wire.generated.rs` manually.
+Generated XCFramework and Swift bindings are disposable and excluded from Git. Rust owns
+wire types and shared limits in `hitslop-core/src/wire`; ts-rs exports TypeScript and
+UniFFI carries native types to Swift. The handwritten TypeBox-to-Rust generator is gone.
+Only the TypeBox manifest/command schemas remain during migration. Run `bun run schema:generate`; never edit generated files manually.
+The Cargo configuration pins macOS 15.0 for Rust and C dependencies, matching the lowest
+native consumer (the Swift package), rather than the locally installed SDK.
 
 The core's `file` owns the `.slop` file (one SQLite database holding the app and its
 saved state), every statement on its tables (every write in `file::rows`) and the checks

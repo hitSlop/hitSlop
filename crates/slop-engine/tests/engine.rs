@@ -1,5 +1,5 @@
 //! The private process boundary: typed JSON, frozen preflight, and classified outcomes.
-use hitslop_core::envelope::{self, Envelope};
+use hitslop_core::EngineReply;
 use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
@@ -25,24 +25,34 @@ fn reply(input: &str, helper: Option<&Path>) -> Value {
     let output = invoke(&["--client-protocol", &protocol()], input.as_bytes(), helper);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(output.stderr.is_empty());
-    assert!(envelope::is_valid(Envelope::EngineReply, &output.stdout), "{}", String::from_utf8_lossy(&output.stdout));
+    assert!(
+        serde_json::from_slice::<EngineReply>(&output.stdout).is_ok(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     serde_json::from_slice(&output.stdout).unwrap()
 }
-/// A build's `app.json` with these initial values.
-fn write_app(stage: &Path, initial: &str) {
-    let manifest = r#"{"author":{"name":"A"},"slug":"engine","title":"Engine","description":"Packs.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
-    let descriptor = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
-    let app = format!(
-        r##"{{"packageFormat":1,"runtimeABI":1,"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{{"accent":"#335577"}}}}"##
-    );
-    fs::write(stage.join("app.json"), app).unwrap();
+/// Explicit compiler input; no metadata file is discovered in the stage.
+fn app(initial: Value) -> Value {
+    json!({
+        "packageFormat":1,"runtimeABI":1,
+        "declaration":{
+            "metadata":{"author":{"name":"A"},"slug":"engine","title":"Engine","description":"Packs.","categories":["utilities"]},
+            "window":{"kind":"standard","width":320,"height":240},
+            "document":{"kind":"object","properties":{"title":{"kind":"text"}}},
+            "initial":initial,"theme":[{"token":"accent","color":"#335577"}],
+            "commands":[],"views":{"export":false,"icon":false}
+        },
+        "roles":{"ui":"ui.js"},
+        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],
+        "artwork":{}
+    })
 }
 
 fn stage(dir: &Path) -> std::path::PathBuf {
     let stage = dir.join("stage");
     fs::create_dir_all(stage.join("assets")).unwrap();
-    write_app(&stage, r#"{"title":"Hello"}"#);
-    fs::write(stage.join("assets/app.js"), "export default { mount() { return {}; } };").unwrap();
+    fs::write(stage.join("assets/ui.js"), "export default { mount() { return {}; } };").unwrap();
     stage
 }
 
@@ -51,7 +61,7 @@ fn packs_creates_and_reads_typed_results() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("Template file.slop");
     assert_eq!(
-        request(json!({"method":"pack","stage":stage(dir.path()),"file":file})),
+        request(json!({"method":"pack","stage":stage(dir.path()),"file":file,"app":app(json!({"title":"Hello"}))})),
         json!({"ok":true,"method":"pack"})
     );
     let inspected = request(json!({"method":"inspect","file":file}));
@@ -68,9 +78,8 @@ fn packs_creates_and_reads_typed_results() {
 fn invalid_requests_are_classified_and_never_publish() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
-    write_app(&stage, r#"{"title":7}"#);
     let output = dir.path().join("Refused.slop");
-    let refused = request(json!({"method":"pack","stage":stage,"file":output}));
+    let refused = request(json!({"method":"pack","stage":stage,"file":output,"app":app(json!({"title":7}))}));
     assert_eq!(refused["ok"], false);
     assert_eq!(refused["code"], "rejected");
     assert!(!output.exists());
@@ -88,35 +97,47 @@ fn invalid_requests_are_classified_and_never_publish() {
     let input = " ".repeat(hitslop_core::command::MAX_REQUEST_BYTES + 1);
     assert_eq!(reply(&input, None)["reason"], "too_large");
 }
+
+#[test]
+fn the_engine_keeps_its_private_evaluator_entrypoint() {
+    let input = json!({"runtimeABI":1,"mode":"definition","bundle":"globalThis.__hitslopDescribe=()=>JSON.stringify({ok:true,probe:'shared runner'});","request":"{}"});
+    let output = invoke(&["--evaluate-command"], input.to_string().as_bytes(), None);
+    assert!(output.status.success());
+    assert_eq!(serde_json::from_slice::<Value>(&output.stdout).unwrap(), json!({"ok":true,"probe":"shared runner"}));
+}
 #[test]
 fn app_validation_preserves_marker_order_and_limits() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
-    let app: Value = serde_json::from_slice(&fs::read(stage.join("app.json")).unwrap()).unwrap();
-    assert_eq!(request(json!({"method":"validateApp","app":app})), json!({"ok":true,"method":"validateApp"}));
+    let app = app(json!({"title":"Hello"}));
+    assert_eq!(
+        request(json!({"method":"validateApp","stage":stage,"app":app})),
+        json!({"ok":true,"method":"validateApp"})
+    );
     for (field, replacement) in [
         ("initial", json!({"title":7})),
-        ("theme", json!({"accent":"#ABCDEF"})),
-        ("descriptor", json!({"kind":"future"})),
-        ("manifest", json!({"title":"Incomplete"})),
+        ("theme", json!([{"token":"accent","color":"invalid"}])),
+        ("document", json!({"kind":"future"})),
+        ("metadata", json!({"title":"Incomplete"})),
     ] {
         let mut app = app.clone();
-        app[field] = replacement;
-        fs::write(stage.join("app.json"), app.to_string()).unwrap();
+        app["declaration"][field] = replacement;
+        let refused = request(json!({"method":"validateApp","stage":stage,"app":app}));
+        assert_eq!(refused["ok"], false, "{field}");
         assert_eq!(
-            request(json!({"method":"validateApp","app":app})),
-            request(json!({"method":"pack","stage":stage,"file":dir.path().join("refused.slop")}))
+            refused,
+            request(json!({"method":"pack","stage":stage,"app":app,"file":dir.path().join("refused.slop")}))
         );
     }
     let mut future = app.clone();
     future["packageFormat"] = json!(999);
-    future["manifest"] = json!({"future":true});
-    assert_eq!(request(json!({"method":"validateApp","app":future}))["reason"], "requires_update");
-    let future_number = r#"{"method":"validateApp","app":{"packageFormat":999,"runtimeABI":1,"manifest":{"future":1e999},"descriptor":{},"initial":{},"theme":{}}}"#;
+    future["declaration"] = json!({"future":true});
+    assert_eq!(request(json!({"method":"validateApp","stage":stage,"app":future}))["reason"], "requires_update");
+    let future_number = r#"{"method":"validateApp","stage":"/unused","app":{"packageFormat":999,"runtimeABI":1,"declaration":{"future":1e999}}}"#;
     assert_eq!(reply(future_number, None)["reason"], "requires_update");
     let oversized = "x".repeat(hitslop_core::file::APP_INPUT_BYTES);
-    let refused = request(json!({"method":"validateApp","app":oversized}));
-    assert_eq!(refused["reason"], "invalid_request");
+    let refused = request(json!({"method":"validateApp","stage":stage,"app":oversized}));
+    assert_eq!(refused["reason"], "too_large");
     assert!(refused["error"].as_str().unwrap().contains("large"));
 }
 #[test]

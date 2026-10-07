@@ -3,7 +3,7 @@
 //! through WASM. This module is independent of Loro and of document semantics.
 use crate::{Code, Error, Result, err};
 use kurbo::{Arc, PathEl, Point, SvgArc, Vec2};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use svgtypes::{PathParser, PathSegment};
 
@@ -32,7 +32,7 @@ pub enum Silhouette {
     Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
 }
 
-use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
+use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX, present_option};
 const MAX_COMMANDS: usize = 512;
 const MAX_SEGMENTS: usize = 2048;
 /// Approximation target in logical points at the declared window size.
@@ -46,18 +46,32 @@ fn finite(values: &[f64]) -> Result<()> {
     if values.iter().all(|v| v.is_finite() && (v * SHAPE_VIEW_BOX).is_finite()) { Ok(()) } else { Err(invalid()) }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PathShape {
-    path: String,
-    #[serde(rename = "viewBox")]
-    view_box: Option<[f64; 2]>,
-    #[serde(rename = "fillRule")]
-    fill_rule: Option<String>,
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
+pub struct PathShape {
+    pub path: String,
+    #[serde(rename = "viewBox", default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub view_box: Option<[f64; 2]>,
+    #[serde(
+        rename = "fillRule",
+        default,
+        deserialize_with = "present_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fill_rule: Option<FillRule>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub enum FillRule {
+    Nonzero,
+    Evenodd,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-enum Shape {
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "WindowShape", export_to = "app.generated.ts"))]
+pub enum Shape {
     Radius(String),
     Path(PathShape),
 }
@@ -78,7 +92,7 @@ pub fn silhouette(shape: Option<&Value>, width: f64, height: f64) -> Result<Silh
     normalize(shape, width, height)
 }
 
-fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
+pub(crate) fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
     match shape {
         Shape::Radius(value) => radii(&value),
         Shape::Path(shape) => {
@@ -86,11 +100,7 @@ fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
             if !view_box.iter().all(|n| n.is_finite() && (1.0..=SHAPE_VIEW_BOX).contains(n)) {
                 return Err(invalid());
             }
-            let even_odd = match shape.fill_rule.as_deref() {
-                None | Some("nonzero") => false,
-                Some("evenodd") => true,
-                Some(_) => return Err(invalid()),
-            };
+            let even_odd = matches!(shape.fill_rule, Some(FillRule::Evenodd));
             let [view_box_width, view_box_height] = view_box;
             Ok(Silhouette::Path {
                 segments: path(&shape.path, ARC_TOLERANCE / (width / view_box_width).max(height / view_box_height))?,

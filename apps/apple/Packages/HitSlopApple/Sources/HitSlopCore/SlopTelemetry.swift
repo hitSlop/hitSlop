@@ -2,7 +2,15 @@ import Foundation
 import HitSlopCoreBinding
 
 /// PNG or PDF: the socket's export format, also used by the window and telemetry.
-public typealias ExportFormat = SocketExportRequestFormat
+public typealias ExportFormat = WireExportFormat
+extension WireExportFormat {
+  public var fileExtension: String {
+    switch self {
+    case .png: "png"
+    case .pdf: "pdf"
+    }
+  }
+}
 
 /// Only fixed product events cross this boundary; document values never enter telemetry.
 public enum SlopTelemetryEvent: Equatable, Sendable {
@@ -131,7 +139,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     var fields = [
       "operation": operation.rawValue, "classification": classification.rawValue, "reason": reason.rawValue,
     ]
-    if let format { fields["format"] = format.rawValue }
+    if let format { fields["format"] = format.fileExtension }
     return fields
   }
 }

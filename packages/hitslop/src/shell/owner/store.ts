@@ -5,7 +5,7 @@ import { DocumentError } from "../../sdk/internal";
 // The page's immutable projection of owner state. No CRDT: it applies the owner's
 // publications in sequence order and resyncs from a fresh snapshot on any gap.
 import type { OwnerPatchOp, OwnerPublication, OwnerState } from "../../schema/core";
-import type { PagePush } from "../../schema/page";
+import type { PagePush } from "../../wire/page";
 
 import type { Segment } from "../../sdk/schema";
 

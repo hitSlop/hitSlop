@@ -40,7 +40,7 @@ export default defineDocument({
 |---|---|---|---|
 | [`s.text()`](#text) | `string` | character edits merge | `set(value)`, `bindText` |
 | [`s.boolean()`](#scalars) | `boolean` | last writer wins | `set`, `preview`, `value` |
-| [`s.string({maxLength?})`](#scalars) | `string` | last writer wins | `set`, `preview`, `value` |
+| [`s.string({minLength?, maxLength?})`](#scalars) | `string` | last writer wins | `set`, `preview`, `value` |
 | [`s.number({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `value` |
@@ -119,7 +119,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 | Code | Meaning |
 |---|---|
 | `type_mismatch` | wrong value type, unknown enum value, or an operation the kind doesn't support |
-| `out_of_range` | outside bounds or `maxLength`, or an index past the end |
+| `out_of_range` | outside numeric or string-length bounds, or an index past the end |
 | `path_not_found` | no such field, row, entry or element (including fields of an unset optional or entry) |
 | `invalid_key` | a record key that is empty, longer than 256 UTF-16 units, or reserved |
 | `exists` | replacing an object whose value holds text, a list or a counter |
@@ -169,7 +169,7 @@ resolve to one of them (last writer wins).
 | Kind | Rules |
 |---|---|
 | `s.boolean()` | `true` or `false` |
-| `s.string({ maxLength })` | any string; `maxLength` counts UTF-16 units, like JavaScript's `length` |
+| `s.string({ minLength?, maxLength? })` | string with inclusive length bounds in Unicode code points; `"😀"` counts as 1, `"e\u0301"` as 2 |
 | `s.number({ min, max })` | a finite number within inclusive bounds; integral values read as integers |
 | `s.integer({ min, max })` | a safe integer (±2⁵³−1) within inclusive bounds |
 | `s.enum(["a", "b"])` | one of the listed strings; TypeScript narrows to their literal types |
@@ -185,6 +185,11 @@ resolve to one of them (last writer wins).
 
 Store amounts in minor units with `s.integer` when exactness matters (cents), and use
 `s.number` for measurements and ratios.
+
+String length bounds are nonnegative safe integers, with `minLength ≤ maxLength`.
+HTML `maxlength` and JavaScript's `.length` count UTF-16 code units, so they are not
+substitutes for a field's bound. Text selection offsets and record-key limits still
+use UTF-16 units.
 
 ## Counter
 

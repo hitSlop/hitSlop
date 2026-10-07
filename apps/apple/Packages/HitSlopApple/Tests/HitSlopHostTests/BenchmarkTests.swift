@@ -145,7 +145,7 @@ private final class PublicationTimes: @unchecked Sendable {
             ]
           }
           // Capture public ctx for measurement while retaining the actual authored view.
-          let app = stage.appendingPathComponent("assets/app.js")
+          let app = stage.appendingPathComponent("assets/ui.js")
           try FileManager.default.moveItem(at: app, to: stage.appendingPathComponent("assets/benchmark-authored.js"))
           // Attribution only: CSS appended to the authored styles (HITSLOP_BENCH_CSS).
           let css = String(

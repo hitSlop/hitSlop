@@ -13,11 +13,8 @@ public struct SlopThemeState: Sendable, Equatable {
     self.revision = revision
   }
   init(_ read: DocumentOwner.ThemeRead) throws {
-    func colors(_ json: String) throws -> [String: String] {
-      try JSONDecoder().decode([String: String].self, from: Data(json.utf8))
-    }
     self.init(
-      overrides: try colors(read.state.overrides), effective: try colors(read.state.effective), revision: read.revision)
+      overrides: read.state.overrides, effective: read.state.effective, revision: read.revision)
   }
 }
 

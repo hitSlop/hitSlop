@@ -7,9 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { debugHelper } from "../lib/native";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { strict as assert } from "node:assert";
-import { validate } from "../../packages/hitslop/src/schema/validation";
-import { ThemeStateSchema, AttachmentInfoSchema, type AttachmentInfo } from "../../packages/hitslop/src/schema/values";
-import { Type, type Static } from "typebox";
+import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.generated";
 
 export const corpus = join(repository, "tests/compat");
 export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
@@ -44,7 +42,7 @@ export type Expected = {
   theme: Pick<ThemeState, "overrides" | "effective">;
   attachments: AttachmentInfo[];
 };
-type ThemeState = Static<typeof ThemeStateSchema>;
+type ThemeState = { overrides: Record<string,string>; effective: Record<string,string> };
 /** `scenarios/<name>.json`: a CLI edit replayed on the frozen document, and its result. */
 export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
@@ -94,7 +92,7 @@ export async function slopJSON(args: string[]): Promise<any> {
 /** What a later build must reproduce: the value, not the version. */
 export async function savedState(document: string): Promise<Expected> {
   const state = await slopJSON(["get", document, "--snapshot"]);
-  const theme = validate(ThemeStateSchema, await slopJSON(["theme", "get", document]), "slop theme get");
-  const attachments = validate(Type.Array(AttachmentInfoSchema), await slopJSON(["attachments", "list", document]), "slop attachments list");
+  const theme: ThemeState = await slopJSON(["theme", "get", document]);
+  const attachments: AttachmentInfo[] = await slopJSON(["attachments", "list", document]);
   return { value: state.value, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
 }

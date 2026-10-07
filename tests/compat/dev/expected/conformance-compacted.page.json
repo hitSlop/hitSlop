@@ -87,7 +87,8 @@
   "attachments": [
     {
       "byteLength": 11,
-      "id": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed"
+      "id": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
+      "mimeType": "application/octet-stream"
     }
   ]
 }

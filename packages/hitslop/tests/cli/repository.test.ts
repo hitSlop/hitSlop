@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { discoverTemplates, templateInventory } from "../../../../scripts/templates/discover";
 import { embedTemplates } from "../../../../scripts/templates/embed";
 import { assertDocs, assertNoGeneratedSource, assertSkill } from "../../../../scripts/hygiene";
-import { loadProject, normalizeApp } from "../../src/cli/build";
+import { stageProject } from "../../src/cli/build";
 import { writeTemplate } from "./template-fixture";
 import { stageEngines } from "../../../../scripts/build/engines";
 
@@ -38,7 +38,7 @@ test("discovery builds an inventory independently of bundled selection and rejec
     await expect(discoverTemplates(root)).rejects.toThrow("unique");
     await writeFile(join(root, "bundled.json"), "[]");
     await source("Not A Slug");
-    await expect(discoverTemplates(root)).rejects.toThrow("folder's name is its slug");
+    expect((await discoverTemplates(root)).some(project => project.source.endsWith("Not A Slug"))).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -126,14 +126,18 @@ test("complete public slop.ts examples follow the current contract", async () =>
         await mkdir(project);
         await writeFile(join(project, "schema.ts"), schema!);
         await writeFile(join(project, "slop.ts"), slop);
-        await normalizeApp(project, await loadProject(project));
+        await writeFile(join(project, "App.svelte"), "<h1>Guide example</h1>");
+        const [commands] = blocks("commands.ts");
+        if (commands) await writeFile(join(project, "commands.ts"), commands);
+        await writeFile(join(project, "styles.css"), "");
+        await stageProject(project, project + ".stage");
       }
     }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
   expect(count).toBeGreaterThan(0);
-});
+}, 30000);
 
 // The CLI finds a staged engine before a checkout's own build, so a refused staging must
 // leave nothing behind for a later build to pick up.

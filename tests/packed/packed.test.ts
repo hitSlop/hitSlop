@@ -23,7 +23,7 @@ beforeAll(async () => {
   coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
   // The installed CLI must find the file engine it ships, never this checkout's.
   const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
-  env = { ...inherited, HITSLOP_NATIVE_CLI: native ? debugHelper : join(root, "native-helper-must-not-be-used") };
+  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates"), HITSLOP_NATIVE_CLI: native ? debugHelper : join(root, "native-helper-must-not-be-used") };
   const bin = join(root, "bin");
   await mkdir(bin);
   await symlink(process.execPath, join(bin, "bun"));
@@ -62,7 +62,7 @@ test("the public SDK imports and type-checks outside the workspace", async () =>
     import {defineDocument, defineSlop, s} from "hitslop";
     const schema = defineDocument({title: s.text()});
     assert.ok(schema.descriptor);
-    assert.equal(defineSlop({title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], presentation: {width: 320, height: 240}, theme: {accent: "#123456"}, schema, initial: {title: ""}}).schema, schema);
+    assert.equal(defineSlop({slug: "probe", title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], window: {kind: "standard", width: 320, height: 240}, theme: {accent: "#123456"}, document: schema, view: () => {}, initial: {title: ""}}).document, schema);
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
     for (const name of ["abi", "internal", "schema", "shell"]) assert.throws(() => Bun.resolveSync("hitslop/" + name, process.cwd()));
   `,
@@ -103,10 +103,10 @@ test("the installed CLI creates, checks and builds a project with the engine it 
   await run([process.execPath, "run", "build"], project(), noNode);
   const inspected = JSON.parse(await run([process.execPath, cli(), "inspect", built()], root, noNode));
   expect(inspected.kind).toBe("template");
-  expect(inspected.manifest.slug).toBe("my-slop");
+  expect(inspected.metadata.slug).toBe("my-slop");
   expect(JSON.parse(await run([process.execPath, cli(), "schema", built()], root, noNode)).kind).toBe("object");
-  expect(appAsset(built(), "app.css")).toContain(".slop-paper");
-  expect(appAsset(built(), "app.js")).not.toContain(repository);
+  expect(appAsset(built(), "ui.css")).toContain(".slop-paper");
+  expect(appAsset(built(), "ui.js")).not.toContain(repository);
   const document = join(root, "Command example.slop");
   await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);
   const described = JSON.parse(await run([process.execPath, cli(), "describe", document, "--json"], root, noNode));
@@ -198,11 +198,10 @@ test("the installed CLI previews the project with its own page shell and core", 
     expect(await frame.text()).toContain('src="/app.html"');
     const app = await fetch("http://127.0.0.1:5197/app.html");
     expect(app.status).toBe(200);
-    expect(await app.text()).toContain("/__shell__/boot.js");
+    expect(await app.text()).toContain("/__preview__/native.js?token=");
+    expect(await (await fetch("http://127.0.0.1:5197/__preview__/native.js")).text()).toContain("/__shell__/boot.js");
     expect((await fetch("http://127.0.0.1:5197/__shell__/index.js")).status).toBe(200);
-    const wasm = await fetch("http://127.0.0.1:5197/__shell__/core/hitslop_core_wasm_bg.wasm");
-    expect(wasm.status).toBe(200);
-    expect(Buffer.from(await wasm.arrayBuffer()).subarray(0, 4).toString("hex")).toBe("0061736d");
+    expect(await Bun.file(join(root, "node_modules/hitslop/shell/core/hitslop_core_wasm_bg.wasm")).exists()).toBe(false);
     if (native) {
       const { webkit } = await import("playwright");
       const browser = await webkit.launch();

@@ -1,6 +1,6 @@
 import { repository } from "./artifacts";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { stageProject } from "../../packages/hitslop/src/cli/build";
 import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { buildTemplates, templateCache } from "../templates/build";
@@ -33,7 +33,8 @@ export async function stageNativeFixtures() {
   for (const slug of nativeFixtureSlugs) {
     const stage = join(output, slug);
     await rm(stage, { recursive: true, force: true });
-    await stageProject(templates.find((template) => template.slug === slug)!.source, stage);
+    const input = await stageProject(templates.find((template) => template.slug === slug)!.source, stage);
+    await writeFile(join(stage, "input.json"), JSON.stringify(input));
   }
 }
 
@@ -105,7 +106,13 @@ async function withVariant(fixture: string, source: string, value: unknown) {
   // Replace, never merge: files removed from the fixture must not survive in the copy.
   await rm(source, { recursive: true, force: true });
   await cp(fixture, source, { recursive: true });
-  await writeFile(join(source, "variant.ts"), `export default ${JSON.stringify(value)};\n`);
+  const { presentation, ...fields } = value as any;
+  const {skin, ...window} = presentation;
+  const declaration = {...fields,slug:basename(source),window:{kind:skin ? "skin" : "standard",...window}};
+  const code = skin
+    ? `import image from ${JSON.stringify("./" + skin)};\nconst variant = ${JSON.stringify(declaration)} as const;\nexport default {...variant,window:{...variant.window,image}};\n`
+    : `export default ${JSON.stringify(declaration)} as const;\n`;
+  await writeFile(join(source, "variant.ts"), code);
 }
 
 export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = false, build = direct) {
@@ -125,7 +132,12 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
     await mkdir(join(source, "assets"), { recursive: true });
     await cp(join(repository, "tests/presentation/assets/washer.png"), join(source, "assets/washer.png"));
   }
-  if (fallback) await rm(join(source, "Export.svelte"));
+  if (fallback) {
+    const declaration = join(source, "slop.ts");
+    const text = await Bun.file(declaration).text();
+    await writeFile(declaration, text.replace('import Export from "./Export.svelte";\n', '').replace('  export: Export,\n', ''));
+    await rm(join(source, "Export.svelte"));
+  }
   return build(source, `shape-lab-${key}`, join(shapeLabRoot, key + ".slop"));
 }
 

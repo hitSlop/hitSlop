@@ -15,7 +15,7 @@ wasm.initSync({
 for (const name of (await readdir(root)).sort()) {
   test(`fixture ${name} opens and replays its scenario`, async () => {
     const at = (path: string) => Bun.file(new URL(`${name}/${path}`, root)).json();
-    const { descriptor, initial } = await at("document/app.json");
+    const { declaration: { document: descriptor, initial } } = await at("document/input.json");
     const core = wasm.WasmDocument.create(JSON.stringify(descriptor), JSON.stringify(initial));
     try {
       const doc = await OwnerDocument.open(fromDescriptor(descriptor), wasmTransport(core));

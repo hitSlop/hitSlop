@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findEngine, execute } from "../../src/cli/engine";
@@ -134,7 +134,13 @@ test("templates lists the catalog and create takes a listed slug", async () => {
   try {
     const templates = join(folder, "templates");
     await writeTemplate(join(templates, "quick-checklist.slop"));
-    const env = { HITSLOP_TEMPLATES_ROOT: templates };
+    // Isolate the bundled catalog too: an installed pre-launch app may contain disposable old files.
+    const contents = join(folder, "Fixture.app/Contents");
+    await mkdir(join(contents, "Resources/StarterTemplates"), { recursive: true });
+    await mkdir(join(contents, "Helpers"));
+    const helper = join(contents, "Helpers/hitslop-native");
+    await writeFile(helper, "fixture");
+    const env = { HITSLOP_TEMPLATES_ROOT: templates, HITSLOP_NATIVE_CLI: helper };
     const listed = await run(["templates"], env);
     expect(listed.code).toBe(0);
     const catalog = JSON.parse(listed.out);

@@ -86,9 +86,9 @@ import Testing
 
 private func themeWindowFixture() throws -> URL {
   // More colors than fit beside the window, so the list must scroll.
-  let extra = (0..<30).map { ",\"color\($0)\":\"#000000\"" }.joined()
+  let extra = (0..<30).map { ("color\($0)", "#000000") }
   let stage = try Fixtures.minimalStage(
-    slug: "theme-fixture", theme: ##"{"paper":"#ffffff","accent":"#335577""## + extra + "}")
+    slug: "theme-fixture", theme: [("paper", "#ffffff"), ("accent", "#335577")] + extra)
   return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("theme.slop"))
 }
 

@@ -28,15 +28,15 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. The directory's name is the app's slug. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
+Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
 - `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
 - `commands.ts` exports named actions shared by the page and CLI; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
 - `slop.ts`'s `theme` declares the colors people can change.
-- `styles.css` owns layout and component styling; the builder includes it automatically.
+- `styles.css` owns layout and component styling; import it explicitly from `slop.ts`.
 
-The builder generates the entry for `App.svelte` and `styles.css`. This is the authoring path; custom `main.ts` entries are refused. `Export.svelte` and `Icon.svelte` are optional.
+Import the editor as `view` and optional capture components as `export` and `icon`. Filenames do not assign roles.
 
 The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state. Test native persistence in a writable document copy.
 
@@ -54,15 +54,21 @@ Then describe the counter in `slop.ts`. Its `initial` values must fit the new sc
 ```ts title="slop.ts"
 import { defineSlop } from "hitslop";
 import schema from "./schema";
+import App from "./App.svelte";
+import { countOne } from "./commands";
+import "./styles.css";
 
 export default defineSlop({
+  slug: "tiny-counter",
+  view: App,
+  commands: { countOne },
   title: "Tiny Counter",
   description: "Count the small things worth counting.",
   author: { name: "Your Name" },
   categories: ["utilities"],
-  presentation: { width: 360, height: 360 },
+  window: { kind: "standard", width: 360, height: 360 },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
-  schema,
+  document: schema,
   initial: { title: "Tiny Counter", count: 0 },
 });
 ```
@@ -70,12 +76,11 @@ export default defineSlop({
 Replace the starter's `commands.ts` with a counter action:
 
 ```ts title="commands.ts"
-import { Type } from "hitslop";
 import doc from "./schema";
 
 export const countOne = doc.command({
   description: "Count one more.",
-  args: Type.Object({}, { additionalProperties: false }),
+  args: {},
   run({ tx }) { tx.fields.count.increment(); },
 });
 ```

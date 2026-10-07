@@ -98,7 +98,7 @@ extension HostTests {
     let root = try contractFixture { stage in
       try FileManager.default.createDirectory(
         at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
-      try before.write(to: stage.appendingPathComponent("artwork/preview.png"))
+      try Fixtures.addArtwork(stage, name: "preview", bytes: before)
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let stored = try #require(SlopArtwork.png(root, .preview))
@@ -145,21 +145,20 @@ extension HostTests {
   @Test @MainActor func startupFailureRevealsNativeError() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
-      let assets = stage.appendingPathComponent("assets")
-      try FileManager.default.moveItem(
-        at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-      try Data(
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: stage.appendingPathComponent("assets/ui.js")), ext: "js",
+        mediaType: "text/javascript")
+      try Fixtures.writeApp(
         """
-        import probe from "./probe.js";
+        import probe from "\(probe)";
         export default { async mount(ctx, target) {
           if (ctx.document.current.title !== "Recovered") {
-            await webkit.messageHandlers.hitslop.postMessage({method: "failed", error: "startup fixture failure"});
+            await webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method: "failed", error: "startup fixture failure"}));
             await new Promise(() => {});
           }
           return probe.mount(ctx, target);
         } };
-        """.utf8
-      ).write(to: assets.appendingPathComponent("app.js"))
+        """, to: stage)
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
@@ -290,7 +289,7 @@ extension HostTests {
         #"""
         export default { mount() { return { unmount: () => new Promise(r => setTimeout(r, 3_600_000)) }; } };
         """#.utf8
-      ).write(to: stage.appendingPathComponent("assets/app.js"))
+      ).write(to: stage.appendingPathComponent("assets/ui.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     // The timer keeps the promise reachable: WebKit rejects calls on unreachable ones.
@@ -334,7 +333,7 @@ extension HostTests {
           return {};
         } };
         """#.utf8
-      ).write(to: stage.appendingPathComponent("assets/app.js"))
+      ).write(to: stage.appendingPathComponent("assets/ui.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let (incidents, continuation) = AsyncStream<SlopFailureContext>.makeStream()
@@ -360,7 +359,7 @@ extension HostTests {
   @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
     let root = try contractFixture { stage in
       try Data("throw new Error('private startup contents');".utf8).write(
-        to: stage.appendingPathComponent("assets/app.js"))
+        to: stage.appendingPathComponent("assets/ui.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     var failures: [SlopFailureContext] = []
@@ -378,7 +377,7 @@ extension HostTests {
 
 /// Makes a stage's app wait forever for its fonts, so its page never reports ready.
 private func neverLoadFonts(_ stage: URL) throws {
-  let script = stage.appendingPathComponent("assets/app.js")
+  let script = stage.appendingPathComponent("assets/ui.js")
   let original = try String(contentsOf: script, encoding: .utf8)
   try Data(
     ("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n"

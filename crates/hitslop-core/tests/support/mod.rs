@@ -25,39 +25,83 @@ pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
     }
     command
 }
-/// A fixture app's manifest and declared colors.
-pub const MANIFEST: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"],"presentation":{"width":320,"height":240}}"#;
+/// A fixture declaration, independent of source filenames or legacy manifests.
+pub const METADATA: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"]}"#;
+pub const WINDOW: &str = r#"{"kind":"standard","width":320,"height":240}"#;
 pub const THEME: &str = r##"{"accent":"#335577"}"##;
-/// A build's `app.json`: the `app` row, each part the JSON text a build writes.
 #[derive(Clone, Copy)]
 pub struct App<'a> {
     pub format: u64,
     pub abi: u64,
-    pub manifest: &'a str,
+    pub metadata: &'a str,
+    pub window: &'a str,
     pub descriptor: &'a str,
     pub initial: &'a str,
     pub theme: &'a str,
+    pub commands: &'a str,
 }
 impl<'a> App<'a> {
-    /// The fixture app with this descriptor and initial values, for this build's markers.
     pub const fn new(descriptor: &'a str, initial: &'a str) -> Self {
-        App {
+        Self {
             format: hitslop_core::PACKAGE_FORMAT,
             abi: hitslop_core::RUNTIME_ABI,
-            manifest: MANIFEST,
+            metadata: METADATA,
+            window: WINDOW,
             descriptor,
             initial,
             theme: THEME,
+            commands: "[]",
         }
     }
 }
-/// Writes `app` as the stage's `app.json`.
+/// Test-only IPC fixture. Production passes BuildInput directly to pack, never scans a stage.
 pub fn write_app(stage: &std::path::Path, app: App) {
-    let App { format, abi, manifest, descriptor, initial, theme } = app;
-    let json = format!(
-        r#"{{"packageFormat":{format},"runtimeABI":{abi},"manifest":{manifest},"descriptor":{descriptor},"initial":{initial},"theme":{theme}}}"#
-    );
-    std::fs::write(stage.join("app.json"), json).unwrap();
+    let parse = |value: &str| serde_json::from_str::<Value>(value).unwrap();
+    let theme: serde_json::Map<String, Value> = serde_json::from_str(app.theme).unwrap();
+    let input = json!({"packageFormat":app.format,"runtimeABI":app.abi,
+        "declaration":{"metadata":parse(app.metadata),"window":parse(app.window),"document":parse(app.descriptor),"initial":parse(app.initial),
+            "theme":theme.into_iter().map(|(token,color)|json!({"token":token,"color":color})).collect::<Vec<_>>(),"commands":parse(app.commands),"views":{"export":false,"icon":false}},
+        "roles":{"ui":"ui.js"},"resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],"artwork":{}});
+    std::fs::write(stage.join("input.json"), input.to_string()).unwrap();
+}
+#[cfg(feature = "storage")]
+pub fn pack(stage: &std::path::Path, destination: &std::path::Path) -> Result<(), hitslop_core::store::Error> {
+    hitslop_core::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination)
+}
+pub fn edit_input(stage: &std::path::Path, edit: impl FnOnce(&mut Value)) {
+    let path = stage.join("input.json");
+    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    edit(&mut value);
+    std::fs::write(path, value.to_string()).unwrap();
+}
+pub fn artwork(stage: &std::path::Path, name: &str, bytes: &[u8]) {
+    std::fs::create_dir_all(stage.join("artwork")).unwrap();
+    std::fs::write(stage.join(format!("artwork/{name}.png")), bytes).unwrap();
+    edit_input(stage, |input| input["artwork"][name] = format!("artwork/{name}.png").into());
+}
+#[cfg(feature = "storage")]
+pub fn add_asset(stage: &std::path::Path, key: &str, media_type: &str, bytes: &[u8]) {
+    let path = format!("assets/{key}");
+    std::fs::create_dir_all(stage.join(&path).parent().unwrap()).unwrap();
+    std::fs::write(stage.join(&path), bytes).unwrap();
+    edit_input(stage, |input| {
+        let resources = input["resources"].as_array_mut().unwrap();
+        resources.retain(|r| r["key"] != key);
+        resources.push(
+            json!({"kind":if key=="commands.js" {"command"} else {"app"},"key":key,"mediaType":media_type,"path":path}),
+        );
+        if key == "ui.css" {
+            input["roles"]["style"] = key.into();
+        }
+        if key == "commands.js" {
+            input["roles"]["commands"] = key.into();
+        }
+    });
+}
+#[cfg(feature = "storage")]
+pub fn media_key(bytes: &[u8], extension: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("media/{}.{}", data_encoding::HEXLOWER.encode(&Sha256::digest(bytes)), extension)
 }
 /// A shared fixture (`fixtures/<name>.json`): a descriptor, its initial values and, for
 /// some, conformance cases.

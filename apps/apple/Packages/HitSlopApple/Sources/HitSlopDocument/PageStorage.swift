@@ -2,26 +2,23 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 
-extension PageRequest {
-  /// A page message, once the core finds its envelope matches the contract.
-  static func checked(_ message: Any) -> PageRequest? {
-    guard let object = message as? [String: Any], Envelope.valid(.pageRequest, object: object) else { return nil }
-    return try? PageRequest(json: object)
-  }
-}
-
 extension DocumentSession {
-  /// A document request from the page. The owner checks and answers it, so document
-  /// bytes and edits never pass through Swift; a refused attachment read or write that
-  /// failed in storage is also the window's to report.
-  func servePage(_ body: [String: Any], storage: Bool, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
-    guard let json = try? JSONSerialization.data(withJSONObject: body) else {
-      return reply(pageFailure(OwnerError.rejected("Invalid page request")), nil)
-    }
-    owner.page(json: String(decoding: json, as: UTF8.self), view: view) { [weak self] answer, failure in
+  /// Swift carries opaque JSON. Rust routes it and admits it under the owner view fence.
+  func servePage(_ json: String, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
+    let requestedView = view
+    owner.page(json: json, view: requestedView) { [weak self] result in
       DispatchQueue.main.async {
-        if storage, let failure, let self { self.reportStorage(failure) }
-        reply(try? JSONSerialization.jsonObject(with: Data(answer.utf8)), nil)
+        switch result {
+        case .reply(let json, let failure, let storage):
+          if storage, let failure, let self { self.reportStorage(failure) }
+          // An accepted document edit keeps its actual answer even if its page retired.
+          reply(json, nil)
+        case .host(let action):
+          guard let self, self.view == requestedView else {
+            return reply(pageFailure(OwnerReplaced()), nil)
+          }
+          self.serveHost(action, reply: reply)
+        }
       }
     }
   }

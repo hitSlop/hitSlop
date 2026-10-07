@@ -56,11 +56,13 @@ async function version(command: string[]) {
 export async function sharedTemplatePaths(repository: string, sources: string[]) {
   const native = "apps/apple/Packages/HitSlopApple";
   const paths = [
+    ".cargo/config.toml",
     "bun.lock",
     "Cargo.lock",
     "crates/hitslop-core/Cargo.toml",
     "crates/hitslop-core/src",
     "crates/slop-engine",
+    "crates/hitslop-runner",
     "packages/hitslop/package.json",
     "packages/hitslop/src/sdk",
     "packages/hitslop/src/shell",
@@ -129,7 +131,7 @@ export async function validateTemplate(path: string, slug: string, artwork = tru
   if (!info.isFile()) throw new Error(`Invalid template file: ${slug}`);
   const template = (await execute({ method: "inspect", file: path })).info;
   if (template.kind !== "template") throw new Error(`Not a template: ${slug}`);
-  if (template.manifest?.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
+  if (template.metadata.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
   if (artwork && !template.artwork.some((image: { name: string }) => image.name === "preview"))
     throw new Error(`Template has no preview artwork: ${slug}`);
   return fileDigest(path);

@@ -7,7 +7,7 @@ The editor, Finder artwork, and exported document should feel like the same obje
 
 ## Declare capture views
 
-The CLI generates the entry for `App.svelte` and discovers optional `Export.svelte` and `Icon.svelte`. Custom `main.ts` entries are refused. Export receives `mode: "preview" | "export"`:
+Import your components and register `view`, optional `export`, and optional `icon` in `defineSlop`. The CLI generates the entry from those roles; filenames are up to you. Export receives `mode: "preview" | "export"`:
 
 ```svelte
 <main class="note-editor">

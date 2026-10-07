@@ -20,12 +20,11 @@ extension SlopRenderer {
   public static func exportClosed(
     _ root: URL, format: ExportFormat, output: URL,
     deadline: NativeCommandDeadline = NativeCommandDeadline()
-  ) async throws -> SocketReply {
+  ) async throws {
     let output = output.standardizedFileURL
     try refuseExisting(output)
     let data = try await withRenderSession(url: root) { try await exportData(session: $0, format: format) }
     try publishExport(data, to: output, deadline: deadline)
-    return SocketReply.export(output: output.path)
   }
 
   private static func exportData(session: DocumentSession, format: ExportFormat) async throws -> Data {

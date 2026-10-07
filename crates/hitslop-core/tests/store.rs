@@ -24,10 +24,10 @@ fn document_with(schema: &str, initial: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
-    std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+    std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
     write_app(&stage, App::new(schema, initial));
     let template = dir.path().join("Doc.template.slop");
-    file::pack(&stage, &template).unwrap();
+    support::pack(&stage, &template).unwrap();
     let path = dir.path().join("Doc.slop");
     file::create_document(&template, &path).unwrap();
     std::fs::remove_dir_all(&stage).unwrap();
@@ -667,7 +667,7 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
 
 fn accent(doc: &Document) -> String {
     let theme = doc.theme_state().unwrap();
-    serde_json::from_str::<Value>(&theme.effective).unwrap()["accent"].as_str().unwrap().into()
+    theme.effective["accent"].clone()
 }
 fn saved_accent(path: &Path) -> String {
     let snapshot = Store::open(path, Mode::Snapshot).unwrap();

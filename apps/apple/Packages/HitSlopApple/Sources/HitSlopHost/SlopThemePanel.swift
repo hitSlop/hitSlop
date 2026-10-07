@@ -83,7 +83,7 @@ extension SlopDocumentWindowController {
     panel.title = "Theme"
     let content = NSHostingView(
       rootView: SlopThemeEditor(
-        model: editor, title: session.file.manifest.title,
+        model: editor, title: session.file.metadata.title,
         close: { [weak self] in self?.setThemeShown(false) },
         importTheme: { [weak self] in self?.request(.importTheme) },
         exportTheme: { [weak self] in self?.request(.exportTheme) }))

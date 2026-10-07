@@ -56,10 +56,4 @@ current values, row IDs and version. Prefer a matching domain action with
 one atomic batch. A refusal applies no edits. After an unknown outcome, read the state
 before deciding on another action.
 
-Authors export named `definition.command({ description, args, run })` values from
-`commands.ts`; args use plain TypeBox JSON schemas (`Type` from `hitslop`). Require
-`additionalProperties: false` on objects. `run` synchronously uses `ctx.current`, `ctx.tx`,
-`ctx.now` and `ctx.random()` and returns JSON or throws. Page buttons import and await the
-same callable. Keep bindings and `doc.change()` for other UI edits. Project scripts and
-skills follow the project's pinned `hitslop` package. Opening a document never upgrades
-its embedded app.
+Authors register `doc.command({ description, args, run })` in `defineSlop({ commands })`. Arguments use `s.*` descriptors, for example `{ text: s.string({ minLength: 1 }) }`. Rust checks arguments, evaluates the stored program in a restricted child and applies one batch. Page buttons await the same owner-routed command. `describe` projects arguments to JSON Schema for tools; JSON Schema is not stored or used to validate the document. Opening a document never upgrades its embedded app.

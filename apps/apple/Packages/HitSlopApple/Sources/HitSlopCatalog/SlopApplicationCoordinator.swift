@@ -87,7 +87,7 @@ import SwiftUI
     Task {
       let template = try? await SlopPreparation.run { () throws -> CatalogEntry? in
         guard try SlopFile.kind(of: canonical) == .template else { return nil }
-        return CatalogScanner.entry(template: try SlopFile(url: canonical))
+        return CatalogScanner.entry(template: try SlopSummary(url: canonical))
       }
       guard model.quitPhase == .running else { return }
       guard let template else { return model.open(canonical) }

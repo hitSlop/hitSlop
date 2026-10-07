@@ -1,6 +1,6 @@
 import type { LiveDocument } from "./schema";
 /**
- * The interface between a built slop and the page shell. A package's `assets/app.js`
+ * The interface between a built slop and the page shell. A package's `assets/ui.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
  * `mount(ctx, target)`. Apps reach the host only through `ctx`.
  *
@@ -59,7 +59,8 @@ export interface SlopContext {
       file: File,
       reference: (tx: Scope<ObjectNode>, ref: AttachmentRef) => void,
     ): Promise<AttachmentRef>;
-    read(id: string, options?: { type?: string }): Promise<Blob>;
+    url(id: string): string;
+    read(id: string): Promise<Blob>;
   };
   readonly window: {
     /** Request a window content size; ignored where the host has no window. */
@@ -81,7 +82,7 @@ export interface CaptureTarget {
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
   /** A named synchronous action; the host applies one guarded undo step. */
-  runCommand<R>(name: string, run: (ctx: import("./commands").CommandContext<N>) => R): Promise<R>;
+  runCommand<R>(name: string, args: unknown): Promise<R>;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). One observer at a time. */

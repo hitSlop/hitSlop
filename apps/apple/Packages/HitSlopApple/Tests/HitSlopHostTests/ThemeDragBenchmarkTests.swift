@@ -107,7 +107,7 @@ import Testing
       try await session.flush()
       try await waitForColor(startColor, session: session)
       let theme = try await session.owner.loadTheme()
-      let effective = try JSONDecoder().decode([String: String].self, from: Data(theme.state.effective.utf8))
+      let effective = theme.state.effective
       #expect(effective["accent"] == startColor, "One Undo restores the whole gesture")
 
       let evidence: [String: Any] = [

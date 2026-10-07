@@ -185,8 +185,8 @@ test("templates are keyed on the compiler and the file engine, not CLI routing o
   const paths = await sharedTemplatePaths(repository, []);
   for (const input of [
     "packages/hitslop/src/cli/build.ts",
-    "packages/hitslop/src/cli/vite.ts",
-    "packages/hitslop/src/cli/entry.ts",
+    "packages/hitslop/src/cli/definition-build.ts",
+    "packages/hitslop/src/cli/command-transform.ts",
     "packages/hitslop/src/sdk",
     "packages/hitslop/src/shell",
     "packages/hitslop/package.json",

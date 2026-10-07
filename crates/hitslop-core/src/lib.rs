@@ -1,7 +1,7 @@
 //! Shared native/WASM document semantics.
 
-#[rustfmt::skip]
-#[path = "wire.generated.rs"]
+#[cfg(feature = "ts")]
+pub mod bindings;
 mod wire;
 use loro::{
     Container, ContainerID, ContainerTrait, ExportMode, Frontiers, ID, Index, LoroDoc, LoroMap, LoroMovableList,
@@ -11,11 +11,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(feature = "storage")]
-pub use wire::{EngineRequest, EngineSuccess};
+pub use wire::build;
+#[cfg(feature = "storage")]
+pub use wire::engine;
+#[cfg(feature = "storage")]
+pub use wire::engine::{EngineReply, EngineRequest, EngineSuccess};
+#[cfg(feature = "storage")]
+pub use wire::{OutcomeCode, native, page as page_wire, preview, socket as socket_wire};
+#[cfg(feature = "storage")]
+pub mod app;
+#[cfg(feature = "storage")]
+pub use wire::{HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
+pub mod arguments;
 mod check;
 mod descriptor;
 mod execute;
 mod identity;
+#[cfg(feature = "storage")]
+pub mod images;
+#[cfg(feature = "storage")]
+pub mod media;
 mod project;
 mod publication;
 mod replace;
@@ -23,17 +38,18 @@ pub mod shape;
 mod text;
 pub mod theme;
 pub use descriptor::validate;
-use descriptor::{Node, descriptor, holds_collections, is_scalar, loro_scalar, unwrap_optional, utf16_len, valid_key};
+use descriptor::{Node, descriptor, holds_collections, is_scalar, loro_scalar, unwrap_optional, valid_key};
 use execute::{Rows, execute, fill, put, resolve};
 use identity::stored_id;
 use project::project;
 use publication::{Events, ListState};
 use std::sync::Arc;
+use wire::valid_id;
 pub use wire::{
     ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES, Code,
     IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
 };
-use wire::{Anchor, Batch, Hunk, Intent, PatchOp, Publication, Segment, valid_id};
+pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Segment, Selection, ThemeFile};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize =
@@ -45,10 +61,22 @@ pub struct Error {
     pub code: Code,
     pub message: String,
     pub op_index: Option<usize>,
+    /// Location within a checked value; independent of the batch's operation index.
+    pub path: Vec<String>,
+}
+impl Error {
+    fn at(mut self, segment: impl ToString) -> Self {
+        self.path.insert(0, segment.to_string());
+        self
+    }
+    /// RFC 6901 pointer; an empty string identifies the checked value itself.
+    pub fn pointer(&self) -> String {
+        self.path.iter().map(|s| format!("/{}", s.replace('~', "~0").replace('/', "~1"))).collect()
+    }
 }
 type Result<T> = std::result::Result<T, Error>;
 fn err(code: Code, message: impl ToString) -> Error {
-    Error { code, message: message.to_string(), op_index: None }
+    Error { code, message: message.to_string(), op_index: None, path: vec![] }
 }
 fn engine(e: impl ToString) -> Error {
     err(Code::EngineError, e)
@@ -151,6 +179,12 @@ const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn safe(n: i64) -> bool {
     (-MAX_SAFE..=MAX_SAFE).contains(&n)
 }
+/// JSON integers are integral numeric values, including `1.0`, `1e2` and `-0.0`.
+/// Canonicalize only after proving the value fits JavaScript's exact integer range.
+fn integer(value: &Value) -> Option<i64> {
+    let n = value.as_f64()?;
+    (n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_SAFE as f64).then_some(n as i64)
+}
 fn application_id() -> String {
     let mut bytes = [0u8; 16];
     random(&mut bytes);
@@ -216,6 +250,36 @@ fn name_rows(node: &Node, value: &mut Value, at: &str) {
             }
         }
         _ => {}
+    }
+}
+
+/// Semantic seed equality: object order and integral number spelling may differ,
+/// but converting an integer to a double must not silently round its value.
+#[cfg(feature = "storage")]
+fn same_seed(a: &Value, b: &Value) -> bool {
+    fn integer_float(integer: &serde_json::Number, float: f64) -> bool {
+        if float.fract() != 0.0 {
+            return false;
+        }
+        if let Some(n) = integer.as_i64() {
+            float >= i64::MIN as f64 && float < i64::MAX as f64 && float as i64 == n
+        } else if let Some(n) = integer.as_u64() {
+            float >= 0.0 && float < u64::MAX as f64 && float as u64 == n
+        } else {
+            false
+        }
+    }
+    match (a, b) {
+        (Value::Number(a), Value::Number(b)) if a != b => match (a.is_f64(), b.is_f64()) {
+            (false, true) => integer_float(a, b.as_f64().expect("float")),
+            (true, false) => integer_float(b, a.as_f64().expect("float")),
+            _ => false,
+        },
+        (Value::Array(a), Value::Array(b)) => a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_seed(a, b)),
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len() && a.iter().all(|(key, a)| b.get(key).is_some_and(|b| same_seed(a, b)))
+        }
+        _ => a == b,
     }
 }
 
@@ -383,7 +447,13 @@ impl Document {
         name_rows(&app.schema, &mut initial, "");
         let doc = LoroDoc::new();
         doc.set_peer_id(TEMPLATE_PEER).map_err(engine)?;
-        filled(doc, &app.schema, &initial)?.export(ExportMode::Snapshot).map_err(engine)
+        let checkpoint = filled(doc, &app.schema, &initial)?.export(ExportMode::Snapshot).map_err(engine)?;
+        let reopened = Self::open(app, &checkpoint, &[])?;
+        let saved: Value = parse(&reopened.value())?;
+        if !same_seed(&initial, &saved) {
+            return Err(err(Code::InvalidRequest, "The initial checkpoint would change the declared values"));
+        }
+        Ok(checkpoint)
     }
     /// A saved document of `app`: its checkpoint and the updates saved after it.
     pub fn open(app: &AppSpec, checkpoint: &[u8], updates: &[Vec<u8>]) -> Result<Self> {
@@ -754,13 +824,9 @@ fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
 }
 
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod envelope;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 mod error;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod file;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod manifest;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod registry;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]

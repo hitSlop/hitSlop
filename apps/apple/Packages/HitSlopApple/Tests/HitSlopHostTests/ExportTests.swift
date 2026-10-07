@@ -243,8 +243,8 @@ extension HostTests {
     let root = try contractFixture { stage in
       let artwork = stage.appendingPathComponent("artwork", isDirectory: true)
       try FileManager.default.createDirectory(at: artwork, withIntermediateDirectories: true)
-      try Fixtures.png().write(to: artwork.appendingPathComponent("preview.png"))
-      let app = stage.appendingPathComponent("assets/app.js")
+      try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())
+      let app = stage.appendingPathComponent("assets/ui.js")
       let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
         of: "const doc = ctx.document;",
         with:
@@ -340,7 +340,7 @@ extension HostTests {
           target.append(root); return { unmount() { root.remove(); } };
         } };
         """
-      try Data(script.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+      try Data(script.utf8).write(to: stage.appendingPathComponent("assets/ui.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)

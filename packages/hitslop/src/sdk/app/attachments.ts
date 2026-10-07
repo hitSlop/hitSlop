@@ -9,6 +9,7 @@ export const attachments = {
    * reference: `attachments.import<typeof schema.descriptor>(file, (tx, ref) => …)`. */
   import: <N extends ObjectNode = ObjectNode>(file: File, reference: (tx: Scope<N>, ref: AttachmentRef) => void) =>
     current().attachments.import(file, reference as never),
-  /** Pass the saved `mimeType` so object URLs for images and media resolve with the right type. */
-  read: (id: string, options?: { type?: string }) => current().attachments.read(id, options),
+  /** A same-origin immutable URL, with the host-verified media type. */
+  url: (id: string) => current().attachments.url(id),
+  read: (id: string) => current().attachments.read(id),
 };

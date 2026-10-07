@@ -199,7 +199,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     // after this initializer returns to the run loop.
     session.load()
     let windowMask = SlopWindowMask(file: session.file)
-    let spec = session.file.manifest.presentation
+    let spec = session.file
     let size = NSSize(width: spec.width, height: spec.height)
     let window = FramelessDocumentWindow(
       contentRect: NSRect(origin: .zero, size: size),
@@ -282,7 +282,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   {
     guard let window else { throw SlopFailure("document window is unavailable") }
     var requested = requested
-    let spec = session.file.manifest.presentation
+    let spec = session.file
     if spec.lockAspect == true {
       let ratio = CGFloat(spec.width) / CGFloat(spec.height)
       requested.width = max(CGFloat(WindowBounds.minWidth), CGFloat(WindowBounds.minHeight) * ratio, requested.width)

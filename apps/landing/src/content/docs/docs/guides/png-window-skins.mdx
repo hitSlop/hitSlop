@@ -10,15 +10,18 @@ A washer with a transparent center is a useful first test.
 
 ## Create the mask asset
 
-Add an RGBA PNG under `assets/`. Its pixel dimensions must exactly match the
-window's `width` and `height`. Alpha defines both the native backing and where the
-window accepts pointer input. Name it in `slop.ts`'s `presentation`:
+Add an RGBA PNG under `assets/`. Its pixel dimensions must be exactly 1× or 2× the
+window's logical `width` and `height`. Alpha defines both the native backing and where the
+window accepts pointer input. Import it in `slop.ts` and use the skin window:
 
 ```ts
-presentation: { width: 480, height: 480, skin: "assets/window-mask.png" },
+import skin from "./assets/window-mask.png";
+
+// Inside defineSlop({ ... })
+window: { kind: "skin", width: 480, height: 480, image: skin },
 ```
 
-A skinned presentation contains only `width`, `height`, and `skin`. It cannot
+A skin window contains `kind`, `width`, `height`, and `image`. It cannot
 also specify `shape`, `background`, or `resizable`, and the native window stays
 at the skin's fixed size.
 
@@ -41,11 +44,13 @@ click the content behind the window.
 
 ## Test the physical behavior
 
-- Confirm the PNG is RGBA and exactly matches the `presentation` dimensions.
+- Confirm the PNG is RGBA and is exactly 1× or 2× the logical window dimensions.
 - Test clicks around curved edges, transparent holes, and soft shadows.
 - Move the window with its native toolbar handle; guest controls do not drag it.
 - Check that focus rings and menus stay inside the usable silhouette.
 - Preview at native size; a skin is not a responsive window treatment.
 
-The PNG belongs to immutable `assets/`; the native mask is defined by the template.
-Document data stays in host-managed state. Media import is deferred.
+Vite includes the imported PNG as an immutable content-addressed asset, even if no
+component renders it. Rust validates the PNG stream and infers its scale; the native
+mask uses that scale for crisp rendering. Document images imported by a user are separate
+attachments served by `app.attachments.url(id)`.

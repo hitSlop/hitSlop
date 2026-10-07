@@ -1,17 +1,17 @@
 ---
-title: Manifest and windows
+title: App definition and windows
 description: Define a slop's identity, discovery metadata, initial window, and native window behavior.
 ---
 
 Read `slop.ts` first. It declares a slop's app: its identity, author, catalog
-metadata, initial native window, theme colors and a new document's values. The build
-stores these in the template as its manifest, theme and initial values, and they are
+metadata, initial native window, theme colors and a new document's values. The build stores catalog fields and a typed definition, with initial values in its
+checkpoint. The embedded app and its defaults are
 immutable in a built template or document, so make changes in the source project and
-rebuild. Writable state is managed by the document runtime; media import is deferred.
+rebuild. Writable state and imported attachments belong to the document.
 
 ## Start with a complete `slop.ts`
 
-`schema` is `schema.ts`'s default export, and `initial` must fit it:
+The `document` field takes a `defineDocument` value; `initial` must fit it:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "hitslop";
@@ -22,28 +22,32 @@ export default defineDocument({ count: s.counter() });
 ```ts title="slop.ts"
 import { defineSlop } from "hitslop";
 import schema from "./schema";
+import App from "./App.svelte";
 
 export default defineSlop({
+  slug: "tiny-counter",
+  view: App,
   title: "Tiny Counter",
   description: "A small counter that stays on your desktop.",
   author: { name: "Your Name", url: "https://example.com" },
   categories: ["utilities"],
-  presentation: { width: 420, height: 520, resizable: true, shape: "22px" },
+  window: { kind: "standard", width: 420, height: 520, resizable: true, shape: "22px" },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
-  schema,
+  document: schema,
   initial: { count: 0 },
 });
 ```
 
-The build runs `slop.ts` in Bun and checks every value by the rules the app opens files
-with; it never ships `slop.ts` in the app. The project folder's name is the slug, so
-this project lives in `tiny-counter/`.
+Vite compiles the declaration and its imports. A restricted native evaluator initializes
+it, then Rust checks the resulting definition and resource inventory. Metadata and
+initial values do not ship in `ui.js`. The explicit `slug` is independent of the source
+folder's name. Import CSS in this entry or in a component; it is never discovered by name.
 
 ## Identity and discovery fields
 
 | Field | Rule |
 | --- | --- |
-| Slug | The project folder's name: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
+| `slug` | Explicit identity: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
 | `author.url` | Optional HTTP or HTTPS URL, up to 2,048 characters. |
 | `title` | Required, 1–80 characters. |
@@ -56,7 +60,7 @@ and `other`.
 
 ## Set the initial window
 
-`presentation.width` must be an integer from 240 to 4,096 pixels. Height must
+`window.width` must be an integer from 240 to 4,096 pixels. Height must
 be an integer from 180 to 4,096 pixels. Choose the smallest size at which the
 main job feels complete; this becomes the initial native window and the basis
 for capture work.

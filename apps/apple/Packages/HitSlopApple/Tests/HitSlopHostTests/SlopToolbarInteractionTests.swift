@@ -114,12 +114,12 @@ extension HostTests {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       // Wrap the probe app with an authored control that follows the native toolbar.
-      let assets = stage.appendingPathComponent("assets")
-      try FileManager.default.moveItem(
-        at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-      try Data(
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: stage.appendingPathComponent("assets/ui.js")), ext: "js",
+        mediaType: "text/javascript")
+      try Fixtures.writeApp(
         """
-        import probe from "./probe.js";
+        import probe from "\(probe)";
         export default { mount(ctx, target) {
           const style = document.createElement("style");
           style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
@@ -129,8 +129,7 @@ extension HostTests {
           target.append(button);
           return probe.mount(ctx, target);
         } };
-        """.utf8
-      ).write(to: assets.appendingPathComponent("app.js"))
+        """, to: stage)
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)

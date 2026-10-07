@@ -29,14 +29,13 @@ import { builtTemplates } from "../templates/discover";
 import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
 import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
 import { execute } from "../../packages/hitslop/src/cli/engine";
-import { coreBuildId } from "../../packages/hitslop/src/cli/core";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { createDocument, debugHelper } from "../lib/native";
 import { evaluateStored } from "./commands";
-useTestRegistry();
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
 process.env.HITSLOP_CARGO_PROFILE = "dist";
+useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun run compat:capture RELEASE [--frozen]");
@@ -61,7 +60,7 @@ if (frozen && dirty) throw new Error("Capture a frozen entry from a clean releas
 // Build the producing tools rather than trusting an existing helper or inventory.
 await run([process.execPath, "run", "build"]);
 await run([process.execPath, "run", "build:templates"]);
-if ((await coreBuildId()) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
+if (await run([documentEngine(), "--build-id"]) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
@@ -86,7 +85,7 @@ templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
 for (const [slug, source] of Object.entries(templates)) {
   const template = join(root, "templates", slug + ".slop");
   if (source.endsWith(".slop")) await copyFile(source, template);
-  else await execute({ method: "pack", stage: source, file: template });
+  else await execute({ method: "pack", stage: source, file: template, app: JSON.parse(await readFile(join(source, "input.json"), "utf8")) });
 }
 
 // Generic edits derived from a descriptor: one valid write of every kind it declares.
@@ -136,7 +135,7 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
 }
 const schemaOf = async (document: string) => (await execute({ method: "schema", file: document })).schema as Node;
 /** The app's module, read from the file outside the core. */
-const appOf = (document: string) => appAsset(document, "app.js");
+const appOf = (document: string) => appAsset(document, "ui.js");
 const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
 const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
@@ -248,8 +247,7 @@ const release: Release = {
   producer: { coreBuildID: await run([helper, "--core-build"]), shell: await digest(shellDestinations.app, shellFiles) },
   files: {},
   acceptance: Object.fromEntries(await Promise.all([
-    `packages/hitslop/acceptance/packageFormat-${PackageFormat}.json`,
-    "packages/hitslop/acceptance/storage-1.json",
+    `crates/hitslop-core/src/app/package_format_${PackageFormat}.rs`,
     "crates/hitslop-core/src/file/storage-1.sql",
   ].map(async path => [path, await fileDigest(join(repository, path))]))),
   templates: Object.fromEntries(await Promise.all(Object.keys(templates).map(async slug => [slug, await fileDigest(join(root, "templates", slug + ".slop"))]))),

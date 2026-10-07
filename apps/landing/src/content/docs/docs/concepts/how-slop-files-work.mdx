@@ -7,16 +7,17 @@ A `.slop` is one file: a small database that holds the app needed to open it and
 
 ## Source is not the runtime file
 
-Authoring source contains `slop.ts`, `schema.ts`, `App.svelte` and `styles.css`. `slop.ts` declares the app with `defineSlop`: its title, description, author, categories, window, theme colors and a new document's values; the folder's name is the slug. The builder generates the Svelte entry; custom `main.ts` entries are refused. Optional `Export.svelte` and `Icon.svelte` define capture layouts. Before mounting the app, the runtime applies the theme's defaults and any owner overrides as `--slop-*` CSS variables. No separate theme stylesheet is generated.
+`slop.ts` explicitly declares identity, window, theme, document shape, initial values, imported view/capture components and commands. It imports styles and images through Vite; filenames do not assign roles. Before mounting, the host applies theme defaults and document overrides as `--slop-*` CSS variables.
 
-`slop build` compiles the app, evaluates `slop.ts` and `schema.ts` (they never ship in the app), and packs the result into a template file:
+`slop build` compiles the app, evaluates the declaration in a restricted Rust runner, and packs the result into a template file:
 
 ```text
 My.slop
-  app        the manifest, the schema's descriptor, initial values, theme defaults,
+  app        catalog columns and one definition (descriptor, theme, commands),
              and the format and runtime the app needs
-  assets     app.js, app.css, and any bundled static resources
+  assets     ui.js, optional ui.css / commands.js, content-addressed media
   artwork    preview and, when declared, icon images
+  checkpoint initial values as a seed Loro snapshot
 ```
 
 The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is never copied into the file.
@@ -34,7 +35,7 @@ Creating a document copies a template into a new file. As it is edited, the same
 
 The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
-One writer at a time owns a document: an OS lock the Rust owner keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView or loads the app's code.
+One writer at a time owns a document: an OS lock the Rust owner keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView. Named commands evaluate their stored program in a restricted child before the owner applies the returned intents.
 
 Theme overrides live in Loro's root `theme` map, outside the authored data tree. They merge per color and share the document's sequence, undo and saving. The page receives the effective palette through its initial state and ordered publications. Replacing document data with JSON preserves the theme. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
 

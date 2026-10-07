@@ -2,6 +2,7 @@
 import { test, expect } from "bun:test";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { stageProject } from "../../src/cli/build";
 import { overrideSlop, stage } from "./source-fixture";
 
 // slop.ts declares the app's row: the build evaluates it, checks it as the app opens files,
@@ -13,20 +14,16 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     const sentinel = `slop-ts-sentinel-${crypto.randomUUID()}`;
     await overrideSlop(source, { initial: `{ ...slop.initial, title: ${JSON.stringify(sentinel)} }` });
-    const output = await stage(source, join(root, "built"));
-    const app = JSON.parse(await readFile(join(output, "app.json"), "utf8"));
-    expect(app.manifest.slug).toBe("sentinel");
-    expect(app.initial.title).toBe(sentinel);
-    expect(await readFile(join(output, "assets/app.js"), "utf8")).not.toContain(sentinel);
+    const output = join(root, "built");
+    const app = await stageProject(source, output);
+    expect(app.declaration.metadata.slug).toBe("quick-checklist");
+    expect(app.declaration.initial.title).toBe(sentinel);
+    expect(await readFile(join(output, "resources/ui.js"), "utf8")).not.toContain(sentinel);
     for (const [name, fields, statements, error] of [
-      ["mismatch", { schema: "defineDocument({ title: s.text() })" }, 'import { defineDocument, s } from "hitslop";', "slop.ts: schema must be schema.ts's default export"],
-      ["unknown", { lineage: '"future"' }, "", 'Invalid manifest at /'],
-      ["field", { title: '""' }, "", "Invalid manifest at /title"],
-      ["no-initial", { initial: "undefined" }, "", "slop.ts: initial is required"],
-      ["no-theme", { theme: "undefined" }, "", "slop.ts: theme is required"],
-      ["css-import", {}, 'import "./styles.css";', "slop.ts: styles.css cannot be imported here"],
-      ["outside-import", {}, 'import "../sentinel/schema";', "slop.ts: ../sentinel/schema.ts is outside the project"],
-      ["slug", { slug: '"other-slug"' }, "", "slop.ts: remove slug"],
+      ["unknown", { lineage: '"future"' }, "", "unknown field"],
+      ["field", { title: '""' }, "", "1–80 characters"],
+      ["no-initial", { initial: "undefined" }, "", "initial"],
+      ["no-document", { document: "undefined" }, "", "defineDocument"],
       ["initial", { initial: "{ ...slop.initial, title: 42 }" }, "", "type_mismatch"],
       ["theme", { theme: '{ accent: "#ABCDEF" }' }, "", "Theme color"],
     ] as const) {
@@ -37,7 +34,7 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
     }
     const misnamed = join(root, "Quick Checklist");
     await cp("examples/slops/quick-checklist", misnamed, { recursive: true });
-    await expect(stage(misnamed, join(root, "misnamed-stage"))).rejects.toThrow("folder's name is its slug");
+    await stage(misnamed, join(root, "misnamed-stage"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -55,7 +52,7 @@ test("an app that imports slop.ts is refused", async () => {
       join(source, "App.svelte"),
       app.replace('<script lang="ts">', '<script lang="ts">\nimport slop from "./slop";\nconsole.log(slop.initial.title);'),
     );
-    await expect(stage(source, join(root, "stage"))).rejects.toThrow("slop.ts is build-only");
+    await expect(stage(source, join(root, "stage"))).rejects.toThrow("Only the generated entry");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

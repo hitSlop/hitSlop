@@ -1,4 +1,4 @@
-import type { HostRequest, HostCaptureResult } from "../schema/page";
+import type { HostRequest, HostCaptureResult } from "../wire/page";
 import type { SlopPageHandle } from "./page-handle";
 
 /** The only JavaScript entry point called by the native host. */

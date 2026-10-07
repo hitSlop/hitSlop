@@ -1,14 +1,22 @@
+import App from "./App.svelte";
+import "./styles.css";
+import Export from "./Export.svelte";
+import Icon from "./Icon.svelte";
 import { defineSlop } from "hitslop";
 import schema from "./schema";
 
 export default defineSlop({
+  slug: "owner-svelte",
+  view: App,
+  export: Export,
+  icon: Icon,
   title: "ABI Svelte consumer",
   description: "Frozen Svelte adapter consumer of the runtime ABI.",
   author: { name: "hitSlop" },
   categories: ["utilities"],
-  presentation: { width: 480, height: 480 },
+  window: { kind: "standard", width: 480, height: 480 },
   theme: { accent: "#335577" },
-  schema,
+  document: schema,
   initial: {
     title: "Svelte ABI 2",
     version: "Authored version",

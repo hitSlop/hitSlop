@@ -1,12 +1,22 @@
+import App from "./App.svelte";
+import "./styles.css";
+import Export from "./Export.svelte";
+import Icon from "./Icon.svelte";
+import * as commands from "./commands";
 import { defineSlop } from "hitslop";
 import schema from "./schema";
 
 export default defineSlop({
+  slug: "quick-checklist",
+  view: App,
+  export: Export,
+  icon: Icon,
+  commands,
   title: "Quick Checklist",
   description: "A blush pocket utility for capturing, finishing, and filing short task lists.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
   categories: ["productivity", "personal"],
-  presentation: { width: 480, height: 620 },
+  window: { kind: "standard", width: 480, height: 620 },
   theme: {
     surface: "#e98996",
     paper: "#fff9f3",
@@ -22,7 +32,7 @@ export default defineSlop({
     filed: "#fff5e9",
     controlBorder: "#d8c0af",
   },
-  schema,
+  document: schema,
   initial: {
     title: "Little things, today",
     tasks: [

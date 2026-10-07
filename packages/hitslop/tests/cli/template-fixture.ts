@@ -1,8 +1,9 @@
+import { png } from "./png-fixture";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineDocument, s } from "../../src/sdk/schema";
 import { execute } from "../../src/cli/engine";
-import { PackageFormat, RuntimeABI, type AppRow } from "../../src/schema/index";
+import { PackageFormat, RuntimeABI } from "../../src/schema/index";
 
 /** A minimal template file at `output`, packed by the file engine from a stage with preview
  * artwork: what tests of template handling need, without building an app. Returns `output`. */
@@ -10,30 +11,28 @@ export async function writeTemplate(output: string, slug = "quick-checklist") {
   const stage = output + ".stage";
   await mkdir(join(stage, "assets"), { recursive: true });
   await mkdir(join(stage, "artwork"));
-  const app: AppRow = {
+  const app = {
     packageFormat: PackageFormat,
     runtimeABI: RuntimeABI,
-    manifest: {
+    declaration: { metadata: {
       slug,
       title: "Cache fixture",
       description: "Cache contract",
       author: { name: "hitSlop" },
       categories: ["utilities"],
-      presentation: { width: 320, height: 240 },
     },
-    descriptor: defineDocument({ title: s.text() }).descriptor,
+    window: { kind: "standard", width: 320, height: 240 },
+    document: defineDocument({ title: s.text() }).descriptor,
     initial: { title: "Cache fixture" },
-    theme: { accent: "#335577" },
+    theme: [{ token: "accent", color: "#335577" }], commands: [], views: { export: false, icon: false } },
+    roles: { ui: "ui.js" },
+    resources: [{ kind: "app", key: "ui.js", mediaType: "text/javascript", path: "assets/ui.js" }],
+    artwork: { preview: "artwork/preview.png" },
   };
-  await writeFile(join(stage, "app.json"), JSON.stringify(app));
-  await writeFile(join(stage, "assets/app.js"), "export default { mount() { return {}; } };");
-  const png = Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1ioAAAAASUVORK5CYII=",
-    "base64",
-  );
-  await writeFile(join(stage, "artwork/preview.png"), png);
+  await writeFile(join(stage, "assets/ui.js"), "export default { mount() { return {}; } };");
+  await writeFile(join(stage, "artwork/preview.png"), png(1, 1));
   try {
-    await execute({ method: "pack", stage, file: output });
+    await execute({ method: "pack", stage, file: output, app });
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

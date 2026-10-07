@@ -68,6 +68,9 @@ test("one JSON transport validates results and never retries ambiguous invocatio
     { ok: true, method: "call" },
     { ok: true, method: "templates", catalog: { folders: [], templates: [], issues: [] } },
     { ok: true, method: "call", result: null, ids: [], unexpected: true },
+    { ok: true, method: "call", result: null, ids: [1] },
+    { ok: true, method: "call", ids: [] },
+    { ok: false, code: "future_outcome", error: "Unclassified" },
   ]) {
     await writeFile(binary, `#!${process.execPath}
 const body = await Bun.stdin.json();

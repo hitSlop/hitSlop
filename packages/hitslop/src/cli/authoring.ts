@@ -3,7 +3,6 @@ import { mkdir } from "node:fs/promises";
 import { shellDirectory } from "./paths";
 import { execute, type EngineOptions } from "./engine";
 import { buildTemplate, prepareRenderer } from "./template";
-import { projectSlug } from "./build";
 
 /** Builds anywhere; only `native` artwork needs the Mac app. */
 export async function build(source: string, artwork?: string) {
@@ -22,11 +21,10 @@ async function installedTemplates(engine: EngineOptions) {
 
 /** Builds into the installed templates folder the app lists, replacing only an earlier build. */
 export async function register(source: string) {
-  const slug = projectSlug(source);
   const renderer = await prepareRenderer();
   const templates = await installedTemplates(renderer);
   await mkdir(templates, { recursive: true });
-  console.log(await buildTemplate(source, renderer, join(templates, slug + ".slop")));
+  console.log(await buildTemplate(source, renderer, slug => join(templates, slug + ".slop")));
 }
 
 export async function dev(source: string, port = 5173) {

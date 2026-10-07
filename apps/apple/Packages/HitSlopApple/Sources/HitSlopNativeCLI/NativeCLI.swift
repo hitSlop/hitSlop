@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import HitSlopDocument
 import HitSlopHost
 
@@ -38,65 +39,60 @@ import HitSlopHost
       var input = Data()
       while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
         input.append(chunk)
-        guard input.count <= Limits.socketRequest else {
-          return write(
-            .failure(SocketFailure(error: "Native request is too large", code: .rejected, reason: .tooLarge)))
-        }
+        if input.count > Limits.socketRequest { break }
       }
-      guard Envelope.valid(.nativeRequest, input),
-        let json = try JSONSerialization.jsonObject(with: input) as? [String: Any]
-      else {
-        return write(
-          .failure(
-            SocketFailure(
-              error: "Invalid native request; send document edits to slop-engine", code: .rejected,
-              reason: .invalidRequest)))
-      }
-      let request = try NativeRequest(json: json)
+      let request = try decodeNativeRequest(input: input)
       switch request {
       case .export:
         bootstrapApp()
         reply = await DocumentCommand.run(json: input, protocol: version, export: exportClosed)
-      case .screenshot(let request):
+      case .screenshot(let documentPath, let outputPath, let target, let ifPresent):
         bootstrapApp()
-        let file = URL(fileURLWithPath: request.documentPath)
-        let output = URL(fileURLWithPath: request.output)
+        let file = URL(fileURLWithPath: documentPath)
+        let output = URL(fileURLWithPath: outputPath)
         let data: Data?
-        switch request.target {
+        switch target {
         case .preview: data = try await SlopRenderer.previewPNGData(url: file)
         case .icon: data = try await SlopRenderer.iconPNGData(url: file)
         }
         guard let data else {
-          if request.ifPresent { return write(.screenshot(output: nil)) }
+          if ifPresent { return write(.screenshot(output: nil)) }
+          let name = target == .preview ? "preview" : "icon"
           return write(
             .failure(
-              SocketFailure(
-                error: "The slop does not define a \(request.target.rawValue) render target.", code: .rejected,
-                reason: .invalidRequest)))
+              error: "The slop does not define a \(name) render target.", code: .rejected,
+              reason: .invalidRequest, opIndex: nil))
         }
         try data.write(to: output, options: .atomic)
-        reply = NativeReply.screenshot(output: output.path).encoded()
-      case .open(let request):
-        let file = URL(fileURLWithPath: request.documentPath)
+        reply = encoded(.screenshot(output: output.path))
+      case .open(let documentPath):
+        let file = URL(fileURLWithPath: documentPath)
         guard try SlopFile.kind(of: file) == .document else { throw SlopError.template }
         guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app") else {
           return write(
             .failure(
-              SocketFailure(error: "Install hitSlop.app to open documents", code: .rejected, reason: .invalidRequest)))
+              error: "Install hitSlop.app to open documents", code: .rejected,
+              reason: .invalidRequest, opIndex: nil))
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         try await NSWorkspace.shared.open([file], withApplicationAt: app, configuration: configuration)
-        reply = NativeReply.open(documentPath: file.path).encoded()
+        reply = encoded(.open(documentPath: file.path))
       }
+    } catch NativeRefusal.Refused(let reply) {
+      return write(reply)
     } catch is SlopRequiresUpdate {
       return write(
         .failure(
-          SocketFailure(error: SlopRequiresUpdate().localizedDescription, code: .rejected, reason: .requiresUpdate)))
+          error: SlopRequiresUpdate().localizedDescription, code: .rejected,
+          reason: .requiresUpdate, opIndex: nil))
     } catch let error as SlopError {
-      return write(.failure(SocketFailure(error: error.localizedDescription, code: .rejected, reason: .invalidRequest)))
+      return write(
+        .failure(
+          error: error.localizedDescription, code: .rejected,
+          reason: .invalidRequest, opIndex: nil))
     } catch {
-      return write(.failure(SocketFailure(error: error.localizedDescription, code: .unknownOutcome)))
+      return write(.failure(error: error.localizedDescription, code: .unknownOutcome, reason: nil, opIndex: nil))
     }
     FileHandle.standardOutput.write(reply + [10])
   }
@@ -104,13 +100,16 @@ import HitSlopHost
     FileHandle.standardError.write(Data((message + "\n").utf8))
     Foundation.exit(2)
   }
-  private static func write(_ reply: NativeReply) {
-    FileHandle.standardOutput.write(reply.encoded() + [10])
+  private static func encoded(_ reply: NativeWireReply) -> Data {
+    Data(encodeNativeReply(reply: reply).utf8)
+  }
+  private static func write(_ reply: NativeWireReply) {
+    FileHandle.standardOutput.write(encoded(reply) + [10])
   }
   @MainActor private static func exportClosed(
     _ root: URL, _ format: ExportFormat, _ output: URL, _ deadline: NativeCommandDeadline
   ) async throws {
-    _ = try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
+    try await SlopRenderer.exportClosed(root, format: format, output: output, deadline: deadline)
   }
 }
 /// A windowless app for WebKit rendering.

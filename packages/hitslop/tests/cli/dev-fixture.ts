@@ -24,10 +24,13 @@ export async function createFixture(repository: string, source: string) {
   import Circle from '@lucide/svelte/icons/circle';
   import doc from './schema';
   import {local} from './probe.svelte';
+  import {addTask} from './commands';
+  import {attachments} from 'hitslop/svelte';
+  (globalThis as any).__devProbe = {doc, addTask, attachments};
   import Child from './Child.svelte';
   let error = $state('');
   async function add() {
-    try { await doc.fields.tasks.insert({text:'Accepted row',done:false}); await doc.flush(); }
+    try { await addTask({text:'Accepted row'}); await doc.flush(); }
     catch (e) { error = String(e); }
   }
 </script>

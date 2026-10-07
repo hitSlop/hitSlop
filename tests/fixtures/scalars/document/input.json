@@ -1,0 +1,163 @@
+{
+  "packageFormat": 1,
+  "runtimeABI": 1,
+  "declaration": {
+    "metadata": {
+      "author": {
+        "name": "hitSlop"
+      },
+      "slug": "scalar-conformance",
+      "title": "Scalar conformance",
+      "description": "Scalar kinds conformance fixture.",
+      "categories": [
+        "utilities"
+      ]
+    },
+    "window": {
+      "kind": "standard",
+      "width": 480,
+      "height": 480
+    },
+    "document": {
+      "kind": "object",
+      "properties": {
+        "title": {
+          "kind": "text"
+        },
+        "currency": {
+          "kind": "enum",
+          "values": [
+            "CAD",
+            "USD",
+            "EUR"
+          ]
+        },
+        "label": {
+          "kind": "string",
+          "maxLength": 4
+        },
+        "ratio": {
+          "kind": "number",
+          "min": 0,
+          "max": 1
+        },
+        "rating": {
+          "kind": "integer",
+          "min": 1,
+          "max": 5
+        },
+        "memo": {
+          "kind": "optional",
+          "inner": {
+            "kind": "string"
+          }
+        },
+        "limit": {
+          "kind": "optional",
+          "inner": {
+            "kind": "integer",
+            "min": 0,
+            "max": 999
+          }
+        },
+        "photo": {
+          "kind": "optional",
+          "inner": {
+            "kind": "object",
+            "properties": {
+              "id": {
+                "kind": "string"
+              },
+              "name": {
+                "kind": "string"
+              }
+            }
+          }
+        },
+        "box": {
+          "kind": "optional",
+          "inner": {
+            "kind": "object",
+            "properties": {
+              "items": {
+                "kind": "list",
+                "item": {
+                  "kind": "object",
+                  "properties": {
+                    "done": {
+                      "kind": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "rows": {
+          "kind": "list",
+          "item": {
+            "kind": "object",
+            "properties": {
+              "text": {
+                "kind": "text"
+              },
+              "amount": {
+                "kind": "number"
+              },
+              "note": {
+                "kind": "optional",
+                "inner": {
+                  "kind": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "initial": {
+      "title": "Trip",
+      "currency": "CAD",
+      "label": "ab",
+      "ratio": 0.5,
+      "rating": 3,
+      "rows": [
+        {
+          "$id": "r1",
+          "text": "Coffee",
+          "amount": 475
+        }
+      ]
+    },
+    "theme": [
+      {
+        "token": "accent",
+        "color": "#335577"
+      }
+    ],
+    "commands": [],
+    "views": {
+      "export": false,
+      "icon": false
+    }
+  },
+  "roles": {
+    "ui": "ui.js",
+    "style": "ui.css"
+  },
+  "resources": [
+    {
+      "kind": "app",
+      "key": "ui.js",
+      "mediaType": "text/javascript",
+      "path": "assets/ui.js"
+    },
+    {
+      "kind": "app",
+      "key": "ui.css",
+      "mediaType": "text/css",
+      "path": "assets/ui.css"
+    }
+  ],
+  "artwork": {}
+}

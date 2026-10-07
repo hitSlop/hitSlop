@@ -18,7 +18,7 @@ public struct UndoState: Sendable, Equatable {
 public final class DocumentOwner: Sendable {
   public let file: SlopFile
   let mode: StoreMode
-  let assets: AssetReader
+  let assets: ResourceReader
   private let native: NativeOwner
   private let events: Events
 
@@ -49,12 +49,27 @@ public final class DocumentOwner: Sendable {
     self.mode = mode
     let events = Events()
     let owner = try storeCall {
-      try SlopFile.opening { try NativeOwner.open(path: url.path, mode: mode, listener: events) }
+      try SlopFile.opening {
+        try NativeOwner.open(path: url.path, mode: mode, evaluatorPath: Self.evaluatorPath, listener: events)
+      }
     }
     native = owner
     self.events = events
     file = try SlopFile(url: url, opened: owner.app())
-    assets = try storeCall { try owner.assetReader() }
+    assets = try storeCall { try owner.resourceReader() }
+  }
+
+  /// The app and its renderer ship this sibling helper. Missing helpers refuse commands;
+  /// they never cause authored code to execute in the page or native process.
+  private static var evaluatorPath: String? {
+    #if DEBUG
+      if let path = ProcessInfo.processInfo.environment["HITSLOP_EVALUATOR"] { return path }
+    #endif
+    let candidates = [
+      Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/hitslop-evaluator"),
+      Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("hitslop-evaluator"),
+    ].compactMap { $0 }
+    return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }?.path
   }
 
   /// What the owner has said, so nothing asks it, and who hears it next.
@@ -140,13 +155,13 @@ public final class DocumentOwner: Sendable {
   func attach(view: String) { native.attach(view: view) }
   /// One document request from the page `view`, as JSON. The owner checks and answers it;
   /// `reply` gets the page's reply, and the owner's failure when it refused.
-  func page(json: String, view: String, reply: @escaping @Sendable (String, OwnerFailure?) -> Void) {
+  func page(json: String, view: String, reply: @escaping @Sendable (PageDispatch) -> Void) {
     native.page(json: json, view: view, completion: PageAnswer(reply))
   }
   private final class PageAnswer: PageCompletion {
-    let reply: @Sendable (String, OwnerFailure?) -> Void
-    init(_ reply: @escaping @Sendable (String, OwnerFailure?) -> Void) { self.reply = reply }
-    func complete(replyJson: String, failure: OwnerFailure?) { reply(replyJson, failure) }
+    let reply: @Sendable (PageDispatch) -> Void
+    init(_ reply: @escaping @Sendable (PageDispatch) -> Void) { self.reply = reply }
+    func complete(reply: PageDispatch) { self.reply(reply) }
   }
   public func flush() async throws {
     do { try await unit(.flush) } catch let error as SlopFailure { throw SaveFailure(error) }
@@ -184,23 +199,21 @@ public final class DocumentOwner: Sendable {
   /// A theme panel change, as the window's own batch; `reply` has the sequence it was
   /// accepted at.
   func enqueueTheme(_ change: SlopThemeChange, reply: @escaping @Sendable (Result<Int, Error>) -> Void) {
-    do {
-      let intent: [String: Any] =
-        switch change {
-        case .set(let values): ["type": "setTheme", "values": values]
-        case .resetAll: ["type": "setTheme", "values": [String: String](), "replace": true]
-        case .importFile(let file): ["type": "importTheme", "file": file]
-        }
-      let batch = String(decoding: try JSONSerialization.data(withJSONObject: ["intents": [intent]]), as: UTF8.self)
-      submit(.apply(batchJson: batch, origin: .window)) { result in
-        reply(
-          result.flatMap { value in
-            guard case .applied(let sequence, _) = value else { return .failure(SlopFailure("Invalid theme response")) }
-            return .success(Int(sequence))
-          })
+    let native: ThemeChange =
+      switch change {
+      case .set(let values): .set(values: values)
+      case .resetAll: .resetAll
+      case .importFile(let file): .importFile(file: file)
       }
-    } catch { reply(.failure(error)) }
+    submit(themeRequest(change: native)) { result in
+      reply(
+        result.flatMap { value in
+          guard case .applied(let sequence, _) = value else { return .failure(SlopFailure("Invalid theme response")) }
+          return .success(Int(sequence))
+        })
+    }
   }
+
   func exportTheme() async throws -> String {
     guard case .themeFile(let json) = try await call(.exportTheme) else { throw SlopFailure("Invalid theme export") }
     return json

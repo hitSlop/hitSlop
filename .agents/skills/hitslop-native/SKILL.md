@@ -17,8 +17,8 @@ lock, save policy, owner scheduling and Unix socket routing. Attachments are imm
 rows in the file, stored and read through the core. The shared Rust owner runs one write
 in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
 events; `DocumentSession` delivers ordered publications to the page. The private
-`@hitslop/shell` package holds immutable snapshots and no CRDT;
-`hitslop` contains the author SDK. Never add a second document engine, a JSON
+`packages/hitslop/src/shell` holds immutable snapshots and no CRDT;
+`packages/hitslop/src/sdk` contains the author SDK. Never add a second document engine, a JSON
 mirror, a JavaScriptCore evaluator or app-specific Swift schemas.
 
 **One edit path.** The CLI forwards to the live owner's socket or takes the lock and runs
@@ -26,7 +26,7 @@ the shared Rust owner in-process. The bundled `slop-engine` handles data command
 native helper supplies WebKit only for rendering and macOS services. The writer lock and the live owner's
 discovery live outside the file, in the core's registry (`~/.hitslop/live`, keyed by the
 file's device and inode); never remove a lock file there or bypass a busy lock, and never
-lock or open the database file outside the core. Closed edits never start WebKit. A
+lock or open the database file outside the core. Closed edits never start WebKit. Page and CLI commands both use the owner's restricted child runner; the app embeds and signs `hitslop-evaluator`. A
 document is a local regular file: never a link, and never with a second hard link.
 
 **Errors.** Rust classifies command outcomes; `RequestOutcome` maps native UI failures
@@ -35,10 +35,7 @@ code), replaced, closing, invalidated, save failed, or unknown. Only unknown lea
 outcome uncertain; after it, run `slop get` before another edit. A failed save keeps
 ownership and shows a native retry; close and export flush first.
 
-**Contracts.** TypeBox in packages/hitslop/src/schema generates the socket, page, manifest and
-core wire; run `bun run schema:generate` and never edit generated files. The core checks
-envelopes and manifests against those schemas and parses payloads strictly. WebKit
-correlates page replies; Swift checks the sender and supplies its native view token.
+**Contracts.** Rust serde types own internal wires and package-format acceptance; ts-rs generates TypeScript and UniFFI carries native records/enums. Run `bun run schema:generate`; never edit generated files. Rust parses page requests once and returns opaque replies or typed host actions. Swift never decodes app, theme or page JSON. WebKit correlates replies; Swift checks the sender and supplies its native view token.
 Keep native view fences and the command protocol check when changing the page or socket protocol. Released
 documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 `tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).

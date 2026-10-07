@@ -40,8 +40,8 @@ extension OwnerFailure: LocalizedError {
 }
 
 /// A hitSlop file, checked by the core: a template (the app its author built) or a document
-/// (the app and its saved state). Swift decodes the manifest and the window skin; the core
-/// owns every other rule.
+/// (the app and its saved state). Rust supplies typed metadata and window semantics;
+/// Swift decodes only the already validated PNG for display.
 public struct SlopFile: Sendable {
   /// The `.slop` file.
   public let url: URL
@@ -50,7 +50,9 @@ public struct SlopFile: Sendable {
   public let descriptor: String
   /// The declared colors in the order the author wrote them.
   public let themeTokens: [ThemeToken]
-  public let manifest: SlopManifest
+  public let metadata: AppMetadata
+  public let window: WindowDefinition
+  public let views: Views
   public let silhouette: SlopSilhouette
   /// The file's size in bytes.
   public let byteCount: Int64
@@ -64,25 +66,21 @@ public struct SlopFile: Sendable {
     try self.init(url: root, opened: Self.opening { try openFile(path: root.path) })
   }
 
-  /// Opens the file at `url` in a template folder as the catalog lists it: the core refuses
-  /// a document, or a template whose file is not named for its slug, as it does for the CLI.
-  public init(template url: URL) throws {
-    let root = try Self.resolvedRoot(url)
-    try self.init(url: root, opened: Self.opening { try openTemplate(path: root.path) })
-  }
-
   /// The file at `url` as the core opened and checked it.
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root
     kind = opened.kind
-    descriptor = opened.descriptorJson
-    themeTokens = opened.themeTokens
+    descriptor = opened.app.descriptorJson
+    themeTokens = opened.app.theme
     byteCount = Int64(opened.byteCount)
-    silhouette = SlopSilhouette(parsed: opened.silhouette)
-    do {
-      manifest = try JSONDecoder().decode(SlopManifest.self, from: Data(opened.manifestJson.utf8))
-    } catch {
-      throw SlopError.invalid(error.localizedDescription)
+    metadata = opened.app.metadata
+    window = opened.app.window
+    views = opened.app.views
+    switch window {
+    case .standard(_, _, _, _, _, let shape): silhouette = SlopSilhouette(parsed: shape)
+    case .skin:
+      silhouette = SlopSilhouette(
+        parsed: .radii(horizontal: [.init(value: 0, percent: false)], vertical: [.init(value: 0, percent: false)]))
     }
     skinImage = try opened.skinPng.map(Self.decodeSkin)
   }
@@ -107,17 +105,31 @@ public struct SlopFile: Sendable {
     try opening { try fileKind(path: url.path) }
   }
 
-  public var isSkinned: Bool { manifest.presentation.skin != nil }
-  /// What the window shows behind the page.
-  public var backdrop: SlopBackdrop {
-    if isSkinned { return .skin }
-    switch manifest.presentation.background {
-    case nil: return .window
-    case .transparent: return .clear
-    case .glass: return .glass
+  public var isSkinned: Bool { if case .skin = window { true } else { false } }
+  public var width: Int {
+    switch window {
+    case .standard(let w, _, _, _, _, _), .skin(let w, _, _): Int(w)
     }
   }
-  public var isResizable: Bool { isSkinned ? false : manifest.presentation.resizable ?? true }
+  public var height: Int {
+    switch window {
+    case .standard(_, let h, _, _, _, _), .skin(_, let h, _): Int(h)
+    }
+  }
+  public var lockAspect: Bool { if case .standard(_, _, _, let lock, _, _) = window { lock } else { true } }
+  /// What the window shows behind the page.
+  public var backdrop: SlopBackdrop {
+    switch window {
+    case .skin: .skin
+    case .standard(_, _, _, _, let background, _):
+      switch background {
+      case nil: .window
+      case .transparent: .clear
+      case .glass: .glass
+      }
+    }
+  }
+  public var isResizable: Bool { if case .standard(_, _, let resizable, _, _, _) = window { resizable } else { false } }
   /// The window skin, decoded when the file was opened.
   public var skin: CGImage? { skinImage }
 

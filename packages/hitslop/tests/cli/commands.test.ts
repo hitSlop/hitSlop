@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { cp, mkdtemp, rm, symlink, readFile, lstat, writeFile } from "node:fs/promises";
-import { loadProject, normalizeApp } from "../../src/cli/build";
+import { stageProject } from "../../src/cli/build";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import metadata from "../../package.json";
@@ -47,7 +47,7 @@ test("inspect and schema read a built template with the CLI's own engine, whatev
 
 /** The manifest a build would store for `project`, from its slop.ts. */
 async function manifestOf(project: string) {
-  return (await normalizeApp(project, await loadProject(project))).manifest;
+  return (await stageProject(project, project + ".stage")).declaration.metadata;
 }
 
 // A project's folder name is its slug, so init refuses a folder that is not one before
@@ -60,7 +60,7 @@ test("init names a project by its folder and refuses a folder that is not a slug
       const target = join(root, name);
       const result = await run(["init", target, "--yes"]);
       expect(result.code).not.toBe(0);
-      expect(result.stderr).toContain("folder's name is its slug");
+      expect(result.stderr).toContain("invalid_request");
       expect(await lstat(target).catch(() => undefined)).toBeUndefined();
     }
     const target = join(root, "a".repeat(64));

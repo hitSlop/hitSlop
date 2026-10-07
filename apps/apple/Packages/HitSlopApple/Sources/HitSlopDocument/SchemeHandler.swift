@@ -18,7 +18,7 @@ import WebKit
   }
   /// The page shell owns every page; a document supplies only its app's assets.
   nonisolated private static let visiblePage = Data(
-    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title><link rel=\"stylesheet\" href=\"/assets/app.css\"></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>"
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>"
       .utf8)
   /// Scripts only from the document and the shell; WebAssembly may compile (MilkDrop presets
   /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.
@@ -26,12 +26,12 @@ import WebKit
   private static let reads = DispatchQueue(label: "hitslop.scheme", qos: .userInitiated, attributes: .concurrent)
   let shell: URL
   /// The document's assets, through its owner's long-lived connection.
-  private let assets: AssetReader
+  private let assets: ResourceReader
   /// Tasks WebKit started and has not stopped. A token tells a stopped task's late read
   /// from a newer task at the same address.
   private var tasks: [ObjectIdentifier: (token: Int, task: any WKURLSchemeTask)] = [:]
   private var nextToken = 0
-  init(assets: AssetReader, shell: URL) {
+  init(assets: ResourceReader, shell: URL) {
     self.shell = shell
     self.assets = assets
   }
@@ -74,13 +74,14 @@ import WebKit
   }
   /// The response for a request. WebKit's media loader asks for byte ranges and fails
   /// without a 206 answer; an asset's range is read from the file without loading the rest.
-  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: AssetReader) throws
+  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: ResourceReader) throws
     -> Response
   {
     guard let url, url.host == "app" else { throw SlopFailure("Unknown resource origin") }
     let isShell = url.path.hasPrefix("/__shell__/")
     if !isShell && url.path == "/" { return whole(visiblePage, type: "text/html; charset=utf-8") }
-    let prefix = isShell ? "/__shell__/" : "/assets/"
+    let isAttachment = url.path.hasPrefix("/attachments/")
+    let prefix = isShell ? "/__shell__/" : isAttachment ? "/attachments/" : "/assets/"
     guard url.path.hasPrefix(prefix) else { throw SlopFailure("Resource not exposed") }
     // URL.path decodes escaped separators and dots; the core's asset-path rule refuses
     // them before anything else.
@@ -93,17 +94,22 @@ import WebKit
       guard file.path.hasPrefix(base.path + "/") else { throw SlopFailure("Resource outside the shell") }
       return try ranged(range, type: type, length: shellFile(file).count) { try shellFile(file).subdata(in: $0) }
     }
-    guard let size = try assets.size(key: key) else { throw SlopFailure("Resource not found") }
-    return try ranged(range, type: type, length: Int(size)) { bounds in
-      guard let bytes = try assets.readRange(key: key, offset: UInt64(bounds.lowerBound), length: UInt64(bounds.count))
+    let route: ResourceRoute = isAttachment ? .attachment : .app
+    guard let info = try assets.info(route: route, key: key) else { throw SlopFailure("Resource not found") }
+    var response = try ranged(range, type: info.mediaType, length: Int(info.size)) { bounds in
+      guard
+        let bytes = try assets.readRange(
+          route: route, key: key, offset: UInt64(bounds.lowerBound), length: UInt64(bounds.count))
       else { throw SlopFailure("Resource not found") }
       return bytes
     }
+    if isAttachment { response.headers["Content-Security-Policy"] = "sandbox" }
+    return response
   }
   nonisolated private static func headers(_ type: String, length: Int) -> [String: String] {
     [
       "Content-Type": type, "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy,
-      "Accept-Ranges": "bytes", "Content-Length": String(length),
+      "Accept-Ranges": "bytes", "Content-Length": String(length), "X-Content-Type-Options": "nosniff",
     ]
   }
   nonisolated private static func whole(_ data: Data, type: String) -> Response {

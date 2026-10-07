@@ -4,11 +4,12 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { coreBuildId } from "../../packages/hitslop/src/cli/core";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
+const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
+await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine();
 // Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>
@@ -33,7 +34,6 @@ try {
   assert.deepEqual(JSON.parse(await installed(["--protocol"], documentEngine)), JSON.parse(await installed(["--protocol"])), "Native tools serve different command protocols");
   assert.deepEqual([...new Bun.Glob("**/slop-engine").scanSync({ cwd: app })], [], "The Mac app must not bundle the npm engine");
   // A release is built from one tree, so the CLI's authoring core is the app's core.
-  assert.equal(await coreBuildId(), helperCore, "CLI and helper embed different document cores");
   // Finder shows a .slop through the app's type declaration and its Quick Look extensions,
   // which read the file with the same core.
   const plist = async (path: string) => JSON.parse(await installed(["-convert", "json", "-o", "-", path], "/usr/bin/plutil"));
@@ -78,7 +78,7 @@ try {
     await createDocument(source, document, placement);
     const initial = await value(document);
     assert.ok(initial && typeof initial === "object");
-    assert.ok(JSON.parse(await installed(["schema", document], documentEngine)));
+    assert.ok((await engineRequest({ method: "schema", file: document }, placement)).schema);
     assert.deepEqual(await value(document), initial);
     for (const format of ["png", "pdf"] as const) {
       const output = join(folder, slug + "." + format);

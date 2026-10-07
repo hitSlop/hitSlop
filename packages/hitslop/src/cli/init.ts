@@ -1,6 +1,6 @@
 import { input, resolvePromptIO, type PromptIO } from "@crustjs/prompts";
-import { SlopManifestSchema, type SlopCategory } from "../schema/index";
-import { validate } from "../schema/validation";
+import type { Category as SlopCategory, AppMetadata } from "../wire/app.generated";
+import { execute } from "./engine";
 import { ManifestText } from "../schema/constants";
 import { cp, lstat, mkdir, readdir, readFile, rm, writeFile, symlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -17,7 +17,6 @@ interface InitOptions {
   yes?: boolean;
 }
 
-const fields = SlopManifestSchema.properties;
 
 /** The starter's `slop.ts` with one top-level field's line replaced. */
 function setField(slop: string, key: string, value: string) {
@@ -33,6 +32,9 @@ export async function initProject(target: string, options: InitOptions = {}, str
   });
   if (existing) throw new Error("Choose a new source directory");
   const slug = projectSlug(destination);
+  const candidate: AppMetadata = { slug, title: "My slop", description: "A hitSlop mini app.", author: { name: "Anonymous" }, categories: ["productivity"] };
+  const checkMetadata = async (value: AppMetadata) => { await execute({ method: "validateMetadata", metadata: value }); };
+  await checkMetadata(candidate);
   const io = resolvePromptIO(streams);
   const interactive = !options.yes && !process.env.CI && io.input.isTTY && io.output.isTTY;
 
@@ -40,13 +42,13 @@ export async function initProject(target: string, options: InitOptions = {}, str
     message: string,
     supplied: string | undefined,
     fallback: string,
-    schema: typeof fields.title,
+    field: "title" | "description" | "author",
     limits: { minLength: number; maxLength: number; pattern?: string },
     prompt = interactive,
   ) {
-    const check = (value: string) => {
+    const check = async (value: string) => {
       try {
-        validate(schema, value);
+        await checkMetadata({ ...candidate, [field]: field === "author" ? { name: value } : value });
       } catch {
         throw new Error(
           `${message} must be ${limits.minLength}–${limits.maxLength} characters${limits.pattern ? " and contain non-whitespace text" : ""}`,
@@ -55,7 +57,7 @@ export async function initProject(target: string, options: InitOptions = {}, str
     };
     if (supplied !== undefined || !prompt) {
       const value = supplied ?? fallback;
-      check(value);
+      await check(value);
       return value;
     }
     return input({ message, default: fallback, validate: check }, io);
@@ -80,26 +82,27 @@ export async function initProject(target: string, options: InitOptions = {}, str
     "Title",
     options.title,
     basename(destination).slice(0, ManifestText.title.maxLength).trim() || "My slop",
-    fields.title,
+    "title",
     ManifestText.title,
     false,
   );
   const categories: SlopCategory[] = options.category ?? ["productivity"];
   try {
-    validate(fields.categories, categories);
+    await checkMetadata({ ...candidate, categories });
   } catch {
-    throw new Error("Choose one or two distinct manifest categories");
+    throw new Error("Choose one or two distinct categories");
   }
-  const author = await text("Author", options.author, "Anonymous", fields.author.properties.name, ManifestText.authorName);
+  const author = await text("Author", options.author, "Anonymous", "author", ManifestText.authorName);
   const description = await text(
     "Description",
     options.description,
     "A hitSlop mini app.",
-    fields.description,
+    "description",
     ManifestText.description,
     false,
   );
   let slop = await readFile(join(cliRoot, "templates/checklist/slop.ts"), "utf8");
+  slop = setField(slop, "slug", JSON.stringify(slug));
   slop = setField(slop, "title", JSON.stringify(title));
   slop = setField(slop, "description", JSON.stringify(description));
   slop = setField(slop, "author", `{ name: ${JSON.stringify(author)} }`);

@@ -13,11 +13,8 @@ final class NativeExports: NativeExportHandler {
     Task { @MainActor in
       do {
         try deadline.check()
-        guard let format = ExportFormat(rawValue: request.format) else {
-          throw OwnerError.rejected("Invalid export format")
-        }
         try await render(
-          URL(fileURLWithPath: request.documentPath), format, URL(fileURLWithPath: request.output), deadline)
+          URL(fileURLWithPath: request.documentPath), request.format, URL(fileURLWithPath: request.output), deadline)
         completion.complete(outcome: .success(output: request.output))
       } catch { completion.complete(outcome: .failure(failure: OwnerFailure(error))) }
     }

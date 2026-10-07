@@ -4,12 +4,11 @@
 uniffi::setup_scaffolding!();
 
 use hitslop_core::Origin;
-use hitslop_core::envelope::Envelope;
 use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::owner::Failure;
 use hitslop_core::shape::{Length, Segment, Silhouette};
 use hitslop_core::store::{self, Attachment, Mode};
-use hitslop_core::theme::ThemeState;
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -38,35 +37,21 @@ impl From<hitslop_core::Error> for CoreError {
     }
 }
 
-/// A declared theme color.
+/// The native palette uses typed maps; Swift never interprets theme JSON.
 #[derive(uniffi::Record)]
-pub struct ThemeToken {
-    pub name: String,
-    pub value: String,
-}
-#[uniffi::remote(Record)]
 pub struct ThemeState {
-    pub defaults: String,
-    pub overrides: String,
-    pub effective: String,
+    pub defaults: std::collections::HashMap<String, String>,
+    pub overrides: std::collections::HashMap<String, String>,
+    pub effective: std::collections::HashMap<String, String>,
 }
-
-/// The platform envelopes whose generated contracts the core evaluates.
-#[uniffi::remote(Enum)]
-pub enum Envelope {
-    SocketRequest,
-    SocketReply,
-    SocketDiscovery,
-    PageRequest,
-    NativeRequest,
-    NativeReply,
-    EngineRequest,
-    EngineReply,
-}
-/// Whether `json` is a well-formed envelope of this kind.
-#[uniffi::export]
-pub fn envelope_is_valid(kind: Envelope, json: Vec<u8>) -> bool {
-    hitslop_core::envelope::is_valid(kind, &json)
+impl From<hitslop_core::theme::ThemeState> for ThemeState {
+    fn from(state: hitslop_core::theme::ThemeState) -> Self {
+        Self {
+            defaults: state.defaults.into_iter().collect(),
+            overrides: state.overrides.into_iter().collect(),
+            effective: state.effective.into_iter().collect(),
+        }
+    }
 }
 
 /// A window corner length: points, or a percentage of the window's width or height.
@@ -123,6 +108,7 @@ pub enum Mode {
 /// A stored attachment: its identity (SHA-256, hex) and size in bytes.
 #[uniffi::remote(Record)]
 pub struct Attachment {
+    pub media_type: String,
     pub id: String,
     pub bytes: u64,
 }
@@ -132,50 +118,32 @@ pub enum Kind {
     Template,
     Document,
 }
-/// A checked template or document: its kind and the app a host needs to show it.
+/// Complete acceptance, for rendering or editing the embedded app.
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
     pub kind: Kind,
-    /// The authored manifest (JSON).
-    pub manifest_json: String,
-    pub silhouette: Silhouette,
-    pub descriptor_json: String,
-    /// The declared colors, in the order the author wrote them.
-    pub theme_tokens: Vec<ThemeToken>,
-    /// The window skin's PNG, when the manifest names one.
+    pub app: AppDefinition,
     pub skin_png: Option<Vec<u8>>,
     pub byte_count: u64,
 }
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
-        OpenedFile {
-            kind: p.kind,
-            manifest_json: p.manifest.clone(),
-            silhouette: p.silhouette.clone(),
-            descriptor_json: p.app.descriptor.clone(),
-            theme_tokens: p
-                .spec
-                .theme_tokens()
-                .iter()
-                .map(|(name, value)| ThemeToken { name: name.clone(), value: value.clone() })
-                .collect(),
-            skin_png: p.skin.clone(),
-            byte_count: p.bytes,
-        }
+        Self { kind: p.kind, app: AppDefinition::from(&p.app), skin_png: p.skin.clone(), byte_count: p.bytes }
     }
 }
-/// Opens and checks a template or document file for display (the catalog, a template opened
-/// from Finder), without its writer lock or SQLite's quick check. A document a host edits
-/// opens through `NativeOwner`, whose `app` is its one check.
 #[uniffi::export]
 pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
     Ok((&file::open(Path::new(&path), false)?).into())
 }
-/// Opens a file in a template folder for the catalog: a template, never a document, whose
-/// file is named for its slug.
+/// Cheap display metadata. This is not a validity certificate for the embedded app.
 #[uniffi::export]
-pub fn open_template(path: String) -> Result<OpenedFile, CoreError> {
-    Ok((&file::open_template(Path::new(&path))?).into())
+pub fn file_summary(path: String) -> Result<file::Summary, CoreError> {
+    Ok(file::summary(Path::new(&path))?)
+}
+/// Catalog templates additionally have a filename matching their slug.
+#[uniffi::export]
+pub fn open_template(path: String) -> Result<file::Summary, CoreError> {
+    Ok(file::open_template(Path::new(&path))?)
 }
 /// Where a listed template comes from.
 #[uniffi::remote(Enum)]
@@ -253,21 +221,34 @@ pub fn valid_asset_path(path: String) -> bool {
 pub fn content_type(path: String) -> String {
     file::content_type(&path).into()
 }
-/// Serves a document's app assets: whole, or a byte range (`NativeOwner::asset_reader`).
+/// Serves package assets and attachments through disjoint checked routes.
 #[derive(uniffi::Object)]
-pub struct AssetReader(Mutex<file::AssetReader>);
+pub struct ResourceReader(Mutex<file::ResourceReader>);
 #[uniffi::export]
-impl AssetReader {
-    pub fn size(&self, key: String) -> Result<Option<u64>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).size(&key)?)
+impl ResourceReader {
+    pub fn info(&self, route: file::ResourceRoute, key: String) -> Result<Option<file::ResourceInfo>, CoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).info(route, &key)?)
     }
-    pub fn read_range(&self, key: String, offset: u64, length: u64) -> Result<Option<Vec<u8>>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(&key, offset, length)?)
+    pub fn read_range(
+        &self,
+        route: file::ResourceRoute,
+        key: String,
+        offset: u64,
+        length: u64,
+    ) -> Result<Option<Vec<u8>>, CoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(route, &key, offset, length)?)
     }
 }
+
+mod app;
+pub use app::*;
 
 mod owner;
 pub use owner::*;
 
 mod command;
 pub use command::*;
+
+mod native;
+mod page;
+pub use native::*;

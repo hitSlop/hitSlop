@@ -14,9 +14,11 @@ browser document.
 2. **Later:** the same host on hitslop.com, taking a dropped `.slop` with no account,
    then [share links](share-links.md). Both reuse this host and wait for launch.
 
-`slop dev` stays as it is: a disposable in-page WASM owner. It can't prove the browser
-path. Every open requires `assets/app.js` (`file/mod.rs`), and dev never builds one,
-because Vite serves the live code.
+`slop dev` now has a separate, approved native-owner direction in
+[app definition and packaging](app-definition-and-packaging.md), supported by the
+[native-dev spike](../docs/evidence/native-dev-owner.md). It retains Vite HMR over a
+disposable native SQLite document. That does not implement or prove this durable OPFS
+browser host; this plan remains deferred while packaging and native development land.
 
 ## What ships
 
@@ -105,7 +107,7 @@ slop open --browser (Bun)        one host per user, fixed loopback port
   (`crates/hitslop-core/src/command.rs`), the path native pages use, and pushes
   publications as native does. The shell's `call` (`packages/hitslop/src/shell/bridge.ts`) gets
   a worker sink beside WebKit's; `nativeTransport` is used unchanged.
-- The host's own messages (import, export, asset reads, flush) are TypeBox-defined and
+- The host's own messages (import, export, asset reads, flush) are Rust-defined and
   generated. Pages and the SDK see no new API; authored slops need no changes.
 
 ### Origins and isolation
@@ -285,7 +287,7 @@ integrity.
    - Pools on sqlite-wasm-vfs `=0.3.0`, with an `rsqlite_vfs::OsCallback` (no sleep,
      `crypto.getRandomValues`, `Date.now`).
    - Page requests through `command::page`, chunked import, open with checks, asset
-     reads and ranges, export into an OPFS file. Host↔worker messages are TypeBox schemas
+     reads and ranges, export into an OPFS file. Host↔worker messages are serde types with generated TypeScript
      in `packages/hitslop/src/schema`, generated.
    - Done when the tier's corpus, crash and export cases pass.
 5. **The host and frame** in `packages/hitslop/src/shell`, built by `scripts/build/shell.ts`.
@@ -307,7 +309,7 @@ integrity.
    for `slop dev` and tests only", and architecture says "The WASM build never edits a
    durable document". Update AGENTS.md, architecture, the engineering contract and the
    roadmap together, keeping Rust ownership, the one native edit path, immutable
-   masters, TypeBox wire authority and released-file compatibility. Add `slop open
+   masters, Rust wire authority and released-file compatibility. Add `slop open
    --browser` to the CLI guide and the public CLI docs, marked beta.
 
 ## Done, for the beta

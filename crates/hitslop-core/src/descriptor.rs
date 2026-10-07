@@ -1,12 +1,5 @@
 use super::*;
-
-// A missing bound is optional; an explicitly null bound is invalid. In particular,
-// JSON.stringify turns authored NaN/Infinity into null, which must not erase a rule.
-fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<Option<T>, D::Error> {
-    T::deserialize(deserializer).map(Some)
-}
+use crate::wire::present_option as present;
 
 // The descriptor is authored data, never executable application code. Parsed, two
 // descriptors compare by meaning: key order and number spelling never matter.
@@ -19,8 +12,10 @@ pub(super) enum Node {
     Boolean {},
     /// An exact safe-integer total; increments serialize through the single writer.
     Counter {},
-    /// Last writer wins. `maxLength` counts UTF-16 units, as JavaScript does.
+    /// Last writer wins. Length bounds count Unicode code points.
     String {
+        #[serde(default, rename = "minLength", deserialize_with = "present")]
+        min_length: Option<u64>,
         #[serde(default, rename = "maxLength", deserialize_with = "present")]
         max_length: Option<u64>,
     },
@@ -68,7 +63,7 @@ pub(super) fn loro_scalar(node: &Node, value: &Value) -> loro::LoroValue {
     match unwrap_optional(node) {
         Node::Boolean {} => value.as_bool().expect("validated boolean").into(),
         Node::Number { .. } => value.as_f64().expect("validated number").into(),
-        Node::Integer { .. } => value.as_i64().expect("validated integer").into(),
+        Node::Integer { .. } => integer(value).expect("validated integer").into(),
         _ => value.as_str().expect("validated string or enum").into(),
     }
 }
@@ -88,6 +83,7 @@ pub(super) fn is_scalar(node: &Node) -> bool {
         Node::Boolean {} | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. }
     )
 }
+pub(super) const MAX_SCALAR_LIST: usize = 100_000;
 /// Whether replacing a value of this kind would discard identity-bearing collections.
 pub(super) fn holds_collections(node: &Node) -> bool {
     match node {
@@ -129,9 +125,15 @@ impl Node {
                 }
                 value.check(depth + 1)?;
             }
-            Self::String { max_length } => {
-                if max_length.is_some_and(|n| n > MAX_JSON as u64) {
-                    return Err(err(Code::InvalidSchema, "maxLength is too large"));
+            Self::String { min_length, max_length } => {
+                if min_length.is_some_and(|n| n > MAX_SAFE as u64)
+                    || max_length.is_some_and(|n| n > MAX_SAFE as u64)
+                    || matches!((min_length, max_length), (Some(a), Some(b)) if a > b)
+                {
+                    return Err(err(
+                        Code::InvalidSchema,
+                        "String bounds must be nonnegative safe integers with minLength ≤ maxLength",
+                    ));
                 }
             }
             Self::Number { min, max } => {
@@ -183,49 +185,49 @@ impl Node {
             Self::Optional { inner } => inner.validate(value, false),
             Self::Object { properties } => {
                 let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected object"))?;
-                if map.keys().any(|k| !(properties.contains_key(k) || (row && k == "$id"))) {
-                    return Err(err(Code::TypeMismatch, "Unknown property"));
+                if let Some(key) = map.keys().find(|k| !(properties.contains_key(*k) || (row && *k == "$id"))) {
+                    return Err(err(Code::TypeMismatch, "Unknown property").at(key));
                 }
                 for (key, node) in properties {
                     match map.get(key) {
-                        Some(value) => node.validate(value, false)?,
+                        Some(value) => node.validate(value, false).map_err(|e| e.at(key))?,
                         None if matches!(node, Self::Optional { .. }) => {}
-                        None => return Err(err(Code::TypeMismatch, format!("Missing {key}"))),
+                        None => return Err(err(Code::TypeMismatch, format!("Missing {key}")).at(key)),
                     }
                 }
                 if let Some(id) = map.get("$id")
                     && !id.as_str().is_some_and(valid_id)
                 {
-                    return Err(err(Code::InvalidId, "Expected a safe 1–64 character application ID"));
+                    return Err(err(Code::InvalidId, "Expected a safe 1–64 character application ID").at("$id"));
                 }
                 Ok(())
             }
             Self::List { item } if is_scalar(item) => {
                 let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
-                if list.len() > 100_000 {
+                if list.len() > MAX_SCALAR_LIST {
                     return Err(err(Code::TooLarge, "List is too long"));
                 }
-                list.iter().try_for_each(|element| item.validate(element, false))
+                list.iter().enumerate().try_for_each(|(i, element)| item.validate(element, false).map_err(|e| e.at(i)))
             }
             Self::Record { value: entry } => {
                 let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected record"))?;
                 for (key, value) in map {
                     if !valid_key(key) {
-                        return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
+                        return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved").at(key));
                     }
-                    entry.validate(value, false)?;
+                    entry.validate(value, false).map_err(|e| e.at(key))?;
                 }
                 Ok(())
             }
             Self::List { item } => {
                 let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
                 let mut ids = BTreeSet::new();
-                for value in list {
-                    item.validate(value, true)?;
+                for (i, value) in list.iter().enumerate() {
+                    item.validate(value, true).map_err(|e| e.at(i))?;
                     if let Some(id) = value.get("$id")
                         && !ids.insert(id.as_str().expect("validated row ID"))
                     {
-                        return Err(err(Code::DuplicateId, "Duplicate row ID"));
+                        return Err(err(Code::DuplicateId, "Duplicate row ID").at("$id").at(i));
                     }
                 }
                 Ok(())
@@ -258,7 +260,9 @@ fn strip_descriptions(node: &mut Value) -> Result<()> {
     Ok(())
 }
 pub(super) fn descriptor(s: &str) -> Result<Node> {
-    let mut root: Value = parse(s)?;
+    descriptor_value(parse(s)?)
+}
+pub(super) fn descriptor_value(mut root: Value) -> Result<Node> {
     strip_descriptions(&mut root)?;
     let root: Node = serde_json::from_value(root).map_err(|e| err(Code::InvalidRequest, e))?;
     if !matches!(root, Node::Object { .. }) {

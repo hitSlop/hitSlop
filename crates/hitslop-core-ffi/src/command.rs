@@ -7,7 +7,7 @@ use hitslop_core::owner::Failure;
 #[derive(uniffi::Record)]
 pub struct NativeExportRequest {
     pub document_path: String,
-    pub format: String,
+    pub format: hitslop_core::engine::ExportFormat,
     pub output: String,
 }
 #[derive(uniffi::Enum)]
@@ -40,7 +40,7 @@ pub trait NativeCommandCompletion: Send + Sync {
 /// A page request's answer: the reply for the page, and the owner's failure when it refused.
 #[uniffi::export(callback_interface)]
 pub trait PageCompletion: Send + Sync {
-    fn complete(&self, reply_json: String, failure: Option<Failure>);
+    fn complete(&self, reply: core::PageDispatch);
 }
 struct Exporter(Box<dyn NativeExportHandler>);
 impl core::ExportHandler for Exporter {
@@ -96,6 +96,6 @@ pub fn command_request(
 impl NativeOwner {
     /// One document request from the page `view`; the owner admits and answers it.
     pub fn page(&self, json: String, view: String, completion: Box<dyn PageCompletion>) {
-        core::page(&self.0, view, &json, move |reply| completion.complete(reply.json, reply.failure));
+        core::page(&self.0, view, &json, move |reply| completion.complete(reply));
     }
 }

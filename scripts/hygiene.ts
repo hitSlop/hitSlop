@@ -170,7 +170,9 @@ async function assertPackageBoundaries(files: string[]) {
   const apple = await readFile(resolve(repository, "apps/apple/project.yml"), "utf8");
   if (pkg.version !== workspace.version || pkg.version !== apple.match(/MARKETING_VERSION: "([^"]+)"/)?.[1])
     throw new Error("Mac, workspace and hitslop must share one release version");
-  const layers = ["schema", "sdk", "shell", "cli"];
+  // Rust exports and shared type aliases form the bottom layer. Neither may depend
+  // on SDK, shell or CLI implementation.
+  const layers: Record<string, number> = { schema: 0, wire: 0, sdk: 1, shell: 2, cli: 3 };
   const prefix = "packages/hitslop/src/";
   for (const path of files.filter(p => p.startsWith(prefix) && /\.(ts|js|svelte)$/.test(p))) {
     const layer = path.slice(prefix.length).split("/")[0]!;
@@ -181,7 +183,7 @@ async function assertPackageBoundaries(files: string[]) {
       const root = resolve(repository, prefix) + "/";
       if (target.startsWith(root)) {
         const dependency = target.slice(root.length).split("/")[0]!;
-        if (layers.indexOf(dependency) > layers.indexOf(layer))
+        if ((layers[dependency] ?? -1) > (layers[layer] ?? -1))
           throw new Error(`Package dependency points inward: ${path} imports ${specifier}`);
       }
     }

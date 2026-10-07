@@ -11,7 +11,6 @@ import WebKit
 @Suite(.serialized) struct PagePolicyProbeTests {
   @Test @MainActor func pagePolicyRunsPackageCodeAndWebAssemblyNotInlineScripts() async throws {
     let stage = try Fixtures.stage()
-    let assets = stage.appendingPathComponent("assets")
     let files: [String: Data] = [
       "worker.js": Data("postMessage('worker');".utf8),
       "module.js": Data("export {}; postMessage('module');".utf8),
@@ -27,8 +26,14 @@ import WebKit
       ]),
       "tone.wav": Self.wav(seconds: 3),
     ]
-    for (name, data) in files { try data.write(to: assets.appendingPathComponent(name)) }
-    try Fixtures.writeApp("export default { mount() { return {}; } };", to: stage)
+    var urls: [String: String] = [:]
+    for (name, data) in files {
+      let ext = name.hasSuffix(".wasm") ? "wasm" : name.hasSuffix(".wav") ? "wav" : "js"
+      let mediaType = ext == "wasm" ? "application/wasm" : ext == "wav" ? "audio/wav" : "text/javascript"
+      urls[name] = try Fixtures.addAsset(stage, bytes: data, ext: ext, mediaType: mediaType)
+    }
+    try Fixtures.writeApp(
+      "export default { mount(ctx) { globalThis.probeAttachments = ctx.attachments; return {}; } };", to: stage)
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -54,7 +59,15 @@ import WebKit
       try await session.waitUntilReady()
       let json =
         try await session.webView.callAsyncJavaScript(
-          Self.probe, arguments: ["workletSource": Self.workletSource], in: nil, contentWorld: .page) as? String
+          Self.probe,
+          arguments: [
+            "workletSource": Self.workletSource, "assets": urls,
+            "png": try Fixtures.png(width: 8, height: 8) { _ in
+              NSColor.red.setFill()
+              NSRect(x: 0, y: 0, width: 8, height: 8).fill()
+            }.base64EncodedString(),
+          ],
+          in: nil, contentWorld: .page) as? String
       results = try JSONDecoder().decode([String: String].self, from: Data((json ?? "{}").utf8))
       try await session.close()
     } catch {
@@ -72,6 +85,15 @@ import WebKit
     #expect(results["worker.module.js"] == "ok:module")
     #expect(results["worker.module.mjs"] == "ok:mjs")
     #expect(results["worklet.asset"] == "ok")
+    #expect(results["attachment.type"] == "application/octet-stream")
+    #expect(results["attachment.nosniff"] == "nosniff")
+    #expect(results["attachment.sandbox"] == "sandbox")
+    #expect(results["attachment.worker"]?.hasPrefix("error") == true)
+    #expect(results["attachment.module"]?.hasPrefix("error") == true)
+    #expect(results["attachment.executed"] == "false")
+    #expect(results["attachment.pathPolicy"] == "true")
+    #expect(results["attachment.canvas"] == "255,0,0,255")
+    #expect(results["attachment.range"] == "206:8950")
     // JavaScript made from strings does not.
     for refused in ["worker.blob", "worker.data", "worklet.blob", "worklet.data"] {
       #expect(results[refused]?.hasPrefix("error") == true, "\(refused): \(results[refused] ?? "missing")")
@@ -121,23 +143,48 @@ import WebKit
       instance.onmessage = event => { resolve('ok:' + event.data); instance.terminate(); };
       instance.onerror = event => { event.preventDefault?.(); reject(new Error('worker failed: ' + (event.message || 'load'))); instance.terminate(); };
     });
-    await settle('worker.asset', () => worker('/assets/worker.js'));
-    await settle('worker.module.js', () => worker('/assets/module.js', { type: 'module' }));
-    await settle('worker.module.mjs', () => worker('/assets/module.mjs', { type: 'module' }));
+    await settle('worker.asset', () => worker(assets['worker.js']));
+    await settle('worker.module.js', () => worker(assets['module.js'], { type: 'module' }));
+    await settle('worker.module.mjs', () => worker(assets['module.mjs'], { type: 'module' }));
     await settle('worker.blob', () => worker(URL.createObjectURL(new Blob(["postMessage('blob')"], { type: 'text/javascript' }))));
     await settle('worker.data', () => worker("data:text/javascript,postMessage('data')"));
 
     const worklet = async url => { await new OfflineAudioContext(1, 128, 44100).audioWorklet.addModule(url); return 'ok'; };
-    await settle('worklet.asset', () => worklet('/assets/worklet.js'));
+    await settle('worklet.asset', () => worklet(assets['worklet.js']));
     await settle('worklet.blob', () => worklet(URL.createObjectURL(new Blob([workletSource], { type: 'text/javascript' }))));
     await settle('worklet.data', () => worklet('data:text/javascript,' + encodeURIComponent(workletSource)));
 
-    const response = await fetch('/assets/add.wasm');
+    const attach = async file => {
+      const ref = await probeAttachments.import(file, (tx, ref) => tx.fields.title.set(ref.id));
+      return probeAttachments.url(ref.id);
+    };
+    const executable = await attach(new File(["globalThis.attachmentExecuted = true;"], 'hostile.js', { type: 'text/javascript' }));
+    const attached = await fetch(executable);
+    results['attachment.type'] = attached.headers.get('content-type');
+    results['attachment.nosniff'] = attached.headers.get('x-content-type-options');
+    results['attachment.sandbox'] = attached.headers.get('content-security-policy');
+    await settle('attachment.worker', () => worker(executable));
+    await settle('attachment.module', () => import(executable));
+    results['attachment.executed'] = String(globalThis.attachmentExecuted === true);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    results['attachment.pathPolicy'] = String(policyViolations.some(v => v.includes('/attachments/')));
+    const pngURL = await attach(new File([Uint8Array.from(atob(png), c => c.charCodeAt(0))], 'misnamed.html', { type: 'text/html' }));
+    await settle('attachment.canvas', async () => {
+      const image = new Image(); image.src = pngURL; await image.decode();
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 8;
+      const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+      canvas.toDataURL();
+      return Array.from(context.getImageData(0, 0, 1, 1).data).join(',');
+    });
+    const part = await fetch(pngURL, { headers: { Range: 'bytes=0-1' } });
+    results['attachment.range'] = part.status + ':' + Array.from(new Uint8Array(await part.arrayBuffer()), n => n.toString(16).padStart(2, '0')).join('');
+
+    const response = await fetch(assets['add.wasm']);
     results['wasm.contentType'] = String(response.headers.get('content-type'));
     const bytes = await response.arrayBuffer();
     await settle('wasm.instantiate', async () => (await WebAssembly.instantiate(bytes)).instance.exports.add(2, 3));
     await settle('wasm.module', async () => new WebAssembly.Instance(new WebAssembly.Module(bytes)).exports.add(2, 3));
-    await settle('wasm.streaming', async () => (await WebAssembly.instantiateStreaming(fetch('/assets/add.wasm'))).instance.exports.add(2, 3));
+    await settle('wasm.streaming', async () => (await WebAssembly.instantiateStreaming(fetch(assets['add.wasm']))).instance.exports.add(2, 3));
 
     results['isolation.crossOriginIsolated'] = String(globalThis.crossOriginIsolated);
     results['isolation.SharedArrayBuffer'] = typeof SharedArrayBuffer;
@@ -163,10 +210,10 @@ import WebKit
         });
       });
     };
-    await media('media.asset', async () => '/assets/tone.wav');
-    await media('media.blob', async () => URL.createObjectURL(await (await fetch('/assets/tone.wav')).blob()));
+    await media('media.asset', async () => assets['tone.wav']);
+    await media('media.blob', async () => URL.createObjectURL(await (await fetch(assets['tone.wav'])).blob()));
     await settle('media.decode', async () => {
-      const buffer = await new OfflineAudioContext(1, 128, 8000).decodeAudioData(await (await fetch('/assets/tone.wav')).arrayBuffer());
+      const buffer = await new OfflineAudioContext(1, 128, 8000).decodeAudioData(await (await fetch(assets['tone.wav'])).arrayBuffer());
       return `duration=${buffer.duration.toFixed(2)}`;
     });
 

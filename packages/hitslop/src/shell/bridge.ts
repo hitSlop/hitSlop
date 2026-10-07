@@ -1,4 +1,4 @@
-import type { PageFailure, PageMethod, PageRequest, PageResult } from "../schema/page";
+import type { PageFailure, PageMethod, PageRequest, PageResult } from "../wire/page";
 import { OutcomeCodes } from "../schema/constants";
 import { DocumentError } from "../sdk/internal";
 
@@ -6,15 +6,22 @@ import { DocumentError } from "../sdk/internal";
 export async function call<M extends PageMethod>(request: PageRequest<M>): Promise<PageResult<M>> {
   let reply: unknown;
   try {
-    reply = await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(request);
+    const preview = (globalThis as any).__hitslopPreview;
+    reply = preview ? await preview.request(request) : await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request));
   } catch (error) {
     throw new DocumentError("unknown_outcome", String(error));
+  }
+  try {
+    if (typeof reply !== "string") throw new Error("Expected JSON reply");
+    reply = JSON.parse(reply);
+  } catch {
+    throw new DocumentError("unknown_outcome", "Invalid host reply; inspect current state");
   }
   // The host and shell share one build. Validate the outcome envelope, not every
   // payload; request validation remains in the core.
   if (typeof reply !== "object" || reply === null || Array.isArray(reply))
     throw new DocumentError("unknown_outcome", "Invalid host reply; inspect current state");
-  const envelope = reply as { ok?: unknown; code?: unknown; error?: unknown };
+  const envelope = reply as { ok?: unknown; code?: unknown; error?: unknown; method?: unknown };
   if (
     envelope.ok === false &&
     typeof envelope.error === "string" &&
@@ -23,9 +30,9 @@ export async function call<M extends PageMethod>(request: PageRequest<M>): Promi
     const failure = reply as PageFailure;
     throw new DocumentError(failure.code, failure.error, failure.reason, failure.opIndex);
   }
-  if (envelope.ok !== true)
+  if (envelope.ok !== true || envelope.method !== request.method)
     throw new DocumentError("unknown_outcome", "Invalid host reply; inspect current state");
-  const { ok, ...result } = reply as { ok: true } & PageResult<M>;
+  const { ok, method, ...result } = reply as { ok: true; method: M } & PageResult<M>;
   return result as PageResult<M>;
 }
 

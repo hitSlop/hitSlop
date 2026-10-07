@@ -49,8 +49,8 @@
       ],
       "id": "compat-3",
       "value": {
-        "text": "Compat 3 ✓ café 🦊",
-        "amount": 0.75
+        "amount": 0.75,
+        "text": "Compat 3 ✓ café 🦊"
       }
     },
     {

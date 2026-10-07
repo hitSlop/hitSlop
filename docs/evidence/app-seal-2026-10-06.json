@@ -1,0 +1,25 @@
+{
+  "sqlite": "3.51.0",
+  "bypassesRefused": [
+    "app REPLACE",
+    "app IGNORE",
+    "app UPSERT",
+    "app UPDATE",
+    "app DELETE",
+    "asset REPLACE key",
+    "asset REPLACE rowid",
+    "asset REPLACE negative rowid",
+    "asset IGNORE",
+    "asset UPSERT",
+    "program inserted after seal",
+    "asset UPDATE",
+    "asset DELETE"
+  ],
+  "appAndAssetsUnchanged": true,
+  "allowed": [
+    "attachment insert/delete",
+    "artwork upsert",
+    "artwork delete/insert",
+    "document/checkpoint/update insertion"
+  ]
+}

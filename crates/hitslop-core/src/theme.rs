@@ -73,18 +73,25 @@ pub fn validate_defaults(json: &str) -> Result<Vec<(String, String)>> {
         return Err(err(Code::TooLarge, "Theme defaults exceed 64 KiB"));
     }
     let Ordered(tokens) = parse(json)?;
-    let defaults: Values = tokens.iter().cloned().collect();
-    check(&defaults, &defaults)?;
-    bound(&defaults)?;
+    validate_tokens(&tokens)?;
     Ok(tokens)
 }
+/// Typed declarations and stored definitions use the same palette rules as writes.
+pub(crate) fn validate_tokens(tokens: &[(String, String)]) -> Result<()> {
+    let defaults: Values = tokens.iter().cloned().collect();
+    if defaults.len() != tokens.len() {
+        return Err(err(Code::InvalidKey, "Repeated theme token"));
+    }
+    check(&defaults, &defaults)?;
+    bound(&defaults)
+}
 
-/// Canonical JSON for the defaults, the overrides and the effective theme.
+/// The defaults, overrides and effective palette, already checked by the core.
 #[derive(Debug)]
 pub struct ThemeState {
-    pub defaults: String,
-    pub overrides: String,
-    pub effective: String,
+    pub defaults: BTreeMap<String, String>,
+    pub overrides: BTreeMap<String, String>,
+    pub effective: BTreeMap<String, String>,
 }
 
 /// An app's declared palette, in the order the author wrote it. The template's slug names
@@ -117,11 +124,7 @@ impl Theme {
     }
     pub fn state(&self, map: &LoroMap) -> Result<ThemeState> {
         let overrides = overrides(map)?;
-        Ok(ThemeState {
-            defaults: encode(&self.defaults),
-            overrides: encode(&overrides),
-            effective: encode(&self.over(&overrides)),
-        })
+        Ok(ThemeState { defaults: self.defaults.clone(), effective: self.over(&overrides), overrides })
     }
     /// Sets each listed color, or with `None` returns it to the template's; `replace`
     /// returns every unlisted color to the template's too.
@@ -239,7 +242,7 @@ mod tests {
             self.0.theme_state().unwrap()
         }
         fn overrides(&self) -> String {
-            self.state().overrides
+            encode(&self.state().overrides)
         }
         fn export(&self) -> String {
             self.0.export_theme().unwrap()
@@ -286,7 +289,7 @@ mod tests {
         let mut theme = theme();
         assert!(theme.set(r##"{"accent":"#123456"}"##).unwrap());
         assert_eq!(theme.overrides(), r##"{"accent":"#123456"}"##);
-        assert!(theme.state().effective.contains(r##""accent":"#123456""##));
+        assert!(theme.state().effective.get("accent").is_some_and(|v| v == "#123456"));
         // Setting a default is a reset, and a repeated change changes nothing.
         assert!(!theme.set(r##"{"accent":"#123456"}"##).unwrap());
         assert!(theme.set(r##"{"accent":"#a43d59"}"##).unwrap());

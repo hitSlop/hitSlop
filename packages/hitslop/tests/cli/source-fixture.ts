@@ -8,10 +8,11 @@ import { join } from "node:path";
  * `statements` run first. */
 export async function overrideSlop(source: string, fields: Record<string, string>, statements = "") {
   if (!(await exists(join(source, "authored.ts")))) await rename(join(source, "slop.ts"), join(source, "authored.ts"));
-  const overrides = Object.entries(fields).map(([key, value]) => `${key}: ${value}`).join(", ");
+  const keys = new Set(["slug", "title", "description", "author", "categories", "document", "initial", "window", "theme", "view", "export", "icon", "commands", "artwork", ...Object.keys(fields)]);
+  const overrides = [...keys].map(key => `${key}: ${fields[key] ?? `slop.${key}`}`).join(", ");
   await writeFile(
     join(source, "slop.ts"),
-    `import slop from "./authored";\n${statements}\nexport default { ...slop, ${overrides} };\n`,
+    `import slop from "./authored";\nimport { defineSlop } from "hitslop";\n${statements}\nexport default defineSlop({ ${overrides} });\n`,
   );
 }
 

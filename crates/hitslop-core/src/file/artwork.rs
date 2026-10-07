@@ -1,6 +1,7 @@
 //! The artwork a file may hold: its names, and the PNG rules every write and open apply.
 
 use crate::error::{Result, invalid};
+use crate::images::{self, Purpose};
 
 /// The artwork a file may hold, as the `artwork` table's CHECK names it. Its name is the
 /// row's in the file and the image's in a build's stage (`artwork/<name>.png`).
@@ -28,12 +29,13 @@ impl rusqlite::ToSql for Artwork {
         Ok(self.as_str().into())
     }
 }
-/// Artwork as every open accepts it: a PNG within the image limits, at most one asset's size.
-pub(crate) fn check_artwork(label: &str, bytes: &[u8]) -> Result<()> {
-    if bytes.len() > crate::ASSET_FILE_BYTES {
-        return Err(invalid(format!("{label} is too large")));
-    }
-    png(bytes, label).map(|_| ())
+/// Every write fully decodes a bounded image before publishing it.
+pub(crate) fn check_artwork(name: Artwork, bytes: &[u8]) -> Result<()> {
+    let purpose = match name {
+        Artwork::Preview => Purpose::Preview,
+        Artwork::Icon => Purpose::Icon,
+    };
+    images::check(bytes, purpose).map(|_| ()).map_err(|e| invalid(format!("artwork/{name}.png: {}", e.message)))
 }
 /// The decoded bytes optimizing may hold: artwork larger than this is stored as it is.
 const OPTIMIZE_DECODED_BYTES: usize = 64 << 20;
@@ -49,28 +51,14 @@ pub(crate) fn optimize_png(bytes: Vec<u8>, level: u8) -> Vec<u8> {
             *b"cICP", *b"iCCP", *b"sRGB", *b"gAMA", *b"cHRM", *b"pHYs", *b"acTL", *b"fcTL", *b"fdAT"
         }),
         max_decompressed_size: Some(OPTIMIZE_DECODED_BYTES),
+        // Acceptance requires RGB/RGBA at 8/16 bits; optimizing cannot change that.
+        color_type_reduction: false,
+        bit_depth_reduction: false,
+        grayscale_reduction: false,
         ..oxipng::Options::from_preset(level)
     };
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| oxipng::optimize_from_memory(&bytes, &options))) {
         Ok(Ok(smaller)) if smaller.len() < bytes.len() => smaller,
         _ => bytes,
     }
-}
-/// A PNG's width and height, and whether it carries alpha (colour type 6), from its header.
-pub(super) fn png(bytes: &[u8], label: &str) -> Result<(u32, u32, bool)> {
-    const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
-    if bytes.len() < 33 || bytes[..8] != SIGNATURE || &bytes[12..16] != b"IHDR" {
-        return Err(invalid(format!("{label} must be a valid PNG")));
-    }
-    let width = u32::from_be_bytes(bytes[16..20].try_into().expect("4 bytes"));
-    let height = u32::from_be_bytes(bytes[20..24].try_into().expect("4 bytes"));
-    if width == 0
-        || height == 0
-        || width as usize > crate::IMAGE_SIDE
-        || height as usize > crate::IMAGE_SIDE
-        || (width as usize) * (height as usize) > crate::IMAGE_PIXELS
-    {
-        return Err(invalid(format!("{label} exceeds the PNG dimension limit")));
-    }
-    Ok((width, height, bytes[25] == 6))
 }

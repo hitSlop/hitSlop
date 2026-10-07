@@ -10,8 +10,13 @@ pub fn value(node: &Value, n: usize) -> Value {
     match node["kind"].as_str().unwrap() {
         "text" => json!(format!("edit {n} 🪴")),
         "string" => {
-            let limit = node["maxLength"].as_u64().unwrap_or(16) as usize;
-            json!(format!("s{n}").chars().take(limit).collect::<String>())
+            let min = node["minLength"].as_u64().unwrap_or(0) as usize;
+            let limit = node["maxLength"].as_u64().unwrap_or(min.max(16) as u64) as usize;
+            let mut value = format!("s{n}").chars().take(limit).collect::<String>();
+            while value.chars().count() < min {
+                value.push('x');
+            }
+            json!(value)
         }
         "boolean" => json!(n.is_multiple_of(2)),
         "counter" => json!(0),

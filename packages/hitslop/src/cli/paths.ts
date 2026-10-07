@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 /** The npm package this CLI ships in; update commands follow this name. */
 export const cliPackage = "hitslop";
 export const cliRoot = fileURLToPath(new URL("../../", import.meta.url));
-/** The page shell (and dev-only WASM core) the preview serves under /__shell__/. */
+/** The page shell the preview serves under /__shell__/. */
 export const shellDirectory = join(cliRoot, "shell");
 
 /** Whether this copy is Bun's global install. `bun install -g` replaces that package

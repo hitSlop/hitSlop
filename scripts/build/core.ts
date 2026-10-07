@@ -77,7 +77,7 @@ export const enginePlatforms = platforms.map(item => item.platform);
  * library's build dependencies add features), and each build would undo the other. */
 export async function buildEngine() {
   const library = process.platform === "darwin" ? ["-p", "hitslop-core-ffi"] : [];
-  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "slop-engine", ...library]);
+  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "slop-engine", "-p", "hitslop-runner", ...library]);
 }
 
 /** The app's core: the Swift binding and an arm64 XCFramework (the app ships for Apple

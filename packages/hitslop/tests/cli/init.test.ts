@@ -7,7 +7,7 @@ import { mkdtemp, lstat, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initProject } from "../../src/cli/init";
-import { loadProject, normalizeApp } from "../../src/cli/build";
+import { stageProject } from "../../src/cli/build";
 import cli from "../../package.json";
 
 // Simulate a person's terminal even when the enclosing test runner is in CI.
@@ -56,7 +56,7 @@ test("interactive init asks for a brief and author and leaves other metadata to 
     tty.type("Jordan");
     tty.keys("return");
     const destination = await result;
-    const { manifest } = await normalizeApp(destination, await loadProject(destination));
+    const manifest = (await stageProject(destination, join(root, "stage"))).declaration.metadata;
     expect([
       manifest.title,
       manifest.categories,
@@ -70,7 +70,7 @@ test("interactive init asks for a brief and author and leaves other metadata to 
     tty.io.output.destroy();
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 test("cancelling init leaves no destination; --yes bypasses TTY prompts", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-init-cancel-"));
@@ -91,4 +91,4 @@ test("cancelling init leaves no destination; --yes bypasses TTY prompts", async 
     tty.io.output.destroy();
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 30_000);

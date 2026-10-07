@@ -3,8 +3,9 @@
 //! `pack` writes. The store saves and loads through these; the checks every open runs,
 //! `inspect` and the asset reader read the tables directly.
 
+use super::Artwork;
 use super::assets::Encoding;
-use super::{App, Artwork};
+use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -55,11 +56,13 @@ pub(crate) fn attachment_sizes(conn: &Connection) -> Result<(i64, i64, i64)> {
     .map_err(sqlite("read attachment sizes"))
 }
 /// Every stored attachment's identity and size, by identity.
-pub(crate) fn attachment_list(conn: &Connection) -> Result<Vec<(String, u64)>> {
-    let mut statement =
-        conn.prepare("SELECT id, length(bytes) FROM attachments ORDER BY id").map_err(sqlite("list attachments"))?;
-    let rows =
-        statement.query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64))).map_err(sqlite("list attachments"))?;
+pub(crate) fn attachment_list(conn: &Connection) -> Result<Vec<(String, u64, String)>> {
+    let mut statement = conn
+        .prepare("SELECT id, length(bytes), media_type FROM attachments ORDER BY id")
+        .map_err(sqlite("list attachments"))?;
+    let rows = statement
+        .query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64, r.get(2)?)))
+        .map_err(sqlite("list attachments"))?;
     rows.collect::<rusqlite::Result<_>>().map_err(sqlite("list attachments"))
 }
 /// One attachment's stored bytes, when it is stored.
@@ -69,9 +72,12 @@ pub(crate) fn read_attachment(conn: &Connection, id: &str) -> Result<Option<Vec<
         .map_err(sqlite("read attachment"))
 }
 pub(crate) fn put_attachment(conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
-    conn.execute("INSERT INTO attachments(id, bytes) VALUES(?,?)", params![id, bytes])
-        .map(|_| ())
-        .map_err(sqlite("store attachment"))
+    conn.execute(
+        "INSERT INTO attachments(id, media_type, bytes) VALUES(?,?,?)",
+        params![id, crate::media::attachment_type(bytes), bytes],
+    )
+    .map(|_| ())
+    .map_err(sqlite("store attachment"))
 }
 /// Deletes one attachment; returns how many rows went (0 or 1).
 pub(crate) fn delete_attachment(conn: &Connection, id: &str) -> Result<usize> {
@@ -99,19 +105,26 @@ pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
 }
 
 /// The `app` row `pack` writes once.
-pub(super) fn put_app(conn: &Connection, app: &App) -> Result<()> {
+pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
+    let m = app.metadata();
     conn.execute(
-        "INSERT INTO app(id, package_format, runtime_abi, manifest, descriptor, theme) VALUES(1,?,?,?,?,?)",
-        params![app.package_format as i64, app.runtime_abi as i64, app.manifest, app.descriptor, app.theme],
-    )
-    .map(|_| ())
-    .map_err(sqlite("write app"))
+        "INSERT INTO app(id,package_format,runtime_abi,slug,title,description,author_name,author_url,category_primary,category_secondary,definition_json) VALUES(1,?,?,?,?,?,?,?,?,?,?)",
+        params![package_format as i64, runtime_abi as i64, m.slug, m.title, m.description, m.author.name, m.author.url,
+            m.categories[0].name(), m.categories.get(1).map(|c| c.name()), app.definition_json()],
+    ).map(|_| ()).map_err(sqlite("write app"))
 }
-/// One asset as `pack` stores it: `stored` holds its `size` bytes in `encoding`.
-pub(super) fn put_asset(conn: &Connection, path: &str, encoding: Encoding, size: usize, stored: &[u8]) -> Result<()> {
+/// One asset, before the app row seals the inventory.
+pub(super) fn put_asset(
+    conn: &Connection,
+    key: &str,
+    media_type: &str,
+    encoding: Encoding,
+    size: usize,
+    stored: &[u8],
+) -> Result<()> {
     conn.execute(
-        "INSERT INTO assets(path, encoding, size, bytes) VALUES(?,?,?,?)",
-        params![path, encoding, size as i64, stored],
+        "INSERT INTO assets(key,media_type,encoding,size,bytes) VALUES(?,?,?,?,?)",
+        params![key, media_type, encoding, size as i64, stored],
     )
     .map(|_| ())
     .map_err(sqlite("write asset"))

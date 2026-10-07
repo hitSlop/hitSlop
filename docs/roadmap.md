@@ -90,7 +90,7 @@ Implementation decisions, measurements and verification are recorded in the
 artifacts, expose a generated OpenAPI catalog, and download immutable cached masters.
 Creating a document still makes a writable local copy, and bundled and cached masters
 work offline. Plan a separate Cloudflare HTTP module with R2 artifacts and catalog
-metadata, with TypeBox authoritative. Publisher identity, upload limits, package isolation
+metadata, with Rust acceptance authoritative. Publisher identity, upload limits, package isolation
 and checksums, immutable release identity and abuse controls are prerequisites. Any
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.

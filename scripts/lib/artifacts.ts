@@ -9,9 +9,10 @@ export const repository = resolve(import.meta.dir, "../..");
 /** Test runs keep their own writer-lock registry, so they never fill a person's
  * `~/.hitslop/live`. Debug hosts and the file engine honor it; release builds never do. */
 export function useTestRegistry() {
+  process.env.HITSLOP_EVALUATOR ||= join(repository, "target", process.env.HITSLOP_CARGO_PROFILE || "release", "hitslop-evaluator");
   process.env.HITSLOP_TEST_REGISTRY ||= join(tmpdir(), "hitslop-test-registry");
 }
-/** The page shell the host injects: the app bundles it; the CLI adds the WASM core for dev. */
+/** The page shell the host injects: the app bundles it; the CLI serves the same shell over its native preview bridge. */
 export const shellDestinations = {
   app: join(repository, "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/shell"),
   cli: join(repository, "packages/hitslop/shell"),
@@ -22,7 +23,7 @@ export const shellFiles = ["boot.js", "index.js"] as const;
 export function appAsset(file: string, path: string): string {
   const database = new Database(file, { readonly: true });
   try {
-    const row = database.query("SELECT encoding, bytes FROM assets WHERE path = ?").get(path) as { encoding: string; bytes: Uint8Array };
+    const row = database.query("SELECT encoding, bytes FROM assets WHERE key = ?").get(path) as { encoding: string; bytes: Uint8Array };
     return (row.encoding === "br" ? brotliDecompressSync(row.bytes) : Buffer.from(row.bytes)).toString("utf8");
   } finally {
     database.close();
@@ -56,6 +57,10 @@ export async function writeIfChanged(path: string, content: string | Uint8Array)
 }
 /** SHA-256 in hex. */
 export const sha256 = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
+/** Source-file identity must agree with the repository index when a file is staged. */
+export function sourceBlobHash(data: Uint8Array, format: "sha1" | "sha256"): string {
+  return createHash(format).update(`blob ${data.byteLength}\0`).update(data).digest("hex");
+}
 /** A regular file's SHA-256 in hex. */
 export async function fileDigest(path: string): Promise<string> {
   if (!(await lstat(path)).isFile()) throw new Error(`Not a file: ${path}`);

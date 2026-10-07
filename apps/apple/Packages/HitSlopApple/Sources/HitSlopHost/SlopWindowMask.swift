@@ -38,6 +38,7 @@ import ImageIO
   }
 
   private let content: Content
+  private let imageScale: CGFloat
   let backdrop: SlopBackdrop
   private lazy var alphaMap: AlphaMap? = {
     guard case .image(let image) = content else { return nil }
@@ -58,13 +59,16 @@ import ImageIO
     backdrop = file.backdrop
     if let skin = file.skin {
       content = .image(skin)
+      imageScale = CGFloat(skin.width) / CGFloat(file.width)
     } else {
       content = .vector(file.silhouette)
+      imageScale = 1
     }
   }
 
-  private static func show(_ image: CGImage, on layer: CALayer) {
+  private static func show(_ image: CGImage, scale: CGFloat, on layer: CALayer) {
     layer.contents = image
+    layer.contentsScale = scale
     layer.contentsGravity = .resize
     layer.isGeometryFlipped = true
     layer.magnificationFilter = .linear
@@ -77,7 +81,7 @@ import ImageIO
     case .vector:
       layer.backgroundColor = backdrop == .window ? NSColor.windowBackgroundColor.cgColor : NSColor.clear.cgColor
     case .image(let image):
-      Self.show(image, on: layer)
+      Self.show(image, scale: imageScale, on: layer)
     }
   }
 
@@ -87,7 +91,7 @@ import ImageIO
       return CAShapeLayer()
     case .image(let image):
       let layer = CALayer()
-      Self.show(image, on: layer)
+      Self.show(image, scale: imageScale, on: layer)
       return layer
     }
   }

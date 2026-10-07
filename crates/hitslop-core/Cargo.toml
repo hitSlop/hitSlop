@@ -15,16 +15,19 @@ thiserror.workspace = true
 getrandom = "0.2"
 svgtypes = "=0.16.1"
 kurbo = "=0.13.1"
+ts-rs = { version = "=12.0.1", optional = true, features = ["serde-json-impl", "no-serde-warnings"] }
 
 [lib]
 doctest = false
 
 [features]
 default = ["storage"]
+# Code generation only; never enabled by the WASM build or shipped native library.
+ts = ["dep:ts-rs", "storage"]
 # Durable storage for native hosts: the document file (SQLite), the writer lock and the
 # save policy. Links the platform's SQLite, the one library every other in-process user
 # (Firebase) loads. Opening checks the app, so it also needs the manifest validator.
-storage = ["dep:rusqlite", "dep:libc", "dep:sha2", "dep:brotli", "dep:jsonschema", "dep:data-encoding", "dep:oxipng"]
+storage = ["dep:hitslop-runner", "dep:rusqlite", "dep:libc", "dep:sha2", "dep:brotli", "dep:data-encoding", "dep:oxipng", "dep:png", "dep:fluent-uri"]
 # SQLite's own amalgamation instead of the platform's, for the engine on platforms without
 # one. Never for the app.
 bundled-sqlite = ["storage", "rusqlite/bundled"]
@@ -33,7 +36,8 @@ bundled-sqlite = ["storage", "rusqlite/bundled"]
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-jsonschema = { version = "=0.58.3", default-features = false, features = ["macros"], optional = true }
+hitslop-runner = { path = "../hitslop-runner", optional = true }
+fluent-uri = { version = "=0.4.1", optional = true }
 rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"], optional = true }
 sha2 = { version = "=0.11.0", optional = true }
 libc = { version = "0.2", optional = true }
@@ -44,10 +48,14 @@ brotli = { version = "=9.0.0", optional = true }
 # Lossless PNG optimization for stored artwork (`pack`, and a closing window's): no
 # threads, no zopfli. It compiles libdeflate (C), so the wasm core never links it.
 oxipng = { version = "=10.2.1", default-features = false, optional = true }
+png = { version = "=0.18.1", optional = true }
 
 [dev-dependencies]
+rusqlite = { version = "=0.40.2", features = ["hooks"] }
 tempfile = "3"
 png = "=0.18.1"
+# Differential oracle for the output-only argument projection. Production uses Node.
+jsonschema = { version = "=0.58.3", default-features = false }
 
 [[test]]
 name = "file"
@@ -69,6 +77,18 @@ required-features = ["storage"]
 name = "command"
 required-features = ["storage"]
 
+[[test]]
+name = "engine_wire"
+required-features = ["storage"]
+
+[[test]]
+name = "native_wire"
+required-features = ["storage"]
+
 [[example]]
 name = "compat_checkpoint"
 required-features = ["storage"]
+
+[[example]]
+name = "export_bindings"
+required-features = ["ts"]

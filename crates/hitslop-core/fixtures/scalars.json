@@ -15,7 +15,8 @@
       },
       "label": {
         "kind": "string",
-        "maxLength": 4
+        "maxLength": 4,
+        "minLength": 1
       },
       "ratio": {
         "kind": "number",
@@ -362,7 +363,7 @@
       "error": "path_not_found"
     },
     {
-      "name": "maxLength counts UTF-16 units",
+      "name": "maxLength counts Unicode code points",
       "intents": [
         {
           "type": "set",
@@ -372,7 +373,20 @@
           "value": "\ud83d\ude00\ud83d\ude00\ud83d\ude00"
         }
       ],
-      "error": "out_of_range"
+      "after": {
+        "title": "Trip",
+        "currency": "CAD",
+        "label": "\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+        "ratio": 0.5,
+        "rating": 3,
+        "rows": [
+          {
+            "$id": "r1",
+            "text": "Coffee",
+            "amount": 475
+          }
+        ]
+      }
     },
     {
       "name": "a number outside its bounds is refused",
@@ -506,6 +520,32 @@
             "rating"
           ],
           "value": 9
+        }
+      ],
+      "error": "out_of_range"
+    },
+    {
+      "name": "maxLength refuses five code points",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "label"
+          ],
+          "value": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+        }
+      ],
+      "error": "out_of_range"
+    },
+    {
+      "name": "minLength refuses an empty string",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "label"
+          ],
+          "value": ""
         }
       ],
       "error": "out_of_range"

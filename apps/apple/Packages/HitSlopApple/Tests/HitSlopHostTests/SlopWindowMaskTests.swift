@@ -35,7 +35,7 @@ import WebKit
 
 @Test @MainActor func transparentGeometryInstallsAClearBacking() throws {
   let stage = try Fixtures.minimalStage(
-    slug: "transparent", manifest: ["presentation": ["width": 240, "height": 180, "background": "transparent"]])
+    slug: "transparent", fields: ["window": ["width": 240, "height": 180, "background": "transparent"]])
   let root = try Fixtures.document(stage: stage)
   defer { try? FileManager.default.removeItem(at: root) }
   let mask = SlopWindowMask(file: try SlopFile(url: root))
@@ -44,12 +44,29 @@ import WebKit
   #expect(layer.backgroundColor?.alpha == 0)
 }
 
-private func maskedFixture(alpha: (Int, Int) -> UInt8 = { _, y in y < 90 ? 255 : 0 }) throws -> URL {
+private func maskedFixture(scale: Int = 1, alpha: (Int, Int) -> UInt8 = { _, y in y < 90 ? 255 : 0 }) throws -> URL {
   let stage = try Fixtures.minimalStage(
-    slug: "asymmetric", manifest: ["presentation": ["width": 240, "height": 180, "skin": "assets/window-mask.png"]])
-  try Fixtures.png(width: 240, height: 180, alpha: alpha).write(
+    slug: "asymmetric", fields: ["window": ["width": 240, "height": 180]])
+  try Fixtures.png(width: 240 * scale, height: 180 * scale, alpha: { x, y in alpha(x / scale, y / scale) }).write(
     to: stage.appendingPathComponent("assets/window-mask.png"))
+  try Fixtures.addSkin(stage, path: "assets/window-mask.png")
   return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("asymmetric.slop"))
+}
+
+@Test @MainActor func doubleResolutionSkinKeepsItsPointSizeAndHitRegion() throws {
+  let root = try maskedFixture(scale: 2)
+  defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+  let mask = SlopWindowMask(file: try SlopFile(url: root))
+  let bounds = CGRect(x: 0, y: 0, width: 240, height: 180)
+  let layer = mask.makeLayer()
+  mask.update(layer, bounds: bounds)
+  #expect(layer.contentsScale == 2)
+  #expect(layer.bounds.size == bounds.size)
+  let backing = CALayer()
+  mask.installBacking(on: backing)
+  #expect(backing.contentsScale == 2)
+  #expect(mask.contains(CGPoint(x: 120, y: 170), in: bounds))
+  #expect(!mask.contains(CGPoint(x: 120, y: 10), in: bounds))
 }
 
 @Test @MainActor func ringMaskLetsClicksFallThroughItsTransparentHole() throws {
@@ -93,7 +110,7 @@ private func maskedFixture(alpha: (Int, Int) -> UInt8 = { _, y in y < 90 ? 255 :
 extension HostTests {
   @Test @MainActor func glassWindowsFrostBehindThePage() async throws {
     let stage = try Fixtures.minimalStage(
-      slug: "glass", manifest: ["presentation": ["width": 240, "height": 180, "background": "glass"]])
+      slug: "glass", fields: ["window": ["width": 240, "height": 180, "background": "glass"]])
     let root = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)

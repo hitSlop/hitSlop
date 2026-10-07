@@ -5,10 +5,9 @@ import { expect, test } from "bun:test";
 import { OwnerDocument } from "../../src/shell/owner/document";
 import { wasmTransport, type OwnerTransport } from "../../src/shell/owner/transport";
 import { defineDocument, s } from "hitslop";
-import { Check } from "typebox/value";
 import { DocumentError } from "../../src/sdk/errors";
-import { OwnerStateSchema, OwnerPublicationSchema, type Batch } from "../../src/schema/core";
-import type { PagePush } from "../../src/schema/page";
+import type { Batch } from "../../src/schema/core";
+import type { PagePush } from "../../src/wire/page";
 /** Wraps the transport's text edits (batches whose set carries a selection); other
  * batches pass straight through. */
 function interceptText(
@@ -55,7 +54,6 @@ test("WASM binding executes literal core fixtures", async () => {
     );
     try {
       const before = core.state();
-      expect(Check(OwnerStateSchema, JSON.parse(before))).toBe(true);
       const batch = JSON.stringify({ intents: scenario.intents });
       if (scenario.error) {
         let failure: unknown;
@@ -69,7 +67,6 @@ test("WASM binding executes literal core fixtures", async () => {
         const applied = core.applyBatch(batch);
         // A batch that changes nothing publishes nothing.
         if (applied.publication === undefined) expect(core.state()).toBe(before);
-        else expect(Check(OwnerPublicationSchema, JSON.parse(applied.publication))).toBe(true);
         expect(JSON.parse(core.state()).value).toEqual(scenario.after);
       }
     } finally {
@@ -97,45 +94,40 @@ const gate = () => {
   return { promise, release };
 };
 
-test("commands retry a definite conflict once with stable clock and seed, and undo separately", async () => {
+test("commands drain pending edits and resolve after the owner's publication", async () => {
   const { core, transport, doc } = await open();
-  const apply = transport.apply;
-  const observed: { now: number; random: number; hits: number }[] = [];
-  let raced = false;
-  transport.apply = async batch => {
-    if (batch.command && !raced) {
-      raced = true;
-      await apply({ intents: [{ type: "increment", path: ["hits"], by: 2 }] });
-    }
-    return apply(batch);
+  const held = gate();
+  let observed: unknown;
+  transport.runCommand = async (name, args) => {
+    observed = { name, args, title: JSON.parse(core.state()).value.title };
+    await held.promise;
+    const result = await transport.apply({ command: name, intents: [{ type: "increment", path: ["hits"], by: 3 }] });
+    return { sequence: result.sequence, ids: result.ids, result: "accepted" };
   };
   try {
-    const result = await doc.runCommand("increment", ({ tx, current, now, random }) => {
-      observed.push({ now, random: random(), hits: current.hits });
-      tx.fields.hits.increment(3);
-      return current.hits + 3;
-    });
-    expect(result).toBe(5);
-    expect(observed.map(o => o.hits)).toEqual([0, 2]);
-    expect(observed[0]!.now).toBe(observed[1]!.now);
-    expect(observed[0]!.random).toBe(observed[1]!.random);
-    await doc.runCommand("increment", ({ tx }) => tx.fields.hits.increment(4));
-    expect(doc.current.hits).toBe(9);
+    const edit = doc.fields.title.set("Before command");
+    const command = doc.runCommand("increment", { by: 3 });
+    await edit;
+    await Bun.sleep(0);
+    expect(observed).toEqual({ name: "increment", args: { by: 3 }, title: "Before command" });
+    expect(doc.current.hits).toBe(0);
+    held.release();
+    expect(await command).toBe("accepted");
+    expect(doc.current.hits).toBe(3);
     await doc.undo();
-    expect(doc.current.hits).toBe(5);
-    await doc.undo();
-    expect(doc.current.hits).toBe(2);
-  } finally { core.free(); }
+    expect(doc.current.hits).toBe(0);
+    expect(doc.current.title).toBe("Before command");
+  } finally { held.release(); core.free(); }
 });
 
-test("a command never retries an unknown outcome or more than one conflict", async () => {
+test("the page never retries command failures", async () => {
   for (const outcome of ["unknown_outcome", "rejected"] as const) {
     const { core, transport, doc } = await open();
     let calls = 0;
-    transport.apply = async () => { calls++; throw new DocumentError(outcome, "test outcome", outcome === "rejected" ? "stale_base" : undefined); };
+    transport.runCommand = async () => { calls++; throw new DocumentError(outcome, "test outcome", outcome === "rejected" ? "stale_base" : undefined); };
     try {
-      await expect(doc.runCommand("increment", ({ tx }) => tx.fields.hits.increment())).rejects.toMatchObject({ code: outcome });
-      expect(calls).toBe(outcome === "rejected" ? 2 : 1);
+      await expect(doc.runCommand("increment", {})).rejects.toMatchObject({ code: outcome });
+      expect(calls).toBe(1);
       expect(doc.current.hits).toBe(0);
     } finally { core.free(); }
   }
@@ -484,34 +476,38 @@ test("a concurrent whole-field set and page typing survive and undo separately",
   }
 });
 
-// Gap: an attachment reference must never be written before its blob is stored, and
-// limits apply before anything is stored.
-test("attachment import stores the blob before its reference and deduplicates by content", async () => {
+// The page must wait for the host's stored blob before submitting its reference.
+test("attachment import uses host identity and media type before writing its reference", async () => {
   const { ownerAttachments } = await import("../../src/shell/attachments");
   const { core, doc } = await open();
+  const host = globalThis as any;
+  const previous = host.__hitslopPreview;
+  const held = gate();
+  const id = "a".repeat(64);
+  let uploads = 0;
+  host.__hitslopPreview = {
+    request: async (request: any) => {
+      expect(request).toEqual({ method: "attachments.put", bytes: "AQID" });
+      uploads++;
+      await held.promise;
+      return JSON.stringify({ ok: true, method: "attachments.put", id, byteLength: 3, mimeType: "application/octet-stream" });
+    },
+    attachmentURL: (key: string) => `http://localhost/attachments/${key}`,
+  };
   try {
-    const attachments = ownerAttachments(doc, false);
-    const file = new File([new Uint8Array([1, 2, 3])], "a.bin", { type: "application/octet-stream" });
-    let storedWhenReferenced!: Promise<Blob>;
-    const ref = await attachments.import(file, (tx: any, ref) => {
-      storedWhenReferenced = attachments.read(ref.id);
-      tx.fields.title.set(ref.id);
-    });
-    expect([...new Uint8Array(await (await storedWhenReferenced).arrayBuffer())]).toEqual([1, 2, 3]);
-    expect(doc.current.title).toBe(ref.id);
-    const again = await attachments.import(new File([new Uint8Array([1, 2, 3])], "b.bin"), () => {});
-    expect(again.id).toBe(ref.id);
-    expect([...new Uint8Array(await (await attachments.read(ref.id)).arrayBuffer())]).toEqual([1, 2, 3]);
-    const huge = new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin");
-    await expect(attachments.import(huge, () => {})).rejects.toThrow();
-    expect([...new Uint8Array(await (await attachments.read(ref.id)).arrayBuffer())]).toEqual([1, 2, 3]);
-    // A reference the core refuses rejects the import.
-    await expect(
-      attachments.import(new File([new Uint8Array([4])], "c.bin"), (tx: any) => tx.fields.rows.remove("missing")),
-    ).rejects.toThrow();
-  } finally {
-    core.free();
-  }
+    const attachments = ownerAttachments(doc);
+    const importing = attachments.import(new File([new Uint8Array([1, 2, 3])], "a.bin", { type: "text/html" }), (tx: any, ref) => tx.fields.title.set(ref.id));
+    await Bun.sleep(0);
+    expect(doc.current.title).toBe("Hello");
+    held.release();
+    const ref = await importing;
+    expect(ref).toEqual({ id, name: "a.bin", byteLength: 3, mimeType: "application/octet-stream" });
+    expect(doc.current.title).toBe(id);
+    expect(attachments.url(id)).toBe(`http://localhost/attachments/${id}`);
+    expect(() => attachments.url("../ui.js")).toThrow();
+    await expect(attachments.import(new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin"), () => {})).rejects.toThrow();
+    expect(uploads).toBe(1);
+  } finally { held.release(); host.__hitslopPreview = previous; core.free(); }
 });
 
 // Gap: reloading the interface must remount against the same document without losing

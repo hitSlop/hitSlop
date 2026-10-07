@@ -36,10 +36,10 @@
   },
   "theme": {
     "overrides": {
-      "surface": "#123456"
+      "accent": "#123456"
     },
     "effective": {
-      "accent": "#a43d59",
+      "accent": "#123456",
       "control": "#f1dfc9",
       "controlBorder": "#d8c0af",
       "filed": "#fff5e9",
@@ -51,7 +51,7 @@
       "rule": "#ead9cb",
       "success": "#94d7c0",
       "successBorder": "#6c354b",
-      "surface": "#123456"
+      "surface": "#e98996"
     }
   },
   "attachments": []

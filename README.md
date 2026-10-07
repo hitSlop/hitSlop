@@ -131,24 +131,32 @@ export default defineDocument({
 
 ### 2. Give it a name, a window and colors
 
-`slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The folder's name, `tiny-wins`, is the app's slug.
+`slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The explicit `slug` identifies the app.
 
 ```ts
 import { defineSlop } from "hitslop";
 import schema from "./schema";
+import App from "./App.svelte";
+import Export from "./Export.svelte";
+import Icon from "./Icon.svelte";
+import "./styles.css";
 
 export default defineSlop({
+  slug: "tiny-wins",
+  view: App,
+  export: Export,
+  icon: Icon,
   title: "Tiny Wins",
   description: "A little credit for the things you get done.",
   author: { name: "You" },
   categories: ["personal"],
-  presentation: { width: 360, height: 360 },
+  window: { kind: "standard", width: 360, height: 360 },
   theme: {
     surface: "#fff7e6",
     ink: "#382d24",
     accent: "#28634b",
   },
-  schema,
+  document: schema,
   initial: { title: "Tiny wins today", wins: 0 },
 });
 ```
@@ -193,7 +201,7 @@ The theme's colors are available as CSS variables; fonts and other styling stay 
 <div class="wins-icon">{doc.current.wins}</div>
 ```
 
-`App.svelte` defines the window. The CLI discovers the two optional capture components:
+`view: App` selects the editor. The declaration also selects two optional capture components:
 
 - `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
 - `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, Finder can use the saved preview; without artwork, it uses the generic document icon.
@@ -233,9 +241,8 @@ main.wins-card { min-height: 100%; }
 }
 ```
 
-The builder connects `App.svelte` and `styles.css` to the host runtime automatically
-through `defineSlop`. Authoring uses this generated Svelte entry; custom `main.ts`
-entries are refused. See the
+The builder connects the explicitly imported views and styles to the host through
+`defineSlop`. Filenames do not assign roles. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 
 ### 4. Take it for a spin
@@ -266,8 +273,8 @@ A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) doc
 | File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
 | Mac app | Swift, SwiftUI, AppKit, WebKit | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
 | Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
-| Author SDK and CLI | `hitslop`, `hitslop`, Bun | Schemas, `slop dev` (the core compiled to WASM), build, edit and export |
-| Contracts | TypeBox | One schema for the CLI, socket and page, generated into Rust and Swift |
+| Author SDK and CLI | `hitslop`, Bun | Schemas, `slop dev` (Vite with a native Rust owner), build, edit and export |
+| Contracts | Rust serde, ts-rs, UniFFI | Rust owns internal wires and app acceptance; generated TypeScript and typed Swift |
 
 ```text
 page (WebKit) ──▶ Swift façade ──▶ Rust owner ──▶ .slop
@@ -281,17 +288,17 @@ slop CLI ───────────────────────�
 ### Inside a .slop
 
 ```text
-app          package_format, runtime_abi, manifest, descriptor, theme   one row: what the author built
-assets       path, encoding (identity | br), size, bytes                app.js, app.css, fonts
+app          markers, catalog columns, definition_json               one immutable declaration
+assets       key, media_type, encoding, size, bytes                    ui.js, ui.css, commands.js, media
 artwork      name (preview | icon), png                                 Quick Look preview and Finder icon
--- added when you make a document from a template
+-- populated when you create and edit a document
 document     id                                                         the document's identity
 checkpoint   bytes                                                      the saved Loro snapshot, including theme changes
 updates      seq, bytes                                                 Loro updates saved since the checkpoint
-attachments  id (SHA-256), bytes                                        files you import
+attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 
-Any SQLite tool shows these tables. `checkpoint` and `updates` hold Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. A template is the first three tables plus a `checkpoint` of its starting values; making a document copies it and adds the rest. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
+Any SQLite tool shows these tables. `checkpoint` and `updates` hold Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro checkpoint; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
 
 [Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
 

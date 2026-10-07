@@ -17,15 +17,15 @@ the first public corpus and publication remain release steps.
   rendering do not migrate their source; flushing pending edits remains a save.
 - Storage, layout, package format and runtime ABI remain separate requirements. Raise
   only the marker a change needs. Unsupported markers refuse without writes.
-- Frozen manifest acceptance and app limits belong to each package format; persistence
+- Frozen app-definition acceptance and app limits belong to each package format; persistence
   limits belong to each storage version. New authoring restrictions cannot reject old files.
 - Format readers normalize into the host model; that model does not reapply current
   authoring restrictions. Document-app upgrades and replica upgrades remain deferred.
 
 ## Implementation
 
-1. Finish compatibility protection: versioned acceptance and limits, a normalized host
-   manifest, write-time migration infrastructure, and a permanent small socket preflight.
+1. Finish compatibility protection: versioned acceptance and limits, a translated typed host
+   app definition, write-time migration infrastructure, and a permanent small socket preflight.
    Keep the existing refusal shape, discovery fields and checks on the actual request.
 2. Consolidate into `packages/hitslop`: `src/{cli,sdk,schema,shell}`, generated contracts,
    templates and skills. Public exports are `.`, `./svelte`, `./embed`, `./package.json`.

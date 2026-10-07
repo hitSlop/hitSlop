@@ -214,3 +214,20 @@ native tier. Branch protection requires `fast`, `native` and `linux-smoke`. The 
 - Faults are real, at real I/O boundaries: another connection holding the database, a
   moved or read-only file, a killed process. Production code has no fault hooks. Prefer
   observable completion over sleeps.
+
+### Packaging and native preview
+
+The two-build Vite fixture covers imported component CSS, CSS fonts/images, unrendered
+skins, export-only assets and command stripping. Browser integration uses a native Rust
+owner, exercises HMR and command calls, checks attachment URL ranges/types, and kills an
+owner to prove the page fences further edits. WASM remains an SDK test adapter; it is not
+shipped in the CLI or used by `slop dev`.
+
+Rust package tests cover the seven-table layout, app-row seal and replacement bypasses,
+marker-first refusals, streaming PNG checks, descriptor argument validation, the JSON
+Schema output projection, resource inventory and first-touch attachment hashes. A SQLite
+authorizer proves `summary` never reads definition or asset/attachment payloads. Swift's
+page-policy probe proves path-scoped CSP blocks attachment scripts while canvas and
+ranges still work. The owner command tests cover stale-base retry and lifecycle fences.
+The evaluator prelude and page context dispatch by runtime ABI; corpus replay uses the
+stored ABI and original embedded programs.

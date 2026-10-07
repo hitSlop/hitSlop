@@ -1,11 +1,11 @@
-import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../schema/engine";
+import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../wire/engine";
 // Document commands. Each is one `SocketRequest` the document engine sends to the
 // document's live owner, or to an owner it opens; files the command names are read and
 // written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "../schema/constants";
-import type { SocketFailure } from "../schema/socket";
+import type { SocketFailure } from "../wire/socket";
 import type { OutcomeCode } from "../schema/values";
 import type { PaletteIntent } from "../schema/core";
 
@@ -73,18 +73,16 @@ export async function get(document: string, snapshot: boolean) {
 }
 
 export async function call(document: string, command: string, args: string) {
-  const { CommandCall } = await import("../schema/commands");
-  const { validate } = await import("../schema/validation");
   const parsed = json(args);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("--args must be a JSON object");
-  const input = validate(CommandCall, { ...at(document), command, args: parsed });
+  const input = { ...at(document), command, args: parsed };
   const reply = await send({ method: "call", ...input });
   print({ result: reply.result, ids: reply.ids });
 }
 export async function describe(document: string, machine = false) {
   const { state } = await send({ method: "describe", ...at(document) });
   if (machine) return print(state);
-  const lines = [`${state.manifest.title}: ${state.manifest.description}`, `Version: ${state.version}`, "", "Fields"];
+  const lines = [`${state.metadata.title}: ${state.metadata.description}`, `Version: ${state.version}`, "", "Fields"];
   for (const field of state.fields)
     lines.push(`  ${JSON.stringify(field.path)}: ${field.kind} (${field.operations.join(", ")})${field.description ? " — " + field.description : ""}`);
   lines.push("", "Commands (slop call PATH NAME --args JSON)");

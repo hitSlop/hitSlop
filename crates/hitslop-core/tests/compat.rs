@@ -26,8 +26,8 @@ fn read(root: &Path) -> (Value, Value) {
     let state: Value = serde_json::from_str(&doc.state().unwrap()).unwrap();
     let theme = doc.theme_state().unwrap();
     let theme = json!({
-        "overrides": serde_json::from_str::<Value>(&theme.overrides).unwrap(),
-        "effective": serde_json::from_str::<Value>(&theme.effective).unwrap(),
+        "overrides": theme.overrides,
+        "effective": theme.effective,
     });
     (state["value"].clone(), theme)
 }

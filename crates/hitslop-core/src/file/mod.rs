@@ -6,8 +6,8 @@
 
 mod artwork;
 mod assets;
+pub mod build;
 mod catalog;
-mod commands;
 mod copy;
 mod pack;
 mod places;
@@ -15,22 +15,19 @@ pub(crate) mod rows;
 
 pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png};
-pub use assets::{AssetReader, content_type, valid_asset_path};
+pub use assets::{ResourceInfo, ResourceReader, ResourceRoute, content_type, valid_asset_path};
 pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
-pub use commands::{COMMAND_BUNDLE, COMMAND_METADATA, CommandAssets, commands, valid_call};
 pub(crate) use copy::copy;
 pub use copy::create_document;
 pub use pack::{APP_INPUT_BYTES, pack, validate_app};
 pub use places::{TemplateSource, template_roots};
 pub(crate) use places::{document_destination, document_location};
 
+use crate::app::{AppDefinition, AppMetadata, Author, Category, WindowDefinition};
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};
-use crate::shape;
-use crate::wire::{APP_TEXT_BYTES, ASSET_PATH_BYTES, MANIFEST_BYTES};
-use artwork::png;
+use crate::wire::{ASSET_PATH_BYTES, MANIFEST_BYTES};
 use assets::{assets_within, read_asset};
 use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior, config::DbConfig, limits::Limit};
-use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -233,15 +230,7 @@ fn markers(conn: &Connection) -> Result<i64> {
 /// The app's requirements, as `pack` reads them from a build and every open from a file:
 /// none newer than this build supports, and each at least 1.
 fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
-    let markers =
-        [("package format", package_format, crate::PACKAGE_FORMAT), ("runtime ABI", runtime_abi, crate::RUNTIME_ABI)];
-    if let Some((name, level, supported)) = markers.iter().find(|(_, level, supported)| *level > *supported as i64) {
-        return Err(requires_update(format!("This slop needs {name} {level}; this hitSlop supports {supported}")));
-    }
-    if let Some((name, ..)) = markers.iter().find(|(_, level, _)| *level < 1) {
-        return Err(invalid(format!("Invalid {name}")));
-    }
-    Ok(())
+    crate::app::requirements(package_format.into(), runtime_abi.into()).map_err(Error::Rejected)
 }
 /// The exact tables, and at most one row, row 1, in each one-row table.
 fn layout(conn: &Connection, version: i64) -> Result<()> {
@@ -262,15 +251,12 @@ fn layout(conn: &Connection, version: i64) -> Result<()> {
     }
     Ok(())
 }
-/// The `app` row's text and every theme, within their budgets.
+/// Bound recursive definition bytes before decoding. Display reads never call this.
 fn app_sizes(conn: &Connection) -> Result<()> {
-    let (manifest, longest, theme) = (
-        one(conn, "SELECT length(CAST(manifest AS BLOB)) FROM app")?,
-        one(conn, "SELECT length(CAST(descriptor AS BLOB)) FROM app")?,
-        one(conn, "SELECT length(CAST(theme AS BLOB)) FROM app")?,
-    );
-    if manifest > MANIFEST_BYTES as i64 || longest > APP_TEXT_BYTES as i64 || theme > crate::wire::THEME_LIMIT as i64 {
-        return Err(invalid("The app's manifest, schema or theme is too large"));
+    if one(conn, "SELECT length(CAST(definition_json AS BLOB)) FROM app")?
+        > crate::app::package_format_1::DEFINITION_BYTES as i64
+    {
+        return Err(invalid("The app definition is too large"));
     }
     Ok(())
 }
@@ -287,7 +273,7 @@ fn stored_assets(conn: &Connection) -> Result<()> {
     }
     let (assets, largest, total, longest_path): (i64, i64, i64, i64) = conn
         .query_row(
-            "SELECT count(*), coalesce(max(size),0), coalesce(sum(size),0), coalesce(max(length(CAST(path AS BLOB))),0) FROM assets",
+            "SELECT count(*), coalesce(max(size),0), coalesce(sum(size),0), coalesce(max(length(CAST(key AS BLOB))),0) FROM assets",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
@@ -296,10 +282,12 @@ fn stored_assets(conn: &Connection) -> Result<()> {
     if longest_path > ASSET_PATH_BYTES as i64 {
         return Err(invalid("An asset path is too long"));
     }
-    let mut paths = conn.prepare("SELECT path FROM assets").map_err(sqlite("read"))?;
-    for path in paths.query_map([], |r| r.get::<_, String>(0)).map_err(sqlite("read"))? {
-        if !valid_asset_path(&path.map_err(sqlite("read"))?) {
-            return Err(invalid("Unsafe asset path"));
+    let mut paths = conn.prepare("SELECT key,media_type FROM assets").map_err(sqlite("read"))?;
+    for row in paths.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sqlite("read"))? {
+        let (key, media_type) = row.map_err(sqlite("read"))?;
+        let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
+        if kind.media_type != media_type {
+            return Err(invalid("Invalid app asset media type"));
         }
     }
     Ok(())
@@ -319,14 +307,14 @@ fn stored_artwork(conn: &Connection) -> Result<()> {
     {
         return Err(invalid("Unexpected artwork"));
     }
-    // Artwork reaches Finder and Quick Look's image decoders: its PNG header is checked as
-    // pack and every artwork write check it, reading only the header.
+    // Display metadata reads stay cheap. Every artwork write decodes all pixels;
+    // opening checks only the stored header and dimensions.
     let mut artwork = conn.prepare("SELECT name, substr(png,1,33) FROM artwork").map_err(sqlite("read"))?;
     for row in
         artwork.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(sqlite("read"))?
     {
         let (name, header) = row.map_err(sqlite("read"))?;
-        png(&header, &format!("The {name} artwork"))?;
+        crate::images::header(&header).map_err(|e| invalid(format!("The {name} artwork: {}", e.message)))?;
     }
     Ok(())
 }
@@ -374,129 +362,175 @@ pub(crate) fn attachments_fit(count: i64, largest: i64, total: i64) -> bool {
         && total <= crate::ATTACHMENT_BYTES as i64
 }
 
-/// What the author built, as `pack` writes it. Its initial values become the template's
-/// checkpoint.
-pub struct App {
+/// Display metadata is deliberately not a certificate of full acceptance.
+#[derive(Clone, Debug)]
+pub struct Summary {
+    pub kind: Kind,
     pub package_format: u64,
     pub runtime_abi: u64,
-    /// The authored manifest, without the markers.
-    pub manifest: String,
-    pub descriptor: String,
-    /// The declared colors and their defaults.
-    pub theme: String,
-}
-/// What checking an app found: what its documents are instances of, its window shape, and
-/// the window skin's PNG when the manifest names one.
-struct CheckedApp {
-    spec: crate::AppSpec,
-    manifest: String,
-    silhouette: shape::Silhouette,
-    skin: Option<Vec<u8>>,
-}
-/// The content rules `pack` applies and every open relies on, each run once.
-fn check_app_values(app: &App) -> Result<(crate::manifest::Window, crate::AppSpec, String)> {
-    let (window, manifest) = crate::manifest::stored(&app.manifest, app.package_format).map_err(Error::Rejected)?;
-    let schema = crate::descriptor::descriptor(&app.descriptor).map_err(Error::Rejected)?;
-    let theme_tokens = crate::theme::validate_defaults(&app.theme).map_err(Error::Rejected)?;
-    let spec = crate::AppSpec::of(schema, &window.slug, theme_tokens);
-    Ok((window, spec, manifest))
-}
-/// An asset's bytes by key: borrowed from a stage being packed, read from a file.
-type Assets<'a, 'b> = &'b dyn Fn(&str) -> Result<Option<Cow<'a, [u8]>>>;
-fn check_app(app: &App, asset: Assets) -> Result<CheckedApp> {
-    let (window, spec, manifest) = check_app_values(app)?;
-    let entry = asset("app.js")?.ok_or_else(|| invalid("Missing assets/app.js"))?;
-    std::str::from_utf8(&entry).map_err(|_| invalid("assets/app.js must be UTF-8"))?;
-    commands::validate(asset(COMMAND_METADATA)?.as_deref(), asset(COMMAND_BUNDLE)?.as_deref())?;
-    let skin = match &window.skin {
-        None => None,
-        Some(skin) => {
-            let key = skin.strip_prefix("assets/").ok_or_else(|| invalid("The window skin must be an asset"))?;
-            let bytes = asset(key)?.ok_or_else(|| invalid(format!("Missing window skin {skin}")))?;
-            let (width, height, alpha) = png(&bytes, "window skin")?;
-            if (width as u64, height as u64) != (window.width, window.height) {
-                return Err(invalid("The window skin must match the window's width and height in pixels"));
-            }
-            if !alpha {
-                return Err(invalid("The window skin must be an RGBA PNG with alpha"));
-            }
-            Some(bytes.into_owned())
-        }
-    };
-    Ok(CheckedApp { spec, manifest, silhouette: window.silhouette, skin })
-}
-
-/// A template or document a host opened: its kind and markers, its app as stored, and what
-/// checking the app found. Each open checks the app once and keeps this.
-pub struct OpenedApp {
-    pub kind: Kind,
-    pub app: App,
-    /// Normalized host-facing manifest. The stored manifest is never rewritten on read.
-    pub manifest: String,
-    /// What its documents are instances of: the descriptor and the declared palette.
-    pub spec: crate::AppSpec,
-    pub silhouette: shape::Silhouette,
-    /// The window skin's PNG, when the manifest names one.
-    pub skin: Option<Vec<u8>>,
-    /// The file's size in bytes when it was opened.
+    pub metadata: AppMetadata,
     pub bytes: u64,
 }
-/// Checks the file at `path` on `conn`, then reads and checks its app, in one read
-/// transaction (the caller's, if it holds one): the app read is the one the checks passed
-/// while another process saves.
-pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<OpenedApp> {
-    let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
-    let kind = check(conn, integrity)?;
-    let app = read_app(conn)?;
-    let found = check_app(&app, &|key| Ok(read_asset(conn, key)?.map(Cow::Owned)))?;
-    Ok(OpenedApp {
+fn scalar_metadata(conn: &Connection, format: u64) -> Result<AppMetadata> {
+    let size = one(
+        conn,
+        "SELECT length(CAST(slug AS BLOB))+length(CAST(title AS BLOB))+length(CAST(description AS BLOB))+length(CAST(author_name AS BLOB))+coalesce(length(CAST(author_url AS BLOB)),0)+length(CAST(category_primary AS BLOB))+coalesce(length(CAST(category_secondary AS BLOB)),0) FROM app WHERE id=1",
+    )?;
+    if size > MANIFEST_BYTES as i64 {
+        return Err(invalid("App metadata is too large"));
+    }
+    let (slug,title,description,name,url,primary,secondary) = conn.query_row(
+        "SELECT slug,title,description,author_name,author_url,category_primary,category_secondary FROM app WHERE id=1", [],
+        |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,String>(5)?,r.get::<_,Option<String>>(6)?))
+    ).map_err(sqlite("read metadata"))?;
+    let mut categories = vec![Category::parse(primary).map_err(Error::Rejected)?];
+    if let Some(secondary) = secondary {
+        categories.push(Category::parse(secondary).map_err(Error::Rejected)?);
+    }
+    let metadata = AppMetadata { slug, title, description, author: Author { name, url }, categories };
+    crate::app::validate_metadata(&metadata, format).map_err(Error::Rejected)?;
+    Ok(metadata)
+}
+/// Common display preamble: marker dispatch, exact layout and bounded catalog fields.
+/// No definition, app blob or attachment blob (even its length) is read here.
+fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
+    let version = markers(conn)?;
+    layout(conn, version)?;
+    let (package_format, runtime_abi) = conn
+        .query_row("SELECT package_format,runtime_abi FROM app WHERE id=1", [], |r| {
+            Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64))
+        })
+        .map_err(sqlite("read markers"))?;
+    let metadata = scalar_metadata(conn, package_format)?;
+    stored_artwork(conn)?;
+    if one(conn, "SELECT count(*) FROM checkpoint")? != 1 {
+        return Err(invalid("The file has no saved state; keep it for recovery"));
+    }
+    let kind = if one(conn, "SELECT count(*) FROM document")? == 0 { Kind::Template } else { Kind::Document };
+    Ok(Summary {
         kind,
-        spec: found.spec,
-        manifest: found.manifest,
-        silhouette: found.silhouette,
-        skin: found.skin,
+        package_format,
+        runtime_abi,
+        metadata,
         bytes: fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0),
-        app,
     })
 }
-/// Opens and checks a template or a document without its writer lock. `integrity` adds
-/// SQLite's quick check; display-only opens (the catalog, Quick Look) leave it out.
+pub fn summary(path: &Path) -> Result<Summary> {
+    let conn = reader(path)?;
+    let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
+    summary_on(&read, path)
+}
+
+/// Fully accepted app and resources, kept by the owner for its entire lifetime.
+pub struct OpenedApp {
+    pub kind: Kind,
+    pub package_format: u64,
+    pub runtime_abi: u64,
+    pub app: AppDefinition,
+    pub skin: Option<Vec<u8>>,
+    pub style: bool,
+    pub commands: Option<std::sync::Arc<String>>,
+    pub bytes: u64,
+}
+pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<OpenedApp> {
+    use sha2::{Digest, Sha256};
+    let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
+    let summary = summary_on(conn, path)?;
+    check(conn, integrity)?;
+    let definition: String = conn
+        .query_row("SELECT definition_json FROM app WHERE id=1", [], |r| r.get(0))
+        .map_err(sqlite("read definition"))?;
+    let app = AppDefinition::decode(
+        summary.package_format,
+        summary.runtime_abi,
+        &crate::encode(&summary.metadata),
+        &definition,
+    )
+    .map_err(Error::Rejected)?;
+    let mut keys = conn.prepare("SELECT key FROM assets ORDER BY key").map_err(sqlite("read assets"))?;
+    let mut ui = false;
+    let mut style = false;
+    let mut skin = None;
+    let mut commands = None;
+    for key in keys.query_map([], |r| r.get::<_, String>(0)).map_err(sqlite("read assets"))? {
+        let key = key.map_err(sqlite("read assets"))?;
+        let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
+        let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing app asset"))?;
+        crate::media::check_asset(kind.media_type, &bytes).map_err(Error::Rejected)?;
+        if let Some(name) = key.strip_prefix("media/") {
+            let digest = data_encoding::HEXLOWER.encode(&Sha256::digest(&bytes));
+            if !name.starts_with(&digest) {
+                return Err(invalid("An app asset does not match its SHA-256"));
+            }
+        } else if bytes.is_empty() {
+            return Err(invalid("Empty app program or stylesheet"));
+        }
+        if key == "ui.css" {
+            style = true;
+        }
+        if key == "ui.js" {
+            ui = true;
+        }
+        if let WindowDefinition::Skin { width, height, skin: skin_key } = app.window()
+            && &key == skin_key
+        {
+            if kind.media_type != "image/png" {
+                return Err(invalid("Window skins must be PNG"));
+            }
+            crate::images::check(&bytes, crate::images::Purpose::Skin { width: *width, height: *height })
+                .map_err(Error::Rejected)?;
+            skin = Some(bytes.clone());
+        }
+        if key == "commands.js" {
+            commands = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        }
+    }
+    if !ui {
+        return Err(invalid("Missing ui.js"));
+    }
+    if matches!(app.window(), WindowDefinition::Skin { .. }) && skin.is_none() {
+        return Err(invalid("Missing window skin"));
+    }
+    if commands.is_some() == app.commands().is_empty() {
+        return Err(invalid("Commands and their private program must be present together"));
+    }
+    for name in Artwork::ALL {
+        if let Some(png) = rows::read_artwork(conn, name)? {
+            check_artwork(name, &png)?;
+        }
+    }
+    Ok(OpenedApp {
+        kind: summary.kind,
+        package_format: summary.package_format,
+        runtime_abi: summary.runtime_abi,
+        app,
+        skin,
+        style,
+        commands,
+        bytes: summary.bytes,
+    })
+}
 pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
     opened(&reader(path)?, path, integrity)
 }
-/// A reader on the file at `path`, and its kind, once the checks every open runs pass.
 pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
     let conn = reader(path)?;
-    let kind = check(&conn, false)?;
+    let kind = summary_on(&conn, path)?.kind;
     Ok((conn, kind))
 }
-/// The first of `preferred` artwork (`preview`, `icon`) the file holds, by name: one read,
-/// for a host displaying the file (Quick Look, the catalog, a window's icon). A file that
-/// cannot be read now (busy, or mid-recovery) is an error, never "no artwork".
 pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Vec<u8>)>> {
-    let (conn, _) = checked(path)?;
+    let conn = reader(path)?;
+    let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
+    summary_on(&read, path)?;
     for &name in preferred {
-        if let Some(png) = rows::read_artwork(&conn, name)? {
+        if let Some(png) = rows::read_artwork(&read, name)? {
             return Ok(Some((name, png)));
         }
     }
     Ok(None)
 }
-/// A file's kind from its checks alone, for a host deciding how to open it.
 pub fn kind(path: &Path) -> Result<Kind> {
-    checked(path).map(|(_, kind)| kind)
-}
-fn read_app(conn: &Connection) -> Result<App> {
-    conn.query_row("SELECT package_format,runtime_abi,manifest,descriptor,theme FROM app WHERE id=1", [], |r| {
-        Ok(App {
-            package_format: r.get::<_, i64>(0)? as u64,
-            runtime_abi: r.get::<_, i64>(1)? as u64,
-            manifest: r.get(2)?,
-            descriptor: r.get(3)?,
-            theme: r.get(4)?,
-        })
-    })
-    .map_err(sqlite("read app"))
+    Ok(summary(path)?.kind)
 }
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
@@ -517,10 +551,12 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
     let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(sqlite("inspect"));
     Ok(serde_json::json!({
         "kind": match opened.kind { Kind::Template => "template", Kind::Document => "document" },
-        "packageFormat": opened.app.package_format,
-        "runtimeABI": opened.app.runtime_abi,
-        "manifest": serde_json::from_str::<serde_json::Value>(&opened.manifest).map_err(failed)?,
-        "assets": list("SELECT path, size FROM assets ORDER BY path")?,
+        "packageFormat": opened.package_format,
+        "runtimeABI": opened.runtime_abi,
+        "metadata": opened.app.metadata(),
+        "window": opened.app.page_window(),
+        "views": opened.app.views(),
+        "assets": list("SELECT key, size FROM assets ORDER BY key")?,
         "artwork": list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         "attachments": { "count": attachments, "bytes": attachment_bytes },
         "state": { "checkpointBytes": checkpoint_bytes, "updates": updates, "updateBytes": update_bytes },
@@ -531,5 +567,46 @@ pub fn inspect(path: &Path) -> Result<serde_json::Value> {
 
 /// The app's descriptor, for `slop schema`, from a file every open would accept.
 pub fn descriptor(path: &Path) -> Result<String> {
-    Ok(open(path, false)?.app.descriptor)
+    Ok(open(path, false)?.app.document_json().into())
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+    #[test]
+    fn summary_cannot_read_the_definition_or_app_and_document_payloads() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version=1;
+            INSERT INTO checkpoint VALUES(1,x'00');
+            INSERT INTO assets VALUES('ui.js','text/javascript','identity',1,x'00');
+            INSERT INTO app VALUES(1,1,1,'fixture','Fixture','A fixture','Author',NULL,'utilities',NULL,'invalid JSON');")).unwrap();
+        conn.authorizer(Some(|context: AuthContext<'_>| match context.action {
+            AuthAction::Read { table_name, column_name }
+                if table_name == "assets"
+                    || table_name == "attachments"
+                    || table_name == "updates"
+                    || (table_name == "app" && column_name == "definition_json")
+                    || (table_name == "checkpoint" && column_name == "bytes") =>
+            {
+                Authorization::Deny
+            }
+            _ => Authorization::Allow,
+        }))
+        .unwrap();
+        for query in [
+            "SELECT definition_json FROM app",
+            "SELECT bytes FROM assets",
+            "SELECT bytes FROM attachments",
+            "SELECT bytes FROM checkpoint",
+        ] {
+            assert!(conn.prepare(query).is_err(), "authorizer must refuse {query}");
+        }
+        let summary = summary_on(&conn, Path::new("unused.slop")).unwrap();
+        assert_eq!(summary.kind, Kind::Template);
+        assert_eq!(summary.metadata.title, "Fixture");
+        // An unreadable payload does not make a summary a validity certificate.
+        assert!(opened(&conn, Path::new("unused.slop"), false).is_err());
+    }
 }

@@ -1,6 +1,6 @@
 import { CoreErrorCodes } from "../../schema/constants";
 import type { Batch, CoreErrorCode, OwnerState } from "../../schema/core";
-import type { PagePush, PageResult } from "../../schema/page";
+import type { PagePush, PageResult } from "../../wire/page";
 import { DocumentError } from "../../sdk/internal";
 import { call } from "../bridge";
 
@@ -10,6 +10,7 @@ export interface OwnerTransport {
   open(): Promise<OwnerState>;
   apply(batch: Batch): Promise<PageResult<"apply">>;
   flush(): Promise<void>;
+  runCommand(name: string, args: unknown): Promise<PageResult<"commands.run">>;
   undo(): Promise<PageResult<"undo">>;
   redo(): Promise<PageResult<"redo">>;
   onPush(receiver: (pushes: PagePush[]) => void): void;
@@ -24,6 +25,7 @@ export function nativeTransport(
   return {
     readOnly,
     open: async () => JSON.parse((await call({ method: "open" })).state),
+    runCommand: (name, args) => call({ method: "commands.run", name, args }),
     apply: (batch) => call({ method: "apply", batch: JSON.stringify(batch) }),
     flush: async () => {
       await call({ method: "flush" });
@@ -32,6 +34,7 @@ export function nativeTransport(
     redo: () => call({ method: "redo" }),
     onPush(next) {
       receiver = next;
+      (globalThis as any).__hitslopPreview?.onPush(next);
     },
     publish(pushes: unknown) {
       if (
@@ -88,6 +91,7 @@ export function wasmTransport(core: any): OwnerTransport {
   };
   return {
     readOnly: false,
+    runCommand: async () => { throw new DocumentError("rejected", "Commands require the native owner"); },
     open: async () => JSON.parse(core.state()),
     apply: async (batch) => {
       const { sequence, ids, authored, selectionStart, selectionEnd } = execute(() =>
@@ -111,20 +115,4 @@ export function wasmTransport(core: any): OwnerTransport {
       receiver = next;
     },
   };
-}
-
-/** Only disposable browser development creates a WASM owner. */
-export async function browserTransport(
-  descriptor: unknown,
-  initial: unknown,
-  template: string,
-  theme: Record<string, string>,
-): Promise<OwnerTransport> {
-  const module = await import(new URL("./core/hitslop_core_wasm.js", import.meta.url).href);
-  await module.default({
-    module_or_path: new URL("./core/hitslop_core_wasm_bg.wasm", import.meta.url).href,
-  });
-  return wasmTransport(
-    module.WasmDocument.create(JSON.stringify(descriptor), JSON.stringify(initial), template, JSON.stringify(theme)),
-  );
 }

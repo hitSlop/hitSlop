@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 /// Where a listed template comes from: the starters bundled with the app, or the installed
 /// templates folder that `slop register` builds into.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "engine.generated.ts"))]
 pub enum TemplateSource {
     Bundled,
     Installed,

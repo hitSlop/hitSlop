@@ -12,6 +12,7 @@ test("native refusals and transport failures retain distinct outcomes", async ()
     },
     { reply: { ok: false, code: "closing", error: "closing" }, code: "closing" },
     { reply: { ok: false, code: "save_failed", error: "disk" }, code: "save_failed" },
+    { reply: { ok: true, method: "undo", sequence: 1 }, code: "unknown_outcome" },
     { reply: { ok: "true" }, code: "unknown_outcome" },
     { reply: { ok: false, code: "rejected" }, code: "unknown_outcome" },
     { reply: [], code: "unknown_outcome" },
@@ -26,7 +27,7 @@ test("native refusals and transport failures retain distinct outcomes", async ()
           hitslop: {
             postMessage: async () => {
               if (entry.reply === undefined) throw new Error("lost connection");
-              return entry.reply;
+              return JSON.stringify(entry.reply);
             },
           },
         },
@@ -73,4 +74,20 @@ describe("bridge base64", () => {
       if (to) Object.defineProperty(Uint8Array.prototype, "toBase64", to);
     }
   });
+});
+
+test("native bridge carries JSON text and correlates a successful reply", async () => {
+  const root = globalThis as any, before = root.webkit;
+  try {
+    root.webkit = { messageHandlers: { hitslop: { postMessage: async (json: string) => {
+      expect(typeof json).toBe("string");
+      expect(JSON.parse(json)).toEqual({ method: "apply", batch: '{"intents":[]}' });
+      return JSON.stringify({ ok: true, method: "apply", sequence: 2, ids: ["row"] });
+    } } } };
+    expect(await call({ method: "apply", batch: '{"intents":[]}' })).toEqual({ sequence: 2, ids: ["row"] });
+    for (const malformed of ["{", { ok: true, method: "apply" }]) {
+      root.webkit.messageHandlers.hitslop.postMessage = async () => malformed;
+      await expect(call({ method: "apply", batch: '{"intents":[]}' })).rejects.toMatchObject({ code: "unknown_outcome" });
+    }
+  } finally { root.webkit = before; }
 });

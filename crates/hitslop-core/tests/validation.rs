@@ -21,12 +21,77 @@ fn accepts(schema: &Value) -> bool {
 fn explicit_null_bounds_are_not_silently_treated_as_absent() {
     for node in [
         json!({"kind":"string","maxLength":null}),
+        json!({"kind":"string","minLength":null}),
         json!({"kind":"number","min":null}),
         json!({"kind":"integer","max":null}),
     ] {
         let schema = json!({"kind":"object","properties":{"value":node}});
         assert!(!accepts(&schema), "{schema}");
     }
+}
+
+// JSON integers describe values, not their spelling. The same rule must hold when
+// checking arguments, creating a document and writing its canonical Loro scalar.
+#[test]
+fn integral_json_numbers_are_stored_as_integers() {
+    let schema = r#"{"kind":"object","properties":{"count":{"kind":"integer"}}}"#;
+    let app = AppSpec::data(schema).unwrap();
+    for (text, expected) in [("1.0", 1), ("-0.0", 0), ("1e2", 100)] {
+        let initial = format!(r#"{{"count":{text}}}"#);
+        hitslop_core::validate(schema, &initial).unwrap();
+        let doc = Document::create(&app, &initial).unwrap();
+        let saved = doc.checkpoint().unwrap();
+        let opened = Document::open(&app, &saved, &[]).unwrap();
+        let state: Value = serde_json::from_str(&opened.state().unwrap()).unwrap();
+        assert_eq!(state["value"]["count"].as_i64(), Some(expected));
+    }
+}
+
+#[test]
+fn string_bounds_count_code_points_on_create_edit_and_reopen() {
+    use hitslop_core::Origin;
+    let schema = r#"{"kind":"object","properties":{"text":{"kind":"string","minLength":1,"maxLength":2}}}"#;
+    let app = AppSpec::data(schema).unwrap();
+    for value in ["a", "😀", "😀😀", "e\u{301}"] {
+        let initial = json!({"text":value}).to_string();
+        hitslop_core::validate(schema, &initial).unwrap();
+        let mut document = Document::create(&app, &initial).unwrap();
+        for invalid in ["", "😀😀😀", "e\u{301}x"] {
+            let before = document.state().unwrap();
+            assert!(Document::create(&app, &json!({"text":invalid}).to_string()).is_err());
+            assert!(
+                document
+                    .apply_batch(
+                        &json!({"intents":[{"type":"set","path":["text"],"value":invalid}]}).to_string(),
+                        Origin::Page
+                    )
+                    .is_err()
+            );
+            assert_eq!(document.state().unwrap(), before);
+        }
+        document.apply_batch(r#"{"intents":[{"type":"set","path":["text"],"value":"😀😀"}]}"#, Origin::Page).unwrap();
+        let opened = Document::open(&app, &document.checkpoint().unwrap(), &[]).unwrap();
+        let state: Value = serde_json::from_str(&opened.state().unwrap()).unwrap();
+        assert_eq!(state["value"]["text"], "😀😀");
+    }
+}
+
+#[test]
+fn string_bounds_are_safe_nonnegative_integers_in_order() {
+    for options in [
+        json!({"minLength":-1}),
+        json!({"maxLength":-1}),
+        json!({"minLength":1.5}),
+        json!({"minLength":3,"maxLength":2}),
+        json!({"minLength":9007199254740992_u64}),
+        json!({"maxLength":9007199254740992_u64}),
+    ] {
+        let mut node = options;
+        node["kind"] = "string".into();
+        assert!(AppSpec::data(&json!({"kind":"object","properties":{"text":node}}).to_string()).is_err());
+    }
+    let empty = r#"{"kind":"object","properties":{"text":{"kind":"string","minLength":0,"maxLength":0}}}"#;
+    hitslop_core::validate(empty, r#"{"text":""}"#).unwrap();
 }
 
 #[test]

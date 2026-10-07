@@ -64,7 +64,7 @@ actor CatalogScanner {
   private func validate(_ child: URL) async throws -> Outcome {
     do {
       let template = try await SlopPreparation.run(on: SlopPreparation.catalog) {
-        Self.entry(template: try SlopFile(template: child))
+        Self.entry(template: try SlopSummary(url: child, template: true))
       }
       return .template(template)
     } catch is CancellationError {
@@ -92,7 +92,7 @@ actor CatalogScanner {
   func recent(_ url: URL) async throws -> CatalogEntry? {
     try await SlopPreparation.run(on: SlopPreparation.catalog) {
       guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-      guard let file = try? SlopFile(url: url) else {
+      guard let file = try? SlopSummary(url: url) else {
         var entry = CatalogEntry(
           id: "recent:\(url.path)", source: .recent(url), title: url.deletingPathExtension().lastPathComponent)
         Self.dates(url, &entry)
@@ -103,18 +103,17 @@ actor CatalogScanner {
   }
 
   /// A checked template's catalog entry, keyed by its path.
-  static func entry(template file: SlopFile) -> CatalogEntry {
+  static func entry(template file: SlopSummary) -> CatalogEntry {
     entry(file, source: .local(file.url), id: "local:\(file.url.path)")
   }
-  private static func entry(_ file: SlopFile, source: CatalogEntry.Source, id: String) -> CatalogEntry {
-    let manifest = file.manifest
-    var entry = CatalogEntry(id: id, source: source, title: manifest.title)
-    entry.slug = manifest.slug
-    entry.description = manifest.description
-    entry.categories = manifest.categories
-    entry.authorName = manifest.author.name
-    entry.authorURL = manifest.author.url.flatMap(URL.init(string:))
-    entry.initialSize = "\(manifest.presentation.width) × \(manifest.presentation.height)"
+  private static func entry(_ file: SlopSummary, source: CatalogEntry.Source, id: String) -> CatalogEntry {
+    let metadata = file.metadata
+    var entry = CatalogEntry(id: id, source: source, title: metadata.title)
+    entry.slug = metadata.slug
+    entry.description = metadata.description
+    entry.categories = metadata.categories
+    entry.authorName = metadata.author.name
+    entry.authorURL = metadata.author.url.flatMap(URL.init(string:))
     let icon = artwork(file.url, .icon)
     let preview = artwork(file.url, .preview)
     entry.icons = [icon, preview]

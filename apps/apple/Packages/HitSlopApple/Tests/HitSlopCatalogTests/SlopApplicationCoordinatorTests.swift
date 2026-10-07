@@ -31,7 +31,7 @@ import Testing
   #expect(await eventually(timeout: .seconds(10)) { !chosen.value.isEmpty })
   let entry = try #require(chosen.value.first)
   #expect(entry.source == .local(SlopPath.canonical(template)))
-  #expect(entry.title == (try SlopFile(url: template)).manifest.title)
+  #expect(entry.title == (try SlopFile(url: template)).metadata.title)
   #expect(app.model.documents.isEmpty)
 }
 

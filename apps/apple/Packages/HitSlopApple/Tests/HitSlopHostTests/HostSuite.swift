@@ -17,7 +17,7 @@ import Testing
   /// changes the build stage before it is packed.
   func contractFixture(edit: (_ stage: URL) throws -> Void = { _ in }) throws -> URL {
     let stage = try Fixtures.stage()
-    let app = stage.appendingPathComponent("assets/app.js")
+    let app = stage.appendingPathComponent("assets/ui.js")
     try FileManager.default.removeItem(at: app)
     try FileManager.default.copyItem(at: Fixtures.repository.appendingPathComponent("tests/abi/probe/app.js"), to: app)
     try edit(stage)

@@ -716,7 +716,9 @@ version = "0.0.0"
 dependencies = [
  "brotli",
  "data-encoding",
+ "fluent-uri",
  "getrandom 0.2.17",
+ "hitslop-runner",
  "jsonschema",
  "kurbo",
  "libc",
@@ -730,6 +732,7 @@ dependencies = [
  "svgtypes",
  "tempfile",
  "thiserror 2.0.21",
+ "ts-rs",
 ]
 
 [[package]]
@@ -748,6 +751,18 @@ dependencies = [
  "hitslop-core",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "hitslop-runner"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "rquickjs",
+ "seccompiler",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -839,7 +854,6 @@ dependencies = [
  "fraction",
  "getrandom 0.3.4",
  "itoa",
- "jsonschema-macros",
  "jsonschema-regex",
  "jsonschema-value",
  "num-cmp",
@@ -852,35 +866,6 @@ dependencies = [
  "strum",
  "unicode-general-category",
  "uuid-simd",
-]
-
-[[package]]
-name = "jsonschema-macros"
-version = "0.58.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8123fa451e16474892232c373cedee1b75f48b490c489a499914442108e50933"
-dependencies = [
- "jsonschema-macros-core",
- "proc-macro2",
-]
-
-[[package]]
-name = "jsonschema-macros-core"
-version = "0.58.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a002239f1799082b6ae421fc171e6d30b0e34b257b8729be8810546cee5114e"
-dependencies = [
- "fancy-regex",
- "indexmap",
- "jsonschema-regex",
- "percent-encoding",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "referencing",
- "regex",
- "serde_json",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -1446,15 +1431,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proc-macro-crate"
-version = "3.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
-dependencies = [
- "toml_edit",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1880,9 +1856,7 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.2.17",
  "hitslop-core",
- "libc",
- "rquickjs",
- "seccompiler",
+ "hitslop-runner",
  "serde",
  "serde_json",
  "tempfile",
@@ -2014,6 +1988,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2071,7 +2054,7 @@ dependencies = [
  "indexmap",
  "serde_core",
  "serde_spanned",
- "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_datetime",
  "toml_parser",
  "toml_writer",
  "winnow 0.7.15",
@@ -2084,27 +2067,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
 dependencies = [
  "serde_core",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "1.1.1+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
-name = "toml_edit"
-version = "0.25.15+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1340ea94a5856333492c9064b02c778b191dd2c853778d9609debdcdfea3a614"
-dependencies = [
- "indexmap",
- "toml_datetime 1.1.1+spec-1.1.0",
- "toml_parser",
- "winnow 1.0.4",
 ]
 
 [[package]]
@@ -2181,6 +2143,29 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "ts-rs"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+ "ts-rs-macros",
+]
+
+[[package]]
+name = "ts-rs-macros"
+version = "12.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "termcolor",
 ]
 
 [[package]]
@@ -2387,6 +2372,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "winapi-util"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
+dependencies = [
+ "windows-sys",
+]
+
+[[package]]
 name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2421,9 +2415,6 @@ name = "winnow"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "wit-bindgen"

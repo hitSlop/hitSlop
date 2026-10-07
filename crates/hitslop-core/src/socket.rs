@@ -114,11 +114,11 @@ fn write_line(stream: &mut UnixStream, input: &str, deadline: Instant) -> Result
 }
 /// The helper's one exchange. Mutations are never retried here, including partial writes.
 pub fn call(path: &Path, input: &str) -> Result<String> {
-    let request: serde_json::Value =
+    let header: crate::wire::socket::ProtocolHeader =
         serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;
-    let hello = serde_json::json!({"method": "hello", "protocol": request["protocol"]}).to_string();
+    let hello = crate::encode(&crate::wire::socket::Hello::Hello { protocol: header.protocol });
     let response = exchange(path, &hello, Some(4096))?;
-    if !crate::envelope::hello_success(&response) {
+    if serde_json::from_str::<crate::wire::socket::HelloSuccess>(&response).is_err() {
         // Return a refusal unchanged. The command router validates the failure header;
         // no document payload has been sent, even if its limit changed across versions.
         return Ok(response);
@@ -217,9 +217,10 @@ impl Server {
         if self.shared.stopped.load(Ordering::Acquire) {
             return Err(Failure::new(FailureKind::Closed, "Socket server is stopped"));
         }
-        self.shared.owner.publish_discovery(
-            &serde_json::json!({"socket":self.path,"documentPath":self.shared.owner.path()}).to_string(),
-        )
+        self.shared.owner.publish_discovery(&crate::encode(&crate::wire::socket::Discovery {
+            document_path: self.shared.owner.path().to_string_lossy().into_owned(),
+            socket: self.path.to_string_lossy().into_owned(),
+        }))
     }
     pub fn withdraw(&self) {
         self.shared.owner.withdraw_discovery();

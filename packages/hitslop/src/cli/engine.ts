@@ -1,6 +1,5 @@
 import { HelperProtocol, SocketLimits } from "../schema/constants";
-import { EngineRequestSchema, EngineReplySchema, type EngineRequest, type EngineRequestFor, type EngineMethod, type EngineReply, type EngineReplyFor, type EngineSuccess } from "../schema/engine";
-import { validate } from "../schema/validation";
+import type { EngineRequest, EngineRequestFor, EngineMethod, EngineReply, EngineReplyFor, EngineSuccess } from "../wire/engine";
 import { join } from "node:path";
 import { cliRoot, cliPackage, isGlobalInstall } from "./paths";
 import { findExecutable, exec } from "./process";
@@ -45,10 +44,10 @@ export function withRemedy(message: string): string {
 }
 
 export type EngineOptions = { binary?: string; cwd?: string; env?: Record<string, string | undefined>; timeout?: number };
-/** A completed invocation has exactly one validated reply. No transport failure is retried. */
+/** A completed invocation has exactly one matching acknowledgement. The same-build
+ * peer owns payload validation; malformed transport never becomes a successful edit. */
 export function request<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<EngineReplyFor<M>>;
 export async function request(body: EngineRequest, { binary, ...options }: EngineOptions = {}): Promise<EngineReply> {
-  validate(EngineRequestSchema, body, "Invalid engine request");
   const stdin = JSON.stringify(body);
   if (Buffer.byteLength(stdin) > SocketLimits.attachment) throw new Error("Engine request is too large");
   const command = negotiate(binary ?? await findEngine());
@@ -63,9 +62,34 @@ export async function request(body: EngineRequest, { binary, ...options }: Engin
   let reply: unknown;
   try { reply = JSON.parse(stdout); } catch {}
   const message = `Invalid engine reply. ${unknown}`;
-  const checked = validate(EngineReplySchema, reply, message);
-  if (checked.ok && checked.method !== body.method) throw new Error(message);
-  return checked;
+  if (!acknowledged(reply, body.method)) throw new Error(message);
+  return reply;
+}
+
+const replyFields = {
+  get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
+  "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
+  templates: ["catalog"], create: ["documentPath"], inspect: ["info"], schema: ["schema"],
+  pack: [], validateApp: [], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
+} satisfies Record<EngineMethod, readonly string[]>;
+function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const reply = value as Record<string, unknown>;
+  if (reply.ok === false) {
+    return typeof reply.error === "string" && typeof reply.code === "string"
+      && ["rejected", "owner_replaced", "closing", "save_failed", "owner_invalidated", "unknown_outcome"].includes(reply.code)
+      && (reply.reason === undefined || typeof reply.reason === "string")
+      && (reply.opIndex === undefined || (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0))
+      && Object.keys(reply).every(key => ["ok", "error", "code", "reason", "opIndex"].includes(key));
+  }
+  if (reply.ok !== true || reply.method !== method) return false;
+  const fields = ["ok", "method", ...replyFields[method]];
+  if (fields.some(key => !Object.hasOwn(reply, key)) || Object.keys(reply).some(key => !fields.includes(key))) return false;
+  if (method === "batch" || method === "call") return Array.isArray(reply.ids) && reply.ids.every(id => typeof id === "string");
+  if (method === "export") return typeof reply.output === "string";
+  if (method === "screenshot") return reply.output === null || typeof reply.output === "string";
+  if (method === "create" || method === "open") return typeof reply.documentPath === "string";
+  return true;
 }
 /** Callers that do not present edit outcomes can unwrap a successful typed result. */
 export async function execute<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<Extract<EngineSuccess, { method: M }>> {

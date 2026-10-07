@@ -24,53 +24,59 @@ list of object rows with `$id`; list of scalars by index; record of scalars or o
 by key; and counter. [Document types](reference/document-types.md) describes each
 kind's snapshot, merge, write rules, handles and CLI paths.
 
-The same core compiles to WASM for `slop dev` and Bun tests. Authoring checks send the
-bounded app input to the native engine's `validate-app` command, sharing the checks used
-when packing and opening files.
-The WASM build never edits a durable document. Authoring (`init`, `check`, `dev`, `build`)
-needs no helper and runs on macOS and Linux: the build stages the compiled app and its
-evaluated descriptor, initial values and theme, and the CLI's file engine
-(`crates/slop-engine`, the same core built natively) packs the stage into a template,
-checking it as the app opens it; text assets are stored compressed, since every document
-carries its own copy of the app. Only `--artwork native` and `register` render artwork
-with the app, from a draft of the template. The CLI and the app update separately: the
-CLI names its command protocol to the engine, and the engine names it in every request
-to a live owner; a side that does not serve it refuses and says which to update. Document
-commands use the CLI's own `slop-engine` on every platform. The engine passes what needs
-AppKit or WebKit (exports, windows, native artwork) to the app's rendering helper.
-The app and helper link the same core; the engine ships only in the npm package.
-Saved documents carry what they need to be read: the
-file's `packageFormat` and `runtimeABI` requirements (`app` columns), the SQLite
-application ID and storage version, and the document's layout (`meta.layout`). A build refuses a newer one with `requires_update`;
-[compatibility](engineering-contract.md#compatibility) has the rules, and the
-[compatibility corpus](testing.md#compatibility-corpus) replays every release's
-documents.
+The same core compiles to WASM for SDK tests. `slop dev` uses a temporary `.slop`
+document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
+owner, while a changed declaration invalidates it and creates a fresh preview. Linux
+preview qualification is deferred.
 
-Manifest acceptance is native-only Rust validation of the TypeBox-generated manifest
-schema (newer `packageFormat` or `runtimeABI` requirements are refused first), followed
-by the shared shape parser. SVG syntax uses `svgtypes::PathParser`; `kurbo` expands arcs
-through a lazy iterator, with source-command and output-segment limits enforced by the
-core. The authored path/viewBox/fillRule and the normalized native silhouette representation
-stay the same. Swift decodes the validated manifest into its generated model
-and decodes the window skin. The native engine validates the complete authoring app;
-the manifest validator dependency is excluded from WASM. Packing validates descriptors, initial values
-and theme defaults. Every open checks the file before reading a value: its application
-ID, storage version and markers, then its exact tables, one `app` row, the sizes of
-every value and asset, and the asset paths. Then the app is checked once (manifest and
-window shape, descriptor and initial values, theme, `app.js` and skin), and the open keeps
-what it found. An owner's store open is its document's one check, adding SQLite's quick
-check; the session shows the document from it. Display-only opens (the catalog, Quick
-Look) skip the quick check, and a host deciding how to open a file reads only its kind
-from the header. A template opened as a document is refused with `is_template`. The core validates socket and page envelopes against the same generated
-schemas (`Envelope`); Swift only serializes them for that check and maps accepted values.
-Document payloads never need that: page batches and text edits, and CLI operations, cross
-as JSON text that only the core parses, and state returns as the core's JSON text, spliced
-into replies unparsed. All page methods use one `{ok, ...result}` or `{ok: false, code, error}` reply
-contract. The core answers the document requests (open, edits, text, undo, flush,
-attachments) and the window answers its own (config, readiness, resizing, errors).
-WebKit correlates replies; native view tokens fence retired pages without page-carried
-identity. Shared limits and codes live in TypeBox-free
-`packages/hitslop/src/schema/constants.ts` and are generated into Rust and Swift.
+Authors compose one `defineSlop` entry with explicit imports for the document, view,
+optional export and icon views, skin, artwork and commands. Both Vite builds use the
+same resolver: the UI build strips command bodies and build metadata, while the command
+build substitutes component tokens and empty stylesheets. Its restricted evaluation
+returns `BuildInput`. Rust checks that input and the explicit resource inventory before
+packing. Imported images, fonts and CSS URLs become content-addressed media resources;
+unimported files and `public/` are never copied.
+
+The immutable `app` row contains catalog columns, compatibility markers and one
+`definition_json`: the window, ordered theme, original document descriptor, views and
+command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`
+and media. Pack inserts assets before the app row, whose presence seals them. Attachments
+and artwork have their own mutable lifecycles. Initial values live only in the Loro
+checkpoint; there is no JSON copy of saved document state.
+
+Markers are checked before interpreting fields or comparing the layout. The format-1
+acceptance module is Rust serde plus explicit checks, including the descriptor validator
+and streamed PNG decoding. Skins are RGBA PNGs at exactly 1× or 2× the logical window.
+SVG paths use `svgtypes` and `kurbo` with bounded commands and segments. Full acceptance
+checks resources and saved state, and the owner keeps its accepted app. Catalog and
+Quick Look summaries read only bounded scalar columns and artwork; a summary is not a
+certificate that the whole file is valid. Neither display path migrates the file.
+
+Rust owns wire types, errors, limits and app metadata. ts-rs generates TypeScript;
+UniFFI carries typed app definitions, summaries, window geometry and host actions to
+Swift. Swift never decodes manifest, theme or page-message JSON. Rust decodes a page
+request once, applies its lifecycle fence, answers document requests, or returns a
+native host action. Document JSON remains opaque text through the bridge. TypeBox,
+quicktype, handwritten contract generators and production JSON Schema validators are gone.
+
+Page command calls and `slop call` both send a name and arguments to the owner. Rust
+validates the argument descriptor, evaluates the private program in a fresh restricted
+child, validates its intents and applies one batch. Evaluation runs off the serial owner.
+A definite stale base retries once with the original clock and seed; an unknown outcome
+never retries. The page callable is a stub, and completion waits for publication; CLI
+completion also waits for persistence. `doc.change()` remains available for incidental UI
+edits. The page context and runner prelude have explicit ABI-1 arms.
+
+Attachments load through same-origin URLs, with range requests, sniffed passive media
+types, `nosniff` and a sandbox policy. The resource reader verifies the complete attachment
+hash on first touch. Script sources are restricted to shell and app-asset paths;
+attachment and command-program paths cannot become script sources.
+
+The CLI's engine forwards to a live owner or acquires the writer lock. Native exports,
+windows and artwork use the app helper. Their command protocol is exact, with no old
+CLI adapters. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
+remain independent; [compatibility](engineering-contract.md#compatibility) and the
+[corpus](testing.md#compatibility-corpus) define the released-file guarantee.
 
 ## Layers
 
@@ -89,7 +95,7 @@ identity. Shared limits and codes live in TypeBox-free
 | App | `HitSlopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
 | Author SDK | `packages/hitslop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/hitslop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
-| Contracts | `packages/hitslop/src/schema` (TypeBox) | Manifest, core wire, page protocol, socket; `bun run schema:generate` emits Rust and Swift |
+| Contracts | `crates/hitslop-core/src/wire` and `packages/hitslop/src/schema` | Rust owns wire and app types and shared limits; ts-rs exports TypeScript and UniFFI carries native types |
 
 ## An edit
 
@@ -296,12 +302,13 @@ refuses, leaves the blob unreferenced until the document closes.
 
 ## CLI
 
-`slop` is the user-facing CLI. Its private engine accepts one TypeBox `EngineRequest`
+`slop` is the user-facing CLI. Its private engine accepts one Rust-owned `EngineRequest`
 on bounded standard input and returns one method-specific `EngineReply`. Authoring,
 catalog, inspection, named commands and owner operations share this JSON boundary.
-`packages/hitslop/src/schema/engine.ts` generates the Rust dispatch types and validators.
-The engine forwards open, screenshot and export JSON to `hitslop-native`; its generated
-`NativeRequest` subset rejects document edits before starting AppKit. Exports still use
+`crates/hitslop-core/src/wire/engine.rs` defines the serde types and explicit checks;
+ts-rs exports the CLI's TypeScript. The engine forwards open, screenshot and export JSON
+to `hitslop-native`. Rust decodes its `NativeRequest` subset once and passes the request
+to Swift through UniFFI, rejecting document edits before starting AppKit. Exports still use
 the Rust command router, so the live owner or a closed document's renderer handles them.
 
 Both executables check the frozen first-position `--client-protocol N` before other

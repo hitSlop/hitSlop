@@ -22,7 +22,7 @@ extension HostTests {
     try await session.withCaptureSnapshot { source in
       try await session.discardPending()
       try await session.close()
-      _ = try await SlopRenderer.exportClosed(source, format: .pdf, output: output)
+      try await SlopRenderer.exportClosed(source, format: .pdf, output: output)
     }
     #expect(FileManager.default.fileExists(atPath: output.path))
   }

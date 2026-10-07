@@ -13,10 +13,10 @@
  *   --keep-going  run every selected tier even after one fails
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, run } from "../packages/hitslop/src/cli/process";
-import { repository, sha256, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
+import { repository, sha256, sourceBlobHash, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftFormat } from "./lib/swift-format";
@@ -61,9 +61,9 @@ const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) 
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
-useTestRegistry();
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
 if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
+useTestRegistry();
 /** The environment tiers run in, as this runner started: what an in-process build changes
  * (Vite sets NODE_ENV=production, which turns off Svelte's hot reload) never reaches a test. */
 const environment = { ...process.env };
@@ -97,7 +97,7 @@ async function bunTest(files: string[], args: string[], env: Record<string, stri
   await sh([process.execPath, "test", ...options, ...selected.map((file) => "./" + file)], { env });
 }
 
-const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
+const rustInputs = [/^crates\//, /^Cargo\.(toml|lock)$/, /^\.cargo\/config\.toml$/, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
@@ -114,10 +114,12 @@ const tiers: Tier[] = [
     quick: true,
     budget: 15,
     inputs: [
-      /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//,
+      /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
+      /^crates\/hitslop-core\/(src\/|examples\/export_bindings\.rs|Cargo\.toml)/,
+      /^Cargo\.lock$/,
       /^packages\/hitslop\/(skills\/|src\/cli\/(skills-build|app)\.ts$)/,
       /^\.agents\/skills\//,
-      /^scripts\/build\/(generate|rust-contracts|swift-contracts|skills)\.ts$/,
+      /^scripts\/build\/(generate|rust-bindings|skills)\.ts$/,
       /^scripts\/build\/(acceptance|runner)\.ts$/,
       /^packages\/hitslop\/src\/(sdk|shell)\//,
       /\.generated\.(rs|swift)$/,
@@ -235,15 +237,24 @@ const tierNames = tiers.map((tier) => tier.name);
  * for modified and untracked ones. Ignored build outputs are not inputs. */
 async function snapshot(): Promise<Record<string, string>> {
   const git = (args: string[]) => run(["git", ...args], { cwd: repository }).then((out) => out.split("\0").filter(Boolean));
-  const [indexed, modified, untracked] = await Promise.all([git(["ls-files", "-s", "-z"]), git(["diff", "--name-only", "-z"]), git(["ls-files", "--others", "--exclude-standard", "-z"])]);
+  const [indexed, modified, untracked, objectFormat] = await Promise.all([
+    git(["ls-files", "-s", "-z"]), git(["diff", "--name-only", "-z"]),
+    git(["ls-files", "--others", "--exclude-standard", "-z"]),
+    run(["git", "rev-parse", "--show-object-format"], { cwd: repository }),
+  ]);
+  const format = objectFormat.trim();
+  if (format !== "sha1" && format !== "sha256") throw new Error(`Unsupported Git object format: ${format}`);
   const files: Record<string, string> = {};
   for (const entry of indexed) {
     const [meta, path] = entry.split("\t");
     files[path!] = meta!.split(" ")[1]!;
   }
   for (const path of [...modified, ...untracked]) {
-    const bytes = await readFile(join(repository, path)).catch(() => undefined);
-    if (bytes) files[path] = sha256(bytes);
+    const file = join(repository, path);
+    // Git stores a symlink's target text, not the contents of the linked file.
+    const bytes = await lstat(file).then(info => info.isSymbolicLink()
+      ? readlink(file).then(target => Buffer.from(target)) : readFile(file)).catch(() => undefined);
+    if (bytes) files[path] = sourceBlobHash(bytes, format);
     else delete files[path];
   }
   return files;

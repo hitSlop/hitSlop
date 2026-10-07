@@ -5,18 +5,20 @@ import Testing
 
 @testable import HitSlopCore
 
-private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 100, height: Double = 100) -> SlopShape {
-  .slopPathShape(.init(fillRule: evenOdd ? .evenodd : .nonzero, path: path, viewBox: [width, height]))
+private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 100, height: Double = 100) -> [String:
+  Any]
+{
+  ["fillRule": evenOdd ? "evenodd" : "nonzero", "path": path, "viewBox": [width, height]]
 }
 // Rust owns parsing; these tests exercise native path construction from its output, read
 // from a template the core packed.
-private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> SlopSilhouette {
+private func silhouette(shape: Any, width: Int, height: Int) throws -> SlopSilhouette {
   let stage = try Fixtures.minimalStage(
     slug: "shape-lab",
-    manifest: [
-      "presentation": [
+    fields: [
+      "window": [
         "width": max(240, width), "height": max(180, height),
-        "shape": try JSONSerialization.jsonObject(with: JSONEncoder().encode(shape), options: .fragmentsAllowed),
+        "shape": shape,
       ]
     ])
   defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
@@ -36,13 +38,13 @@ private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> Slo
 }
 @Test func radiiApplyCSSOverlapAndPercentagesInLogicalCoordinates() throws {
   let rect = CGRect(x: 0, y: 0, width: 200, height: 100)
-  let ellipse = try silhouette(shape: .string("50%"), width: 200, height: 100).path(in: rect)
+  let ellipse = try silhouette(shape: "50%", width: 200, height: 100).path(in: rect)
   #expect(!ellipse.contains(CGPoint(x: 10, y: 10)))
   #expect(ellipse.contains(CGPoint(x: 100, y: 10)))
-  let capsule = try silhouette(shape: .string("9999px"), width: 200, height: 100).path(in: rect)
+  let capsule = try silhouette(shape: "9999px", width: 200, height: 100).path(in: rect)
   #expect(capsule.contains(CGPoint(x: 50, y: 1)))
   #expect(!capsule.contains(CGPoint(x: 1, y: 1)))
-  let asymmetric = try silhouette(shape: .string("50px 0 0 0"), width: 200, height: 100).path(in: rect)
+  let asymmetric = try silhouette(shape: "50px 0 0 0", width: 200, height: 100).path(in: rect)
   #expect(!asymmetric.contains(CGPoint(x: 1, y: 99)))
   #expect(asymmetric.contains(CGPoint(x: 1, y: 1)))
   #expect(asymmetric.contains(CGPoint(x: 199, y: 99)))

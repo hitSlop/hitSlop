@@ -311,8 +311,8 @@ extension HostTests {
   // window-sized capture is masked, and longer exports are unmasked, like PDF.
   @Test @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
     let root = try contractFixture { stage in
-      try Fixtures.updateManifest(stage) {
-        $0["presentation"] = ["width": 480, "height": 360, "shape": "50%"]
+      try Fixtures.updateApp(stage) {
+        $0["window"] = ["kind": "standard", "width": 480, "height": 360, "shape": "50%"]
       }
       try Fixtures.writeApp(
         """

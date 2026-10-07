@@ -56,6 +56,30 @@ public final class Locked<Value>: @unchecked Sendable {
   public func modify(_ change: (inout Value) -> Void) { lock.withLock { change(&stored) } }
 }
 
+/// Test-only inspection of replies; native production code routes through Rust.
+public struct SocketReplyHeader: Decodable, Sendable {
+  public let ok: Bool
+  public let method: String?
+  public let error: String?
+  public let code: OutcomeCode?
+  public let reason: CoreErrorCode?
+  public let opIndex: Int?
+  private enum CodingKeys: String, CodingKey { case ok, method, error, code, reason, opIndex }
+  public init(from decoder: Decoder) throws {
+    let fields = try decoder.container(keyedBy: CodingKeys.self)
+    ok = try fields.decode(Bool.self, forKey: .ok)
+    method = try fields.decodeIfPresent(String.self, forKey: .method)
+    error = try fields.decodeIfPresent(String.self, forKey: .error)
+    opIndex = try fields.decodeIfPresent(Int.self, forKey: .opIndex)
+    code = try fields.decodeIfPresent(String.self, forKey: .code).flatMap(OutcomeCode.init(rawValue:))
+    reason = try fields.decodeIfPresent(String.self, forKey: .reason).flatMap(CoreErrorCode.init(rawValue:))
+    guard ok ? method != nil : (code != nil && error != nil) else {
+      throw DecodingError.dataCorrupted(
+        .init(codingPath: decoder.codingPath, debugDescription: "Invalid socket reply header"))
+    }
+  }
+}
+
 /// Tests inspect payloads as well as the header; production routing never parses them.
 public struct DecodedReply {
   public let header: SocketReplyHeader

@@ -250,10 +250,10 @@ impl Store {
     /// A reader of the app's assets on its own connection, which pages read from while this
     /// store saves. The file is the one this store's open checked, or the reader fails with
     /// `Moved`.
-    pub fn asset_reader(&self) -> Result<file::AssetReader> {
+    pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         let conn = file::reader(&self.path)?;
         self.check(false)?;
-        Ok(file::AssetReader::new(conn))
+        Ok(file::ResourceReader::new(conn))
     }
     /// Fails once the file was moved or replaced (or, for the writer, gained a hard link),
     /// or, with `writable`, once the store no longer owns it.
@@ -277,7 +277,7 @@ impl Store {
         self.check(false)?;
         let (doc, meta) = self.connected(&mut lock(&self.backing).conn, |conn| {
             let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
-            load(&read, &self.app.spec)
+            load(&read, self.app.app.spec())
         })?;
         let mut account = lock(&self.account);
         *account =
@@ -438,7 +438,7 @@ impl Store {
         let id = attachment_id(bytes);
         self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &id, bytes))?;
         lock(&self.account).changed = true;
-        Ok(Attachment { id, bytes: bytes.len() as u64 })
+        Ok(Attachment { id, bytes: bytes.len() as u64, media_type: crate::media::attachment_type(bytes).into() })
     }
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
         let tx = file::begin_write(conn, "store attachment")?;
@@ -493,7 +493,7 @@ impl Store {
     pub fn attachments(&self) -> Result<Vec<Attachment>> {
         self.check(false)?;
         let stored = self.read(rows::attachment_list)?;
-        Ok(stored.into_iter().map(|(id, bytes)| Attachment { id, bytes }).collect())
+        Ok(stored.into_iter().map(|(id, bytes, media_type)| Attachment { id, bytes, media_type }).collect())
     }
     /// Runs a read on the store's connection: the writer's, or a snapshot's reader.
     fn read<T>(&self, f: impl Fn(&Connection) -> Result<T>) -> Result<T> {
@@ -519,7 +519,7 @@ impl Store {
         file::document_destination(dest)?;
         self.check(true)?;
         let artwork = optimized_artwork(artwork)?;
-        let app = &self.app.spec;
+        let app = self.app.app.spec();
         self.read(|conn| file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, &artwork))))
     }
     /// Copies the open document to `dest` as it is stored, without syncing: a capture's
@@ -539,7 +539,7 @@ impl Store {
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {
             let tx = file::begin_write(conn, "reclaim attachments")?;
-            let deleted = delete_unreferenced(&tx, None, &self.app.spec)?;
+            let deleted = delete_unreferenced(&tx, None, self.app.app.spec())?;
             tx.commit()?;
             Ok(deleted)
         })
@@ -552,7 +552,7 @@ fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u
     artwork
         .iter()
         .map(|&(name, png)| {
-            file::check_artwork(&format!("The {name} artwork"), png)?;
+            file::check_artwork(name, png)?;
             Ok((name, file::optimize_png(png.to_vec(), 0)))
         })
         .collect()
@@ -578,7 +578,7 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
 /// Deletes the attachments `doc`, or the saved state when none is given, does not
 /// reference (`Document::attachment_references`), inside the caller's transaction.
 fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::AppSpec) -> Result<usize> {
-    let stored: Vec<String> = rows::attachment_list(conn)?.into_iter().map(|(id, _)| id).collect();
+    let stored: Vec<String> = rows::attachment_list(conn)?.into_iter().map(|(id, _, _)| id).collect();
     if stored.is_empty() {
         return Ok(0);
     }
@@ -601,6 +601,7 @@ fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::A
 /// A stored attachment: its identity (the SHA-256 of its bytes) and size.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attachment {
+    pub media_type: String,
     pub id: String,
     pub bytes: u64,
 }

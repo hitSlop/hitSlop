@@ -1,0 +1,93 @@
+{
+  "packageFormat": 1,
+  "runtimeABI": 1,
+  "declaration": {
+    "metadata": {
+      "author": {
+        "name": "hitSlop"
+      },
+      "slug": "runtime-conformance",
+      "title": "Runtime conformance",
+      "description": "Checklist fixture replayed by the Bun and Swift host-path tests.",
+      "categories": [
+        "utilities"
+      ]
+    },
+    "window": {
+      "kind": "standard",
+      "width": 480,
+      "height": 480
+    },
+    "document": {
+      "kind": "object",
+      "properties": {
+        "title": {
+          "kind": "text"
+        },
+        "rows": {
+          "kind": "list",
+          "item": {
+            "kind": "object",
+            "properties": {
+              "text": {
+                "kind": "text"
+              },
+              "done": {
+                "kind": "boolean"
+              }
+            }
+          }
+        },
+        "hits": {
+          "kind": "counter"
+        }
+      }
+    },
+    "initial": {
+      "title": "abc",
+      "rows": [
+        {
+          "$id": "00000000000000000000000000000001",
+          "text": "A",
+          "done": false
+        },
+        {
+          "$id": "00000000000000000000000000000002",
+          "text": "B",
+          "done": false
+        }
+      ],
+      "hits": 0
+    },
+    "theme": [
+      {
+        "token": "accent",
+        "color": "#335577"
+      }
+    ],
+    "commands": [],
+    "views": {
+      "export": false,
+      "icon": false
+    }
+  },
+  "roles": {
+    "ui": "ui.js",
+    "style": "ui.css"
+  },
+  "resources": [
+    {
+      "kind": "app",
+      "key": "ui.js",
+      "mediaType": "text/javascript",
+      "path": "assets/ui.js"
+    },
+    {
+      "kind": "app",
+      "key": "ui.css",
+      "mediaType": "text/css",
+      "path": "assets/ui.css"
+    }
+  ],
+  "artwork": {}
+}

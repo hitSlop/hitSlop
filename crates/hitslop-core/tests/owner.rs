@@ -17,13 +17,13 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
-    std::fs::write(stage.join("assets/app.js"), "export default {}").unwrap();
+    std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
     support::write_app(
         &stage,
         support::App::new(r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#, r#"{"title":"Saved"}"#),
     );
     let template = dir.path().join("template.slop");
-    file::pack(&stage, &template).unwrap();
+    support::pack(&stage, &template).unwrap();
     let path = dir.path().join("document.slop");
     file::create_document(&template, &path).unwrap();
     (dir, path)

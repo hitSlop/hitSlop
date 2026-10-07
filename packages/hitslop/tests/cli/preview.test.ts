@@ -4,7 +4,7 @@ import { previewFrame } from "../../src/cli/preview";
 
 test("preview titles cannot inject executable markup or iframe attributes", async () => {
   const title = '</title><script>alert(1)</script><title>" onload="alert(2)';
-  const frame = previewFrame({ title, presentation: { width: 480, height: 620 } });
+  const frame = previewFrame({ title, window: { kind: "standard", width: 480, height: 620 } });
   const scripts: (string | null)[] = [];
   let inlineScript = "";
   let iframeTitle: string | null = null;

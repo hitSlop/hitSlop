@@ -36,11 +36,11 @@ import Testing
   // author's order.
   let source = try Fixtures.minimalStage(
     slug: "tiny-counter",
-    manifest: [
+    fields: [
       "author": ["name": "Fixture Author", "url": "https://example.com"],
       "categories": ["productivity", "other"],
-      "presentation": ["width": 320, "height": 240, "shape": "12px 30% / 20px", "resizable": true, "lockAspect": true],
-    ], theme: ##"{"paper":"#ffffff","accent":"#335577"}"##)
+      "window": ["width": 320, "height": 240, "shape": "12px 30% / 20px", "resizable": true, "lockAspect": true],
+    ], theme: [("paper", "#ffffff"), ("accent", "#335577")])
   let template = try Fixtures.template(stage: source)
   defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
   let document = template.deletingLastPathComponent().appendingPathComponent("document.slop")
@@ -48,7 +48,7 @@ import Testing
   for (url, kind) in [(template, FileKind.template), (document, .document)] {
     let file = try SlopFile(url: url)
     #expect(file.kind == kind)
-    #expect(file.manifest.categories == [.productivity, .other])
+    #expect(file.metadata.categories == [.productivity, .other])
     #expect(file.silhouette.path(in: CGRect(x: 0, y: 0, width: 320, height: 240)).contains(CGPoint(x: 160, y: 120)))
     #expect(file.backdrop == .window && file.isResizable && !file.isSkinned)
     // The panel lists colors in the order the author declared them.
@@ -69,7 +69,7 @@ import Testing
 @Test func theBackdropFollowsThePresentationsBackground() throws {
   for (background, backdrop) in [("transparent", SlopBackdrop.clear), ("glass", .glass)] {
     let stage = try Fixtures.minimalStage(
-      slug: background, manifest: ["presentation": ["width": 240, "height": 180, "background": background]])
+      slug: background, fields: ["window": ["width": 240, "height": 180, "background": background]])
     let document = try Fixtures.document(stage: stage)
     defer { try? FileManager.default.removeItem(at: document) }
     #expect(try SlopFile(url: document).backdrop == backdrop)
@@ -95,17 +95,20 @@ import Testing
   #expect(try SlopFile.create(from: template, to: created) == created.standardizedFileURL.resolvingSymlinksInPath())
   let second = folder.appendingPathComponent("second.slop")
   _ = try SlopFile.create(from: template, to: second)
-  #expect(try SlopFile(url: second).manifest.slug == SlopFile(url: created).manifest.slug)
+  #expect(try SlopFile(url: second).metadata.slug == SlopFile(url: created).metadata.slug)
   // Creation never replaces an existing file.
   #expect(throws: (any Error).self) { try SlopFile.create(from: template, to: second) }
 }
 
 /// A small app's build stage, with an optional window skin.
 private func stage(skin: Bool = false) throws -> URL {
-  let presentation: [String: Any] =
-    skin ? ["width": 320, "height": 240, "skin": "assets/skin.png"] : ["width": 320, "height": 240]
-  let stage = try Fixtures.minimalStage(slug: "tiny-counter", manifest: ["presentation": presentation])
-  if skin { try writeSkin(to: stage.appendingPathComponent("assets/skin.png"), width: 320, height: 240) }
+  let window: [String: Any] =
+    ["width": 320, "height": 240]
+  let stage = try Fixtures.minimalStage(slug: "tiny-counter", fields: ["window": window])
+  if skin {
+    try writeSkin(to: stage.appendingPathComponent("assets/skin.png"), width: 320, height: 240)
+    try Fixtures.addSkin(stage, path: "assets/skin.png")
+  }
   return stage
 }
 

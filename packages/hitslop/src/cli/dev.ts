@@ -1,192 +1,147 @@
-import { previewResizeScript } from "./preview-resize";
-import { appContentSecurityPolicy } from "../schema/policy";
 import { createServer, type Plugin, type ViteDevServer } from "vite";
-import { readFile, mkdtemp, rm, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, mkdtemp, rm, realpath, mkdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { appConfig, virtualEntry } from "./vite";
-import { discoverEntry, entryFiles } from "./entry";
+import { appConfig } from "./vite";
 import { previewFrame } from "./preview";
+import { previewResizeScript } from "./preview-resize";
 import { cliRoot, shellDirectory } from "./paths";
-import { metadataFiles, stageWorker } from "./build";
+import { stageWorker } from "./build";
+import { execute } from "./engine";
+import { NativeDevHosts } from "./native-dev";
+import { nativeDevClient } from "./native-dev-client";
+import type { BuildInput } from "../wire/app.generated";
+import { appContentSecurityPolicy } from "../schema/policy";
+
+/** Single byte ranges; malformed/multiple ranges are ignored, an empty range is 416. */
+export function byteRange(header: string | undefined, size: number): [number, number] | "whole" | "unsatisfiable" {
+  if (!header?.startsWith("bytes=") || header.includes(",")) return "whole";
+  const parts = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!parts || (!parts[1] && !parts[2])) return "whole";
+  const first = parts[1] ? Number(parts[1]) : undefined, last = parts[2] ? Number(parts[2]) : undefined;
+  if (first !== undefined) {
+    if (first >= size || (last !== undefined && last < first)) return "unsatisfiable";
+    return [first, Math.min(size, last === undefined ? size : last + 1)];
+  }
+  if (!last || !size) return "unsatisfiable";
+  return [Math.max(0,size-last),size];
+}
 
 export async function startDev(source: string, port = 0, signal?: AbortSignal) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
-  const out = join(temporary, "preview");
-  const graph = join(temporary, "dependencies.json");
-  let child: { kill(): void } | undefined;
-  let closed = false;
-  let server: ViteDevServer | undefined;
-  let dependencies = new Set(
-    metadataFiles.map((file) => join(source, file)),
-  );
-  let metadataFailed = false;
-  const metadata = async () => {
-    if (closed) return;
-    const worker = stageWorker([source, out, "--deps", graph], "Metadata evaluation failed");
-    child = worker;
+  let stage = "", template = "", input: BuildInput;
+  const hosts = new NativeDevHosts(temporary, () => template);
+  let dependencies = new Set([join(source,"slop.ts")]);
+  let closed = false, failed = false;
+  let server: ViteDevServer | undefined, child: {kill():void} | undefined;
+  let rebuilding: Promise<void> | undefined, wanted = false;
+  const build = async () => {
+    await hosts.invalidate();
+    const next = await mkdtemp(join(temporary,"build-"));
     try {
-      await worker.done;
-      const next = new Set<string>(JSON.parse(await readFile(graph, "utf8")));
-      // Vite watches the source itself; only files outside it are watched for metadata.
-      const outside = (file: string) => !file.startsWith(source + "/");
-      server?.watcher.unwatch([...dependencies].filter((file) => !next.has(file) && outside(file)));
-      dependencies = next;
+      const worker = stageWorker([source,join(next,"stage")], "Definition build failed");
+      child = worker;
+      const built: {input:BuildInput;dependencies:{definition:string[]}} = JSON.parse(await worker.done);
+      await execute({method:"pack",app:built.input,stage:join(next,"stage"),file:join(next,"preview.slop")});
+      const old = stage;
+      input = built.input; stage = next; template = join(next,"preview.slop");
+      dependencies = new Set(built.dependencies.definition.filter(path => !/\.(?:svelte|css)$/.test(path)));
       server?.watcher.add([...dependencies]);
-      metadataFailed = false;
-    } catch (error) {
-      metadataFailed = true;
-      throw error;
-    } finally {
-      child = undefined;
-    }
+      failed = false; hosts.activate();
+      if (old) await rm(old,{recursive:true,force:true});
+    } catch (error) { failed = true; await rm(next,{recursive:true,force:true}); throw error; }
+    finally { child = undefined; }
   };
-  // One rebuild runs at a time; changes during it are coalesced into the next one.
-  let wanted: { metadata: boolean; entry: boolean } | undefined;
-  let rebuilding: Promise<void> | undefined;
-  const rebuild = (current: ViteDevServer, change: { metadata: boolean; entry: boolean }) => {
-    wanted = { metadata: !!wanted?.metadata || change.metadata, entry: !!wanted?.entry || change.entry };
+  const rebuild = () => {
+    wanted = true;
     rebuilding ??= (async () => {
       while (wanted && !closed) {
-        const next = wanted;
-        wanted = undefined;
-        try {
-          if (next.metadata) await metadata();
-          if (next.entry) {
-            const entry = current.moduleGraph.getModuleById(virtualEntry);
-            if (entry) current.moduleGraph.invalidateModule(entry);
-            current.config.optimizeDeps.entries = (await discoverEntry(source)).files.map((file) =>
-              join(source, file),
-            );
-          }
-          if (!closed) current.ws.send({ type: "full-reload" });
-        } catch (error) {
-          if (!closed)
-            current.ws.send({
-              type: "error",
-              err: { message: String(error), stack: "", plugin: "hitslop-metadata" },
-            });
-        }
+        wanted = false;
+        try { await build(); if (!closed) server?.ws.send({type:"full-reload",path:"*"}); }
+        catch (error) { if (!closed) server?.ws.send({type:"error",err:{message:String(error),stack:"",plugin:"hitslop-definition"}}); }
       }
       rebuilding = undefined;
     })();
   };
   let closing: Promise<void> | undefined;
-  const close = () => {
-    if (closing) return closing;
-    closed = true;
-    signal?.removeEventListener("abort", onAbort);
-    child?.kill();
-    return (closing = (async () => {
-      await server?.close();
-      await rebuilding;
-      await rm(temporary, { recursive: true, force: true });
-    })());
-  };
-  const onAbort = () => {
-    void close().catch((error) => console.error(error));
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
+  const close = () => closing ??= (async () => {
+    closed = true; signal?.removeEventListener("abort",onAbort); child?.kill();
+    await hosts.close(); await server?.close(); await rebuilding;
+    await rm(temporary,{recursive:true,force:true});
+  })();
+  const onAbort = () => { void close().catch(console.error); };
+  signal?.addEventListener("abort",onAbort,{once:true});
   try {
-    signal?.throwIfAborted();
-    await metadata();
-    signal?.throwIfAborted();
-    const config = await appConfig(source);
-    signal?.throwIfAborted();
-    const policy = appContentSecurityPolicy("browser");
-    const page =
-      '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module" src="/@vite/client"></script></head><body><script type="module" src="/__shell__/boot.js"></script></body></html>';
-    const conventional = new Set(entryFiles.map((file) => join(source, file)));
+    signal?.throwIfAborted(); await build(); signal?.throwIfAborted();
     const host: Plugin = {
-      name: "hitslop-preview-host",
+      name:"hitslop-preview-host",
       configureServer(current) {
+        hosts.attach(current);
         current.watcher.add([...dependencies]);
-        current.watcher.on("all", (event, file) => {
-          if (closed || !["add", "unlink", "change"].includes(event)) return;
-          const entryChanged = event !== "change" && conventional.has(file);
-          const metadataChanged =
-            dependencies.has(file) || (metadataFailed && /\.(ts|json)$/.test(file));
-          if (!entryChanged && !metadataChanged) return;
-          rebuild(current, { metadata: metadataChanged, entry: entryChanged });
+        current.watcher.on("all",(event,file) => {
+          if (!closed && ["add","unlink","change"].includes(event) && (dependencies.has(file) || (failed && /\.[cm]?[jt]s$/.test(file)))) rebuild();
         });
-        current.middlewares.use(async (req, res, next) => {
+        current.middlewares.use(async (req,res,next) => {
+          let path = "";
           try {
-            const path = decodeURIComponent(new URL(req.url!, "http://localhost").pathname);
-            let content: string | Buffer | undefined;
-            let type = "application/json";
-            if (path === "/") {
-              content = previewFrame(JSON.parse(await readFile(join(out, "app.json"), "utf8")).manifest);
-              type = "text/html";
-            } else if (path === "/__preview__/resize.js") {
-              content = Buffer.from(previewResizeScript);
-              type = "text/javascript";
-            } else if (path === "/app.html") {
-              content = page;
-              type = "text/html";
-            } else if (path.startsWith("/__shell__/")) {
-              const file = resolve(shellDirectory, path.slice(11));
-              if (!file.startsWith(shellDirectory + "/")) {
-                res.statusCode = 403;
-                res.end();
-                return;
-              }
-              content = await readFile(file);
-              type = file.endsWith(".wasm") ? "application/wasm" : "text/javascript";
-            } else if (path === "/app.json") {
-              content = await readFile(join(out, "app.json"));
+            path = decodeURIComponent(new URL(req.url!,"http://localhost").pathname);
+            const origin = new URL(current.resolvedUrls!.local[0]!).origin;
+            let content: string | Buffer | undefined, type = "text/javascript";
+            if (path === "/") { content = previewFrame({title:input.declaration.metadata.title,window:input.declaration.window}); type="text/html"; }
+            else if (path === "/app.html") {
+              type="text/html";
+              content=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
             }
-            if (content === undefined) {
-              next();
-              return;
+            else if (path === "/__preview__/resize.js") content=previewResizeScript;
+            else if (path === "/__preview__/native.js") content=nativeDevClient;
+            else if (path.startsWith("/__shell__/")) {
+              const file=resolve(shellDirectory,path.slice(11));
+              if (!file.startsWith(shellDirectory+"/") || !file.endsWith(".js")) throw new Error("Resource not exposed");
+              content=await readFile(file);
             }
-            res.setHeader("Content-Type", type);
-            res.setHeader("Cache-Control", "no-store");
-            res.setHeader(
-              "Content-Security-Policy",
-              path === "/"
-                ? "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'"
-                : policy,
-            );
+            else if (path.startsWith("/assets/")) {
+              const key=path.slice(8), resource=input.resources.find(r=>r.kind==="app" && r.key===key);
+              if (!resource) { res.statusCode=404;res.end();return; }
+              content=await readFile(join(stage,"stage",resource.path));type=resource.mediaType;
+            }
+            else if (path.startsWith("/attachments/")) {
+              const [, ,token,id,...rest]=path.split("/");
+              if (rest.length || !token || !/^[0-9a-f]{64}$/.test(id??"")) throw new Error("Invalid attachment URL");
+              const metadata=await hosts.resource(token,id!,0,0);
+              if (!metadata.info || metadata.error) { res.statusCode=404;res.end();return; }
+              const size=metadata.info.size, range=byteRange(req.headers.range,size);
+              res.setHeader("Accept-Ranges","bytes");
+              res.setHeader("Content-Type",metadata.info.mimeType);
+              res.setHeader("Content-Security-Policy","sandbox");
+              res.setHeader("X-Content-Type-Options","nosniff");
+              res.setHeader("Cache-Control","no-store");
+              if (range==="unsatisfiable") {res.statusCode=416;res.setHeader("Content-Range",`bytes */${size}`);res.end();return;}
+              const [start,end]=range==="whole"?[0,size]:range;
+              if (range!=="whole") {res.statusCode=206;res.setHeader("Content-Range",`bytes ${start}-${end-1}/${size}`);}
+              res.setHeader("Content-Length",end-start);
+              if (req.method==="HEAD") {res.end();return;}
+              const data=await hosts.resource(token,id!,start,end-start);
+              if (data.error || !data.bytes) throw new Error(data.error??"Missing attachment");
+              res.end(Buffer.from(data.bytes));return;
+            }
+            if (content===undefined) {next();return;}
+            res.setHeader("Content-Type",type);res.setHeader("Cache-Control","no-store");res.setHeader("X-Content-Type-Options","nosniff");
+            res.setHeader("Content-Security-Policy",path==="/" ? `default-src 'none'; script-src ${origin}/__preview__/resize.js; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'` : appContentSecurityPolicy("browser",origin));
             res.end(content);
-          } catch (error) {
-            next(error as Error);
+          } catch(error) {
+            if (path.startsWith("/attachments/")) { res.statusCode=404; res.end(); }
+            else next(error as Error);
           }
         });
       },
-      handleHotUpdate(ctx) {
-        // Metadata changes deliberately replace the disposable owner after fresh evaluation.
-        if (dependencies.has(ctx.file)) return [];
-      },
+      handleHotUpdate(ctx) {if (dependencies.has(ctx.file)) return [];},
     };
-    server = await createServer({
-      ...config,
-      plugins: [host, ...(config.plugins ?? [])],
-      appType: "custom",
-      cacheDir: join(
-        tmpdir(),
-        "hitslop-vite-cache",
-        createHash("sha256")
-          .update(cliRoot + source)
-          .digest("hex"),
-      ),
-      server: {
-        host: "127.0.0.1",
-        port,
-        strictPort: port !== 0,
-        fs: {
-          strict: true,
-          allow: [source, cliRoot],
-        },
-      },
-    });
-    signal?.throwIfAborted();
-    await server.listen();
-    signal?.throwIfAborted();
-    return { url: server.resolvedUrls!.local[0]!, close };
-  } catch (error) {
-    await close();
-    throw error;
-  }
+    const config=await appConfig(source);
+    server=await createServer({...config,plugins:[host,...(config.plugins??[])],appType:"custom",cacheDir:join(tmpdir(),"hitslop-vite-cache",createHash("sha256").update(cliRoot+source).digest("hex")),server:{host:"127.0.0.1",port,strictPort:port!==0,fs:{strict:true,allow:[source,cliRoot]}}});
+    signal?.throwIfAborted();await server.listen();signal?.throwIfAborted();
+    const origin = new URL(server.resolvedUrls!.local[0]!).origin;
+    return {url:origin+"/",close,diagnostics:()=>hosts.diagnostics()};
+  } catch(error) {await close();throw error;}
 }

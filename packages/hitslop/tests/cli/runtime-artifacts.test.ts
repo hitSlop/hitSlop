@@ -13,9 +13,6 @@ test("page shell copies must be byte-identical across consumers", async () => {
       await mkdir(consumer, { recursive: true });
       for (const file of ["boot.js", "index.js"]) await writeFile(join(consumer, file), file);
     }
-    // The CLI copy also carries the dev-only WASM core; it is not part of the shell digest.
-    await mkdir(join(consumers[1]!, "core"));
-    await writeFile(join(consumers[1]!, "core/hitslop_core_wasm_bg.wasm"), "wasm");
     await verifyShellCopies(consumers);
     await writeFile(join(consumers[1]!, "index.js"), "drift");
     await expect(verifyShellCopies(consumers)).rejects.toThrow("differ");

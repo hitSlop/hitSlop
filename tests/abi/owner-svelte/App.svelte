@@ -140,8 +140,8 @@
       const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),
       );
-      check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "text/plain", "Attachment reference was lost");
-      check((await (await attachments.read(ref.id, { type: ref.mimeType })).text()) === "conformance", "Attachment bytes differ");
+      check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
+      check((await (await attachments.read(ref.id)).text()) === "conformance", "Attachment bytes differ");
       check(capture.isRenderer() === false, "An interactive page reported itself as a renderer");
       await resizeWindow({ width: 480, height: 480 }).catch((error) => {
         if (!isDocumentError(error)) throw error;

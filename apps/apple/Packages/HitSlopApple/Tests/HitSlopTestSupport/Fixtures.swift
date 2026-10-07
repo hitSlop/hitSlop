@@ -1,10 +1,11 @@
 import AppKit
+import CryptoKit
 import HitSlopCore
 import HitSlopCoreBinding
 import SQLite3
 
-/// Test files built the way `slop build` builds them: a stage directory (manifest with its
-/// markers, descriptor, initial values, assets, optional artwork) packed by the core into a
+/// Test files built the way `slop build` builds them: explicit BuildInput and staged
+/// resource bytes (with optional artwork), packed by the core into a
 /// template, and documents created from templates.
 public enum Fixtures {
   public static let repository = URL(fileURLWithPath: String(#filePath.components(separatedBy: "/apps/apple/")[0]))
@@ -97,51 +98,104 @@ public enum Fixtures {
     if source.range(of: #"export\s+default\s*\{\s*descriptor\s*:"#, options: .regularExpression) == nil,
       let entry = source.range(of: #"export\s+default\s*\{"#, options: .regularExpression)
     {
-      let row = try object(String(contentsOf: stage.appendingPathComponent("app.json"), encoding: .utf8))
-      let descriptor = try json(row["descriptor"]!)
+      let row = try object(String(contentsOf: stage.appendingPathComponent("input.json"), encoding: .utf8))
+      let descriptor = try json((row["declaration"] as! [String: Any])["document"]!)
       source.replaceSubrange(entry, with: "export default { descriptor: \(descriptor),")
     }
-    try Data(source.utf8).write(to: stage.appendingPathComponent("assets/app.js"))
+    let input = try object(String(contentsOf: stage.appendingPathComponent("input.json"), encoding: .utf8))
+    let path = (input["resources"] as! [[String: Any]]).first { $0["key"] as? String == "ui.js" }!["path"] as! String
+    try Data(source.utf8).write(to: stage.appendingPathComponent(path))
   }
 
-  /// A minimal app's stage: an app that mounts nothing and an empty descriptor. `manifest`
-  /// replaces fields of the default manifest; `theme` is written as given, so its colors
-  /// keep their order.
+  /// An explicit BuildInput fixture. Declaration edits and resource registration are
+  /// separate, as in the production compiler.
   public static func minimalStage(
-    slug: String = "fixture", manifest overrides: [String: Any] = [:],
-    theme: String = ##"{"accent":"#335577"}"##
+    slug: String = "fixture", fields overrides: [String: Any] = [:],
+    theme: [(String, String)] = [("accent", "#335577")]
   ) throws -> URL {
     let stage = try folder().appendingPathComponent("stage")
     try FileManager.default.createDirectory(
       at: stage.appendingPathComponent("assets"), withIntermediateDirectories: true)
-    var manifest: [String: Any] = [
+    var metadata: [String: Any] = [
       "author": ["name": "Fixture Author", "url": "https://example.com"], "slug": slug, "title": "Fixture",
-      "description": "A test app.", "categories": ["utilities"], "presentation": ["width": 320, "height": 240],
+      "description": "A test app.", "categories": ["utilities"],
     ]
-    manifest.merge(overrides) { $1 }
-    let manifestJSON = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
-    let app =
-      #"{"packageFormat":\#(PackageFormat.level),"runtimeABI":\#(RuntimeABI.level),"manifest":\#(manifestJSON),"descriptor":{"kind":"object","properties":{}},"initial":{},"theme":\#(theme)}"#
-    try Data(app.utf8).write(to: stage.appendingPathComponent("app.json"))
+    metadata.merge(overrides.filter { $0.key != "window" }) { $1 }
+    var window = overrides["window"] as? [String: Any] ?? ["width": 320, "height": 240]
+    window["kind"] = "standard"
+    let app: [String: Any] = [
+      "packageFormat": PackageFormat.level, "runtimeABI": RuntimeABI.level,
+      "declaration": [
+        "metadata": metadata, "window": window, "document": ["kind": "object", "properties": [:]],
+        "initial": [:], "theme": theme.map { ["token": $0.0, "color": $0.1] }, "commands": [],
+        "views": ["export": false, "icon": false],
+      ],
+      "roles": ["ui": "ui.js"],
+      "resources": [["kind": "app", "key": "ui.js", "mediaType": "text/javascript", "path": "assets/ui.js"]],
+      "artwork": [:],
+    ]
+    try JSONSerialization.data(withJSONObject: app).write(to: stage.appendingPathComponent("input.json"))
     try writeApp("export default { mount() { return {}; } };", to: stage)
     return stage
   }
 
-  /// Changes a stage's `app.json`, the `app` row the build wrote: its manifest, descriptor,
-  /// initial values or theme. (The theme's colors may be reordered.)
-  public static func updateApp(_ stage: URL, _ change: (inout [String: Any]) throws -> Void) throws {
-    let url = stage.appendingPathComponent("app.json")
-    var app = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
-    try change(&app)
-    try JSONSerialization.data(withJSONObject: app).write(to: url)
+  public static func updateInput(_ stage: URL, _ change: (inout [String: Any]) throws -> Void) throws {
+    let url = stage.appendingPathComponent("input.json")
+    var input = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+    try change(&input)
+    try JSONSerialization.data(withJSONObject: input).write(to: url)
   }
 
-  /// Changes a stage's manifest.
-  public static func updateManifest(_ stage: URL, _ change: (inout [String: Any]) throws -> Void) throws {
-    try updateApp(stage) { app in
-      var manifest = app["manifest"] as! [String: Any]
-      try change(&manifest)
-      app["manifest"] = manifest
+  public static func updateApp(_ stage: URL, _ change: (inout [String: Any]) throws -> Void) throws {
+    try updateInput(stage) { input in
+      var declaration = input["declaration"] as! [String: Any]
+      try change(&declaration)
+      input["declaration"] = declaration
+    }
+  }
+
+  public static func addAsset(_ stage: URL, bytes: Data, ext: String, mediaType: String) throws -> String {
+    let key = "media/" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() + "." + ext
+    let path = "assets/" + key
+    try FileManager.default.createDirectory(
+      at: stage.appendingPathComponent("assets/media"), withIntermediateDirectories: true)
+    try bytes.write(to: stage.appendingPathComponent(path))
+    try updateInput(stage) { input in
+      var resources = input["resources"] as! [[String: Any]]
+      resources.append(["kind": "app", "key": key, "mediaType": mediaType, "path": path])
+      input["resources"] = resources
+    }
+    return "/assets/" + key
+  }
+
+  public static func addArtwork(_ stage: URL, name: String, bytes: Data) throws {
+    let path = "artwork/" + name + ".png"
+    try FileManager.default.createDirectory(
+      at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
+    try bytes.write(to: stage.appendingPathComponent(path))
+    try updateInput(stage) { input in
+      var artwork = input["artwork"] as! [String: Any]
+      artwork[name] = path
+      input["artwork"] = artwork
+    }
+  }
+
+  public static func addSkin(_ stage: URL, path: String) throws {
+    let bytes = try Data(contentsOf: stage.appendingPathComponent(path))
+    let key = "media/" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() + ".png"
+    try updateInput(stage) { input in
+      var declaration = input["declaration"] as! [String: Any]
+      let previous = declaration["window"] as! [String: Any]
+      declaration["window"] = [
+        "kind": "skin", "width": previous["width"]!, "height": previous["height"]!, "image": "/assets/" + key,
+      ]
+      input["declaration"] = declaration
+      var roles = input["roles"] as! [String: Any]
+      roles["skin"] = key
+      input["roles"] = roles
+      var resources = input["resources"] as! [[String: Any]]
+      resources.append(["kind": "app", "key": key, "mediaType": "image/png", "path": path])
+      input["resources"] = resources
     }
   }
 
@@ -151,6 +205,7 @@ public enum Fixtures {
     let template = stage.deletingLastPathComponent().appendingPathComponent(name + ".slop")
     let input = try JSONSerialization.data(withJSONObject: [
       "method": "pack", "stage": stage.path, "file": template.path,
+      "app": try JSONSerialization.jsonObject(with: Data(contentsOf: stage.appendingPathComponent("input.json"))),
     ])
     let (status, output, errors) = try run(engine, ["--client-protocol", String(HelperProtocol.version)], input: input)
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
@@ -213,13 +268,13 @@ public enum Fixtures {
         with: Data(contentsOf: repository.appendingPathComponent("crates/hitslop-core/fixtures/checklist.json")))
       as! [String: Any]
     try updateApp(stage) { app in
-      app["descriptor"] = spec["schema"]
+      app["document"] = spec["schema"]
       app["initial"] = spec["initial"]
     }
     let source =
       try app
       ?? String(
-        contentsOf: repository.appendingPathComponent("tests/fixtures/checklist/document/assets/app.js"),
+        contentsOf: repository.appendingPathComponent("tests/fixtures/checklist/document/assets/ui.js"),
         encoding: .utf8)
     try writeApp(source, to: stage)
     return try document(stage: stage)
@@ -281,8 +336,34 @@ public enum Fixtures {
   public static func sql(_ file: URL, _ statement: String) throws {
     var db: OpaquePointer?
     defer { sqlite3_close(db) }
-    guard sqlite3_open(file.path, &db) == SQLITE_OK, sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK
-    else { throw SlopFailure(String(cString: sqlite3_errmsg(db))) }
+    guard sqlite3_open(file.path, &db) == SQLITE_OK else { throw SlopFailure("Cannot open fixture") }
+    func execute(_ sql: String) throws {
+      guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+        throw SlopFailure(String(cString: sqlite3_errmsg(db)))
+      }
+    }
+    // Corruption fixtures deliberately bypass the seal; production never does this.
+    var cursor: OpaquePointer?
+    var triggers: [(String, String)] = []
+    guard
+      sqlite3_prepare_v2(db, "SELECT name,sql FROM sqlite_master WHERE type='trigger'", -1, &cursor, nil) == SQLITE_OK
+    else { throw SlopFailure("Cannot read fixture triggers") }
+    while sqlite3_step(cursor) == SQLITE_ROW {
+      triggers.append(
+        (String(cString: sqlite3_column_text(cursor, 0)), String(cString: sqlite3_column_text(cursor, 1))))
+    }
+    sqlite3_finalize(cursor)
+    try execute("BEGIN")
+    do {
+      for (name, _) in triggers { try execute("DROP TRIGGER \(name)") }
+      try execute(statement)
+      for (_, sql) in triggers { try execute(sql) }
+      try execute("COMMIT")
+    } catch {
+      try? execute("ROLLBACK")
+      throw error
+    }
+
   }
 
   /// Whether Finder shows a custom icon for `file`: the flag in its Finder info.

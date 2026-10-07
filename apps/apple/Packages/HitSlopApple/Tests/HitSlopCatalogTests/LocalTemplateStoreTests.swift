@@ -99,7 +99,7 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
     throw SlopFailure("Not a template entry")
   }
   _ = try SlopFile.create(from: template, to: destination)
-  #expect(try SlopFile(url: destination).manifest.categories == [.utilities, .other])
+  #expect(try SlopFile(url: destination).metadata.categories == [.utilities, .other])
   // The core stores artwork losslessly re-encoded: a document copies its template's
   // bytes, and written artwork keeps its pixels.
   let (templatePreview, templateIcon) = (SlopArtwork.png(file, .preview), SlopArtwork.png(file, .icon))
@@ -141,12 +141,12 @@ private func writeTemplate(
   named slug: String, in directory: URL, fileName: String? = nil, categories: [String] = ["utilities", "personal"],
   preview: Data = png, icon: Data = iconPNG
 ) throws -> URL {
-  let stage = try Fixtures.minimalStage(slug: slug, manifest: ["title": "Tiny Counter", "categories": categories])
+  let stage = try Fixtures.minimalStage(slug: slug, fields: ["title": "Tiny Counter", "categories": categories])
   defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
   try FileManager.default.createDirectory(
     at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
-  try preview.write(to: stage.appendingPathComponent("artwork/preview.png"))
-  try icon.write(to: stage.appendingPathComponent("artwork/icon.png"))
+  try Fixtures.addArtwork(stage, name: "preview", bytes: preview)
+  try Fixtures.addArtwork(stage, name: "icon", bytes: icon)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   let template = directory.appendingPathComponent(fileName ?? "\(slug).slop")
   try FileManager.default.moveItem(at: Fixtures.template(stage: stage), to: template)
@@ -166,7 +166,7 @@ private func writeTemplate(
   let file = try writeTemplate(named: "cached", in: root)
   let scanner = CatalogScanner()
   #expect(try await scanner.local(at: root).templates.count == 1)
-  try Fixtures.sql(file, "UPDATE app SET manifest = substr(manifest, 2)")
+  try Fixtures.sql(file, "UPDATE app SET title = ''")
   try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
   let rescanned = try await scanner.local(at: root)
   #expect(rescanned.templates.isEmpty)

@@ -55,8 +55,8 @@ import Testing
 }
 
 private func documentWindowFixture(resizable: Bool) throws -> URL {
-  let stage = try Fixtures.minimalStage(manifest: [
-    "presentation": ["width": 320, "height": 240, "resizable": resizable]
+  let stage = try Fixtures.minimalStage(fields: [
+    "window": ["width": 320, "height": 240, "resizable": resizable]
   ])
   let icon = try Fixtures.png(width: 512, height: 512) { _ in
     NSColor.systemOrange.setFill()
@@ -64,6 +64,6 @@ private func documentWindowFixture(resizable: Bool) throws -> URL {
   }
   try FileManager.default.createDirectory(
     at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
-  try icon.write(to: stage.appendingPathComponent("artwork/icon.png"))
+  try Fixtures.addArtwork(stage, name: "icon", bytes: icon)
   return try Fixtures.document(stage: stage, at: Fixtures.folder().appendingPathComponent("fixture.slop"))
 }

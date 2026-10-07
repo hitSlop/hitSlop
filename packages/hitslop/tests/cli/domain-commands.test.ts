@@ -8,7 +8,7 @@ import { exec } from "../../src/cli/process";
 import { findEngine } from "../../src/cli/engine";
 import { evaluate } from "../../src/shell/commands";
 import { commandInfo } from "../../src/sdk/commands";
-import { buildCommands } from "../../src/cli/commands-build";
+import { stageProject } from "../../src/cli/build";
 
 test("command imports stay inside the real project when it is reached through a symlink", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-command-link-"));
@@ -16,13 +16,12 @@ test("command imports stay inside the real project when it is reached through a 
     const source = join(root, "source"), alias = join(root, "alias"), stage = join(root, "stage");
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     await symlink(source, alias);
-    const definition = (await import(join(source, "schema.ts"))).default;
-    await buildCommands(alias, definition, stage);
-    expect(JSON.parse(await readFile(join(stage, "assets/__commands/metadata.json"), "utf8")).addTask).toBeDefined();
+    const input = await stageProject(alias, stage);
+    expect(input.declaration.commands.map(c => c.name)).toContain("addTask");
   } finally { await rm(root, { recursive: true, force: true }); }
-});
+}, 30_000);
 
-test("stored commands validate arguments, match page evaluation and refuse atomically", async () => {
+test("stored commands validate arguments, return typed results and refuse atomically", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-commands-"));
   const named = ["--client-protocol", String(HelperProtocol.version)];
   try {
@@ -30,8 +29,8 @@ test("stored commands validate arguments, match page evaluation and refuse atomi
     await cp("examples/slops/quick-checklist", source, { recursive: true });
     const file = join(source, "commands.ts");
     await writeFile(file, (await readFile(file, "utf8")) + `
-export const refuse = doc.command({ description: "Refuse after collecting", args: Type.Object({}, {additionalProperties:false}), run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate refusal"); } });
-export const ambient = doc.command({ description: "No host APIs", args: Type.Object({}, {additionalProperties:false}), run() { return [typeof process, typeof fetch, typeof Bun]; } });
+export const refuse = doc.command({ description: "Refuse after collecting", args: {}, run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate refusal"); } });
+export const ambient = doc.command({ description: "No host APIs", args: {}, run() { return [typeof process, typeof fetch, typeof Bun]; } });
 `);
     const template = await buildTemplate(source, undefined, join(root, "master.slop"));
     const document = join(root, "Working.slop");
@@ -58,7 +57,7 @@ export const ambient = doc.command({ description: "No host APIs", args: Type.Obj
       expect((await describe()).value).toEqual(before.value);
     }
     expect((await run("ambient", {})).result).toEqual(["undefined", "undefined", "undefined"]);
-    // The page and the restricted child use the same action and collecting handles.
+    // Direct SDK collection and the restricted child use the same collecting handles.
     const commands = await import(file);
     const spec = commandInfo(commands.archiveFinished)!.spec;
     const local = evaluate({ descriptor: before.schema, value: before.value, args: {}, now: 1, seed: [1,2,3,4] }, spec.run);

@@ -4,7 +4,7 @@ import { isRejected } from "../../sdk/errors";
 import type { Batch, OwnerPath } from "../../schema/core";
 import type { Segment } from "../../sdk/schema";
 
-type ApplyReply = import("../../schema/page").PageResult<"apply">;
+type ApplyReply = import("../../wire/page").PageResult<"apply">;
 interface TextHost {
   /** The store's text at `path` (not a string when the field is gone) and its version. */
   read(path: readonly Segment[]): { text: unknown; version: string; sequence: number };

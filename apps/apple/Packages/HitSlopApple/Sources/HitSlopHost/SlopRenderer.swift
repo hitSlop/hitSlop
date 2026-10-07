@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import HitSlopDocument
 import WebKit
 
@@ -298,25 +299,25 @@ import WebKit
     }
     return CGRect(x: value.x, y: value.y, width: value.width, height: value.height)
   }
-  private static func begin(_ view: WKWebView, token: String, mode: HostCaptureBeginRequestMode) async throws
+  private static func begin(_ view: WKWebView, token: String, mode: CaptureMode) async throws
     -> HostCaptureResult
   {
-    guard let value = try await view.callHost(.captureBegin(.init(token: token, mode: mode))) as? [String: Any] else {
+    guard let value = try await view.callHost(.captureBegin(token: token, mode: mode)) as? String else {
       throw SlopFailure("Could not prepare capture")
     }
-    return try HostCaptureResult(json: value)
+    return try decodeHostCaptureResult(json: value)
   }
   private static func resizeAndSettle(
     _ view: WKWebView, to size: CGSize, token: String, measurement: inout HostCaptureResult
   ) async throws {
     guard view.frame.size != size else { return }
     view.frame.size = size
-    guard let value = try await view.callHost(.captureSettle(.init(token: token))) as? [String: Any] else {
+    guard let value = try await view.callHost(.captureSettle(token: token)) as? String else {
       throw SlopFailure("Could not measure capture")
     }
-    measurement = try HostCaptureResult(json: value)
+    measurement = try decodeHostCaptureResult(json: value)
   }
   private static func restore(_ view: WKWebView, token: String) async throws {
-    _ = try await view.callHost(.captureRestore(.init(token: token)))
+    _ = try await view.callHost(.captureRestore(token: token))
   }
 }
