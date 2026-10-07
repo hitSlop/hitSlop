@@ -2,3 +2,11 @@
 # nativeCommandsRecoverThroughRealCloudflareRoom and compiledCounterStarterPersistsAndReopens.
 # Cloudflare keyword proximity caused a false positive; this is not a credential.
 b24a5152f52c15f7fe790358038566ce73c7b57e:scripts/local-check.ts:cloudflare-api-key:113
+
+# Archived benchmark inventory: these four values are SHA-256 file hashes, not
+# credentials. archive/spikes/boundary-simplification/harness.ts generated the
+# files map with createHash("sha256"). Keyword-bearing paths triggered detection.
+de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:generic-api-key:19
+de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:discord-api-token:59
+de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:discord-api-token:239
+de27c611aa9c87eb37d73b57a2228b9e21a1d8fe:archive/spikes/boundary-simplification/evidence/baseline.json:generic-api-key:918

@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: >-
+  Use plain English inspired by ASD-STE100: short sentences, one idea per sentence,
+  active voice, and consistent terms. Keep exact identifiers and error codes.
+  State uncertainty. Do not claim formal STE compliance.
+
+reviews:
+  profile: chill
+  # CI remains the merge gate; the bot does not approve or request changes.
+  request_changes_workflow: false
+  fail_commit_status: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  high_level_summary_instructions: >-
+    Start with a short description of the behavior change. Then report
+    "Merge risk: Low / Medium / High / Unknown" with one selected level and its
+    concrete reason. Low means a narrow change with no identified effect on saved
+    documents, public contracts, security, or release integrity. Medium means a
+    localized behavior change or a refactor in production Loro/CRDT, storage, or
+    runtime code. High means a Loro version change, a change to stored bytes or
+    their interpretation, open-time acceptance or limits, save/lock/recovery
+    behavior, an app-facing runtime contract, or another credible path to data
+    loss, unreadable documents, or a security regression. Use Unknown if the
+    available context is insufficient; name the missing evidence. Classify by
+    changed behavior, not file names alone; docs and tests do not become High
+    merely because they mention Loro. Passing CI does not erase the impact of a
+    risky change. Include "Document compatibility" with the affected boundary,
+    expected impact on existing slops opening, rendering, editing, saving, and
+    reopening, and evidence for that assessment. Say "not verified" when evidence
+    is missing; unrelated green checks do not prove compatibility.
+    Explicitly call out every production
+    Loro/CRDT change, including dependency and lockfile changes. End with the
+    focused checks or maintainer decisions still needed. Distinguish observed
+    test results from tests only proposed or present in source. Keep this an
+    advisory assessment; do not describe an AI rating as proof of safe merging.
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  poem: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+    drafts: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Prioritize reproducible correctness, security, data-loss, and compatibility
+        problems. Explain each failing scenario and its impact, cite the relevant
+        code or contract, and suggest a focused fix. Avoid cosmetic nitpicks,
+        speculative refactors, and praise-only comments.
+        Use this branch's AGENTS.md and engineering contract to identify
+        the owner of document semantics, persistence, validation, and wire types;
+        follow those boundaries across Rust, Swift, and TypeScript where present.
+        Pay particular attention to writer-lock ownership, live-owner routing,
+        async write completion, immutable snapshots, row identity, failed saves,
+        and flush-before-close/export. Trace Loro/CRDT changes through saved
+        updates and checkpoints, container layout, serialization, and reopen.
+        Check changes to format markers, open-time acceptance and limits,
+        package/resource loading, attachments, runtime ABI, and protocol refusal
+        for effects on existing slops. For relevant changes, identify the affected
+        frozen corpus and owning-boundary tests; report missing compatibility or
+        save/reopen evidence explicitly. Never suggest updating a frozen fixture
+        to make an incompatible change pass. Distinguish public-release compatibility
+        guarantees and frozen fixtures from explicitly unsupported prelaunch
+        documents; do not invent legacy readers or migrations for the latter.
+        Review changes to compatibility fixtures, lockfiles, generated contracts,
+        and release workflows for behavioral impact. Request regression tests at
+        the owning boundary only when they demonstrate a real failure; avoid
+        tests of private call sequences or cosmetic source strings.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/AGENTS.md"
+      - "docs/engineering-contract.md"
+      - "docs/testing.md"
