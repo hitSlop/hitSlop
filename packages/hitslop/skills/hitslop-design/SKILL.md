@@ -7,7 +7,7 @@ description: Design or refine hitSlop mini apps and documents with a purpose-led
 
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
-Read `slop.ts` first and design at its `presentation`'s exact dimensions. A slop
+Read `slop.ts` first and design at its `window`'s exact dimensions. A slop
 is one complete digital object, not a small website.
 
 Each slop should be unique, expressive, and instantly graspable for its single
@@ -43,7 +43,7 @@ layout, typography, palette, and controls to the requested object.
 - Implement the expression with plain CSS, declared theme colors, and styled
   Bits UI primitives. Use spacing, rules, gradients, borders, and restrained
   shadows before reaching for image skins; reserve PNG skins for meaningful
-  silhouettes as described in the presentation reference.
+  silhouettes as described in the windows reference.
 
 Related slops share interaction quality, not a universal shell. A recipe, timer,
 and budget tool should remain distinguishable even with their titles removed.
@@ -95,7 +95,7 @@ and PDF behavior.
   (`--slop-surface`, `--slop-accent`, `--slop-ink`). This ensures each slop retains its
   authentic physical personality (Paper, Instrument, Skin) while remaining effortless
   to restyle or re-theme at runtime.
-- Keep structural styles in plain `styles.css`, imported by the generated entry. Declare the
+- Keep structural styles in plain `styles.css`, imported explicitly from `slop.ts`. Declare the
   colors a person may change in slop.ts's `theme`: lowercase `#rrggbb`, or `#rrggbbaa`
   when translucent. Only colors belong there; fonts, sizes and colors derived with
   `color-mix(… var(--slop-ink) …)` go in `styles.css`. The build stores them as the
@@ -108,7 +108,7 @@ and PDF behavior.
   `slop theme get/set/reset/export/import`.
   The host saves overrides in the document's database; never edit it or compiled assets
   directly. Layout changes require authoring source and a rebuild.
-- Keep exportable content in normal flow. Without an `Export.svelte`, mark
+- Keep exportable content in normal flow. Without an `export` view, mark
   editing-only UI with `data-slop-export="hide"`; with one, the editor is never
   captured.
 - Make each slop purpose-specific. Shared SDK patterns must not make unrelated
@@ -116,7 +116,7 @@ and PDF behavior.
 
 ## Review efficiently
 
-Use `bun run dev` for disposable browser preview. Review at the `presentation` size
+Use `bun run dev` for disposable browser preview. Review at the `window` size
 and a narrow width, with menus open and keyboard focus visible. Build with the
 matching Mac app to verify export and icon artwork. Read
 [references/review-workbench.md](references/review-workbench.md) for a short pass.

@@ -70,7 +70,7 @@ try {
 // Templates: the chosen shipped templates as built, the hand-written conformance fixtures
 // (packed from their stages) and the Svelte conformance app, which exercises every ctx
 // member and descriptor kind.
-await prepareNativeFixtures();
+const presentation = await prepareNativeFixtures();
 const { templates: built } = await builtTemplates();
 for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "commands", "engine/darwin-arm64"])
   await mkdir(join(root, directory), { recursive: true });
@@ -82,6 +82,8 @@ for (const slug of chosen) {
 for (const fixture of await readdir(join(repository, "tests/fixtures")))
   templates[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
 templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
+// Window kinds the corpus keeps: 1× and 2× PNG skins, glass, a transparent ellipse and a path shape.
+for (const kind of ["washer", "washer-2x", "glass", "ellipse", "notch"]) templates[`presentation-${kind}`] = presentation[kind]!;
 for (const [slug, source] of Object.entries(templates)) {
   const template = join(root, "templates", slug + ".slop");
   if (source.endsWith(".slop")) await copyFile(source, template);
@@ -149,6 +151,7 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
   "hourglass": [{ selector: '[aria-label="What it counts down to"]', value: "Hourglass edited ✓" }],
   "quick-checklist": [{ selector: '[aria-label="Checklist title"]', value: "Checklist edited ✓" }],
+  ...Object.fromEntries(["washer", "washer-2x", "glass", "ellipse", "notch"].map((kind) => [`presentation-${kind}`, [{ selector: "button", click: true }]])),
 };
 for (const slug of Object.keys(templates)) {
   const document = join(documents, slug + ".slop");
@@ -166,6 +169,12 @@ for (const slug of Object.keys(templates)) {
     const ref = await slopJSON(["attachments", "ref", file]);
     await slopJSON(["apply", document, "--attach", file, "--op", JSON.stringify({ type: "set", path: ["attachment"], value: ref.id })]);
     await rm(file);
+    // A second attachment of a media type the host sniffs from its bytes.
+    const image = join(work, "photo.png");
+    await copyFile(join(repository, "tests/abi/owner-svelte/media/swatch.png"), image);
+    const photo = await slopJSON(["attachments", "ref", image]);
+    await slopJSON(["apply", document, "--attach", image, "--op", JSON.stringify({ type: "set", path: ["photo"], value: photo.id })]);
+    await rm(image);
   }
   const app = appOf(document);
   pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
@@ -244,7 +253,12 @@ const release: Release = {
     protocol: HelperProtocol.version,
   },
   inputs: capturedInputs,
-  producer: { coreBuildID: await run([helper, "--core-build"]), shell: await digest(shellDestinations.app, shellFiles) },
+  producer: {
+    coreBuildID: await run([helper, "--core-build"]),
+    shell: await digest(shellDestinations.app, shellFiles),
+    // The command prelude this release ran; a frozen entry freezes it (scripts/build/runner.ts).
+    runner: { [RuntimeABI]: await fileDigest(join(repository, `crates/hitslop-runner/src/abi/${RuntimeABI}.generated.js`)) },
+  },
   files: {},
   acceptance: Object.fromEntries(await Promise.all([
     `crates/hitslop-core/src/app/package_format_${PackageFormat}.rs`,

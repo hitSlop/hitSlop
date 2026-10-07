@@ -1854,6 +1854,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 name = "slop-engine"
 version = "0.0.0"
 dependencies = [
+ "data-encoding",
  "getrandom 0.2.17",
  "hitslop-core",
  "hitslop-runner",

@@ -18,7 +18,7 @@ const fixture = "tests/fixtures/checklist/document";
 const rounds = 24;
 const helper = process.env.HITSLOP_NATIVE_CLI ?? debugHelper;
 // The engine the CLI selects for that helper: the one beside it.
-const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine();
+const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
 const app = process.env.HITSLOP_APP_BINARY;
 let folder: string;
 beforeAll(async () => {

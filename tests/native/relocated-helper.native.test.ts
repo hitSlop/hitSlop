@@ -23,7 +23,7 @@ beforeAll(async () => {
   for (const name of ["hitslop-native", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
   const engine = join(folder, "slop-engine");
-  await cp(await (await import("../../packages/hitslop/src/cli/engine")).findDocumentEngine(), engine);
+  await cp(await (await import("../../packages/hitslop/src/cli/engine")).findEngine(), engine);
   placement = {
     engine,
     cwd: folder,

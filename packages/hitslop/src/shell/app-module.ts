@@ -4,7 +4,7 @@ import type { SlopApp } from "../sdk/abi";
  * evaluate differently in the build process and the browser. */
 export function checkedApp(app: unknown, descriptor: unknown): SlopApp {
   const view = app as Partial<SlopApp> | undefined;
-  if (!view || typeof view.mount !== "function") throw new Error("assets/app.js must export default { mount(ctx, target) }");
+  if (!view || typeof view.mount !== "function") throw new Error("ui.js must export default { mount(ctx, target) }");
   if (!view.descriptor || !sameJSON(view.descriptor, descriptor))
     throw new Error("This app was built for a different document: its schema does not match the file's");
   return view as SlopApp;

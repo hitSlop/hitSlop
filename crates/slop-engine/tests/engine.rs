@@ -205,3 +205,32 @@ fn helper_receives_json_and_ambiguous_failures_stay_unknown() {
     fs::write(&helper, "#!/bin/sh\necho 'update hitSlop' >&2\nexit 2\n").unwrap();
     assert_eq!(reply(&input, Some(&helper))["reason"], "requires_update");
 }
+
+#[test]
+fn a_preview_owner_refuses_an_unknown_page_request_and_keeps_serving() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = dir.path().join("Preview template.slop");
+    request(json!({"method":"pack","stage":stage(dir.path()),"file":template,"app":app(json!({"title":"Hello"}))}));
+    let document = dir.path().join("Preview.slop");
+    request(json!({"method":"create","from":template,"output":document}));
+    let frames = [
+        json!({"type":"page","id":1,"request":{"method":"future.method"}}),
+        json!({"type":"page","id":2,"request":{"method":"open"}}),
+    ];
+    let input: String = frames.iter().map(|f| format!("{f}\n")).collect();
+    let output = invoke(
+        &["--client-protocol", &protocol(), "--preview-owner", document.to_str().unwrap()],
+        input.as_bytes(),
+        None,
+    );
+    let replies: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .filter(|frame: &Value| frame["type"] == "reply" || frame["type"] == "fatal")
+        .collect();
+    assert!(output.status.success(), "{replies:?}");
+    // Page replies are JSON text, refusals included, exactly as the native host sends them.
+    let reply = |n: usize| serde_json::from_str::<Value>(replies[n]["reply"].as_str().unwrap()).unwrap();
+    assert_eq!((replies[0]["id"].clone(), reply(0)["reason"].clone()), (json!(1), json!("invalid_request")));
+    assert_eq!((replies[1]["id"].clone(), reply(1)["ok"].clone()), (json!(2), json!(true)));
+}

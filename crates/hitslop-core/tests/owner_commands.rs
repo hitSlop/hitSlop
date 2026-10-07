@@ -179,7 +179,11 @@ fn arguments_are_checked_before_launch_and_missing_evaluators_never_fall_back() 
         let failure = call(&owner, command(args)).unwrap_err();
         assert!(failure.message.contains("Invalid arguments"));
     }
-    assert!(call(&owner, command(json!({"title":"Valid"}))).unwrap_err().message.contains("unavailable"));
+    let missing = call(&owner, command(json!({"title":"Valid"}))).unwrap_err();
+    assert_eq!(
+        (missing.message.as_str(), missing.reason.as_deref()),
+        ("This hitSlop has no command evaluator", Some("engine_error"))
+    );
     assert!(!fixture.dir.path().join("started-0").exists());
     assert_eq!(title(&owner), "Saved");
     close(&owner);

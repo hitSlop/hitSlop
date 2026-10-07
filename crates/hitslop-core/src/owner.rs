@@ -235,12 +235,19 @@ impl Owner {
             .name("hitslop.persistence".into())
             .spawn(move || persistence(disk, work, completion))
             .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-        let (evaluate, evaluations) = mpsc::channel();
-        let completion = sender.clone();
-        std::thread::Builder::new()
-            .name("hitslop.commands".into())
-            .spawn(move || commands::worker(evaluator, evaluations, completion))
-            .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
+        // Without an evaluator there is no worker: commands are refused when called.
+        let evaluate = match evaluator {
+            Some(evaluator) => {
+                let (evaluate, evaluations) = mpsc::channel();
+                let completion = sender.clone();
+                std::thread::Builder::new()
+                    .name("hitslop.commands".into())
+                    .spawn(move || commands::worker(evaluator, evaluations, completion))
+                    .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
+                Some(evaluate)
+            }
+            None => None,
+        };
         let actor = Actor {
             evaluate,
             evaluating: false,
@@ -471,7 +478,7 @@ struct Waiter {
     next: AfterSave,
 }
 struct Actor {
-    evaluate: mpsc::Sender<EvaluationWork>,
+    evaluate: Option<mpsc::Sender<EvaluationWork>>,
     evaluating: bool,
     core: Document,
     store: Arc<store::Store>,
@@ -629,6 +636,17 @@ impl Actor {
         }
         Ok(())
     }
+    /// An edit whose refusal could not be rolled back poisons the owner like a panic.
+    pub(crate) fn edited<T>(&mut self, edit: impl FnOnce(&mut Document) -> crate::Result<T>) -> Result<T> {
+        edit(&mut self.core).map_err(|e| {
+            if self.core.is_broken() {
+                self.invalidated = true;
+                poisoned()
+            } else {
+                e.into()
+            }
+        })
+    }
     fn mutation(&self) -> Result<()> {
         if self.mode != store::Mode::Document {
             return Err(Failure::new(FailureKind::ReadOnly, "Read-only document"));
@@ -657,13 +675,13 @@ impl Actor {
             Request::State => Reply::State { json: self.core.reading()?, sequence: self.core.sequence() },
             Request::Apply { batch_json, origin } => {
                 self.mutation()?;
-                let result = self.core.apply_batch(&batch_json, origin)?;
+                let result = self.edited(|core| core.apply_batch(&batch_json, origin))?;
                 self.accepted(result.sequence, result.publication, result.theme_changed);
                 Reply::Applied { sequence: result.sequence, ids: result.ids, text: result.text }
             }
             Request::Undo { redo } => {
                 self.mutation()?;
-                let result = if redo { self.core.redo()? } else { self.core.undo()? };
+                let result = self.edited(|core| if redo { core.redo() } else { core.undo() })?;
                 self.accepted(result.sequence, result.publication, result.theme_changed);
                 Reply::Applied { sequence: result.sequence, ids: result.ids, text: None }
             }

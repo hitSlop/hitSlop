@@ -54,7 +54,7 @@ certificate that the whole file is valid. Neither display path migrates the file
 
 Rust owns wire types, errors, limits and app metadata. ts-rs generates TypeScript;
 UniFFI carries typed app definitions, summaries, window geometry and host actions to
-Swift. Swift never decodes manifest, theme or page-message JSON. Rust decodes a page
+Swift. Swift never decodes the app definition, theme or page-message JSON. Rust decodes a page
 request once, applies its lifecycle fence, answers document requests, or returns a
 native host action. Document JSON remains opaque text through the bridge. TypeBox,
 quicktype, handwritten contract generators and production JSON Schema validators are gone.
@@ -288,8 +288,8 @@ enabled, so focus survives a cancelled barrier. Export, preview and icon renderi
 fresh read-only pages from saved state. For an open document, the core first backs up
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
-WebKit rendering. A dedicated `Export.svelte` hides the editor before layout; without
-one, the fresh App renders its default local UI state. Capture never changes the open
+WebKit rendering. A dedicated `export` view hides the editor before layout; without
+one, a fresh `view` renders its default local UI state. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
 
 If the session changed the document, or the file has no preview, close captures its
@@ -355,7 +355,7 @@ effective values when changed, enter the undo history and are saved by the same 
 data, and a batch may change data and palette together. The window's consecutive
 changes to one color are one undo step, so a picker drag undoes at once.
 
-A theme file is `{template, values}`: the manifest slug and full effective palette.
+A theme file is `{template, values}`: the app's slug and full effective palette.
 Import checks the whole file, refuses another template or undeclared color, and replaces
 overrides; omitted colors return to defaults. Export reads the palette then flushes, so
 a failed save fails export. The panel follows the document sequence; the page applies

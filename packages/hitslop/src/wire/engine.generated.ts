@@ -27,7 +27,7 @@ export type EngineReply = EngineSuccess | Failure;
 /**
  * One request on the engine's standard input. Protocol negotiation stays outside it.
  */
-export type EngineRequest = { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, ifVersion?: string, command?: string,
+export type EngineRequest = { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, ifVersion?: string,
 /**
  * Intents as JSON text that only the core parses.
  */

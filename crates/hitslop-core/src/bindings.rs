@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
         ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
-        ("SlopCategories", json!(Category::ALL)),
+        ("SlopCategories", json!(crate::app::Category::ALL)),
         (
             "ManifestText",
             json!({
@@ -18,7 +18,10 @@ pub fn constants() -> Vec<(&'static str, Value)> {
                 "authorName": {"minLength": 1, "maxLength": AUTHOR_NAME_MAX, "pattern": "\\S"},
             }),
         ),
-        ("WindowBounds", json!({"minWidth": WINDOW_MIN_WIDTH, "minHeight": WINDOW_MIN_HEIGHT, "max": WINDOW_MAX})),
+        (
+            "WindowBounds",
+            json!({"minWidth": crate::wire::WINDOW_MIN_WIDTH, "minHeight": crate::wire::WINDOW_MIN_HEIGHT, "max": crate::wire::WINDOW_MAX}),
+        ),
         ("DefaultWindowRadius", json!(DEFAULT_WINDOW_RADIUS)),
         (
             "AttachmentLimits",

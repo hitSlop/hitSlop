@@ -8,6 +8,28 @@ import type { LiveDocument } from "./schema";
  * a change an older app cannot run raises `RuntimeABI`, and the shell keeps the older
  * behavior for packages built at the lower level. New members of object-like handles
  * start with `$`, which no field name can, so they never shadow an author's fields.
+ *
+ * The ABI is more than `ctx`: an app's bundles carry SDK code that meets the host here.
+ * Each of these is released behavior and changes only behind a raised RuntimeABI:
+ * - Page boot: the shell imports `/assets/ui.js` (default export `SlopApp`) and links
+ *   `/assets/ui.css` when present; it mounts the app only when `SlopApp.descriptor` equals
+ *   the file's stored descriptor as JSON, so the host passes that descriptor unnormalized.
+ * - Command program (`commands.js`): it sets `globalThis.__slopCommands` (name → command)
+ *   and `__hitslopDescribe`; a command carries `Symbol.for("hitslop.command")` →
+ *   `{ definition, spec: { description, args, run }, name }`. The ABI's evaluator prelude
+ *   defines `__hitslopRun(json)` and replies `{ ok, intents, result }` or `{ ok: false,
+ *   error }`, with intents in the core's vocabulary for that ABI.
+ * - Errors: `Symbol.for("hitslop.operation-error")` brands refusals; apps treat an
+ *   unknown `code` or `reason` as an outcome.
+ * - Markup the host styles: `[data-hitslop-root]` (the app's root, sized to the window),
+ *   `[data-slop-capture-target]` and `[data-hitslop-active-target]` (capture targets,
+ *   children of `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the
+ *   attributes the host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
+ *   `data-slop-resizable`, `data-slop-renderer`.
+ * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
+ *   `--slop-window-width` and `--slop-window-height`.
+ * The conformance app in the frozen corpus (`tests/abi/owner-svelte`) exercises these
+ * against every later shell.
  */
 /** The runtime ABI this SDK's app-side code needs; `slop build` stamps it. */
 export { RuntimeABI } from "../schema/constants";

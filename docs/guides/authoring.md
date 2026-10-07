@@ -76,8 +76,9 @@ packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
 
 ## Commands
 
-Keep the stored shape in `schema.ts` and export useful actions by name from `commands.ts`.
-The same action can be called by a page button or `slop call`. Start with the few verbs
+Keep the stored shape in `schema.ts`, declare actions with `doc.command(...)` in any module,
+and register them by name in `defineSlop({ commands })`. The same action can be called by a
+page button or `slop call`; either way it runs in the owner's restricted evaluator. Start with the few verbs
 that matter; ordinary handles, bindings and `doc.change()` remain available.
 
 ```ts

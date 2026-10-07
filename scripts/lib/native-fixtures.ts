@@ -145,10 +145,16 @@ const presentationFixtures = {
   standard: { width: 320, height: 320 },
   ellipse: { width: 320, height: 320, shape: "50%", lockAspect: true, background: "transparent" },
   glass: { width: 320, height: 320, background: "glass" },
+  notch: {
+    width: 320,
+    height: 320,
+    shape: { path: "M16 0 H304 Q320 0 320 16 V120 L280 160 L320 200 V304 Q320 320 304 320 H0 V32 Z", viewBox: [320, 320] },
+  },
   washer: { width: 320, height: 320, skin: "assets/washer.png" },
+  "washer-2x": { width: 320, height: 320, skin: "assets/washer@2x.png" },
 };
 
-/** Every presentation fixture, by name: the standard, ellipse, glass and washer controls, and
+/** Every presentation fixture, by name: the standard, ellipse, glass, notch and washer controls, and
  * each Shape Lab variant with a dedicated and a fallback export. */
 export async function buildPresentationFixtures(build = direct) {
   const parent = join(repository, "generated/presentation");

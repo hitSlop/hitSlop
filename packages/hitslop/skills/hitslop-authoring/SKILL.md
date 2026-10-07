@@ -65,7 +65,7 @@ never base64 document values. Validate app formats first. Limits: 10 MiB/file,
 Keep high-frequency or transient values (drag positions, playback, timers) in local state, not saved fields; use attachments for binary data. Documents are capped at 32 MiB.
 Counter values read `number | null`: `null` flags invalid stored contributions or merged overflow; render it as unavailable and disable increments.
 
-`slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. Changes to slop.ts or schema.ts (including their imports) reset disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. The entry dependency graph determines which changes reset the preview; filenames are not conventions.
+`slop dev` watches source with Vite. Component and CSS HMR retain accepted document state. A change to slop.ts or any non-component module it imports (the document definition, commands, skin or artwork) resets disposable state; refresh also resets it. Correcting a failed edit clears the diagnostic. The entry's dependency graph, not filenames, decides what resets.
 
 The author SDK is `hitslop`; the private page shell runtime is host-owned.
 Catch semantic refusals with `isRejected(error)` and other document outcomes with

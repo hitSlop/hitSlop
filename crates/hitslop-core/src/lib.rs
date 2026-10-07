@@ -405,6 +405,9 @@ pub struct Document {
     /// Consecutive edits at the caret of one text field, consecutive agent batches, or
     /// consecutive window changes to one color are one undo step.
     run: Option<Run>,
+    /// A refused edit could not be rolled back: the replica may hold part of it, so it
+    /// accepts nothing more. Its host reloads durable state.
+    broken: bool,
 }
 impl Document {
     /// `check` is false only for a document just built from validated input; stored state
@@ -421,6 +424,7 @@ impl Document {
             undo: VecDeque::new(),
             redo: vec![],
             run: None,
+            broken: false,
             doc,
             app,
             sequence: 0,
@@ -529,13 +533,24 @@ impl Document {
         if self.doc.get_pending_txn_len() == 0 && self.doc.state_frontiers() == *before {
             return Ok(());
         }
-        let fresh = replica_at(&self.doc, before)?;
+        let fresh = replica_at(&self.doc, before).inspect_err(|_| self.broken = true)?;
         lock(&self.events).clear();
         subscribe(&fresh, &self.events);
         self.doc = fresh;
         // Publication may have failed after updating indexes; rebuild those too.
         self.lists = publication::index_all(&self.doc);
         Ok(())
+    }
+    /// Whether a failed rollback left this replica unusable; see `broken`.
+    pub fn is_broken(&self) -> bool {
+        self.broken
+    }
+    fn intact(&self) -> Result<()> {
+        if self.broken {
+            Err(err(Code::EngineError, "The document could not be rolled back; reload it"))
+        } else {
+            Ok(())
+        }
     }
     /// The publication sequence: the number of published changes since open.
     pub fn sequence(&self) -> u64 {
@@ -551,19 +566,20 @@ impl Document {
     }
     /// Applies a batch atomically; the result is a record so hosts never parse the reply.
     pub fn apply_batch(&mut self, batch: &str, origin: Origin) -> Result<Applied> {
+        self.apply(batch, origin, None)
+    }
+    /// A command's intents: one undo step, labeled by the app-declared command the owner
+    /// evaluated. No wire names a command for a batch.
+    pub fn apply_command(&mut self, batch: &str, origin: Origin, command: &str) -> Result<Applied> {
+        self.apply(batch, origin, Some(command))
+    }
+    fn apply(&mut self, batch: &str, origin: Origin, command: Option<&str>) -> Result<Applied> {
+        self.intact()?;
         let batch: Batch = parse(batch)?;
         if let Some(expected) = &batch.ifVersion
             && *expected != self.version()
         {
             return Err(err(Code::StaleBase, "The document changed since the command read it"));
-        }
-        if let Some(name) = &batch.command
-            && (name.is_empty()
-                || name.len() > 80
-                || !name.starts_with(|c: char| c.is_ascii_lowercase())
-                || !name.chars().all(|c| c.is_ascii_alphanumeric()))
-        {
-            return Err(err(Code::InvalidRequest, "Invalid command name"));
         }
         if batch.intents.len() > wire::BATCH_INTENTS {
             return Err(err(Code::TooLarge, format!("Batch exceeds {} intents", wire::BATCH_INTENTS)));
@@ -607,7 +623,7 @@ impl Document {
             self.abort(&before)?;
             return Err(e);
         }
-        if let Some(name) = &batch.command {
+        if let Some(name) = command {
             self.doc.set_next_commit_message(&format!("command:{name}"));
         } else if origin == Origin::Agent {
             self.doc.set_next_commit_message(AGENT);
@@ -616,7 +632,7 @@ impl Document {
         let published = self.publish_or_abort(&before)?;
         if published.is_some() {
             match &typed {
-                _ if batch.command.is_some() => self.record(before, None, false),
+                _ if command.is_some() => self.record(before, None, false),
                 // A merged edit ends the typing run and is its own undo step.
                 Some(typed) if origin != Origin::Agent && typed.merged => self.record(before, None, false),
                 Some(typed) if origin != Origin::Agent => {
@@ -659,6 +675,7 @@ impl Document {
         self.history(false)
     }
     fn history(&mut self, undo: bool) -> Result<Applied> {
+        self.intact()?;
         let target = if undo {
             self.undo.back().map(|step| step.before.clone())
         } else {

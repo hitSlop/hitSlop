@@ -9,7 +9,7 @@ fn evaluate(code: &str) -> Value {
     );
     let request = json!({"name":"probe","args":{},"value":{"count":0},"descriptor":{"kind":"object","properties":{"count":{"kind":"counter"}}},"now":1234,"seed":[1,2,3,4]});
     let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();
-    let output = evaluator.run(1, bundle, request.to_string()).unwrap();
+    let output = evaluator.run(1, &bundle, &request.to_string()).unwrap();
     serde_json::from_str(&output).unwrap_or_else(|e| panic!("{e}: {output}"))
 }
 #[test]
@@ -27,6 +27,8 @@ fn runner_refuses_async_mutation_and_ambient_clock() {
     for code in [
         "ctx.current.count = 7",
         "return Date.now()",
+        "return new (Date.prototype.constructor)()",
+        "return new (new Date(0).constructor)().getTime()",
         "return Date()",
         "return new Date()",
         "return Math.random()",

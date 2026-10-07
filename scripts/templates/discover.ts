@@ -8,7 +8,7 @@ export type TemplateSource = { slug: string; source: string; bundled: boolean };
 
 /** Only immediate authored projects (folders with a `slop.ts`) are active; archives and
  * build outputs are not scanned. Discovery never runs author code: a folder's name is its
- * slug. */
+ * slug, and building it refuses an app that declares another. */
 export async function discoverTemplates(
   root = join(repository, "examples/slops"),
 ): Promise<TemplateSource[]> {

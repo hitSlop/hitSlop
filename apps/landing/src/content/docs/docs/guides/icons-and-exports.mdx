@@ -16,7 +16,7 @@ Import your components and register `view`, optional `export`, and optional `ico
 </main>
 ```
 
-`Export.svelte`:
+An export component (here `Export.svelte`, registered as `export`):
 
 ```svelte
 <script lang="ts">
@@ -40,7 +40,7 @@ Import your components and register `view`, optional `export`, and optional `ico
 Use the app's existing document facade in capture components. Captures render saved
 data in a fresh read-only page. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
-A missing `Export.svelte` falls back to a fresh `App.svelte` with its default local view.
+Without an `export` view, a fresh rendering of your `view` with its default local state is the fallback.
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh rendering page.
 
@@ -64,7 +64,7 @@ An absent icon is optional. If you declare an icon and it throws, capture fails 
 
 ## Make exports readable
 
-Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `Export.svelte`, the editor is never captured. If no dedicated export view is declared, a fresh App rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
+Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `export` view, the editor is never captured. If no dedicated export view is declared, a fresh App rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 

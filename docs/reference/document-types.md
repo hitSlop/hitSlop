@@ -133,7 +133,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
-imported), `invalid_shape` (a manifest window shape), `requires_update` (an app format,
+imported), `invalid_shape` (a window shape), `requires_update` (an app format,
 storage or document layout newer than this build), `is_template` (a template opened as a
 document: create a document from it) and `engine_error` (an unexpected Loro failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
 

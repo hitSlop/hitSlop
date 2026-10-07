@@ -52,7 +52,8 @@ async function generator(name: string, version: string, variable: string, instal
   return binary;
 }
 
-/** Browser/dev/test binding. This entry point works on Linux without Xcode. */
+/** Test binding: the SDK and shell tests run the core in Bun. This entry point works on
+ * Linux without Xcode. */
 export async function buildCoreWasm() {
   const bindgen = await generator(
     "wasm-bindgen",

@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { HelperProtocol } from "../../src/schema/constants";
-import { findDocumentEngine } from "../../src/cli/engine";
+import { findEngine } from "../../src/cli/engine";
 
 test("the helper reports its protocol and refuses unknown or unnamed protocols before document access", async () => {
   const helper = process.env.HITSLOP_NATIVE_CLI!;
@@ -31,7 +31,7 @@ test("the helper reports its protocol and refuses unknown or unnamed protocols b
 });
 
 // The CLI runs the document engine, which passes an export to the selected helper.
-const engine = await findDocumentEngine();
+const engine = await findEngine();
 
 // The CLI names its protocol; a tool that serves it runs the command, and any other
 // refuses before the document command runs, saying which side must update. The CLI passes

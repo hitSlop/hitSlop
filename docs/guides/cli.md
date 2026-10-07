@@ -51,11 +51,11 @@ Successful mutations acknowledge persistence. Generic edits are never automatica
 
 ## Engine requests
 
-`slop-engine --client-protocol N` reads one `EngineRequest` (`packages/hitslop/src/schema/engine.ts`) from standard
+`slop-engine --client-protocol N` reads one `EngineRequest` (`crates/hitslop-core/src/wire/engine.rs`, exported to TypeScript by ts-rs) from standard
 input, bounded at 16 MiB, and prints one `EngineReply` line. The core keeps the 1 MiB
 limit for ordinary owner requests and the app metadata limit for `validateApp`.
 A request names no protocol: the engine adds the one it was called with. A success carries its
-method and required result fields (`EngineReply` in `packages/hitslop/src/schema/engine.ts`); the CLI treats a success
+method and required result fields (`EngineReply` in `crates/hitslop-core/src/wire/engine.rs`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;

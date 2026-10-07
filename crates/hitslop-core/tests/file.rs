@@ -384,16 +384,14 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
     assert_eq!(fs::read(&doc).unwrap(), before);
 }
 
-/// What pack and a save never write is refused on open, sizes before values: artwork that
-/// is not an image within the limits, a theme over its budget, and a second or misnumbered
-/// row in a one-row table.
+/// What pack and a save never write is refused on open, sizes before values: a theme over
+/// its budget, and a second or misnumbered row in a one-row table. (Damaged artwork reads
+/// as absent instead; see `saved_apps_open_under_their_format...`.)
 #[test]
 fn stored_values_are_bounded_as_writes_bound_them() {
     let many_tokens =
         format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
-    let cases: [(&str, &str, Option<Vec<u8>>); 6] = [
-        ("oversized artwork", "INSERT INTO artwork VALUES('preview', ?)", Some(oversized_png_header())),
-        ("artwork that is not a PNG", "INSERT INTO artwork VALUES('icon', ?)", Some(b"not a png".to_vec())),
+    let cases: [(&str, &str, Option<Vec<u8>>); 4] = [
         (
             "theme defaults over budget",
             "UPDATE app SET definition_json=CAST(? AS TEXT)",
@@ -1139,4 +1137,32 @@ fn attachment_urls_check_the_whole_blob_before_serving_even_one_byte() {
         .unwrap();
     assert!(store.resource_reader().unwrap().info(Attachment, &attachment.id).is_err());
     store.close().unwrap();
+}
+
+/// A saved app is judged by its package format's acceptance, never by today's authoring
+/// rules: metadata `init` would now refuse and a damaged preview still open, edit, save
+/// and reopen. Artwork is cosmetic and reads as absent.
+#[test]
+fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let title = "A title longer than any author may now write. ".repeat(4);
+    raw(&doc)
+        .execute("UPDATE app SET title=?, author_name=' ', author_url='not a URL', slug='Saved_Before'", [&title])
+        .unwrap();
+    raw(&doc).execute("INSERT OR REPLACE INTO artwork VALUES('preview', x'89504e470d0a1a0a00')", []).unwrap();
+    raw(&doc).execute("INSERT OR REPLACE INTO artwork VALUES('icon', zeroblob(16))", []).unwrap();
+    let summary = file::summary(&doc).unwrap();
+    assert_eq!((summary.metadata.title.as_str(), summary.metadata.slug.as_str()), (title.as_str(), "Saved_Before"));
+    assert!(hitslop_core::app::validate_metadata(&summary.metadata).is_err(), "authoring refuses it");
+    assert_eq!(file::artwork(&doc, &[Artwork::Preview, Artwork::Icon]).unwrap(), None);
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    assert_eq!(store.artwork(Artwork::Preview).unwrap(), None);
+    let mut state = store.document().unwrap();
+    state.apply_batch(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
+    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.close().unwrap();
+    let reopened = Store::open(&doc, Mode::Snapshot).unwrap();
+    assert!(reopened.document().unwrap().value().contains("Edited"));
+    assert_eq!(reopened.app().app.metadata().title, title);
 }

@@ -17,6 +17,7 @@ import type { PageResult } from "../wire/page";
 import type {} from "./page-handle";
 import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
+import { preview } from "./preview";
 
 const isNative = () => Boolean((globalThis as any).webkit?.messageHandlers?.hitslop);
 /** Reports a page error to the host, or to the console in the browser preview. */
@@ -24,17 +25,15 @@ const report = (native: boolean, kind: "application" | "operation", error: unkno
   if (native) void call({ method: "pageError", kind, error: describe(error) }).catch(() => {});
   else console.error(error);
 };
-/** Open the document with host or disposable memory storage. The native owner holds the
- * saved state and sends the descriptor with the config; only the preview reads the
- * initial values. */
+/** Open the document through its owner: the native host's, or the development owner's
+ * over the preview transport. The owner sends the descriptor with the config. */
 async function openDocument(native: boolean) {
   const config = await call({ method: "config" });
   const descriptor = config.descriptor as ObjectNode;
-  const host = nativeTransport(config.readOnly);
-  const transport = host;
+  const transport = nativeTransport(config.readOnly);
   // Boot owns the host entry point. Register it before opening the document; open
   // installs the receiver synchronously before requesting its initial snapshot.
-  const page = { publish: host?.publish ?? (() => {}) };
+  const page = { publish: transport.publish };
   globalThis.__slop = Object.assign(page, { dispatch: hostDispatcher(page) });
   const doc = await Document.open(
     fromDescriptor(descriptor),
@@ -52,12 +51,14 @@ async function openDocument(native: boolean) {
   return { config, doc, attachments };
 }
 
-// Every app ABI the core admits gets this one context. Raising RuntimeABI fails here: keep
-// this context for the released ABI and dispatch on the app's (docs/engineering-contract.md).
-const contexts = { 1: abi1 } satisfies Record<typeof RuntimeABI, typeof abi1>;
+// One context per runtime ABI the core admits, index `abi - 1`. Raising RuntimeABI fails to
+// type-check until its context is added; a released ABI's context stays
+// (docs/engineering-contract.md).
+const contexts = [abi1] as const satisfies { length: typeof RuntimeABI };
 function contextFor(abi: number) {
-  if (abi === 1) return contexts[abi];
-  throw new Error(`Unsupported runtime ABI ${abi}`);
+  const context = Number.isInteger(abi) ? contexts[abi - 1] : undefined;
+  if (!context) throw new Error(`Unsupported runtime ABI ${abi}`);
+  return context;
 }
 
 /** The message first: WebKit's `stack` lists only frames, V8's repeats the message. */
@@ -87,7 +88,7 @@ export async function boot() {
     report(native, "application", error);
     throw error;
   };
-  const app = import(new URL((globalThis as any).__hitslopPreview?.uiURL ?? "/assets/ui.js", location.href).href).then(
+  const app = import(new URL(preview.host?.uiURL ?? "/assets/ui.js", location.href).href).then(
     (module) => module.default as unknown,
     authored,
   );

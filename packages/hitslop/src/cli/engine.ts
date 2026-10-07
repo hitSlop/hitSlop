@@ -1,4 +1,4 @@
-import { HelperProtocol, SocketLimits } from "../schema/constants";
+import { HelperProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
 import type { EngineRequest, EngineRequestFor, EngineMethod, EngineReply, EngineReplyFor, EngineSuccess } from "../wire/engine";
 import { join } from "node:path";
 import { cliRoot, cliPackage, isGlobalInstall } from "./paths";
@@ -16,7 +16,6 @@ export function findEngine(): Promise<string> {
 }
 
 /** Document commands always use the engine shipped with the invoked CLI. */
-export const findDocumentEngine = findEngine;
 
 /** The permanent engine preflight refusal: exit 2, before touching a document. */
 export class ExitStatus extends Error {
@@ -77,7 +76,7 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
   const reply = value as Record<string, unknown>;
   if (reply.ok === false) {
     return typeof reply.error === "string" && typeof reply.code === "string"
-      && ["rejected", "owner_replaced", "closing", "save_failed", "owner_invalidated", "unknown_outcome"].includes(reply.code)
+      && (OutcomeCodes as readonly string[]).includes(reply.code)
       && (reply.reason === undefined || typeof reply.reason === "string")
       && (reply.opIndex === undefined || (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0))
       && Object.keys(reply).every(key => ["ok", "error", "code", "reason", "opIndex"].includes(key));

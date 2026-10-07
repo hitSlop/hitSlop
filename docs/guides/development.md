@@ -42,7 +42,7 @@ Discovery scans immediate project directories with a `slop.ts`, without running 
 
 `bun run build:templates` produces `generated/templates/<slug>.slop` for every discovered project. Add its slug to `examples/slops/bundled.json` only when it should ship with the Mac app. This list is the sole bundled selection; duplicate or unknown selections fail. The generated inventory connects the build to app embedding and release verification. Rebuild after changing sources or selection.
 
-Embedding replaces the entire generated StarterTemplates directory, so deselected templates disappear from the next app build. It never edits a user's installed templates or documents. The native catalog already discovers any valid local template and derives categories from its manifest.
+Embedding replaces the entire generated StarterTemplates directory, so deselected templates disappear from the next app build. It never edits a user's installed templates or documents. The native catalog already discovers any valid local template and reads its categories from its app metadata.
 
 Quick Checklist is the reference example; the other examples wait in `examples/archive` until they move to `slop.ts`. New templates need no edits to build loops. App-specific tests can remain schema-specific; generic release checks cannot assume fields such as `title`.
 

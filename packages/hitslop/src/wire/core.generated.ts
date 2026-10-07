@@ -2,7 +2,7 @@
 
 export type Anchor = { before: string, } | { after: string, };
 
-export type Batch = { ifVersion?: string, command?: string, base?: string, intents: Array<Intent>, };
+export type Batch = { ifVersion?: string, base?: string, intents: Array<Intent>, };
 
 export type Hunk = { retain: number, } | { insert: string, } | { delete: number, };
 

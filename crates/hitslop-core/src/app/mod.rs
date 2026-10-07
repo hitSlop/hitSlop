@@ -4,8 +4,108 @@ pub(crate) mod package_format_1;
 
 use crate::arguments::Arguments;
 use crate::build::BuildDeclaration;
+use crate::wire::present_option;
 use crate::{AppSpec, Code, Result, err, shape};
-pub use package_format_1::{AppMetadata, Author, Background, Category, CommandInput, ThemeInput, Views};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+// The host and authoring model. A format module translates its stored structs into these,
+// so they may grow or change without changing how a released file decodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub enum Category {
+    Productivity,
+    Utilities,
+    Finance,
+    Media,
+    Games,
+    DeveloperTools,
+    Education,
+    Business,
+    Personal,
+    Health,
+    Creative,
+    Music,
+    Other,
+}
+
+impl Category {
+    pub fn name(self) -> String {
+        serde_json::to_value(self).expect("category").as_str().expect("string category").into()
+    }
+    pub fn parse(value: String) -> Result<Self> {
+        serde_json::from_value(Value::String(value)).map_err(|_| err(Code::InvalidRequest, "Unknown category"))
+    }
+
+    /// Catalog order is declaration order, independent of its stored string spelling.
+    pub const ALL: &[Self] = &[
+        Self::Productivity,
+        Self::Utilities,
+        Self::Finance,
+        Self::Media,
+        Self::Games,
+        Self::DeveloperTools,
+        Self::Education,
+        Self::Business,
+        Self::Personal,
+        Self::Health,
+        Self::Creative,
+        Self::Music,
+        Self::Other,
+    ];
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
+pub struct Author {
+    pub name: String,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub struct AppMetadata {
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub author: Author,
+    pub categories: Vec<Category>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub enum Background {
+    Transparent,
+    Glass,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub struct ThemeInput {
+    pub token: String,
+    pub color: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub struct CommandInput {
+    pub name: String,
+    pub description: String,
+    #[cfg_attr(feature = "ts", ts(type = "unknown"))]
+    pub args: Value,
+}
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub struct Views {
+    pub export: bool,
+    pub icon: bool,
+}
 
 /// Native window semantics, independent of the stored definition's decoding rules.
 #[derive(Clone, Debug)]
@@ -39,6 +139,8 @@ pub struct AppDefinition {
     metadata: AppMetadata,
     stored: package_format_1::Definition,
     window: WindowDefinition,
+    theme: Vec<ThemeInput>,
+    views: Views,
     commands: Vec<CommandDefinition>,
     spec: AppSpec,
 }
@@ -69,10 +171,10 @@ impl AppDefinition {
         &self.window
     }
     pub fn theme(&self) -> &[ThemeInput] {
-        &self.stored.theme
+        &self.theme
     }
     pub fn views(&self) -> Views {
-        self.stored.views
+        self.views
     }
     pub fn commands(&self) -> &[CommandDefinition] {
         &self.commands
@@ -97,7 +199,7 @@ impl AppDefinition {
                     height: *height,
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
-                    background: *background,
+                    background: background.map(Into::into),
                     shape: shape.clone(),
                 }
             }
@@ -123,10 +225,9 @@ impl AppDefinition {
     }
 }
 
-/// The one check shared by display metadata and complete definition acceptance.
-pub fn validate_metadata(metadata: &AppMetadata, package_format: u64) -> Result<()> {
-    requirements(package_format.into(), 1)?;
-    package_format_1::metadata(metadata)
+/// The current authoring rules for a new app's metadata (`slop init`); never a saved file's.
+pub fn validate_metadata(metadata: &AppMetadata) -> Result<()> {
+    package_format_1::authoring_metadata(metadata)
 }
 
 /// Permanent marker checks, before interpreting any current-format fields. i128

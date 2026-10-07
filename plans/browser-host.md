@@ -15,7 +15,7 @@ browser document.
    then [share links](share-links.md). Both reuse this host and wait for launch.
 
 `slop dev` now has a separate, approved native-owner direction in
-[app definition and packaging](app-definition-and-packaging.md), supported by the
+the app definition and packaging plan (executed and archived 2026-10-07), supported by the
 [native-dev spike](../docs/evidence/native-dev-owner.md). It retains Vite HMR over a
 disposable native SQLite document. That does not implement or prove this durable OPFS
 browser host; this plan remains deferred while packaging and native development land.

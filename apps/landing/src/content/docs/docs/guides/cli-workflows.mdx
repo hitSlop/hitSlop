@@ -49,7 +49,7 @@ bunx hitslop init budget-book --yes \
 
 Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The wizard initializes the explicit `slug` from the directory name: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
 
-Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state.
+Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or any module it imports outside components (the document definition, commands, skin or artwork) resets disposable state.
 
 Stop the preview, then package the app and add it to your local catalog:
 

@@ -5,13 +5,13 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execute, request, findDocumentEngine } from "../../packages/hitslop/src/cli/engine";
+import { execute, request, findEngine } from "../../packages/hitslop/src/cli/engine";
 import type { EngineMethod, EngineRequestFor, EngineSuccess, EngineReplyFor } from "../../packages/hitslop/src/wire/engine";
 import { repository } from "./artifacts";
 
 /** The helper `bun run build` compiles, and this checkout's independent document engine. */
 export const debugHelper = join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
-export const debugEngine = () => findDocumentEngine();
+export const debugEngine = () => findEngine();
 /** Which engine a script runs (the debug build's unless named) and, for a relocated or
  * installed one, the folder and environment it runs in. */
 export type Placement = { engine?: string; cwd?: string; env?: Record<string, string | undefined> };

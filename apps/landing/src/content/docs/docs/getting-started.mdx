@@ -38,7 +38,7 @@ Read `slop.ts` first. It declares the app with `defineSlop`: its title, descript
 
 Import the editor as `view` and optional capture components as `export` and `icon`. Filenames do not assign roles.
 
-The browser preview uses disposable memory. Refreshing resets document state. Vite watches source changes. Component/CSS updates preserve accepted edits; `slop.ts` and `schema.ts` changes reset disposable state. Test native persistence in a writable document copy.
+The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or the modules it imports outside components (such as `schema.ts`) resets the copy. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 

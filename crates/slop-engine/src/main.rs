@@ -94,8 +94,7 @@ fn dispatch(request: EngineRequest) -> String {
                 EngineSuccess::Pack { ok: True }
             }
             EngineRequest::ValidateMetadata { metadata } => {
-                hitslop_core::app::validate_metadata(&metadata, hitslop_core::PACKAGE_FORMAT)
-                    .map_err(hitslop_core::store::Error::Rejected)?;
+                hitslop_core::app::validate_metadata(&metadata).map_err(hitslop_core::store::Error::Rejected)?;
                 EngineSuccess::ValidateMetadata { ok: True }
             }
             EngineRequest::ValidateApp { app, stage } => {

@@ -24,7 +24,6 @@ export function commandInfo(value: unknown): CommandInfo | undefined {
   return typeof value === "function" ? (value as any)[brand] : undefined;
 }
 export function bindCommands(commands: Record<string, unknown>, definition: object) {
-  if (Object.keys(commands).length > 64) throw new Error("A slop supports at most 64 commands");
   const seen = new Set<CommandInfo>();
   for (const [name, value] of Object.entries(commands)) {
     const info = commandInfo(value);
@@ -34,8 +33,9 @@ export function bindCommands(commands: Record<string, unknown>, definition: obje
     info.name = name;
   }
 }
+/** A page call sends the registered name and arguments to the owner, which runs the
+ * stored program; the UI build removes `run` from declarations it recognizes. */
 export function makeCommand<N extends ObjectNode, A extends Arguments, R>(definition: object, spec: CommandSpec<N, A, R>): Command<A, R> {
-  if (typeof spec.run !== "function") throw new Error("A command needs run(ctx, args)");
   const info: CommandInfo = { definition, spec };
   const command = (args: CommandInput<A> = {} as CommandInput<A>): Promise<R> => {
     try {

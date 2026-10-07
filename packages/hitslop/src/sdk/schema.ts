@@ -11,7 +11,7 @@ import type { At, Handle as ModeHandle } from "./handle-types";
 import { fromDescriptor } from "./descriptor";
 import { documentFor } from "./app/context";
 /**
- * Descriptors are data. Neither the host nor the CLI evaluates authored callbacks.
+ * Descriptors are data. Command bodies run only in the owner's restricted evaluator.
  * Only kinds the Rust core, the SDK and a fixture implement are offered here; a new
  * kind lands in all three at once.
  */

@@ -16,7 +16,8 @@ pub const PACKAGE_FORMAT: u64 = 1;
 pub const RUNTIME_ABI: u64 = 1;
 #[cfg(feature = "storage")]
 pub const HELPER_PROTOCOL: u64 = 1;
-/// The CSS `border-radius` of a window whose manifest names no shape.
+/// The CSS `border-radius` of a window that names no shape. Package format 1 means this
+/// by an absent shape, so it never changes.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
 /// Effective theme JSON, and a theme file, in UTF-8 bytes.
 pub(crate) const THEME_LIMIT: usize = 65536;

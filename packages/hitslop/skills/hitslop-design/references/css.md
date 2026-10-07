@@ -1,6 +1,6 @@
 # Plain CSS and the theme palette
 
-Keep app styles in `./styles.css`; the build imports it with `App.svelte`. Keep markup class names literal and prefix
+Keep app styles in `./styles.css`, imported explicitly from `slop.ts`. Keep markup class names literal and prefix
 classes with the app name. Each WebView owns one app, so document-level CSS is
 appropriate. Use native nesting for related states and descendants.
 

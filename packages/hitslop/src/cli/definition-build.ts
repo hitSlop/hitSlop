@@ -1,11 +1,10 @@
 import { build, type InlineConfig, type Plugin } from "vite";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, realpath, writeFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { findEngine } from "./engine";
 import { exec } from "./process";
-import { stripCommandBodies } from "./command-transform";
+import { refuseHostImport, sveltePlugin, uiEntrySource, uiTransform } from "./app-vite";
 import { portableAssetURLs } from "./asset-url-transform";
 import type { BuildInput } from "../wire/app.generated";
 import { PackageFormat, RuntimeABI } from "../schema/constants";
@@ -18,7 +17,7 @@ export function resourceKey(source: string | Uint8Array, name: string) {
   return `media/${createHash("sha256").update(bytesOf(source)).digest("hex")}.${typeOf(name)[1]}`;
 }
 type Emitted = { key: string; bytes: Uint8Array; mediaType: string };
-export type DefinitionBuildOptions = { entry?: string; alias?: Record<string, string> };
+export type DefinitionBuildOptions = { alias?: Record<string, string> };
 
 /** Two modes of the same resolver; Vite's emitted bundle is the resource inventory.
  * The definition runs in the restricted runner before Rust accepts the inventory. */
@@ -30,9 +29,7 @@ export async function buildDefinition(source: string, stage: string, options: De
     throw error;
   });
   if (publicFiles.length) throw new Error("The public/ directory is not copied. Import assets explicitly from your components or declaration.");
-  const entry = resolve(source, options.entry ?? "slop.ts");
-  const inside = (id: string) => { const path = relative(source, id); return path !== ".." && !path.startsWith("../") && !isAbsolute(path); };
-  if (!inside(entry)) throw new Error("The app entry must be inside the project");
+  const entry = join(source, "slop.ts");
   const inputs = { ui: new Set<string>(), definition: new Set<string>() };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
@@ -51,8 +48,7 @@ export async function buildDefinition(source: string, stage: string, options: De
             sdk = dirname(resolved.id);
             return id;
           }
-          if (/^(?:loro-crdt|@hitslop\/shell)(\/|$)|^\/__shell__\//.test(id))
-            this.error(`App code cannot import ${id}; use the document SDK`);
+          refuseHostImport(id, (message) => this.error(message));
           if (headless && (/^svelte(?:\/|$)/.test(id) || id === "hitslop/svelte"))
             this.error(`Headless declaration cannot import ${id} (from ${importer})`);
           if (!importer || importer === virtualEntry) return;
@@ -71,21 +67,17 @@ export async function buildDefinition(source: string, stage: string, options: De
 import {describeApp} from ${JSON.stringify(join(sdk,"app-definition.ts"))};
 globalThis.__slopCommands = app.commands ?? {};
 globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app)});`
-            : `import app from ${JSON.stringify(entry)};
-import {svelteApp} from "hitslop/svelte";
-export default svelteApp(app.view,{schema:app.document,export:app.export,icon:app.icon,commands:app.commands});`;
+            : uiEntrySource(entry);
           if (headless && clean.endsWith(".svelte"))
             return `export default Object.freeze(${JSON.stringify({"~hitslop":"component",id:relative(source,clean)})});`;
         },
-        transform(code, id) {
-          const clean = id.split("?", 1)[0]!;
-          if (!headless && inside(clean) && !clean.includes("/node_modules/") && /\.[cm]?[jt]s$/.test(clean))
-            return stripCommandBodies(code, clean, join(sdk, "command-stub.ts"), clean === entry);
-        },
+        transform(code, id) { if (!headless) return uiTransform(code, id, source, entry); },
         generateBundle() {
           for (const id of this.getModuleIds()) {
             if (!id.startsWith("\0")) inputs[mode].add(id.split("?", 1)[0]!);
-            if (/(?:loro-crdt|\/src\/shell\/)/.test(id)) this.error(`Embedded host runtime rejected: ${id}`);
+            // The host's own runtime, not an author folder that happens to be named shell.
+            if (id.includes("/node_modules/loro-crdt/") || id.startsWith(join(dirname(sdk), "shell") + "/"))
+              this.error(`Embedded host runtime rejected: ${id}`);
           }
         },
       };
@@ -97,7 +89,7 @@ export default svelteApp(app.view,{schema:app.document,export:app.export,icon:ap
           renderChunk(code: string, chunk: {fileName:string}) {
             if (code.includes("/assets/")) return portableAssetURLs(code,chunk.fileName);
           },
-        }] : [svelte({configFile:false, compilerOptions:{cssHash:({hash,css}) => `svelte-${hash(css)}`}})])],
+        }] : [sveltePlugin()])],
         build: {
           write:false, target:"safari17", minify:"oxc", assetsInlineLimit:0, cssCodeSplit:false, modulePreload:false,
           rolldownOptions:{ input:virtualEntry, preserveEntrySignatures:"strict", output:{

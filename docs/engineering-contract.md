@@ -20,6 +20,28 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
 | CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
 
+### How documents evolve
+
+A slop carries its own copy of the SDK: its `ui.js` and `commands.js` were compiled with
+the SDK its project pinned, Svelte included. Changing the SDK therefore never affects a
+released document, and authors move to a new SDK when they rebuild. What old documents
+depend on is the host side they call into, the runtime ABI that `sdk/abi.ts` lists. A
+host change an old app cannot run raises `runtimeABI` and keeps the old behavior for apps
+built at the lower level.
+
+Each marker in the table above has its own mechanism. Only storage is rewritten:
+SQL migrations move a file forward. A package format is read in place and translated into
+the host model in memory, a runtime ABI keeps its adapter, and a Loro layout is read as it
+is or migrated losslessly. The app inside a document is an author's compiled code, so it
+is never migrated; moving a document to a newer build of its app is a separate, explicit
+operation ([additive app upgrades](ideas.md#additive-app-upgrades)).
+
+Migration is lazy. It runs only on a write that needs the newer structure, under the
+writer lock and inside that write's transaction, never at launch or on a display read:
+previewing, listing or exporting a file leaves it untouched. A migrated file opens only
+in builds that know its new marker, so migrating only when needed keeps a file that two
+Macs share openable on both for as long as possible.
+
 Markers are requirements, not release numbers: refactors never raise them, and app,
 CLI and SDK versions never stand for them. The Mac app and the npm packages share one
 release version. A format change that an older build cannot read correctly raises a
@@ -29,8 +51,9 @@ it has a real fallback. A syntax reader never caps `runtimeABI`: the supported r
 checked before the reader is chosen. The build stamps `runtimeABI` from the project's
 SDK and refuses one this CLI cannot validate or preview. Raising one
 adds a reader and leaves released behavior in place. The current format reader is
-`app/package_format_1.rs`; the page context is `shell/abi/1.ts`, and the command prelude
-is `shell/abi/runner-1.ts`. Compile-time guards require a new arm when their marker rises.
+`app/package_format_1.rs`; the page context is `shell/abi/1.ts`, the command prelude
+is built from `shell/abi/runner-1.ts`, and `sdk/abi.ts` lists every part of the app ABI,
+including the globals, markup and CSS variables that are not `ctx`. Compile-time guards require a new arm when their marker rises.
 The page receives the stored descriptor unchanged, while native UI receives the translated
 host model. Storage-1 SQL freezes at the first release; later physical changes use a
 writer-locked transactional migration. Every open reads
@@ -43,7 +66,14 @@ size and updates, attachments) govern every save as well as every open, so they 
 versioned by the storage version: never lowered for a released one, and raised only
 together with it. Tightening an authoring rule never rejects a saved document or stops
 one from being edited and saved, and an accepted edit stays readable under the markers
-its save writes. A security fix that must reject old documents needs an assessment and a
+its save writes. Each format module therefore holds two rule sets: `checked`, what opening
+requires (the shape the host can interpret safely, under the format's own frozen limits;
+it may only loosen), and `authoring`, what `pack` and `init` require of a new app (it may
+tighten). Opening never re-runs signature sniffing or authoring grammars on a sealed app,
+and damaged or oversized artwork reads as absent rather than refusing the document. New
+files are created by replaying `storage-1.sql` and then each storage migration in order,
+so a migrated file and a new one share one exact layout. A frozen corpus entry records
+the command prelude of its runtime ABI; that prelude's bytes are then final. A security fix that must reject old documents needs an assessment and a
 recovery path for their data. Installing hitSlop never replaces the app inside an
 existing document; upgrading a document's app is an explicit operation. Only a write
 under the writer lock migrates a file, validating the result and committing the data and

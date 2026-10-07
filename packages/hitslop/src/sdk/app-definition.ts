@@ -17,6 +17,7 @@ export function describeApp(app: any): BuildDeclaration & { artwork?: ArtworkInp
     theme: Object.entries(theme ?? {}).map(([token, color]) => ({ token, color: color as string })),
     commands: Object.entries(commands).map(([name, command]) => {
       const { spec } = commandInfo(command)!;
+      if (typeof spec.run !== "function") throw new Error(`commands.${name} needs run(ctx, args)`);
       return { name, description: spec.description, args: { kind: "object", properties: spec.args } };
     }),
     views: { export: exportView !== undefined, icon: icon !== undefined },

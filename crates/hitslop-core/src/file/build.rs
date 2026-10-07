@@ -5,7 +5,6 @@ use crate::app::{AppDefinition, WindowDefinition};
 use crate::build::{BuildInput, ResourceKind};
 use crate::error::{Error, Result, invalid};
 use crate::media;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
@@ -88,14 +87,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         super::assets::assets_within(input.resources.len(), length, total)?;
         let bytes = read(file, length)?;
         media::check_asset(kind.media_type, &bytes).map_err(Error::Rejected)?;
-        if let Some(name) = resource.key.strip_prefix("media/") {
-            let digest = data_encoding::HEXLOWER.encode(&Sha256::digest(&bytes));
-            if !name.starts_with(&digest) {
-                return Err(invalid(format!("Resource {} does not match its SHA-256", resource.key)));
-            }
-        } else if bytes.is_empty() {
-            return Err(invalid(format!("Resource {} is empty", resource.key)));
-        }
+        super::assets::check_resource(&resource.key, &bytes, true)?;
         assets.push(BuildAsset { key: resource.key.clone(), media_type: kind.media_type, bytes });
     }
     if !keys.contains("ui.js")

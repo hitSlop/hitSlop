@@ -1,6 +1,6 @@
 # Marker fire drill (2026-10-06)
 
-Spike A of [the versioning plan](../../plans/versioning.md#spike-a-marker-fire-drill-gates-step-2).
+Spike A of the versioning plan (executed and archived 2026-10-07; its rules live in [the engineering contract](../engineering-contract.md#compatibility)).
 No marker had ever been raised. Does today's format support the first bump of each one,
 while changing the format is still free? Run on the development M1. Data:
 [marker-drill-2026-10-06.json](marker-drill-2026-10-06.json).

@@ -149,7 +149,7 @@ The native host exposes the presentation to your CSS:
 | `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements |
 | `data-slop-controls` | `visible` or `hidden`, following the native hover toolbar |
 
-`slop dev` previews the window at its `presentation` size with the same shape or skin, but
+`slop dev` previews the window at its declared `window` size with the same shape or skin, but
 without these host values; lay out from the actual viewport rather than assuming them.
 
 Keep controls inside the visible shape and test focus, resizing, and dragging
@@ -158,7 +158,7 @@ at the smallest size you support.
 ## Resize the app and move the window
 
 An unskinned app can request a new bounded native size at runtime. The host
-keeps the result on the visible screen and returns the applied size; `presentation`
+keeps the result on the visible screen and returns the applied size; `window`'s size
 remains the next launch's initial size. Browser preview has no native window: resize
 it with the preview's handle or arrow keys.
 
@@ -192,7 +192,7 @@ view.
 
 ## Use a PNG skin for a custom silhouette
 
-A skinned presentation contains only `width`, `height`, and `skin`. It is fixed
-at that exact size and cannot also use `shape`, `background`, or `resizable`.
+A skinned window, `{ kind: "skin", width, height, image }`, imports its PNG as `image`. It is fixed
+at that size and cannot also use `shape`, `background`, `resizable` or `lockAspect`.
 See [PNG window skins](/docs/guides/png-window-skins/) for the full asset and
 hit-testing workflow.

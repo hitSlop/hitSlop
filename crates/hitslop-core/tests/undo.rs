@@ -26,12 +26,15 @@ fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
     let agent = value(&d);
     let old_version = d.version();
     for title in ["First command", "Second command"] {
-        let batch = json!({"command":"rename","ifVersion":d.version(),"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
-        apply(&mut d, &mut view, &batch, Origin::Agent);
+        let batch =
+            json!({"ifVersion":d.version(),"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
+        let publication = d.apply_command(&batch, Origin::Agent, "rename").unwrap().publication.unwrap();
+        view.publish(&publication);
     }
     let latest = value(&d);
-    let stale = json!({"command":"rename","ifVersion":old_version,"intents":[{"type":"set","path":["title"],"value":"Lost edit"}]}).to_string();
-    assert_eq!(d.apply_batch(&stale, Origin::Agent).unwrap_err().code, hitslop_core::Code::StaleBase);
+    let stale =
+        json!({"ifVersion":old_version,"intents":[{"type":"set","path":["title"],"value":"Lost edit"}]}).to_string();
+    assert_eq!(d.apply_command(&stale, Origin::Agent, "rename").unwrap_err().code, hitslop_core::Code::StaleBase);
     assert_eq!(value(&d), latest);
     assert!(undo(&mut d, &mut view));
     assert_eq!(value(&d)["title"], "First command");
@@ -39,6 +42,16 @@ fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
     assert_eq!(value(&d), agent);
     assert!(undo(&mut d, &mut view));
     assert_eq!(value(&d), before);
+}
+#[test]
+fn only_the_owner_names_a_command_step() {
+    // A page or agent batch cannot claim a command's undo label and grouping.
+    let (mut d, _) = setup();
+    for origin in [Origin::Page, Origin::Agent] {
+        let forged =
+            json!({"command":"rename","intents":[{"type":"set","path":["title"],"value":"Forged"}]}).to_string();
+        assert_eq!(d.apply_batch(&forged, origin).unwrap_err().code, hitslop_core::Code::InvalidRequest);
+    }
 }
 fn batch(intents: Value) -> String {
     json!({ "intents": intents }).to_string()

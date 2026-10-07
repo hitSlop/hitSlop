@@ -84,11 +84,22 @@ pub(crate) fn delete_attachment(conn: &Connection, id: &str) -> Result<usize> {
     conn.execute("DELETE FROM attachments WHERE id=?", [id]).map_err(sqlite("delete attachment"))
 }
 
-/// One artwork image, when the file holds it.
+/// One artwork image hosts can show, when the file holds one. Artwork is replaceable and
+/// cosmetic, and the next capture rewrites it: an oversized image or one that is not a PNG
+/// reads as absent, never as a damaged document. Writes check it fully.
 pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Vec<u8>>> {
-    conn.prepare_cached("SELECT png FROM artwork WHERE name=?")
+    let length: Option<i64> = conn
+        .prepare_cached("SELECT length(png) FROM artwork WHERE name=?")
         .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
-        .map_err(sqlite("read artwork"))
+        .map_err(sqlite("read artwork"))?;
+    if length.is_none_or(|n| n as usize > crate::ASSET_FILE_BYTES) {
+        return Ok(None);
+    }
+    let png: Option<Vec<u8>> = conn
+        .prepare_cached("SELECT png FROM artwork WHERE name=?")
+        .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
+        .map_err(sqlite("read artwork"))?;
+    Ok(png.filter(|png| crate::images::header(png).is_ok()))
 }
 /// Writes one artwork image, in place of any by that name.
 pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Result<()> {
@@ -106,11 +117,12 @@ pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
 
 /// The `app` row `pack` writes once.
 pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
+    use crate::app::package_format_1::category_column as column;
     let m = app.metadata();
     conn.execute(
         "INSERT INTO app(id,package_format,runtime_abi,slug,title,description,author_name,author_url,category_primary,category_secondary,definition_json) VALUES(1,?,?,?,?,?,?,?,?,?,?)",
         params![package_format as i64, runtime_abi as i64, m.slug, m.title, m.description, m.author.name, m.author.url,
-            m.categories[0].name(), m.categories.get(1).map(|c| c.name()), app.definition_json()],
+            column(m.categories[0]), m.categories.get(1).map(|c| column(*c)), app.definition_json()],
     ).map(|_| ()).map_err(sqlite("write app"))
 }
 /// One asset, before the app row seals the inventory.

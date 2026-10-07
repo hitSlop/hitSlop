@@ -19,4 +19,5 @@ export default defineDocument({
   checkins: s.record(s.integer({ min: 0 })),
   cells: s.record(s.object({ input: s.text(), width: s.optional(s.integer({ min: 0 })) })),
   attachment: s.optional(s.string()),
+  photo: s.optional(s.string()),
 });

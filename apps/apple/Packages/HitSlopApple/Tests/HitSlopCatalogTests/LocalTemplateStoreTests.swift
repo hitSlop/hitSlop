@@ -166,7 +166,7 @@ private func writeTemplate(
   let file = try writeTemplate(named: "cached", in: root)
   let scanner = CatalogScanner()
   #expect(try await scanner.local(at: root).templates.count == 1)
-  try Fixtures.sql(file, "UPDATE app SET title = ''")
+  try Fixtures.sql(file, "UPDATE app SET category_primary = 'not-a-category'")
   try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
   let rescanned = try await scanner.local(at: root)
   #expect(rescanned.templates.isEmpty)

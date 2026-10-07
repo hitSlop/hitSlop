@@ -14,7 +14,7 @@ bun run check
 bun run build
 ```
 
-Build validates the manifest and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
+Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
 Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
 
@@ -22,8 +22,8 @@ Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hi
 
 A template's Finder preview and icon come from one of three places:
 
-- **Your files.** `artwork/preview.png` and `artwork/icon.png` in the project are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
-- **The Mac app.** `slop build . --artwork native` renders whichever of the two you didn't supply from `Export.svelte` and `Icon.svelte`. `bun run register` always does this. Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
+- **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
+- **The Mac app.** `slop build . --artwork native` renders whichever of the two you didn't supply from your `export` and `icon` views. `bun run register` always does this. Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
 - **Neither.** The template has no artwork, and Finder shows hitSlop's document icon. Documents created from it still get their own artwork when they are first closed in hitSlop.
 
 ## Register a local template
@@ -52,4 +52,4 @@ See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-s
 
 ## Release your source
 
-Include the manifest, schema, initial values, theme, stylesheet, components, package manifest, and Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.
+Include `slop.ts` and the modules, styles, assets and components it imports, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.

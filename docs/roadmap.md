@@ -32,9 +32,16 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
-- Give that entry boundary documents: limits at their maximums, every descriptor kind and
-  every window shape form. Frozen format acceptance and persistence limits keep current
-  authoring rules from rejecting saved documents.
+- Give that entry boundary documents: limits at their maximums and every descriptor kind.
+  The dev corpus already covers every window kind (1× and 2× skins, glass, transparent,
+  path shapes), app media (font, image, audio) and page commands. Opening checks only
+  what format 1 accepts, so tightening authoring rules never rejects a saved document.
+- Storage version 2, whenever it comes, ships with: a backup of each file before its first
+  migration (a clean copy, `file/copy.rs`); a test that a frozen version-1 file migrated by
+  a write equals a newly created version-2 file in layout and value; and a test that an
+  interrupted migration leaves the version-1 file intact.
+- Freezing that entry also freezes runtime ABI 1's command prelude: capture records its
+  digest, and `scripts/build/runner.ts` refuses to change it afterwards.
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.
@@ -62,8 +69,8 @@ In order, with the reasoning in [ideas](ideas.md):
 
 - **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
   in the app, and select the ones that ship.
-- **Worker and worklet assets.** The shared page CSP now comes from `packages/hitslop/src/schema`
-  for native and browser pages. Explicit worker policy and build support for worker and
+- **Worker and worklet assets.** The shared page CSP is defined in Rust for native and
+  browser pages. Explicit worker policy and build support for worker and
   worklet entry points remain: emit them as files in `assets` so `new Worker` and
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
@@ -76,10 +83,15 @@ In order, with the reasoning in [ideas](ideas.md):
 - The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
   app links its core and supplies the rendering helper independently.
 - The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
-  the Mac app's release version. Named commands share page and CLI behavior.
+  the Mac app's release version.
+- Rust types own every wire and the app definition; ts-rs generates TypeScript and UniFFI
+  carries types to Swift. Command arguments are `s.*` descriptors the owner checks.
+- Named commands run in the owner's restricted evaluator for page buttons and agents
+  alike; the page bundle carries no command bodies.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
-- Authoring has one generated Svelte entry. `Export.svelte` and `Icon.svelte` remain
-  optional; captures use fresh saved-state pages, with a fresh App as the export fallback.
+- `slop.ts` declares the app: `view`, optional `export` and `icon` views, commands and
+  artwork. Captures use fresh saved-state pages, with a fresh `view` as the export
+  fallback. `slop dev` runs the native owner on a disposable copy per preview page.
 
 Implementation decisions, measurements and verification are recorded in the
 [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
@@ -117,7 +129,7 @@ internal import/export do not constitute a shipped collaboration product.
 
 ## Deferred
 
-Media import, account UI/Auth/App Check, a document history UI, schema evolution,
+Account UI/Auth/App Check, a document history UI, schema evolution,
 iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.

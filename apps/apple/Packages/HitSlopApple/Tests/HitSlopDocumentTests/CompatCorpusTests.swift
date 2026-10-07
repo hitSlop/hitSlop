@@ -142,6 +142,7 @@ import WebKit
       if (matches.length !== 1) throw new Error(`Expected one control: ${action.selector}`);
       const field = matches[0];
       if (field.disabled || field.readOnly || !field.getClientRects().length) throw new Error(`Unavailable control: ${action.selector}`);
+      if (action.click) { field.click(); await globalThis.__slop.flush(); continue; }
       field.focus();
       field.value = action.value;
       field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: action.value }));

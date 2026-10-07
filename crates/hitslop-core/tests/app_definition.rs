@@ -20,6 +20,10 @@ fn definition() -> Value {
 fn read(metadata: &Value, definition: &Value) -> Result<AppDefinition, hitslop_core::Error> {
     AppDefinition::decode(1, 1, &metadata.to_string(), &definition.to_string())
 }
+/// Today's authoring rules for new metadata; a saved file's is only bounded (`read`).
+fn author(metadata: &Value) -> Result<(), hitslop_core::Error> {
+    hitslop_core::app::validate_metadata(&serde_json::from_value(metadata.clone()).unwrap())
+}
 
 #[test]
 fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract() {
@@ -84,14 +88,14 @@ fn metadata_errors_are_located_and_do_not_echo_authored_text() {
     ] {
         let mut value = metadata();
         *value.pointer_mut(path).unwrap() = bad;
-        let error = read(&value, &definition()).unwrap_err();
+        let error = author(&value).unwrap_err();
         assert_eq!(error.pointer(), path);
         assert!(!error.message.contains("secret"));
     }
     for count in [80, 81] {
         let mut value = metadata();
         value["title"] = "😀".repeat(count).into();
-        assert_eq!(read(&value, &definition()).is_ok(), count == 80);
+        assert_eq!(author(&value).is_ok(), count == 80);
     }
     for (url, accepted) in [
         ("https://example.com/a%20b?q=1#part", true),
@@ -107,7 +111,7 @@ fn metadata_errors_are_located_and_do_not_echo_authored_text() {
     ] {
         let mut value = metadata();
         value["author"]["url"] = url.into();
-        assert_eq!(read(&value, &definition()).is_ok(), accepted, "{url:?}");
+        assert_eq!(author(&value).is_ok(), accepted, "{url:?}");
     }
 }
 
@@ -206,11 +210,11 @@ fn metadata_text_is_bounded_and_counts_unicode_code_points() {
     for count in [40, 41, 80, 81] {
         let mut value = metadata();
         value["title"] = "😀".repeat(count).into();
-        assert_eq!(read(&value, &definition()).is_ok(), count <= 80);
+        assert_eq!(author(&value).is_ok(), count <= 80);
     }
     let mut invalid = metadata();
     invalid["title"] = "secret".repeat(50).into();
-    let error = read(&invalid, &definition()).unwrap_err();
+    let error = author(&invalid).unwrap_err();
     assert_eq!(error.pointer(), "/title");
     assert!(!error.message.contains("secret"));
     let mut padded = metadata().to_string();

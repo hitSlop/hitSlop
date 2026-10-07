@@ -25,6 +25,7 @@
     "lane": "done",
     "memo": "Replay 2 é 中文",
     "note": "compat 2",
+    "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
     "place": {
       "name": "compat 1",
       "visits": 1
@@ -66,6 +67,11 @@
       "byteLength": 36,
       "id": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
       "mimeType": "application/octet-stream"
+    },
+    {
+      "byteLength": 82,
+      "id": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "mimeType": "image/png"
     }
   ]
 }

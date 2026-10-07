@@ -6,8 +6,6 @@ import { execute, request } from "../../src/cli/engine";
 import { HelperProtocol } from "../../src/schema/constants";
 import { exec } from "../../src/cli/process";
 import { findEngine } from "../../src/cli/engine";
-import { evaluate } from "../../src/shell/commands";
-import { commandInfo } from "../../src/sdk/commands";
 import { stageProject } from "../../src/cli/build";
 
 test("command imports stay inside the real project when it is reached through a symlink", async () => {
@@ -57,13 +55,7 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
       expect((await describe()).value).toEqual(before.value);
     }
     expect((await run("ambient", {})).result).toEqual(["undefined", "undefined", "undefined"]);
-    // Direct SDK collection and the restricted child use the same collecting handles.
-    const commands = await import(file);
-    const spec = commandInfo(commands.archiveFinished)!.spec;
-    const local = evaluate({ descriptor: before.schema, value: before.value, args: {}, now: 1, seed: [1,2,3,4] }, spec.run);
-    const remote = await run("archiveFinished", {});
-    expect(remote.result).toEqual(local.result);
-    expect(remote.ok).toBe(true);
+    expect((await run("archiveFinished", {})).ok).toBe(true);
     // Unsupported authoring shapes are rejected before replacing the previous build.
     const old = await readFile(template);
     await writeFile(file, (await readFile(file, "utf8")) + "\nexport const notACommand = 7;\n");

@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { localImports } from "../../packages/hitslop/src/cli/imports";
+import { localImports } from "./imports";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
 import { run } from "../../packages/hitslop/src/cli/process";

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { execute, findDocumentEngine, type EngineOptions } from "./engine";
+import { execute, findEngine, type EngineOptions } from "./engine";
 import { stageProject } from "./build";
 import { defaultOutput, exists } from "./fs";
 
@@ -11,7 +11,7 @@ import { defaultOutput, exists } from "./fs";
 export async function prepareRenderer() {
   if (process.platform !== "darwin")
     throw new Error("--artwork native renders with hitSlop.app on macOS. Elsewhere, import preview and icon PNGs in defineSlop({ artwork }) to the project.");
-  return { binary: await findDocumentEngine() };
+  return { binary: await findEngine() };
 }
 
 /** Builds a project into a template file and returns its path: the stage, with artwork

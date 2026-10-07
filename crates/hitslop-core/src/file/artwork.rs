@@ -3,7 +3,7 @@
 use crate::error::{Result, invalid};
 use crate::images::{self, Purpose};
 
-/// The artwork a file may hold, as the `artwork` table's CHECK names it. Its name is the
+/// The artwork a file holds and hosts read; rows with other names are ignored. Its name is the
 /// row's in the file and the image's in a build's stage (`artwork/<name>.png`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Artwork {

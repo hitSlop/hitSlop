@@ -79,8 +79,6 @@ pub enum EngineRequest {
         document_path: String,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         if_version: Option<String>,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        command: Option<String>,
         /// Intents as JSON text that only the core parses.
         ops: String,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
@@ -198,9 +196,9 @@ impl EngineRequest {
                     return Err("Invalid attachment ID");
                 }
             }
-            Self::Batch { document_path, command, ops, attachments, .. } => {
+            Self::Batch { document_path, ops, attachments, .. } => {
                 check_path(document_path)?;
-                check_batch(command.as_deref(), ops, attachments.as_deref())?;
+                check_batch(ops, attachments.as_deref())?;
             }
             Self::Call { document_path, command, .. } => {
                 check_path(document_path)?;
@@ -229,14 +227,7 @@ impl EngineRequest {
 }
 
 /// Constraints shared by the socket and engine request boundaries.
-pub(super) fn check_batch(
-    command: Option<&str>,
-    ops: &str,
-    attachments: Option<&[String]>,
-) -> Result<(), &'static str> {
-    if command.is_some_and(|name| !valid_command_name(name)) {
-        return Err("Invalid command name");
-    }
+pub(super) fn check_batch(ops: &str, attachments: Option<&[String]>) -> Result<(), &'static str> {
     if !(2..=super::SOCKET_REQUEST).contains(&ops.chars().count()) {
         return Err("Invalid operations length");
     }

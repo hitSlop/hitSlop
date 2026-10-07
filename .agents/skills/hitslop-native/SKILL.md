@@ -42,10 +42,10 @@ documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
 is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated
-`Export.svelte`/`Icon.svelte` captures are never masked. Flush and copy saved state before
+`export`/`icon` view captures are never masked. Flush and copy saved state before
 rendering in an independent hidden page. The editor holds `capturing` only while acquiring
-that copy; rendering can continue after the editor closes. Without `Export.svelte`, export
-uses a fresh `App.svelte` with its default transient view state. Theme overrides live in
+that copy; rendering can continue after the editor closes. Without an `export` view, export
+uses a fresh `view` with its default transient view state. Theme overrides live in
 Loro and use the same publication, undo and saving path as data edits.
 
 **Checks.** `bun run verify --native` runs what a change touches, building first.

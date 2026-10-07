@@ -25,7 +25,7 @@ have no special role. Once mounted, the schema's definition is the live document
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
-The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from local manifests. Account UI, OpenAPI/Registry, hosted discovery, and sharing are deferred.
+The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. Account UI, OpenAPI/Registry, hosted discovery, and sharing are deferred.
 
 ## File layout
 
@@ -34,7 +34,7 @@ A `.slop` file is one SQLite database (application ID `0x48534C50`, "HSLP"; stor
 explicitly declares identity, window, ordered theme, document descriptor, initial values,
 views and commands. The build writes `packageFormat` and `runtimeABI`; readers check
 these markers before interpreting current-format fields. Swift receives typed UniFFI
-metadata/window/theme values, never a second JSON manifest decoder.
+metadata/window/theme values and never decodes the stored definition itself.
 
 ```text
 app          one row: package_format, runtime_abi, catalog columns, definition_json
@@ -85,9 +85,9 @@ Application-render errors and save failures have separate recovery paths. Render
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes only the app's assets and the bundled page shell; saved state, attachments, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
+The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
-The native and browser CSPs come from `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`; Soma Amp's MilkDrop compiles its presets this way), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
+The native and browser CSPs are defined in Rust (`crates/hitslop-core/src/wire/limits.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`; Soma Amp's MilkDrop compiles its presets this way), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
@@ -99,7 +99,7 @@ An export never replaces the document it renders. Capture stages output and publ
 
 Slop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 
-Bridge resize requests respect the manifest’s resizable setting, including fixed-size skin windows. The validated `shape` becomes one immutable native silhouette that supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
+Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The validated `shape` becomes one immutable native silhouette that supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
 ## Capture and Finder integration
 
@@ -109,9 +109,9 @@ ends after the backup. Rendering then uses that independent copy, including its 
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
 
-The generated Svelte entry discovers optional `Export.svelte` and `Icon.svelte`.
-`Export.svelte` receives `mode: "preview" | "export"` and supplies the capture layout.
-Without it, a fresh `App.svelte` renders saved data using its default local UI state.
+`defineSlop` registers optional `export` and `icon` views beside `view`. The export view
+receives `mode: "preview" | "export"` and supplies the capture layout. Without it, a fresh
+rendering of `view` shows saved data using its default local UI state.
 State that should determine an export, such as a selected report, must be saved in the
 document. Capture components read the same document facade; they cannot change saved
 state to prepare their view.

@@ -33,8 +33,6 @@ pub enum SocketRequest {
         documentPath: String,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         ifVersion: Option<String>,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        command: Option<String>,
         ops: String,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         base: Option<String>,
@@ -67,9 +65,7 @@ impl SocketRequest {
             Self::AttachmentsRead { attachmentID, .. } if !super::valid_attachment_id(attachmentID) => {
                 Err("Invalid attachment ID")
             }
-            Self::Batch { command, ops, attachments, .. } => {
-                check_batch(command.as_deref(), ops, attachments.as_deref())
-            }
+            Self::Batch { ops, attachments, .. } => check_batch(ops, attachments.as_deref()),
             Self::Export { output, .. } => check_path(output),
             _ => Ok(()),
         }

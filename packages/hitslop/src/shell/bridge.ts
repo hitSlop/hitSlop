@@ -1,13 +1,13 @@
 import type { PageFailure, PageMethod, PageRequest, PageResult } from "../wire/page";
 import { OutcomeCodes } from "../schema/constants";
 import { DocumentError } from "../sdk/internal";
+import { preview } from "./preview";
 
 /** One native request path. WebKit correlates each reply with its returned promise. */
 export async function call<M extends PageMethod>(request: PageRequest<M>): Promise<PageResult<M>> {
   let reply: unknown;
   try {
-    const preview = (globalThis as any).__hitslopPreview;
-    reply = preview ? await preview.request(request) : await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request));
+    reply = preview.host ? await preview.host.request(request) : await (globalThis as any).webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request));
   } catch (error) {
     throw new DocumentError("unknown_outcome", String(error));
   }

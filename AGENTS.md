@@ -38,44 +38,25 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 Before launch we start fresh: no legacy handling, migrations or backwards-compatible
 readers; pre-launch documents are unsupported and `tests/compat/dev` may be replaced.
 From the first public release, a newer hitSlop must open, render, edit, save and reopen
-every document a released build wrote. Downgrades are not supported.
+every document a released build wrote. Downgrades are not supported. The full rules, by
+boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
 
 - The frozen corpus (`tests/compat/<release>/`, `"frozen": true`) passes in every build.
-  Never edit, regenerate or delete a frozen entry or its expectations; capture one per
-  release ([releasing](docs/guides/releasing.md)).
-- Persisted formats change only additively, or behind a marker the reader dispatches
-  on: the file's `packageFormat` and `runtimeABI` requirements (its `app` columns), the
-  SQLite storage version (`user_version`; forward migration under the writer lock) or
-  the document layout (read it, or migrate losslessly). The markers are requirements,
-  not release numbers; refactors never raise them. A build refuses a newer marker with
-  `requires_update` and writes nothing. The Mac app and the npm packages share one
-  release version, which never stands for compatibility.
-- Definition changes raise `packageFormat`; physical columns, tables and triggers raise the storage version; app-facing
-  behavior raises `runtimeABI`. These requirements evolve independently. App limits and
-  the checks that run on open are versioned by `packageFormat`; persistence limits
-  (storage size and updates, attachments) by the storage version, never lowered for a
-  released one and raised only with it. Tightening an authoring rule never rejects a
-  saved document or stops one from being edited and saved, and an accepted edit stays
-  readable under the markers its save writes. A security fix that must reject old
-  documents needs an assessment and a recovery path for their data.
-- Installing hitSlop never replaces the app inside an existing document; upgrading a
-  document's app is an explicit operation. Only a write under the writer lock migrates a
-  file: reads that only display it (Quick Look, the catalog, `get`, export) never do.
-- Public boundaries grow additively: `ctx` and handle methods (new object-handle members
-  start with `$`; reserved field names never grow), error codes (apps treat unknown
-  ones as outcomes), `--slop-*`, `data-hitslop-root` and the embed relay. A change an old
-  app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
-  Internals behind them are free.
-- The command protocol is exact: each side serves one protocol, keeps no adapters for
-  older programs, and refuses any other before touching a document, naming the older
-  side to update. Its refusal path never changes: `--client-protocol N` as the first
-  argument, exit status 2 and one stderr line; the live discovery record (`socket` and
-  `documentPath`; other fields are ignored); newline framing; `protocol` read before any
-  other check; and the reply `{ok: false, code: "rejected", reason: "requires_update",
-  error}`.
-- Upgrade Loro (pinned exactly) only with the corpus passing. The engine and the helper
-  ship in one bundle with one core build; across builds, the CLI, engine and live owner
-  meet only through the command protocol.
+  Never edit, regenerate or delete a frozen entry, its expectations or the command
+  prelude it froze; capture one per release ([releasing](docs/guides/releasing.md)).
+- Persisted formats change only additively, or behind the marker that owns the change:
+  `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
+  version (tables, columns, triggers) or the document layout. Markers are requirements,
+  not release numbers; refactors never raise them. A newer marker is refused with
+  `requires_update` and nothing is written.
+- Opening a file applies only its format's acceptance, which never tightens. Authoring
+  rules run at `pack` and `init` and may tighten freely; they never judge a saved file.
+- Installing hitSlop never replaces the app inside an existing document. Only a write
+  under the writer lock migrates a file; display reads never do.
+- Public boundaries (`ctx`, handles, error codes, `--slop-*`, host markup, the embed relay,
+  the command protocol's refusal path) grow additively. A change an old app cannot run
+  raises `runtimeABI` and keeps the old behavior through an adapter.
+- Upgrade Loro (pinned exactly) only with the corpus passing.
 
 ## Authoring
 

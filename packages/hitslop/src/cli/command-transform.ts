@@ -1,16 +1,16 @@
 import ts from "typescript";
 
-/** The explicit command form is part of the authoring API. Parse source syntax, never
- * regex-match bodies (strings, comments and nested braces must remain harmless). */
-export function stripCommandBodies(source: string, fileName: string, stubModule: string, declarationEntry = false) {
+/** The UI bundle needs a command's name and arguments, never its body: the owner runs the
+ * stored program. Parse source syntax, never regex-match bodies (strings, comments and
+ * nested braces must remain harmless). A declaration this misses still works; only its
+ * body's bytes reach the page. */
+export function stripCommandBodies(source: string, fileName: string, declarationEntry = false) {
   let changed = false;
-  let needsStub = false;
   const result = ts.transpileModule(source, {
     fileName,
     compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, sourceMap: true },
     transformers: { before: [context => root => {
       const f = context.factory;
-      const stub = f.createUniqueName("hitslopCommandStub");
       const declarations = new Set<string>();
       for (const statement of root.statements) {
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== "hitslop") continue;
@@ -36,31 +36,39 @@ export function stripCommandBodies(source: string, fileName: string, stubModule:
             p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) &&
             ["document", "view", "export", "icon", "commands"].includes(p.name.text))), visit);
         }
-        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "command") {
-          const spec = node.arguments[0];
-          if (node.arguments.length !== 1 || !spec || !ts.isObjectLiteralExpression(spec))
-            throw new Error(`${fileName}: command declarations must use doc.command({ description, args, run })`);
-          if (spec.properties.some(p => ts.isSpreadAssignment(p) || (p.name && ts.isComputedPropertyName(p.name))))
-            throw new Error(`${fileName}: command declarations cannot spread or compute their properties`);
-          const name = (p: ts.ObjectLiteralElementLike) => p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : undefined;
-          const runs = spec.properties.filter(p => name(p) === "run");
-          if (runs.length !== 1 || (!ts.isMethodDeclaration(runs[0]!) && !(ts.isPropertyAssignment(runs[0]!) && (ts.isArrowFunction(runs[0]!.initializer) || ts.isFunctionExpression(runs[0]!.initializer)))))
-            throw new Error(`${fileName}: run must be an inline synchronous method or function`);
-          const run = ts.isMethodDeclaration(runs[0]!) ? runs[0]! : (runs[0]! as ts.PropertyAssignment).initializer as ts.ArrowFunction | ts.FunctionExpression;
-          if (run.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword) || ("asteriskToken" in run && run.asteriskToken))
+        // A document command declaration: `<doc>.command({ description, args, run })`.
+        // Only that exact shape loses its body; any other `.command(...)` is not ours.
+        const spec = commandDeclaration(node);
+        if (spec) {
+          const run = spec.properties.find(p => propertyName(p) === "run")!;
+          const body = ts.isMethodDeclaration(run) ? run : ts.isPropertyAssignment(run) ? run.initializer : undefined;
+          if (body && (ts.isMethodDeclaration(body) || ts.isArrowFunction(body) || ts.isFunctionExpression(body)) &&
+            (body.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) || ("asteriskToken" in body && body.asteriskToken)))
             throw new Error(`${fileName}: run must be synchronous and cannot be a generator`);
           changed = true;
-          needsStub = true;
-          return f.createCallExpression(stub, undefined, [node.expression.expression,
-            f.updateObjectLiteralExpression(spec, spec.properties.filter(p => name(p) !== "run"))]);
+          const call = node as ts.CallExpression;
+          return f.updateCallExpression(call, ts.visitNode(call.expression, visit) as ts.Expression, call.typeArguments,
+            [f.updateObjectLiteralExpression(spec, spec.properties.filter(p => p !== run))]);
         }
         return ts.visitEachChild(node, visit, context);
       };
-      const next = ts.visitEachChild(root, visit, context);
-      return needsStub ? f.updateSourceFile(next, [f.createImportDeclaration(undefined,
-        f.createImportClause(false, undefined, f.createNamedImports([f.createImportSpecifier(false, f.createIdentifier("commandStub"), stub)])),
-        f.createStringLiteral(stubModule)), ...next.statements]) : next;
+      return ts.visitEachChild(root, visit, context);
     }] },
   });
   return changed ? { code: result.outputText.replace(/\n\/\/# sourceMappingURL=.*\n?$/, "\n"), map: result.sourceMapText } : undefined;
+}
+
+const commandKeys = new Set(["description", "args", "run"]);
+const propertyName = (p: ts.ObjectLiteralElementLike) =>
+  p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : undefined;
+/** The spec of `x.command({ description, args, run })`: one object literal whose keys are
+ * exactly those three. */
+function commandDeclaration(node: ts.Node) {
+  if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) ||
+    node.expression.name.text !== "command" || node.arguments.length !== 1) return;
+  const spec = node.arguments[0]!;
+  if (!ts.isObjectLiteralExpression(spec)) return;
+  const names = spec.properties.map(propertyName);
+  if (names.length !== commandKeys.size || names.some(name => !name || !commandKeys.has(name)) || new Set(names).size !== names.length) return;
+  return spec;
 }

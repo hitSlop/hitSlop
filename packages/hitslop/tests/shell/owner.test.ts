@@ -3,7 +3,8 @@
 // with replies resolving before their publications arrive, as they can natively.
 import { expect, test } from "bun:test";
 import { OwnerDocument } from "../../src/shell/owner/document";
-import { wasmTransport, type OwnerTransport } from "../../src/shell/owner/transport";
+import type { OwnerTransport } from "../../src/shell/owner/transport";
+import { wasmTransport } from "./wasm-transport";
 import { defineDocument, s } from "hitslop";
 import { DocumentError } from "../../src/sdk/errors";
 import type { Batch } from "../../src/schema/core";
@@ -101,7 +102,7 @@ test("commands drain pending edits and resolve after the owner's publication", a
   transport.runCommand = async (name, args) => {
     observed = { name, args, title: JSON.parse(core.state()).value.title };
     await held.promise;
-    const result = await transport.apply({ command: name, intents: [{ type: "increment", path: ["hits"], by: 3 }] });
+    const result = await transport.apply({ intents: [{ type: "increment", path: ["hits"], by: 3 }] });
     return { sequence: result.sequence, ids: result.ids, result: "accepted" };
   };
   try {
@@ -479,13 +480,15 @@ test("a concurrent whole-field set and page typing survive and undo separately",
 // The page must wait for the host's stored blob before submitting its reference.
 test("attachment import uses host identity and media type before writing its reference", async () => {
   const { ownerAttachments } = await import("../../src/shell/attachments");
+  const { preview } = await import("../../src/shell/preview");
   const { core, doc } = await open();
-  const host = globalThis as any;
-  const previous = host.__hitslopPreview;
+  const previous = preview.host;
   const held = gate();
   const id = "a".repeat(64);
   let uploads = 0;
-  host.__hitslopPreview = {
+  preview.host = {
+    uiURL: "",
+    onPush: () => {},
     request: async (request: any) => {
       expect(request).toEqual({ method: "attachments.put", bytes: "AQID" });
       uploads++;
@@ -507,7 +510,7 @@ test("attachment import uses host identity and media type before writing its ref
     expect(() => attachments.url("../ui.js")).toThrow();
     await expect(attachments.import(new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin"), () => {})).rejects.toThrow();
     expect(uploads).toBe(1);
-  } finally { held.release(); host.__hitslopPreview = previous; core.free(); }
+  } finally { held.release(); preview.host = previous; core.free(); }
 });
 
 // Gap: reloading the interface must remount against the same document without losing

@@ -3,6 +3,10 @@
   import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
   import { isDocumentError, isRejected } from "hitslop";
   import doc from "./schema";
+  import { bump } from "./actions";
+  // App media the corpus must keep serving: an image, audio and a font (styles.css).
+  import swatch from "./media/swatch.png";
+  import tone from "./media/tone.wav";
   let shown: HTMLParagraphElement;
   let input: HTMLTextAreaElement;
   let checkbox: HTMLInputElement;
@@ -136,12 +140,28 @@
       await doc.redo();
       check(doc.current.label === "Undo me", "Redo did not reapply");
       check(Array.isArray(doc.current.rows), "Snapshot missing");
+      // A command runs in the owner: its arguments are checked there, it returns its
+      // result after its edit reaches this page, and it is one undo step.
+      const before = doc.current.hits;
+      check((await bump({ by: 2 })) === before + 2 && doc.current.hits === before + 2, "Command result or edit was lost");
+      await refused(bump({ by: 100 }), "invalid_request");
+      check(doc.current.hits === before + 2, "A refused command changed the document");
+      await doc.undo();
+      check(doc.current.hits === before, "Undo did not revert the command");
+      await doc.redo();
+      check(doc.current.hits === before + 2, "Redo did not reapply the command");
       // Host services: attachments, capture and the window.
       const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),
       );
       check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
       check((await (await attachments.read(ref.id)).text()) === "conformance", "Attachment bytes differ");
+      check((await (await fetch(attachments.url(ref.id))).text()) === "conformance", "Attachment URL bytes differ");
+      check(document.querySelector("[data-hitslop-root]") !== null, "The app root is not marked for the host");
+      // The app's own media load from its embedded assets.
+      for (const url of [swatch, tone]) check((await fetch(url)).ok, `App media did not load: ${url}`);
+      await document.fonts.load('16px "Conformance Hand"');
+      check(document.fonts.check('16px "Conformance Hand"'), "The imported font did not load");
       check(capture.isRenderer() === false, "An interactive page reported itself as a renderer");
       await resizeWindow({ width: 480, height: 480 }).catch((error) => {
         if (!isDocumentError(error)) throw error;
@@ -158,6 +178,9 @@
 </script>
 
 <main>
+  <h2>Conformance</h2>
+  <img src={swatch} alt="Swatch" width="16" height="16" />
+  <audio src={tone} preload="none"></audio>
   <p bind:this={shown}>{doc.current.title}</p>
   <textarea aria-label="Title" bind:this={input} use:bindText={doc.fields.title}></textarea>
   <input aria-label="Done" type="checkbox" bind:this={checkbox} bind:checked={doc.fields.done.value} />

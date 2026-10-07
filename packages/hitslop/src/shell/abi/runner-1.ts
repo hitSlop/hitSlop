@@ -5,7 +5,7 @@ import { commandInfo } from "../../sdk/commands";
 const refuse = () => { throw new Error("Use the host-provided ctx.now and ctx.random()"); };
 const OriginalDate = Date;
 // Explicit dates remain useful for formatting. Reading the ambient clock is forbidden.
-(globalThis as any).Date = new Proxy(OriginalDate, {
+const RestrictedDate = new Proxy(OriginalDate, {
   construct(target, args, newTarget) {
     if (!args.length) refuse();
     return Reflect.construct(target, args, newTarget);
@@ -13,6 +13,9 @@ const OriginalDate = Date;
   apply: refuse,
   get(target, key, receiver) { return key === "now" ? refuse : Reflect.get(target, key, receiver); },
 });
+(globalThis as any).Date = RestrictedDate;
+// Every date reaches the constructor through its prototype; that path is restricted too.
+Object.defineProperty(OriginalDate.prototype, "constructor", { value: RestrictedDate });
 Math.random = refuse;
 (globalThis as any).__hitslopRun = (input: string): string => {
   try {

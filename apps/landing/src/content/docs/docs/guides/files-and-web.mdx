@@ -61,19 +61,26 @@ its edits accepted together with the file or the promise rejects. Prepare the fi
 asynchronously before calling `import`. If storing the file fails, the collector never
 runs; if the reference edit is refused, the file stays stored but unreferenced. A
 reference is `{ id, name, mimeType, byteLength }`; model it with ordinary fields. The name
-and type are descriptive, never a path.
+is descriptive, never a path. The type comes from the file's bytes, not its extension:
+images, audio, video and PDFs keep theirs, and anything else is
+`application/octet-stream`.
 
-```ts
-const blob = await attachments.read(ref.id, { type: ref.mimeType });
-const url = URL.createObjectURL(blob); // revoke it when you're done
+Show or play a file by its URL. It is same-origin and never changes, and media can seek:
+
+```svelte
+<img src={attachments.url(ref.id)} alt={ref.name} />
+<audio controls src={attachments.url(ref.id)}></audio>
 ```
+
+`attachments.read(id)` returns the bytes as a `Blob` when your code needs them. A file
+never runs as a script, stylesheet or page.
 
 Files are immutable and deduplicated by content: up to 10 MiB each, 100 MiB and 256 files
 per document. Store the reference's `id` as it is, in a field or inside text: when the
 document closes, files whose ID appears nowhere in it are removed, and a duplicate or shared
 copy carries only the files it references. Close, export and duplicate wait for imports in
-progress. Templates never contain imported files, and browser preview keeps them in memory
-with the same limits. From the terminal, use
+progress. Templates never contain imported files. `slop dev` stores them in each preview's
+own disposable document, with the same limits. From the terminal, use
 [`attachments ref` and `--attach`](/docs/guides/cli-workflows/#work-with-attachments).
 
 ## HTTPS data, media and frames

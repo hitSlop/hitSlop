@@ -87,12 +87,25 @@ pub fn serve(path: &Path) -> ExitCode {
                 if count > command::MAX_REQUEST_BYTES {
                     return Err("Oversized preview frame".into());
                 }
-                match serde_json::from_slice::<PreviewRequest>(&line).map_err(|e| e.to_string())? {
+                let request = match serde_json::from_slice::<PreviewRequest>(&line) {
+                    Ok(request) => request,
+                    // A page request the owner does not know is refused like the native
+                    // host refuses it; a frame without its ID is a broken transport.
+                    Err(error) => {
+                        let Some(id) = serde_json::from_slice::<Value>(&line).ok().and_then(|v| v["id"].as_u64())
+                        else {
+                            return Err(error.to_string());
+                        };
+                        let _ = send.send(json!({"type":"reply","id":id,"reply":failure(error).to_string()}));
+                        continue;
+                    }
+                };
+                match request {
                     PreviewRequest::Resource { id, attachment_id, offset, length } => {
                         let resource = (|| {
                             let info = resources.info(ResourceRoute::Attachment, &attachment_id)?;
                             let bytes = resources.read_range(ResourceRoute::Attachment, &attachment_id, offset, length)?;
-                            Ok::<_,hitslop_core::store::Error>(json!({"type":"resource","id":id,"info":info.map(|i| json!({"size":i.size,"mimeType":i.media_type})),"bytes":bytes}))
+                            Ok::<_,hitslop_core::store::Error>(json!({"type":"resource","id":id,"info":info.map(|i| json!({"size":i.size,"mimeType":i.media_type})),"bytes":bytes.map(|b| data_encoding::BASE64.encode(&b))}))
                         })().unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
                         let _ = send.send(resource);
                     }

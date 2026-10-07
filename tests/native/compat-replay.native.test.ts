@@ -95,6 +95,15 @@ for (const { name, root, release, documents: saved, templates } of entries)
           expect(evaluated).toEqual(command.evaluated);
           await slopJSON(["batch", copy, "--ops", JSON.stringify(evaluated.intents)]);
           expect(await slopJSON(["get", copy])).toEqual(command.value);
+          // The same stored program through the owner, as an agent or page calls it: the
+          // owner checks its arguments before evaluating, and a valid call edits.
+          await fresh();
+          const unread = await slop(["call", copy, command.name, "--args", JSON.stringify({ unexpected: true })]);
+          expect(unread.code).not.toBe(0);
+          expect(unread.stderr + unread.stdout).toContain("Invalid arguments");
+          expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
+          await slopJSON(["call", copy, command.name, "--args", JSON.stringify(command.args)]);
+          expect((await slopJSON(["get", copy, "--snapshot"])).value).not.toEqual(state.value);
         }
       }, 120_000);
 

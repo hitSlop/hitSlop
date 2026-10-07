@@ -9,7 +9,7 @@ type Session = {
   pid: number;
   path: string;
   token: string;
-  resource(id: string, offset: number, length: number): Promise<{info: {size: number; mimeType: string} | null; bytes: number[] | null; error?: string}>;
+  resource(id: string, offset: number, length: number): Promise<{info: {size: number; mimeType: string} | null; /** Base64. */ bytes: string | null; error?: string}>;
   send(frame: unknown): void;
   close(): Promise<void>;
 };
@@ -28,11 +28,19 @@ export class NativeDevHosts {
   attach(server: ViteDevServer) {
     const admitted = new WeakSet<WebSocketClient["socket"]>();
     server.ws.on("connection", (socket, request) => {
-      const origin = server.resolvedUrls?.local[0];
-      if (origin && request.headers.origin === new URL(origin).origin) admitted.add(socket);
+      // Loopback under either name; never another site that can reach the port.
+      const origins = (server.resolvedUrls?.local ?? []).flatMap(url => {
+        const loopback = new URL(url);
+        return ["localhost", "127.0.0.1", "[::1]"].map(host => { loopback.hostname = host; return loopback.origin; });
+      });
+      if (origins.includes(request.headers.origin ?? "")) admitted.add(socket);
     });
     server.ws.on("hitslop:open", (data, client) => {
-      if (!admitted.has(client.socket) || data?.token !== this.token || this.stopped || !this.available || this.sessions.has(client)) return;
+      if (!admitted.has(client.socket) || data?.token !== this.token || this.sessions.has(client)) return;
+      if (this.stopped || !this.available) {
+        client.send("hitslop:fatal", { error: this.stopped ? "The preview server stopped" : "The app failed to build; fix the error and save to reload" });
+        return;
+      }
       const generation = this.generation;
       const opening = this.open(client, generation);
       this.sessions.set(client, opening);

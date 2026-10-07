@@ -31,7 +31,20 @@ pub fn content_type(path: &str) -> &'static str {
     let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     if extension == "html" { "text/html; charset=utf-8" } else { crate::media::asset_type(&extension).media_type }
 }
-/// How an asset's `bytes` hold it, as the `assets` table's CHECK names it.
+/// What every app resource is, at pack and open: a program or stylesheet with content, or
+/// media named by its SHA-256. `hashed` verifies the address; opening checks it only for
+/// integrity, since the app row seals what `pack` verified.
+pub(super) fn check_resource(key: &str, bytes: &[u8], hashed: bool) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    match key.strip_prefix("media/") {
+        Some(name) if hashed && !name.starts_with(&data_encoding::HEXLOWER.encode(&Sha256::digest(bytes))) => {
+            Err(invalid(format!("Resource {key} does not match its SHA-256")))
+        }
+        None if bytes.is_empty() => Err(invalid(format!("Resource {key} is empty"))),
+        _ => Ok(()),
+    }
+}
+/// How an asset's `bytes` hold it. Every open refuses another encoding (`stored_assets`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Encoding {
     Identity,

@@ -65,9 +65,12 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const response = await fetch(new URL("/__app__/@fs/etc/passwd", dev.url));
     expect(response.status).toBe(403);
-    // slop.ts is build-only: the preview never serves it as an app module.
-    const metadata = await fetch(new URL("/slop.ts", dev.url));
-    expect(metadata.ok).toBe(false);
+    // The page gets slop.ts projected to its UI roles; metadata stays in the definition build.
+    const declaration = await fetch(new URL("/__app__/slop.ts", dev.url));
+    expect(declaration.ok).toBe(true);
+    const served = await declaration.text();
+    expect(served).toContain("view");
+    expect(served).not.toContain("categories");
   } finally {
     await browser.close();
     await dev?.close();

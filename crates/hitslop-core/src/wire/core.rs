@@ -150,7 +150,6 @@ impl Intent {
 #[allow(non_snake_case)]
 pub struct Batch {
     pub ifVersion: Option<String>,
-    pub command: Option<String>,
     pub base: Option<String>,
     pub intents: Vec<Intent>,
 }

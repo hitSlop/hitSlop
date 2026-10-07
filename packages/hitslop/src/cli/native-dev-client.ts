@@ -1,3 +1,4 @@
+import { PushLimits } from "../schema/constants";
 /* Served only by the Vite host. It uses Vite’s browser-only HMR module. */
 export const nativeDevClient = String.raw`
 // Only served by the Vite host; never bundled into an authored slop.
@@ -12,6 +13,7 @@ let receiver;
 let pushes = [];
 const ready = Promise.withResolvers();
 function fatal(error) {
+  clearTimeout(opening);
   failed = new Error(error);
   ready.reject(failed);
   for (const { reject, timer } of pending.values()) { clearTimeout(timer); reject(failed); }
@@ -27,7 +29,8 @@ function fatal(error) {
   }
   notice.textContent = error;
 }
-hot.on("hitslop:ready", data => { resourceToken = data.resourceToken; ready.resolve(); });
+const opening = setTimeout(() => fatal("The preview did not start; check the terminal, then reload"), 20000);
+hot.on("hitslop:ready", data => { clearTimeout(opening); resourceToken = data.resourceToken; ready.resolve(); });
 hot.on("hitslop:fatal", ({ error }) => fatal(error));
 hot.on("vite:ws:disconnect", () => fatal("Preview connection lost; reload before editing"));
 hot.on("hitslop:reply", ({ id, reply }) => {
@@ -39,7 +42,7 @@ hot.on("hitslop:push", batch => {
   if (receiver) receiver(batch);
   else {
     pushes.push(...batch);
-    if (pushes.length > 256) pushes = [{ type: "resync" }];
+    if (pushes.length > ${PushLimits.items}) pushes = [{ type: "resync" }];
   }
 });
 globalThis.__hitslopPreview = {

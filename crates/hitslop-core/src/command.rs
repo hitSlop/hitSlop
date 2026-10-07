@@ -251,7 +251,7 @@ fn dispatch(
                     ))?,
                 }
             }
-            SocketRequest::Batch { ops, base, ifVersion, command, attachments, .. } => {
+            SocketRequest::Batch { ops, base, ifVersion, attachments, .. } => {
                 // The blobs first, in this one request: their reference edits follow, so
                 // no close can find a blob waiting for its reference. A refused batch
                 // leaves only blobs nothing references, which its close reclaims.
@@ -270,9 +270,6 @@ fn dispatch(
                 }
                 if let Some(version) = ifVersion {
                     batch["ifVersion"] = version.into();
-                }
-                if let Some(name) = command {
-                    batch["command"] = name.into();
                 }
                 let batch_json = batch.to_string();
                 let Reply::Applied { ids, .. } =

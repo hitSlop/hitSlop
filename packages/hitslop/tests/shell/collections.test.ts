@@ -4,7 +4,7 @@
 // that is lost. Oracle: literal snapshots and the core's saved state.
 import { expect, test } from "bun:test";
 import { OwnerDocument } from "../../src/shell/owner/document";
-import { wasmTransport } from "../../src/shell/owner/transport";
+import { wasmTransport } from "./wasm-transport";
 import { defineDocument, s } from "hitslop";
 const wasm = await import(new URL("../../../../generated/core/wasm/hitslop_core_wasm.js", import.meta.url).href);
 wasm.initSync({

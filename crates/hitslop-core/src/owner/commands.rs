@@ -44,21 +44,33 @@ struct Refusal {
     _ok: False,
     error: String,
 }
+/// The intents a command built for `abi` returns, in the core's current vocabulary. ABI 1's
+/// are today's. A later ABI that changes the vocabulary translates an older one here; the
+/// core never loosens what it accepts to admit them.
+fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<Value>> {
+    match abi {
+        1 => Ok(intents),
+        _ => Err(rejected("Unsupported command runtime ABI")),
+    }
+}
+/// The evaluator, not the command, failed. A definite refusal: nothing was applied.
+fn host_fault(error: impl std::fmt::Display) -> Failure {
+    Failure::rejected(Code::EngineError, format!("The command evaluator failed: {error}"))
+}
 fn rejected(error: impl ToString) -> Failure {
     Failure::rejected(Code::InvalidRequest, error.to_string())
 }
 
-pub(super) fn worker(evaluator: Option<Evaluator>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
+pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for Work { invocation, bundle, input, runtime_abi } in work {
         let result = contained(|| {
-            let evaluator = evaluator.as_ref().ok_or_else(|| rejected("The command evaluator is unavailable"))?;
-            let output = evaluator.run(runtime_abi, (*bundle).clone(), input).map_err(rejected)?;
-            serde_json::from_str(&output).map_err(|_| {
-                rejected(
-                    serde_json::from_str::<Refusal>(&output)
-                        .map(|r| r.error)
-                        .unwrap_or_else(|_| "Command evaluator returned an invalid reply".into()),
-                )
+            // The evaluator process failed (it could not start, timed out, or replied
+            // nothing usable): a host fault, not the command refusing. Nothing was applied.
+            let output = evaluator.run(runtime_abi, &bundle, &input).map_err(host_fault)?;
+            serde_json::from_str(&output).map_err(|_| match serde_json::from_str::<Refusal>(&output) {
+                // The command threw: its own refusal.
+                Ok(refusal) => rejected(refusal.error),
+                Err(_) => host_fault("it returned an invalid reply"),
             })
         });
         if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) =
@@ -95,6 +107,9 @@ impl Actor {
         command.args.validate(&args).map_err(|error| {
             rejected(format!("Invalid arguments for {name} at {}: {}", error.pointer(), error.message))
         })?;
+        if self.evaluate.is_none() {
+            return Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator"));
+        }
         let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(rejected)?.as_millis() as u64;
         let mut bytes = [0; 16];
         getrandom::getrandom(&mut bytes).map_err(rejected)?;
@@ -130,9 +145,16 @@ impl Actor {
                 return;
             }
         };
+        let Some(evaluate) = &self.evaluate else {
+            complete(
+                take(&mut invocation.callback),
+                Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator")),
+            );
+            return;
+        };
         self.evaluating = true;
         if let Err(mpsc::SendError(Work { mut invocation, .. })) =
-            self.evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
+            evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
             complete(take(&mut invocation.callback), Err(closed()));
@@ -152,9 +174,9 @@ impl Actor {
                 return Err(rejected("Command expired before its intents were admitted"));
             }
             let output = result?;
-            let batch =
-                json!({"intents":output.intents,"ifVersion":invocation.version,"command":invocation.name}).to_string();
-            let accepted = self.core.apply_batch(&batch, invocation.origin)?;
+            let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
+            let batch = json!({"intents":intents,"ifVersion":invocation.version}).to_string();
+            let accepted = self.edited(|core| core.apply_command(&batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
             Ok(Reply::Command {
                 sequence: accepted.sequence,

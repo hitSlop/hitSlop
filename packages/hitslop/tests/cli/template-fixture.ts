@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineDocument, s } from "../../src/sdk/schema";
 import { execute } from "../../src/cli/engine";
-import { PackageFormat, RuntimeABI } from "../../src/schema/index";
+import { PackageFormat, RuntimeABI } from "../../src/schema/constants";
 
 /** A minimal template file at `output`, packed by the file engine from a stage with preview
  * artwork: what tests of template handling need, without building an app. Returns `output`. */

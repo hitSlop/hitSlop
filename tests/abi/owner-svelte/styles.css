@@ -1,1 +1,3 @@
+@import "./fonts.css";
 body { font-family: system-ui; margin: 0; } main { padding: 24px; } textarea { display: block; }
+h2 { font-family: "Conformance Hand", system-ui; }

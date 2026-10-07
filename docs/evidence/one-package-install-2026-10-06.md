@@ -1,6 +1,6 @@
 # One package, installed (2026-10-06)
 
-Spike B of [the versioning plan](../../plans/versioning.md#spike-b-one-package-installed-gates-steps-3-and-6).
+Spike B of the versioning plan (executed and archived 2026-10-07).
 Does a single `hitslop` package, holding the CLI, the SDK and the schema, work when installed
 the way authors and agents install it? Run on the development M1 with Bun 1.4.2.
 

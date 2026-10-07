@@ -36,7 +36,7 @@ bundled-sqlite = ["storage", "rusqlite/bundled"]
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hitslop-runner = { path = "../hitslop-runner", optional = true }
+hitslop-runner = { path = "../hitslop-runner", optional = true, default-features = false }
 fluent-uri = { version = "=0.4.1", optional = true }
 rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"], optional = true }
 sha2 = { version = "=0.11.0", optional = true }

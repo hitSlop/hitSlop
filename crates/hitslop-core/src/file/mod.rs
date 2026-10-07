@@ -23,7 +23,7 @@ pub use pack::{APP_INPUT_BYTES, pack, validate_app};
 pub use places::{TemplateSource, template_roots};
 pub(crate) use places::{document_destination, document_location};
 
-use crate::app::{AppDefinition, AppMetadata, Author, Category, WindowDefinition};
+use crate::app::{AppDefinition, AppMetadata, Author, WindowDefinition};
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};
 use crate::wire::{ASSET_PATH_BYTES, MANIFEST_BYTES};
 use assets::{assets_within, read_asset};
@@ -129,13 +129,19 @@ impl WriteTransaction<'_> {
 pub(crate) fn begin_write<'a>(conn: &'a Connection, action: &str) -> Result<WriteTransaction<'a>> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite(action))?;
     let version = markers(&tx)?;
-    // Version 1 is the first public storage. The assertion above forces a real reader
-    // and migration step to accompany a bump; no prelaunch legacy format is supported.
-    let validate = version != STORAGE_VERSION;
-    if validate {
-        return Err(invalid("Missing storage migration"));
-    }
+    let validate = migrate(&tx, version)?;
     Ok(WriteTransaction { tx, validate })
+}
+/// Brings a file from `from` to `STORAGE_VERSION` inside the write's transaction; the commit
+/// then checks the result in full. Version 1 is the first. A later version adds its arm
+/// here, admits `from` in `markers`, and creates new files by replaying the same chain
+/// (`storage-1.sql`, then each migration), so a migrated file and a new one share one
+/// exact layout. Display reads never call this.
+fn migrate(_tx: &Connection, from: i64) -> Result<bool> {
+    match from {
+        STORAGE_VERSION => Ok(false),
+        _ => Err(invalid("Unsupported document storage")),
+    }
 }
 pub(crate) fn initialize(conn: &Connection) -> Result<WriteTransaction<'_>> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("create"))?;
@@ -181,9 +187,13 @@ pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
     let version = markers(conn)?;
     layout(conn, version)?;
+    contents(conn, integrity)
+}
+/// The checks after the markers and exact layout: sizes, assets, saved-state rows and,
+/// with `integrity`, SQLite's quick check.
+fn contents(conn: &Connection, integrity: bool) -> Result<Kind> {
     app_sizes(conn)?;
     stored_assets(conn)?;
-    stored_artwork(conn)?;
     let kind = state(conn)?;
     if integrity {
         let result: String = conn.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(sqlite("check"))?;
@@ -292,32 +302,6 @@ fn stored_assets(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-/// The artwork's size, names and PNG headers.
-fn stored_artwork(conn: &Connection) -> Result<()> {
-    if one(conn, "SELECT coalesce(max(length(png)),0) FROM artwork")? > crate::ASSET_FILE_BYTES as i64 {
-        return Err(invalid("Artwork is too large"));
-    }
-    if one(
-        conn,
-        &format!(
-            "SELECT count(*) FROM artwork WHERE name NOT IN ('{}')",
-            Artwork::ALL.map(Artwork::as_str).join("','")
-        ),
-    )? > 0
-    {
-        return Err(invalid("Unexpected artwork"));
-    }
-    // Display metadata reads stay cheap. Every artwork write decodes all pixels;
-    // opening checks only the stored header and dimensions.
-    let mut artwork = conn.prepare("SELECT name, substr(png,1,33) FROM artwork").map_err(sqlite("read"))?;
-    for row in
-        artwork.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))).map_err(sqlite("read"))?
-    {
-        let (name, header) = row.map_err(sqlite("read"))?;
-        crate::images::header(&header).map_err(|e| invalid(format!("The {name} artwork: {}", e.message)))?;
-    }
-    Ok(())
-}
 /// Whether the file is a template or a document. Both hold exactly one checkpoint: a
 /// template's is its initial state, which only a document adds updates and attachments
 /// to. A document's attachments are within their limits and named by their hashes; the
@@ -371,7 +355,8 @@ pub struct Summary {
     pub metadata: AppMetadata,
     pub bytes: u64,
 }
-fn scalar_metadata(conn: &Connection, format: u64) -> Result<AppMetadata> {
+/// Display metadata, bounded; the definition's decoder owns every other rule.
+fn scalar_metadata(conn: &Connection) -> Result<AppMetadata> {
     let size = one(
         conn,
         "SELECT length(CAST(slug AS BLOB))+length(CAST(title AS BLOB))+length(CAST(description AS BLOB))+length(CAST(author_name AS BLOB))+coalesce(length(CAST(author_url AS BLOB)),0)+length(CAST(category_primary AS BLOB))+coalesce(length(CAST(category_secondary AS BLOB)),0) FROM app WHERE id=1",
@@ -383,13 +368,12 @@ fn scalar_metadata(conn: &Connection, format: u64) -> Result<AppMetadata> {
         "SELECT slug,title,description,author_name,author_url,category_primary,category_secondary FROM app WHERE id=1", [],
         |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,String>(5)?,r.get::<_,Option<String>>(6)?))
     ).map_err(sqlite("read metadata"))?;
-    let mut categories = vec![Category::parse(primary).map_err(Error::Rejected)?];
+    use crate::app::package_format_1::column_category;
+    let mut categories = vec![column_category(&primary).map_err(Error::Rejected)?];
     if let Some(secondary) = secondary {
-        categories.push(Category::parse(secondary).map_err(Error::Rejected)?);
+        categories.push(column_category(&secondary).map_err(Error::Rejected)?);
     }
-    let metadata = AppMetadata { slug, title, description, author: Author { name, url }, categories };
-    crate::app::validate_metadata(&metadata, format).map_err(Error::Rejected)?;
-    Ok(metadata)
+    Ok(AppMetadata { slug, title, description, author: Author { name, url }, categories })
 }
 /// Common display preamble: marker dispatch, exact layout and bounded catalog fields.
 /// No definition, app blob or attachment blob (even its length) is read here.
@@ -401,8 +385,7 @@ fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
             Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64))
         })
         .map_err(sqlite("read markers"))?;
-    let metadata = scalar_metadata(conn, package_format)?;
-    stored_artwork(conn)?;
+    let metadata = scalar_metadata(conn)?;
     if one(conn, "SELECT count(*) FROM checkpoint")? != 1 {
         return Err(invalid("The file has no saved state; keep it for recovery"));
     }
@@ -433,10 +416,9 @@ pub struct OpenedApp {
     pub bytes: u64,
 }
 pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<OpenedApp> {
-    use sha2::{Digest, Sha256};
     let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
     let summary = summary_on(conn, path)?;
-    check(conn, integrity)?;
+    contents(conn, integrity)?;
     let definition: String = conn
         .query_row("SELECT definition_json FROM app WHERE id=1", [], |r| r.get(0))
         .map_err(sqlite("read definition"))?;
@@ -456,15 +438,10 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         let key = key.map_err(sqlite("read assets"))?;
         let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
         let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing app asset"))?;
-        crate::media::check_asset(kind.media_type, &bytes).map_err(Error::Rejected)?;
-        if let Some(name) = key.strip_prefix("media/") {
-            let digest = data_encoding::HEXLOWER.encode(&Sha256::digest(&bytes));
-            if !name.starts_with(&digest) {
-                return Err(invalid("An app asset does not match its SHA-256"));
-            }
-        } else if bytes.is_empty() {
-            return Err(invalid("Empty app program or stylesheet"));
-        }
+        // `pack` checked each asset's signature and the app row seals them; a later
+        // build's signature rules never judge a saved app. Its content address is a
+        // damage check that cannot change meaning.
+        assets::check_resource(&key, &bytes, integrity)?;
         if key == "ui.css" {
             style = true;
         }
@@ -493,11 +470,6 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     }
     if commands.is_some() == app.commands().is_empty() {
         return Err(invalid("Commands and their private program must be present together"));
-    }
-    for name in Artwork::ALL {
-        if let Some(png) = rows::read_artwork(conn, name)? {
-            check_artwork(name, &png)?;
-        }
     }
     Ok(OpenedApp {
         kind: summary.kind,

@@ -92,6 +92,13 @@
     {
       "type": "set",
       "path": [
+        "photo"
+      ],
+      "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
         "ratio"
       ],
       "value": 0.75
@@ -181,11 +188,12 @@
     "count": 3,
     "done": true,
     "epoch": 3,
-    "hits": 12,
+    "hits": 14,
     "label": "compat 3",
     "lane": "todo",
     "memo": "Compat 3 ✓ café 🦊",
     "note": "compat 3",
+    "photo": "compat 3",
     "place": {
       "name": "Café",
       "visits": 2

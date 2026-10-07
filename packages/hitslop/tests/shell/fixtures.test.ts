@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { OwnerDocument } from "../../src/shell/owner/document";
-import { wasmTransport } from "../../src/shell/owner/transport";
+import { wasmTransport } from "./wasm-transport";
 import { fromDescriptor } from "../../src/sdk/internal";
 
 const root = new URL("../../../../tests/fixtures/", import.meta.url);

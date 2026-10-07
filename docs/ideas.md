@@ -119,6 +119,10 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Builds on:** saved state stored with its app row, so replacing the row compares the
   old and new parsed descriptors in the same commit; and the
   [compatibility](engineering-contract.md#compatibility) markers and corpus.
+- **Storage:** the `app` row and `assets` are sealed by triggers. The upgrade is a write
+  under the writer lock that drops the seal, replaces the app and assets, and recreates
+  the identical triggers in the same transaction (the exact layout check then passes);
+  keep the triggers rather than weakening them for this.
 - **Identity:** safety comes from the descriptor comparison, so an explicit "move this
   document to that template" needs no lineage. Offering "a newer version of this app
   exists" does, and neither a slug nor an SDK version provides it. The exact revision is

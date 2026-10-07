@@ -28,7 +28,6 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
     const output = await stage(source, join(root, "built"));
     const js = await readFile(join(output, "resources/ui.js"), "utf8");
     expect(js).not.toContain("/__shell__/");
-    expect(js).not.toContain("loro_wasm_bg");
     expect(await readdir(output)).not.toContain("app.html");
     const app = await readFile(join(source, "App.svelte"), "utf8");
     for (const [code, error] of [

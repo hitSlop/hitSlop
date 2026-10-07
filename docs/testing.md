@@ -155,8 +155,11 @@ and wrote its documents with (`engine/darwin-arm64/slop-engine`, with its build 
 and hash in `release.json`). Its documents are written both ways a release writes them:
 through its CLI and helper, and by its own app's page (`NAME.page.slop`, saved by the page
 scenario, so text splices against older versions and page-minted IDs are replayed too). A
-small sample includes the conformance app, three type fixtures and selected real
-templates. It is regression evidence, not proof of all possible authored apps.
+small sample includes the conformance app (every `ctx` member and descriptor kind, a page
+command, app media: font, image and audio, and two attachment types), three type fixtures,
+the presentation fixtures for every window kind (1× and 2× PNG skins, glass, a transparent
+ellipse and a path shape) and selected real templates. It is regression evidence, not
+proof of all possible authored apps.
 
 `bun run compat:capture VERSION --frozen` builds the producing tools and templates (the
 shipped ones in `examples/slops/bundled.json`, or `--templates slug,slug`), records their
@@ -175,10 +178,17 @@ may be recaptured.
   16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
 - Native replay (`tests/native/compat-replay.native.test.ts`) checks inventory and hashes,
   original app rendering, PNG/PDF, attachments and template creation, through this build's
-  CLI and helper. A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
+  CLI and helper. Stored command programs replay twice: deterministically through the
+  evaluator with their recorded clock and seed, and through the owner with `slop call`
+  (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
   frozen entry.
-- Swift (`CompatCorpusTests`) runs frozen explicit UI actions or the old conformance app's own scenario,
-  requires an actual saved edit and checks reopen. Missing controls fail.
+- Swift (`CompatCorpusTests`) runs frozen explicit UI actions (field edits or clicks) or the
+  old conformance app's own scenario, which includes a page command, requires an actual
+  saved edit and checks reopen. Missing controls fail.
+
+Each storage-version bump adds two Rust tests: a frozen file migrated by a write equals a
+newly created file in exact layout and value, and an interrupted migration leaves the
+older file intact.
 
 Hygiene compares frozen entries with protected Git history and verifies their content
 hashes. Release checks additionally require the tagged entry to match current producing

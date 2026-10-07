@@ -116,3 +116,18 @@ test("headless declarations fail at the actual import or initialization boundary
     await expect(buildDefinition(source,stage,options)).rejects.toThrow("skin.png");
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
+
+test("an author folder named src/shell is ordinary app code", async () => {
+  const root=await mkdtemp(join(process.cwd(),".build-test-definition-"));
+  try {
+    const source=join(root,"source"),stage=join(root,"stage");
+    const options=await definitionFixture(source);
+    await mkdir(join(source,"src","shell"),{recursive:true});
+    await writeFile(join(source,"src","shell","Header.svelte"),"<header>Shell of a crab</header>");
+    const room=await readFile(join(source,"Room.svelte"),"utf8");
+    await writeFile(join(source,"Room.svelte"),room.replace("<script lang=\"ts\">","<script lang=\"ts\">import Header from './src/shell/Header.svelte';")+"<Header/>");
+    const {input}=await buildDefinition(source,stage,options);
+    expect(await readFile(join(stage,"resources/ui.js"),"utf8")).toContain("Shell of a crab");
+    expect(input.roles.ui).toBe("ui.js");
+  } finally { await rm(root,{recursive:true,force:true}); }
+},60000);

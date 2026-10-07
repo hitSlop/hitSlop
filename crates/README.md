@@ -43,8 +43,8 @@ Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; 
 never substitutes for Cargo's dependency checks.
 Generated XCFramework and Swift bindings are disposable and excluded from Git. Rust owns
 wire types and shared limits in `hitslop-core/src/wire`; ts-rs exports TypeScript and
-UniFFI carries native types to Swift. The handwritten TypeBox-to-Rust generator is gone.
-Only the TypeBox manifest/command schemas remain during migration. Run `bun run schema:generate`; never edit generated files manually.
+UniFFI carries native types to Swift; the app definition and its format readers live in
+`hitslop-core/src/app`. Run `bun run schema:generate`; never edit generated files manually.
 The Cargo configuration pins macOS 15.0 for Rust and C dependencies, matching the lowest
 native consumer (the Swift package), rather than the locally installed SDK.
 

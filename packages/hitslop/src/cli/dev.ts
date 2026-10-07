@@ -13,6 +13,7 @@ import { NativeDevHosts } from "./native-dev";
 import { nativeDevClient } from "./native-dev-client";
 import type { BuildInput } from "../wire/app.generated";
 import { appContentSecurityPolicy } from "../schema/policy";
+import { AttachmentIdPattern } from "../schema/constants";
 
 /** Single byte ranges; malformed/multiple ranges are ignored, an empty range is 416. */
 export function byteRange(header: string | undefined, size: number): [number, number] | "whole" | "unsatisfiable" {
@@ -41,9 +42,9 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
     await hosts.invalidate();
     const next = await mkdtemp(join(temporary,"build-"));
     try {
-      const worker = stageWorker([source,join(next,"stage")], "Definition build failed");
+      const worker = stageWorker(source, join(next,"stage"), "Definition build failed");
       child = worker;
-      const built: {input:BuildInput;dependencies:{definition:string[]}} = JSON.parse(await worker.done);
+      const built = await worker.done;
       await execute({method:"pack",app:built.input,stage:join(next,"stage"),file:join(next,"preview.slop")});
       const old = stage;
       input = built.input; stage = next; template = join(next,"preview.slop");
@@ -108,7 +109,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
             }
             else if (path.startsWith("/attachments/")) {
               const [, ,token,id,...rest]=path.split("/");
-              if (rest.length || !token || !/^[0-9a-f]{64}$/.test(id??"")) throw new Error("Invalid attachment URL");
+              if (rest.length || !token || !new RegExp(AttachmentIdPattern).test(id??"")) throw new Error("Invalid attachment URL");
               const metadata=await hosts.resource(token,id!,0,0);
               if (!metadata.info || metadata.error) { res.statusCode=404;res.end();return; }
               const size=metadata.info.size, range=byteRange(req.headers.range,size);
@@ -124,7 +125,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
               if (req.method==="HEAD") {res.end();return;}
               const data=await hosts.resource(token,id!,start,end-start);
               if (data.error || !data.bytes) throw new Error(data.error??"Missing attachment");
-              res.end(Buffer.from(data.bytes));return;
+              res.end(Buffer.from(data.bytes,"base64"));return;
             }
             if (content===undefined) {next();return;}
             res.setHeader("Content-Type",type);res.setHeader("Cache-Control","no-store");res.setHeader("X-Content-Type-Options","nosniff");
