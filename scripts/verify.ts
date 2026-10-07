@@ -276,12 +276,17 @@ const inputsOf = (tier: Tier, files: Record<string, string>) =>
   Object.keys(files).filter((path) => [...sharedInputs, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
 // A base/named listing does not consult the local pass cache. A default listing must
 // use the same toolchain identity as an actual run.
-const toolchains = flag("--list") && (option("--base") || named || flag("--all") || release) ? { rust: "not queried", swift: null } : {
-  rust: await run(["rustc", "--version"]).then(s => s.trim()),
-  swift: process.platform === "darwin" ? await run(["swift", "--version"]).then(s => s.trim()) : null,
+const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "contracts" || !!tier.needs?.length;
+const candidates = named ? tiers.filter(tier => named.includes(tier.name))
+  : tiers.filter(tier => !tier.native || flag("--native") || release);
+const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
+const toolchains = {
+  rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
+  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.native)
+    ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, toolchains, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.native ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
