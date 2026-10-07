@@ -1,4 +1,4 @@
-/** The shared document core, as each host consumes it: the WASM binding (`slop dev` and Bun
+/** The shared document core, as each host consumes it: the WASM binding (SDK and Bun
  * tests), the CLI's file engine, and the app's Swift binding and library. Every host build
  * shares one Cargo graph, and an output whose bytes did not change is not rewritten, so
  * nothing downstream rebuilds. */

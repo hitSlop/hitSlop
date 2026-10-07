@@ -54,7 +54,7 @@ impl Staged {
         }
         self.published = true;
         if durable {
-            sync_folder(dest);
+            sync_folder(dest)?;
         }
         Ok(())
     }
@@ -72,7 +72,7 @@ impl Staged {
             }
             fs::rename(&self.path, resolve(dest)?).map_err(|e| failed(format!("Cannot save the template: {e}")))?;
             self.published = true;
-            sync_folder(dest);
+            sync_folder(dest)?;
             return Ok(());
         }
         self.publish_new(dest, true)
@@ -89,12 +89,19 @@ impl Drop for Staged {
 fn cstring(path: &Path) -> Result<CString> {
     CString::new(path.as_os_str().as_bytes()).map_err(|_| failed("Invalid path"))
 }
-fn sync_folder(path: &Path) {
-    if let Some(folder) = resolve(path).ok().and_then(|p| p.parent().map(Path::to_owned))
-        && let Ok(file) = fs::File::open(folder)
-    {
-        let _ = file.sync_all();
-    }
+fn sync_folder(path: &Path) -> Result<()> {
+    // The rename already published the file. Report an uncertain durability outcome,
+    // retaining that destination rather than deleting or retrying it.
+    let sync = || -> Result<()> {
+        let resolved = resolve(path)?;
+        let folder = resolved.parent().ok_or_else(|| failed("Invalid destination folder"))?;
+        fs::File::open(folder).and_then(|file| file.sync_all()).map_err(failed)
+    };
+    sync().map_err(|error| {
+        failed(format!(
+            "The destination exists, but its durability could not be confirmed: {error}. Inspect it before retrying"
+        ))
+    })
 }
 
 /// A change a copy makes to its staged file, before its checks.

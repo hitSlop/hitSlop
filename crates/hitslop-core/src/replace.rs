@@ -158,6 +158,18 @@ impl Reconcile<'_, '_> {
             .iter()
             .map(|value| value.get("$id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(application_id))
             .collect();
+        // The common import keeps its row IDs in place. Reconcile those live maps
+        // directly, including a list changed earlier in this batch, without repeatedly
+        // scanning the row index or planning moves that cannot be needed.
+        if current == wanted {
+            for (index, value) in values.iter().enumerate() {
+                let Some(ValueOrContainer::Container(Container::Map(row))) = list.get(index) else {
+                    return Err(unexpected());
+                };
+                self.object(&row, item, value)?;
+            }
+            return Ok(());
+        }
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
         for (index, id) in current.iter().enumerate().rev() {
             if !keep.contains(id.as_str()) {

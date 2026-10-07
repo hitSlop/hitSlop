@@ -123,6 +123,16 @@ preparation/readiness/reveal durations and whether progress appeared.
 benchmark app. Report the first sample separately, then the warmed median and p95.
 
 Performance diagnostics are opt-in and not CI gates:
+`cargo run --release -p hitslop-core --example bench_replace` measures whole-list
+replacement at 1k/5k rows: unchanged values, field edits, append, reverse and mixed
+membership/order changes. It prints five samples and a median after one warmup per
+case, with fresh document creation outside the timer. Compare builds sequentially
+without concurrent tests or compilation; these timings are not test assertions.
+The [2026-10-07 samples](evidence/replace-2026-10-07.json) compare the same-order
+row fast path with the original reconciler; shared-machine timing variation limits
+the comparison.
+
+Other performance diagnostics:
 `HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`,
 `scripts/dev/bench-webkit.ts` (Playwright WebKit) and `scripts/dev/bench-wkwebview.swift`
 (plain system WebKit). `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and

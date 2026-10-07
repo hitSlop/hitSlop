@@ -9,8 +9,8 @@ import { previewResizeScript } from "./preview-resize";
 import { cliRoot, shellDirectory } from "./paths";
 import { stageWorker } from "./build";
 import { execute } from "./engine";
-import { NativeDevHosts } from "./native-dev";
-import { nativeDevClient } from "./native-dev-client";
+import { PreviewOwners } from "./preview-owner";
+import { previewClient } from "./preview-client";
 import type { BuildInput } from "../wire/app.generated";
 import { appContentSecurityPolicy } from "../schema/policy";
 import { AttachmentIdPattern } from "../schema/constants";
@@ -33,7 +33,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
   let stage = "", template = "", input: BuildInput;
-  const hosts = new NativeDevHosts(temporary, () => template);
+  const hosts = new PreviewOwners(temporary, () => template);
   let dependencies = new Set([join(source,"slop.ts")]);
   let closed = false, failed = false;
   let server: ViteDevServer | undefined, child: {kill():void} | undefined;
@@ -96,7 +96,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
               content=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
             }
             else if (path === "/__preview__/resize.js") content=previewResizeScript;
-            else if (path === "/__preview__/native.js") content=nativeDevClient;
+            else if (path === "/__preview__/native.js") content=previewClient;
             else if (path.startsWith("/__shell__/")) {
               const file=resolve(shellDirectory,path.slice(11));
               if (!file.startsWith(shellDirectory+"/") || !file.endsWith(".js")) throw new Error("Resource not exposed");

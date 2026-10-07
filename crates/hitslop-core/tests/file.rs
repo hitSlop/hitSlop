@@ -76,6 +76,33 @@ fn temporaries(dir: &Path) -> Vec<String> {
         .filter(|n| n.ends_with(".tmp"))
         .collect()
 }
+
+#[test]
+fn publication_reports_unsynced_directory_and_preserves_the_destination() {
+    use std::os::unix::fs::PermissionsExt;
+    struct Restore(PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = template(dir.path());
+    let destination = dir.path().join("write-only");
+    fs::create_dir(&destination).unwrap();
+    let restore = Restore(destination.clone());
+    // Search and write allow staging and rename, but opening the directory for fsync fails.
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o300)).unwrap();
+    assert!(fs::File::open(&destination).is_err(), "test requires denied directory reads");
+    let document = destination.join("Published.slop");
+    let result = file::create_document(&source, &document);
+    drop(restore);
+    assert!(document.is_file(), "publication must have happened before the sync error");
+    let error = result.expect_err("unconfirmed directory durability must not be success");
+    assert!(error.to_string().contains("durability"), "{error}");
+    assert_eq!(file::open(&document, true).unwrap().kind, Kind::Document);
+    assert!(temporaries(&destination).is_empty());
+}
 /// Each marker raised one past what this build writes.
 fn raised(doc: &Path) -> [String; 3] {
     let storage: i64 = raw(doc).query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
@@ -120,8 +147,8 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert!(metadata.get("packageFormat").is_none() && metadata.get("runtimeABI").is_none(), "the markers are columns");
     assert_eq!(decoded(&file::artwork(&a, &[Artwork::Preview]).unwrap().unwrap().1), decoded(&png(640, 480, 6)));
     let summary = file::inspect(&a).unwrap();
-    assert_eq!(summary["kind"], "template");
-    let assets: Vec<&str> = summary["assets"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert!(matches!(summary.kind, hitslop_core::engine::FileKind::Template));
+    let assets: Vec<&str> = summary.assets.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(assets, [font_key().as_str(), "ui.css", "ui.js"]);
     // A rebuild replaces a template; it never replaces a document, or anything else.
     let folder = dir.path().join("Folder.slop");
@@ -501,8 +528,9 @@ fn template_folders_list_their_templates_and_why_others_were_left_out() {
     );
     assert_eq!(
         (catalog.templates[0].title.as_str(), &catalog.templates[0].categories[..]),
-        ("Checklist", &["utilities".to_owned()][..])
+        ("Checklist", &[hitslop_core::app::Category::Utilities][..])
     );
+    assert_eq!(serde_json::to_value(&catalog.templates[0]).unwrap()["categories"], serde_json::json!(["utilities"]));
     let left_out: Vec<_> = catalog.issues.iter().map(|issue| issue.split(':').next().unwrap()).collect();
     assert_eq!(left_out, ["doc.slop", "folder.slop", "renamed.slop"]);
     assert!(!missing.exists(), "listing makes no folder");

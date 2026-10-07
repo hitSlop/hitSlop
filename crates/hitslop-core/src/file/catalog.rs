@@ -4,6 +4,7 @@
 
 use super::places::TemplateSource;
 use super::{Kind, Summary, summary};
+use crate::app::Category;
 use crate::error::{Result, invalid};
 use std::ffi::OsStr;
 use std::fs;
@@ -17,7 +18,7 @@ pub struct Template {
     pub slug: String,
     pub title: String,
     pub description: String,
-    pub categories: Vec<String>,
+    pub categories: Vec<Category>,
     pub source: TemplateSource,
     pub path: PathBuf,
 }
@@ -89,7 +90,7 @@ pub fn list_templates(roots: &[(TemplateSource, PathBuf)]) -> Catalog {
                         slug: m.slug,
                         title: m.title,
                         description: m.description,
-                        categories: m.categories.into_iter().map(|c| c.name()).collect(),
+                        categories: m.categories,
                         source: *source,
                         path,
                     })

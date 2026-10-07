@@ -1,0 +1,514 @@
+{
+  "date": "2026-10-07",
+  "platform": "macOS arm64",
+  "baseRevision": "edd83c7e909224811df62bf75138d63cb6ee3ba8",
+  "command": "cargo run --release -p hitslop-core --example bench_replace",
+  "change": "For identical ordered row IDs, reconcile existing row maps directly. Structural replacements retain the existing LIS path.",
+  "method": "One warmup then five timed apply_batch samples, fresh document creation excluded. Original release executable preserved before adding the fast path; both executables run sequentially in two opposite orders.",
+  "caveats": [
+    "Shared development machine; unrelated system load was not controlled.",
+    "Large timing variation, including in unchanged structural paths. These are diagnostic observations, not CI thresholds or a precise speedup claim."
+  ],
+  "runs": [
+    {
+      "order": [
+        "before",
+        "after"
+      ],
+      "before": [
+        {
+          "medianMs": 5.246708,
+          "rows": 1000,
+          "samplesMs": [
+            4.257542,
+            5.190917,
+            5.246708,
+            5.897875,
+            6.325584
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 8.155625,
+          "rows": 1000,
+          "samplesMs": [
+            7.129167,
+            7.856083,
+            8.155625,
+            8.630042,
+            8.82375
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 5.073792,
+          "rows": 1000,
+          "samplesMs": [
+            4.570083,
+            4.972167000000001,
+            5.073792,
+            6.941667000000001,
+            7.470916
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 22.179958,
+          "rows": 1000,
+          "samplesMs": [
+            20.728375,
+            22.021584,
+            22.179958,
+            25.487667,
+            26.888833
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 15.907333999999999,
+          "rows": 1000,
+          "samplesMs": [
+            15.502791,
+            15.837333,
+            15.907333999999999,
+            16.047124999999998,
+            16.566417
+          ],
+          "scenario": "mixed"
+        },
+        {
+          "medianMs": 56.993334,
+          "rows": 5000,
+          "samplesMs": [
+            56.495375,
+            56.945834,
+            56.993334,
+            57.082041,
+            59.17625
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 108.03220900000001,
+          "rows": 5000,
+          "samplesMs": [
+            76.92858299999999,
+            77.641875,
+            108.03220900000001,
+            131.269542,
+            170.000459
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 94.332292,
+          "rows": 5000,
+          "samplesMs": [
+            77.548292,
+            84.053541,
+            94.332292,
+            168.50025,
+            319.770333
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 768.4822919999999,
+          "rows": 5000,
+          "samplesMs": [
+            625.154625,
+            656.10225,
+            768.4822919999999,
+            789.358041,
+            827.688791
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 767.091125,
+          "rows": 5000,
+          "samplesMs": [
+            438.594625,
+            532.104042,
+            767.091125,
+            828.5984589999999,
+            867.5048330000001
+          ],
+          "scenario": "mixed"
+        }
+      ],
+      "after": [
+        {
+          "medianMs": 6.312583,
+          "rows": 1000,
+          "samplesMs": [
+            4.607417,
+            5.571333,
+            6.312583,
+            6.659541,
+            7.010459
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 11.854167,
+          "rows": 1000,
+          "samplesMs": [
+            11.120334000000001,
+            11.236584,
+            11.854167,
+            12.333791999999999,
+            13.765834
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 16.239625,
+          "rows": 1000,
+          "samplesMs": [
+            13.603291,
+            14.6885,
+            16.239625,
+            16.639542,
+            17.057042000000003
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 58.83116699999999,
+          "rows": 1000,
+          "samplesMs": [
+            54.166875000000005,
+            58.203708,
+            58.83116699999999,
+            59.006583,
+            59.298416
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 65.59575,
+          "rows": 1000,
+          "samplesMs": [
+            50.760791,
+            52.67675,
+            65.59575,
+            66.247875,
+            116.977791
+          ],
+          "scenario": "mixed"
+        },
+        {
+          "medianMs": 22.29275,
+          "rows": 5000,
+          "samplesMs": [
+            21.288541000000002,
+            22.283125000000002,
+            22.29275,
+            22.807541,
+            34.219041
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 48.552083,
+          "rows": 5000,
+          "samplesMs": [
+            41.587334,
+            46.352,
+            48.552083,
+            52.468209,
+            62.169917
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 175.86458299999998,
+          "rows": 5000,
+          "samplesMs": [
+            122.88758299999999,
+            164.528167,
+            175.86458299999998,
+            186.007125,
+            441.158667
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 1245.821292,
+          "rows": 5000,
+          "samplesMs": [
+            759.015459,
+            1192.943917,
+            1245.821292,
+            1591.811667,
+            2007.126
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 559.0847920000001,
+          "rows": 5000,
+          "samplesMs": [
+            417.46775,
+            452.81658400000003,
+            559.0847920000001,
+            577.202542,
+            613.92475
+          ],
+          "scenario": "mixed"
+        }
+      ]
+    },
+    {
+      "order": [
+        "after",
+        "before"
+      ],
+      "before": [
+        {
+          "medianMs": 9.348708,
+          "rows": 1000,
+          "samplesMs": [
+            9.153125,
+            9.3045,
+            9.348708,
+            9.543917,
+            9.746209
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 15.148874999999999,
+          "rows": 1000,
+          "samplesMs": [
+            13.063208,
+            13.212666,
+            15.148874999999999,
+            16.841874999999998,
+            25.095665999999998
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 12.012,
+          "rows": 1000,
+          "samplesMs": [
+            10.76825,
+            11.666457999999999,
+            12.012,
+            12.057459,
+            12.430125
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 65.730875,
+          "rows": 1000,
+          "samplesMs": [
+            54.926083,
+            55.540917,
+            65.730875,
+            70.23312499999999,
+            79.309417
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 50.740292,
+          "rows": 1000,
+          "samplesMs": [
+            45.168458,
+            50.106166,
+            50.740292,
+            56.583332999999996,
+            71.861458
+          ],
+          "scenario": "mixed"
+        },
+        {
+          "medianMs": 135.46570799999998,
+          "rows": 5000,
+          "samplesMs": [
+            125.86175,
+            132.3655,
+            135.46570799999998,
+            142.783125,
+            142.953375
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 213.647792,
+          "rows": 5000,
+          "samplesMs": [
+            187.29537499999998,
+            213.37958400000002,
+            213.647792,
+            217.993625,
+            244.874667
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 168.808125,
+          "rows": 5000,
+          "samplesMs": [
+            129.220625,
+            148.56125,
+            168.808125,
+            185.716125,
+            195.680916
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 759.5188750000001,
+          "rows": 5000,
+          "samplesMs": [
+            576.416584,
+            705.058917,
+            759.5188750000001,
+            807.6058750000001,
+            841.210333
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 415.720458,
+          "rows": 5000,
+          "samplesMs": [
+            388.16033300000004,
+            390.727792,
+            415.720458,
+            417.769958,
+            613.445166
+          ],
+          "scenario": "mixed"
+        }
+      ],
+      "after": [
+        {
+          "medianMs": 2.59225,
+          "rows": 1000,
+          "samplesMs": [
+            2.463875,
+            2.581916,
+            2.59225,
+            2.924458,
+            3.246417
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 6.6944159999999995,
+          "rows": 1000,
+          "samplesMs": [
+            6.479042,
+            6.539790999999999,
+            6.6944159999999995,
+            6.8172500000000005,
+            7.079833
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 7.804875,
+          "rows": 1000,
+          "samplesMs": [
+            7.3920829999999995,
+            7.55175,
+            7.804875,
+            7.867458000000001,
+            8.083042
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 40.428332999999995,
+          "rows": 1000,
+          "samplesMs": [
+            34.801416,
+            38.730124999999994,
+            40.428332999999995,
+            55.974999999999994,
+            91.326542
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 64.546541,
+          "rows": 1000,
+          "samplesMs": [
+            62.033875,
+            62.94975,
+            64.546541,
+            65.4475,
+            67.353916
+          ],
+          "scenario": "mixed"
+        },
+        {
+          "medianMs": 32.077374999999996,
+          "rows": 5000,
+          "samplesMs": [
+            26.05075,
+            29.492250000000002,
+            32.077374999999996,
+            33.368958,
+            33.90775
+          ],
+          "scenario": "unchanged"
+        },
+        {
+          "medianMs": 51.246041,
+          "rows": 5000,
+          "samplesMs": [
+            50.431791,
+            50.959042000000004,
+            51.246041,
+            56.086417,
+            63.167457999999996
+          ],
+          "scenario": "fields"
+        },
+        {
+          "medianMs": 125.45304199999998,
+          "rows": 5000,
+          "samplesMs": [
+            116.873542,
+            124.434625,
+            125.45304199999998,
+            132.530125,
+            140.227125
+          ],
+          "scenario": "append"
+        },
+        {
+          "medianMs": 824.8892920000001,
+          "rows": 5000,
+          "samplesMs": [
+            555.837375,
+            643.2038329999999,
+            824.8892920000001,
+            938.051208,
+            985.6465
+          ],
+          "scenario": "reverse"
+        },
+        {
+          "medianMs": 418.934792,
+          "rows": 5000,
+          "samplesMs": [
+            412.53625,
+            412.76154199999996,
+            418.934792,
+            528.182,
+            677.618583
+          ],
+          "scenario": "mixed"
+        }
+      ]
+    }
+  ]
+}

@@ -103,9 +103,7 @@ fn dispatch(request: EngineRequest) -> String {
             }
             EngineRequest::Inspect { file: path } => {
                 let path = Path::new(&path);
-                let mut info = file::inspect(path)?;
-                info["live"] = registry::discovery(path)?.is_some().into();
-                EngineSuccess::Inspect { ok: True, info: serde_json::from_value(info).expect("core inspection shape") }
+                EngineSuccess::Inspect { ok: True, info: file::inspect(path)? }
             }
             EngineRequest::Schema { file: path } => EngineSuccess::Schema {
                 ok: True,

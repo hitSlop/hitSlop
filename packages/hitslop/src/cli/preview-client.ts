@@ -1,6 +1,6 @@
 import { PushLimits } from "../schema/constants";
 /* Served only by the Vite host. It uses Vite’s browser-only HMR module. */
-export const nativeDevClient = String.raw`
+export const previewClient = String.raw`
 // Only served by the Vite host; never bundled into an authored slop.
 import { createHotContext } from "/__app__/@vite/client";
 const hot = createHotContext("/__preview__/native.js");

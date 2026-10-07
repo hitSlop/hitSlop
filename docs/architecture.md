@@ -29,6 +29,20 @@ document and a native owner per page; Vite supplies modules and HMR. UI edits re
 owner, while a changed declaration invalidates it and creates a fresh preview. Linux
 preview qualification is deferred.
 
+Here "native owner" means the compiled Rust engine, not a native window. The browser
+renders the development page; Vite forwards its WebSocket messages as newline JSON to
+`slop-engine --preview-owner` over pipes. The Rust transport never blocks an owner
+callback on its output. A full output queue or a stalled reader fails the disposable
+session, fences the page and attempts a bounded close; the browser must reload rather
+than replay an edit with an unknown outcome.
+
+Native operations keep a separate process boundary: the typed TypeScript CLI invokes
+`slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
+Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
+rendering; exports route through the Rust command router to a live owner or an independent
+saved-state render. Replies return as structured JSON. The restricted command evaluator's
+short execution budget does not govern WebKit rendering.
+
 Authors compose one `defineSlop` entry with explicit imports for the document, view,
 optional export and icon views, skin, artwork and commands. Both Vite builds use the
 same resolver: the UI build strips command bodies and build metadata, while the command

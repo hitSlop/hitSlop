@@ -134,7 +134,7 @@ impl Actor {
             let app = self.store.app();
             let bundle = app.commands.clone().ok_or_else(|| rejected("This app has no command program"))?;
             let input = json!({"name":invocation.name,"args":invocation.args,"now":invocation.now,"seed":invocation.seed,
-                "value":serde_json::from_str::<Value>(&self.core.value()).map_err(rejected)?,
+                "value":self.core.projected(),
                 "descriptor":serde_json::from_str::<Value>(app.app.document_json()).map_err(rejected)?});
             Ok((bundle, input.to_string()))
         };

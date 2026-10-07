@@ -67,6 +67,11 @@ fn packs_creates_and_reads_typed_results() {
     let inspected = request(json!({"method":"inspect","file":file}));
     assert_eq!(inspected["info"]["kind"], "template");
     assert_eq!(inspected["info"]["live"], false);
+    assert_eq!(inspected["info"]["metadata"]["categories"], json!(["utilities"]));
+    assert_eq!(
+        inspected["info"]["assets"],
+        json!([{"name":"ui.js","bytes":fs::metadata(dir.path().join("stage/assets/ui.js")).unwrap().len()}])
+    );
     assert_eq!(request(json!({"method":"schema","file":file}))["schema"]["properties"]["title"]["kind"], "text");
     let output = dir.path().join("-Document file.slop");
     let created = request(json!({"output":output,"method":"create","from":file}));
@@ -217,7 +222,8 @@ fn a_preview_owner_refuses_an_unknown_page_request_and_keeps_serving() {
         json!({"type":"page","id":1,"request":{"method":"future.method"}}),
         json!({"type":"page","id":2,"request":{"method":"open"}}),
     ];
-    let input: String = frames.iter().map(|f| format!("{f}\n")).collect();
+    // EOF also terminates the last frame, without requiring a trailing newline.
+    let input = frames.iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
     let output = invoke(
         &["--client-protocol", &protocol(), "--preview-owner", document.to_str().unwrap()],
         input.as_bytes(),
@@ -233,4 +239,65 @@ fn a_preview_owner_refuses_an_unknown_page_request_and_keeps_serving() {
     let reply = |n: usize| serde_json::from_str::<Value>(replies[n]["reply"].as_str().unwrap()).unwrap();
     assert_eq!((replies[0]["id"].clone(), reply(0)["reason"].clone()), (json!(1), json!("invalid_request")));
     assert_eq!((replies[1]["id"].clone(), reply(1)["ok"].clone()), (json!(2), json!(true)));
+}
+
+#[test]
+fn a_preview_with_stalled_output_closes_and_saves_without_waiting_for_its_reader() {
+    stalled_preview(true);
+}
+
+#[test]
+fn a_preview_with_stalled_output_fails_even_while_its_input_remains_open() {
+    stalled_preview(false);
+}
+
+fn stalled_preview(close_input: bool) {
+    use std::io::{BufRead, BufReader};
+    use std::time::{Duration, Instant};
+    struct Reap(std::process::Child);
+    impl Drop for Reap {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let template = dir.path().join("Template.slop");
+    let document = dir.path().join("Preview.slop");
+    request(json!({"method":"pack","stage":stage(dir.path()),"file":template,"app":app(json!({"title":"Before"}))}));
+    request(json!({"method":"create","from":template,"output":document}));
+    let mut child = Reap(
+        Command::new(env!("CARGO_BIN_EXE_slop-engine"))
+            .args(["--client-protocol", &protocol(), "--preview-owner", document.to_str().unwrap()])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let mut output = BufReader::new(child.0.stdout.take().unwrap());
+    loop {
+        let mut line = String::new();
+        assert_ne!(output.read_line(&mut line).unwrap(), 0);
+        if serde_json::from_str::<Value>(&line).unwrap()["type"] == "ready" {
+            break;
+        }
+    }
+    // Keep stdout open but unread. This publication exceeds the pipe buffer.
+    let title = "saved despite a stalled reader".repeat(8192);
+    let batch = json!({"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
+    let mut input = child.0.stdin.take().unwrap();
+    writeln!(input, "{}", json!({"type":"page","id":1,"request":{"method":"apply","batch":batch}})).unwrap();
+    let input = (!close_input).then_some(input);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "preview shutdown waited for its stdout reader");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!status.success(), "a stalled transport is a failed preview session");
+    drop(input);
+    assert_eq!(request(json!({"method":"get","documentPath":document}))["state"]["value"]["title"], title);
 }

@@ -506,35 +506,51 @@ pub fn kind(path: &Path) -> Result<Kind> {
 }
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
-pub fn inspect(path: &Path) -> Result<serde_json::Value> {
+pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
+    use crate::engine::{AttachmentTotals, FileKind, InspectInfo, NamedSize, StateSizes};
     let conn = reader(path)?;
     // The summary reads the state the checks passed.
     let conn = conn.unchecked_transaction().map_err(sqlite("read"))?;
     let opened = opened(&conn, path, true)?;
     let (updates, update_bytes, checkpoint_bytes) = rows::state_sizes(&conn)?;
     let (attachments, _, attachment_bytes) = rows::attachment_sizes(&conn)?;
-    let list = |sql: &str| -> Result<Vec<serde_json::Value>> {
+    let size = |value: i64| u64::try_from(value).map_err(|_| invalid("Negative stored size"));
+    let list = |sql: &str| -> Result<Vec<NamedSize>> {
         let mut statement = conn.prepare(sql).map_err(sqlite("inspect"))?;
         let rows = statement
-            .query_map([], |r| Ok(serde_json::json!({ "name": r.get::<_, String>(0)?, "bytes": r.get::<_, i64>(1)? })))
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .map_err(sqlite("inspect"))?;
-        rows.collect::<rusqlite::Result<_>>().map_err(sqlite("inspect"))
+        rows.map(|row| {
+            let (name, bytes) = row.map_err(sqlite("inspect"))?;
+            Ok(NamedSize { name, bytes: size(bytes)? })
+        })
+        .collect()
     };
-    let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(sqlite("inspect"));
-    Ok(serde_json::json!({
-        "kind": match opened.kind { Kind::Template => "template", Kind::Document => "document" },
-        "packageFormat": opened.package_format,
-        "runtimeABI": opened.runtime_abi,
-        "metadata": opened.app.metadata(),
-        "window": opened.app.page_window(),
-        "views": opened.app.views(),
-        "assets": list("SELECT key, size FROM assets ORDER BY key")?,
-        "artwork": list("SELECT name, length(png) FROM artwork ORDER BY name")?,
-        "attachments": { "count": attachments, "bytes": attachment_bytes },
-        "state": { "checkpointBytes": checkpoint_bytes, "updates": updates, "updateBytes": update_bytes },
-        "bytes": opened.bytes,
-        "storedAssetBytes": one("SELECT coalesce(sum(length(bytes)),0) FROM assets")?,
-    }))
+    Ok(InspectInfo {
+        kind: match opened.kind {
+            Kind::Template => FileKind::Template,
+            Kind::Document => FileKind::Document,
+        },
+        package_format: opened.package_format,
+        runtime_abi: opened.runtime_abi,
+        metadata: opened.app.metadata().clone(),
+        window: opened.app.page_window(),
+        views: opened.app.views(),
+        assets: list("SELECT key, size FROM assets ORDER BY key")?,
+        artwork: list("SELECT name, length(png) FROM artwork ORDER BY name")?,
+        attachments: AttachmentTotals { count: size(attachments)?, bytes: size(attachment_bytes)? },
+        state: StateSizes {
+            checkpoint_bytes: size(checkpoint_bytes)?,
+            updates: size(updates)?,
+            update_bytes: size(update_bytes)?,
+        },
+        bytes: opened.bytes,
+        stored_asset_bytes: size(
+            conn.query_row("SELECT coalesce(sum(length(bytes)),0) FROM assets", [], |r| r.get(0))
+                .map_err(sqlite("inspect"))?,
+        )?,
+        live: crate::registry::discovery(path)?.is_some(),
+    })
 }
 
 /// The app's descriptor, for `slop schema`, from a file every open would accept.

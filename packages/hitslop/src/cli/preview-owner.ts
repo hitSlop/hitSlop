@@ -16,7 +16,7 @@ type Session = {
 
 /** Vite already owns the loopback WebSocket. This adapter only frames requests;
  * the native owner holds all state, attachments, validation and save scheduling. */
-export class NativeDevHosts {
+export class PreviewOwners {
   readonly token = crypto.randomUUID();
   private sessions = new Map<WebSocketClient, Promise<Session>>();
   private generation = 0;

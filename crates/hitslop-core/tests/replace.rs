@@ -81,6 +81,35 @@ fn rows_and_text_keep_their_identity() {
 }
 
 #[test]
+fn replacing_rows_after_an_insert_in_the_same_batch_preserves_identity_and_undo() {
+    let (mut d, mut view) = open("checklist");
+    let before = value(&d);
+    let rows = json!([
+        {"$id": A,"text":"A","done":true},
+        {"$id": B,"text":"B","done":true},
+        {"$id":"new","text":"C","done":true}
+    ]);
+    let batch = json!({"intents":[
+        {"type":"insert","path":["rows"],"id":"new","value":{"text":"C","done":false}},
+        {"type":"replace","path":["rows"],"value":rows}
+    ]});
+    let applied = apply(&mut d, &mut view, &batch.to_string());
+    assert_eq!(applied.ids, ["new"]);
+    assert_eq!(value(&d)["rows"], rows);
+    view.check(&d, "after replacing the just-extended list");
+    view.publish(&d.undo().unwrap().publication.unwrap());
+    assert_eq!(value(&d), before);
+    view.publish(&d.redo().unwrap().publication.unwrap());
+    assert_eq!(value(&d)["rows"], rows);
+    view.check(&d, "after redo");
+    let base = d.version();
+    let typed = type_text(&mut d, &base, json!(["rows",{"id":"new"},"text"]), "C", "CX", 2).unwrap();
+    view.publish(&typed.publication.unwrap());
+    assert_eq!(value(&d)["rows"][2]["text"], "CX");
+    view.check(&d, "after editing the preserved text");
+}
+
+#[test]
 fn rows_are_removed_inserted_and_reordered_with_the_fewest_moves() {
     let (mut d, mut view) = open("checklist");
     let rows =
