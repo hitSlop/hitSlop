@@ -15,12 +15,18 @@ final class DocumentUndoManager: UndoManager {
     levelsOfUndo = 1
   }
 
-  override var canUndo: Bool { session?.undoAvailability.canUndo ?? false }
-  override var canRedo: Bool { session?.undoAvailability.canRedo ?? false }
+  // AppKit calls this window-owned manager on the main actor. Older SDKs expose
+  // UndoManager's overrides as nonisolated, so make that synchronous boundary explicit.
+  override var canUndo: Bool {
+    MainActor.assumeIsolated { session?.undoAvailability.canUndo ?? false }
+  }
+  override var canRedo: Bool {
+    MainActor.assumeIsolated { session?.undoAvailability.canRedo ?? false }
+  }
   override var undoMenuItemTitle: String { NSLocalizedString("Undo", comment: "Edit menu") }
   override var redoMenuItemTitle: String { NSLocalizedString("Redo", comment: "Edit menu") }
-  override func undo() { perform(redo: false) }
-  override func redo() { perform(redo: true) }
+  override func undo() { MainActor.assumeIsolated { perform(redo: false) } }
+  override func redo() { MainActor.assumeIsolated { perform(redo: true) } }
 
   private func perform(redo: Bool) {
     guard let session else { return }
