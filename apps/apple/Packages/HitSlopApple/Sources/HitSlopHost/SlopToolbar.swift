@@ -175,9 +175,11 @@ struct SlopToolbar: View {
       icon(controls.themeShown ? "paintpalette.fill" : "paintpalette", controls.themeShown ? "Hide Theme" : "Theme") {
         act(.toggleTheme)
       }.disabled(!controls.canToggleTheme).background(SlopToolbarControlRegion())
+      icon("square.and.arrow.up", "Share a Copy…") {
+        act(.document(.share))
+      }.disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
-        Button("Share a Copy…") { act(.document(.share)) }.disabled(!controls.commandsEnabled)
         Divider()
         Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
         Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)

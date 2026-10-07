@@ -57,7 +57,7 @@ const { visible, filed, finished, ratio } = $derived(checklistView(doc.current))
     await doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id});
   }
   async function remove(id: string) {
-    await doc.fields.tasks.remove(id);
+    await actions.removeTask({ id });
     notice = "Task removed.";
     composer?.focus();
   }

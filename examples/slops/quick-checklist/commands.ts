@@ -28,3 +28,11 @@ export const restoreTask = doc.command({
     tx.at(task).done.set(false);
   },
 });
+
+export const removeTask = doc.command({
+  description: "Remove a task from the checklist.",
+  args: { id: s.string({ minLength: 1 }) },
+  run({ tx }, { id }) {
+    tx.fields.tasks.remove(id);
+  },
+});

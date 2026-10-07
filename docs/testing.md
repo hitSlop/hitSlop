@@ -16,7 +16,7 @@ openable, so its frozen entries never change.
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Native tools | `tests/native`, `packages/hitslop/tests/cli/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
-| App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app; release native tests also exercise host process death |
+| App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app, including named commands through the raw Xcode Debug app without an evaluator override; release native tests also exercise host process death |
 | Release tooling | `tests/release`, in `verify bun` | Artifact identity, publication recovery and promotion rules |
 | Presentation | `tests/presentation`, prepared for Swift/native tiers | Window shapes and capture fixtures |
 | Verification runner | `tests/verification`, in `verify bun` | Tier selection, evidence and subprocess lifecycle |
@@ -278,5 +278,13 @@ Schema output projection, resource inventory and first-touch attachment hashes. 
 authorizer proves `summary` never reads definition or asset/attachment payloads. Swift's
 page-policy probe proves path-scoped CSP blocks attachment scripts while canvas and
 ranges still work. The owner command tests cover stale-base retry and lifecycle fences.
+
+Quick Checklist's example UI test adds tasks by Enter and button, completes, files,
+restores and removes them through their controls. App acceptance separately launches the
+actual app with no `HITSLOP_EVALUATOR`, exercises those named commands through its live
+owner and checks saved state after reopening. `apple:build` runs this against the raw
+Xcode product before adding the standalone renderer; release artifact acceptance runs
+it against the packaged app. Test-runner environment overrides cannot mask a missing
+bundled evaluator in these checks.
 The evaluator prelude and page context dispatch by runtime ABI; corpus replay uses the
 stored ABI and original embedded programs.

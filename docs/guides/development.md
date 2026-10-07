@@ -15,6 +15,11 @@ bun run verify --all --native
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 
+Every Xcode app configuration builds, embeds and signs `hitslop-evaluator`, which runs
+named commands such as Quick Checklist's add, file, restore and remove actions. Debug
+Run does not require `HITSLOP_EVALUATOR`; that override is for isolated tests. The native
+renderer is embedded for Release and the packaged development artifact separately.
+
 ## Workspace responsibilities
 
 | Area | Responsibility |

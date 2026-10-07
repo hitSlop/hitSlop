@@ -6,10 +6,12 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
+import { verifyAppCommands } from "./app-commands";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
 const helper = join(app, "Contents/Helpers/hitslop-native");
 const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
+await verifyAppCommands(app);
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
 // Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>

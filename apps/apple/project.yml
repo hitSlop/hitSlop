@@ -48,6 +48,9 @@ targets:
       - target: hitSlop-QuickLookThumbnail
       - target: hitSlop-QuickLookPreview
     postCompileScripts:
+      - name: Embed command evaluator
+        basedOnDependencyAnalysis: false
+        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-hitslop-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
         script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'

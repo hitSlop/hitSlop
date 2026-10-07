@@ -69,15 +69,6 @@ if [ ! -f "$helper" ]; then
   exit 70
 fi
 
-# The evaluator is a Rust process, exact-matched to this core build.
-profile=${HITSLOP_CARGO_PROFILE:-release}
-(cd "$repo_root" && bun scripts/build/core.ts --engine)
-evaluator="$repo_root/target/$profile/hitslop-evaluator"
-if [ ! -x "$evaluator" ]; then
-  echo "hitslop-evaluator is missing at $evaluator" >&2
-  exit 70
-fi
-
 # SwiftPM executables locate Bundle.module resources beside the executable.
 # Host resources are not visible to this independently-built helper.
 /bin/mkdir -p "$app/Contents/Helpers"
@@ -85,8 +76,6 @@ fi
 /bin/rm -f "$app/Contents/Helpers/slop-engine"
 /bin/cp "$helper" "$app/Contents/Helpers/hitslop-native"
 /bin/chmod 755 "$app/Contents/Helpers/hitslop-native"
-/bin/cp "$evaluator" "$app/Contents/Helpers/hitslop-evaluator"
-/bin/chmod 755 "$app/Contents/Helpers/hitslop-evaluator"
 
 # Xcode does not automatically sign nested content added by a run script. Use
 # its resolved identity for normal builds and an ad-hoc signature when signing
@@ -110,5 +99,4 @@ for module in HitSlopDocument; do
   /usr/bin/codesign --force --sign "$signing_identity" "$embedded"
 done
 /usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/hitslop-native"
-/usr/bin/codesign --force --options runtime --sign "$signing_identity" "$app/Contents/Helpers/hitslop-evaluator"
-echo "Embedded hitslop-native and hitslop-evaluator in $app/Contents/Helpers"
+echo "Embedded hitslop-native in $app/Contents/Helpers"

@@ -27,6 +27,35 @@ async function preview(run: (page: Page) => Promise<void>) {
 const app = (page: Page) => page.frames().find((frame) => frame.url().includes("/app.html"))!;
 const focused = (page: Page) => app(page).evaluate(() => document.activeElement?.getAttribute("aria-label"));
 
+test("tasks can be added, completed, filed, restored, and removed through their controls", () =>
+  preview(async (page) => {
+    const frame = page.frameLocator("iframe");
+    const composer = frame.getByRole("textbox", { name: "New task" });
+    await composer.fill("Added with Enter");
+    await composer.press("Enter");
+    const first = frame.getByRole("checkbox", { name: "Mark Added with Enter complete", exact: true });
+    await first.waitFor();
+    expect(await composer.inputValue()).toBe("");
+    await composer.fill("Added with button");
+    await frame.getByRole("button", { name: "Add task", exact: true }).click();
+    await frame.getByRole("checkbox", { name: "Mark Added with button complete", exact: true }).waitFor();
+    expect(await composer.inputValue()).toBe("");
+    await first.check();
+    await frame.getByRole("button", { name: "File finished (2)", exact: true }).click();
+    await first.waitFor({ state: "detached" });
+    await frame.getByRole("tab", { name: "Filed 2", exact: true }).click();
+    const restore = frame.getByRole("button", { name: "Restore Added with Enter", exact: true });
+    await restore.click();
+    await restore.waitFor({ state: "detached" });
+    await frame.getByRole("tab", { name: "To do 4", exact: true }).click();
+    expect(await first.isChecked()).toBe(false);
+    await frame.getByRole("button", { name: "Actions for Added with Enter", exact: true }).click();
+    await frame.getByRole("menuitem", { name: "Remove task", exact: true }).click();
+    await first.waitFor({ state: "detached" });
+    expect(await frame.getByRole("checkbox").count()).toBe(3);
+    expect(await frame.getByRole("status").textContent()).toBe("Task removed.");
+  }), 60000);
+
 // An IME's Enter commits the composition; only Enter after it finishes editing the task.
 test("Enter while composing keeps the task editor; Enter after composing moves to New task", () =>
   preview(async (page) => {

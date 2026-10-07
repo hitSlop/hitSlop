@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { verifyAppCommands } from "../release/app-commands";
 const env: Record<string, string | undefined> = {
   ...process.env,
   PATH: "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + process.env.PATH,
@@ -30,6 +31,8 @@ await run([
   "CODE_SIGNING_ALLOWED=NO",
   "build",
 ]);
+// Validate Xcode Run's product before the packaging wrapper adds the renderer.
+await verifyAppCommands(resolve(derived, "Build/Products/Debug/hitSlop.app"));
 await mkdir("generated/app", { recursive: true });
 const artifact = resolve("generated/app/hitSlop.app");
 // This is a disposable build artifact. Never merge old signed resources or
