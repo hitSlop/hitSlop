@@ -253,7 +253,7 @@ extension HostTests {
   await slowDelay.started()
   #expect(slow.panel == nil)
   await slowDelay.release()
-  await slow.waitForFeedback()
+  await eventually(timeout: .seconds(1)) { slow.panel?.isVisible == true }
   #expect(fast.panel == nil)
   #expect(slow.panel?.isVisible == true)
   var cancelled = false

@@ -3,8 +3,8 @@
 //! document operations to the live owner or acquires its lock and runs the same owner.
 //! AppKit operations forward the original JSON to the native helper. Only build/protocol
 //! queries and the exact restricted evaluator entry point are outside the JSON wire.
+use hitslop_core::owner::{Failure, FailureKind};
 use hitslop_core::{EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
-use serde_json::json;
 mod preview;
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -35,10 +35,25 @@ fn helper() -> Result<PathBuf, String> {
 }
 
 fn rejected(reason: &str, error: impl std::fmt::Display) -> String {
-    json!({"ok":false,"code":"rejected","reason":reason,"error":error.to_string()}).to_string()
+    command::failure(
+        Failure {
+            kind: FailureKind::Rejected,
+            message: error.to_string(),
+            reason: Some(reason.into()),
+            op_index: None,
+        },
+        false,
+        false,
+    )
 }
 fn unknown(error: impl std::fmt::Display) -> String {
-    json!({"ok":false,"code":"unknown_outcome","error":error.to_string()}).to_string()
+    command::failure(hitslop_core::store::Error::Failed(error.to_string()).into(), false, false)
+}
+fn evaluator() -> Result<hitslop_runner::Evaluator, String> {
+    hitslop_runner::Evaluator::new(
+        std::env::current_exe().map_err(|e| e.to_string())?,
+        vec!["--evaluate-command".into()],
+    )
 }
 fn success(result: EngineSuccess) -> String {
     serde_json::to_string(&result).expect("serializable reply")
@@ -67,11 +82,13 @@ fn native(protocol: u64, method: &str, input: &str) -> String {
     if output.status.code() == Some(2) {
         return rejected("requires_update", String::from_utf8_lossy(&output.stderr).trim());
     }
+    const NO_REPLY: &str =
+        "Native helper stopped without a valid reply; inspect the document and output before retrying";
     if !output.status.success() || sent.is_err() {
-        return unknown("Native helper stopped without a valid reply; inspect the document and output before retrying");
+        return unknown(NO_REPLY);
     }
     let Ok(reply) = serde_json::from_slice::<NativeReply>(&output.stdout) else {
-        return unknown("Native helper stopped without a valid reply; inspect the document and output before retrying");
+        return unknown(NO_REPLY);
     };
     if reply.method().is_some_and(|received| received != method) {
         return unknown("Native helper replied to another method; inspect the document and output before retrying");
@@ -143,12 +160,7 @@ fn request(input: &str, protocol: u64) -> String {
         | EngineRequest::AttachmentsList { .. }
         | EngineRequest::AttachmentsRead { .. }
         | EngineRequest::Describe { .. }
-        | EngineRequest::Call { .. } => {
-            let evaluator = std::env::current_exe()
-                .ok()
-                .and_then(|path| hitslop_runner::Evaluator::new(path, vec!["--evaluate-command".into()]).ok());
-            command::request_with_evaluator(request, protocol, None, evaluator)
-        }
+        | EngineRequest::Call { .. } => command::request_with_evaluator(request, protocol, None, evaluator().ok()),
         _ => dispatch(request),
     }
 }

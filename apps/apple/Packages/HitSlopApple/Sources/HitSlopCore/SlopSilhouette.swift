@@ -5,6 +5,8 @@ import HitSlopCoreBinding
 /// Immutable window geometry shared by clipping, pointer membership and raster capture.
 /// The manifest shape is parsed once by the core during manifest validation; this type only
 /// turns its normalized radii or segments into paths for the current bounds.
+// The only reference storage is a copied immutable CGPath. Mutable paths remain local
+// to construction; each transformed path is a new copy, and stored arrays are values.
 public struct SlopSilhouette: @unchecked Sendable {
   private enum Geometry {
     case radii(horizontal: [SilhouetteLength], vertical: [SilhouetteLength])

@@ -176,7 +176,7 @@ pub(crate) enum Hello {
 pub(crate) enum HelloSuccess {
     #[serde(rename = "hello")]
     Hello {
-        #[allow(dead_code)]
-        ok: super::engine::True,
+        #[serde(rename = "ok")]
+        _ok: super::engine::True,
     },
 }

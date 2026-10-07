@@ -54,8 +54,6 @@ import HitSlopDocument
     action?()
   }
 
-  func waitForFeedback() async { await timer?.value }
-
   public func focus() { panel?.makeKeyAndOrderFront(nil) }
 
   func finish() {

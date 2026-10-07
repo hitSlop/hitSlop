@@ -47,7 +47,7 @@ let package = Package(
     ),
     .target(
       name: "HitSlopHost",
-      dependencies: ["HitSlopCore", "HitSlopDocument"],
+      dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"],
       linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
     ),
     .target(name: "HitSlopFeatures", dependencies: ["HitSlopCore"]),
@@ -64,6 +64,7 @@ let package = Package(
       name: "HitSlopNativeCLI",
       dependencies: [
         "HitSlopCore",
+        "HitSlopCoreBinding",
         "HitSlopHost",
         "HitSlopDocument",
       ],

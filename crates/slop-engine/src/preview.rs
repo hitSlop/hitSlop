@@ -20,9 +20,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn failure(error: impl ToString) -> Value {
-    json!({"ok":false,"code":"rejected","reason":"invalid_request","error":error.to_string()})
-}
 fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     let (sender, receiver) = mpsc::channel();
     owner.submit(
@@ -45,10 +42,7 @@ pub fn serve(path: &Path) -> ExitCode {
     let mut shutdown = None;
     let events = send.clone();
     let result = (|| -> Result<(), String> {
-        let evaluator = hitslop_runner::Evaluator::new(
-            std::env::current_exe().map_err(|e| e.to_string())?,
-            vec!["--evaluate-command".into()],
-        )?;
+        let evaluator = super::evaluator()?;
         let owner = Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
             let message = match event {
                 Event::Publication { json: publication } => json!({"type":"push","pushes":[{"type":"publication","publication":serde_json::from_str::<Value>(&publication).expect("publication")}]}),
@@ -73,7 +67,7 @@ pub fn serve(path: &Path) -> ExitCode {
                         else {
                             return Err(error.to_string());
                         };
-                        send.send(json!({"type":"reply","id":id,"reply":failure(error).to_string()}));
+                        send.send(json!({"type":"reply","id":id,"reply":super::rejected("invalid_request", error)}));
                         continue;
                     }
                 };
@@ -129,7 +123,9 @@ pub fn serve(path: &Path) -> ExitCode {
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        send.send(json!({"type":"fatal","error":failure(error)}));
+        let error = serde_json::value::RawValue::from_string(super::rejected("invalid_request", error))
+            .expect("serialized failure");
+        send.send(json!({"type":"fatal","error":error}));
     }
     drop(send);
     failed |= transport.finish(shutdown.unwrap_or_else(|| Instant::now() + Duration::from_secs(10))).is_err();

@@ -22,15 +22,6 @@ fn error(e: hitslop_core::Error) -> JsValue {
 pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
     hitslop_core::validate(schema_json, initial_json).map_err(error)
 }
-#[wasm_bindgen(js_name = validateThemeDefaults)]
-pub fn validate_theme_defaults(json: &str) -> Result<(), JsValue> {
-    hitslop_core::theme::validate_defaults(json).map(|_| ()).map_err(error)
-}
-/// Validates a manifest window `shape` (JSON, or undefined for the default).
-#[wasm_bindgen(js_name = validateWindowShape)]
-pub fn validate_window_shape(shape_json: Option<String>, width: f64, height: f64) -> Result<(), JsValue> {
-    hitslop_core::shape::validate(shape_json.as_deref(), width, height).map_err(error)
-}
 
 /// A committed batch, as the page's `apply` reply carries it, with its publication. A text
 /// edit (a set carrying `selection`) also has `authored` and its merged selection.

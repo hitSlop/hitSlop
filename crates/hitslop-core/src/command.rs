@@ -469,14 +469,6 @@ fn discovery(path: &Path) -> Result<String> {
     }
     Ok(value.socket)
 }
-/// Whether a client's request is an export, which only the app's helper can render.
-pub fn is_export(input: &str) -> bool {
-    #[derive(Deserialize)]
-    struct Method {
-        method: String,
-    }
-    serde_json::from_str::<Method>(input).is_ok_and(|request| request.method == "export")
-}
 /// A client's request in `protocol`, naming its document by its resolved path.
 fn prepare(request: wire::engine::EngineRequest, protocol: u64) -> Result<SocketRequest> {
     use wire::engine::EngineRequest as E;
