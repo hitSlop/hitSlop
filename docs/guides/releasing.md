@@ -4,6 +4,48 @@ The Mac app and the single `hitslop` npm package ship together under one `vX.Y.Z
 Their shared version labels a release; file markers and the exact command protocol decide
 compatibility. The first shared version is 1.0.0. Mac build numbers continue increasing.
 
+## Release branches and hotfixes
+
+Development continues on `master`. When a candidate is ready to stabilize, cut
+`release/X.Y` from that candidate commit (for example, `release/1.0`). Keep only the latest
+release line maintained by default. A release branch accepts stabilization and patch fixes
+through PRs; it is not a second feature-development branch.
+
+PRs into a release branch and every push to it run all everyday CI tiers, including the
+full native suite. Before tagging, run **Release hitSlop** manually on the final branch
+commit and wait for the full release dry run to pass. That workflow builds matching Engines
+artifacts and validates the release gate. Any later commit requires another dry run;
+record the accepted SHA and tag that exact commit. Branch pushes and manual runs do not
+sign or publish. Only `v*` tags enter publication.
+
+For an urgent fix to `v1.0.0`, branch the fix from `release/1.0`, merge it through a PR,
+prepare version `1.0.1` and a higher Mac build number, and follow the same freeze and
+release acceptance steps below. This excludes unfinished changes on `master`. Forward-port
+the fix through a PR into `master` so the next release keeps it; do not overwrite master's
+development version or copy release-only version bumps back blindly. Frozen corpus entries
+remain permanent and must also be retained on master. If the release branch has been
+retired, recreate it from the latest tag in that line before preparing the fix.
+
+## GitHub rules rollout
+
+Install these workflows on the default branch **before** activating release-branch rules.
+The attribution validator always executes the default branch's trusted code, so changing
+only a release branch cannot install that check. The workflow trigger and validator both
+must recognize `release/*`.
+
+The reviewed ruleset in [release-ruleset.json](../../.github/release-ruleset.json) is staged
+with enforcement disabled. It targets `refs/heads/release/*`, requires PRs and resolved
+review threads, blocks force pushes/deletion, and requires `fast`, `native`, `linux-smoke`,
+`Gitleaks` and `Attribution` from GitHub Actions. It permits initial branch creation without
+checks on that new ref; subsequent changes require current checks. Create branches from
+the chosen candidate or released tag, never as a way to bypass validation before tagging.
+
+After the workflow PR merges, confirm a release-target PR reports every required check,
+then activate the staged ruleset in repository Settings → Rules → Rulesets. Ensure master's
+required checks also include `Attribution` after that workflow is installed. Keep the
+existing release-tag protection. Branch protection controls merges; the release dry run
+and immutable tag workflow still control acceptance and publication.
+
 ## Merge-ready candidate
 
 Finish cleanup and commit the candidate on its working branch. Run `bun run verify`
@@ -12,7 +54,7 @@ run the frozen-lockfile installs and `bun run release:check` below without setti
 `HITSLOP_RELEASE_TAG`. Retain the commit and evidence report. This validates a candidate;
 it does not freeze 1.0.0 or prove signing, publishing, deployment or manual acceptance.
 
-After merge, any new commit needs matching Engines artifacts again. Branch cleanup,
+After merge into the release branch, any new commit needs matching Engines artifacts again. Branch cleanup,
 npm bootstrap/deprecations and public release changes are separate release work.
 
 ## After merge: prepare and freeze

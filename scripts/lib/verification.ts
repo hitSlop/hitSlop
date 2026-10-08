@@ -13,9 +13,9 @@ export async function changedPaths(cwd: string, ref: string) {
 
 export type Preparation = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 
-export type TestTier = "bun" | "cli" | "native" | "packed";
+export type TestTier = "tooling" | "bun" | "cli" | "native" | "packed";
 export function testInventory(files: string[]): Record<TestTier, string[]> {
-  const groups: Record<TestTier, string[]> = { bun: [], cli: [], native: [], packed: [] };
+  const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], native: [], packed: [] };
   const seen = new Set<string>();
   for (const file of files.sort()) {
     if (seen.has(file)) throw new Error(`Duplicate test: ${file}`);
@@ -23,8 +23,9 @@ export function testInventory(files: string[]): Record<TestTier, string[]> {
     if (!file.endsWith(".test.ts")) throw new Error(`Unclassified test: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
       : file.endsWith(".native.test.ts") ? "native"
+      : file.startsWith("tests/verification/") ? "tooling"
       : file.startsWith("packages/hitslop/tests/cli/") ? "cli"
-      : /^(packages\/hitslop\/tests\/(sdk|shell)\/|tests\/(examples|release|verification)\/)/.test(file) ? "bun" : undefined;
+      : /^(packages\/hitslop\/tests\/(sdk|shell)\/|tests\/(examples|release)\/)/.test(file) ? "bun" : undefined;
     if (!tier) throw new Error(`Unclassified test: ${file}`);
     groups[tier].push(file);
   }

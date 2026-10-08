@@ -58,6 +58,7 @@ jobs:
           done
       - uses: ./.github/actions/prepare-checks
         with:
+          cache-scope: release
           webkit: "true"
       - name: Download candidate engines
         env:

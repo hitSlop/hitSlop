@@ -12,13 +12,31 @@ runs:
       run: |
         TOOLCHAIN_HASH=$( (xcodebuild -version; swift --version) | shasum -a 256 | cut -d ' ' -f 1)
         echo "hash=$TOOLCHAIN_HASH" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - id: swift-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: apps/apple/Packages/HitSlopApple/.build
-        key: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        key: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
+    - id: template-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .hitslop/template-cache
         key: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-
+    - name: Native cache summary
+      shell: bash
+      env:
+        SWIFT_HIT: ${{ steps.swift-cache.outputs.cache-hit }}
+        TEMPLATE_HIT: ${{ steps.template-cache.outputs.cache-hit }}
+      run: |
+        status() {
+          case "$1" in true) echo 'exact hit';; false) echo 'fallback hit';; *) echo 'miss';; esac
+        }
+        {
+          echo '### Native caches'
+          echo '| Cache | Restore |'
+          echo '|---|---|'
+          echo "| SwiftPM | $(status "$SWIFT_HIT") |"
+          echo "| Templates | $(status "$TEMPLATE_HIT") |"
+        } >> "$GITHUB_STEP_SUMMARY"

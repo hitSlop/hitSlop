@@ -2,7 +2,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, "release/*"]
+  schedule:
+    - cron: "17 9 * * *"
   workflow_dispatch:
     inputs:
       render_corpus:
@@ -17,12 +19,12 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 env:
   CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
-  # replaced. Manual runs compare with nothing and check everything.
+  # replaced. Nightly, manual and release-branch runs always check every tier.
   CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
   # No dependency installation or compilation: decide before allocating macOS.
@@ -44,11 +46,9 @@ jobs:
         id: select
         shell: bash
         run: |
-          args=(--list --json --native)
-          if [[ -n "$CHANGE_BASE" ]]; then args+=(--base "$CHANGE_BASE"); else args+=(--all); fi
-          bun scripts/verify.ts "${args[@]}" > selection.json
+          bun scripts/ci/select.ts > selection.json
           jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          echo "fast=$(jq -r '[.tiers[].name | select(. == "hygiene" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "fast=$(jq -r '[.tiers[].name | select(. == "hygiene" or . == "tooling" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
           echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
           echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -81,7 +81,7 @@ jobs:
         if: contains(env.TIERS, 'landing')
       - run: bun run verify --ci --keep-going "$TIERS"
         env:
-          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
+          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || 'origin/master' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -142,18 +142,20 @@ jobs:
           name: linux-rust-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  # Tag runs can only restore caches saved on the default branch, so master keeps the
-  # full template corpus warm for the next release. Manual runs can also profile
+  # Nightly runs keep the default branch's full template corpus warm for releases.
+  # Manual runs can also profile
   # the complete render corpus without signing or publishing. Not a required check.
   release-templates:
     timeout-minutes: 60
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.render_corpus)
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.render_corpus)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
+        with:
+          cache-scope: templates
       - uses: ./.github/actions/native-cache
         with:
           templates: release
@@ -164,7 +166,6 @@ jobs:
           bun run build
           bun run build:templates
       - name: Verify warm template cache and profile full render corpus
-        if: github.event_name == 'workflow_dispatch' && inputs.render_corpus
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
           HITSLOP_RENDER: all
@@ -179,3 +180,26 @@ jobs:
           name: release-templates-evidence
           path: .hitslop/evidence
           include-hidden-files: true
+  timings:
+    needs: [select, fast, native, linux-smoke, release-templates]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      # Completed jobs include cache-save post steps, which verifier timings cannot see.
+      - name: Job wall times
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          gh api "repos/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" > jobs.json
+          {
+            echo '### Job wall times (including setup and cache saves)'
+            echo '| Job | Result | Wall time |'
+            echo '|---|---|---:|'
+            jq -r '.jobs[] | select(.name != "timings") | [.name, .conclusion, (if .conclusion == "skipped" then "—" elif .completed_at == null then "unfinished" else (((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) | tostring) + "s" end)] | "| " + join(" | ") + " |"' jobs.json
+          } >> "$GITHUB_STEP_SUMMARY"

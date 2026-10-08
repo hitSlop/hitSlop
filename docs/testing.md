@@ -19,7 +19,7 @@ openable, so its frozen entries never change.
 | App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app, including named commands through the raw Xcode Debug app without an evaluator override; release native tests also exercise host process death |
 | Release tooling | `tests/release`, in `verify bun` | Artifact identity, publication recovery and promotion rules |
 | Presentation | `tests/presentation`, prepared for Swift/native tiers | Window shapes and capture fixtures |
-| Verification runner | `tests/verification`, in `verify bun` | Tier selection, evidence and subprocess lifecycle |
+| Verification runner and CI policy | `tests/verification`, in `verify tooling` | Tier selection, evidence, subprocess lifecycle and attribution; no product build |
 | Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; release includes the build |
 | Examples | `tests/examples`, run with the package tests (`verify bun`, or `verify native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
@@ -48,7 +48,8 @@ bun run release:check          # verify --release: every tier, the shipped build
 | Tier | Runs |
 |---|---|
 | `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently |
-| `bun` | SDK, shell, example, release and runner tests; up to four isolated file workers |
+| `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
+| `bun` | SDK, shell, example and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
 | `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
@@ -72,8 +73,8 @@ and writer registry (an explicit registry override is preserved). Test-process h
 bound subprocess lifetimes, drain diagnostics and stop descendants on cancellation.
 The packed preview uses an OS-assigned port and waits for its reported URL.
 
-Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs both `bun`
-and `cli`; `verify bun` now covers only the lightweight group. Discovery rejects
+Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs `tooling`,
+`bun` and `cli`; `verify tooling` runs the build-free infrastructure tests. Discovery rejects
 unclassified test files rather than silently leaving them out.
 
 While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo clippy
@@ -233,31 +234,51 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | Job | Runs |
 |---|---|
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
-| `fast` (Ubuntu 24.04) | Hygiene on every change, plus affected generated-contract, type, Bun, CLI, installed-package and landing checks |
+| `fast` (Ubuntu 24.04) | Hygiene on every change, plus affected tooling, generated-contract, type, Bun, CLI, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
-| `release-templates` (master) | builds and caches the full template corpus |
+| `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus; verifies warm reuse |
+| `timings` (Ubuntu) | Reports job wall time including preparation and cache-save steps |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
-`fast` runs on pull requests, master pushes and manual runs; feature-branch pushes don't
-repeat PR checks. `native` and `linux-smoke` skip at job level when none of their tiers
+CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UTC
+(03:17 Saskatchewan time), and manual dispatch. Feature-branch pushes don't repeat PR
+checks. PRs into `master` and master pushes select affected tiers. PRs into `release/*`,
+release-branch pushes, nightly and manual runs select **all everyday tiers**, regardless
+of changed paths. The full release gate, including the app bundle, remains separate.
+
+`native` and `linux-smoke` skip at job level when none of their tiers
 are affected, so an unrelated change allocates no Mac runner. Selection includes both
-paths of a rename and deleted files; CI infrastructure and shared verification/toolchain
-inputs select all tiers. Manual CI runs select all everyday tiers. Jobs execute exactly
+paths of a rename and deleted files. The main CI workflow, shared preparation action,
+selector, verifier implementation and shared toolchain/dependency inputs select all tiers.
+Policy workflows and verification tests select tooling; they do not invalidate the product.
+Native-cache changes select the Swift/native tiers. Other product and build dependencies
+remain conservatively selected. For example, PR #5's attribution policy changes select
+only hygiene, tooling and types, allocating no macOS runner. Jobs execute exactly
 the selected tier names, without consulting the local pass cache. `fast` always reports
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
-Branch protection requires `fast`, `native`, `linux-smoke`, `Gitleaks` and `Attribution`. The full
+The required-check policy is `fast`, `native`, `linux-smoke`, `Gitleaks` and `Attribution`;
+activate it only after the corresponding workflows are installed (see
+[release rules](guides/releasing.md#github-rules-rollout)). The full
 `release:check` runs only in the Release macOS workflow. Reports live in
 `.hitslop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
-verification results or retry failed tests automatically.
+verification results or retry failed tests automatically. Job summaries report cache
+restoration, setup duration, build/preparation and test duration, and complete job wall time.
+Nightly runs have a separate concurrency group, so a master push cannot cancel cache warming.
+Successful default-branch runs populate caches that other branches can restore. A cache
+created on a PR merge ref is available only to that PR, so a successful PR alone does not
+warm the next one. Rust caches separate checks, template builds and release builds; SwiftPM
+caches separate fixtures and the release corpus. This prevents a smaller concurrent job
+from filling an immutable cache key before the full suite finishes.
 Playwright WebKit is installed when the native browser tier is selected and for release
 verification; lighter PR checks do not download a browser.
 
-The attribution workflow uses `pull_request_target` and publishes a separate
+The attribution workflow covers PRs into `master` and `release/*`, uses
+`pull_request_target` and publishes a separate
 `Attribution` commit status on the inspected PR head. Its checkout and validator come
 from the default branch; incoming Git objects are read without checking out or executing
 their files. It has read access to contents and PRs, and write access only to statuses.
@@ -266,7 +287,7 @@ block merging. The policy catches known assistant identities and generated signa
 not arbitrary aliases; human co-authors and ordinary AI discussion remain allowed.
 Review the final merge message, which a maintainer can edit after validation.
 
-Secret scanning uses the PR merge base or the previous master commit through the
+Secret scanning uses the PR merge base or the previous master/release-branch commit through the
 checked-out commit. It scans every introduced commit, including a secret later removed
 in the same PR and merge-resolution changes. Scanner configuration changes trigger a
 full-history scan, even if reverted before the tip. Missing bases fail the check;
@@ -276,7 +297,7 @@ For a scheduling or CI change, compare identical source/test inventories with on
 and three warm CI runs. Record build, test and job wall time separately. Completion
 requires three consecutive full warm runs without retries and one successful cold run;
 isolated retries are debugging evidence, not a passing full suite. Template restoration
-continues through the existing full-corpus master/manual/release flow.
+continues through the nightly/manual/release flow.
 For an isolated cold run, dispatch CI with a new `cache_namespace` (for example,
 `ci-validation-COMMIT-`), then dispatch three more runs of the same commit and namespace.
 The prefix applies to both cache keys and restore prefixes, leaving everyday caches intact.
