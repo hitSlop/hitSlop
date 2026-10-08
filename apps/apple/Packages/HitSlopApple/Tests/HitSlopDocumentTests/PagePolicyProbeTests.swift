@@ -105,7 +105,8 @@ import WebKit
     #expect(results["wasm.streaming"] == "5", "wasm.streaming: \(results["wasm.streaming"] ?? "missing")")
     // Media assets play and seek: WebKit's media loader needs byte ranges, read from the file.
     #expect(
-      results["media.asset"]?.hasSuffix("seekedTo=1.50") == true, "media.asset: \(results["media.asset"] ?? "missing")")
+      results["media.asset"]?.hasSuffix("seekedTo=1.50") == true,
+      "media.asset: \(results["media.asset"] ?? "missing"); events: \(results["media.asset.events"] ?? "missing")")
   }
 
   // The range forms WebKit's media loader doesn't exercise above.
@@ -196,15 +197,17 @@ import WebKit
         const src = await source();
         return new Promise((resolve, reject) => {
           const audio = new Audio();
-          for (const type of ['loadstart', 'loadedmetadata', 'canplay', 'stalled', 'suspend', 'abort', 'error', 'seeking', 'seeked'])
-            audio.addEventListener(type, () => { events.push(type); results[name + '.events'] = events.join(','); });
+          for (const type of ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'stalled', 'suspend', 'abort', 'error', 'seeking', 'seeked'])
+            audio.addEventListener(type, () => { events.push(`${type}@${audio.currentTime.toFixed(2)}:ready=${audio.readyState}`); results[name + '.events'] = events.join(','); });
           audio.preload = 'auto';
           audio.onerror = () => reject(new Error('media error ' + audio.error?.code + ' ' + (audio.error?.message || '')));
-          audio.onloadedmetadata = () => {
+          // Exercise seeking after media is playable. Metadata alone can arrive before
+          // WebKit's AVFoundation player is ready to retain a seek on older macOS runners.
+          audio.addEventListener('canplay', () => {
             const seekable = audio.seekable.length ? audio.seekable.end(0) : 0;
             audio.onseeked = () => resolve(`duration=${audio.duration.toFixed(2)} seekableEnd=${seekable.toFixed(2)} seekedTo=${audio.currentTime.toFixed(2)}`);
             audio.currentTime = 1.5;
-          };
+          }, { once: true });
           audio.src = src;
           audio.load();
         });

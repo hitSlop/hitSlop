@@ -53,7 +53,7 @@ bun run release:check          # verify --release: every tier, the shipped build
 | `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
-| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three concurrent process shards, bounded by available CPUs and balanced by full test identities; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
+| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `native` | `*.native.test.ts` against the debug helper |
 

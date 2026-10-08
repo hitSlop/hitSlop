@@ -1,6 +1,7 @@
-/** The Swift package's tests as concurrent process shards. Each shard is its own process,
+/** The Swift package's tests as isolated process shards. Each shard is its own process,
  * with its own main thread, temporary folder and writer-lock registry, so WebKit and AppKit
- * suites run side by side while each suite stays serialized within its shard. Shards are
+ * suites stay serialized. SwiftPM invocations run sequentially because even --skip-build
+ * opens the shared build database. Shards are
  * balanced by the durations the previous run recorded; a test that ran in none of them
  * fails the run, so a filter can never skip one silently. */
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
@@ -13,7 +14,7 @@ import { repository } from "./artifacts";
 
 const packagePath = "apps/apple/Packages/HitSlopApple";
 const timingsFile = join(repository, ".hitslop/verify/swift-timings.json");
-/** Concurrent shards: three halved the suite's time, with no flakes under load; four were no faster. */
+/** Preserve process isolation between groups without concurrent SwiftPM invocations. */
 const shards = Math.min(3, availableParallelism());
 
 /** A test's name as Swift Testing reports it: `name(labels:)`, without module or suite. */
@@ -41,24 +42,23 @@ export async function swiftTests(env: Record<string, string | undefined>, args: 
   const timings: Record<string, number> = await Bun.file(timingsFile).json().catch(() => ({}));
   const groups = shardTests(ids, shards, timings);
   if (env.HITSLOP_TEST_EVIDENCE) await atomicJson(join(env.HITSLOP_TEST_EVIDENCE, "swift-shards.json"), groups);
-  const results = await Promise.all(
-    groups.map(async (group, index) => {
-      const scratch = await mkdtemp(join(tmpdir(), `hitslop-swift-${index}-`));
-      try {
-        const filters = group.flatMap((id) => ["--filter", filterOf(id)]);
-        const result = await run(
-          ["swift", "test", "--skip-build", "--no-parallel", "--package-path", packagePath, ...filters],
-          { TMPDIR: scratch + "/", HITSLOP_TEST_REGISTRY: join(scratch, "registry") },
-          false,
-        );
-        const ran = [...result.stdout.matchAll(/Test run with (\d+) tests?/g)].reduce((sum, match) => sum + Number(match[1]), 0);
-        console.log(`Swift shard ${index + 1}/${groups.length}: ${ran} of ${group.length} tests, exit ${result.code}`);
-        return { ...result, ran, expected: group };
-      } finally {
-        await rm(scratch, { recursive: true, force: true });
-      }
-    }),
-  );
+  const results: (Awaited<ReturnType<typeof run>> & { ran: number; expected: string[] })[] = [];
+  for (const [index, group] of groups.entries()) {
+    const scratch = await mkdtemp(join(tmpdir(), `hitslop-swift-${index}-`));
+    try {
+      const filters = group.flatMap((id) => ["--filter", filterOf(id)]);
+      const result = await run(
+        ["swift", "test", "--skip-build", "--no-parallel", "--package-path", packagePath, ...filters],
+        { TMPDIR: scratch + "/", HITSLOP_TEST_REGISTRY: join(scratch, "registry") },
+        false,
+      );
+      const ran = [...result.stdout.matchAll(/Test run with (\d+) tests?/g)].reduce((sum, match) => sum + Number(match[1]), 0);
+      console.log(`Swift shard ${index + 1}/${groups.length}: ${ran} of ${group.length} tests, exit ${result.code}`);
+      results.push({ ...result, ran, expected: group });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
   // Swift's console omits suite names. Only use a short name when it identifies
   // exactly one discovered test; store every estimate under that test's full ID.
   for (const { stdout } of results)
