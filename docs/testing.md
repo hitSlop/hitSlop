@@ -237,6 +237,7 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
+| `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
 | `release-templates` (master) | builds and caches the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
@@ -247,7 +248,7 @@ paths of a rename and deleted files; CI infrastructure and shared verification/t
 inputs select all tiers. Manual CI runs select all everyday tiers. Jobs execute exactly
 the selected tier names, without consulting the local pass cache. `fast` always reports
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
-Branch protection requires `fast`, `native`, `linux-smoke` and `Gitleaks`. The full
+Branch protection requires `fast`, `native`, `linux-smoke`, `Gitleaks` and `Attribution`. The full
 `release:check` runs only in the Release macOS workflow. Reports live in
 `.hitslop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
@@ -255,6 +256,15 @@ separate from Cargo artifacts and dependency downloads. CI does not cache succes
 verification results or retry failed tests automatically.
 Playwright WebKit is installed when the native browser tier is selected and for release
 verification; lighter PR checks do not download a browser.
+
+The attribution workflow uses `pull_request_target` and publishes a separate
+`Attribution` commit status on the inspected PR head. Its checkout and validator come
+from the default branch; incoming Git objects are read without checking out or executing
+their files. It has read access to contents and PRs, and write access only to statuses.
+New commits, metadata edits and reopened PRs trigger another check. Inspection errors
+block merging. The policy catches known assistant identities and generated signatures,
+not arbitrary aliases; human co-authors and ordinary AI discussion remain allowed.
+Review the final merge message, which a maintainer can edit after validation.
 
 Secret scanning uses the PR merge base or the previous master commit through the
 checked-out commit. It scans every introduced commit, including a secret later removed
