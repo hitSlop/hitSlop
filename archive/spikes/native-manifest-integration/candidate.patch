@@ -1,0 +1,969 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 307b8f4..0aeffad 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -11,6 +11,7 @@ dependencies = [
+  "cfg-if",
+  "getrandom 0.3.4",
+  "once_cell",
++ "serde",
+  "version_check",
+  "zerocopy",
+ ]
+@@ -24,6 +25,12 @@ dependencies = [
+  "memchr",
+ ]
+ 
++[[package]]
++name = "allocator-api2"
++version = "0.2.21"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
++
+ [[package]]
+ name = "anstyle"
+ version = "1.0.14"
+@@ -129,6 +136,21 @@ dependencies = [
+  "serde",
+ ]
+ 
++[[package]]
++name = "bit-set"
++version = "0.8.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
++dependencies = [
++ "bit-vec",
++]
++
++[[package]]
++name = "bit-vec"
++version = "0.8.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
++
+ [[package]]
+ name = "bitflags"
+ version = "2.13.2"
+@@ -144,12 +166,24 @@ dependencies = [
+  "typenum",
+ ]
+ 
++[[package]]
++name = "borrow-or-share"
++version = "0.2.4"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
++
+ [[package]]
+ name = "bumpalo"
+ version = "3.20.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+ 
++[[package]]
++name = "bytecount"
++version = "0.6.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
++
+ [[package]]
+ name = "byteorder"
+ version = "1.5.0"
+@@ -299,6 +333,12 @@ dependencies = [
+  "syn 2.0.119",
+ ]
+ 
++[[package]]
++name = "data-encoding"
++version = "2.11.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
++
+ [[package]]
+ name = "derive_arbitrary"
+ version = "1.4.2"
+@@ -322,6 +362,15 @@ version = "1.18.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
+ 
++[[package]]
++name = "email_address"
++version = "0.2.9"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
++dependencies = [
++ "serde",
++]
++
+ [[package]]
+ name = "embedded-io"
+ version = "0.4.0"
+@@ -392,6 +441,17 @@ dependencies = [
+  "windows-sys",
+ ]
+ 
++[[package]]
++name = "fancy-regex"
++version = "0.19.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
++dependencies = [
++ "bit-set",
++ "regex-automata",
++ "regex-syntax",
++]
++
+ [[package]]
+ name = "fastrand"
+ version = "2.5.0"
+@@ -404,12 +464,39 @@ version = "0.1.14"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+ 
++[[package]]
++name = "fluent-uri"
++version = "0.4.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bc74ac4d8359ae70623506d512209619e5cf8f347124910440dbc221714b328e"
++dependencies = [
++ "borrow-or-share",
++ "ref-cast",
++ "serde",
++]
++
+ [[package]]
+ name = "fnv"
+ version = "1.0.7"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
+ 
++[[package]]
++name = "foldhash"
++version = "0.2.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
++
++[[package]]
++name = "fraction"
++version = "0.17.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e246562084dde8ebbcc943b261c406ce4f68e5032ec28029a251a47d6a295500"
++dependencies = [
++ "num",
++ "num-bigint",
++]
++
+ [[package]]
+ name = "fs-err"
+ version = "2.11.0"
+@@ -492,9 +579,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
+ dependencies = [
+  "cfg-if",
++ "js-sys",
+  "libc",
+  "r-efi 5.3.0",
+  "wasip2",
++ "wasm-bindgen",
+ ]
+ 
+ [[package]]
+@@ -554,6 +643,11 @@ name = "hashbrown"
+ version = "0.17.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
++dependencies = [
++ "allocator-api2",
++ "equivalent",
++ "foldhash",
++]
+ 
+ [[package]]
+ name = "heapless"
+@@ -606,6 +700,7 @@ name = "hitslop-core"
+ version = "0.0.0"
+ dependencies = [
+  "getrandom 0.2.17",
++ "jsonschema",
+  "loro",
+  "serde",
+  "serde_json",
+@@ -698,6 +793,89 @@ dependencies = [
+  "wasm-bindgen",
+ ]
+ 
++[[package]]
++name = "jsonschema"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "905edfa6eee835291d6efe33f733f7fcb40c2a24be93b78b74df95e56aef8611"
++dependencies = [
++ "ahash",
++ "bytecount",
++ "data-encoding",
++ "email_address",
++ "fancy-regex",
++ "fraction",
++ "getrandom 0.3.4",
++ "itoa",
++ "jsonschema-macros",
++ "jsonschema-regex",
++ "jsonschema-value",
++ "num-cmp",
++ "num-traits",
++ "percent-encoding",
++ "referencing",
++ "regex",
++ "serde",
++ "serde_json",
++ "strum",
++ "unicode-general-category",
++ "uuid-simd",
++]
++
++[[package]]
++name = "jsonschema-macros"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "8123fa451e16474892232c373cedee1b75f48b490c489a499914442108e50933"
++dependencies = [
++ "jsonschema-macros-core",
++ "proc-macro2",
++]
++
++[[package]]
++name = "jsonschema-macros-core"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5a002239f1799082b6ae421fc171e6d30b0e34b257b8729be8810546cee5114e"
++dependencies = [
++ "fancy-regex",
++ "indexmap",
++ "jsonschema-regex",
++ "percent-encoding",
++ "proc-macro-crate",
++ "proc-macro2",
++ "quote",
++ "referencing",
++ "regex",
++ "serde_json",
++ "syn 2.0.119",
++]
++
++[[package]]
++name = "jsonschema-regex"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "023cf6b6c38655c1e9cedf72b9c534fd361bd35d20ac06e074f2c93b7dd0836c"
++dependencies = [
++ "regex-syntax",
++]
++
++[[package]]
++name = "jsonschema-value"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "43519639b8e32075ef90a9b6b19136e516a3236b7943c3fe6b1622dafdced8ea"
++dependencies = [
++ "ahash",
++ "bytecount",
++ "fraction",
++ "getrandom 0.3.4",
++ "num-cmp",
++ "num-traits",
++ "serde_json",
++ "zmij",
++]
++
+ [[package]]
+ name = "lazy_static"
+ version = "1.5.0"
+@@ -920,6 +1098,12 @@ version = "2.8.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+ 
++[[package]]
++name = "micromap"
++version = "0.3.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
++
+ [[package]]
+ name = "minimal-lexical"
+ version = "0.2.1"
+@@ -975,6 +1159,12 @@ dependencies = [
+  "num-traits",
+ ]
+ 
++[[package]]
++name = "num-cmp"
++version = "0.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "63335b2e2c34fae2fb0aa2cecfd9f0832a1e24b3b32ecec612c3426d46dc8aaa"
++
+ [[package]]
+ name = "num-complex"
+ version = "0.4.6"
+@@ -1029,6 +1219,12 @@ version = "1.21.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+ 
++[[package]]
++name = "outref"
++version = "0.5.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
++
+ [[package]]
+ name = "parking_lot"
+ version = "0.12.5"
+@@ -1144,6 +1340,15 @@ dependencies = [
+  "yansi",
+ ]
+ 
++[[package]]
++name = "proc-macro-crate"
++version = "3.5.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
++dependencies = [
++ "toml_edit",
++]
++
+ [[package]]
+ name = "proc-macro2"
+ version = "1.0.107"
+@@ -1234,6 +1439,55 @@ dependencies = [
+  "bitflags",
+ ]
+ 
++[[package]]
++name = "ref-cast"
++version = "1.0.27"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "7e440fb4e4b4147295338efb76001ab9e4efc0e5839df2c47fc5ac2381d365c3"
++dependencies = [
++ "ref-cast-impl",
++]
++
++[[package]]
++name = "ref-cast-impl"
++version = "1.0.27"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "92ecd8964f8453721699a1ed72037b0db49ce2f5a5138486ee89bed6f67cdf3a"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn 3.0.6",
++]
++
++[[package]]
++name = "referencing"
++version = "0.58.3"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ead446bbb5527785ff232eb96625ac03daa627945470374c553db8f13090e30f"
++dependencies = [
++ "ahash",
++ "fluent-uri",
++ "getrandom 0.3.4",
++ "hashbrown 0.17.1",
++ "itoa",
++ "micromap",
++ "parking_lot",
++ "percent-encoding",
++ "serde_json",
++]
++
++[[package]]
++name = "regex"
++version = "1.13.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
++dependencies = [
++ "aho-corasick",
++ "memchr",
++ "regex-automata",
++ "regex-syntax",
++]
++
+ [[package]]
+ name = "regex-automata"
+ version = "0.4.18"
+@@ -1483,6 +1737,27 @@ version = "0.11.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
+ 
++[[package]]
++name = "strum"
++version = "0.28.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
++dependencies = [
++ "strum_macros",
++]
++
++[[package]]
++name = "strum_macros"
++version = "0.28.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
++dependencies = [
++ "heck 0.5.0",
++ "proc-macro2",
++ "quote",
++ "syn 2.0.119",
++]
++
+ [[package]]
+ name = "syn"
+ version = "1.0.109"
+@@ -1597,7 +1872,7 @@ dependencies = [
+  "indexmap",
+  "serde_core",
+  "serde_spanned",
+- "toml_datetime",
++ "toml_datetime 0.7.5+spec-1.1.0",
+  "toml_parser",
+  "toml_writer",
+  "winnow 0.7.15",
+@@ -1612,6 +1887,27 @@ dependencies = [
+  "serde_core",
+ ]
+ 
++[[package]]
++name = "toml_datetime"
++version = "1.1.1+spec-1.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
++dependencies = [
++ "serde_core",
++]
++
++[[package]]
++name = "toml_edit"
++version = "0.25.15+spec-1.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "1340ea94a5856333492c9064b02c778b191dd2c853778d9609debdcdfea3a614"
++dependencies = [
++ "indexmap",
++ "toml_datetime 1.1.1+spec-1.1.0",
++ "toml_parser",
++ "winnow 1.0.4",
++]
++
+ [[package]]
+ name = "toml_parser"
+ version = "1.1.3+spec-1.1.0"
+@@ -1706,6 +2002,12 @@ version = "0.1.7"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
+ 
++[[package]]
++name = "unicode-general-category"
++version = "1.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
++
+ [[package]]
+ name = "unicode-ident"
+ version = "1.0.26"
+@@ -1839,6 +2141,16 @@ dependencies = [
+  "weedle2",
+ ]
+ 
++[[package]]
++name = "uuid-simd"
++version = "0.8.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "23b082222b4f6619906941c17eb2297fff4c2fb96cb60164170522942a200bd8"
++dependencies = [
++ "outref",
++ "vsimd",
++]
++
+ [[package]]
+ name = "valuable"
+ version = "0.1.1"
+@@ -1851,6 +2163,12 @@ version = "0.9.5"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+ 
++[[package]]
++name = "vsimd"
++version = "0.8.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
++
+ [[package]]
+ name = "wasi"
+ version = "0.11.1+wasi-snapshot-preview1"
+@@ -1958,6 +2276,9 @@ name = "winnow"
+ version = "1.0.4"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
++dependencies = [
++ "memchr",
++]
+ 
+ [[package]]
+ name = "wit-bindgen"
+diff --git a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift
+index 7322fc6..3369a84 100644
+--- a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift
++++ b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift
+@@ -60,5 +60,4 @@ public enum PlatformContract {
+     }
+ }
+ 
+-nonisolated(unsafe) public let manifestSchema: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"{"type":"object","required":["author","slug","title","description","categories","presentation"],"properties":{"$schema":{"type":"string","const":"https://api.hitslop.com/schemas/manifest.schema.json"},"author":{"type":"object","required":["name"],"properties":{"name":{"type":"string","minLength":1,"maxLength":80,"pattern":"\\S"},"url":{"type":"string","maxLength":2048,"format":"uri","pattern":"^https?://[^/?#\\s]+"}},"additionalProperties":false,"title":"SlopAuthor"},"slug":{"type":"string","minLength":2,"maxLength":64,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"title":{"type":"string","minLength":1,"maxLength":80},"description":{"type":"string","minLength":1,"maxLength":240},"categories":{"type":"array","items":{"enum":["productivity","utilities","finance","media","games","developer-tools","education","business","personal","other"],"title":"SlopCategory"},"minItems":1,"maxItems":2,"uniqueItems":true},"presentation":{"anyOf":[{"type":"object","required":["width","height"],"properties":{"width":{"type":"integer","minimum":240,"maximum":4096},"height":{"type":"integer","minimum":180,"maximum":4096},"resizable":{"type":"boolean"},"shape":{"anyOf":[{"type":"string","minLength":1,"maxLength":256,"pattern":"^[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3}(?:[ \t\r\n]*/[ \t\r\n]*(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))(?:[ \t\r\n]+(?:0|(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:px|%))){0,3})?[ \t\r\n]*$"},{"type":"object","required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"viewBox":{"type":"array","additionalItems":false,"items":[{"type":"number","minimum":1,"maximum":16384},{"type":"number","minimum":1,"maximum":16384}],"minItems":2},"fillRule":{"enum":["nonzero","evenodd"]}},"additionalProperties":false,"title":"SlopPathShape"}],"title":"SlopShape"},"lockAspect":{"type":"boolean"},"background":{"type":"string","const":"transparent"}},"additionalProperties":false,"title":"SlopStandardPresentation"},{"type":"object","required":["width","height","skin"],"properties":{"width":{"type":"integer","minimum":240,"maximum":4096},"height":{"type":"integer","minimum":180,"maximum":4096},"skin":{"type":"string","minLength":12,"maxLength":240,"pattern":"^assets/(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+\\.[pP][nN][gG]$"}},"additionalProperties":false,"title":"SlopSkinPresentation"}],"title":"SlopPresentation"}},"additionalProperties":false,"title":"SlopManifest"}"#.utf8)) as! [String: Any]
+ nonisolated(unsafe) public let bridgeValidationSchema: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"{"anyOf":[{"type":"object","required":["method","bytes"],"properties":{"method":{"type":"string","const":"attachments.put"},"bytes":{"type":"string","maxLength":13981016}}},{"type":"object","required":["method","attachmentID"],"properties":{"method":{"type":"string","const":"attachments.read"},"attachmentID":{"type":"string","pattern":"^[a-f0-9]{64}$","minLength":64,"maxLength":64}}},{"type":"object","required":["method"],"properties":{"method":{"type":"string","const":"attachments.list"}}},{"type":"object","required":["method"],"properties":{"method":{"type":"string","const":"theme.load"}}},{"type":"object","required":["method","values"],"properties":{"method":{"type":"string","const":"theme.save"},"values":{"type":"object","patternProperties":{"^[a-zA-Z][a-zA-Z0-9-]*$":{"type":"string","minLength":1,"maxLength":4096}}}}},{"type":"object","required":["method"],"properties":{"method":{"type":"string","const":"pageRecovered"}}},{"type":"object","required":["method","width","height"],"properties":{"method":{"type":"string","const":"window.resize"},"width":{"type":"integer","minimum":240,"maximum":4096},"height":{"type":"integer","minimum":180,"maximum":4096}}},{"type":"object","required":["method"],"properties":{"method":{"type":"string","const":"config"}}},{"type":"object","required":["method"],"properties":{"method":{"type":"string","const":"ready"}}},{"type":"object","required":["method","error"],"properties":{"method":{"type":"string","const":"failed"},"error":{"type":"string","maxLength":4096}}},{"type":"object","required":["method","kind","error"],"properties":{"method":{"type":"string","const":"pageError"},"kind":{"enum":["operation","application"]},"error":{"type":"string","maxLength":4096}}}]}"#.utf8)) as! [String: Any]
+diff --git a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift
+index b4e3ed5..b53e579 100644
+--- a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift
++++ b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift
+@@ -1,4 +1,5 @@
+ import Foundation
++import HitSlopCoreBinding
+ import ImageIO
+ 
+ public enum SlopPackageError: LocalizedError {
+@@ -38,9 +39,10 @@ public struct SlopPackage: Sendable {
+       throw SlopPackageError.missing("manifest.json")
+     }
+     manifestData = try SlopFile.read(manifestURL, within: root, maximumBytes: 64 * 1024)
+-    manifest = try Self.decodeManifest(manifestData)
++    let decoded = try Self.decodeManifest(manifestData)
++    manifest = decoded.manifest
+ 
+-    silhouette = try SlopSilhouette(shape: manifest.presentation.shape, width: manifest.presentation.width, height: manifest.presentation.height)
++    silhouette = SlopSilhouette(parsed: decoded.silhouette)
+ 
+     // The host owns the page; a package supplies only its app module.
+     guard fileManager.fileExists(atPath: entryURL.path) else {
+@@ -232,14 +234,18 @@ public struct SlopPackage: Sendable {
+ 
+   /// The manifest must match the current contract exactly: nothing has shipped, so
+   /// there is no tolerant reader for older or newer fields.
+-  private static func decodeManifest(_ data: Data) throws -> SlopManifest {
+-    guard String(data: data, encoding: .utf8) != nil else {
++  private static func decodeManifest(_ data: Data) throws -> (manifest: SlopManifest, silhouette: WindowSilhouette) {
++    guard let json = String(data: data, encoding: .utf8) else {
+       throw SlopPackageError.invalid("manifest.json must be UTF-8")
+     }
+-    guard let object = try? JSONSerialization.jsonObject(with: data),
+-      PlatformContract.valid(object, against: manifestSchema)
+-    else { throw SlopPackageError.invalid("invalid manifest") }
+-    return try JSONDecoder().decode(SlopManifest.self, from: data)
++    do {
++      let silhouette = try validateManifest(manifestJson: json)
++      return (try JSONDecoder().decode(SlopManifest.self, from: data), silhouette)
++    } catch let CoreError.Rejected(_, message, _) {
++      throw SlopPackageError.invalid(message)
++    } catch {
++      throw SlopPackageError.invalid(error.localizedDescription)
++    }
+   }
+ 
+   private func validateState() throws {
+diff --git a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopSilhouette.swift b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopSilhouette.swift
+index 54c6f5b..9ca59c8 100644
+--- a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopSilhouette.swift
++++ b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopSilhouette.swift
+@@ -3,7 +3,7 @@ import Foundation
+ import HitSlopCoreBinding
+ 
+ /// Immutable window geometry shared by clipping, pointer membership and raster capture.
+-/// The manifest shape is parsed once by the core (`window_silhouette`); this type only
++/// The manifest shape is parsed once by the core during manifest validation; this type only
+ /// turns its normalized radii or segments into paths for the current bounds.
+ public struct SlopSilhouette: @unchecked Sendable {
+   private enum Geometry {
+@@ -13,14 +13,7 @@ public struct SlopSilhouette: @unchecked Sendable {
+   private let geometry: Geometry
+   public let fillRule: CGPathFillRule
+ 
+-  public init(shape: SlopShape?, width: Int, height: Int) throws {
+-    let parsed: WindowSilhouette
+-    do {
+-      let json = try shape.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }
+-      parsed = try windowSilhouette(shapeJson: json, width: Double(width), height: Double(height))
+-    } catch {
+-      throw SlopPackageError.invalid("window silhouette")
+-    }
++  public init(parsed: WindowSilhouette) {
+     switch parsed {
+     case .radii(let horizontal, let vertical):
+       geometry = .radii(horizontal: horizontal, vertical: vertical)
+diff --git a/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift b/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift
+index 395103c..cd36867 100644
+--- a/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift
++++ b/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift
+@@ -78,7 +78,6 @@ import Testing
+     ] {
+         var changed = manifest
+         changed[key] = value
+-        #expect(!PlatformContract.valid(changed, against: manifestSchema))
+         try JSONSerialization.data(withJSONObject: changed).write(to: url)
+         #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+     }
+@@ -99,7 +98,6 @@ import Testing
+         ["width": 320, "height": 240, "skin": "assets/skin.png", "background": NSNull()],
+     ] {
+         manifest["presentation"] = presentation
+-        #expect(!PlatformContract.valid(manifest, against: manifestSchema))
+         try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+         #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
+     }
+@@ -249,3 +247,59 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
+     CGImageDestinationAddImage(destination, image, nil)
+     guard CGImageDestinationFinalize(destination) else { throw SlopPackageError.invalid("could not write test skin") }
+ }
++
++// Shared with the baseline: these acceptance regressions must fail before extraction.
++@Test func nativeManifestParityRegressions() throws {
++    let root = try fixture()
++    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
++    let url = root.appendingPathComponent("manifest.json")
++    let original = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
++    for count in [40, 41, 80, 81] {
++        var value = original
++        value["title"] = String(repeating: "😀", count: count)
++        try JSONSerialization.data(withJSONObject: value).write(to: url)
++        let accepted = (try? SlopPackage(rootURL: root)) != nil
++        #expect(accepted == (count <= 80), "title with \(count) emoji")
++    }
++    var value = original
++    value["author"] = ["name": "\u{0085}"]
++    try JSONSerialization.data(withJSONObject: value).write(to: url)
++    #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
++    value["author"] = ["name": "Author", "url": "https://[bad]"]
++    try JSONSerialization.data(withJSONObject: value).write(to: url)
++    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++    value = original
++    value["presentation"] = ["width": 320, "height": 240, "skin": "assets/skin.png\n"]
++    try writeSkin(to: root.appendingPathComponent("assets/skin.png\n"), width: 320, height: 240)
++    try JSONSerialization.data(withJSONObject: value).write(to: url)
++    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++}
++
++@Test func manifestInputBoundaryRemainsStrict() throws {
++    let root = try fixture()
++    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
++    let url = root.appendingPathComponent("manifest.json")
++    let original = try Data(contentsOf: url)
++    for invalid in [Data([0xff]), Data("{".utf8)] {
++        try invalid.write(to: url)
++        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++    }
++    var boundary = original
++    boundary.append(Data(repeating: 32, count: 65536 - original.count))
++    try boundary.write(to: url)
++    #expect(throws: Never.self) { _ = try SlopPackage(rootURL: root) }
++    boundary.append(32)
++    try boundary.write(to: url)
++    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++}
++
++@Test func invalidShapesAreRefusedAsInvalidPackages() throws {
++    let root = try fixture(); defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
++    let url = root.appendingPathComponent("manifest.json")
++    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
++    for shape: Any in ["1em", ["path": "M0 0L1"]] {
++        manifest["presentation"] = ["width": 320, "height": 240, "shape": shape]
++        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
++        #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++    }
++}
+diff --git a/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopSilhouetteTests.swift b/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopSilhouetteTests.swift
+index 287ea92..5c40181 100644
+--- a/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopSilhouetteTests.swift
++++ b/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopSilhouetteTests.swift
+@@ -1,59 +1,65 @@
+ import CoreGraphics
+ import Foundation
+ import Testing
++import HitSlopCoreBinding
+ @testable import HitSlopCore
+ 
+ private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 100, height: Double = 100) -> SlopShape {
+   .slopPathShape(.init(fillRule: evenOdd ? .evenodd : .nonzero, path: path, viewBox: [width, height]))
+ }
+-// The grammar and its corpus belong to the core's parser (crates/hitslop-core/tests/shape.rs).
+-// Here: a refusal surfaces as a package error, and the path geometry built from its output.
+-@Test func invalidShapesAreRefusedAsInvalidPackages() {
+-  #expect(throws: SlopPackageError.self) { try SlopSilhouette(shape: .string("1em"), width: 100, height: 100) }
+-  #expect(throws: SlopPackageError.self) { try SlopSilhouette(shape: pathShape("M0 0L1"), width: 100, height: 100) }
++// Rust owns parsing; these tests exercise native path construction from its output.
++private func silhouette(shape: SlopShape, width: Int, height: Int) throws -> SlopSilhouette {
++  let object: [String: Any] = [
++    "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"],
++    "presentation": ["width": max(240, width), "height": max(180, height),
++      "shape": try JSONSerialization.jsonObject(with: JSONEncoder().encode(shape), options: .fragmentsAllowed)],
++  ]
++  let json = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
++  return SlopSilhouette(parsed: try validateManifest(manifestJson: json))
+ }
+ @Test func silhouettesPreserveOrientationOriginsAndEvenOddHoles() throws {
+-  let shape = try SlopSilhouette(shape: pathShape("M0 0H100V100H0Z M60 10H90V40H60Z", evenOdd: true), width: 100, height: 100)
++  let shape = try silhouette(shape: pathShape("M0 0H100V100H0Z M60 10H90V40H60Z", evenOdd: true), width: 100, height: 100)
+   let bounds = CGRect(x: 20, y: 30, width: 200, height: 300), path = shape.path(in: bounds)
+   // Hole at SVG (75,25), not (75,75); scales from top-left into AppKit's y-up bounds.
+   #expect(!path.contains(CGPoint(x: 170, y: 255), using: shape.fillRule))
+   #expect(path.contains(CGPoint(x: 170, y: 105), using: shape.fillRule))
+   #expect(path.contains(CGPoint(x: 40, y: 300), using: shape.fillRule))
+-  let winding = try SlopSilhouette(shape: pathShape("M0 0H100V100H0Z M60 10H90V40H60Z"), width: 100, height: 100)
++  let winding = try silhouette(shape: pathShape("M0 0H100V100H0Z M60 10H90V40H60Z"), width: 100, height: 100)
+   #expect(winding.path(in: bounds).contains(CGPoint(x: 170, y: 255), using: winding.fillRule))
+ }
+ @Test func radiiApplyCSSOverlapAndPercentagesInLogicalCoordinates() throws {
+   let rect = CGRect(x: 0, y: 0, width: 200, height: 100)
+-  let ellipse = try SlopSilhouette(shape: .string("50%"), width: 200, height: 100).path(in: rect)
++  let ellipse = try silhouette(shape: .string("50%"), width: 200, height: 100).path(in: rect)
+   #expect(!ellipse.contains(CGPoint(x: 10, y: 10)))
+   #expect(ellipse.contains(CGPoint(x: 100, y: 10)))
+-  let capsule = try SlopSilhouette(shape: .string("9999px"), width: 200, height: 100).path(in: rect)
++  let capsule = try silhouette(shape: .string("9999px"), width: 200, height: 100).path(in: rect)
+   #expect(capsule.contains(CGPoint(x: 50, y: 1)))
+   #expect(!capsule.contains(CGPoint(x: 1, y: 1)))
+-  let asymmetric = try SlopSilhouette(shape: .string("50px 0 0 0"), width: 200, height: 100).path(in: rect)
++  let asymmetric = try silhouette(shape: .string("50px 0 0 0"), width: 200, height: 100).path(in: rect)
+   #expect(!asymmetric.contains(CGPoint(x: 1, y: 99)))
+   #expect(asymmetric.contains(CGPoint(x: 1, y: 1)))
+   #expect(asymmetric.contains(CGPoint(x: 199, y: 99)))
+ }
+ @Test func arcsRespectSweepRotationAndRadiusCorrection() throws {
+-  let circle = try SlopSilhouette(shape: pathShape("M50 0a50 50 0 1 0 0 100a50 50 0 1 0 0-100Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
++  let circle = try silhouette(shape: pathShape("M50 0a50 50 0 1 0 0 100a50 50 0 1 0 0-100Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
+   #expect(circle.contains(CGPoint(x: 50, y: 50)))
+   #expect(!circle.contains(CGPoint(x: 1, y: 1)))
+   #expect(abs(circle.boundingBoxOfPath.width - 100) < 0.001)
+-  let corrected = try SlopSilhouette(shape: pathShape("M0 50A1 1 0 0 1 100 50Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
++  let corrected = try silhouette(shape: pathShape("M0 50A1 1 0 0 1 100 50Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
+   #expect(corrected.contains(CGPoint(x: 50, y: 75)))
+   #expect(!corrected.contains(CGPoint(x: 50, y: 25)))
+-  let rotated = try SlopSilhouette(shape: pathShape("M50 10A40 20 90 1 1 50 90A40 20 90 1 1 50 10Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
++  let rotated = try silhouette(shape: pathShape("M50 10A40 20 90 1 1 50 90A40 20 90 1 1 50 10Z"), width: 100, height: 100).path(in: CGRect(x: 0, y: 0, width: 100, height: 100))
+   #expect(abs(rotated.boundingBoxOfPath.width - 40) < 0.01)
+   #expect(abs(rotated.boundingBoxOfPath.height - 80) < 0.01)
+ }
+ 
+-@Test func nativeManifestValidatorChecksViewBoxTupleMembers() {
++@Test func nativeManifestValidatorChecksViewBoxTupleMembers() throws {
+   for box: [Any] in [[0, 100], [100, "bad"], [100, 20000]] {
+     let manifest: [String: Any] = [
+       "author": ["name": "Lab"], "slug": "shape-lab", "title": "Lab", "description": "Geometry", "categories": ["developer-tools"],
+       "presentation": ["width": 480, "height": 360, "shape": ["path": "M0 0H100V100Z", "viewBox": box]],
+     ]
+-    #expect(!PlatformContract.valid(manifest, against: manifestSchema))
++    let json = String(decoding: try JSONSerialization.data(withJSONObject: manifest), as: UTF8.self)
++    #expect(throws: CoreError.self) { _ = try validateManifest(manifestJson: json) }
+   }
+ }
+diff --git a/crates/hitslop-core/Cargo.toml b/crates/hitslop-core/Cargo.toml
+index 671fb54..db9430b 100644
+--- a/crates/hitslop-core/Cargo.toml
++++ b/crates/hitslop-core/Cargo.toml
+@@ -10,3 +10,9 @@ serde.workspace = true
+ serde_json.workspace = true
+ thiserror.workspace = true
+ getrandom = { version = "0.2", features = ["js"] }
++
++[features]
++manifest-validation = ["dep:jsonschema"]
++
++[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
++jsonschema = { version = "=0.58.3", default-features = false, features = ["macros"], optional = true }
+diff --git a/crates/hitslop-core/src/lib.rs b/crates/hitslop-core/src/lib.rs
+index be83f0d..e05877f 100644
+--- a/crates/hitslop-core/src/lib.rs
++++ b/crates/hitslop-core/src/lib.rs
+@@ -364,3 +364,6 @@ fn checked_import(doc: &LoroDoc, bytes: &[u8]) -> Result<()> {
+     }
+     Ok(())
+ }
++
++#[cfg(all(feature = "manifest-validation", not(target_arch = "wasm32")))]
++pub mod manifest;
+diff --git a/crates/hitslop-core/src/manifest.rs b/crates/hitslop-core/src/manifest.rs
+new file mode 100644
+index 0000000..cd05919
+--- /dev/null
++++ b/crates/hitslop-core/src/manifest.rs
+@@ -0,0 +1,27 @@
++//! Native manifest acceptance over the TypeBox-generated contract.
++use crate::{err, shape, Code, Result};
++
++#[jsonschema::validator(
++    path = "../../packages/schema/generated/manifest.schema.json",
++    draft = Draft7,
++    validate_formats = true,
++    methods = { is_valid = false, validate = true, iter_errors = false }
++)]
++struct Manifest;
++
++pub fn validate(input: &str) -> Result<shape::Silhouette> {
++    if input.len() > 64 * 1024 {
++        return Err(err(Code::TooLarge, "manifest.json exceeds 64 KiB"));
++    }
++    let value: serde_json::Value = serde_json::from_str(input)
++        .map_err(|_| err(Code::InvalidRequest, "manifest.json must be valid JSON"))?;
++    Manifest::validate(&value).map_err(|e| {
++        let path = e.instance_path().as_str();
++        err(Code::InvalidRequest, format!("Invalid manifest.json at {}", if path.is_empty() { "/" } else { path }))
++    })?;
++    let presentation = &value["presentation"];
++    // The validated schema guarantees both dimensions and restricts the presentation.
++    let width = presentation["width"].as_f64().expect("validated width");
++    let height = presentation["height"].as_f64().expect("validated height");
++    shape::silhouette_value(presentation.get("shape"), width, height)
++}
+diff --git a/crates/hitslop-core/src/shape.rs b/crates/hitslop-core/src/shape.rs
+index 4b5bf18..17a5a0e 100644
+--- a/crates/hitslop-core/src/shape.rs
++++ b/crates/hitslop-core/src/shape.rs
+@@ -64,6 +64,19 @@ pub fn silhouette(shape: Option<&str>, width: f64, height: f64) -> Result<Silhou
+         None => Shape::Radius(DEFAULT_RADIUS.into()),
+         Some(json) => serde_json::from_str(json).map_err(|_| invalid())?,
+     };
++    normalize(shape, width, height)
++}
++
++#[cfg(all(feature = "manifest-validation", not(target_arch = "wasm32")))]
++pub(crate) fn silhouette_value(shape: Option<&serde_json::Value>, width: f64, height: f64) -> Result<Silhouette> {
++    let shape = match shape {
++        None => Shape::Radius(DEFAULT_RADIUS.into()),
++        Some(value) => serde_json::from_value(value.clone()).map_err(|_| invalid())?,
++    };
++    normalize(shape, width, height)
++}
++
++fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhouette> {
+     match shape {
+         Shape::Radius(value) => radii(&value),
+         Shape::Path(shape) => {
+diff --git a/crates/hitslop-core/tests/manifest.rs b/crates/hitslop-core/tests/manifest.rs
+new file mode 100644
+index 0000000..fd28ac1
+--- /dev/null
++++ b/crates/hitslop-core/tests/manifest.rs
+@@ -0,0 +1,39 @@
++#![cfg(all(feature = "manifest-validation", not(target_arch = "wasm32")))]
++use hitslop_core::{manifest, shape::Silhouette, Code};
++
++fn fixture() -> serde_json::Value {
++    serde_json::json!({"author":{"name":"Author"},"slug":"fixture","title":"Title","description":"Description","categories":["utilities"],"presentation":{"width":320,"height":240}})
++}
++
++#[test]
++fn native_manifest_returns_geometry_and_located_bounded_errors() {
++    let mut value = fixture();
++    assert!(matches!(manifest::validate(&value.to_string()).unwrap(), Silhouette::Radii { .. }));
++    value["presentation"]["shape"] = serde_json::json!({"path":"M0 0L100 100","viewBox":[100,100]});
++    assert!(matches!(manifest::validate(&value.to_string()).unwrap(), Silhouette::Path { .. }));
++    value["presentation"]["shape"] = serde_json::json!({"path":"M0 0X"});
++    assert_eq!(manifest::validate(&value.to_string()).unwrap_err().code, Code::InvalidShape);
++    value = fixture();
++    value["title"] = serde_json::json!("secret".repeat(50));
++    let error = manifest::validate(&value.to_string()).unwrap_err();
++    assert!(error.message.contains("/title"));
++    assert!(!error.message.contains("secret"));
++    value = fixture();
++    value["presentation"] = serde_json::json!({"width":320,"height":240,"skin":"assets/skin.png"});
++    assert!(matches!(manifest::validate(&value.to_string()).unwrap(), Silhouette::Radii { .. }));
++}
++
++#[test]
++fn native_manifest_bounds_json_and_preserves_unicode_semantics() {
++    for count in [40, 41, 80, 81] {
++        let mut value = fixture();
++        value["title"] = serde_json::json!("😀".repeat(count));
++        assert_eq!(manifest::validate(&value.to_string()).is_ok(), count <= 80);
++    }
++    let mut boundary = fixture().to_string();
++    boundary.push_str(&" ".repeat(65536 - boundary.len()));
++    assert!(manifest::validate(&boundary).is_ok());
++    boundary.push(' ');
++    assert_eq!(manifest::validate(&boundary).unwrap_err().code, Code::TooLarge);
++    assert_eq!(manifest::validate("{").unwrap_err().code, Code::InvalidRequest);
++}
+diff --git a/crates/hitslop-core-ffi/Cargo.toml b/crates/hitslop-core-ffi/Cargo.toml
+index fa50656..5a51ddd 100644
+--- a/crates/hitslop-core-ffi/Cargo.toml
++++ b/crates/hitslop-core-ffi/Cargo.toml
+@@ -16,7 +16,7 @@ required-features = ["cli"]
+ cli = ["uniffi/cli"]
+ 
+ [dependencies]
+-hitslop-core = { path = "../hitslop-core" }
++hitslop-core = { path = "../hitslop-core", features = ["manifest-validation"] }
+ uniffi = "=0.31.1"
+ thiserror.workspace = true
+ 
+diff --git a/crates/hitslop-core-ffi/src/lib.rs b/crates/hitslop-core-ffi/src/lib.rs
+index 682f950..c0a7db6 100644
+--- a/crates/hitslop-core-ffi/src/lib.rs
++++ b/crates/hitslop-core-ffi/src/lib.rs
+@@ -59,12 +59,12 @@ pub enum WindowSilhouette {
+     Radii { horizontal: Vec<SilhouetteLength>, vertical: Vec<SilhouetteLength> },
+     Path { segments: Vec<SilhouetteSegment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
+ }
+-/// Parses a manifest `shape` (JSON, or none for the default) for a window of this size.
++/// Validates the manifest contract and returns its normalized window geometry.
+ #[uniffi::export]
+-pub fn window_silhouette(shape_json: Option<String>, width: f64, height: f64) -> Result<WindowSilhouette, CoreError> {
++pub fn validate_manifest(manifest_json: String) -> Result<WindowSilhouette, CoreError> {
+     use hitslop_core::shape::{self, Segment, Silhouette};
+     let length = |l: shape::Length| SilhouetteLength { value: l.value, percent: l.percent };
+-    Ok(match shape::silhouette(shape_json.as_deref(), width, height).map_err(rejected)? {
++    Ok(match hitslop_core::manifest::validate(&manifest_json).map_err(rejected)? {
+         Silhouette::Radii { horizontal, vertical } => WindowSilhouette::Radii {
+             horizontal: horizontal.into_iter().map(length).collect(),
+             vertical: vertical.into_iter().map(length).collect(),
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 780ce78..2041ab2 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -24,6 +24,12 @@ descriptors, initial values, theme defaults and window shapes, and for the Bun t
+ It never edits documents outside the app. The app, helper, page shell and CLI are built
+ from one tree; nothing has shipped, so there is no version negotiation between them.
+ 
++Manifest acceptance is native-only Rust validation of the TypeBox-generated JSON
++Schema, followed by the shared shape parser. Swift decodes the validated manifest
++into its generated model and owns filesystem, PNG and native path checks. Authoring
++keeps TypeBox manifest validation; the manifest validator dependency is excluded from
++WASM. Swift's schema interpreter still validates socket and page envelopes.
++
+ ## Layers
+ 
+ | Layer | Where | Owns |
+diff --git a/packages/document/tests/cli.native.test.ts b/packages/document/tests/cli.native.test.ts
+index a68b5e7..19f735d 100644
+--- a/packages/document/tests/cli.native.test.ts
++++ b/packages/document/tests/cli.native.test.ts
+@@ -83,7 +83,9 @@ test("native CLI rejects invalid packages and malformed commands before mutation
+   };
+   try {
+     await writeFile(join(root, "manifest.json"), JSON.stringify({ slug: "not-a-manifest" }));
+-    expect((await cli("get")).error).toContain("invalid manifest");
++    const refused = await cli("get");
++    expect(refused.code).not.toBe(0);
++    expect(refused.error).toContain("Invalid manifest.json at /");
+     expect(await readdir(root)).toEqual(["manifest.json"]);
+     const manifest = JSON.parse(
+       await readFile("examples/slops/quick-checklist/manifest.json", "utf8"),
+diff --git a/scripts/generate.ts b/scripts/generate.ts
+index 29f3152..e252701 100644
+--- a/scripts/generate.ts
++++ b/scripts/generate.ts
+@@ -58,9 +58,7 @@ export async function generateContracts(check = false) {
+     "apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift":
+       "// Generated by bun run schema:generate. Do not edit.\n" +
+       platformValidatorSource +
+-      '\nnonisolated(unsafe) public let manifestSchema: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"' +
+-      JSON.stringify(SlopManifestSchema) +
+-      '"#.utf8)) as! [String: Any]\nnonisolated(unsafe) public let bridgeValidationSchema: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"' +
++      '\nnonisolated(unsafe) public let bridgeValidationSchema: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"' +
+       JSON.stringify(BridgeRequestSchema) +
+       '"#.utf8)) as! [String: Any]\n',
+     "packages/schema/generated/manifest.schema.json": schema,

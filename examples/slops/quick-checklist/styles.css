@@ -1,9 +1,13 @@
+:root {
+  --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --headingFont: Georgia, "Times New Roman", serif;
+}
 * {
   box-sizing: border-box;
 }
 
 :root {
-  font-family: var(--slop-font);
+  font-family: var(--font);
   color-scheme: light;
   font-synthesis: none;
 }
@@ -14,8 +18,7 @@ body {
 }
 
 button,
-input,
-textarea {
+input {
   font: inherit;
   color: inherit;
 }
@@ -34,11 +37,6 @@ input:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--slop-accent);
   outline-offset: 3px;
-}
-
-textarea {
-  resize: none;
-  overflow: hidden;
 }
 
 button {
@@ -129,7 +127,7 @@ button {
   padding: 0;
   margin: 0;
   background: transparent;
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 34px;
   line-height: 1.12;
   letter-spacing: -0.045em;
@@ -250,6 +248,8 @@ button {
 
 .checklist-scroller {
   min-height: 0;
+  /* The grid track sizes the scroller; containment keeps row edits from re-laying out the page. */
+  contain: strict;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -276,8 +276,61 @@ button {
   grid-template-columns: 25px minmax(0, 1fr) 28px;
   align-items: start;
   gap: 11px;
-  padding: 17px 0;
+  padding: 17px 5px;
+  margin-inline: -5px;
   border-bottom: 1px solid var(--slop-rule);
+  /* Off-screen rows skip layout and paint; the inline padding keeps focus rings unclipped. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 59px;
+}
+
+html[data-slop-capture] .checklist-row {
+  content-visibility: visible;
+}
+
+.checklist-box {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid color-mix(in srgb, var(--slop-muted) 65%, transparent);
+  border-radius: 7px;
+  color: var(--slop-onAccent);
+  cursor: pointer;
+}
+
+.checklist-box input {
+  position: absolute;
+  inset: -1.5px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checklist-row[data-done="true"] .checklist-box {
+  border-color: var(--slop-successBorder);
+  background: var(--slop-success);
+}
+
+.checklist-box:focus-within {
+  outline: 2px solid var(--slop-accent);
+  outline-offset: 3px;
+}
+
+.checklist-box svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.checklist-task-text [data-placeholder] {
+  color: var(--slop-muted);
+  opacity: 0.7;
 }
 
 .checklist-row [data-checkbox-root] {
@@ -309,7 +362,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-.checklist-row[data-done="true"] textarea,
+.checklist-row[data-done="true"] .checklist-task-text,
 .checklist-row[data-done="true"] > span {
   color: var(--slop-muted);
   text-decoration: line-through;
@@ -471,7 +524,7 @@ button {
 .checklist-empty h2 {
   margin: 14px 0 5px;
   color: var(--slop-ink);
-  font-family: var(--slop-headingFont);
+  font-family: var(--headingFont);
   font-size: 23px;
   font-weight: 400;
 }

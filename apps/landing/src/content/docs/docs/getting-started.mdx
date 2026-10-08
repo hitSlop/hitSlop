@@ -7,20 +7,20 @@ A slop is a focused app and its document in one portable `.slop` package. Start 
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer. For this release, authoring is supported on macOS. Install the matching hitSlop Mac app in `/Applications` or `~/Applications` for native previews, registration, and document exports. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and building an app, and creating or editing its documents, need only the CLI. To register templates, open windows, render Finder artwork and export PNG/PDF, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
 
 The public CLI workflow is:
 
 ```sh
-bunx @hitslop/cli init tiny-counter
+bunx hitslop init tiny-counter
 cd tiny-counter
 bun install
 bun run dev
 ```
 
-Alternatively, install the CLI with `bun install -g @hitslop/cli` and run `slop init tiny-counter`. The generated project pins its own CLI and SDK versions; prefer its `bun run` scripts after creation.
+Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
 
-See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, import, export, and agent skill installation.
+See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, moving data between documents, export, and agent skill installation.
 
 `init` asks you to describe your slop and who the author is. It starts from a working Checklist, saves your idea in `BRIEF.md`, and includes `AGENTS.md` and authoring/design skills in `.agents/skills/`.
 
@@ -28,52 +28,96 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `manifest.json` first. Its slug comes from the directory name unless you supplied `--slug`. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime. Keep `runtime` set to `hitslop-v1`.
+Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
-- `schema.ts` defines document fields; `initial.ts` provides creation-only values.
+- `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
+- `commands.ts` exports named actions shared by the page and CLI; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
-- `theme.ts` declares public visual tokens.
-- `styles.css` owns layout and component styling; the builder includes it automatically.
+- `slop.ts`'s `theme` declares the colors people can change.
+- `styles.css` owns layout and component styling; import it explicitly from `slop.ts`.
 
-The builder generates the entry for `App.svelte` and `styles.css` through `defineSlop`; no `main.ts` is needed. Non-Svelte apps can supply an optional `main.ts` exporting `default { mount(ctx, target) }` and importing their styles.
+Import the editor as `view` and optional capture components as `export` and `icon`. Filenames do not assign roles.
 
-The browser preview uses disposable memory. Refreshing resets document state. Restart `bun run dev` after source changes; native persistence is tested in a writable document copy.
+The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or the modules it imports outside components (such as `schema.ts`) resets the copy. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 
 Replace the starter's data definition:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "@hitslop/document";
-export default defineDocument({ title: s.text(), count: s.number() });
+import { defineDocument, s } from "hitslop";
+export default defineDocument({ title: s.text(), count: s.counter() });
 ```
 
-```ts title="initial.ts"
-export default { title: "Tiny Counter", count: 0 };
+Then describe the counter in `slop.ts`. Its `initial` values must fit the new schema, and its `theme` declares the colors `styles.css` uses below:
+
+```ts title="slop.ts"
+import { defineSlop } from "hitslop";
+import schema from "./schema";
+import App from "./App.svelte";
+import { countOne } from "./commands";
+import "./styles.css";
+
+export default defineSlop({
+  slug: "tiny-counter",
+  view: App,
+  commands: { countOne },
+  title: "Tiny Counter",
+  description: "Count the small things worth counting.",
+  author: { name: "Your Name" },
+  categories: ["utilities"],
+  window: { kind: "standard", width: 360, height: 360 },
+  theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
+  document: schema,
+  initial: { title: "Tiny Counter", count: 0 },
+});
+```
+
+Replace the starter's `commands.ts` with a counter action:
+
+```ts title="commands.ts"
+import doc from "./schema";
+
+export const countOne = doc.command({
+  description: "Count one more.",
+  args: {},
+  run({ tx }) { tx.fields.count.increment(); },
+});
 ```
 
 Replace `App.svelte` with:
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
-  import schema from "./schema";
-  const doc = useDocument(schema);
+  import { bindText } from "hitslop/svelte";
+  import doc from "./schema";
+  import { countOne } from "./commands";
 </script>
+<main class="counter">
+  <input aria-label="Counter title" use:bindText={doc.fields.title} />
+  <p class="counter-value">{doc.current.count}</p>
+  <button onclick={() => countOne()}>
+    Count one
+  </button>
+</main>
+```
 
-<Slop>
-  <main class="counter">
-    <input aria-label="Counter title" use:bindText={doc.fields.title} />
-    <p class="counter-value">{doc.current.count}</p>
-    <button onclick={() => doc.fields.count.set(doc.current.count + 1)}>
-      Count one
-    </button>
-  </main>
-  {#snippet icon()}<strong class="counter-icon">{doc.current.count}</strong>{/snippet}
-  {#snippet exportView()}
-    <article class="counter"><h1>{doc.current.title}</h1><p>{doc.current.count}</p></article>
-  {/snippet}
-</Slop>
+`Export.svelte`:
+
+```svelte title="Export.svelte"
+<script lang="ts">
+  import doc from "./schema";
+</script>
+<article class="counter"><h1>{doc.current.title}</h1><p>{doc.current.count}</p></article>
+```
+
+`Icon.svelte`:
+
+```svelte title="Icon.svelte"
+<script lang="ts">
+  import doc from "./schema";
+</script>
+<strong class="counter-icon">{doc.current.count}</strong>
 ```
 
 Give it ordinary CSS, using the starter's declared tokens:
@@ -97,6 +141,6 @@ bun run build
 bun run register
 ```
 
-Build emits `dist/tiny-counter.slop` with native artwork. Register installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
+Build emits `dist/tiny-counter.slop`. Register renders its Finder artwork with the Mac app and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.

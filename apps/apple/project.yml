@@ -2,20 +2,22 @@ name: hitSlop
 options:
   bundleIdPrefix: com.hitslop
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.2"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
-    SWIFT_STRICT_CONCURRENCY: minimal
+    # The app and its extensions ship as one version.
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "31"
 packages:
   HitSlopApple:
     path: Packages/HitSlopApple
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: 2.9.6
+    exactVersion: 2.10.0
 targets:
   hitSlop-macOS:
     type: application
@@ -36,17 +38,22 @@ targets:
       - package: HitSlopApple
         product: HitSlopCatalog
       - package: HitSlopApple
-        product: HitSlopRuntime
+        product: HitSlopDocument
       - package: HitSlopApple
         product: HitSlopCore
       - package: HitSlopApple
         product: HitSlopFirebase
       - package: Sparkle
         product: Sparkle
+      - target: hitSlop-QuickLookThumbnail
+      - target: hitSlop-QuickLookPreview
     postCompileScripts:
+      - name: Embed command evaluator
+        basedOnDependencyAnalysis: false
+        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-hitslop-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
-        script: '"${SRCROOT}/../../scripts/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
+        script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed hitslop-native
         basedOnDependencyAnalysis: false
         script: |
@@ -56,7 +63,7 @@ targets:
             *) exit 0 ;;
           esac
           export HITSLOP_NATIVE_ARCHS="${ARCHS:-}"
-          "${SRCROOT}/../../scripts/embed-hitslop-native.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
+          "${SRCROOT}/../../scripts/build/embed-hitslop-native.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
     postBuildScripts:
       - name: Upload Crashlytics symbols
         basedOnDependencyAnalysis: false
@@ -83,9 +90,7 @@ targets:
         INFOPLIST_FILE: App/macOS/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/macOS/hitSlop.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        MARKETING_VERSION: "1.1.1"
-        CURRENT_PROJECT_VERSION: "28"
-        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.2"
         ENABLE_HARDENED_RUNTIME: YES
         OTHER_LDFLAGS: $(inherited) -ObjC
         SKIP_INSTALL: NO
@@ -93,6 +98,61 @@ targets:
         Release:
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
           ENABLE_DEBUG_DYLIB: NO
+  # Quick Look reads a document's artwork through the core, read-only, in a sandbox: what
+  # Finder, Mail and the share sheet show for a `.slop` that left this Mac.
+  hitSlop-QuickLookThumbnail:
+    type: app-extension
+    platform: macOS
+    sources: [App/QuickLookThumbnail]
+    dependencies:
+      - package: HitSlopApple
+        product: HitSlopCore
+      - sdk: QuickLookThumbnailing.framework
+    info:
+      path: App/QuickLookThumbnail/Info.plist
+      properties:
+        CFBundleDisplayName: hitSlop Thumbnail
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
+          NSExtensionAttributes:
+            QLSupportedContentTypes: [com.hitslop.slop]
+            QLThumbnailMinimumDimension: 0
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.quicklook-thumbnail
+        CODE_SIGN_ENTITLEMENTS: App/QuickLookThumbnail/QuickLookThumbnail.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+  hitSlop-QuickLookPreview:
+    type: app-extension
+    platform: macOS
+    sources: [App/QuickLookPreview]
+    dependencies:
+      - package: HitSlopApple
+        product: HitSlopCore
+      - sdk: QuickLookUI.framework
+    info:
+      path: App/QuickLookPreview/Info.plist
+      properties:
+        CFBundleDisplayName: hitSlop Preview
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
+          NSExtensionAttributes:
+            QLIsDataBasedPreview: true
+            QLSupportedContentTypes: [com.hitslop.slop]
+            QLSupportsSearchableItems: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.quicklook-preview
+        CODE_SIGN_ENTITLEMENTS: App/QuickLookPreview/QuickLookPreview.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
 schemes:
   hitSlop-macOS:
     build:

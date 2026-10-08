@@ -139,34 +139,53 @@ private struct ToolbarFileMenu: NSViewRepresentable {
 }
 
 struct SlopToolbar: View {
+  /// What a toolbar control asks its window to do.
+  enum Action {
+    /// A document operation, which the app runs like the menu bar's.
+    case document(SlopDocumentCommand)
+    case close, minimize, togglePin, toggleTheme, reveal, copyPath
+    case openEditor(URL)
+  }
+  /// What the controls show and whether each is available.
+  struct Controls {
+    var pinned = false, canPin = false
+    /// Whether the theme panel is shown, and whether showing or hiding it is available.
+    var themeShown = false, canToggleTheme = false
+    /// Whether the app accepts document operations now.
+    var commandsEnabled = false
+  }
   let identity: SlopDocumentIdentity
+  let controls: Controls
   let menuTrackingChanged: (Bool) -> Void
   let drag: (NSEvent) -> Void
-  let pinned: Bool, commandsEnabled: Bool, close: () -> Void, minimize: () -> Void, pin: () -> Void,
-    duplicate: () -> Void, png: () -> Void, pdf: () -> Void, reveal: () -> Void,
-    copyPath: () -> Void
-  let editors: [(String, URL)], openEditor: (URL) -> Void
+  let act: (Action) -> Void
+  let editors: [(String, URL)]
   var body: some View {
     HStack(spacing: 6) {
       ToolbarDragHandle(onDrag: drag).frame(width: 18, height: 28).help("Drag window")
       HStack(spacing: 0) {
-        windowControl("xmark", "Close", .red, close)
-        windowControl("minus", "Minimize", .yellow, minimize)
+        windowControl("xmark", "Close", .red) { act(.close) }
+        windowControl("minus", "Minimize", .yellow) { act(.minimize) }
       }.fixedSize().background(SlopToolbarControlRegion())
       Divider().frame(height: 20).padding(.horizontal, 2)
-      ToolbarFileMenu(identity: identity, reveal: reveal, copyPath: copyPath)
+      ToolbarFileMenu(identity: identity, reveal: { act(.reveal) }, copyPath: { act(.copyPath) })
         .frame(minWidth: 0, maxWidth: .infinity).frame(height: 28)
-        .disabled(!commandsEnabled)
-      icon(pinned ? "pin.fill" : "pin", pinned ? "Unpin" : "Always on Top", pin).disabled(
-        !commandsEnabled).background(SlopToolbarControlRegion())
+      icon(controls.pinned ? "pin.fill" : "pin", controls.pinned ? "Unpin" : "Always on Top") { act(.togglePin) }
+        .disabled(!controls.canPin).background(SlopToolbarControlRegion())
+      icon(controls.themeShown ? "paintpalette.fill" : "paintpalette", controls.themeShown ? "Hide Theme" : "Theme") {
+        act(.toggleTheme)
+      }.disabled(!controls.canToggleTheme).background(SlopToolbarControlRegion())
+      icon("square.and.arrow.up", "Share a Copy…") {
+        act(.document(.share))
+      }.disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
-        Button("Duplicate…", action: duplicate)
+        Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
         Divider()
-        Button("Export PNG…", action: png)
-        Button("Export PDF…", action: pdf)
+        Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
+        Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
         if !editors.isEmpty {
           Divider()
-          ForEach(editors, id: \.1) { editor in Button(editor.0) { openEditor(editor.1) } }
+          ForEach(editors, id: \.1) { editor in Button(editor.0) { act(.openEditor(editor.1)) } }
         }
       } label: {
         Image(systemName: "ellipsis").frame(width: 28, height: 28).contentShape(Rectangle())
@@ -174,7 +193,6 @@ struct SlopToolbar: View {
       .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
       .background(SlopToolbarControlRegion())
       .help("More actions").accessibilityLabel("More document actions")
-      .disabled(!commandsEnabled)
     }
     .padding(.horizontal, 10).frame(height: 40)
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13))
@@ -187,7 +205,9 @@ struct SlopToolbar: View {
       menuTrackingChanged(false)
     }
   }
-  private func windowControl(_ symbol: String, _ label: String, _ color: Color, _ action: @escaping () -> Void) -> some View {
+  private func windowControl(_ symbol: String, _ label: String, _ color: Color, _ action: @escaping () -> Void)
+    -> some View
+  {
     Button(action: action) {
       Image(systemName: symbol).font(.system(size: 8, weight: .bold))
         .foregroundStyle(.black.opacity(0.65))

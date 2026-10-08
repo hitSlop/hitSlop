@@ -1,0 +1,12 @@
+# `bun run core:test` runs the Rust suite with cargo-nextest: one process per test, all
+# cores. A test still running after two minutes is a hang, reported by name.
+[profile.default]
+slow-timeout = { period = "20s", terminate-after = 6 }
+
+[profile.ci]
+fail-fast = false
+
+# `bun run core:test:extended`: the long model run, sized for CI.
+[profile.extended]
+slow-timeout = { period = "60s", terminate-after = 15 }
+fail-fast = false

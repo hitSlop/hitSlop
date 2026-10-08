@@ -1,10 +1,10 @@
 # hitSlop template roadmap
 
-Single-purpose digital objects worth building as `.slop` packages. The list is
+Single-purpose digital objects worth building as `.slop` templates. The list is
 ordered by product value, breadth of everyday use, and how well each template
 helps establish the hitSlop design language.
 
-- `[x]` implemented, reviewed, and ready in `examples/slops/`
+- `[x]` implemented and reviewed (most wait in `examples/archive/` until they move to `slop.ts`)
 - `[ ]` planned or implemented but still awaiting the current quality review
 - **Paper** favors editorial hierarchy, direct editing, and clean static export.
 - **Instrument** favors compact controls, inset readouts, and durable state.
@@ -114,6 +114,55 @@ so it is intentionally excluded from the implemented count.
 - [x] **Metronome & BPM Tapper** — Music / Instrument — Tap a tempo and run an adjustable visual and audible metronome. **Visual:** mechanical music-practice instrument with a swinging tempo indicator.
 - [x] **Pixel-Art Canvas** — Creative / Instrument — Draw on a small grid with a limited palette, undo, and clean export. **Visual:** colorful pocket-console cartridge.
 - [ ] **Poster Generator** — Creative / Paper — Edit a constrained message, hierarchy, palette, and composition, then export it. **Visual:** Swiss print-shop tool with bold type and disciplined geometry.
+
+## P4 — Student, lifestyle, and shareable sheets
+
+Ideas from 2026-10 research into what Gen Z and Gen Alpha build in Notion and share on TikTok. Each needs its own object and material, not a shared look. Shortlist for a first batch: Internship & Job Tracker, College Apps Tracker, Household Chores, Digital Closet, Project Pan, Resale Tracker, Wishlist with Cooling-Off, Scratch-Off Bucket List, Collection Tracker, Practice Log, MASH, Personality Stack Card, Birth Chart Card.
+
+### School
+
+- [ ] **Internship & Job Tracker** — Work / Instrument — Move applications through applied, assessment, interview, offer, and rejected, with follow-up dates and a coffee-chat log. **Visual:** lanyard badge with a stamped status per row. Built in `examples/slops/internship-tracker`; awaiting the quality review and not yet in `bundled.json`.
+- [ ] **College Apps Tracker** — Planning / Paper — Track reach, target, and safety schools with deadlines, essay and recommendation status, fees, and scholarships, and show what is due next. **Visual:** a stack of admissions folders with coloured tabs.
+- [ ] **Course Card** — Learning / Paper — Keep one class's professor, room, office hours, grading weights, key dates, textbook, and policies on a single reference card. **Visual:** university ID card crossed with a syllabus cover.
+- [ ] **Degree Map** — Learning / Paper + Instrument — Fill gen-ed, major, and elective requirement buckets with courses and watch credits climb toward graduation on a four-year grid. **Visual:** video-game skill tree.
+- [ ] **Exam Prep Board** — Learning / Instrument — Per exam, list weight, date, and topics with a red/amber/green confidence rating, so the weakest topics surface first. **Visual:** mission-control readiness panel.
+- [ ] **Paper Planner** — Writing / Paper — Plan an essay from thesis to argument blocks and sources, with a word-count bar against the deadline. **Visual:** clipboard of index cards with a highlighter.
+- [ ] **Service Hours Log** — School / Paper — Log volunteer and activity hours with date, supervisor, and a signature line, and export a clean sheet to hand in. **Visual:** punch time-card.
+- [ ] **Household Chores** — Home / Instrument + Paper — Rotate chores by person and day for roommates, families, or kids, with tap-to-complete, a fairness tally, optional points, and house rules. Replaces the Cleaning Schedule line in P2. **Visual:** magnetic fridge chore wheel with a spinning dial and coloured person-magnets. Built in `examples/slops/household-chores`; awaiting the quality review and not yet in `bundled.json`.
+- [ ] **Group Project Split** — Work / Paper — Assign roles, tasks, owners, and deadlines, then export a PNG for the group chat. **Visual:** pie chart cut into slices with owner chips.
+
+### Fashion, beauty, and lifestyle
+
+- [ ] **Digital Closet** — Fashion / Skin — Photograph clothes, plan a week of outfits, and see cost per wear. **Visual:** closet rail with hangers, or a polaroid grid.
+- [ ] **Wishlist with Cooling-Off** — Money / Paper — Hold wanted items behind a 30-day wait and decide buy or skip, with a dupe or already-own note. **Visual:** shopping tag with a countdown.
+- [ ] **Project Pan** — Beauty / Skin — Track products' fill level, open date, and expiry, and file finished ones on an empties shelf. **Visual:** compact mirror with makeup pans. Built in `examples/slops/project-pan`; awaiting the quality review and not yet in `bundled.json`.
+- [ ] **Skin Routine** — Beauty / Paper — Plan AM and PM steps and an actives rotation so strong products never share a night, with breakout notes. **Visual:** bathroom shelf of labelled bottles.
+- [ ] **Cycle Notebook** — Health / Paper — Mark cycle days, symptoms, and mood with a simple predicted window, kept in a local file with no account. Needs a conservative prediction rule and a not-medical-advice line. **Visual:** soft moon-phase calendar.
+- [ ] **Resale Tracker** — Money / Instrument — Record cost, listing price, fees, sold price, and profit for items sold on Depop, Vinted, or Poshmark. **Visual:** hang-tag price gun.
+- [ ] **Concert & Festival Kit** — Social / Paper + Skin — Gather tickets, travel, outfit, setlist, bracelet list, budget, and who is going, then export a story-ready card. **Visual:** ticket stub with a wristband.
+- [ ] **Gift Radar** — Social / Paper — Keep each person's birthday, sizes, likes, saved ideas, and past gifts. **Visual:** wrapped-gift tags.
+- [ ] **Scratch-Off Bucket List** — Playful / Skin — Hide a summer or semester list under scratch-off foil, reveal and tick items, and export the card. **Visual:** lottery scratch card. Built in `examples/slops/scratch-off-list`; awaiting the quality review and not yet in `bundled.json`.
+- [ ] **Content Calendar** — Creative / Paper — Plan posts with hook, caption, and shoot, edit, posted status on a monthly grid. **Visual:** film strip or contact sheet.
+
+### Everyday trackers
+
+- [ ] **Practice Log** — Learning / Instrument — Log minutes per session for an instrument, sport, language, or art, with a weekly goal, streak, and a note on what to work on next. **Visual:** worn music-teacher assignment book with sticker stars.
+- [ ] **Collection Tracker** — Hobby / Paper + Skin — Mark own, want, and duplicate across sets of cards, blind-box figures, vinyl, or stamps, with gaps visible and optional photos and price paid. **Visual:** display-case shelf with silhouettes for missing pieces, or sticker-album slots.
+- [ ] **Plant Tracker** — Home / Paper — Keep many plants with a photo, watering and feeding interval, and a due-today and overdue list. Replaces Plant Care Card in P2. Due state shows on open and in the catalog thumbnail; real notifications need a host feature that does not exist yet. **Visual:** botanical field notebook with pressed-leaf tabs.
+
+### Quizzes, fortunes, and personality sheets
+
+Each ends in one card meant to be exported and posted.
+
+- [ ] **MASH** — Games / Skin — Fill mansion, apartment, shack, and house categories with your own picks, draw the spiral, and eliminate to a shareable future card. **Visual:** spiral-notebook page in gel pen with a pencil spiral. Built in `examples/slops/mash`; awaiting the quality review and not yet in `bundled.json`.
+- [ ] **Cootie Catcher** — Games / Skin — Write your own fortunes, colours, and numbers, then fold open the paper to reveal one. **Visual:** folded origami paper with ballpoint scribbles.
+- [ ] **Slam Book** — Social / Paper — Fill a page per friend with favourites, a rate-me, most-likely-to, and a crush question. **Visual:** glittery 2000s autograph book in gel pen.
+- [ ] **Birth Chart Card** — Astrology / Paper + Skin — Enter sun, moon, rising, and optional planets from any chart site, and render a wheel with short readings and a shareable card. No ephemeris needed. **Visual:** celestial star map in navy and gold foil.
+- [ ] **Personality Stack Card** — Self / Skin — Combine MBTI, Enneagram, love language, attachment style, zodiac, and house on one ID card, with a red and green flags box. **Visual:** holographic trading card.
+- [ ] **Human Design Cheat Sheet** — Self / Paper + Instrument — Record type, strategy, authority, profile, and defined centres on a bodygraph, with a how-I-decide notes box. **Visual:** technical esoteric diagram on indigo with thin geometric lines.
+- [ ] **Daily Tarot Pull** — Self / Skin — Draw one card a day, save a reflection, and see pull history and repeats. Needs an original card deck, not Rider-Waite artwork. **Visual:** black velvet reading cloth with foil card edges.
+- [ ] **Tier List Maker** — Games / Instrument — Drag anything into S to F rows and export the image. **Visual:** brutalist sticker-slab board.
+- [ ] **Wheel of Life** — Self / Instrument — Rate eight life areas on a radar wheel and overlay past months. **Visual:** compass or dartboard dashboard.
 
 ## Prior-art inventory
 

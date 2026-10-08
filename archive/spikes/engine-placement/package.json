@@ -1,0 +1,12 @@
+{
+  "name": "hitslop-engine-placement-spike",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "loro-crdt": "1.16.2"
+  },
+  "scripts": {
+    "build:web": "bun prepare.ts",
+    "run": "bun run.ts"
+  }
+}

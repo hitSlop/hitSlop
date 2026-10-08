@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-02",
+  "scope": "Quick Checklist at 10 and 1,000 rows, one shown window. Debug Swift test harness (BenchmarkTests.themeDragCost), system WKWebView on macOS 26.6.2, Apple M1. Single run per row count.",
+  "question": "Does a color drag in the theme panel need its own preview path or a frame-rate cap, now that a theme change is an owner edit saved by the save jobs?",
+  "method": {
+    "bench": "HITSLOP_BENCH_THEME=1 bun run swift:test --filter themeDragCost",
+    "drag": "120 DocumentSession.changeTheme(.set) calls 16 ms apart (a 60 Hz picker), then flush",
+    "change_to_style_ms": "From each change (Swift wall clock) to the page's MutationObserver seeing --slop-accent set (performance.timeOrigin + now). A delivery that skips superseded changes counts from the earliest change it covers. The two clocks differ by under a millisecond, so values near zero can be slightly negative.",
+    "frames": "requestAnimationFrame does not run for the harness window, so frame times were not recorded"
+  },
+  "measurements": [
+    {
+      "rows": 10,
+      "changes": 120,
+      "deliveries": 120,
+      "change_to_style_ms": { "p50": -0.1, "p95": 0.4, "max": 9.9 },
+      "last_value_shown": true
+    },
+    {
+      "rows": 1000,
+      "changes": 120,
+      "deliveries": 96,
+      "change_to_style_ms": { "p50": 17.3, "p95": 32.5, "max": 68.9 },
+      "last_value_shown": true
+    }
+  ],
+  "finding": "Accepting a change in memory and delivering the latest palette keeps a drag live without a page-only preview: at 1,000 rows delivery trails by about one frame and skips superseded colors, and the final color always shows. No frame-rate cap is needed. Saves are not per change: autosave and flush write the palette with the document."
+}

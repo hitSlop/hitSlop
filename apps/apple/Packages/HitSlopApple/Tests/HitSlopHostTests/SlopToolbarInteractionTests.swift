@@ -1,9 +1,10 @@
 import AppKit
-import HitSlopRuntime
+import HitSlopDocument
+import HitSlopTestSupport
 import PDFKit
-@testable import HitSlopHost
 import Testing
 
+@testable import HitSlopHost
 
 @Test func toolbarHoverRecoversAndAllowsGapCrossing() {
   var state = SlopToolbarVisibility()
@@ -36,87 +37,184 @@ import Testing
   #expect(result27)
 }
 
-extension LoroClientTests {
+extension HostTests {
+  // Clicks pass through a transparent document's empty pixels, so the window server reports
+  // the window behind it there. The document's shape still decides hover unless another
+  // window covers the point.
+  @Test @MainActor func toolbarFollowsShapeOverTransparentPixels() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    SlopToolbarPointerSampler.shared.remove(controller.toolbar)
+    await controller.waitForPresentation()
+    do {
+      controller.showWindow(nil)
+      let window = try #require(controller.window)
+      let inside = NSPoint(x: window.frame.midX, y: window.frame.midY)
+      let toolbarVisible = { NSApp.windows.contains { $0 !== window && controller.owns($0) && $0.isVisible } }
+      let behind = window.windowNumber + 1_000
+      let cover = window.windowNumber + 2_000
+      controller.toolbar.refresh(point: inside, front: cover, below: behind, now: 1)
+      #expect(!toolbarVisible())
+      controller.toolbar.refresh(point: inside, front: behind, below: behind, now: 2)
+      #expect(toolbarVisible())
+      try await controller.session.close()
+    } catch {
+      try? await controller.session.close()
+      controller.window?.close()
+      throw error
+    }
+    controller.window?.close()
+  }
+
+  // A toolbar first shown while unpinned must still float above other apps' windows
+  // after pinning: a window ordered front over it (a click in another app) must not bury it.
+  @Test @MainActor func pinnedToolbarStaysAboveOtherWindows() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    SlopToolbarPointerSampler.shared.remove(controller.toolbar)
+    await controller.waitForPresentation()
+    var other: NSWindow?
+    do {
+      controller.showWindow(nil)
+      let window = try #require(controller.window)
+      controller.toolbar.refresh(
+        point: NSPoint(x: window.frame.midX, y: window.frame.midY),
+        front: window.windowNumber, now: 1)
+      let toolbar = try #require(NSApp.windows.first { $0 !== window && controller.owns($0) })
+      controller.setPinned(true)
+      let cover = NSWindow(
+        contentRect: toolbar.frame.union(window.frame), styleMask: [.borderless],
+        backing: .buffered, defer: false)
+      cover.isReleasedWhenClosed = false
+      other = cover
+      cover.orderFrontRegardless()
+      let order = (NSWindow.windowNumbers(options: []) ?? []).map(\.intValue)
+      let rank = { (window: NSWindow) in order.firstIndex(of: window.windowNumber) ?? .max }
+      #expect(toolbar.isVisible)
+      #expect(rank(toolbar) < rank(cover))
+      #expect(rank(toolbar) < rank(window))
+      other?.close()
+      try await controller.session.close()
+    } catch {
+      other?.close()
+      try? await controller.session.close()
+      controller.window?.close()
+      throw error
+    }
+    controller.window?.close()
+  }
+
   // A guest must not retain visible/focusable controls after native chrome hides.
   // Existing deadline tests do not exercise delivery into a real WKWebView.
   @Test @MainActor func guestControlsFollowNativeToolbar() async throws {
     _ = NSApplication.shared
-    let root = try captureFixture()
+    let root = try contractFixture { stage in
+      // Wrap the probe app with an authored control that follows the native toolbar.
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: stage.appendingPathComponent("assets/ui.js")), ext: "js",
+        mediaType: "text/javascript")
+      try Fixtures.writeApp(
+        """
+        import probe from "\(probe)";
+        export default { mount(ctx, target) {
+          const style = document.createElement("style");
+          style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
+          document.head.append(style);
+          const button = document.createElement("button");
+          button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
+          target.append(button);
+          return probe.mount(ctx, target);
+        } };
+        """, to: stage)
+    }
     defer { try? FileManager.default.removeItem(at: root) }
-    // Wrap the probe app with an authored control that follows the native toolbar.
-    let assets = root.appendingPathComponent("assets")
-    try FileManager.default.moveItem(at: assets.appendingPathComponent("app.js"), to: assets.appendingPathComponent("probe.js"))
-    try Data("""
-      import probe from "./probe.js";
-      export default { mount(ctx, target) {
-        const style = document.createElement("style");
-        style.textContent = '#hover-control { visibility: hidden; pointer-events: none; } html[data-slop-controls="visible"] #hover-control { visibility: visible; pointer-events: auto; }';
-        document.head.append(style);
-        const button = document.createElement("button");
-        button.id = "hover-control"; button.dataset.slopExport = "hide"; button.textContent = "Hover action";
-        target.append(button);
-        return probe.mount(ctx, target);
-      } };
-      """.utf8).write(to: assets.appendingPathComponent("app.js"))
-    let controller = try await SlopDocumentWindowController.open(packageURL: root)
-    SlopToolbarPointerSampler.shared.remove(controller)
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    SlopToolbarPointerSampler.shared.remove(controller.toolbar)
     await controller.waitForPresentation()
     let view = controller.session.webView
     do {
       // The host must initialize the signal before any pointer interaction.
-      try #require(try await view.evaluateJavaScript("document.documentElement.getAttribute('data-slop-controls')") as? String == "hidden")
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "hidden")
+      try #require(
+        try await view.evaluateJavaScript("document.documentElement.getAttribute('data-slop-controls')") as? String
+          == "hidden")
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "hidden")
       controller.showWindow(nil)
       let window = try #require(controller.window)
       let inside = NSPoint(x: window.frame.midX, y: window.frame.midY)
-      controller.refreshToolbarHover(point: inside, front: window.windowNumber, now: 1)
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "visible")
+      controller.toolbar.refresh(point: inside, front: window.windowNumber, now: 1)
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "visible")
       _ = try await view.evaluateJavaScript("document.querySelector('#hover-control').focus(); true")
       #expect(try await view.evaluateJavaScript("document.activeElement.id") as? String == "hover-control")
 
       let toolbar = try #require(NSApp.windows.first { $0 !== window && controller.owns($0) })
-      controller.refreshToolbarHover(point: NSPoint(x: toolbar.frame.midX, y: toolbar.frame.midY),
-                                     front: toolbar.windowNumber, now: 2)
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "visible")
+      controller.toolbar.refresh(
+        point: NSPoint(x: toolbar.frame.midX, y: toolbar.frame.midY),
+        front: toolbar.windowNumber, now: 2)
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "visible")
       let outside = NSPoint(x: window.frame.maxX + 500, y: window.frame.maxY + 500)
-      controller.refreshToolbarHover(point: outside, front: 0, now: 3)
+      controller.toolbar.refresh(point: outside, front: 0, now: 3)
       #expect(toolbar.isVisible)
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "visible")
-      controller.refreshToolbarHover(point: outside, front: 0, now: 3.9)
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "visible")
+      controller.toolbar.refresh(point: outside, front: 0, now: 3.9)
       #expect(!toolbar.isVisible)
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "hidden")
-      #expect(try await view.evaluateJavaScript("document.querySelector('#draft').focus(); document.querySelector('#hover-control').focus(); document.activeElement.id") as? String == "draft")
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "hidden")
+      #expect(
+        try await view.evaluateJavaScript(
+          "document.querySelector('#draft').focus(); document.querySelector('#hover-control').focus(); document.activeElement.id"
+        ) as? String == "draft")
 
-      controller.refreshToolbarHover(point: inside, front: window.windowNumber)
+      controller.toolbar.refresh(point: inside, front: window.windowNumber)
       _ = try await view.evaluateJavaScript("document.querySelector('#hover-control').disabled = true; true")
       // Miniaturization immediately hides chrome, including a busy guest control.
       controller.windowWillMiniaturize(Notification(name: NSWindow.willMiniaturizeNotification, object: window))
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "hidden")
-      controller.refreshToolbarHover(point: inside, front: window.windowNumber)
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "hidden")
+      controller.toolbar.refresh(point: inside, front: window.windowNumber)
       window.orderOut(nil)
-      controller.refreshToolbarHover()
-      #expect(try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "hidden")
+      controller.toolbar.refresh()
+      #expect(
+        try await view.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility")
+          as? String == "hidden")
       let pdf = try await SlopRenderer.exportPDFData(session: controller.session)
       #expect(PDFDocument(data: pdf)?.string?.contains("Hover action") == false)
-      #expect(try await view.evaluateJavaScript("document.documentElement.getAttribute('data-slop-controls')") as? String == "hidden")
+      #expect(
+        try await view.evaluateJavaScript("document.documentElement.getAttribute('data-slop-controls')") as? String
+          == "hidden")
 
       let pid = try #require(view.value(forKey: "_webProcessIdentifier") as? Int32)
       try #require(pid > 0)
       try #require(Darwin.kill(pid, SIGKILL) == 0)
-      let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-      while !controller.session.engine.rendererDead && ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(25))
-      }
-      try #require(controller.session.engine.rendererDead)
+      await eventually(timeout: .seconds(5)) { controller.session.rendererDead }
+      try #require(controller.session.rendererDead)
       try await controller.session.reopenSavedDocument()
-      try await controller.session.waitUntilReady()
-      #expect(try await controller.session.webView.evaluateJavaScript("document.documentElement.getAttribute('data-slop-controls')") as? String == "hidden")
+      // The replacement page reloads like any recovery; interact once it is presented.
+      await controller.waitForPresentation()
+      #expect(
+        try await controller.session.webView.evaluateJavaScript(
+          "document.documentElement.getAttribute('data-slop-controls')") as? String == "hidden")
       window.orderFront(nil)
-      controller.refreshToolbarHover(point: inside, front: window.windowNumber)
-      #expect(try await controller.session.webView.evaluateJavaScript("getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "visible")
-      try await controller.session.finish()
+      controller.toolbar.refresh(point: inside, front: window.windowNumber)
+      #expect(
+        try await controller.session.webView.evaluateJavaScript(
+          "getComputedStyle(document.querySelector('#hover-control')).visibility") as? String == "visible")
+      try await controller.session.close()
     } catch {
-      try? await controller.session.finish()
+      try? await controller.session.close()
       controller.window?.close()
       throw error
     }

@@ -1,0 +1,20 @@
+{
+  "value": {
+    "end": 0.5,
+    "start": 0.5,
+    "title": "Hourglass edited ✓"
+  },
+  "theme": {
+    "overrides": {
+      "frame": "#123456"
+    },
+    "effective": {
+      "frame": "#123456",
+      "glass": "#fff8ec5c",
+      "ink": "#2a1f17",
+      "onFrame": "#f4e7d2",
+      "sand": "#e2b15e"
+    }
+  },
+  "attachments": []
+}

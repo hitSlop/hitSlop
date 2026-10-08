@@ -1,0 +1,4 @@
+[env]
+# The same Rust/C library serves the Swift package (macOS 15) and app (15.2).
+# Do not let an installed SDK silently raise C dependencies' deployment target.
+MACOSX_DEPLOYMENT_TARGET = { value = "15.0", force = true }

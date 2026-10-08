@@ -14,9 +14,17 @@ bun run check
 bun run build
 ```
 
-Build validates the manifest and initial values, compiles Svelte and plain CSS, emits the schema and theme defaults, and uses the installed Mac app to capture native artwork. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
+Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-The project SDK and CLI identities must match. Native capture requires a Mac app supporting the requested runtime contract and minimum revision. An incompatibility is an update instruction, not a reason to compile Swift or install another document engine.
+Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
+
+### Finder artwork
+
+A template's Finder preview and icon come from one of three places:
+
+- **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
+- **The Mac app.** `slop build . --artwork native` renders whichever of the two you didn't supply from your `export` and `icon` views. `bun run register` always does this. Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
+- **Neither.** The template has no artwork, and Finder shows hitSlop's document icon. Documents created from it still get their own artwork when they are first closed in hitSlop.
 
 ## Register a local template
 
@@ -24,24 +32,24 @@ The project SDK and CLI identities must match. Native capture requires a Mac app
 bun run register
 ```
 
-Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering updates the master; it does not modify documents already created from it.
+Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering replaces the previous master once the new build is complete; it does not modify documents already created from it.
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
 
 ## Share a template or a document
 
-For a reusable app, distribute the freshly built `.slop` template. A `.slop` is a directory package; zip it when transferring through a service that does not preserve directory bundles. The recipient needs a Mac app supporting the template’s runtime contract and minimum revision. Unpack the download first, then place the complete `.slop` template in `~/.hitslop/templates`. Refresh the Mac catalog and choose **Create** to make a writable copy.
+For a reusable app, distribute the freshly built `.slop` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the hitSlop app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.hitslop/templates` and refresh.
 
-For a filled document, save and close it before copying or zipping the complete package. Its `state/` contains the actual private document and theme overrides. Inspect that content before sharing a writable copy; distributing source or a clean template does not include it. Keep active documents outside synced folders.
+For a filled document, use **Share a Copy** in the document window: it saves what you typed and shares a separate copy, while you keep editing. The copy carries the actual document, its attachments and theme overrides; inspect that content before sharing it (`slop inspect` lists what a file holds). Distributing source or a clean template does not include it. Keep active documents outside synced folders.
 
 For read-only output, export PNG or PDF:
 
 ```sh
-bunx @hitslop/cli export My.slop --format pdf --output My.pdf
+bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
-See [icons and exports](/docs/guides/icons-and-exports/) for layouts and live-versus-closed capture behavior. Live collaboration is [coming soon](/docs/guides/live-sharing/). Public template publishing and hosted discovery remain future work; file distribution and image/PDF exports work locally today.
+See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-state capture behavior. Live collaboration is [coming soon](/docs/guides/live-sharing/). Public template publishing and hosted discovery remain future work; file distribution and image/PDF exports work locally today.
 
 ## Release your source
 
-Include the manifest, schema, initial values, theme, stylesheet, components, package manifest, and Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.
+Include `slop.ts` and the modules, styles, assets and components it imports, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.

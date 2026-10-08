@@ -1,0 +1,74 @@
+{
+  "name": "addTask",
+  "args": {
+    "text": "Frozen command replay ✓"
+  },
+  "now": 1791374400000,
+  "seed": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "evaluated": {
+    "ok": true,
+    "intents": [
+      {
+        "type": "insert",
+        "path": [
+          "tasks"
+        ],
+        "value": {
+          "text": "Frozen command replay ✓",
+          "done": false,
+          "archived": false
+        },
+        "id": "00pg00000000103gb808179r0g"
+      }
+    ],
+    "result": {
+      "id": "00pg00000000103gb808179r0g"
+    }
+  },
+  "value": {
+    "tasks": [
+      {
+        "$id": "x-6yyyw505f331nsw29bjpvh38",
+        "archived": false,
+        "done": false,
+        "text": "Make a little room for the weekend"
+      },
+      {
+        "$id": "x-03yyw505d331nca39bjpvj38",
+        "archived": false,
+        "done": true,
+        "text": "Send the first draft"
+      },
+      {
+        "$id": "compat-1",
+        "archived": true,
+        "done": true,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "x-kgyyw505e3315k339bjpbj38",
+        "archived": false,
+        "done": false,
+        "text": "Take a walk without my phone"
+      },
+      {
+        "$id": "compat-2",
+        "archived": false,
+        "done": false,
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "00pg00000000103gb808179r0g",
+        "archived": false,
+        "done": false,
+        "text": "Frozen command replay ✓"
+      }
+    ],
+    "title": "Replay 2 é 中文"
+  }
+}

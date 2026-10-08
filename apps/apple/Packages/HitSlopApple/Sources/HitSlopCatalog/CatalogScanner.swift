@@ -1,101 +1,136 @@
 import Foundation
 import HitSlopCore
+import HitSlopDocument
 import HitSlopFeatures
-import HitSlopRuntime
 
-/// Filesystem work is isolated from the main actor and yields during large enumerations.
+/// Catalog file work runs on its own queue, off the main actor and away from document
+/// opening. Installed templates are validated once per version; recent documents are
+/// listed from their checked apps.
 actor CatalogScanner {
-    func local(at root: URL, makeImmutable: Bool = true) async throws -> LocalTemplateSnapshot {
-        try Task.checkCancellation()
-        if makeImmutable { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
-        let children = try FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-        ).sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        var result = LocalTemplateSnapshot()
-        for child in children where child.pathExtension.lowercased() == "slop" {
-            try Task.checkCancellation()
-            do {
-                let package = try await SlopPreparation.run {
-                    let package = try SlopPackage(rootURL: child)
-                    try package.validateAsTemplate()
-                    return package
-                }
-                guard child.deletingPathExtension().lastPathComponent == package.manifest.slug else {
-                    throw SlopPackageError.invalid("installed filename must match manifest slug")
-                }
-                let values = try? child.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
-                let bytes = try await byteCount(child)
-                try Task.checkCancellation()
-                if makeImmutable { try? SlopDuplicator.makeImmutable(child) }
-                result.templates.append(LocalTemplate(
-                    packageURL: child, icon: artwork(at: package.iconURL), preview: artwork(at: package.previewURL),
-                    manifest: package.manifest, packageBytes: bytes,
-                    createdAt: values?.creationDate, updatedAt: values?.contentModificationDate
-                ))
-            } catch is CancellationError { throw CancellationError() }
-            catch {
-                result.issues.append("\(child.lastPathComponent): \(error.localizedDescription)")
-                let diagnostic = error is SlopPackageError || error is DecodingError
-                  ? SlopFailureContext(.rejection, reason: .invalidPackage) : .classify(error)
-                if !result.diagnostics.contains(diagnostic) { result.diagnostics.append(diagnostic) }
-            }
-            await Task.yield()
-        }
-        return result
+  /// A template file as last validated. Installs replace the whole file, so its identity,
+  /// date or size changes with every new version.
+  private struct Version: Equatable, Sendable {
+    let identifier: UInt64?
+    let modified: Date?
+    let size: Int?
+    init(_ url: URL) {
+      let values = try? url.resourceValues(forKeys: [.fileIdentifierKey, .contentModificationDateKey, .fileSizeKey])
+      identifier = values?.fileIdentifier
+      modified = values?.contentModificationDate
+      size = values?.fileSize
     }
+  }
+  private enum Outcome: Sendable {
+    case template(CatalogEntry)
+    case issue(String, SlopFailureContext)
+  }
+  /// Per templates folder, each template file's last validation.
+  private var validated: [URL: [URL: (version: Version, outcome: Outcome)]] = [:]
 
-    func recents(_ urls: [URL], templatesRoot: URL) async throws -> [CatalogEntry] {
-        try Task.checkCancellation()
-        var seen = Set<URL>()
-        var entries: [CatalogEntry] = []
-        for original in urls {
-            try Task.checkCancellation()
-            guard (try? original.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
-            let url = original.standardizedFileURL.resolvingSymlinksInPath()
-            guard url.pathExtension.lowercased() == "slop", seen.insert(url).inserted,
-                  FileManager.default.fileExists(atPath: url.path),
-                  !DocumentFactory.isManagedTemplatePackage(url, templatesRoot: templatesRoot) else { continue }
-            let package = try? await SlopPreparation.run { try SlopPackage(rootURL: url) }
-            var entry = CatalogEntry(
-                id: "recent:\(url.path)", source: .recent(url),
-                title: package?.manifest.title ?? url.deletingPathExtension().lastPathComponent
-            )
-            if let package {
-                CatalogServices.apply(package.manifest, to: &entry)
-                let icon = artwork(at: package.iconURL), preview = artwork(at: package.previewURL)
-                entry.icons = [icon, preview]
-                entry.previews = [preview, icon]
-            }
-            entry.packageBytes = try await byteCount(url)
-            let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
-            entry.createdAt = values?.creationDate
-            entry.updatedAt = values?.contentModificationDate
-            entries.append(entry)
-            await Task.yield()
-        }
-        return entries
+  func local(at root: URL) async throws -> LocalTemplateSnapshot {
+    try Task.checkCancellation()
+    let children = try await SlopPreparation.run(on: SlopPreparation.catalog) {
+      // The installed templates folder may not exist yet.
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      return try FileManager.default.contentsOfDirectory(
+        at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+      ).filter { $0.pathExtension == "slop" }
+        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
+    var result = LocalTemplateSnapshot()
+    var seen: [URL: (version: Version, outcome: Outcome)] = [:]
+    for child in children {
+      try Task.checkCancellation()
+      let version = Version(child)
+      let outcome: Outcome
+      if let cached = validated[root]?[child], cached.version == version {
+        outcome = cached.outcome
+      } else {
+        outcome = try await validate(child)
+      }
+      seen[child] = (version, outcome)
+      switch outcome {
+      case .template(let template): result.templates.append(template)
+      case .issue(let issue, let diagnostic):
+        result.issues.append(issue)
+        if !result.diagnostics.contains(diagnostic) { result.diagnostics.append(diagnostic) }
+      }
+    }
+    // Removed templates leave the cache.
+    validated[root] = seen
+    return result
+  }
 
-    private func artwork(at url: URL) -> CatalogArtwork {
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        return CatalogArtwork(url: url, modifiedAt: values?.contentModificationDate, byteCount: values?.fileSize)
+  private func validate(_ child: URL) async throws -> Outcome {
+    do {
+      let template = try await SlopPreparation.run(on: SlopPreparation.catalog) {
+        Self.entry(template: try SlopSummary(url: child, template: true))
+      }
+      return .template(template)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      return .issue("\(child.lastPathComponent): \(error.localizedDescription)", .classify(error))
     }
+  }
 
-    private func byteCount(_ root: URL) async throws -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(
-            at: root, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]
-        ) else { return 0 }
-        var total: Int64 = 0
-        var count = 0
-        while let url = enumerator.nextObject() as? URL {
-            total += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-            count += 1
-            if count.isMultiple(of: 128) {
-                try Task.checkCancellation()
-                await Task.yield()
-            }
-        }
-        try Task.checkCancellation()
-        return total
+  func recents(_ urls: [URL]) async throws -> [CatalogEntry] {
+    try Task.checkCancellation()
+    var seen = Set<URL>()
+    var entries: [CatalogEntry] = []
+    for original in urls {
+      try Task.checkCancellation()
+      guard let url = try? SlopFile.resolvedRoot(original), seen.insert(url).inserted,
+        let entry = try await recent(url)
+      else { continue }
+      entries.append(entry)
     }
+    return entries
+  }
+
+  /// A recent document's entry, or nil once it no longer exists.
+  func recent(_ url: URL) async throws -> CatalogEntry? {
+    try await SlopPreparation.run(on: SlopPreparation.catalog) {
+      guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+      guard let file = try? SlopSummary(url: url) else {
+        var entry = CatalogEntry(
+          id: "recent:\(url.path)", source: .recent(url), title: url.deletingPathExtension().lastPathComponent)
+        Self.dates(url, &entry)
+        return entry
+      }
+      return Self.entry(file, source: .recent(url), id: "recent:\(url.path)")
+    }
+  }
+
+  /// A checked template's catalog entry, keyed by its path.
+  static func entry(template file: SlopSummary) -> CatalogEntry {
+    entry(file, source: .local(file.url), id: "local:\(file.url.path)")
+  }
+  private static func entry(_ file: SlopSummary, source: CatalogEntry.Source, id: String) -> CatalogEntry {
+    let metadata = file.metadata
+    var entry = CatalogEntry(id: id, source: source, title: metadata.title)
+    entry.slug = metadata.slug
+    entry.description = metadata.description
+    entry.categories = metadata.categories
+    entry.authorName = metadata.author.name
+    entry.authorURL = metadata.author.url.flatMap(URL.init(string:))
+    let icon = artwork(file.url, .icon)
+    let preview = artwork(file.url, .preview)
+    entry.icons = [icon, preview]
+    entry.previews = [preview, icon]
+    entry.fileBytes = file.byteCount
+    dates(file.url, &entry)
+    return entry
+  }
+  private static func dates(_ url: URL, _ entry: inout CatalogEntry) {
+    let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+    entry.createdAt = values?.creationDate
+    entry.updatedAt = values?.contentModificationDate
+  }
+
+  private static func artwork(_ file: URL, _ name: SlopArtwork.Name) -> CatalogArtwork {
+    let values = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+    return CatalogArtwork(
+      file: file, name: name, modifiedAt: values?.contentModificationDate, byteCount: values?.fileSize)
+  }
 }

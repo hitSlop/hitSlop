@@ -44,13 +44,11 @@
 				<string>slop</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>hitSlop Document</string>
+			<string>Slop document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
-			<key>LSTypeIsPackage</key>
-			<true/>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.hitslop.slop</string>
@@ -63,11 +61,11 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.hitslop.slop</string>
 			<key>UTTypeDescription</key>
-			<string>hitSlop Document</string>
+			<string>Slop document</string>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>com.apple.package</string>
-				<string>public.composite-content</string>
+				<string>public.data</string>
+				<string>public.content</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
@@ -75,6 +73,13 @@
 				<array>
 					<string>slop</string>
 				</array>
+			</dict>
+			<key>UTTypeIcons</key>
+			<dict>
+				<key>UTTypeIconBadgeName</key>
+				<string>DocumentBadge</string>
+				<key>UTTypeIconText</key>
+				<string>slop</string>
 			</dict>
 		</dict>
 	</array>

@@ -1,28 +1,37 @@
-name: Release macOS
+name: Release hitSlop
 
 on:
   push:
     tags:
-      - "macos-v*"
+      - "v*"
   # Manual runs validate the full release gate without signing or publishing.
   workflow_dispatch:
 
 concurrency:
-  group: macos-release-${{ github.ref_name }}
+  group: hitslop-release
   cancel-in-progress: false
 
 permissions: {}
 
 jobs:
+  engines:
+    uses: ./.github/workflows/engines.yml
+    permissions:
+      contents: read
   release:
+    needs: engines
     name: ${{ github.event_name == 'push' && 'Sign, notarize, and publish' || 'Release check (dry run)' }}
     if: github.repository == 'hitslop/hitslop'
     runs-on: macos-15
     permissions:
       contents: write
+      actions: read
+      id-token: write
     # Signing and notarization secrets are scoped to the steps that use them, so
     # dependency installs, the test suite and third-party actions never see them.
     env:
+      # The gate and the archive build what ships: the `dist` Cargo profile.
+      HITSLOP_CARGO_PROFILE: dist
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
     steps:
@@ -48,21 +57,39 @@ jobs:
             fi
           done
       - uses: ./.github/actions/prepare-checks
+        with:
+          webkit: "true"
+      - name: Download candidate engines
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --pattern 'engine-*' --dir generated/engine-artifacts
+          mkdir -p generated/engines
+          for folder in generated/engine-artifacts/engine-*; do cp -R "$folder/" generated/engines/; done
+      - name: Resume recorded candidate
+        id: candidate
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/release/publish.ts resume
       - uses: ./.github/actions/native-cache
         with:
           templates: release
       - name: Check release identity
         if: github.event_name == 'push'
-        run: bun scripts/v1/release-bundle.ts --preflight
+        run: bun scripts/release/bundle.ts --preflight
       - run: bun install --cwd apps/landing --frozen-lockfile
       - run: brew install xcodegen
       # Tags accept the signed Release app during packaging instead of building a Debug app.
       - name: Validate release artifacts
+        if: steps.candidate.outputs.resumed != 'true'
         run: bun run release:check ${{ github.event_name == 'push' && '--skip-app' || '' }}
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          # Tags require their frozen tests/compat entry.
+          HITSLOP_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
       - name: Import Developer ID certificate
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -79,7 +106,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
       - name: Package notarized DMG
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
@@ -87,13 +114,13 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p .hitslop/v1-evidence
-          scripts/package-macos-release.sh 2>&1 | tee .hitslop/v1-evidence/packaging.log
+          mkdir -p .hitslop/evidence
+          scripts/release/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
       - name: Verify Gatekeeper
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#macos-v}"
+          VERSION="${GITHUB_REF_NAME#v}"
           APP="$RUNNER_TEMP/verify/hitSlop.app"
           mkdir -p "$RUNNER_TEMP/verify"
           hdiutil attach "dist/macos/hitSlop-${VERSION}.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/dmg"
@@ -104,51 +131,49 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"
-          bun scripts/v1/release-artifact.ts "$APP"
+          bun scripts/release/artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
           ditto -x -k "dist/macos/hitSlop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
           spctl --assess --type execute "$RUNNER_TEMP/verify-zip/hitSlop.app"
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
-      - name: Retain tested npm packages and sealed runtime
-        if: github.event_name == 'push'
+      - name: Retain tested npm packages
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         run: |
-          bun scripts/v1/release-bundle.ts
-          git diff --exit-code -- runtimes/releases.json
+          bun scripts/release/bundle.ts
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
-      - name: Publish GitHub Release
+      - name: Retain complete candidate for interrupted uploads
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-candidate
+          path: dist/macos
+          retention-days: 90
+      - name: Stage immutable GitHub artifacts
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#macos-v}"
-          NOTES="$RUNNER_TEMP/release-notes.md"
-          SDK_VERSION=$(bun -e 'console.log((await Bun.file("dist/macos/release-record.json").json()).runtime.sdkVersion)')
-          CLI_VERSION=$(bun -e 'console.log((await Bun.file("dist/macos/release-record.json").json()).packageVersions.cli)')
-          cat > "$NOTES" <<EOF
-          hitSlop $VERSION for Apple silicon Macs.
-
-          Signed and notarized by Apple (Developer ID: Mushroom DAO Holdings Corp.).
-          Requires a Mac with an Apple M-series processor and macOS 14 or newer.
-          Drag hitSlop.app into Applications, then create a document from the included template collection.
-
-          This release uses hitSlop document runtime contract 2. Documents created with pre-release 1.0.x builds are not supported; create them again from the included templates.
-          The compatible authoring packages are @hitslop/schema and @hitslop/document $SDK_VERSION, with @hitslop/cli $CLI_VERSION.
-          EOF
-          gh release create "$GITHUB_REF_NAME" \
-            --title "hitSlop $VERSION" \
-            --notes-file "$NOTES" \
-            "dist/macos/hitSlop-${VERSION}.dmg" \
-            "dist/macos/hitSlop-${VERSION}.zip" \
-            dist/macos/hitSlop.dmg \
-            dist/macos/hitSlop.zip \
-            dist/macos/appcast.xml \
-            dist/macos/SHA256SUMS \
-            dist/macos/hitslop-*.tgz \
-            dist/macos/runtime-*.tar.gz \
-            dist/macos/runtime-releases.json \
-            dist/macos/release-record.json
+        run: bun scripts/release/publish.ts stage
+      - name: Prepare npm trusted publisher
+        if: github.event_name == 'push'
+        run: npm install -g npm@11.21.0
+      - name: Publish the tested npm tarball
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/release/publish.ts npm
+      - name: Promote npm and Sparkle
+        id: promotion
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/release/publish.ts promote
+      - name: Deploy documentation and landing page
+        if: steps.promotion.outputs.promoted == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun run --cwd apps/landing deploy
       - name: Remove temporary signing credentials
         if: always()
         run: |
@@ -163,7 +188,7 @@ jobs:
         with:
           name: release-evidence
           path: |
-            .hitslop/v1-evidence
+            .hitslop/evidence
             dist/macos/release-record.json
             dist/macos/SHA256SUMS
           include-hidden-files: true

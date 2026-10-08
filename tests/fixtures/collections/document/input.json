@@ -1,0 +1,184 @@
+{
+  "packageFormat": 1,
+  "runtimeABI": 1,
+  "declaration": {
+    "metadata": {
+      "author": {
+        "name": "hitSlop"
+      },
+      "slug": "collection-conformance",
+      "title": "Collection conformance",
+      "description": "Records, scalar lists and optional text conformance fixture.",
+      "categories": [
+        "utilities"
+      ]
+    },
+    "window": {
+      "kind": "standard",
+      "width": 480,
+      "height": 480
+    },
+    "document": {
+      "kind": "object",
+      "properties": {
+        "title": {
+          "kind": "text"
+        },
+        "done": {
+          "kind": "record",
+          "value": {
+            "kind": "boolean"
+          }
+        },
+        "widths": {
+          "kind": "record",
+          "value": {
+            "kind": "integer",
+            "min": 56,
+            "max": 320
+          }
+        },
+        "cells": {
+          "kind": "record",
+          "value": {
+            "kind": "object",
+            "properties": {
+              "input": {
+                "kind": "string",
+                "maxLength": 10
+              },
+              "tint": {
+                "kind": "optional",
+                "inner": {
+                  "kind": "enum",
+                  "values": [
+                    "red",
+                    "blue"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "pages": {
+          "kind": "record",
+          "value": {
+            "kind": "object",
+            "properties": {
+              "text": {
+                "kind": "text"
+              }
+            }
+          }
+        },
+        "pixels": {
+          "kind": "list",
+          "item": {
+            "kind": "string"
+          }
+        },
+        "presets": {
+          "kind": "list",
+          "item": {
+            "kind": "integer",
+            "min": 40,
+            "max": 240
+          }
+        },
+        "notes": {
+          "kind": "optional",
+          "inner": {
+            "kind": "text"
+          }
+        },
+        "habits": {
+          "kind": "list",
+          "item": {
+            "kind": "object",
+            "properties": {
+              "name": {
+                "kind": "text"
+              },
+              "checkins": {
+                "kind": "record",
+                "value": {
+                  "kind": "integer",
+                  "min": 1
+                }
+              }
+            }
+          }
+        },
+        "stats": {
+          "kind": "object",
+          "properties": {
+            "guesses": {
+              "kind": "list",
+              "item": {
+                "kind": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "initial": {
+      "title": "Board",
+      "done": {},
+      "widths": {
+        "A": 100
+      },
+      "cells": {},
+      "pages": {},
+      "pixels": [
+        "#fff",
+        "#fff",
+        "#fff"
+      ],
+      "presets": [
+        60,
+        90
+      ],
+      "habits": [
+        {
+          "$id": "h1",
+          "name": "Walk",
+          "checkins": {}
+        }
+      ],
+      "stats": {
+        "guesses": []
+      }
+    },
+    "theme": [
+      {
+        "token": "accent",
+        "color": "#335577"
+      }
+    ],
+    "commands": [],
+    "views": {
+      "export": false,
+      "icon": false
+    }
+  },
+  "roles": {
+    "ui": "ui.js",
+    "style": "ui.css"
+  },
+  "resources": [
+    {
+      "kind": "app",
+      "key": "ui.js",
+      "mediaType": "text/javascript",
+      "path": "assets/ui.js"
+    },
+    {
+      "kind": "app",
+      "key": "ui.css",
+      "mediaType": "text/css",
+      "path": "assets/ui.css"
+    }
+  ],
+  "artwork": {}
+}

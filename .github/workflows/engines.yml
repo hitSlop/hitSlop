@@ -1,0 +1,55 @@
+name: Engines
+# The file engine (`crates/slop-engine`) for every platform the published CLI supports. A
+# release downloads these artifacts into `generated/engines/` before capturing its
+# compatibility entry, which packs the npm packages (docs/guides/releasing.md).
+# Run it on the release candidate's commit, before the capture.
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - id: platforms
+        run: echo "matrix=$(jq -c '{include:.}' scripts/build/platforms.json)" >> "$GITHUB_OUTPUT"
+  build:
+    needs: platforms
+    strategy:
+      fail-fast: true
+      matrix: ${{ fromJSON(needs.platforms.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CC_x86_64_unknown_linux_musl: musl-gcc
+      CC_aarch64_unknown_linux_musl: musl-gcc
+      FEATURES: ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: rustup target add ${{ matrix.target }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      # The release flags every build of the core uses: no machine paths in the binary.
+      - run: echo "RUSTFLAGS=$(bun scripts/build/core.ts --rustflags)" >> "$GITHUB_ENV"
+      # The engine's own tests run on the binary this runner built, in the profile that ships.
+      - run: cargo test --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
+      - run: cargo build --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
+      # engine.json records what the binary was built from; packing refuses an engine
+      # from another commit or core (scripts/build/packages.ts).
+      - run: |
+          mkdir -p engines/${{ matrix.platform }}
+          cp target/${{ matrix.target }}/dist/slop-engine engines/${{ matrix.platform }}/
+          build_id=$(engines/${{ matrix.platform }}/slop-engine --build-id)
+          printf '{"commit":"%s","buildId":"%s"}\n' "$GITHUB_SHA" "$build_id" > engines/${{ matrix.platform }}/engine.json
+          cat engines/${{ matrix.platform }}/engine.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: engine-${{ matrix.platform }}
+          path: engines
+          overwrite: true

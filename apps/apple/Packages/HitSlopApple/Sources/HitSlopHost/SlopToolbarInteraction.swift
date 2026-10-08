@@ -21,7 +21,10 @@ struct SlopToolbarVisibility {
       outsideSince = nil
       return true
     }
-    guard visible else { outsideSince = nil; return false }
+    guard visible else {
+      outsideSince = nil
+      return false
+    }
     if outsideSince == nil { outsideSince = now }
     return now - (outsideSince ?? now) < 0.8
   }
@@ -52,8 +55,10 @@ struct SlopToolbarVisibility {
     }
     let file = views.compactMap { $0 as? SlopToolbarFileButton }
       .first { contains($0, event.locationInWindow) }
-    while let next = nextEvent(matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture,
-                               inMode: .eventTracking, dequeue: true) {
+    while let next = nextEvent(
+      matching: [.leftMouseDragged, .leftMouseUp], until: .distantFuture,
+      inMode: .eventTracking, dequeue: true)
+    {
       if next.type == .leftMouseUp {
         if let file, file.isEnabled, contains(file, next.locationInWindow) { file.performClick(nil) }
         return
@@ -67,37 +72,55 @@ struct SlopToolbarVisibility {
 }
 
 /// A single sampler recovers missed tracking events, including in inactive pinned windows.
+/// Pointer movement in any app, a window that may have appeared under the pointer, or
+/// entering a document starts it; it stops once no window shows its toolbar (including
+/// the grace period before it hides), so a still pointer costs nothing.
 @MainActor final class SlopToolbarPointerSampler {
   static let shared = SlopToolbarPointerSampler()
   private struct Entry {
     weak var owner: AnyObject?
-    weak var window: NSWindow?
-    let update: (NSPoint, Int) -> Void
+    /// Refreshes one window's hover state; true while its toolbar shows.
+    let update: (NSPoint, Int) -> Bool
   }
   private var entries: [ObjectIdentifier: Entry] = [:]
   private var timer: Timer?
+  /// Sees pointer events delivered to other apps, where an inactive app's tracking areas
+  /// miss entries. Mouse events need no Accessibility permission.
+  private var pointerMonitor: Any?
 
   private var observers: [NSObjectProtocol] = []
 
   private init() {
-    for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didDeminiaturizeNotification,
-                 NSApplication.didBecomeActiveNotification, NSApplication.didUnhideNotification] {
-      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.startSampling() }
-      })
+    for name in [
+      NSWindow.didChangeOcclusionStateNotification, NSWindow.didDeminiaturizeNotification,
+      NSApplication.didBecomeActiveNotification, NSApplication.didUnhideNotification,
+    ] {
+      observers.append(
+        NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.start() }
+        })
     }
-    observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-      forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-        MainActor.assumeIsolated { self?.startSampling() }
+    observers.append(
+      NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated { self?.start() }
       })
   }
 
-  func add(_ owner: AnyObject, window: NSWindow?, update: @escaping (NSPoint, Int) -> Void) {
-    entries[ObjectIdentifier(owner)] = Entry(owner: owner, window: window, update: update)
-    startSampling()
+  func add(_ owner: AnyObject, update: @escaping (NSPoint, Int) -> Bool) {
+    entries[ObjectIdentifier(owner)] = Entry(owner: owner, update: update)
+    if pointerMonitor == nil {
+      pointerMonitor = NSEvent.addGlobalMonitorForEvents(
+        matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+      ) { [weak self] _ in
+        MainActor.assumeIsolated { self?.start() }
+      }
+    }
+    start()
   }
 
-  private func startSampling() {
+  func start() {
     guard timer == nil, !entries.isEmpty else { return }
     let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.sample() }
@@ -108,26 +131,23 @@ struct SlopToolbarVisibility {
 
   func remove(_ owner: AnyObject) {
     entries.removeValue(forKey: ObjectIdentifier(owner))
-    stopIfEmpty()
+    guard entries.isEmpty else { return }
+    stop()
+    if let pointerMonitor { NSEvent.removeMonitor(pointerMonitor) }
+    pointerMonitor = nil
   }
 
-  private func stopIfEmpty() {
-    if entries.isEmpty { timer?.invalidate(); timer = nil }
+  private func stop() {
+    timer?.invalidate()
+    timer = nil
   }
 
   private func sample() {
     entries = entries.filter { $0.value.owner != nil }
-    stopIfEmpty()
-    guard !entries.isEmpty else { return }
     let point = NSEvent.mouseLocation
     let front = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
-    for entry in entries.values { entry.update(point, front) }
-    if !entries.values.contains(where: { entry in
-      guard let window = entry.window else { return false }
-      return window.isVisible && window.occlusionState.contains(.visible) && !window.isMiniaturized && window.isOnActiveSpace && !NSApp.isHidden
-    }) {
-      timer?.invalidate()
-      timer = nil
-    }
+    // Every window refreshes, so one leaving hides while another shows.
+    let showing = entries.values.reduce(false) { showing, entry in entry.update(point, front) || showing }
+    if !showing { stop() }
   }
 }

@@ -1,55 +1,66 @@
 ---
-title: Manifest and windows
+title: App definition and windows
 description: Define a slop's identity, discovery metadata, initial window, and native window behavior.
 ---
 
-Read `manifest.json` first. It is the package contract for a slop: its identity,
-author, catalog metadata, and initial native window. The manifest is immutable in
-a built template or document, so make changes in the source project and rebuild.
-Writable state is managed by the document runtime; media import is deferred.
+Read `slop.ts` first. It declares a slop's app: its identity, author, catalog
+metadata, initial native window, theme colors and a new document's values. The build stores catalog fields and a typed definition, with initial values in its
+checkpoint. The embedded app and its defaults are
+immutable in a built template or document, so make changes in the source project and
+rebuild. Writable state and imported attachments belong to the document.
 
-## Start with a complete manifest
+## Start with a complete `slop.ts`
 
-```json title="manifest.json"
-{
-  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
-  "author": {
-    "name": "Your Name",
-    "url": "https://example.com"
-  },
-  "slug": "tiny-counter",
-  "title": "Tiny Counter",
-  "description": "A small counter that stays on your desktop.",
-  "categories": ["utilities"],
-  "presentation": {
-    "width": 420,
-    "height": 520,
-    "resizable": true,
-    "shape": "rounded"
-  }
-}
+The `document` field takes a `defineDocument` value; `initial` must fit it:
+
+```ts title="schema.ts"
+import { defineDocument, s } from "hitslop";
+
+export default defineDocument({ count: s.counter() });
 ```
+
+```ts title="slop.ts"
+import { defineSlop } from "hitslop";
+import schema from "./schema";
+import App from "./App.svelte";
+
+export default defineSlop({
+  slug: "tiny-counter",
+  view: App,
+  title: "Tiny Counter",
+  description: "A small counter that stays on your desktop.",
+  author: { name: "Your Name", url: "https://example.com" },
+  categories: ["utilities"],
+  window: { kind: "standard", width: 420, height: 520, resizable: true, shape: "22px" },
+  theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
+  document: schema,
+  initial: { count: 0 },
+});
+```
+
+Vite compiles the declaration and its imports. A restricted native evaluator initializes
+it, then Rust checks the resulting definition and resource inventory. Metadata and
+initial values do not ship in `ui.js`. The explicit `slug` is independent of the source
+folder's name. Import CSS in this entry or in a component; it is never discovered by name.
 
 ## Identity and discovery fields
 
 | Field | Rule |
 | --- | --- |
-| `$schema` | Must be `https://api.hitslop.com/schemas/v1/manifest.schema.json`. |
-| `runtime` | Required, exactly `hitslop-v1`. |
+| `slug` | Explicit identity: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
 | `author.url` | Optional HTTP or HTTPS URL, up to 2,048 characters. |
-| `slug` | 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
 | `title` | Required, 1–80 characters. |
 | `description` | Required, 1–240 characters. Explain the slop's specific job. |
 | `categories` | One or two unique catalog categories. |
 
 Categories are `productivity`, `utilities`, `finance`, `media`, `games`,
-`developer-tools`, `education`, `business`, `personal`, and `other`.
+`developer-tools`, `education`, `business`, `personal`, `health`, `creative`, `music`,
+and `other`.
 
 ## Set the initial window
 
-`presentation.width` must be an integer from 240 to 4,096 pixels. Height must
+`window.width` must be an integer from 240 to 4,096 pixels. Height must
 be an integer from 180 to 4,096 pixels. Choose the smallest size at which the
 main job feels complete; this becomes the initial native window and the basis
 for capture work.
@@ -59,19 +70,87 @@ Standard windows support these options:
 | Option | Values | Behavior |
 | --- | --- | --- |
 | `resizable` | `true` or `false` | Whether the user can resize the window. The host defaults to `true`. |
-| `shape` | `rounded`, `ellipse`, or `capsule` | Selects a built-in native silhouette. |
-| `background` | `transparent` | Makes the WebView background transparent for a custom HTML surface. |
+| `shape` | CSS radius string or SVG path object | Defines the native silhouette; defaults to `"22px"`. |
+| `lockAspect` | Boolean, default false | Preserves the initial width/height ratio when resizing. |
+| `background` | `transparent` or `glass` | `transparent` shows the desktop behind a custom HTML surface; `glass` frosts it. |
+
+## Choose a window shape
+
+`shape` is either a CSS radius string or a vector path. The host builds one native
+silhouette from it and uses that silhouette for clipping, click-through, and the
+mask on window-sized fallback PNG captures.
+
+**Radius strings** accept one to four nonnegative `px` or `%` values, unitless `0`,
+and an optional `/` followed by vertical radii. Corners run top-left, top-right,
+bottom-right, bottom-left, and overlapping radii shrink as in CSS. Use `"50%"` for an
+ellipse or `"9999px"` for a pill. Radius strings are limited to 256 ASCII characters.
+
+```ts
+shape: "48px 8px 72px 0 / 24px 32px 18px 0",
+```
+
+**Vector paths** use `{ path, viewBox, fillRule }`. Coordinates are top-left
+and y-down. `viewBox` defaults to the window's `width` and `height`, so the path scales when
+the window resizes, and `fillRule` defaults to `nonzero`. All SVG path commands are
+supported. Paths are limited to 4,096 ASCII characters, 512 commands (implicit
+repetitions count) and 2,048 expanded segments; each `viewBox` side is 1–16,384.
+Arcs target 0.1 logical-point accuracy at the declared window size and must fit the
+expanded-segment limit. Numerically unstable arcs are refused; nonzero arc radii must
+exceed 0.00001 `viewBox` units. A concave notch on the right edge:
+
+```ts
+shape: {
+  path: "M24 0 H456 Q480 0 480 24 V132 L432 156 L480 180 V336 Q480 360 456 360 H0 V48 Z",
+  viewBox: [480, 360],
+},
+```
+
+Set `fillRule: "evenodd"` and add a second subpath to cut a hole. Clicks in the
+hole reach whatever is underneath the window:
+
+```ts
+shape: {
+  path: "M24 0 H456 Q480 0 480 24 V336 Q480 360 456 360 H0 V48 Z M350 56 a44 32 0 1 0 0 64 a44 32 0 1 0 0 -64 Z",
+  viewBox: [480, 360],
+  fillRule: "evenodd",
+},
+```
+
+Add `lockAspect: true` to keep the window at its initial ratio while resizing.
+The build refuses invalid geometry. Dedicated exports and icons remain
+independent of the window silhouette. Radius shapes expose their radius to the
+page as `--slop-window-radius`; path shapes set it to `0`.
 
 The window is the stage in every mode. The host resets the page margins, and
-`<Slop>` (or a framework-neutral `data-hitslop-root` element) and its mount
+the automatic app root (or a framework-neutral `data-hitslop-root` element) and its mount
 ancestors fill the window. Prefer `height: 100%`, grid, or flex inside it rather
 than repeating page sizing or using `100vh`; deliberate overrides remain possible.
 For a transparent window, draw the visible surface inside your app: the host
-overrides ordinary `html`/`body` backgrounds with transparency.
+overrides ordinary `html`/`body` backgrounds with transparency, and a more specific or
+`!important` page background defeats it.
 
-The native host derives `data-slop-presentation` as `standard`, `transparent`, or `skin`
-and exposes initial dimensions through `--slop-width` and `--slop-height`.
-`slop dev` previews the window at its manifest size with the same shape or skin.
+A glass window puts the system's frosted material behind the page and keeps your page
+background. Give it a translucent theme color, such as `paper: "#f6f3ee99"` used as
+`body { background: var(--slop-paper) }`: the desktop shows through blurred, and
+anyone can make the window clearer or more solid from the theme panel. An opaque
+background hides the glass. The frost stays light in dark mode, as your palette does;
+a dark tint makes smoked glass. With Reduce Transparency on, macOS draws the frost as a
+solid light surface, so keep text readable over it as well. Exports and icons can't
+capture the blur, so a translucent area stays translucent there; paint a solid surface
+in `Export.svelte` when the export should look finished.
+
+The native host exposes the presentation to your CSS:
+
+| Host value | Meaning |
+| --- | --- |
+| `data-slop-presentation` | `standard`, `transparent`, `glass`, or `skin` |
+| `--slop-window-radius` | The radius shape; `0` for paths, absent for PNG skins |
+| `data-slop-resizable` | Present when the person can resize the window |
+| `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements |
+| `data-slop-controls` | `visible` or `hidden`, following the native hover toolbar |
+
+`slop dev` previews the window at its declared `window` size with the same shape or skin, but
+without these host values; lay out from the actual viewport rather than assuming them.
 
 Keep controls inside the visible shape and test focus, resizing, and dragging
 at the smallest size you support.
@@ -79,20 +158,41 @@ at the smallest size you support.
 ## Resize the app and move the window
 
 An unskinned app can request a new bounded native size at runtime. The host
-keeps the result on the visible screen; the manifest remains the next launch's
-initial size.
+keeps the result on the visible screen and returns the applied size; `window`'s size
+remains the next launch's initial size. Browser preview has no native window: resize
+it with the preview's handle or arrow keys.
 
 ```ts
-// The native host installs this global; it is unavailable in browser preview.
-await (globalThis as any).slop.window.resize({ width: 560, height: 680 });
+import { resizeWindow } from "hitslop/svelte";
+
+// Ignored in browser preview, which has no native window.
+await resizeWindow({ width: 560, height: 680 });
 ```
 
 Use the native toolbar handle to move the window. There is no guest window-drag
 API; buttons, sliders, and text selection retain their ordinary behavior.
 
+## Show controls on hover
+
+For actions that should appear only on hover, follow `html[data-slop-controls="visible"]`.
+The host starts it at `hidden` and updates it with the native toolbar, including the
+toolbar's hit testing and its 0.8-second hide delay. Focus, Tab and disabled controls
+don't reveal these actions. Hide them with `visibility: hidden` and
+`pointer-events: none`, not opacity alone, so they also leave keyboard navigation.
+
+```css
+.my-slop-actions { visibility: hidden; pointer-events: none; }
+html[data-slop-controls="visible"] .my-slop-actions { visibility: visible; pointer-events: auto; }
+/* Browser preview has no attribute; fall back to :hover there only. */
+html:not([data-slop-controls]) .my-slop-shell:hover .my-slop-actions { visibility: visible; pointer-events: auto; }
+```
+
+Mark these controls `data-slop-export="hide"` too, or leave them out of your export
+view.
+
 ## Use a PNG skin for a custom silhouette
 
-A skinned presentation contains only `width`, `height`, and `skin`. It is fixed
-at that exact size and cannot also use `shape`, `background`, or `resizable`.
+A skinned window, `{ kind: "skin", width, height, image }`, imports its PNG as `image`. It is fixed
+at that size and cannot also use `shape`, `background`, `resizable` or `lockAspect`.
 See [PNG window skins](/docs/guides/png-window-skins/) for the full asset and
 hit-testing workflow.

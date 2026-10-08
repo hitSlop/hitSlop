@@ -1,0 +1,901 @@
+//! Isolated native/WASM semantic-core experiment. Not a production runtime.
+
+#[rustfmt::skip]
+#[path = "wire.generated.rs"]
+mod wire;
+use loro::{
+    Container, ContainerID, ContainerTrait, ExportMode, Index, LoroDoc, LoroMap, LoroMovableList,
+    LoroText, ValueOrContainer, VersionVector,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+mod publication;
+mod text;
+use publication::{Events, ListState};
+use std::sync::Arc;
+use wire::{Anchor, Batch, Intent, Segment};
+
+const MAX_BYTES: usize = 32 * 1024 * 1024;
+const MAX_JSON: usize = 4 * 1024 * 1024;
+
+#[derive(Debug, Serialize, thiserror::Error)]
+#[error("{code}: {message}")]
+pub struct Error {
+    pub code: String,
+    pub message: String,
+    #[serde(rename = "opIndex", skip_serializing_if = "Option::is_none")]
+    pub op_index: Option<usize>,
+}
+type Result<T> = std::result::Result<T, Error>;
+fn err(code: &str, message: impl ToString) -> Error {
+    Error {
+        code: code.into(),
+        message: message.to_string(),
+        op_index: None,
+    }
+}
+fn engine(e: impl ToString) -> Error {
+    err("engine_error", e)
+}
+fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
+    if s.len() > MAX_JSON {
+        return Err(err("too_large", "JSON exceeds spike limit"));
+    }
+    serde_json::from_str(s).map_err(|e| err("invalid_request", e))
+}
+fn encode(v: &impl Serialize) -> Result<String> {
+    serde_json::to_string(v).map_err(engine)
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn unhex(s: &str) -> Result<Vec<u8>> {
+    if s.len() > MAX_JSON || s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(err("invalid_version", "Expected an opaque version token"));
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(engine))
+        .collect()
+}
+// Loro's postcard encoding serializes a hash map. Tokens must be stable across
+// import/reopen and independent hash-map insertion order.
+fn version_token(vv: &VersionVector) -> String {
+    let sorted: BTreeMap<_, _> = vv
+        .iter()
+        .filter(|(_, v)| **v > 0)
+        .map(|(k, v)| (*k, *v))
+        .collect();
+    hex(serde_json::to_string(&sorted)
+        .expect("integer map")
+        .as_bytes())
+}
+fn decode_version(s: &str) -> Result<VersionVector> {
+    let values: BTreeMap<u64, i32> =
+        serde_json::from_slice(&unhex(s)?).map_err(|e| err("invalid_version", e))?;
+    if values.values().any(|v| *v <= 0) {
+        return Err(err("invalid_version", "Nonpositive counter"));
+    }
+    Ok(values.into_iter().collect())
+}
+fn random_id() -> Result<String> {
+    let mut bytes = [0; 16];
+    getrandom::getrandom(&mut bytes).map_err(engine)?;
+    Ok(hex(&bytes))
+}
+fn valid_id(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 64
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+const MAX_SAFE: i64 = 9_007_199_254_740_991;
+fn safe(n: i64) -> bool {
+    (-MAX_SAFE..=MAX_SAFE).contains(&n)
+}
+/// The exact sum of a counter's stored contributions, or `None` when any
+/// contribution is not a safe integer or the sum leaves the safe range.
+fn counter_sum(raw: &Value) -> Option<i64> {
+    raw.as_object()?.values().try_fold(0i64, |sum, v| {
+        let n = v.as_i64().filter(|n| safe(*n))?;
+        sum.checked_add(n).filter(|n| safe(*n))
+    })
+}
+/// The application view of a raw stored value: counters become their sum.
+/// Anomalous counters stay raw (preserved and flagged, never repaired).
+fn project(node: Option<&Node>, value: Value) -> Value {
+    match (node, value) {
+        (Some(Node::Counter), raw) => match counter_sum(&raw) {
+            Some(sum) => json!(sum),
+            None => raw,
+        },
+        (Some(Node::Object { properties }), Value::Object(mut map)) => {
+            for (key, child) in properties {
+                if let Some(v) = map.remove(key) {
+                    map.insert(key.clone(), project(Some(child), v));
+                }
+            }
+            Value::Object(map)
+        }
+        (Some(Node::List { item }), Value::Array(rows)) => {
+            Value::Array(rows.into_iter().map(|r| project(Some(item), r)).collect())
+        }
+        (_, value) => value,
+    }
+}
+// Same 128 random bits / Crockford base32 representation as document/identity.ts.
+fn application_id() -> Result<String> {
+    const ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).map_err(engine)?;
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    let mut out = String::new();
+    for byte in bytes {
+        buffer = (buffer << 8) | u32::from(byte);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(ALPHABET[((buffer >> bits) & 31) as usize] as char);
+        }
+    }
+    out.push(ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
+    Ok(out)
+}
+
+// The descriptor is authored data, never executable application code.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+enum Node {
+    Text,
+    Boolean,
+    /// Stored as a map of writer key → integer contribution; projects to their sum.
+    Counter,
+    Object { properties: BTreeMap<String, Node> },
+    List { item: Box<Node> },
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Descriptor {
+    format: u32,
+    root: Node,
+}
+impl Node {
+    fn check(&self, depth: usize) -> Result<()> {
+        if depth > 32 {
+            return Err(err("too_large", "Descriptor depth"));
+        }
+        match self {
+            Self::Object { properties } => {
+                if properties.len() > 1024 {
+                    return Err(err("too_large", "Descriptor fields"));
+                }
+                for (key, node) in properties {
+                    if key.is_empty()
+                        || key == "$id"
+                        || ["__proto__", "constructor", "prototype"].contains(&key.as_str())
+                    {
+                        return Err(err("invalid_schema", "Reserved or empty key"));
+                    }
+                    node.check(depth + 1)?;
+                }
+            }
+            Self::List { item } => {
+                if !matches!(**item, Self::Object { .. }) {
+                    return Err(err("invalid_schema", "Only object lists in milestone one"));
+                }
+                item.check(depth + 1)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    fn validate(&self, value: &Value, row: bool) -> Result<()> {
+        match self {
+            Self::Text if value.is_string() => Ok(()),
+            Self::Boolean if value.is_boolean() => Ok(()),
+            Self::Counter if value.as_i64().is_some_and(safe) => Ok(()),
+            Self::Object { properties } => {
+                let map = value
+                    .as_object()
+                    .ok_or_else(|| err("type_mismatch", "Expected object"))?;
+                if map
+                    .keys()
+                    .any(|k| !properties.contains_key(k) && !(row && k == "$id"))
+                {
+                    return Err(err("type_mismatch", "Unknown property"));
+                }
+                for (key, node) in properties {
+                    node.validate(
+                        map.get(key)
+                            .ok_or_else(|| err("type_mismatch", format!("Missing {key}")))?,
+                        false,
+                    )?;
+                }
+                if let Some(id) = map.get("$id") {
+                    if !id.as_str().is_some_and(valid_id) {
+                        return Err(err(
+                            "invalid_id",
+                            "Expected a safe 1–64 character application ID",
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            Self::List { item } => {
+                let list = value
+                    .as_array()
+                    .ok_or_else(|| err("type_mismatch", "Expected list"))?;
+                let mut ids = BTreeSet::new();
+                for value in list {
+                    item.validate(value, true)?;
+                    if let Some(id) = value.get("$id") {
+                        if !ids.insert(id.as_str().unwrap()) {
+                            return Err(err("duplicate_id", "Duplicate row ID"));
+                        }
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(err("type_mismatch", "Value does not match descriptor")),
+        }
+    }
+}
+
+fn descriptor(s: &str) -> Result<Node> {
+    let d: Descriptor = parse(s)?;
+    if d.format != 1 || !matches!(d.root, Node::Object { .. }) {
+        return Err(err(
+            "invalid_schema",
+            "Expected descriptor format 1 with object root",
+        ));
+    }
+    d.root.check(0)?;
+    Ok(d.root)
+}
+
+fn fill(map: &LoroMap, node: &Node, value: &Value, writer: &str) -> Result<()> {
+    let Node::Object { properties } = node else {
+        return Err(err("type_mismatch", "Expected object"));
+    };
+    for (key, child) in properties {
+        let value = &value[key];
+        match child {
+            Node::Boolean => map.insert(key, value.as_bool().unwrap()).map_err(engine)?,
+            Node::Counter => {
+                let counter = map.insert_container(key, LoroMap::new()).map_err(engine)?;
+                let initial = value.as_i64().unwrap();
+                if initial != 0 {
+                    counter.insert(writer, initial).map_err(engine)?;
+                }
+            }
+            Node::Text => {
+                let text = map.insert_container(key, LoroText::new()).map_err(engine)?;
+                text.insert_utf16(0, value.as_str().unwrap())
+                    .map_err(engine)?;
+            }
+            Node::Object { .. } => {
+                let map = map.insert_container(key, LoroMap::new()).map_err(engine)?;
+                fill(&map, child, value, writer)?;
+            }
+            Node::List { item } => {
+                let list = map
+                    .insert_container(key, LoroMovableList::new())
+                    .map_err(engine)?;
+                for (index, row) in value.as_array().unwrap().iter().enumerate() {
+                    let id = row
+                        .get("$id")
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                        .map(Ok)
+                        .unwrap_or_else(application_id)?;
+                    insert_unchecked(&list, item, index, &id, row, writer)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+fn insert_unchecked(
+    list: &LoroMovableList,
+    item: &Node,
+    index: usize,
+    id: &str,
+    value: &Value,
+    writer: &str,
+) -> Result<()> {
+    item.validate(value, true)?;
+    if !valid_id(id) {
+        return Err(err(
+            "invalid_id",
+            "Expected a safe 1–64 character application ID",
+        ));
+    }
+    if value.get("$id").is_some_and(|v| v.as_str() != Some(id)) {
+        return Err(err("invalid_id", "Conflicting IDs"));
+    }
+    let row = list
+        .insert_container(index, LoroMap::new())
+        .map_err(engine)?;
+    row.insert("$id", id).map_err(engine)?;
+    fill(&row, item, value, writer)
+}
+/// Row lookup during one batch. Untouched lists use the persistent index published
+/// from Loro events; a list changed earlier in the same batch is scanned live,
+/// because its index only advances when the committed events are published.
+pub(crate) struct Rows<'a> {
+    lists: &'a HashMap<ContainerID, ListState>,
+    touched: HashSet<ContainerID>,
+}
+impl<'a> Rows<'a> {
+    fn new(lists: &'a HashMap<ContainerID, ListState>) -> Self {
+        Self {
+            lists,
+            touched: HashSet::new(),
+        }
+    }
+    fn indexed(&self, list: &LoroMovableList) -> Option<&ListState> {
+        let id = list.id();
+        if self.touched.contains(&id) {
+            None
+        } else {
+            self.lists.get(&id)
+        }
+    }
+    fn scan(list: &LoroMovableList, id: &str) -> Result<(usize, LoroMap)> {
+        let mut found = None;
+        for index in 0..list.len() {
+            if let Some(ValueOrContainer::Container(Container::Map(map))) = list.get(index) {
+                if let Some(ValueOrContainer::Value(loro::LoroValue::String(v))) = map.get("$id") {
+                    if v.as_str() == id {
+                        if found.is_some() {
+                            return Err(err("duplicate_id", "Ambiguous row ID"));
+                        }
+                        found = Some((index, map));
+                    }
+                }
+            }
+        }
+        found.ok_or_else(|| err("path_not_found", "Row is absent"))
+    }
+    fn unique<'s>(state: &'s ListState, id: &str) -> Result<&'s ContainerID> {
+        match state.by_id.get(id).map(Vec::as_slice) {
+            Some([cid]) => Ok(cid),
+            Some(_) => Err(err("duplicate_id", "Ambiguous row ID")),
+            None => Err(err("path_not_found", "Row is absent")),
+        }
+    }
+    fn map(&self, doc: &LoroDoc, list: &LoroMovableList, id: &str) -> Result<LoroMap> {
+        match self.indexed(list) {
+            Some(state) => Ok(doc.get_map(Self::unique(state, id)?.clone())),
+            None => Ok(Self::scan(list, id)?.1),
+        }
+    }
+    fn index(&self, list: &LoroMovableList, id: &str) -> Result<usize> {
+        match self.indexed(list) {
+            Some(state) => {
+                let cid = Self::unique(state, id)?;
+                state
+                    .order
+                    .iter()
+                    .position(|c| c.as_ref() == Some(cid))
+                    .ok_or_else(|| err("engine_error", "Row index out of sync"))
+            }
+            None => Ok(Self::scan(list, id)?.0),
+        }
+    }
+    fn touch(&mut self, list: &LoroMovableList) {
+        self.touched.insert(list.id());
+    }
+}
+fn position(list: &LoroMovableList, anchor: &Option<Anchor>, rows: &Rows) -> Result<usize> {
+    match anchor {
+        None => Ok(list.len()),
+        Some(Anchor::Before { before }) => rows.index(list, before),
+        Some(Anchor::After { after }) => Ok(rows.index(list, after)? + 1),
+    }
+}
+struct Location {
+    node: Node,
+    value: ValueOrContainer,
+    parent: Option<(LoroMap, String)>,
+}
+fn resolve(doc: &LoroDoc, schema: &Node, path: &[Segment], rows: &Rows) -> Result<Location> {
+    if path.is_empty() || path.len() > 64 {
+        return Err(err("invalid_path", "Path length"));
+    }
+    let mut node = schema;
+    let mut value = ValueOrContainer::Container(Container::Map(doc.get_map("data")));
+    let mut parent = None;
+    for segment in path {
+        match (segment, node, &value) {
+            (
+                Segment::Key(key),
+                Node::Object { properties },
+                ValueOrContainer::Container(Container::Map(map)),
+            ) => {
+                let next = properties
+                    .get(key)
+                    .ok_or_else(|| err("path_not_found", "Unknown field"))?;
+                let child = map
+                    .get(key)
+                    .ok_or_else(|| err("path_not_found", "Missing field"))?;
+                parent = Some((map.clone(), key.clone()));
+                node = next;
+                value = child;
+            }
+            (
+                Segment::Id { id },
+                Node::List { item },
+                ValueOrContainer::Container(Container::MovableList(list)),
+            ) => {
+                let map = rows.map(doc, list, id)?;
+                node = item;
+                value = ValueOrContainer::Container(Container::Map(map));
+                parent = None;
+            }
+            _ => return Err(err("type_mismatch", "Path traverses an incompatible value")),
+        }
+    }
+    Ok(Location {
+        node: node.clone(),
+        value,
+        parent,
+    })
+}
+
+fn boundary(text: &str, target: usize) -> bool {
+    let mut offset = 0;
+    for ch in text.chars() {
+        if offset == target {
+            return true;
+        }
+        offset += ch.len_utf16();
+    }
+    offset == target
+}
+/// Validates each intent completely before its first Loro mutation. A failure in a
+/// later intent can still leave earlier intents applied; `Document::abort` owns that.
+fn execute(
+    doc: &LoroDoc,
+    schema: &Node,
+    op: &Intent,
+    base: &str,
+    ids: &mut Vec<String>,
+    rows: &mut Rows,
+) -> Result<()> {
+    let at = resolve(doc, schema, op.path(), rows)?;
+    match op {
+        Intent::Set { value, .. } => {
+            if !matches!(at.node, Node::Boolean) {
+                return Err(err(
+                    "type_mismatch",
+                    "set only accepts booleans in milestone one",
+                ));
+            }
+            at.node.validate(value, false)?;
+            if !matches!(at.value, ValueOrContainer::Value(loro::LoroValue::Bool(_))) {
+                return Err(err("type_mismatch", "Cannot edit anomalous field"));
+            }
+            let (map, key) = at
+                .parent
+                .ok_or_else(|| err("type_mismatch", "Cannot replace a row"))?;
+            map.insert(&key, value.as_bool().unwrap()).map_err(engine)?;
+        }
+        Intent::Splice {
+            base: authored,
+            index,
+            delete,
+            insert,
+            ..
+        } => {
+            if authored != base {
+                return Err(err(
+                    "stale_base",
+                    "Read a new snapshot; draft ancestry is not implemented yet",
+                ));
+            }
+            let ValueOrContainer::Container(Container::Text(text)) = at.value else {
+                return Err(err("type_mismatch", "Expected text"));
+            };
+            if !matches!(at.node, Node::Text) {
+                return Err(err("type_mismatch", "Expected text descriptor"));
+            }
+            let value = text.to_string();
+            let end = index
+                .checked_add(*delete)
+                .ok_or_else(|| err("out_of_range", "Text range overflow"))?;
+            if !boundary(&value, *index) || !boundary(&value, end) {
+                return Err(err("out_of_range", "Invalid UTF-16 boundary"));
+            }
+            if *delete > 0 {
+                text.delete_utf16(*index, *delete).map_err(engine)?;
+            }
+            if !insert.is_empty() {
+                text.insert_utf16(*index, insert).map_err(engine)?;
+            }
+        }
+        Intent::Insert {
+            id,
+            value,
+            at: anchor,
+            ..
+        } => {
+            let (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) =
+                (at.node, at.value)
+            else {
+                return Err(err("type_mismatch", "Expected list"));
+            };
+            let id = id.clone().map(Ok).unwrap_or_else(application_id)?;
+            match rows.map(doc, &list, &id) {
+                Err(e) if e.code == "path_not_found" => {}
+                _ => return Err(err("duplicate_id", "Row already exists or is ambiguous")),
+            }
+            let index = position(&list, anchor, rows)?;
+            insert_row(&list, &item, index, &id, value, &writer(doc))?;
+            rows.touch(&list);
+            ids.push(id);
+        }
+        Intent::Increment { by, .. } => {
+            let (Node::Counter, ValueOrContainer::Container(Container::Map(counter))) =
+                (&at.node, &at.value)
+            else {
+                return Err(err("type_mismatch", "Expected counter"));
+            };
+            if *by == 0 || !safe(*by) {
+                return Err(err("out_of_range", "Increment must be a nonzero safe integer"));
+            }
+            let raw = serde_json::to_value(counter.get_deep_value()).map_err(engine)?;
+            let sum = counter_sum(&raw)
+                .ok_or_else(|| err("type_mismatch", "Cannot edit anomalous counter"))?;
+            let key = writer(doc);
+            let mine = raw.get(&key).and_then(Value::as_i64).unwrap_or(0);
+            let next = mine.checked_add(*by).filter(|n| safe(*n));
+            let total = sum.checked_add(*by).filter(|n| safe(*n));
+            let (Some(next), Some(_)) = (next, total) else {
+                return Err(err("out_of_range", "Counter would leave the safe integer range"));
+            };
+            counter.insert(&key, next).map_err(engine)?;
+        }
+        Intent::Remove { id, .. } => {
+            let ValueOrContainer::Container(Container::MovableList(list)) = at.value else {
+                return Err(err("type_mismatch", "Expected list"));
+            };
+            list.delete(rows.index(&list, id)?, 1).map_err(engine)?;
+            rows.touch(&list);
+        }
+        Intent::Move { id, at: anchor, .. } => {
+            let ValueOrContainer::Container(Container::MovableList(list)) = at.value else {
+                return Err(err("type_mismatch", "Expected list"));
+            };
+            let from = rows.index(&list, id)?;
+            let mut to = position(&list, anchor, rows)?;
+            if to > from {
+                to -= 1;
+            }
+            if from != to {
+                list.mov(from, to).map_err(engine)?;
+                rows.touch(&list);
+            }
+        }
+    }
+    Ok(())
+}
+// Separate name avoids shadowing the splice's insert string in pattern matches.
+use insert_unchecked as insert_row;
+
+/// Each session writes only its own counter contribution: no key ever has
+/// concurrent writers, so contributions merge without loss.
+fn writer(doc: &LoroDoc) -> String {
+    doc.peer_id().to_string()
+}
+fn raw(doc: &LoroDoc) -> Result<Value> {
+    serde_json::to_value(doc.get_map("data").get_deep_value()).map_err(engine)
+}
+fn issues(node: &Node, value: &Value, path: &mut Vec<Value>, result: &mut Vec<Value>) {
+    match (node, value) {
+        (Node::Text, Value::String(_)) | (Node::Boolean, Value::Bool(_)) => {}
+        (Node::Counter, raw @ Value::Object(_)) => {
+            if counter_sum(raw).is_none() {
+                result.push(json!({"code":"type_mismatch","path":path}));
+            }
+        }
+        (Node::Object { properties }, Value::Object(map)) => {
+            for (key, child) in properties {
+                path.push(json!(key));
+                issues(child, map.get(key).unwrap_or(&Value::Null), path, result);
+                path.pop();
+            }
+        }
+        (Node::List { item }, Value::Array(rows)) => {
+            let mut seen = BTreeSet::new();
+            for (i, row) in rows.iter().enumerate() {
+                path.push(json!(i));
+                match row.get("$id").and_then(Value::as_str) {
+                    Some(id) if valid_id(id) => {
+                        if !seen.insert(id) {
+                            result.push(json!({"code":"duplicate_id","path":path}));
+                        }
+                    }
+                    _ => result.push(json!({"code":"invalid_id","path":path})),
+                }
+                issues(item, row, path, result);
+                path.pop();
+            }
+        }
+        _ => result.push(json!({"code":"type_mismatch","path":path})),
+    }
+}
+fn container_issues(
+    node: &Node,
+    value: Option<ValueOrContainer>,
+    path: &mut Vec<Value>,
+    result: &mut Vec<Value>,
+) -> Result<()> {
+    match (node, value) {
+        (Node::Text, Some(ValueOrContainer::Container(Container::Text(_)))) => {}
+        (Node::Object { properties }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
+            for (key, child) in properties {
+                path.push(json!(key));
+                container_issues(child, map.get(key), path, result)?;
+                path.pop();
+            }
+        }
+        (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) => {
+            let mut seen = HashSet::new();
+            for i in 0..list.len() {
+                path.push(json!(i));
+                let row = list.get(i);
+                let id = match &row {
+                    Some(ValueOrContainer::Container(Container::Map(map))) => match map.get("$id") {
+                        Some(ValueOrContainer::Value(loro::LoroValue::String(id))) => {
+                            Some(id.to_string())
+                        }
+                        _ => None,
+                    },
+                    // A plain value (or other container) row: defer to the JSON oracle below.
+                    Some(other) => serde_json::to_value(other.get_deep_value())
+                        .map_err(engine)?
+                        .get("$id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    None => None,
+                };
+                match id {
+                    Some(id) if valid_id(&id) => {
+                        if !seen.insert(id) {
+                            result.push(json!({"code":"duplicate_id","path":path}));
+                        }
+                    }
+                    _ => result.push(json!({"code":"invalid_id","path":path})),
+                }
+                container_issues(item, row, path, result)?;
+                path.pop();
+            }
+        }
+        // Plain values and unusual container kinds: exact JSON semantics, small or rare.
+        (node, value) => {
+            let json = match value {
+                Some(v) => serde_json::to_value(v.get_deep_value()).map_err(engine)?,
+                None => Value::Null,
+            };
+            issues(node, &json, path, result);
+        }
+    }
+    Ok(())
+}
+fn subscribe(doc: &LoroDoc, events: &Events) {
+    // The subscription lives exactly as long as this LoroDoc; a replaced doc drops it.
+    publication::subscribe(doc, events).detach();
+}
+
+/// Exactly one host executor owns this value. Neither binding contains semantics.
+pub struct Document {
+    doc: LoroDoc,
+    schema: Node,
+    sequence: u64,
+    session: String,
+    /// Every movable list's order and row identities as of the last publication.
+    lists: HashMap<ContainerID, ListState>,
+    /// Issues as of the last publication. Empty is the common case and enables
+    /// change-proportional validation; a document with anomalies rescans on publish.
+    issues: Vec<Value>,
+    events: Events,
+    drafts: BTreeMap<String, text::Draft>,
+    retired: BTreeSet<String>,
+}
+impl Document {
+    fn from_doc(doc: LoroDoc, schema: Node) -> Result<Self> {
+        let events = Events::default();
+        subscribe(&doc, &events);
+        let mut this = Self {
+            lists: publication::index_all(&doc),
+            doc,
+            schema,
+            sequence: 0,
+            session: random_id()?,
+            issues: vec![],
+            events,
+            drafts: BTreeMap::new(),
+            retired: BTreeSet::new(),
+        };
+        this.issues = this.scan_issues()?;
+        Ok(this)
+    }
+    pub fn create(schema: &str, initial: &str) -> Result<Self> {
+        let schema = descriptor(schema)?;
+        let initial: Value = parse(initial)?;
+        schema.validate(&initial, false)?;
+        let doc = LoroDoc::new();
+        fill(&doc.get_map("data"), &schema, &initial, &writer(&doc))?;
+        doc.commit();
+        Self::from_doc(doc, schema)
+    }
+    pub fn open(schema: &str, checkpoint: &[u8], updates: &[Vec<u8>]) -> Result<Self> {
+        let schema = descriptor(schema)?;
+        let total = updates
+            .iter()
+            .try_fold(checkpoint.len(), |n, b| n.checked_add(b.len()))
+            .ok_or_else(|| err("too_large", "Input bytes"))?;
+        if total > MAX_BYTES {
+            return Err(err("too_large", "Input bytes"));
+        }
+        let doc = LoroDoc::new();
+        checked_import(&doc, checkpoint)?;
+        for bytes in updates {
+            checked_import(&doc, bytes)?;
+        }
+        Self::from_doc(doc, schema)
+    }
+    /// Same result as `issues` over the full JSON value, without materializing it:
+    /// containers are walked directly and only plain or unexpected values become JSON.
+    fn scan_issues(&self) -> Result<Vec<Value>> {
+        let mut found = vec![];
+        let root = ValueOrContainer::Container(Container::Map(self.doc.get_map("data")));
+        container_issues(&self.schema, Some(root), &mut vec![], &mut found)?;
+        Ok(found)
+    }
+    pub fn version(&self) -> String {
+        version_token(&self.doc.oplog_vv())
+    }
+    pub fn snapshot(&self) -> Result<String> {
+        // Deliberately recomputed from the full value: this is the oracle that
+        // incremental publications and issues are tested against.
+        let value = raw(&self.doc)?;
+        let mut found = vec![];
+        issues(&self.schema, &value, &mut vec![], &mut found);
+        let value = project(Some(&self.schema), value);
+        encode(
+            &json!({"version":self.version(),"value":value,"issues":found,"sequence":self.sequence,"session":self.session}),
+        )
+    }
+    /// A host command explicitly addressed against the state at queue execution.
+    /// Unlike authored draft edits, these positional splices omit a base token.
+    pub fn command_current(&mut self, batch: &str) -> Result<String> {
+        let mut value: Value = parse(batch)?;
+        if let Some(intents) = value.get_mut("intents").and_then(Value::as_array_mut) {
+            for op in intents {
+                if op["type"] == "splice" {
+                    if op.get("base").is_some() {
+                        return Err(err(
+                            "invalid_request",
+                            "Current-state command must omit base",
+                        ));
+                    }
+                    op["base"] = json!(self.version());
+                }
+            }
+        }
+        self.apply(&value.to_string())
+    }
+    pub fn apply(&mut self, batch: &str) -> Result<String> {
+        let batch: Batch = parse(batch)?;
+        if batch.intents.len() > 1000 {
+            return Err(err("too_large", "Batch exceeds 1000 intents"));
+        }
+        let base = self.version();
+        let before = self.doc.state_frontiers();
+        let mut ids = vec![];
+        let mut failure = None;
+        {
+            let mut rows = Rows::new(&self.lists);
+            for (index, op) in batch.intents.iter().enumerate() {
+                if let Err(mut e) = execute(&self.doc, &self.schema, op, &base, &mut ids, &mut rows)
+                {
+                    e.op_index = Some(index);
+                    failure = Some(e);
+                    break;
+                }
+            }
+        }
+        if let Some(e) = failure {
+            self.abort(&before)?; // Atomicity sensitivity removes only this call in a disposable copy.
+            return Err(e);
+        }
+        self.doc.commit();
+        self.publish(ids)
+    }
+    /// Loro transactions cannot be rolled back. Validation happens before each
+    /// intent's first mutation, so a batch rejected at its first intent left nothing
+    /// pending. When an earlier intent already mutated, rebuild the owner at the
+    /// pre-batch frontiers (O(document), only on this rejection path). The pending
+    /// operations were never exported; the rebuilt replica uses a fresh peer.
+    fn abort(&mut self, before: &loro::Frontiers) -> Result<()> {
+        if self.doc.get_pending_txn_len() == 0 {
+            return Ok(());
+        }
+        let fresh = self.doc.fork_at(before).map_err(engine)?;
+        self.events.lock().unwrap().clear();
+        subscribe(&fresh, &self.events);
+        // Container IDs survive the snapshot, so the published list indexes stay valid.
+        self.doc = fresh;
+        Ok(())
+    }
+    pub fn import(&mut self, bytes: &[u8]) -> Result<String> {
+        if bytes.len() > MAX_BYTES {
+            return Err(err("too_large", "Import bytes"));
+        }
+        // Refuse a batch with missing dependencies before Loro buffers any of it.
+        let meta = LoroDoc::decode_import_blob_meta(bytes, true)
+            .map_err(|e| err("invalid_bytes", e))?;
+        let known = self.doc.oplog_vv();
+        if meta
+            .partial_start_vv
+            .iter()
+            .any(|(peer, start)| known.get(peer).copied().unwrap_or(0) < *start)
+        {
+            return Err(err(
+                "missing_dependencies",
+                "Durable pending-import buffering is not implemented",
+            ));
+        }
+        self.doc
+            .import(bytes)
+            .map_err(|e| err("invalid_bytes", e))?;
+        self.publish(vec![])
+    }
+    fn publish(&mut self, ids: Vec<String>) -> Result<String> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let started = std::time::Instant::now();
+        let events = std::mem::take(&mut *self.events.lock().unwrap());
+        let published = publication::publish(&self.doc, &self.schema, &mut self.lists, events)?;
+        if published.rescan || !self.issues.is_empty() {
+            self.issues = self.scan_issues()?;
+        }
+        let next = self
+            .sequence
+            .checked_add(1)
+            .ok_or_else(|| err("too_large", "Publication sequence"))?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let patch_build_ms = started.elapsed().as_secs_f64() * 1000.0;
+        #[cfg(target_arch = "wasm32")]
+        let patch_build_ms: Option<f64> = None;
+        let response = encode(
+            &json!({"patchBuildMS":patch_build_ms,"version":self.version(),"ids":ids,
+            "patch":{"session":self.session,"previous":self.sequence,"sequence":next,"ops":published.ops,"issues":self.issues}}),
+        )?;
+        self.sequence = next;
+        Ok(response)
+    }
+    pub fn checkpoint(&self) -> Result<Vec<u8>> {
+        self.doc.export(ExportMode::Snapshot).map_err(engine)
+    }
+    pub fn export_since(&self, version: &str) -> Result<Vec<u8>> {
+        let vv = decode_version(version)?;
+        self.doc.export(ExportMode::updates(&vv)).map_err(engine)
+    }
+}
+fn checked_import(doc: &LoroDoc, bytes: &[u8]) -> Result<()> {
+    if bytes.len() > MAX_BYTES {
+        return Err(err("too_large", "Import bytes"));
+    }
+    let status = doc.import(bytes).map_err(|e| err("invalid_bytes", e))?;
+    if status.pending.as_ref().is_some_and(|v| !v.is_empty()) {
+        return Err(err(
+            "missing_dependencies",
+            "Durable pending-import buffering is not implemented",
+        ));
+    }
+    Ok(())
+}

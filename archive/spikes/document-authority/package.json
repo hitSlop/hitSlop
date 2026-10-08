@@ -1,0 +1,12 @@
+{
+  "name": "@hitslop/document-authority-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "bun prepare.ts",
+    "test": "bun test core.test.ts",
+    "check": "tsc -p tsconfig.json",
+    "run": "bun run.ts",
+    "report": "bun summarize.ts"
+  }
+}

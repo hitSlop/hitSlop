@@ -1,0 +1,56 @@
+---
+import { SITE_LINKS } from "../constants";
+
+interface Props {
+  title: string;
+  description: string;
+  themeColor?: string;
+  image?: string;
+  preloadHeadline?: boolean;
+}
+const { title, description, themeColor = "#f4efff", image = "/og.jpg", preloadHeadline = false } = Astro.props;
+const site = Astro.site ?? new URL("https://hitslop.com");
+const canonical = new URL(Astro.url.pathname, site).href;
+const imageUrl = new URL(image, site).href;
+const app = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "hitSlop",
+  applicationCategory: "ProductivityApplication",
+  operatingSystem: "macOS 15.2 or later (Apple silicon)",
+  description,
+  url: site.href,
+  downloadUrl: SITE_LINKS.download,
+  image: imageUrl,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
+---
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<meta name="theme-color" content={themeColor} />
+<link rel="canonical" href={canonical} />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+<link rel="apple-touch-icon" href="/assets/appicon-256.png" />
+<link rel="sitemap" href="/sitemap-index.xml" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="hitSlop" />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={imageUrl} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="hitSlop: tiny apps with big personality on a Mac desktop" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@hitslop" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={imageUrl} />
+{preloadHeadline && <link rel="preload" href="/assets/hero/fonts/omnes-black-latin.woff2" as="font" type="font/woff2" crossorigin />}
+<link rel="preload" href="/assets/hero/fonts/baloo-2-latin.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="/assets/hero/fonts/nunito-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
+<script is:inline type="application/ld+json" set:html={JSON.stringify(app)} />

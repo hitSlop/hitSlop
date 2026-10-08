@@ -1,0 +1,14 @@
+{
+  "ops": [
+    {
+      "type": "increment",
+      "path": [
+        "count"
+      ],
+      "by": 4
+    }
+  ],
+  "value": {
+    "count": 9
+  }
+}

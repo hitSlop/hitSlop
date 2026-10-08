@@ -1,0 +1,37 @@
+/* Shared motion vocabulary. Everything here switches off under reduced motion. */
+@property --accent { syntax: "<color>"; inherits: true; initial-value: #6c16ed; }
+@property --accent-2 { syntax: "<color>"; inherits: true; initial-value: #f443a1; }
+
+/* Stickers: tilted, springy badges that wobble when touched. */
+.sticker { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 3px solid var(--ink); border-radius: 18px 22px 16px 24px; color: var(--ink); background: #fff; box-shadow: 0 0 0 5px #fff, 0 10px 22px #40247a26; font-family: "HitSlop Display", sans-serif; font-size: 1.05rem; font-weight: 800; line-height: 1; letter-spacing: -.01em; rotate: var(--tilt, -4deg); transition: rotate 380ms var(--spring), scale 380ms var(--spring); }
+.sticker[data-tone="sun"] { background: #ffe56f; }
+.sticker[data-tone="pink"] { background: #ffd1ea; }
+.sticker[data-tone="mint"] { background: #c7f3dc; }
+.sticker[data-tone="sky"] { background: #d6e6ff; }
+.sticker[data-tone="ink"] { color: #fff; background: var(--ink); box-shadow: 0 0 0 5px #fff, 0 10px 22px #10132c40; }
+@media (hover: hover) { .sticker:hover { rotate: calc(var(--tilt, -4deg) * -1); scale: 1.06; } }
+
+/* Handwritten notes with a drawn arrow, always pointing at something to try. */
+.annotation { display: inline-flex; align-items: center; gap: 10px; margin: 0; color: var(--accent); font-family: "HitSlop Handwriting", cursive; font-size: clamp(1.1rem, 1.5vw, 1.45rem); line-height: 1.1; rotate: var(--tilt, -5deg); pointer-events: none; user-select: none; }
+.annotation svg { width: 58px; height: 42px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Things pop into place as they arrive. Browsers without scroll timelines show them static. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .pop-in { animation: pop-in both var(--spring); animation-timeline: view(); animation-range: entry 0% entry 55%; }
+    .rise-in { animation: rise-in both var(--ease-out); animation-timeline: view(); animation-range: entry 0% entry 60%; }
+    /* Drawn strokes ink themselves in; --len must be at least the path length. */
+    .draw path { stroke-dasharray: var(--len, 320); animation: draw-in both linear; animation-timeline: view(); animation-range: entry 20% cover 45%; }
+  }
+}
+@keyframes pop-in { from { opacity: 0; scale: .86; translate: 0 26px; } }
+@keyframes rise-in { from { opacity: 0; translate: 0 34px; } }
+@keyframes draw-in { from { stroke-dashoffset: var(--len, 320); } }
+
+/* A small, occasional wiggle keeps drawn accents feeling handmade. */
+@media (prefers-reduced-motion: no-preference) {
+  .wiggle { transform-origin: center; animation: ink-wiggle 7s cubic-bezier(.37, 0, .63, 1) infinite; animation-delay: var(--delay, 0s); }
+  .float { animation: float 5.5s ease-in-out infinite; animation-delay: var(--delay, 0s); }
+}
+@keyframes ink-wiggle { 0%, 64%, 100% { rotate: 0deg; translate: 0 0; } 73% { rotate: -2deg; translate: 0 -1px; } 82% { rotate: 2deg; } 91% { rotate: -.8deg; translate: 0 -1px; } }
+@keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -8px; } }

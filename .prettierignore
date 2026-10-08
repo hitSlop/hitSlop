@@ -11,4 +11,4 @@ _vibe/
 .hitslop/
 **/generated/
 **/*.generated.*
-packages/cli/skills/
+packages/hitslop/skills/

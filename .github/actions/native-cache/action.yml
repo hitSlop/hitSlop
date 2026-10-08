@@ -15,10 +15,10 @@ runs:
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: apps/apple/Packages/HitSlopApple/.build
-        key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'packages/document/**', 'packages/schema/**', 'runtimes/**', 'bun.lock') }}
-        restore-keys: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
+        key: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .hitslop/template-cache
-        key: templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-
+        key: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-

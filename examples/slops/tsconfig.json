@@ -1,8 +1,0 @@
-{
-  "extends": "../../tsconfig.v1.json",
-  "include": [
-    "quick-checklist/**/*",
-    "small-expenses/**/*",
-    "soma-amp/**/*"
-  ]
-}

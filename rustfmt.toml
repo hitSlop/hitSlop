@@ -1,0 +1,4 @@
+# The crates' dense style: wide lines, and calls, chains and literals kept on one line
+# while they fit.
+max_width = 120
+use_small_heuristics = "Max"

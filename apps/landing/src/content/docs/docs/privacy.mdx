@@ -1,0 +1,14 @@
+---
+title: Privacy
+description: Analytics and crash reporting in the hitSlop Mac app.
+---
+
+Release builds of the Mac app enable Firebase Analytics and Crashlytics. They send
+launch, open, create (source), duplicate and export (format) events; operation
+breadcrumbs; failure records with fixed operation, classification, reason and format
+fields; crash reports; and Firebase's standard app and device data.
+
+Our custom event, breadcrumb and failure fields do not include document contents or
+file paths. Automatic crash reports contain diagnostic information collected by the
+Firebase SDK. Collection is enabled in release builds with no in-app toggle; Debug
+builds and tests do not upload telemetry.

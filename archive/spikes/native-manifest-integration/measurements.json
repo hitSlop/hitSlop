@@ -1,0 +1,2892 @@
+{
+  "measuredAt": "2026-09-30T21:36:32.211Z",
+  "methodology": "Same isolated workspace, Release helper, strip -S -x. Twenty fresh processes per scenario, first SlopPackage init timed then 100 repeated opens averaged. Warm filesystem caches; process launch and WebKit excluded.",
+  "measurements": {
+    "baseline": {
+      "variant": "baseline",
+      "measuredAt": "2026-09-30T21:03:29.580Z",
+      "helperBytes": 10222800,
+      "helperStrippedBytes": 7010072,
+      "wasmBytes": 3931296,
+      "timings": {
+        "baseline": [
+          {
+            "consumed": 1515,
+            "cold_ms": 4.132292,
+            "warm_ms": 0.46751416
+          },
+          {
+            "cold_ms": 3.929459,
+            "consumed": 1515,
+            "warm_ms": 0.42834333999999996
+          },
+          {
+            "cold_ms": 3.828875,
+            "consumed": 1515,
+            "warm_ms": 0.40927167
+          },
+          {
+            "cold_ms": 3.994792,
+            "warm_ms": 0.41991292,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.74875,
+            "warm_ms": 0.41070124999999996,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.76475,
+            "warm_ms": 0.41891375
+          },
+          {
+            "cold_ms": 3.963375,
+            "warm_ms": 0.42408417,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.898333,
+            "warm_ms": 0.40747875,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.692959,
+            "warm_ms": 0.43729375
+          },
+          {
+            "warm_ms": 0.40112791000000003,
+            "cold_ms": 3.866125,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.41273833000000004,
+            "cold_ms": 5.884541,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.579625,
+            "warm_ms": 0.41600417
+          },
+          {
+            "cold_ms": 3.901209,
+            "warm_ms": 1.22901458,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 6.100667,
+            "consumed": 1515,
+            "warm_ms": 0.59451375
+          },
+          {
+            "cold_ms": 4.6005,
+            "consumed": 1515,
+            "warm_ms": 0.5357579100000001
+          },
+          {
+            "warm_ms": 0.53393417,
+            "cold_ms": 5.263792,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.49586375,
+            "consumed": 1515,
+            "cold_ms": 5.02
+          },
+          {
+            "warm_ms": 0.48485208,
+            "consumed": 1515,
+            "cold_ms": 4.887959
+          },
+          {
+            "cold_ms": 4.711875,
+            "consumed": 1515,
+            "warm_ms": 0.54074875
+          },
+          {
+            "warm_ms": 0.51547292,
+            "consumed": 1515,
+            "cold_ms": 5.097917
+          }
+        ],
+        "shape-\"5px\"": [
+          {
+            "cold_ms": 6.105916,
+            "warm_ms": 0.5589995799999999,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.46609542,
+            "cold_ms": 8.679792,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.446315,
+            "consumed": 1515,
+            "cold_ms": 5.26625
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 5.342834,
+            "warm_ms": 0.44653291
+          },
+          {
+            "warm_ms": 0.44838833,
+            "consumed": 1515,
+            "cold_ms": 5.357416
+          },
+          {
+            "cold_ms": 5.6075,
+            "consumed": 1515,
+            "warm_ms": 0.460195
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 5.502375,
+            "warm_ms": 0.4584075
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 5.790208,
+            "warm_ms": 0.45827165999999997
+          },
+          {
+            "cold_ms": 5.762959,
+            "warm_ms": 0.45649542,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 5.74575,
+            "warm_ms": 0.46450083999999997,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 5.771333,
+            "warm_ms": 0.48552124999999996,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 5.674042,
+            "warm_ms": 0.46120833,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 5.77775,
+            "warm_ms": 0.46036499999999997,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.46132667,
+            "consumed": 1515,
+            "cold_ms": 5.641833
+          },
+          {
+            "warm_ms": 0.44228417,
+            "cold_ms": 5.151708,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.44353333999999994,
+            "cold_ms": 5.245833,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.454515,
+            "cold_ms": 5.183083
+          },
+          {
+            "cold_ms": 5.215416,
+            "consumed": 1515,
+            "warm_ms": 0.44474167000000003
+          },
+          {
+            "warm_ms": 0.44184584,
+            "cold_ms": 5.24125,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.44009709,
+            "cold_ms": 5.181708
+          }
+        ],
+        "skin-\"assets/skin.png\"": [
+          {
+            "warm_ms": 0.63922166,
+            "cold_ms": 8.893167,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.6454466600000001,
+            "cold_ms": 8.713709
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 8.8295,
+            "warm_ms": 0.658415
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.63468125,
+            "cold_ms": 8.95075
+          },
+          {
+            "cold_ms": 8.553541,
+            "warm_ms": 0.64580125,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 8.666084,
+            "consumed": 1515,
+            "warm_ms": 0.63990125
+          },
+          {
+            "warm_ms": 0.63306041,
+            "cold_ms": 8.5405,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 8.5765,
+            "warm_ms": 0.63989
+          },
+          {
+            "cold_ms": 8.58925,
+            "consumed": 1515,
+            "warm_ms": 0.63957792
+          },
+          {
+            "cold_ms": 8.550042,
+            "warm_ms": 0.64127709,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.63235667,
+            "consumed": 1515,
+            "cold_ms": 8.896291
+          },
+          {
+            "cold_ms": 8.598791,
+            "warm_ms": 0.63730042,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 8.335917,
+            "warm_ms": 0.63420375,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 8.587542,
+            "warm_ms": 0.63696041,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.63875125,
+            "cold_ms": 8.7105
+          },
+          {
+            "warm_ms": 0.6408920899999999,
+            "cold_ms": 8.874625,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.63963167,
+            "consumed": 1515,
+            "cold_ms": 8.668917
+          },
+          {
+            "warm_ms": 0.64489042,
+            "consumed": 1515,
+            "cold_ms": 8.632791
+          },
+          {
+            "cold_ms": 8.393292,
+            "warm_ms": 0.64996542,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.6777241700000001,
+            "consumed": 1515,
+            "cold_ms": 8.428125
+          }
+        ]
+      },
+      "summary": {
+        "baseline": {
+          "cold_ms": {
+            "p50": 3.963375,
+            "p95": 5.884541
+          },
+          "warm_ms": {
+            "p50": 0.42834333999999996,
+            "p95": 0.59451375
+          }
+        },
+        "shape-\"5px\"": {
+          "cold_ms": {
+            "p50": 5.502375,
+            "p95": 6.105916
+          },
+          "warm_ms": {
+            "p50": 0.45649542,
+            "p95": 0.48552124999999996
+          }
+        },
+        "skin-\"assets/skin.png\"": {
+          "cold_ms": {
+            "p50": 8.598791,
+            "p95": 8.896291
+          },
+          "warm_ms": {
+            "p50": 0.63963167,
+            "p95": 0.658415
+          }
+        }
+      }
+    },
+    "candidate": {
+      "variant": "candidate",
+      "measuredAt": "2026-09-30T21:28:26.328Z",
+      "helperBytes": 12429456,
+      "helperStrippedBytes": 8776584,
+      "wasmBytes": 3931054,
+      "timings": {
+        "baseline": [
+          {
+            "consumed": 1515,
+            "cold_ms": 3.501792,
+            "warm_ms": 0.38205374999999997
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.574,
+            "warm_ms": 0.37264625
+          },
+          {
+            "warm_ms": 0.36219625,
+            "cold_ms": 3.532541,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.206459,
+            "warm_ms": 0.36310749999999997,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.562375,
+            "consumed": 1515,
+            "warm_ms": 0.35749415999999995
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.389792,
+            "warm_ms": 0.35742624999999995
+          },
+          {
+            "warm_ms": 0.37154792000000003,
+            "cold_ms": 3.761042,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.36987791999999997,
+            "cold_ms": 3.809416
+          },
+          {
+            "warm_ms": 0.36418292,
+            "cold_ms": 3.945083,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.456875,
+            "warm_ms": 1.29065666
+          },
+          {
+            "warm_ms": 0.46045375,
+            "consumed": 1515,
+            "cold_ms": 13.378542
+          },
+          {
+            "cold_ms": 3.361084,
+            "consumed": 1515,
+            "warm_ms": 0.36042833
+          },
+          {
+            "warm_ms": 0.38022541,
+            "consumed": 1515,
+            "cold_ms": 3.544792
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.34725,
+            "warm_ms": 0.35826709
+          },
+          {
+            "cold_ms": 4.112625,
+            "warm_ms": 0.35847209,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.4875,
+            "warm_ms": 0.35049083000000003
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.373458,
+            "warm_ms": 0.36491458
+          },
+          {
+            "cold_ms": 3.586084,
+            "warm_ms": 0.39245041999999997,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.37828207999999997,
+            "cold_ms": 3.816625,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.48183375,
+            "cold_ms": 3.586417,
+            "consumed": 1515
+          }
+        ],
+        "shape-\"5px\"": [
+          {
+            "consumed": 1515,
+            "warm_ms": 0.40427959,
+            "cold_ms": 3.776458
+          },
+          {
+            "warm_ms": 0.36912042,
+            "consumed": 1515,
+            "cold_ms": 3.802
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.555166,
+            "warm_ms": 0.35119833
+          },
+          {
+            "cold_ms": 3.558167,
+            "consumed": 1515,
+            "warm_ms": 0.35452125
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.523125,
+            "warm_ms": 0.37958582999999996
+          },
+          {
+            "cold_ms": 3.460666,
+            "warm_ms": 0.3819625,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.585666,
+            "consumed": 1515,
+            "warm_ms": 0.4289425
+          },
+          {
+            "cold_ms": 3.810458,
+            "warm_ms": 0.3562625,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "warm_ms": 0.35354458,
+            "cold_ms": 3.555166
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.512875,
+            "warm_ms": 0.35366667
+          },
+          {
+            "warm_ms": 0.35105292,
+            "cold_ms": 3.451375,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.35141416999999997,
+            "consumed": 1515,
+            "cold_ms": 3.443167
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 3.59575,
+            "warm_ms": 0.35468375
+          },
+          {
+            "cold_ms": 3.687834,
+            "consumed": 1515,
+            "warm_ms": 0.35863999999999996
+          },
+          {
+            "warm_ms": 0.35465792,
+            "cold_ms": 3.402833,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.502625,
+            "warm_ms": 0.35156624999999997,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.522417,
+            "consumed": 1515,
+            "warm_ms": 0.35473750000000004
+          },
+          {
+            "cold_ms": 3.414791,
+            "warm_ms": 0.35161291,
+            "consumed": 1515
+          },
+          {
+            "warm_ms": 0.35921208,
+            "cold_ms": 3.4115,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 3.649333,
+            "warm_ms": 0.35348459,
+            "consumed": 1515
+          }
+        ],
+        "skin-\"assets/skin.png\"": [
+          {
+            "consumed": 1515,
+            "cold_ms": 8.179083,
+            "warm_ms": 0.53828167
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.598125,
+            "warm_ms": 0.53565333
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.319125,
+            "warm_ms": 0.54181542
+          },
+          {
+            "cold_ms": 7.601625,
+            "consumed": 1515,
+            "warm_ms": 0.53769208
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.475833,
+            "warm_ms": 0.536275
+          },
+          {
+            "warm_ms": 0.7112837500000001,
+            "consumed": 1515,
+            "cold_ms": 7.864791
+          },
+          {
+            "cold_ms": 8.111792,
+            "warm_ms": 1.29503791,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 7.775167,
+            "consumed": 1515,
+            "warm_ms": 0.55471125
+          },
+          {
+            "warm_ms": 0.55183792,
+            "consumed": 1515,
+            "cold_ms": 7.922083
+          },
+          {
+            "cold_ms": 7.778958,
+            "consumed": 1515,
+            "warm_ms": 0.54061791
+          },
+          {
+            "cold_ms": 7.426792,
+            "consumed": 1515,
+            "warm_ms": 0.54241833
+          },
+          {
+            "warm_ms": 0.53640333,
+            "consumed": 1515,
+            "cold_ms": 7.587125
+          },
+          {
+            "warm_ms": 0.5415591599999999,
+            "consumed": 1515,
+            "cold_ms": 7.514167
+          },
+          {
+            "warm_ms": 0.54150167,
+            "cold_ms": 7.771167,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 7.744084,
+            "warm_ms": 0.5421462499999999,
+            "consumed": 1515
+          },
+          {
+            "cold_ms": 7.55,
+            "warm_ms": 0.53722125,
+            "consumed": 1515
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.605792,
+            "warm_ms": 0.53768042
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.377417,
+            "warm_ms": 0.54117792
+          },
+          {
+            "warm_ms": 0.53851125,
+            "consumed": 1515,
+            "cold_ms": 7.50125
+          },
+          {
+            "consumed": 1515,
+            "cold_ms": 7.49375,
+            "warm_ms": 0.54742209
+          }
+        ]
+      },
+      "summary": {
+        "baseline": {
+          "cold_ms": {
+            "p50": 3.544792,
+            "p95": 4.112625
+          },
+          "warm_ms": {
+            "p50": 0.36491458,
+            "p95": 0.48183375
+          }
+        },
+        "shape-\"5px\"": {
+          "cold_ms": {
+            "p50": 3.523125,
+            "p95": 3.802
+          },
+          "warm_ms": {
+            "p50": 0.35465792,
+            "p95": 0.40427959
+          }
+        },
+        "skin-\"assets/skin.png\"": {
+          "cold_ms": {
+            "p50": 7.598125,
+            "p95": 8.111792
+          },
+          "warm_ms": {
+            "p50": 0.54117792,
+            "p95": 0.7112837500000001
+          }
+        }
+      }
+    }
+  },
+  "verification": {
+    "baseline-regressions": {
+      "command": [
+        "/usr/bin/swift",
+        "test",
+        "--no-parallel",
+        "--package-path",
+        "apps/apple/Packages/HitSlopApple",
+        "--filter",
+        "nativeManifestParityRegressions|manifestInputBoundaryRemainsStrict"
+      ],
+      "code": 1,
+      "seconds": 30.72682675
+    },
+    "candidate-rust": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--workspace"
+      ],
+      "code": 0,
+      "seconds": 486.614747625
+    },
+    "candidate-build": {
+      "command": [
+        "bun",
+        "run",
+        "build"
+      ],
+      "code": 0,
+      "seconds": 62.443307917
+    },
+    "candidate-check-final": {
+      "command": [
+        "bun",
+        "run",
+        "check"
+      ],
+      "code": 0,
+      "seconds": 14.781683124999999
+    },
+    "candidate-test": {
+      "command": [
+        "bun",
+        "run",
+        "test"
+      ],
+      "code": 0,
+      "seconds": 407.693213875
+    },
+    "candidate-swift": {
+      "command": [
+        "bun",
+        "run",
+        "swift:test"
+      ],
+      "code": 0,
+      "seconds": 65.017181917
+    },
+    "candidate-core-final": {
+      "command": [
+        "swift",
+        "test",
+        "--no-parallel",
+        "--package-path",
+        "apps/apple/Packages/HitSlopApple",
+        "--filter",
+        "HitSlopCoreTests"
+      ],
+      "code": 0,
+      "seconds": 18.503249083000004
+    },
+    "candidate-native": {
+      "command": [
+        "bun",
+        "run",
+        "test:native"
+      ],
+      "code": 0,
+      "seconds": 24.567477957999998
+    },
+    "candidate-restored": {
+      "command": [
+        "bun",
+        "run",
+        "test:restored"
+      ],
+      "code": 0,
+      "seconds": 54.273853917000004
+    },
+    "candidate-visual": {
+      "command": [
+        "bun",
+        "<repo>/spikes/native-manifest-integration/visual.ts"
+      ],
+      "code": 0,
+      "seconds": 2.3718418340000005
+    },
+    "wasm-feature-build": {
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "--target",
+        "wasm32-unknown-unknown",
+        "-p",
+        "hitslop-core-wasm",
+        "--features",
+        "hitslop-core/manifest-validation"
+      ],
+      "code": 0,
+      "seconds": 40.99513029199999
+    }
+  },
+  "visualComparison": [
+    {
+      "file": "washer.png",
+      "identical": true,
+      "baselineSHA256": "0d3ba02a7d73f395bae2acdf564c32e5737592eb15a6ad01a8f748ea5cacbbd1",
+      "candidateSHA256": "0d3ba02a7d73f395bae2acdf564c32e5737592eb15a6ad01a8f748ea5cacbbd1"
+    },
+    {
+      "file": "washer-pdf.png",
+      "identical": true,
+      "baselineSHA256": "c79f95b4229cbf3a29882e71559cf48d357897d1963b9332766993aaf85b3ed6",
+      "candidateSHA256": "c79f95b4229cbf3a29882e71559cf48d357897d1963b9332766993aaf85b3ed6"
+    },
+    {
+      "file": "washer-fallback.png",
+      "identical": true,
+      "baselineSHA256": "5f191d501514434e99bcefddd6f180c929670652e7fba49137b92da67a141f9b",
+      "candidateSHA256": "5f191d501514434e99bcefddd6f180c929670652e7fba49137b92da67a141f9b"
+    },
+    {
+      "file": "washer-fallback-pdf.png",
+      "identical": true,
+      "baselineSHA256": "cc2a8ea80fdea0307130f6db9d1ea18f3902c5f8b3b433c9946a405d32cdd287",
+      "candidateSHA256": "cc2a8ea80fdea0307130f6db9d1ea18f3902c5f8b3b433c9946a405d32cdd287"
+    }
+  ],
+  "wasmFeatureCheck": {
+    "sameDependencyTree": true,
+    "includesJsonschema": false,
+    "featureBytes": 3931054,
+    "featureSHA256": "4d75d77a4bc2e6ce8eef9ebbb0c62f34ab721a8ba27040f1ce64fe18b668457b"
+  },
+  "nativeParityDifferences": [],
+  "baselineSchemaDifferences": [
+    "title-41-emoji",
+    "title-80-emoji",
+    "author-\"\"",
+    "url-\"https://[bad]\"",
+    "skin-\"assets/skin.png\\n\""
+  ],
+  "packageParityDifferences": [],
+  "packageAcceptanceChanges": [
+    "title-41-emoji",
+    "title-80-emoji",
+    "author-\"\"",
+    "url-\"https://[bad]\"",
+    "skin-\"assets/skin.png\\n\""
+  ],
+  "nativeAcceptedButPackageRejected": [
+    {
+      "name": "skin-\"assets/../skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/../skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/../skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/../skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/../skin.png"
+      }
+    },
+    {
+      "name": "skin-\"assets/a//skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/a//skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a//skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/a//skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a//skin.png"
+      }
+    },
+    {
+      "name": "skin-\"assets/a/./skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/a/./skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a/./skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/a/./skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a/./skin.png"
+      }
+    }
+  ],
+  "decodedTitleDifferences": [],
+  "diffStats": "322\t1\t{before => after}/Cargo.lock\n0\t1\t{before => after}/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/Generated/PlatformValidation.generated.swift\n14\t8\t{before => after}/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift\n2\t9\t{before => after}/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopSilhouette.swift\n56\t2\t{before => after}/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopPackageTests.swift\n21\t15\t{before => after}/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/SlopSilhouetteTests.swift\n6\t0\t{before => after}/crates/hitslop-core/Cargo.toml\n3\t0\t{before => after}/crates/hitslop-core/src/lib.rs\n27\t0\t/dev/null => after/crates/hitslop-core/src/manifest.rs\n13\t0\t{before => after}/crates/hitslop-core/src/shape.rs\n39\t0\t/dev/null => after/crates/hitslop-core/tests/manifest.rs\n1\t1\t{before => after}/crates/hitslop-core-ffi/Cargo.toml\n3\t3\t{before => after}/crates/hitslop-core-ffi/src/lib.rs\n6\t0\t{before => after}/docs/architecture.md\n3\t1\t{before => after}/packages/document/tests/cli.native.test.ts\n1\t3\t{before => after}/scripts/generate.ts\n",
+  "results": [
+    {
+      "name": "baseline",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "baseline",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "baseline",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "title-40-emoji",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "name": "title-40-emoji",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "name": "title-40-emoji",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "title-41-emoji",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "name": "title-41-emoji",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "decodedTitle": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "name": "title-41-emoji",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "title-80-emoji",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "name": "title-80-emoji",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "decodedTitle": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "name": "title-80-emoji",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "title-81-emoji",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "title-81-emoji",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "title-81-emoji",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /title\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /title"
+      }
+    },
+    {
+      "name": "title-0-ascii",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "title-0-ascii",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "title-0-ascii",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /title\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /title"
+      }
+    },
+    {
+      "name": "title-80-ascii",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "title-80-ascii",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "title-80-ascii",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "title-81-ascii",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "title-81-ascii",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "title-81-ascii",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /title\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /title"
+      }
+    },
+    {
+      "name": "combining-title",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "combining-title",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "combining-title",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /title\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /title"
+      }
+    },
+    {
+      "name": "author-\" \"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "author-\" \"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "author-\" \"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/name\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/name"
+      }
+    },
+    {
+      "name": "author-\"\\t\\n\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "author-\"\\t\\n\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "author-\"\\t\\n\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/name\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/name"
+      }
+    },
+    {
+      "name": "author-\" \"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "author-\" \"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "author-\" \"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/name\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/name"
+      }
+    },
+    {
+      "name": "author-\"\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "name": "author-\"\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "author-\"\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "author-\"﻿\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "author-\"﻿\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "author-\"﻿\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/name\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/name"
+      }
+    },
+    {
+      "name": "author-\"Alice\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "author-\"Alice\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "author-\"Alice\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "url-\"https://example.com\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"https://example.com\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"https://example.com\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "url-\"http://example.com/a?q=b#c\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"http://example.com/a?q=b#c\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"http://example.com/a?q=b#c\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "url-\"https://example.com/%20\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"https://example.com/%20\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"https://example.com/%20\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "url-\"ftp://example.com\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"ftp://example.com\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"ftp://example.com\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"mailto:a@example.com\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"mailto:a@example.com\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"mailto:a@example.com\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"example.com\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"example.com\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"example.com\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://example.com/a b\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://example.com/a b\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://example.com/a b\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://example.com/%zz\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://example.com/%zz\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://example.com/%zz\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://[bad]\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "url-\"https://[bad]\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "url-\"https://[bad]\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://example.com/😀\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://example.com/😀\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://example.com/😀\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://例え.jp\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://例え.jp\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://例え.jp\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "url-\"https://example.com\\n\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "url-\"https://example.com\\n\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "url-\"https://example.com\\n\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author/url\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author/url"
+      }
+    },
+    {
+      "name": "unknown-root",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "unknown-root",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "unknown-root",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /"
+      }
+    },
+    {
+      "name": "unknown-author",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "unknown-author",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "unknown-author",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /author\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /author"
+      }
+    },
+    {
+      "name": "missing-author",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "missing-author",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "missing-author",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /"
+      }
+    },
+    {
+      "name": "duplicate-category",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "duplicate-category",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "duplicate-category",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /categories\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /categories"
+      }
+    },
+    {
+      "name": "unknown-category",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "unknown-category",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "unknown-category",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /categories/0\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /categories/0"
+      }
+    },
+    {
+      "name": "three-categories",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "three-categories",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "three-categories",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /categories\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /categories"
+      }
+    },
+    {
+      "name": "empty-categories",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "empty-categories",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "empty-categories",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /categories\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /categories"
+      }
+    },
+    {
+      "name": "slug-newline",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "slug-newline",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "slug-newline",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /slug\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /slug"
+      }
+    },
+    {
+      "name": "slug-invalid",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "slug-invalid",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "slug-invalid",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /slug\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /slug"
+      }
+    },
+    {
+      "name": "wrong-schema-url",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "wrong-schema-url",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "wrong-schema-url",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /$schema\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /$schema"
+      }
+    },
+    {
+      "name": "width-239",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-239",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-239",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "width-240",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "width-240",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "width-240",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "width-4096",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "width-4096",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "width-4096",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "width-4097",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-4097",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-4097",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "width-240.5",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-240.5",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-240.5",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "width-\"400\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-\"400\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-\"400\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "width-null",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-null",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-null",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "width-true",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "width-true",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "width-true",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "height-179",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "height-179",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "height-179",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "height-180",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "height-180",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "height-180",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "height-4096",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "height-4096",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "height-4096",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "height-4097",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "height-4097",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "height-4097",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "unknown-presentation",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "unknown-presentation",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "unknown-presentation",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "default-shape",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "default-shape",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "default-shape",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\"0\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"0\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"0\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\"5px\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"5px\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"5px\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\"5.0px\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"5.0px\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"5.0px\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\".5%\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\".5%\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\".5%\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\"0 / 20% 30%\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"0 / 20% 30%\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-\"0 / 20% 30%\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-\"5.px\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"5.px\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"5.px\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-\"5.%\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"5.%\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"5.%\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-\"calc(5px)\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"calc(5px)\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"calc(5px)\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-\"-1px\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"-1px\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"-1px\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-\"1e309px\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"1e309px\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"1e309px\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-\"1px 2px 3px 4px 5px\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-\"1px 2px 3px 4px 5px\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-\"1px 2px 3px 4px 5px\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-null",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-null",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-null",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0 L100 0 L100 100 Z\",\"viewBox\":[100,100],\"fillRule\":\"evenodd\"}",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-{\"path\":\"M0 0 L100 0 L100 100 Z\",\"viewBox\":[100,100],\"fillRule\":\"evenodd\"}",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-{\"path\":\"M0 0 L100 0 L100 100 Z\",\"viewBox\":[100,100],\"fillRule\":\"evenodd\"}",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0X\"}",
+      "typebox": true,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0X\"}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: window silhouette",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0X\"}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_shape\", message: \"Invalid window silhouette\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid window silhouette"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M,0 0\"}",
+      "typebox": true,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M,0 0\"}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: window silhouette",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M,0 0\"}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_shape\", message: \"Invalid window silhouette\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid window silhouette"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0Z 1 1\"}",
+      "typebox": true,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0Z 1 1\"}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: window silhouette",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0Z 1 1\"}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_shape\", message: \"Invalid window silhouette\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid window silhouette"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M1e309 0\"}",
+      "typebox": true,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M1e309 0\"}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: window silhouette",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M1e309 0\"}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_shape\", message: \"Invalid window silhouette\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid window silhouette"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,100,100]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,100,100]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,100,100]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[0,100]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[0,100]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[0,100]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1,16385]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1,16385]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1,16385]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1.5,100]}",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1.5,100]}",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[1.5,100]}",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[\"100\",100]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[\"100\",100]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[\"100\",100]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,null]}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,null]}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"viewBox\":[100,null]}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"fillRule\":\"future\"}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"fillRule\":\"future\"}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"fillRule\":\"future\"}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "shape-{\"path\":\"M0 0L1 1\",\"future\":true}",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"future\":true}",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "shape-{\"path\":\"M0 0L1 1\",\"future\":true}",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "skin-\"assets/skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "skin-\"assets/skin.png\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "skin-\"assets/skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "skin-\"assets/nested/skin.PNG\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "skin-\"assets/nested/skin.PNG\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "skin-\"assets/nested/skin.PNG\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "skin-\"assets/../skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/../skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/../skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/../skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/../skin.png"
+      }
+    },
+    {
+      "name": "skin-\"assets/a/../../skin.png\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/a/../../skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "skin-\"assets/a/../../skin.png\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "skin-\"/assets/skin.png\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"/assets/skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "skin-\"/assets/skin.png\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "skin-\"assets/skin.jpg\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/skin.jpg\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: invalid manifest",
+        "schemaAcceptance": false
+      },
+      "candidate": {
+        "name": "skin-\"assets/skin.jpg\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "skin-\"assets/a//skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/a//skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a//skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/a//skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a//skin.png"
+      }
+    },
+    {
+      "name": "skin-\"assets/a/./skin.png\"",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "name": "skin-\"assets/a/./skin.png\"",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a/./skin.png",
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/a/./skin.png\"",
+        "nativeAcceptance": true,
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: unsafe path assets/a/./skin.png"
+      }
+    },
+    {
+      "name": "skin-\"assets/skin.png\\n\"",
+      "typebox": false,
+      "expectedNativeAcceptance": false,
+      "expectedPackageAcceptance": false,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "skin-\"assets/skin.png\\n\"",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "name": "skin-\"assets/skin.png\\n\"",
+        "nativeAcceptance": false,
+        "nativeError": "HitSlopCoreBinding.CoreError.Rejected(code: \"invalid_request\", message: \"Invalid manifest.json at /presentation\", opIndex: nil)",
+        "packageAcceptance": false,
+        "packageError": "Invalid hitSlop package: Invalid manifest.json at /presentation"
+      }
+    },
+    {
+      "name": "mixed-presentation",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "mixed-presentation",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "mixed-presentation",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/doodle-board/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Doodle Board",
+        "name": "examples/slops/doodle-board/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Doodle Board",
+        "name": "examples/slops/doodle-board/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/meeting-notes/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Meeting Notes",
+        "name": "examples/slops/meeting-notes/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Meeting Notes",
+        "name": "examples/slops/meeting-notes/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/workout-planner/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Workout Planner",
+        "name": "examples/slops/workout-planner/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Workout Planner",
+        "name": "examples/slops/workout-planner/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/kanban-board/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Kanban Board",
+        "name": "examples/slops/kanban-board/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Kanban Board",
+        "name": "examples/slops/kanban-board/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/shape-lab/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Shape Lab",
+        "name": "examples/slops/shape-lab/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Shape Lab",
+        "name": "examples/slops/shape-lab/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/pixel-art/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Pixel Art Studio",
+        "name": "examples/slops/pixel-art/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Pixel Art Studio",
+        "name": "examples/slops/pixel-art/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/metronome-tapper/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Metronome & BPM",
+        "name": "examples/slops/metronome-tapper/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Metronome & BPM",
+        "name": "examples/slops/metronome-tapper/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/pocket-sheet/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Pocket Sheet",
+        "name": "examples/slops/pocket-sheet/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Pocket Sheet",
+        "name": "examples/slops/pocket-sheet/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/habit-heatmap/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Habit Heatmap",
+        "name": "examples/slops/habit-heatmap/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Habit Heatmap",
+        "name": "examples/slops/habit-heatmap/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/wordle/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Wordle",
+        "name": "examples/slops/wordle/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Wordle",
+        "name": "examples/slops/wordle/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/morning-pages/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Morning Pages",
+        "name": "examples/slops/morning-pages/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Morning Pages",
+        "name": "examples/slops/morning-pages/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/alien-radio/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Alien Radio",
+        "name": "examples/slops/alien-radio/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Alien Radio",
+        "name": "examples/slops/alien-radio/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/slide-deck/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Slide Deck",
+        "name": "examples/slops/slide-deck/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Slide Deck",
+        "name": "examples/slops/slide-deck/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/reading-tracker/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Reading Tracker",
+        "name": "examples/slops/reading-tracker/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Reading Tracker",
+        "name": "examples/slops/reading-tracker/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/recipe/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Recipe",
+        "name": "examples/slops/recipe/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Recipe",
+        "name": "examples/slops/recipe/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/quick-checklist/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Quick Checklist",
+        "name": "examples/slops/quick-checklist/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Quick Checklist",
+        "name": "examples/slops/quick-checklist/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/small-expenses/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Small Expenses",
+        "name": "examples/slops/small-expenses/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Small Expenses",
+        "name": "examples/slops/small-expenses/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    },
+    {
+      "name": "examples/slops/harada-method/manifest.json",
+      "typebox": true,
+      "expectedNativeAcceptance": true,
+      "expectedPackageAcceptance": true,
+      "baseline": {
+        "decodedTitle": "Harada Method",
+        "name": "examples/slops/harada-method/manifest.json",
+        "packageAcceptance": true,
+        "schemaAcceptance": true
+      },
+      "candidate": {
+        "decodedTitle": "Harada Method",
+        "name": "examples/slops/harada-method/manifest.json",
+        "nativeAcceptance": true,
+        "packageAcceptance": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+[workspace]
+members = ["crates/hitslop-core", "crates/hitslop-core-ffi", "crates/hitslop-core-wasm", "crates/slop-engine", "crates/hitslop-runner"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+# Loro main: its fixes (revert_to, malformed-import errors, smaller snapshots) are not on
+# crates.io yet. An exact rev; return to `=1.16.x` once one is published.
+loro = { git = "https://github.com/loro-dev/loro", rev = "c00c9fa501f8d32f68d6255eacb7035a67fb6ab6" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+# Clippy's default groups warn, and `verify rust` denies warnings; these deny outright.
+[workspace.lints.clippy]
+correctness = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+
+# Development builds (`bun run build`, the Bun, Swift and native tiers): optimized, since the
+# core's wall-clock budgets (the text diff's timeout, save scheduling, deadlines) assume it.
+# Panics unwind: the owner contains them.
+[profile.release]
+panic = "unwind"
+
+# What ships (`HITSLOP_CARGO_PROFILE=dist`): the release gate, compatibility capture, the
+# Xcode archive and the Engines workflow. Measured: engine 10.4→8.1 MB, app core 9.6→7.4 MB,
+# WASM 4.24→3.83 MB, and a core rebuild 24 s→120 s, so development keeps `release`.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+# Test builds keep file and line in backtraces, not full debug info: less to write, link
+# and keep in `target/`.
+[profile.dev]
+debug = "line-tables-only"
+
+# Tests run the workspace crates in debug but Loro optimized: the randomized
+# publication and model suites are dominated by the dependency's debug speed.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

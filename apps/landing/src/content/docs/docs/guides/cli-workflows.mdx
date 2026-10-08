@@ -7,31 +7,31 @@ Use the CLI yourself or let your coding agent run it. Start with an authoring pr
 
 ## Choose how to run commands
 
-Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx @hitslop/cli`.
+Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx hitslop`.
 
 | Entry point | When to use it |
 | --- | --- |
-| `bunx @hitslop/cli COMMAND` | Run the authoring CLI without a global install. |
-| `slop COMMAND` | After `bun install -g @hitslop/cli`, with Bun's bin directory on your PATH. |
-| `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" COMMAND` | Run native document commands directly, without Node or Bun. |
+| `bunx hitslop COMMAND` | Run the authoring CLI without a global install. |
+| `slop COMMAND` | After `bun install -g hitslop`, with Bun's bin directory on your PATH. |
+| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" COMMAND` | Run document commands directly, without Node or Bun. |
 
-Use `bunx` or `slop` for the examples below. Build, register, and document commands use the installed Mac app, which can be closed. Browser preview works without it.
+Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
 
-For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` in the native commands.
+For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/slop-engine"` in the native commands.
 
 Append `--help` to any command to see its arguments.
 
 ## Create, preview, and register an app
 
 ```sh
-bunx @hitslop/cli init weekend-kit
+bunx hitslop init weekend-kit
 cd weekend-kit
 bun install
 bun run check
 bun run dev
 ```
 
-`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `manifest.json` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
+`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `slop.ts` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
 
 At the end, choose which agent CLI should build your slop. The picker offers detected Codex, Claude Code, Gemini CLI, and OpenCode installations. Choose **Other CLI…** for Grok or another installed tool: enter its executable name or path, then its prompt option (leave blank if it accepts a positional prompt). The agent opens in the new project and is asked to read the brief and hitSlop guidance before implementing your app. It uses its existing account, model, and permission settings.
 
@@ -40,16 +40,16 @@ Choose **Finish without launching** to work manually. If an agent fails or you c
 For an agent or script that is already running, create the project without another interactive session:
 
 ```sh
-bunx @hitslop/cli init budget-book --yes \
+bunx hitslop init budget-book --yes \
   --brief 'Track spending by category with a monthly summary.' \
-  --title 'Budget Book' --slug budget-book \
+  --title 'Budget Book' \
   --category finance --category personal --author Jordan \
   --description 'A simple monthly spending tracker.'
 ```
 
-Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. Metadata is validated before files are created, and an existing destination is never overwritten.
+Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The wizard initializes the explicit `slug` from the directory name: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
 
-Read `manifest.json`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh. Stop and restart the preview after source changes.
+Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or any module it imports outside components (the document definition, commands, skin or artwork) resets disposable state.
 
 Stop the preview, then package the app and add it to your local catalog:
 
@@ -58,143 +58,160 @@ bun run build
 bun run register
 ```
 
-Build writes `dist/weekend-kit.slop`. Register builds it and adds it to the Mac app's template catalog. Existing documents keep their app version.
+Build writes `dist/weekend-kit.slop` on macOS or Linux. Register, on a Mac, builds it with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
-From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174`, `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
+From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
 
 ## Create and open a writable document
 
 In the Mac app, choose a template and select **Create**. For the terminal equivalent, run these commands from your authoring project:
 
 ```sh
-"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" create \
-  --from dist/weekend-kit.slop --output "$HOME/Documents/Weekend.slop"
-"/Applications/hitSlop.app/Contents/Helpers/hitslop-native" open \
-  "$HOME/Documents/Weekend.slop"
+bunx hitslop create --from dist/weekend-kit.slop --output "$HOME/Documents/Weekend.slop"
+bunx hitslop open "$HOME/Documents/Weekend.slop"
 ```
 
-Use the native commands above for `create` and `open`. Create makes a new document with the template's starting data; choose a destination that does not already exist. Open launches it in hitSlop.
+Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.slop` is added if you leave it off. Open launches it in hitSlop. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
+
+To start from a template in the Mac app's catalog instead, list them and pass a slug to `--from`:
+
+```sh
+bunx hitslop templates
+bunx hitslop create --from weekend-kit --output "$HOME/Documents/Weekend.slop"
+```
+
+`templates` prints each template's slug, title, description, categories, path and source: `bundled` with the app, or `installed` by register. If you register a template with the same slug as a bundled one, the slug names yours.
 
 ## Read and edit data
 
-In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read `manifest.json`, the schema, and current data first:
+In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read the schema and current data first:
+
+`slop describe My.slop` lists the fields, supported edits and any named commands saved
+inside the document. Add `--json` for structured output. To run a listed command:
 
 ```sh
-bunx @hitslop/cli schema My.slop
-bunx @hitslop/cli get My.slop
+bunx hitslop call My.slop addTask --args '{"text":"Buy coffee"}'
+```
+
+Commands use the same authored behavior as the app's buttons and apply as one undo
+step. Each document lists its own commands; generic `apply` and `batch` remain available.
+
+```sh
+bunx hitslop schema My.slop
+bunx hitslop get My.slop
 ```
 
 For a document with a text field named `title`:
 
 ```sh
-bunx @hitslop/cli apply My.slop \
-  --op '{"type":"text.replace","path":["title"],"value":"Weekend"}'
-bunx @hitslop/cli batch My.slop \
-  --ops '[{"type":"text.replace","path":["title"],"value":"Ready for the weekend"}]'
+bunx hitslop apply My.slop \
+  --op '{"type":"set","path":["title"],"value":"Weekend"}'
+bunx hitslop batch My.slop \
+  --ops '[{"type":"set","path":["title"],"value":"Ready for the weekend"}]'
 ```
 
 `apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
 
-Commands print JSON, and successful edits are saved. You can edit a document while it is open or closed. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+Commands print JSON (edits print `{ids}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
 
-## Import complete JSON data
+## Move data between documents
 
-Read the destination schema, then ask your agent to prepare `mapped.json` with the data you want to import.
-
-To create a new document from a built template:
+`import` writes a JSON file's value into a document, changing only what differs. Rows are matched by `$id`, so rows and text that stay keep their identity, and fields the import leaves unchanged are not written at all; an open window keeps working on them. Pass `--path` to replace one part, such as `'["rows"]'`:
 
 ```sh
-bunx @hitslop/cli schema dist/weekend-kit.slop
-bunx @hitslop/cli import New.slop \
-  --from dist/weekend-kit.slop --file mapped.json
+bunx hitslop get Old.slop > data.json
+bunx hitslop import New.slop data.json
+bunx hitslop import New.slop rows.json --path '["rows"]'
 ```
 
-To replace an existing document's data, first capture its data, schema, and version:
-
-```sh
-bunx @hitslop/cli get My.slop --snapshot > snapshot.json
-# Prepare mapped.json using the snapshot. Replace VERSION_TOKEN below
-# with the exact version string from snapshot.json, keeping it quoted.
-bunx @hitslop/cli import My.slop \
-  --replace --if-version 'VERSION_TOKEN' --file mapped.json
-```
-
-`mapped.json` must contain the complete document data. **Replacement removes rows and optional values that you leave out.** Use the data from your snapshot as a starting point, keeping row IDs for items you want to retain.
-
-If someone edits the document after your snapshot, take a new snapshot and update your import before retrying. Import changes data only; it keeps the document's theme and existing attachments. To copy attachments from another document, use the attachment commands below. See the [import reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#full-json-import) for advanced cases.
+Both documents must come from the same template, so the data fits its schema; a value that doesn't fit is refused and nothing changes. For a document of another template, map the data to one `batch` of `insert` and `set` operations, giving each insert an `id` so a retried command is refused as a duplicate. Copy attachments with the commands below, then write their references. Edit ▸ Undo in the window reverts an import as one step.
 
 ## Change theme colors
 
 ```sh
-bunx @hitslop/cli theme get My.slop
-bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad"}'
-bunx @hitslop/cli theme reset My.slop --token accent
-bunx @hitslop/cli theme reset My.slop
+bunx hitslop theme get My.slop
+bunx hitslop theme set My.slop --values '{"accent":"#7050ad"}'
+bunx hitslop theme reset My.slop --token accent
+bunx hitslop theme reset My.slop
+bunx hitslop theme export My.slop --output Purple.json
+bunx hitslop theme import Other.slop Purple.json
 ```
 
-`theme get` reports defaults, overrides, and effective values. Set only tokens declared by the app. Reset one token with `--token`, or omit it to reset all overrides. The open window and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for authoring theme tokens.
+`theme get` reports the template's colors, the document's changes, and the effective palette. Set only colors the app declares, as lowercase `#rrggbb` or `#rrggbbaa`. Reset one color with `--token`, or omit it to reset them all. `theme export` prints the full palette as a theme file, or writes it with `--output`; `theme import` replaces the palette with a file made for the same template. The open window, its theme panel and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for declaring a theme.
 
 ## Work with attachments
 
 ```sh
-bunx @hitslop/cli attachments import My.slop ./photo.png
-bunx @hitslop/cli attachments list My.slop
-# Replace ATTACHMENT_ID with an ID returned by import or list.
-bunx @hitslop/cli attachments export My.slop ATTACHMENT_ID \
+bunx hitslop attachments ref ./photo.png
+# Store the printed reference where the app expects it, attaching the file in the same edit.
+bunx hitslop apply My.slop --attach ./photo.png \
+  --op '{"type":"set","path":["photo"],"value":{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}}'
+bunx hitslop attachments list My.slop
+bunx hitslop attachments export My.slop ATTACHMENT_ID \
   --output ./photo-copy.png
 ```
 
-Import saves the file and returns its ID, name, type, and size. Ask your agent to store that reference in the appropriate document field so the app can use it. List shows saved attachment IDs and sizes.
+`attachments ref` prints a file's reference (its ID, size, name and type) without reading the document. `--attach` on `apply` or `batch` saves the file in the same edit that stores the reference, so both succeed or neither does; repeat it for more files. Ask your agent to store the reference where the app expects it. A file nothing references any more is removed when the document closes, and a duplicate or shared copy carries only the files its document references. List shows saved attachment IDs and sizes.
 
-Attachment export refuses existing output files and destinations inside the document package. After an uncertain import, inspect the attachment list before another command.
+Attachment export refuses existing output files and the document itself. After an uncertain edit, run `get` before another command.
 
 ## Export PNG or PDF
 
 ```sh
-bunx @hitslop/cli export My.slop --format png --output My.png
-bunx @hitslop/cli export My.slop --format pdf --output My.pdf
+bunx hitslop export My.slop --format png --output My.png
+bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose an output outside the `.slop` package; existing output files are replaced. Open documents export the current view. Closed documents use saved data and the app's starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose an output other than the `.slop` itself; existing output files are replaced. Open documents export the current view. Closed documents use saved data and the app's starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
 
 ## Install agent skills
 
-Run the interactive installer to choose scope and agents:
+Agent skills link to your global CLI, so they update whenever you upgrade it. Install the CLI globally, then run the interactive installer to choose skills and agents:
 
 ```sh
-bunx @hitslop/cli skills install
+bun install -g hitslop
+slop skills install
 ```
 
 Or, from a project directory, install for all detected agents at project scope:
 
 ```sh
-bunx @hitslop/cli skills install --all --scope project
+slop skills install --all --scope project
 ```
 
-Use `--scope global` to make the skills available across projects. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`.
+Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Global links require a global install. Project links use the project's pinned `node_modules/hitslop`, including when installed through `bunx`.
 
-Repair existing links after updating the CLI package:
+Upgrading the global CLI updates linked skills in place. If a link breaks or points somewhere else, repair it; add `--scope project` for project links:
 
 ```sh
-bunx @hitslop/cli skills repair --scope project
+slop skills repair
 ```
 
-`skills repair` repairs existing links; `skills update` remains an alias. To install skills for a new agent, run `skills install` again. Installed links use a durable local copy, so clearing the bunx cache does not break them.
+To install skills for a new agent, run `skills install` again.
 
-Remove installed links explicitly:
+Remove installed links explicitly. Any copy of the CLI can do this:
 
 ```sh
-bunx @hitslop/cli skills uninstall --scope project
+slop skills uninstall --scope project
 # Remove every installed hitSlop skill at this scope without prompts:
-bunx @hitslop/cli skills uninstall --all --scope project
+slop skills uninstall --all --scope project
 ```
 
-The guides copied into a project by `init` are ordinary files. Repair does not update them, and installation does not overwrite them without confirmation. Review those copies when upgrading your project.
+The guides linked by `init` follow the project's pinned `node_modules/hitslop` install. Upgrading that dependency updates the linked guides; upgrading the global CLI leaves them unchanged.
 
 ## Upgrade the CLI
 
-Install the compatible hitSlop Mac app before upgrading authoring packages. Within a project, update `@hitslop/cli` and `@hitslop/document` to the same released version; update `@hitslop/schema` to that version too if you depend on it directly. Continue using the project's `bun run` scripts. A global CLI update does not change a project's pinned dependencies.
+The Mac app and the `hitslop` package share a release version. Within a project, update its one pinned `hitslop` dependency and continue using its `bun run` scripts. A global CLI update does not change project dependencies. If the command protocol differs, the CLI names which installation needs updating before touching a document. Updating either installation preserves the app already saved inside every document.
 
-If you use a global installation, update it with `bun install -g @hitslop/cli@VERSION`, replacing `VERSION` with the matching released version. Then run `slop skills repair --scope global` to refresh installed skill links. With bunx, use `bunx @hitslop/cli@VERSION skills repair --scope global` instead.
+Update the global CLI with `bun install -g hitslop@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
 
-Interactive commands may show an update notice on stderr, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
+Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
+
+The CLI and native owner use the same generated socket contract. Socket requests
+carry the document path and the command protocol they are written in. Correlation IDs
+are not part of this contract; each request receives its reply on its own exchange.
+
+`apply` submits one operation through the same batch path as `batch`. Both read modes
+use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
+schema, the template's colors (`defaults`), the version, the value and the effective
+colors (`theme`).

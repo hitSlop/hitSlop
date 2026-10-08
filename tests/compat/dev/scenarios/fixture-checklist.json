@@ -1,0 +1,70 @@
+{
+  "ops": [
+    {
+      "type": "increment",
+      "path": [
+        "hits"
+      ],
+      "by": 4
+    },
+    {
+      "type": "insert",
+      "path": [
+        "rows"
+      ],
+      "id": "compat-3",
+      "value": {
+        "done": true,
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "rows"
+      ],
+      "id": "00000000000000000000000000000001",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
+      "type": "set",
+      "path": [
+        "title"
+      ],
+      "value": "Compat 3 ✓ café 🦊"
+    }
+  ],
+  "value": {
+    "hits": 9,
+    "rows": [
+      {
+        "$id": "compat-1",
+        "done": true,
+        "text": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "00000000000000000000000000000002",
+        "done": false,
+        "text": "B"
+      },
+      {
+        "$id": "compat-2",
+        "done": false,
+        "text": "Replay 2 é 中文"
+      },
+      {
+        "$id": "00000000000000000000000000000001",
+        "done": false,
+        "text": "A"
+      },
+      {
+        "$id": "compat-3",
+        "done": true,
+        "text": "Compat 3 ✓ café 🦊"
+      }
+    ],
+    "title": "Compat 3 ✓ café 🦊"
+  }
+}

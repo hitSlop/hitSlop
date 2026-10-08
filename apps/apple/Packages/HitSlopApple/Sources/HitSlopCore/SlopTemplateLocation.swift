@@ -1,32 +1,17 @@
 import Foundation
+import HitSlopCoreBinding
 
-/// Shared catalog-master classification. Opening a master must never create live document state.
+/// Where templates live, as the core lists them, so the app, its helper and the CLI agree. A
+/// template is a kind of file, not a location: these folders decide what the catalog lists,
+/// and the core refuses new documents inside them.
 public enum SlopTemplateLocation {
-  public static var defaultTemplatesRoot: URL {
-    FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hitslop/templates", isDirectory: true)
-  }
+  /// The installed templates folder the catalog lists: `HITSLOP_TEMPLATES_ROOT` (a
+  /// development app's) or `~/.hitslop/templates`. Nil only without an account home folder.
+  public static var templatesRoot: URL? { root(.installed) }
+  /// The starters bundled with the app, when this process runs inside it.
+  public static var bundledRoot: URL? { root(.bundled) }
 
-  public static func isManagedTemplatePackage(_ url: URL, templatesRoot: URL = defaultTemplatesRoot) -> Bool {
-    let candidate = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-    var roots = [templatesRoot]
-    if let resources = Bundle.main.resourceURL {
-      roots.append(resources.appendingPathComponent("StarterTemplates"))
-    }
-    // The installed CLI's main bundle is Contents/Helpers, not the enclosing app.
-    if let executable = Bundle.main.executableURL?.resolvingSymlinksInPath() {
-      let helpers = executable.deletingLastPathComponent()
-      let contents = helpers.deletingLastPathComponent()
-      if helpers.lastPathComponent.caseInsensitiveCompare("Helpers") == .orderedSame,
-         contents.lastPathComponent.caseInsensitiveCompare("Contents") == .orderedSame,
-         contents.deletingLastPathComponent().pathExtension.caseInsensitiveCompare("app") == .orderedSame {
-        roots.append(contents.appendingPathComponent("Resources/StarterTemplates"))
-      }
-    }
-    return roots.contains { url in
-      let root = url.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-      return candidate.count > root.count && zip(root, candidate).allSatisfy {
-        $0.caseInsensitiveCompare($1) == .orderedSame
-      }
-    }
+  private static func root(_ source: TemplateSource) -> URL? {
+    templateRoots().first { $0.source == source }.map { URL(fileURLWithPath: $0.path, isDirectory: true) }
   }
 }

@@ -1,0 +1,120 @@
+--- a/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift
++++ b/apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopPackage.swift
+@@ -16,6 +16,7 @@
+ public struct SlopPackage: Sendable {
+   public let rootURL: URL
+   private var validatedSkin: (url: URL, image: CGImage)?
++  public let schemaKey: String
+   public let manifest: SlopManifest
+   public let silhouette: SlopSilhouette
+ 
+@@ -42,6 +43,22 @@
+     manifest = decoded.manifest
+ 
+     silhouette = SlopSilhouette(parsed: decoded.silhouette)
++    do {
++      func utf8(_ file: String, maximum: Int) throws -> String {
++        let bytes = try SlopFile.read(root.appendingPathComponent(file), within: root, maximumBytes: maximum)
++        guard let value = String(data: bytes, encoding: .utf8) else { throw SlopPackageError.invalid("\(file) must be UTF-8") }
++        return value
++      }
++      schemaKey = try validateDocument(schemaJson: utf8("state.schema.json", maximum: 1_048_576), initialJson: utf8("initial.json", maximum: SlopFile.maximumBytes))
++      if fileManager.fileExists(atPath: root.appendingPathComponent("assets/theme.json").path) {
++        try validateThemeDefaults(json: utf8("assets/theme.json", maximum: 65_536))
++      }
++    } catch let error as CoreError {
++      switch error {
++      case .Rejected(_, let message, _): throw SlopPackageError.invalid(message)
++      case .Invalidated(let message): throw SlopPackageError.invalid(message)
++      }
++    }
+ 
+     // The host owns the page; a package supplies only its app module.
+     guard fileManager.fileExists(atPath: entryURL.path) else {
+@@ -103,7 +120,6 @@
+       }
+     }
+     try validateState()
+-    try validateSchemaMetadata()
+     try validateDocumentSkill()
+     try validateQuickLook()
+     validatedSkin = try skin()
+@@ -267,14 +283,6 @@
+         throw SlopPackageError.invalid("unexpected or unsafe state file")
+       }
+     }
+-  }
+-
+-  private func validateSchemaMetadata() throws {
+-    let descriptor = try SlopFile.read(dataSchemaURL, within: rootURL, maximumBytes: 1024 * 1024)
+-    guard let header = try JSONSerialization.jsonObject(with: descriptor) as? [String: Any],
+-      header["kind"] as? String == "object"
+-    else { throw SlopPackageError.invalid("document descriptor must have an object root") }
+-    _ = try JSONSerialization.jsonObject(with: SlopFile.read(initialURL, within: rootURL))
+   }
+ 
+   private func validateDocumentSkill(strict: Bool = false) throws {
+--- a/apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/DocumentOwner.swift
++++ b/apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/DocumentOwner.swift
+@@ -80,8 +80,7 @@
+ 
+   public init(package: SlopPackage, mode: StorageMode = .document) throws {
+     self.package = package
+-    let descriptor = try SlopFile.read(package.dataSchemaURL, within: package.rootURL, maximumBytes: 1_048_576)
+-    schemaKey = try HitSlopCoreBinding.schemaKey(schemaJson: String(decoding: descriptor, as: UTF8.self))
++    schemaKey = package.schemaKey
+     storage = try Storage(root: package.rootURL, mode: mode)
+     do {
+       let loaded = try storage.load()
+--- a/crates/hitslop-core-ffi/src/lib.rs
++++ b/crates/hitslop-core-ffi/src/lib.rs
+@@ -31,6 +31,15 @@
+ }
+ 
+ #[uniffi::export]
++pub fn validate_document(schema_json: String, initial_json: String) -> Result<String, CoreError> {
++    hitslop_core::validate(&schema_json, &initial_json).map_err(rejected)?;
++    hitslop_core::schema_key(&schema_json).map_err(rejected)
++}
++#[uniffi::export]
++pub fn validate_theme_defaults(json: String) -> Result<(), CoreError> {
++    hitslop_core::theme::validate_defaults(&json).map_err(rejected)
++}
++#[uniffi::export]
+ pub fn schema_key(schema_json: String) -> Result<String, CoreError> {
+     hitslop_core::schema_key(&schema_json).map_err(rejected)
+ }
+--- a/packages/document/tests/cli.native.test.ts
++++ b/packages/document/tests/cli.native.test.ts
+@@ -115,6 +115,7 @@
+     expect((await cli("batch", "--ops", "null")).code).not.toBe(0);
+     const changed = defineDocument({ title: s.text(), extra: s.boolean() });
+     await writeFile(join(root, "state.schema.json"), JSON.stringify(changed.descriptor));
++    await writeFile(join(root, "initial.json"), JSON.stringify({ title: "Initial", extra: false }));
+     expect((await cli("get")).error).toContain("schema differs from saved state");
+     expect(await readFile(join(root, "state/document.sqlite"))).toEqual(before);
+   } finally {
+--- /dev/null
++++ b/apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/PackageRegression.swift
+@@ -0,0 +1,21 @@
++import Foundation
++import Testing
++@testable import HitSlopCore
++
++@Suite struct BoundaryPackageRegression {
++  @Test(arguments: ["descriptor", "initial", "theme", "utf8"])
++  func refusesInvalidPackageInput(kind: String) throws {
++    let repository = #filePath.components(separatedBy: "/apps/apple/")[0]
++    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
++    try FileManager.default.copyItem(atPath: repository + "/tests/fixtures/checklist/document", toPath: root.path)
++    defer { try? FileManager.default.removeItem(at: root) }
++    let (file, bytes): (String, Data) = switch kind {
++    case "descriptor": ("state.schema.json", Data(#"{"kind":"object","properties":{"bad":{"kind":"not-a-kind"}}}"#.utf8))
++    case "initial": ("initial.json", Data(#"{"title":false,"rows":[],"hits":0}"#.utf8))
++    case "theme": ("assets/theme.json", Data(#"{"accent":"red;"}"#.utf8))
++    default: ("assets/theme.json", Data([0xff]))
++    }
++    try bytes.write(to: root.appendingPathComponent(file))
++    #expect(throws: SlopPackageError.self) { _ = try SlopPackage(rootURL: root) }
++  }
++}

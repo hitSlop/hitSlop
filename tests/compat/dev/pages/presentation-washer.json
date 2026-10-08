@@ -1,0 +1,12 @@
+{
+  "actions" : [
+    {
+      "click" : true,
+      "selector" : "button"
+    }
+  ],
+  "script" : "actions",
+  "value" : {
+    "count" : 6
+  }
+}

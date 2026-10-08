@@ -1,31 +1,32 @@
 ---
 title: Edit installed documents
-description: Inspect schemas, edit through the native owner, and customize declared theme tokens.
+description: Inspect schemas, edit through the native owner, and change or share a document's theme colors.
 ---
 
-Document commands read and edit the live Loro document, which the native app persists in SQLite. `apply` and `batch` accept JSON operations; `get` returns a read-only JSON snapshot. There is no editable `data.json` file.
+Document commands read and edit the document through the app's Rust core, which persists it in SQLite. `apply` and `batch` accept JSON operations; `get` returns a read-only JSON snapshot. There is no editable `data.json` file.
 
 Create a writable copy before editing. Registered templates are immutable masters.
 
-The [CLI workflows guide](/docs/guides/cli-workflows/) shows how to create that copy from the terminal, import complete JSON data, transfer attachments, and export PNG/PDF. It also covers direct native commands when you do not have Bun installed.
+The [CLI workflows guide](/docs/guides/cli-workflows/) shows how to create that copy from the terminal, move data between documents, transfer attachments, and export PNG/PDF. It also covers direct native commands when you do not have Bun installed.
 
 ```sh
-bunx @hitslop/cli schema My.slop
-bunx @hitslop/cli get My.slop
-bunx @hitslop/cli apply My.slop --op '{"type":"text.replace","path":["title"],"value":"Weekend"}'
-bunx @hitslop/cli batch My.slop --ops '[{"type":"text.replace","path":["title"],"value":"Ready"}]'
+bunx hitslop schema My.slop
+bunx hitslop get My.slop
+bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Weekend"}'
+bunx hitslop batch My.slop --ops '[{"type":"set","path":["title"],"value":"Ready"}]'
 ```
 
 Read the descriptor and current state before choosing operations. The CLI prints JSON and reports failures on stderr. Successful mutations acknowledge persistence. If transport fails, run `get` before another edit; do not blindly retry.
 
-The installed app's helper performs edits through the live document socket or an engine-only hidden WebView when closed. It does not load the authored interface for headless edits and never bypasses a busy writer. Installed native editing itself needs no Bun; the `bunx` command is its convenient authoring-CLI entrypoint.
+The Rust engine sends edits to the open document's socket, or edits a closed document directly without loading its interface. The CLI uses its own bundled engine on macOS and Linux. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. The `slop` CLI runs with Bun; document edits do not require the Mac app.
 
-Theme changes use a separate command and persist in `state/theme.json`, outside the Loro data in SQLite:
+Theme colors use separate commands, or the theme panel in the window, and are saved with the document's edits, in the same database:
 
 ```sh
-bunx @hitslop/cli theme get My.slop
-bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad"}'
-bunx @hitslop/cli theme reset My.slop
+bunx hitslop theme get My.slop
+bunx hitslop theme set My.slop --values '{"accent":"#7050ad"}'
+bunx hitslop theme reset My.slop
+bunx hitslop theme export My.slop --output Mine.json
 ```
 
-Only declared tokens may be changed. They affect the editor and captures, not application data or layout selectors. Do not edit SQLite, initial values, or theme sidecars underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).
+Only declared colors may be changed. They affect the editor and captures, not application data, fonts or layout. Do not edit SQLite or initial values underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).

@@ -3,131 +3,151 @@ import HitSlopCore
 import ImageIO
 
 @MainActor final class SlopWindowMask {
-    private enum Content {
-        case geometry(Shape)
-        case image(CGImage, AlphaMap)
-    }
+  private enum Content {
+    case vector(SlopSilhouette)
+    case image(CGImage)
+  }
 
-    private struct AlphaMap {
-        let width: Int
-        let height: Int
-        let bytes: [UInt8]
+  /// A skin's alpha at its own resolution, read only for hit-testing.
+  private struct AlphaMap {
+    private let context: CGContext
 
-        init(image: CGImage) throws {
-            width = image.width
-            height = image.height
-            var rgba = [UInt8](repeating: 0, count: width * height * 4)
-            guard let context = CGContext(
-                data: &rgba,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-            ) else { throw SlopPackageError.invalid("could not read window image mask alpha") }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            bytes = stride(from: 3, to: rgba.count, by: 4).map { rgba[$0] }
-        }
-
-        func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
-            guard bounds.width > 0, bounds.height > 0, bounds.contains(point) else { return false }
-            let x = min(width - 1, max(0, Int((point.x / bounds.width) * CGFloat(width))))
-            let appKitY = min(height - 1, max(0, Int((point.y / bounds.height) * CGFloat(height))))
-            let y = height - 1 - appKitY
-            return bytes[y * width + x] >= 26 // 10% alpha: soft edges look smooth without catching empty pixels.
-        }
-    }
-
-    private let content: Content
-    private let transparentBacking: Bool
-
-    init(package: SlopPackage) throws {
-        transparentBacking = package.usesTransparentBackground
-        if let skin = try package.skin() {
-            content = .image(skin.image, try AlphaMap(image: skin.image))
-        } else {
-            content = .geometry(package.shape)
-        }
-    }
-
-    func installBacking(on layer: CALayer?) {
-        guard let layer else { return }
-        switch content {
-        case .geometry:
-            layer.backgroundColor = transparentBacking ? NSColor.clear.cgColor : NSColor.windowBackgroundColor.cgColor
-        case .image(let image, _):
-            layer.contents = image; layer.contentsGravity = .resize
-            layer.isGeometryFlipped = true; layer.magnificationFilter = .linear; layer.minificationFilter = .linear
-        }
-    }
-
-    func makeLayer() -> CALayer {
-        switch content {
-        case .geometry:
-            return CAShapeLayer()
-        case .image(let image, _):
-            let layer = CALayer()
-            layer.contents = image
-            layer.contentsGravity = .resize
-            layer.isGeometryFlipped = true
-            layer.magnificationFilter = .linear
-            layer.minificationFilter = .linear
-            return layer
-        }
-    }
-
-    func update(_ layer: CALayer, bounds: CGRect) {
-        layer.frame = bounds
-        guard case .geometry(let shape) = content, let shapeLayer = layer as? CAShapeLayer else { return }
-        shapeLayer.path = Self.path(for: shape, in: bounds).cgPath
+    init?(image: CGImage) {
+      guard
+        let context = CGContext(
+          data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+          bytesPerRow: image.width, space: CGColorSpaceCreateDeviceGray(),
+          bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
+        )
+      else { return nil }
+      context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+      self.context = context
     }
 
     func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
-        switch content {
-        case .geometry(let shape):
-            return Self.path(for: shape, in: bounds).contains(point)
-        case .image(_, let alpha):
-            return alpha.contains(point, in: bounds)
-        }
+      guard bounds.width > 0, bounds.height > 0, bounds.contains(point), let data = context.data else { return false }
+      let width = context.width
+      let height = context.height
+      let x = min(width - 1, max(0, Int((point.x / bounds.width) * CGFloat(width))))
+      let appKitY = min(height - 1, max(0, Int((point.y / bounds.height) * CGFloat(height))))
+      // Bitmap rows run from the top of the image.
+      let y = height - 1 - appKitY
+      // 10% alpha: soft edges look smooth without catching empty pixels.
+      return data.load(fromByteOffset: y * context.bytesPerRow + x, as: UInt8.self) >= 26
     }
+  }
 
-    func png(from image: NSImage, scale: CGFloat = 1) throws -> Data {
-        let size = image.size
-        let masked = NSImage(size: size, flipped: false) { [content] rect in
-            switch content {
-            case .geometry(let shape):
-                Self.path(for: shape, in: rect, scale: scale).addClip()
-                image.draw(in: rect)
-            case .image(let mask, _):
-                image.draw(in: rect)
-                NSGraphicsContext.saveGraphicsState()
-                if let context = NSGraphicsContext.current?.cgContext {
-                    context.setBlendMode(.destinationIn)
-                    context.draw(mask, in: rect)
-                }
-                NSGraphicsContext.restoreGraphicsState()
-            }
-            return true
-        }
-        guard let tiff = masked.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw SlopPackageError.invalid("could not encode screenshot")
-        }
-        return png
-    }
+  private let content: Content
+  private let imageScale: CGFloat
+  let backdrop: SlopBackdrop
+  private lazy var alphaMap: AlphaMap? = {
+    guard case .image(let image) = content else { return nil }
+    return AlphaMap(image: image)
+  }()
+  private var cachedBounds: CGRect?
+  private var cachedPath: CGPath?
 
-    private static func path(for shape: Shape, in rect: CGRect, scale: CGFloat = 1) -> NSBezierPath {
-        switch shape {
-        case .ellipse:
-            return NSBezierPath(ovalIn: rect)
-        case .capsule:
-            let radius = min(rect.width, rect.height) / 2
-            return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        case .rounded:
-            let radius = min(CGFloat(22) * scale, min(rect.width, rect.height) / 2)
-            return NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        }
+  private func path(_ silhouette: SlopSilhouette, in bounds: CGRect) -> CGPath {
+    if cachedBounds == bounds, let cachedPath { return cachedPath }
+    let path = silhouette.path(in: bounds)
+    cachedBounds = bounds
+    cachedPath = path
+    return path
+  }
+
+  init(file: SlopFile) {
+    backdrop = file.backdrop
+    if let skin = file.skin {
+      content = .image(skin)
+      imageScale = CGFloat(skin.width) / CGFloat(file.width)
+    } else {
+      content = .vector(file.silhouette)
+      imageScale = 1
     }
+  }
+
+  private static func show(_ image: CGImage, scale: CGFloat, on layer: CALayer) {
+    layer.contents = image
+    layer.contentsScale = scale
+    layer.contentsGravity = .resize
+    layer.isGeometryFlipped = true
+    layer.magnificationFilter = .linear
+    layer.minificationFilter = .linear
+  }
+
+  func installBacking(on layer: CALayer?) {
+    guard let layer else { return }
+    switch content {
+    case .vector:
+      layer.backgroundColor = backdrop == .window ? NSColor.windowBackgroundColor.cgColor : NSColor.clear.cgColor
+    case .image(let image):
+      Self.show(image, scale: imageScale, on: layer)
+    }
+  }
+
+  func makeLayer() -> CALayer {
+    switch content {
+    case .vector:
+      return CAShapeLayer()
+    case .image(let image):
+      let layer = CALayer()
+      Self.show(image, scale: imageScale, on: layer)
+      return layer
+    }
+  }
+
+  func update(_ layer: CALayer, bounds: CGRect) {
+    layer.frame = bounds
+    guard case .vector(let silhouette) = content, let shapeLayer = layer as? CAShapeLayer else { return }
+    shapeLayer.fillRule = silhouette.fillRule == .evenOdd ? .evenOdd : .nonZero
+    shapeLayer.path = path(silhouette, in: bounds)
+  }
+
+  /// The window's shape as an image the size of `bounds`, for a view that a layer mask
+  /// does not clip: the glass material's blur behind the window.
+  func image(in bounds: CGRect) -> NSImage {
+    switch content {
+    case .vector(let silhouette):
+      let shape = path(silhouette, in: bounds)
+      let rule = silhouette.fillRule
+      return NSImage(size: bounds.size, flipped: false) { _ in
+        guard let context = NSGraphicsContext.current?.cgContext else { return false }
+        context.addPath(shape)
+        context.fillPath(using: rule)
+        return true
+      }
+    case .image(let image):
+      return NSImage(cgImage: image, size: bounds.size)
+    }
+  }
+
+  func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
+    switch content {
+    case .vector(let silhouette):
+      return bounds.contains(point) && path(silhouette, in: bounds).contains(point, using: silhouette.fillRule)
+    case .image:
+      return alphaMap?.contains(point, in: bounds) ?? false
+    }
+  }
+
+  /// A snapshot clipped to the window's shape, as PNG. `scale` is the snapshot's pixels
+  /// per point.
+  func png(from image: NSImage, scale: CGFloat = 1) throws -> Data {
+    try SlopPreviewImage.png(size: image.size) { [content] rect in
+      guard let context = NSGraphicsContext.current?.cgContext else { return }
+      switch content {
+      case .vector(let silhouette):
+        let logical = CGRect(
+          x: rect.minX / scale, y: rect.minY / scale, width: rect.width / scale, height: rect.height / scale)
+        var transform = CGAffineTransform(scaleX: scale, y: scale)
+        context.addPath(silhouette.path(in: logical).copy(using: &transform)!)
+        context.clip(using: silhouette.fillRule)
+        image.draw(in: rect)
+      case .image(let mask):
+        image.draw(in: rect)
+        context.setBlendMode(.destinationIn)
+        context.draw(mask, in: rect)
+      }
+    }
+  }
 }

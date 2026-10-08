@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-30",
+  "commit": "4c12ea89db2c186e6157efde02bab3770bf4d5d1",
+  "dirty": true,
+  "machine": {
+    "chip": "Apple M1",
+    "memoryGiB": 16,
+    "os": "26.6.2"
+  },
+  "command": "cargo run --locked --release -p hitslop-core --example text_cost",
+  "historyOps": 10000,
+  "samplesPerCase": 30,
+  "measurements": [
+    {
+      "characters": 1000,
+      "checkpointBytes": 639221,
+      "p95MS": {
+        "fast": 0.263917,
+        "forkSlow": 38.614625,
+        "set": 0.065709
+      },
+      "peers": 21,
+      "rows": 5000
+    },
+    {
+      "characters": 10000,
+      "checkpointBytes": 639815,
+      "p95MS": {
+        "fast": 0.311625,
+        "forkSlow": 43.566292,
+        "set": 0.175875
+      },
+      "peers": 21,
+      "rows": 5000
+    },
+    {
+      "characters": 100000,
+      "checkpointBytes": 640575,
+      "p95MS": {
+        "fast": 1.295792,
+        "forkSlow": 46.770458,
+        "set": 1.7177920000000002
+      },
+      "peers": 21,
+      "rows": 5000
+    }
+  ],
+  "decision": "Keep the existing diff and replay proof. Fast-path p95 at 10k is below the 5ms optimization threshold; fork slow-path remains under 50ms in this run. These are native release core timings, not end-to-end typing latency."
+}

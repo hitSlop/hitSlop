@@ -2,50 +2,91 @@
 
 **Tiny apps. Big personality.**
 
-Build mini apps for your Mac with Svelte and your favorite AI coding agent. Make a planner that fits your week, an interactive document, or a weird desktop experiment you've been thinking about.
+Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-Your agent can work with the data, too. It can read changes you make in the app, and its edits through the document CLI appear in the open window. Each `.slop` keeps the interface and saved work together in one portable package. Local apps work offline, and you can send a copy to a friend with hitSlop.
+Each one is a document you and your agent share. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
-macOS 14+ · Apple silicon · No account required
+macOS 15.2+ · Apple silicon · No account required
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
   <br><sub>▶ <a href="apps/landing/public/assets/desktop-hero.mp4">Watch the 30-second tour</a></sub>
 </p>
 
+## You and your agent, one document
+
+A slop isn't a chat transcript or a web page someone generated for you. It's a live document with its own small interface, and your agent works on the same document you do, through the hitSlop CLI. Here it works on a tiny counter:
+
+```sh
+slop get "My Wins.slop"      # read what you've done in the window
+slop apply "My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
+slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
+```
+
+With the window open, the count ticks up and the accent turns purple as each command runs. Text merges character by character, and your agent edits from the version it read, so its edit doesn't wipe out what you typed in the same field since. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
+
 ## Small enough to be yours
 
-Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. A tiny pond to stare at between meetings.
+Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
 
-Those are good reasons to make software.
-
-hitSlop is built for tools with one clear job and a little character. Start with a template, or ask your coding agent to make the thing you keep wishing existed. Give it the fields you need, the colors you like, and a window that fits the job. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
-
-If all you need is a packing list for next weekend, that's enough.
-
-## What belongs on your desktop?
-
-Try these examples, or use their source as a starting point:
-
-| A little help | Something to send | Just for fun |
-| --- | --- | --- |
-| [Quick Checklist](examples/slops/quick-checklist): get it out of your head | [Invoice](examples/slops/invoice): get paid | [Pixel Art](examples/slops/pixel-art): one more pixel |
-| [Focus Timer](examples/slops/focus-timer): make room to concentrate | [Recipe](examples/slops/recipe): keep the good ones | [Koi Pond](examples/slops/koi-pond): take a break |
-| [Small Expenses](examples/slops/small-expenses): remember where it went | [Résumé](examples/slops/resume): introduce yourself | [Wordle](examples/slops/wordle): five letters, a little obsession |
-
-[Browse all the examples →](examples/slops)
+hitSlop is built for tools with one clear job and a little character. It comes with a checklist and an hourglass timer to open and make your own. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
 
 ## Keep the app. Keep the work.
 
-- Your documents live on your Mac. You don't need an account or a server to use a local slop.
-- The interface, saved data, and imported attachments travel together. Close a document before moving or copying it in Finder.
-- Send a friend a template or a copy of a finished document. Zip the closed `.slop` package for transfer; they'll need a compatible hitSlop Mac app. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
-- Use the app yourself or have an agent edit its data through the document CLI. Both work with the same document. The installed native CLI works without Node or Bun.
-- Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message. Authors can define a separate export layout with its own styling and no editing controls.
-- Dynamic Finder icons can show what's in a document, such as a counter's saved total. hitSlop refreshes the icon from saved data when you close the document.
-- Give each app its own look. Change a document's supported theme colors, or edit the source to make a different tool.
+- Your documents live on your Mac. You don't need an account or a server.
+- A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder, and send the file itself to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
+- Finder icons can show what's inside, such as a counter's total.
+- Change a document's colors without touching its code, or edit the source to make a different tool.
+
+## Make your own with an agent
+
+Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows, register templates and export PNG/PDF.
+
+```sh
+bunx hitslop@1.0.0 init weekend-kit
+cd weekend-kit
+bun install
+```
+
+Setup asks what your slop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter includes a working checklist, your brief, and hitSlop's guidance for agents. Or open the folder in your agent yourself and try:
+
+> Read AGENTS.md, slop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
+
+Ask for changes as you go ("Make the checkboxes bigger"). When it feels right:
+
+```sh
+bun run dev       # Try it in your browser; preview data resets on refresh
+bun run build     # Package it as dist/weekend-kit.slop
+bun run register  # Add it to hitSlop's templates
+```
+
+Open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
+
+[A whole slop, from scratch](#a-whole-slop-from-scratch) below builds a complete app with its export view and Finder icon · [Full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
+
+## Use the CLI
+
+Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitslop@1.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
+
+| Task | Commands |
+| --- | --- |
+| Create and preview an app | `init SOURCE`, then the project's `bun run check` and `bun run dev` |
+| Package and install a template | `bun run build`, `bun run register` |
+| Make a writable document | `create --from TEMPLATE --output DOCUMENT`, then `open DOCUMENT` |
+| Inspect and edit a writable document | `schema`, `get`, `apply`, `batch` |
+| Move data between documents | `get`, then one `batch` of `insert` operations |
+| Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/import/export` |
+| Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
+| Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
+
+Document creation and editing run on macOS and Linux. The CLI carries its own engine; opening windows and exporting PNG/PDF use the Mac app's rendering helper. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+
+## Where it's going
+
+Next, we want changing a slop to be as easy as using it. Its colors already change from the window's theme panel; next come asking your agent from the toolbar, seeing who changed what and undoing an agent's change, and remixing a slop someone sent you. See [direction](docs/roadmap.md) and [ideas](docs/ideas.md).
 
 ## Why Svelte?
 
@@ -53,59 +94,13 @@ Svelte suits the kinds of apps we want to make: small tools with custom interfac
 
 You can keep a component's markup, behavior, and [scoped CSS](https://svelte.dev/docs/svelte/scoped-styles) together in a `.svelte` file. That makes a small interface easy to follow and gives you room to design a paper planner, a calculator, or a pond without adopting a prescribed set of UI components. TypeScript and `bun run check` help catch type and template mistakes as you work.
 
-[Svelte's compiler](https://svelte.dev/docs/svelte/svelte-compiler) turns components into JavaScript. `bun run build` bundles that code, the Svelte runtime code it needs, and the app's styles into the `.slop`. The interface keeps the Svelte version it was built with. The Mac app supplies the separate hitSlop document engine and native services; it doesn't supply Svelte. Existing documents retain their built interface, with host compatibility governed by [hitSlop's runtime contracts](docs/versioning.md).
+[Svelte's compiler](https://svelte.dev/docs/svelte/svelte-compiler) turns components into JavaScript. `bun run build` bundles that code, the Svelte runtime code it needs, and the app's styles into the `.slop`. The interface keeps the Svelte version it was built with. The Mac app supplies the hitSlop document engine, the page shell and native services; it doesn't supply Svelte.
 
 Svelte 5's [reactive updates](https://svelte.dev/docs/svelte/lifecycle-hooks) let a state change update the parts of an interface that depend on it. hitSlop's Svelte bindings connect those views to document snapshots. How much work an edit triggers depends on how the app is written.
 
-[Snippets](https://svelte.dev/docs/svelte/snippet) also fit our window, icon, and export model. With hitSlop's `<Slop>` component, you can define each view alongside the others, all reading the same document. hitSlop handles saving and capture. The Tiny Wins example below shows how this works.
+Separate `App.svelte`, `Export.svelte`, and `Icon.svelte` components read the same document. hitSlop mounts capture views only when needed and handles saving and capture. The Tiny Wins example below shows how this works.
 
 Svelte is our supported authoring integration. The document engine is framework independent, so another framework could use it through a new adapter. A React adapter, for example, would need to be implemented before it could offer the same authoring experience.
-
-## Make your own with an agent
-
-Start with an idea and a coding agent. Setup asks what your slop should do and who made it, then offers to launch your agent's CLI. The starter includes a working Svelte checklist, your `BRIEF.md`, `AGENTS.md`, and authoring/design skills.
-
-Use Bun 1.4.2 or newer and the matching hitSlop Mac app, installed in `/Applications` or `~/Applications` for native builds and registration.
-
-**1. Give your idea a folder.**
-
-```sh
-bunx @hitslop/cli@1.2.0 init weekend-kit
-cd weekend-kit
-bun install
-```
-
-**2. Let your chosen agent build it.**
-
-At the end of setup, choose a detected agent, **Other CLI…** to enter another installed tool, or **Finish without launching**. The agent opens in the project with your brief and hitSlop guidance. Use `--yes` and `--brief 'What to build'` when an agent or script is already creating the project; this never launches another agent.
-
-You can also open the folder in your agent yourself. Try this:
-
-> Read AGENTS.md, manifest.json, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
-
-Try it and ask for changes as you go: "Make the checkboxes bigger" or "Let me rename the trip." It's easier to judge what works once you can use it.
-
-**3. Try it, then put it on your desktop.**
-
-```sh
-bun run dev
-```
-
-The browser preview uses disposable data; refreshing resets it. Restart the dev command after source changes. When it feels right, stop the preview and run:
-
-```sh
-bun run check     # Check your Svelte and TypeScript code
-bun run build     # Package your app as dist/weekend-kit.slop
-bun run register  # Add the template to hitSlop's local catalog
-```
-
-Open hitSlop, choose Weekend Kit under **Templates**, and select **Create** to make your own writable document. Add a few items, close and reopen it, then try a PNG or PDF export.
-
-You can also zip up `dist/weekend-kit.slop` and send it to a friend. They just unzip it and open the `.slop` with hitSlop on their Mac. The app and its starting content are included; your personal saved data stays in your document.
-
-You keep the source and the finished app. Make another version whenever you like; existing documents keep the app version they were created with.
-
-[Follow the full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Authoring guide](docs/guides/authoring.md) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
 
 ## A whole slop, from scratch
 
@@ -114,36 +109,19 @@ You keep the source and the finished app. Make another version whenever you like
 With the same Bun and Mac app setup above, create a fresh starter:
 
 ```sh
-bunx @hitslop/cli@1.2.0 init tiny-wins
+bunx hitslop@1.0.0 init tiny-wins
 cd tiny-wins
 bun install
 ```
 
 Replace the following starter files. Keep the generated `package.json` and `tsconfig.json`.
 
-### 1. Give it a name and a window
-
-`manifest.json` describes the app, including its starting window size.
-
-```json
-{
-  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
-  "slug": "tiny-wins",
-  "title": "Tiny Wins",
-  "description": "A little credit for the things you get done.",
-  "author": { "name": "You" },
-  "categories": ["personal"],
-  "presentation": { "width": 360, "height": 360 }
-}
-```
-
-### 2. Say what it remembers
+### 1. Say what it remembers
 
 `schema.ts` defines the saved fields. Text is editable; a counter supports increments.
 
 ```ts
-import { defineDocument, s } from "@hitslop/document";
+import { defineDocument, s } from "hitslop";
 
 export default defineDocument({
   title: s.text(),
@@ -151,67 +129,86 @@ export default defineDocument({
 });
 ```
 
-`initial.ts` supplies the starting values for **new** documents. Changing it later doesn't overwrite someone's saved wins.
+### 2. Give it a name, a window and colors
+
+`slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The explicit `slug` identifies the app.
 
 ```ts
-export default { title: "Tiny wins today", wins: 0 };
-```
+import { defineSlop } from "hitslop";
+import schema from "./schema";
+import App from "./App.svelte";
+import Export from "./Export.svelte";
+import Icon from "./Icon.svelte";
+import "./styles.css";
 
-### 3. Pick its colors
-
-`theme.ts` declares tokens available as CSS variables. The window, icon, and export use these colors. Your agent can change them through hitSlop's theme commands while the document is open, without rebuilding. Overrides stay with that document; the template keeps its defaults.
-
-```ts
-import { defineTheme } from "@hitslop/document/theme";
-
-export default defineTheme({
-  surface: "#fff7e6",
-  ink: "#382d24",
-  accent: "#28634b",
+export default defineSlop({
+  slug: "tiny-wins",
+  view: App,
+  export: Export,
+  icon: Icon,
+  title: "Tiny Wins",
+  description: "A little credit for the things you get done.",
+  author: { name: "You" },
+  categories: ["personal"],
+  window: { kind: "standard", width: 360, height: 360 },
+  theme: {
+    surface: "#fff7e6",
+    ink: "#382d24",
+    accent: "#28634b",
+  },
+  document: schema,
+  initial: { title: "Tiny wins today", wins: 0 },
 });
 ```
 
-### 4. Build the app, icon, and export together
+The theme's colors are available as CSS variables; fonts and other styling stay in your CSS. The window, icon, and export use these colors. Anyone can change them from the window's theme panel, and share them as a theme file, and your agent can change them through hitSlop's theme commands, all without rebuilding. Changes stay with that document; the template keeps its defaults. Changing `initial` later doesn't overwrite someone's saved wins.
 
-`App.svelte` is the whole interface. Read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
+### 3. Build the app, icon, and export together
+
+`App.svelte` is the whole interface. Import the document from `schema.ts`, read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
 
 ```svelte
 <script lang="ts">
-  import { Slop, useDocument, bindText } from "@hitslop/document/svelte";
-  import schema from "./schema";
-
-  const doc = useDocument(schema);
+  import { bindText } from "hitslop/svelte";
+  import doc from "./schema";
 </script>
-
-<Slop>
-  <main class="wins-card">
-    <input aria-label="Counter title" use:bindText={doc.fields.title} />
-    <p class="wins-number" aria-live="polite">{doc.current.wins}</p>
-    <button onclick={() => doc.fields.wins.increment()}>A little win +1</button>
-  </main>
-
-  {#snippet icon()}
-    <div class="wins-icon">{doc.current.wins}</div>
-  {/snippet}
-
-  {#snippet exportView()}
-    <article class="wins-card">
-      <h1>{doc.current.title}</h1>
-      <p class="wins-number">{doc.current.wins}</p>
-      <p>Little things add up.</p>
-    </article>
-  {/snippet}
-</Slop>
+<main class="wins-card">
+  <input aria-label="Counter title" use:bindText={doc.fields.title} />
+  <p class="wins-number" aria-live="polite">{doc.current.wins}</p>
+  <button onclick={() => doc.fields.wins.increment()}>A little win +1</button>
+</main>
 ```
 
-The markup directly inside `<Slop>` defines the window. The two named snippets define what you see outside it:
+`Export.svelte`:
 
-- `{#snippet exportView()}` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this snippet, hitSlop captures the editor; mark controls with `data-slop-export="hide"` to leave them out.
-- `{#snippet icon()}` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon snippet, hitSlop uses its generic icon.
+```svelte
+<script lang="ts">
+  import doc from "./schema";
+</script>
+<article class="wins-card">
+  <h1>{doc.current.title}</h1>
+  <p class="wins-number">{doc.current.wins}</p>
+  <p>Little things add up.</p>
+</article>
+```
 
-Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Build/register generate the template's initial artwork from starting values.
+`Icon.svelte`:
 
-See [Export and icons](docs/guides/authoring.md#export-and-icons) for capture details and size limits.
+```svelte
+<script lang="ts">
+  import doc from "./schema";
+</script>
+<div class="wins-icon">{doc.current.wins}</div>
+```
+
+`view: App` selects the editor. The declaration also selects two optional capture components:
+
+- `Export.svelte` supplies the layout for previews and PNG/PDF exports. It reads the same document as the editor, but you can give it different markup and CSS. Here it shows the title and count without the input or button. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
+- `Icon.svelte` supplies the document's dynamic Finder icon. hitSlop centers the artwork on a transparent 512 × 512 canvas. This example shows the saved count; another app could show a checklist's progress. Without an icon component, Finder can use the saved preview; without artwork, it uses the generic document icon.
+
+Click three times and the window shows **3**. Export a PNG or PDF and it shows **3** with your current title. When you close the document, hitSlop refreshes its Finder preview and icon from the saved data, so the icon shows **3** too. Register renders the template's initial artwork from starting values.
+
+See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 
 Style the views in `styles.css`:
 
@@ -244,65 +241,66 @@ main.wins-card { min-height: 100%; }
 }
 ```
 
-The builder connects `App.svelte` and `styles.css` to the host runtime automatically
-through `defineSlop`; no `main.ts` is needed. For a non-Svelte app, an optional
-`main.ts` can export `default { mount(ctx, target) }` and import its styles. See the
-[authoring guide](docs/guides/authoring.md) for the app interface.
+The builder connects the explicitly imported views and styles to the host through
+`defineSlop`. Filenames do not assign roles. See the
+[runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 
-### 5. Take it for a spin
+### 4. Take it for a spin
 
 ```sh
 bun run check     # Check the types and Svelte component
 bun run dev       # Try it in the browser; preview data resets on refresh
 ```
 
-Stop the preview before continuing. Restart it after source changes.
+The preview reloads as you edit. Stop it before continuing.
 
 ```sh
-bun run build     # Create dist/tiny-wins.slop, including preview and icon artwork
-bun run register  # Add Tiny Wins to your local template catalog
+bun run build     # Create dist/tiny-wins.slop (works on Linux too)
+bun run register  # Render its preview and icon, then add Tiny Wins to your catalog
 ```
 
 In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins.slop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.
 
-Your agent can add a win to that same document through the CLI. Substitute the path where you saved it:
+Then point the commands from [You and your agent, one document](#you-and-your-agent-one-document) at your document's path. With it open, the count ticks up and the accent turns purple, and the next export and icon capture use the new values. `slop theme reset` returns to the template's colors.
 
-```sh
-bunx @hitslop/cli@1.2.0 get "/path/to/My Wins.slop"
-bunx @hitslop/cli@1.2.0 apply "/path/to/My Wins.slop" --op '{"type":"increment","path":["wins"],"value":1}'
+## How it's built
+
+A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
+
+| Layer | Built with | Role |
+| --- | --- | --- |
+| Document engine | Rust, Loro | Merging text, lists and counters; atomic edits; the single owner of the document |
+| File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
+| Mac app | Swift, SwiftUI, AppKit, WebKit | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
+| Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
+| Author SDK and CLI | `hitslop`, Bun | Schemas, `slop dev` (Vite with a native Rust owner), build, edit and export |
+| Contracts | Rust serde, ts-rs, UniFFI | Rust owns internal wires and app acceptance; generated TypeScript and typed Swift |
+
+```text
+page (WebKit) ──▶ Swift façade ──▶ Rust owner ──▶ .slop
+slop CLI ───────────────────────▶ Rust owner      (the open window's, or the closed file's lock)
 ```
 
-With the document open, the number changes in the window. Its next export and icon capture use the updated value as well.
+- App and agent edits take one path, so an open window updates live and a closed file is edited without starting WebKit.
+- Text merges character by character.
+- A failed save keeps the document open and shows a retry.
 
-Ask your agent to "make the accent purple," and it can change the declared theme token at runtime:
+### Inside a .slop
 
-```sh
-bunx @hitslop/cli@1.2.0 theme set "/path/to/My Wins.slop" --values '{"accent":"#7050ad"}'
+```text
+app          markers, catalog columns, definition_json               one immutable declaration
+assets       key, media_type, encoding, size, bytes                    ui.js, ui.css, commands.js, media
+artwork      name (preview | icon), png                                 Quick Look preview and Finder icon
+-- populated when you create and edit a document
+document     id                                                         the document's identity
+checkpoint   bytes                                                      the saved Loro snapshot, including theme changes
+updates      seq, bytes                                                 Loro updates saved since the checkpoint
+attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 
-The open window updates immediately, and the next export and icon capture use the same purple. To return to the template's colors:
+Any SQLite tool shows these tables. `checkpoint` and `updates` hold Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro checkpoint; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
 
-```sh
-bunx @hitslop/cli@1.2.0 theme reset "/path/to/My Wins.slop"
-```
-
-## Use the CLI
-
-Use `bunx @hitslop/cli@1.2.0` for individual commands, or install with `bun install -g @hitslop/cli@1.2.0` and run `slop` from Bun's PATH. In this checkout, use `bun slop`. Generated projects provide their own pinned `bun run` scripts.
-
-| Task | Commands |
-| --- | --- |
-| Create and preview an app | `init SOURCE`, then the project's `bun run check` and `bun run dev` |
-| Package and install a template | `bun run build`, `bun run register` |
-| Inspect and edit a writable document | `schema`, `get`, `apply`, `batch` |
-| Import complete JSON data | `import --from`, or `get --snapshot` followed by `import --replace --if-version` |
-| Customize colors and manage files | `theme get/set/reset`, `attachments list/import/export` |
-| Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
-| Install agent guidance | `skills install`, `skills repair`, `skills uninstall` |
-
-The table lists command families; follow the [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) for complete examples and required arguments. The [repository CLI reference](docs/guides/cli.md) covers operation shapes and contributor details. Add `--help` to a command to see its arguments.
-
-Native document commands run on macOS through the installed app. You can invoke `"/Applications/hitSlop.app/Contents/Helpers/hitslop-native"` directly without Node or Bun; its `create` and `open` commands make and open writable documents. Built and registered templates remain immutable. After an uncertain edit result, inspect with `get` before another edit.
+[Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
 
 ## Work on hitSlop
 
@@ -312,33 +310,39 @@ Use the Bun version pinned in `package.json`, Xcode, and XcodeGen on macOS:
 bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
 bun run build
-bun run check
-bun run test
-bun run swift:test
+bun run verify --all --native
 bun slop dev examples/slops/quick-checklist
 ```
 
-[Development](docs/guides/development.md) covers setup, the workspace, and adding templates. All active templates are discovered for checks and `bun run build:templates`; `examples/slops/bundled.json` selects those shipped with the app. The local catalog also discovers templates under `~/.hitslop/templates`.
-
-The native Mac client supplies the document runtime and local persistence. Authors build with the matching `@hitslop/document`, `@hitslop/schema`, and `@hitslop/cli` packages. See [runtime versioning](docs/versioning.md) for supported v1 contracts; pre-v1 documents are unsupported.
-
-Hosted discovery, public template publication, accounts, collaboration, and iCloud/synced folders are deferred. The current workflow is local creation, editing, and export.
-
-Start with the [documentation index](docs/README.md). Contributors run `bun run test:local` before release. See [releasing](docs/guides/releasing.md) for signed-app and npm publication steps.
-
-## License
-
-MIT © 2026 hitSlop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
+[Development](docs/guides/development.md) covers setup and adding templates, and the [documentation index](docs/README.md) covers how the platform works.
 
 ## Related projects
 
 Other projects exploring personal software and interactive documents:
 
-- [Hyperclay](https://hyperclay.com/)
-- [Capsule](https://withcapsule.app/)
+- [Hyperclay](https://hyperclay.com/): HTML files you can reshape in place, where the live document is the source of truth.
+- [Capsule](https://withcapsule.app/): documents that run like apps, shared as single SQLite files.
+- [bento](https://bento.page/): an office suite that fits in one self-contained HTML file.
+- [Decker](https://beyondloom.com/decker/): HyperCard-style decks of interactive cards.
+- [TiddlyWiki](https://tiddlywiki.com/): a personal wiki that lives in one HTML file.
 - [uapp](https://thederf.com/uapp/demo)
-- [bento](https://bento.page/)
-- [Decker](https://beyondloom.com/decker/)
-- [TiddlyWiki](https://tiddlywiki.com/)
 
-Older inspirations include [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/), which put making your own tools within reach. [Winamp's skin system](https://support.winamp.com/winamp-desktop-player-for-windows) was a major inspiration for hitSlop's look and feel.
+Older inspirations: [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/) put making your own tools within reach. [Winamp's skin system](https://support.winamp.com/winamp-desktop-player-for-windows) was a major inspiration for hitSlop's look and feel.
+
+## Privacy
+
+Release builds of the Mac app enable Firebase Analytics and Crashlytics. They send
+launch, open, create (source), duplicate and export (format) events; operation
+breadcrumbs; failure records with fixed operation, classification, reason and format
+fields; crash reports; and Firebase's standard app and device data.
+
+Our custom event, breadcrumb and failure fields do not include document contents or
+file paths. Automatic crash reports contain diagnostic information collected by the
+Firebase SDK. Collection is enabled in release builds with no in-app toggle; Debug
+builds and tests do not upload telemetry.
+
+See [Privacy](https://hitslop.com/docs/privacy/) for the public disclosure.
+
+## License
+
+MIT © 2026 hitSlop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).

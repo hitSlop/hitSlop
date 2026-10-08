@@ -6,13 +6,9 @@
 
 <!-- Mark the applicable tiers and include failures or checks not run. See docs/testing.md. -->
 
-- [ ] Everyday: `bun run check` and `bun run test`
+- [ ] Everyday: `bun run verify` (add `--native` when Swift, the FFI or the helper changed)
 - [ ] Native changes: native boundary and full render checks from `docs/testing.md`
 - [ ] Release candidate: `bun run release:check` on the final clean commit
 - [ ] Visual changes include screenshots
 - [ ] Manifest/schema changes include regenerated artifacts
 - [ ] No secrets, local documents, or private paths are included
-
-## Compatibility notes
-
-<!-- Storage, host, package-format, or release impact. Preserve shipped v1 contracts and sealed bytes; no legacy migration. -->

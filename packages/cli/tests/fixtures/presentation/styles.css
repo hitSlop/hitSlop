@@ -1,9 +1,0 @@
-* { box-sizing: border-box; }
-html, body { background: rgb(240, 230, 220); }
-body { font: 14px system-ui; }
-.editor { width: 100%; height: 100%; display: grid; place-items: start center; padding-top: 44px; }
-html[data-slop-presentation="transparent"] .editor { background: #245ba8; border-radius: 50%; }
-button { min-height: 36px; }
-button:focus-visible { outline: 3px solid orange; }
-.export { width: 320px; height: 240px; background: white; color: #182b47; padding: 20px; }
-.icon { width: 512px; height: 512px; background: radial-gradient(circle, transparent 0 110px, #ff0000 111px 205px, transparent 206px); }

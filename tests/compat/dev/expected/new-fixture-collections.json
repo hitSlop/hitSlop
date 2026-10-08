@@ -1,0 +1,28 @@
+{
+  "cells": {},
+  "done": {},
+  "habits": [
+    {
+      "$id": "h1",
+      "checkins": {},
+      "name": "Walk"
+    }
+  ],
+  "pages": {},
+  "pixels": [
+    "#fff",
+    "#fff",
+    "#fff"
+  ],
+  "presets": [
+    60,
+    90
+  ],
+  "stats": {
+    "guesses": []
+  },
+  "title": "Board",
+  "widths": {
+    "A": 100
+  }
+}

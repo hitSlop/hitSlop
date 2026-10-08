@@ -1,0 +1,53 @@
+{
+  "name": "hitslop",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "slop": "src/cli/cli.ts"
+  },
+  "dependencies": {
+    "@crustjs/core": "0.5.4",
+    "@crustjs/extensions": "0.5.4",
+    "@crustjs/prompts": "0.2.6",
+    "@crustjs/skills": "0.5.4",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
+    "typescript": "5.9.2",
+    "vite": "8.3.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/cli",
+    "src/sdk",
+    "src/schema",
+    "src/wire",
+    "templates",
+    "skills",
+    ".crust/root/skills",
+    "shell",
+    "engine"
+  ],
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "description": "Create, preview, build, register, and edit hitSlop documents.",
+  "license": "MIT",
+  "homepage": "https://hitslop.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hitSlop/hitslop.git",
+    "directory": "packages/hitslop"
+  },
+  "bugs": {
+    "url": "https://github.com/hitSlop/hitslop/issues"
+  },
+  "exports": {
+    ".": "./src/sdk/schema.ts",
+    "./svelte": "./src/sdk/app/store.svelte.ts",
+    "./embed": "./src/sdk/app/embed.ts",
+    "./package.json": "./package.json"
+  }
+}

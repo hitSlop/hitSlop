@@ -1,0 +1,25 @@
+[package]
+name = "slop-engine"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The file engine `hitslop` runs: it builds and reads `.slop` files on any platform, by
+# the rules the app opens them with.
+[dependencies]
+hitslop-core = { path = "../hitslop-core", features = ["storage"] }
+serde_json.workspace = true
+hitslop-runner = { path = "../hitslop-runner" }
+libc = "0.2"
+data-encoding = { version = "=2.11.1" }
+
+[features]
+# SQLite's own amalgamation, for platforms without a system SQLite (release builds only:
+# the app and tests link the platform library).
+bundled-sqlite = ["hitslop-core/bundled-sqlite"]
+
+[dev-dependencies]
+tempfile = "3"

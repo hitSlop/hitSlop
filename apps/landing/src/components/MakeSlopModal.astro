@@ -5,9 +5,9 @@ const prompt = `Help me create a personalized hitSlop mini app.
 
 First, check that Bun is available. If it is missing, direct me to https://bun.sh/ to install it myself, then pause until I’m ready. Do not install Bun for me.
 
-Initialize a project using \`bunx @hitslop/cli init my-slop\` in a new directory. Never overwrite an existing project; use another available directory name if needed. Enter the project and run \`bun install\`. If setup fails, explain the issue and help resolve it before continuing.
+Initialize a project using \`bunx hitslop init my-slop\` in a new directory. Never overwrite an existing project; use another available directory name if needed. Enter the project and run \`bun install\`. If setup fails, explain the issue and help resolve it before continuing.
 
-After initialization succeeds, read \`manifest.json\`, \`AGENTS.md\`, and the included hitSlop authoring and design skills.
+After initialization succeeds, read \`slop.ts\`, \`AGENTS.md\`, and the included hitSlop authoring and design skills.
 
 Before customizing the starter, ask me a few useful questions: What do I want this slop for? Who will use it? What are its essential actions and data? What aesthetic, colors, typography, or visual references do I like? Should it feel like a compact desktop tool or a document, and do I need PNG or PDF exports?
 
@@ -28,7 +28,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
     <p id="make-slop-description">You’ll use it to open your finished slop on your Mac.</p>
 
     <div data-install-step>
-      <p class="make-slop-requirements">Apple silicon · macOS 14+</p>
+      <p class="make-slop-requirements">Apple silicon · macOS 15.2+</p>
       <div class="make-slop-actions">
         <button class="make-slop-button make-slop-primary" type="button" data-installed>Yes</button>
         <a class="make-slop-button make-slop-secondary" href={SITE_LINKS.download} target="_blank" rel="noopener noreferrer" data-download>Download now <span aria-hidden="true">↗</span></a>
@@ -49,10 +49,12 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
 </dialog>
 
 <script>
-  const trigger = document.querySelector<HTMLButtonElement>("#make-slop-trigger");
+  // Any button marked data-make-slop opens the flow; focus returns to whichever opened it.
+  const triggers = document.querySelectorAll<HTMLElement>("[data-make-slop]");
   const dialog = document.querySelector<HTMLDialogElement>("#make-slop-modal");
+  let trigger: HTMLElement | null = null;
 
-  if (trigger && dialog) {
+  if (triggers.length && dialog) {
     const storageKey = "hitslop:desktop-installed";
     const title = dialog.querySelector<HTMLHeadingElement>("#make-slop-title")!;
     const description = dialog.querySelector<HTMLParagraphElement>("#make-slop-description")!;
@@ -77,7 +79,8 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
         : "You’ll use it to open your finished slop on your Mac.";
     }
 
-    trigger.addEventListener("click", () => {
+    triggers.forEach((button) => button.addEventListener("click", () => {
+      trigger = button;
       let installed = confirmedThisVisit;
       try {
         installed ||= localStorage.getItem(storageKey) === "yes";
@@ -92,7 +95,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
       document.body.style.overflow = "hidden";
       if (installed) title.focus();
       else installedButton.focus();
-    });
+    }));
 
     installedButton.addEventListener("click", () => {
       confirmedThisVisit = true;
@@ -131,7 +134,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
     });
     dialog.addEventListener("close", () => {
       document.body.style.overflow = previousOverflow;
-      trigger.focus();
+      trigger?.focus();
     });
   }
 </script>
@@ -159,7 +162,7 @@ Then create the slop using the project’s instructions. Adapt the starter’s d
   .make-slop-close { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
   .make-slop-close:hover { background: #eae3f7; }
   .make-slop-close svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
-  #make-slop-title { font-family: "HitSlop Display", sans-serif; font-size: clamp(2rem, 6vw, 2.6rem); font-weight: 400; line-height: 1.1; letter-spacing: -.02em; }
+  #make-slop-title { font-family: "HitSlop Display", sans-serif; font-size: clamp(2rem, 6vw, 2.6rem); font-weight: 800; line-height: 1.1; letter-spacing: -.02em; }
   #make-slop-title:focus { outline: none; }
   #make-slop-description { margin: 16px 0; color: #505168; line-height: 1.6; }
   .make-slop-requirements { margin: 0 0 22px; color: #505168; font-size: .85rem; }

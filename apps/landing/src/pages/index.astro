@@ -1,178 +1,271 @@
 ---
-import ThemeSwitcher from "../components/ThemeSwitcher.svelte";
-import BidirectionalSync from "../components/BidirectionalSync.svelte";
-import LiveTogether from "../components/LiveTogether.svelte";
+import SiteHead from "../components/SiteHead.astro";
+import Masthead from "../components/Masthead.astro";
+import SiteFooter from "../components/SiteFooter.astro";
 import Hero from "../components/Hero.astro";
+import VideoDialog from "../components/VideoDialog.astro";
 import MakeSlopModal from "../components/MakeSlopModal.astro";
-import FocusTimer from "../components/FocusTimer.svelte";
-import Invoice from "../components/Invoice.svelte";
-import TerminalWalkthrough from "../components/TerminalWalkthrough.astro";
-import RandomPicker from "../components/RandomPicker.svelte";
+import TemplateWall from "../components/TemplateWall.svelte";
+import TypingTerminal from "../components/TypingTerminal.svelte";
+import BidirectionalSync from "../components/BidirectionalSync.svelte";
+import SlopUnfold from "../components/SlopUnfold.svelte";
+import ThemeSwitcher from "../components/ThemeSwitcher.svelte";
+import ExportPrinter from "../components/ExportPrinter.svelte";
+import LiveTogether from "../components/LiveTogether.svelte";
 import AppleIcon from "../components/AppleIcon.astro";
-import GitHubIcon from "../components/GitHubIcon.astro";
-import XIcon from "../components/XIcon.astro";
-import DiscordIcon from "../components/DiscordIcon.astro";
+import templates from "../data/templates.json";
 import { SITE_LINKS } from "../constants";
 import "../styles/global.css";
+import "../styles/motion.css";
 
+const count = templates.length;
+const burst = templates.map((template) => template.emoji);
 const faqs = [
-  { question: "What is a .slop?", answer: "A .slop is a tiny app or a living document, packaged as a single file. Open it, move it, share it, keep it. Its interface and your data travel together." },
-  { question: "Where does my data live?", answer: "In the document on your Mac. Your interface and saved state travel together. The two included templates work offline." },
-  { question: "Can an AI edit it?", answer: "Yes. A coding agent can create a slop from source, then follow the document’s included instructions to change tasks, notes, numbers, or other saved data. Agents use the document CLI to edit the same live state safely." },
-  { question: "Can we edit together?", answer: "Live collaboration is coming soon. Today, your documents stay local and you can share PNG and PDF exports." },
-  { question: "Can I change how a slop looks?", answer: "Yes. Change the app’s declared theme tokens with the theme commands; your colors stay with that document. Authors change layout and structure in source and build a new template." },
-  { question: "Do I need to host anything?", answer: "No hosting, no database setup, and no server to run. Build a template, register it locally, and create a document on your Mac." },
-  { question: "Will my slops update automatically?", answer: "No. Your existing documents keep the app version they were created with. Building a new template makes it available for new copies; it does not change the documents you already use." },
-  { question: "Can I share the result without sharing the app?", answer: "Yes. Export the current document as a high-resolution PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything else that needs to leave your desktop." },
+  { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single SQLite file. Open it, move it, share it, keep it. The interface and your data travel together." },
+  { question: "Can I open a .slop without hitSlop?", answer: "You can look inside it: a .slop is a standard SQLite database, so any SQLite tool opens it and shows its tables. To use or edit it, open it in hitSlop or change it through the CLI. hitSlop is MIT-licensed, so the format is all in the open." },
+  { question: "What comes with the app?", answer: `A whole collection: ${count} tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates and hitSlop makes you your own copy.` },
+  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account, no server, and every included template works offline." },
+  { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a slop from scratch, and it can change the tasks, notes and numbers in a document through the hitSlop CLI. It edits the same live document you have open." },
+  { question: "Can I change how a slop looks?", answer: "Yes. Open the theme panel in any slop’s window to pick your own colors, and import or export a palette to share it. Your agent can do the same with the theme commands. Colors stay with that document. Authors change layout and structure in source and build a new version." },
+  { question: "Will my slops update on their own?", answer: "No. A document keeps the app version it was made with. A new build is available for new copies and never rewrites the ones you already use." },
+  { question: "Can I share the result without sharing the app?", answer: "Yes. Export a crisp PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything that needs to leave your desktop." },
+  { question: "Can we edit together?", answer: "Live collaboration is coming soon. Today your documents stay on your Mac, and you can send copies or PNG and PDF exports." },
+  { question: "Is it free?", answer: "Yes. hitSlop is free and open source under the MIT license." },
 ];
-
-const platformRequirements = "macOS 14+ · Apple silicon";
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#fafbfd" />
-    <meta name="description" content="Tiny local-first apps and documents that live on your desktop. Create from included templates, edit locally, and export PNG or PDF." />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="preload" href="/assets/hero/fonts/mochiy-pop-one-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/assets/hero/fonts/nunito-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <title>hitSlop — Tiny apps &amp; docs for your desktop</title>
+    <SiteHead title="hitSlop · Tiny apps. Big personality." description={`Tiny apps and living documents for your Mac. ${count} included templates, each one a single SQLite file you keep. Make your own with your AI agent.`} preloadHeadline />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="masthead home-masthead">
-      <a class="wordmark" href="/" aria-label="hitSlop home"><span class="brand-mark"><img src="/assets/appicon.png" alt="" /></span><span>hitSlop</span></a>
-      <nav aria-label="Primary navigation">
-        <a href="#why">Why hitSlop</a><a href="#make">Make one</a><a href="#templates">Browse</a>
-        <a class="merch-link" href="/merch">Merch</a>
-        <a href={SITE_LINKS.docs}>Docs</a>
-      </nav>
-      <div class="header-actions">
-        <div class="social-links">
-          <a class="nav-social" href={SITE_LINKS.repository} target="_blank" rel="noopener noreferrer" aria-label="hitSlop on GitHub" title="GitHub"><GitHubIcon /></a>
-          <a class="nav-social" href="https://x.com/hitslop" target="_blank" rel="noopener noreferrer" aria-label="hitSlop on X" title="X"><XIcon /></a>
-          <a class="nav-social" href={SITE_LINKS.discord} target="_blank" rel="noopener noreferrer" aria-label="Join hitSlop on Discord" title="Discord"><DiscordIcon /></a>
-        </div>
-        <a class="nav-download" href={SITE_LINKS.download} aria-label="Download" title="Download"><AppleIcon /><span>Download</span></a>
-      </div>
-    </header>
-
+    <Masthead current="home" />
 
     <main id="main-content">
       <Hero />
-      <MakeSlopModal />
 
-      <section class="objects" id="objects" aria-labelledby="objects-title">
-        <div class="section-intro"><p class="eyebrow">One format, many personalities</p><h2 id="objects-title">Little apps, real objects.</h2><p>These interactive demos show what a small desktop tool can do. The Mac release ships with Quick Checklist and Small Expenses; the demos below are previews, not installed templates.</p></div>
-        <div class="object-gallery">
-          <article class="object object-focus"><div class="object-stage focus-stage"><FocusTimer client:visible /></div><div class="object-caption"><span><strong>Pomodoro</strong>Focus and rest, without a dashboard.</span><small>Instrument · Interactive</small></div></article>
-          <article class="object object-invoice"><div class="object-stage invoice-stage"><Invoice client:visible /></div><div class="object-caption"><span><strong>Invoice</strong>Edit the document directly. Totals follow.</span><small>Paper · Interactive</small></div></article>
-          <article class="object object-picker"><div class="object-stage picker-stage"><RandomPicker client:visible /></div><div class="object-caption"><span><strong>Random Picker</strong>A tiny decision-making capsule.</span><small>Instrument · Interactive</small></div></article>
+      <section class="section templates" id="templates" aria-labelledby="templates-title">
+        <div class="section-head">
+          <p class="kicker">{count} tiny apps, included</p>
+          <h2 class="headline" id="templates-title">There’s a slop <em>for that.</em></h2>
+          <p class="lede">Every one of these comes with hitSlop. Pick one, make a copy, and it’s yours to use, change, or send to a friend.</p>
         </div>
+        <div class="wall-wrap"><TemplateWall client:visible templates={templates} /></div>
       </section>
 
-
-
-
-      <section class="make-section" id="make" aria-labelledby="make-title">
-        <div class="make-copy"><h2 id="make-title">From your terminal to your desktop.</h2><p>Create a starter, open it in your coding agent, and describe the little app you want. Preview it as you work, then build a <code>.slop</code> you can open on your Mac.</p><p>You’ll need Bun to get started. The project includes instructions for your coding agent, and you keep both the source and the finished app.</p><a class="text-link" href={SITE_LINKS.authoring}>Create your first slop <span aria-hidden="true">→</span></a></div>
-        <TerminalWalkthrough />
-      </section>
-
-
-      <section class="local-section" id="why" aria-labelledby="local-title">
-        <div class="local-copy">
-          <p class="eyebrow">A file, not an account</p><h2 id="local-title">Everything travels with the document.</h2>
-          <p>The app and your saved work stay together in one package on your Mac. Close it before moving or copying it. Export a PNG or PDF to share the result.</p>
-          <div class="local-actions" aria-label="Things you can do with a slop"><span>Open</span><span>Move</span><span>Duplicate</span><span>Export</span><span>Keep</span></div>
-        </div>
-        <div class="package-anatomy" aria-label="Contents of a slop document">
-          <div class="package-tab"><img src="/assets/appicon.png" alt="" /><span>my-work.slop</span><small>on your Mac</small></div>
-          <div class="package-files">
-            <div class="app-group">
-              <div class="layer-label"><span>app files</span><small>fixed for this release</small></div>
-              <div class="file-row immutable"><span>manifest.json</span><small>identity + presentation</small></div>
-              <div class="file-row immutable"><span>app.html</span><small>generated interface</small></div>
-              <div class="file-row immutable"><span>state.schema.json</span><small>data contract</small></div>
-              <div class="file-row immutable"><span>assets/</span><small>compiled JS, CSS + assets</small></div>
-              <div class="file-row immutable"><span>.agents/skills/</span><small>AI editing guide</small></div>
-              <div class="file-row immutable optional"><span>QuickLook/</span><small>Finder preview + icon</small></div>
+      <section class="section panel make" id="make" aria-labelledby="make-title">
+        <div class="split">
+          <div>
+            <p class="kicker">Make your own</p>
+            <h2 class="headline" id="make-title">Describe it. <em>Your agent</em> builds it.</h2>
+            <p class="lede">Run one command, say what your slop should do, and pick your agent. It builds the app while you watch it take shape in your browser. When it feels right, build a <code>.slop</code> and put it on your desktop. You keep the source and the finished app.</p>
+            <div class="make-actions">
+              <button class="button button-primary" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Get the agent prompt</button>
+              <a class="text-link" href={SITE_LINKS.authoring}>Read the guide <span aria-hidden="true">→</span></a>
             </div>
-            <div class="store-group">
-              <div class="store-label"><span>state/</span><small>saved document</small></div>
-              <div class="file-row"><span>document.sqlite</span><small>durable document data</small></div>
-              <div class="file-row optional"><span>theme.json</span><small>your theme overrides</small></div>
-            </div>
+            <p class="small-print">Needs <a href="https://bun.sh/" target="_blank" rel="noopener noreferrer">Bun</a> and any coding agent you like. Svelte and your favorite CSS inside.</p>
           </div>
-          <p class="package-note"><span>optional</span> where needed · portable in Finder</p>
+          <div class="make-art"><TypingTerminal client:visible /></div>
         </div>
       </section>
 
-      <section class="theme-section" id="themes" aria-labelledby="theme-title">
-        <div class="theme-copy"><p class="eyebrow">Make it yours</p><h2 id="theme-title">Same little app, your own colors.</h2><p>Ask your agent to change the theme, or use the theme commands. Your choices stay with the document and carry into its exports.</p><p>Try a palette in this interactive preview. The Mac app supports theme overrides through the CLI; it does not yet have a built-in palette picker.</p><a class="text-link" href="/docs/guides/styling/#let-owners-override-tokens">How theme files work →</a><div class="theme-contract"><code>state/theme.json</code><span>Your overrides travel with the file.</span></div></div>
-        <ThemeSwitcher client:visible />
+      <section class="section agent" id="agents" aria-labelledby="agent-title">
+        <div class="split">
+          <div>
+            <p class="kicker">You + your agent</p>
+            <h2 class="headline" id="agent-title">Two ways to edit. <em>One document.</em></h2>
+            <p class="lede">Tick a box yourself, or ask your agent to do it through the document CLI while the window is open. It’s the same live document either way, and the change shows up right away.</p>
+          </div>
+          <BidirectionalSync client:visible />
+        </div>
       </section>
 
-      <section class="sync-section" id="agents" aria-labelledby="sync-title">
-        <div class="sync-copy"><p class="eyebrow">You and your agent</p><h2 id="sync-title">Two ways to work, one document.</h2><p>Check a task yourself, or ask an agent to do it through the document CLI. Same live state either way. Try applying an operation in this browser-only example.</p></div>
-        <BidirectionalSync client:visible />
+      <section class="section panel file" id="file" aria-labelledby="file-title">
+        <div class="section-head">
+          <p class="kicker">A SQLite file, not an account</p>
+          <h2 class="headline" id="file-title">I’m literally <em>just a file.</em></h2>
+          <p class="lede">Every slop is one SQLite database on your Mac: the app and everything you save live together. Close it before you move or copy it, the way you would any document. Any SQLite tool can open it to look inside.</p>
+          <ul class="verbs" aria-label="Things you can do with a slop">
+            <li class="sticker" data-tone="sun" style="--tilt: -5deg">Open</li>
+            <li class="sticker" data-tone="pink" style="--tilt: 4deg">Move</li>
+            <li class="sticker" data-tone="mint" style="--tilt: -2deg">Duplicate</li>
+            <li class="sticker" data-tone="sky" style="--tilt: 5deg">Send</li>
+            <li class="sticker" style="--tilt: -4deg">Keep forever</li>
+          </ul>
+        </div>
+        <div class="unfold-wrap"><SlopUnfold client:visible /></div>
       </section>
 
-      <section class="collab-section" id="together" aria-labelledby="collab-title">
-        <div class="collab-copy"><p class="eyebrow">Coming soon</p><h2 id="collab-title">Little things, better together.</h2><p>Plan a trip, work through a list, or shape an idea together. Live collaboration is coming soon; the people and activity in this interactive preview are simulated.</p><a class="text-link" href="/docs/guides/live-sharing/">More about collaboration →</a></div>
-        <LiveTogether client:visible />
+      <section class="section themes" id="themes" aria-labelledby="theme-title">
+        <div class="split">
+          <div>
+            <p class="kicker">Make it yours</p>
+            <h2 class="headline" id="theme-title">Same little app. <em>Your colors.</em></h2>
+            <p class="lede">Ask your agent to make it purple, or use the theme commands. The colors stay with that document and carry into its exports. Try a palette.</p>
+            <p class="annotation theme-note" aria-hidden="true" style="--tilt: -4deg">psst… it repaints this page too<svg viewBox="0 0 70 50"><path d="M4 30c18 10 40 6 52-14m-16-2 17-2-3 17" /></svg></p>
+          </div>
+          <ThemeSwitcher client:visible />
+        </div>
       </section>
 
-      <section class="infra-section" aria-labelledby="infra-title">
-        <div class="infra-copy"><p class="eyebrow">Keep it simple</p><h2 id="infra-title">No hosting, no database setup.</h2><p>No server to run. Build your app, register the template, and open a local copy. hitSlop takes care of saving the document on your Mac.</p><a class="text-link" href="/docs/guides/build-and-share/">Build your first template →</a></div>
-        <div class="infra-list"><p><span>1</span><strong>Build</strong><small>Turn source into a portable template.</small></p><p><span>2</span><strong>Register</strong><small>Add it to your local catalog.</small></p><p><span>3</span><strong>Create</strong><small>Make a writable document and start using it.</small></p></div>
+      <section class="section panel export" id="export" aria-labelledby="export-title">
+        <div class="split flip">
+          <div>
+            <p class="kicker">Share the result</p>
+            <h2 class="headline" id="export-title">The app stays home. <em>The work goes anywhere.</em></h2>
+            <p class="lede">Export a crisp PNG or a PDF with selectable text. Send the invoice, print the recipe, drop the plan in a group chat. Nobody needs to install anything.</p>
+            <ul class="checks">
+              <li>Editing controls disappear from exports</li>
+              <li>The whole document, not a cropped window</li>
+              <li>A Finder preview and icon that match what’s inside</li>
+            </ul>
+          </div>
+          <ExportPrinter client:visible />
+        </div>
       </section>
 
-      <section class="export-section" aria-labelledby="export-title">
-        <div class="export-art" aria-hidden="true"><div class="export-paper"><header><span>Invoice</span><b>PAID</b></header><p>Northwind Studio</p><div><span>Product design</span><strong>$2,500</strong></div><div><span>Development</span><strong>$1,440</strong></div><footer><span>Total</span><strong>$3,940</strong></footer></div><span class="format format-png">PNG<small>2×</small></span><span class="format format-pdf">PDF<small>vector</small></span></div>
-        <div class="export-copy"><p class="eyebrow">Share the result</p><h2 id="export-title">The app stays local. The work can go anywhere.</h2><p>Export a crisp PNG or a PDF with selectable text and vector output. Send the invoice, print the recipe, or drop the plan into a message. The recipient doesn't need to install anything.</p><ul><li>Editing controls disappear from captures</li><li>Full document height, not a cropped window</li><li>Preview and Finder icon stay with the file</li></ul></div>
+      <section class="section makers" aria-labelledby="makers-title">
+        <div class="split">
+          <div>
+            <p class="kicker">For makers</p>
+            <h2 class="headline" id="makers-title">Share software without starting a startup.</h2>
+            <p class="lede">Make a useful little app and hand it to a friend. hitSlop does the saving, the window, the export and the icon.</p>
+            <a class="text-link" href="/docs/guides/build-and-share/">Build and share a template <span aria-hidden="true">→</span></a>
+          </div>
+          <ul class="stamps" aria-label="Things you don’t have to build">
+            <li style="--tilt: -6deg"><b>No hosting</b><span>nothing to deploy or keep running</span></li>
+            <li style="--tilt: 4deg"><b>No database</b><span>saving is handled for you</span></li>
+            <li style="--tilt: -3deg"><b>No accounts</b><span>no logins or password resets</span></li>
+            <li style="--tilt: 5deg"><b>No forced updates</b><span>documents keep their version</span></li>
+          </ul>
+        </div>
       </section>
 
-      <section class="catalog-section" id="templates" aria-labelledby="catalog-title">
-        <div class="catalog-heading"><div><p class="eyebrow">Included templates</p><h2 id="catalog-title">Find your next favorite tiny app.</h2></div><p>Start with a checklist or a small expense tracker. Each creates its own local document.</p></div>
-        <p>Quick Checklist and Small Expenses are included in the Mac app. Create a writable copy and start using it offline. Hosted discovery and public publishing are planned for a later release.</p>
+      <section class="section panel together" aria-labelledby="together-title">
+        <div class="split">
+          <div>
+            <p class="kicker">Coming soon</p>
+            <h2 class="headline small" id="together-title">Little things, <em>better together.</em></h2>
+            <p class="lede">Plan a trip or split a list with friends, live. Collaboration is on the way; the people in this preview are pretend.</p>
+            <a class="text-link" href="/docs/guides/live-sharing/">What’s planned <span aria-hidden="true">→</span></a>
+          </div>
+          <LiveTogether client:visible />
+        </div>
       </section>
-      <section class="faq-section" aria-labelledby="faq-title"><div><h2 id="faq-title">Got questions?</h2></div><div class="faq-list">{faqs.map((faq) => <details><summary>{faq.question}<span aria-hidden="true">+</span></summary><p>{faq.answer}</p></details>)}</div></section>
-      <section class="final-cta" aria-labelledby="cta-title"><div><p class="eyebrow">Small files. Big ideas.</p><h2 id="cta-title">Put your next tiny tool on your desktop.</h2></div><a class="button button-primary" href={SITE_LINKS.download}><AppleIcon /> Download for Apple silicon</a><p class="download-meta">Apple silicon · macOS 14+ · Signed &amp; notarized</p><div class="cta-art" aria-hidden="true"><span></span><span></span><img src="/assets/appicon.png" alt="" /></div></section>
+
+      <section class="section faq" aria-labelledby="faq-title">
+        <h2 class="headline small" id="faq-title">Got questions?</h2>
+        <div class="faq-list">{faqs.map((faq) => <details><summary>{faq.question}<span aria-hidden="true">+</span></summary><p>{faq.answer}</p></details>)}</div>
+      </section>
+
+      <section class="section final" aria-labelledby="final-title">
+        <div class="final-copy">
+          <p class="kicker">Small files. Big ideas.</p>
+          <h2 class="headline" id="final-title">Put a tiny app on your desktop.</h2>
+          <a class="button button-primary final-download" href={SITE_LINKS.download} data-burst={JSON.stringify(burst)}><AppleIcon /> Download for Mac</a>
+          <p class="small-print">Free &amp; open source · macOS 15.2+ on Apple silicon · Signed &amp; notarized · Live collaboration, Windows + iOS coming soon</p>
+        </div>
+        <div class="final-dock" aria-hidden="true">
+          <span>🍅</span><span>☑️</span><span class="app"><img src="/assets/appicon-256.webp" width="96" height="96" alt="" loading="lazy" /></span><span>🐟</span><span>📻</span>
+        </div>
+      </section>
     </main>
 
-    <footer class="site-footer" id="community">
-      <a class="wordmark" href="/" aria-label="hitSlop home"><span class="brand-mark"><img src="/assets/appicon.png" alt="" /></span><span>hitSlop</span></a><p>Local-first small software for macOS. {platformRequirements}.</p>
-      <nav aria-label="Footer navigation"><a href={SITE_LINKS.repository} target="_blank" rel="noreferrer">GitHub</a><a href={SITE_LINKS.docs}>Docs</a>{SITE_LINKS.discord && <a href={SITE_LINKS.discord} target="_blank" rel="noreferrer">Discord</a>}<span>MIT © 2026</span></nav>
-    </footer>
+    <SiteFooter />
+    <VideoDialog />
+    <MakeSlopModal />
+
+    <script>
+      // A little confetti of real template stickers when someone downloads.
+      const download = document.querySelector<HTMLAnchorElement>("[data-burst]");
+      if (download && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const pool: string[] = JSON.parse(download.dataset.burst ?? "[]");
+        download.addEventListener("click", () => {
+          const rect = download.getBoundingClientRect();
+          for (let i = 0; i < 18; i++) {
+            const bit = document.createElement("span");
+            bit.className = "burst-bit";
+            bit.textContent = pool[Math.floor(Math.random() * pool.length)] ?? "✨";
+            const angle = (Math.PI * 2 * i) / 18 + Math.random() * .4;
+            const distance = 120 + Math.random() * 140;
+            bit.style.left = `${rect.left + rect.width / 2}px`;
+            bit.style.top = `${rect.top + rect.height / 2}px`;
+            bit.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+            bit.style.setProperty("--dy", `${Math.sin(angle) * distance - 60}px`);
+            bit.style.setProperty("--spin", `${Math.random() * 720 - 360}deg`);
+            document.body.append(bit);
+            bit.addEventListener("animationend", () => bit.remove());
+          }
+        });
+      }
+    </script>
   </body>
 </html>
 
 <style>
-  .masthead { font-family: "HitSlop Sans", sans-serif; color: #10132c; }
-  .home-masthead nav, .home-masthead .nav-download { font-weight: 800; }
-  .header-actions { display: flex; align-items: center; gap: 16px; }
-  .social-links { display: flex; align-items: center; }
-  .nav-social { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: #10132c; }
-  .nav-social:hover { color: #7922e0; background: #7922e00a; }
-  .nav-social :global(svg) { display: block; width: 20px; height: 20px; }
-  @media (max-width: 979px) {
-    .home-masthead { grid-template-columns: auto 1fr auto; }
-    .home-masthead nav { display: flex; justify-content: flex-end; }
-    .home-masthead nav a { display: none; }
-    .home-masthead nav .merch-link { display: inline-flex; align-items: center; min-height: 44px; font-size: .85rem; font-weight: 700; }
-  }
-  @media (max-width: 480px) {
-    .header-actions { gap: 4px; }
-    .home-masthead .nav-download { width: 44px; padding-inline: 0; }
-    .nav-download > span { display: none; }
-  }
-  @media (max-width: 420px) {
-    .home-masthead .wordmark > span:last-child { display: none; }
-    .home-masthead { padding-inline: 12px; gap: 10px; }
-  }
+  code { font-size: .92em; }
+  .headline.small { font-size: clamp(2.2rem, 5vw, 3.6rem); }
+  .small-print { margin: 16px 0 0; color: var(--faint); font-size: .92rem; }
+  .small-print a { text-decoration: underline; text-underline-offset: 3px; }
+
+  .templates { padding-top: clamp(88px, 11vw, 150px); }
+  .wall-wrap { margin-top: 40px; }
+
+  .make-actions { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+  .make-art { min-width: 0; }
+
+  .agent { color: #f3ecf6; background: #251630; border-radius: var(--radius); }
+  .agent .headline em { color: #ffd84a; }
+  .agent .kicker { color: #ffb38a; }
+  .agent .lede { color: #cdbfd6; }
+
+  .verbs { margin: 30px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 14px; list-style: none; }
+  .unfold-wrap { margin-top: 46px; }
+
+  .themes { background: #fbe8f7; border-radius: var(--radius); }
+  .themes .theme-note { margin-top: 30px; }
+  .themes .theme-note svg { rotate: -10deg; }
+
+  .checks { margin: 26px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; font-weight: 700; }
+  .checks li { display: flex; align-items: center; gap: 10px; }
+  .checks li::before { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--accent); font-size: .8rem; content: "✓"; }
+
+  .makers { background: #ffd84a; border-radius: var(--radius); }
+  .makers .kicker, .makers .text-link { color: #6b3c00; }
+  .makers .lede { color: #4a3a12; }
+  .stamps { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; list-style: none; }
+  @media (max-width: 480px) { .stamps { grid-template-columns: 1fr; } }
+  .stamps li { padding: 20px 18px; display: grid; gap: 4px; border: 3px dashed #b3261e; border-radius: 16px; color: #b3261e; background: #fff8e1; rotate: var(--tilt); box-shadow: 0 8px 18px #6b3c0026; transition: rotate 400ms var(--spring), scale 400ms var(--spring); }
+  .stamps b { font-family: "HitSlop Headline", "HitSlop Display", sans-serif; font-size: 1.6rem; font-weight: 900; letter-spacing: .01em; text-transform: uppercase; }
+  .stamps span { color: #5b3a1a; font-weight: 700; }
+  @media (hover: hover) { .stamps li:hover { rotate: 0deg; scale: 1.05; } }
+
+  .together { background: #e3f1ff; }
+
+  .faq { display: grid; gap: 40px; }
+  @media (min-width: 900px) { .faq { grid-template-columns: .6fr 1.4fr; align-items: start; } }
+  .faq-list { border-top: 2px solid var(--ink); }
+  .faq-list details { border-bottom: 1px solid var(--rule); }
+  .faq-list summary { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 24px; cursor: pointer; font-size: 1.15rem; font-weight: 800; list-style: none; }
+  .faq-list summary::-webkit-details-marker { display: none; }
+  .faq-list summary span { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 50%; color: var(--ink); font-size: 1.3rem; transition: transform 300ms var(--spring), background-color 200ms; }
+  .faq-list details[open] summary span { transform: rotate(135deg); background: #ffe66b; }
+  .faq-list details p { max-width: 46rem; margin: -6px 0 24px; color: var(--muted); font-size: 1.05rem; line-height: 1.65; }
+
+  .final { display: grid; gap: 40px; align-items: center; overflow: hidden; border-radius: var(--radius); background: radial-gradient(circle at 85% 30%, #ffd1ea, transparent 50%), #ffe0d6; }
+  @media (min-width: 900px) { .final { grid-template-columns: 1fr auto; } }
+  .final .headline { max-width: 12ch; }
+  .final-download { margin-top: 28px; }
+  .final-dock { justify-self: center; padding: 14px 16px; display: flex; align-items: flex-end; gap: 12px; border: 1px solid #ffffffcc; border-radius: 28px; background: #ffffffa6; box-shadow: 0 20px 40px #6b1f3a26; backdrop-filter: blur(10px); }
+  .final-dock span { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 18px; background: #fff; box-shadow: 0 4px 10px #6b1f3a1f; font-size: 34px; }
+  .final-dock .app { width: 96px; height: 96px; padding: 0; overflow: hidden; border-radius: 24px; }
+  .final-dock .app img { width: 100%; height: 100%; }
+  @media (prefers-reduced-motion: no-preference) { .final-dock .app { animation: dock-bounce 2.8s var(--ease-out) infinite; } }
+  @keyframes dock-bounce { 0%, 55%, 100% { translate: 0 0; } 10%, 30% { translate: 0 -34px; } 20%, 40% { translate: 0 0; } }
+  @media (max-width: 520px) { .final-dock span { width: 48px; height: 48px; font-size: 26px; } .final-dock .app { width: 72px; height: 72px; } }
+
+  :global(.burst-bit) { position: fixed; z-index: 999; font-size: 30px; pointer-events: none; translate: -50% -50%; animation: burst-fly 1100ms cubic-bezier(.2, .8, .3, 1) forwards; }
+  @keyframes burst-fly { to { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)) scale(.7); opacity: 0; } }
 </style>

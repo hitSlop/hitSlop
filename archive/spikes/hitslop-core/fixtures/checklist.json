@@ -1,0 +1,419 @@
+{
+  "schema": {
+    "format": 1,
+    "root": {
+      "kind": "object",
+      "properties": {
+        "title": {
+          "kind": "text"
+        },
+        "rows": {
+          "kind": "list",
+          "item": {
+            "kind": "object",
+            "properties": {
+              "text": {
+                "kind": "text"
+              },
+              "done": {
+                "kind": "boolean"
+              }
+            }
+          }
+        },
+        "hits": {
+          "kind": "counter"
+        }
+      }
+    }
+  },
+  "initial": {
+    "title": "abc",
+    "rows": [
+      {
+        "$id": "00000000000000000000000000000001",
+        "text": "A",
+        "done": false
+      },
+      {
+        "$id": "00000000000000000000000000000002",
+        "text": "B",
+        "done": false
+      }
+    ],
+    "hits": 0
+  },
+  "scenarios": [
+    {
+      "name": "insert then address new row in one batch",
+      "intents": [
+        {
+          "type": "insert",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000003",
+          "value": {
+            "text": "C",
+            "done": false
+          },
+          "at": {
+            "before": "00000000000000000000000000000002"
+          }
+        },
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000003"
+            },
+            "done"
+          ],
+          "value": true
+        }
+      ],
+      "after": {
+        "title": "abc",
+        "rows": [
+          {
+            "$id": "00000000000000000000000000000001",
+            "text": "A",
+            "done": false
+          },
+          {
+            "$id": "00000000000000000000000000000003",
+            "text": "C",
+            "done": true
+          },
+          {
+            "$id": "00000000000000000000000000000002",
+            "text": "B",
+            "done": false
+          }
+        ],
+        "hits": 0
+      }
+    },
+    {
+      "name": "move retains identity for subsequent edit",
+      "intents": [
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000001"
+        },
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000001"
+            },
+            "done"
+          ],
+          "value": true
+        }
+      ],
+      "after": {
+        "title": "abc",
+        "rows": [
+          {
+            "$id": "00000000000000000000000000000002",
+            "text": "B",
+            "done": false
+          },
+          {
+            "$id": "00000000000000000000000000000001",
+            "text": "A",
+            "done": true
+          }
+        ],
+        "hits": 0
+      }
+    },
+    {
+      "name": "rejected late operation preserves state and version",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000001"
+            },
+            "done"
+          ],
+          "value": true
+        },
+        {
+          "type": "remove",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000002"
+        },
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000002"
+            },
+            "done"
+          ],
+          "value": true
+        }
+      ],
+      "error": "path_not_found"
+    },
+    {
+      "name": "duplicate ID rejects preceding edits too",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000001"
+            },
+            "done"
+          ],
+          "value": true
+        },
+        {
+          "type": "insert",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000001",
+          "value": {
+            "text": "Duplicate",
+            "done": false
+          }
+        }
+      ],
+      "error": "duplicate_id"
+    },
+    {
+      "name": "text replacement uses UTF-16 and keeps combining marks",
+      "initial": {
+        "title": "a😀é中",
+        "rows": [],
+        "hits": 0
+      },
+      "intents": [
+        {
+          "type": "splice",
+          "path": [
+            "title"
+          ],
+          "base": "$current",
+          "index": 1,
+          "delete": 2,
+          "insert": "🚀"
+        }
+      ],
+      "after": {
+        "title": "a🚀é中",
+        "rows": [],
+        "hits": 0
+      }
+    },
+    {
+      "name": "split surrogate boundary is rejected",
+      "initial": {
+        "title": "a😀b",
+        "rows": [],
+        "hits": 0
+      },
+      "intents": [
+        {
+          "type": "splice",
+          "path": [
+            "title"
+          ],
+          "base": "$current",
+          "index": 2,
+          "delete": 0,
+          "insert": "X"
+        }
+      ],
+      "error": "out_of_range"
+    },
+    {
+      "name": "stale text base is explicit until ancestry is implemented",
+      "intents": [
+        {
+          "type": "splice",
+          "path": [
+            "title"
+          ],
+          "base": "old",
+          "index": 0,
+          "delete": 0,
+          "insert": "X"
+        }
+      ],
+      "error": "stale_base"
+    },
+    {
+      "name": "present collection cannot be assigned over",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "rows"
+          ],
+          "value": []
+        }
+      ],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "strict scalar validation",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000001"
+            },
+            "done"
+          ],
+          "value": "true"
+        }
+      ],
+      "error": "type_mismatch"
+    },
+    {
+      "name": "strict envelope rejects unknown fields",
+      "intents": [
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000001",
+          "unexpected": 1
+        }
+      ],
+      "error": "invalid_request"
+    },
+    {
+      "name": "removed row never retargets its neighbor",
+      "intents": [
+        {
+          "type": "remove",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000001"
+        }
+      ],
+      "after": {
+        "title": "abc",
+        "rows": [
+          {
+            "$id": "00000000000000000000000000000002",
+            "text": "B",
+            "done": false
+          }
+        ],
+        "hits": 0
+      }
+    },
+    {
+      "name": "missing move anchor is rejected",
+      "intents": [
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "00000000000000000000000000000001",
+          "at": {
+            "after": "00000000000000000000000000000009"
+          }
+        }
+      ],
+      "error": "path_not_found"
+    },
+    {
+      "name": "counter increments add exactly",
+      "intents": [
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 2
+        },
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": -7
+        },
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 9007199254740990
+        }
+      ],
+      "after": {
+        "title": "abc",
+        "rows": [
+          {
+            "$id": "00000000000000000000000000000001",
+            "text": "A",
+            "done": false
+          },
+          {
+            "$id": "00000000000000000000000000000002",
+            "text": "B",
+            "done": false
+          }
+        ],
+        "hits": 9007199254740985
+      }
+    },
+    {
+      "name": "zero or overflowing increment rejects the whole batch",
+      "intents": [
+        {
+          "type": "set",
+          "path": [
+            "rows",
+            {
+              "id": "00000000000000000000000000000001"
+            },
+            "done"
+          ],
+          "value": true
+        },
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 9007199254740991
+        },
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 1
+        }
+      ],
+      "error": "out_of_range"
+    }
+  ]
+}

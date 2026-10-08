@@ -3,35 +3,25 @@ title: PNG window skins
 description: Give a fixed-size slop a custom native silhouette and click-through transparent areas.
 ---
 
-Start with a built-in `rounded`, `ellipse`, or `capsule` shape and
+Start with a radius (`"22px"`, `"50%"`, or `"9999px"`) or SVG path shape and
 `background: "transparent"`. Use a PNG when you need a hole in the window or an
 outline those shapes cannot describe. PNG skins are fixed-size and cannot resize.
 A washer with a transparent center is a useful first test.
 
 ## Create the mask asset
 
-Add an RGBA PNG under `assets/`. Its pixel dimensions must exactly match the
-manifest window. Alpha defines both the native backing and where the window
-accepts pointer input.
+Add an RGBA PNG under `assets/`. Its pixel dimensions must be exactly 1× or 2× the
+window's logical `width` and `height`. Alpha defines both the native backing and where the
+window accepts pointer input. Import it in `slop.ts` and use the skin window:
 
-```json title="manifest.json"
-{
-  "$schema": "https://api.hitslop.com/schemas/v1/manifest.schema.json",
-  "runtime": "hitslop-v1",
-  "author": { "name": "Your Name" },
-  "slug": "pocket-dial",
-  "title": "Pocket Dial",
-  "description": "A compact desktop dial.",
-  "categories": ["utilities"],
-  "presentation": {
-    "width": 480,
-    "height": 480,
-    "skin": "assets/window-mask.png"
-  }
-}
+```ts
+import skin from "./assets/window-mask.png";
+
+// Inside defineSlop({ ... })
+window: { kind: "skin", width: 480, height: 480, image: skin },
 ```
 
-A skinned presentation contains only `width`, `height`, and `skin`. It cannot
+A skin window contains `kind`, `width`, `height`, and `image`. It cannot
 also specify `shape`, `background`, or `resizable`, and the native window stays
 at the skin's fixed size.
 
@@ -39,12 +29,12 @@ at the skin's fixed size.
 
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
-transparency with more-specific or `!important` page backgrounds. Wrap the app in `<Slop>`
-or mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
+transparency with more-specific or `!important` page backgrounds. The generated Svelte entry provides the app root automatically;
+mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
-are needed; use `100%` or `--slop-width`/`--slop-height`. Align controls with opaque areas of the PNG using ordinary CSS.
+are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
 
-The native host exposes initial dimensions as `--slop-width` and `--slop-height`, and
+The native host exposes initial dimensions as `--slop-window-width` and `--slop-window-height`, and
 sets `data-slop-presentation="skin"`. These layout rules are disabled for capture.
 
 Pixels below 10% alpha are click-through. Feathered edge pixels may still
@@ -54,11 +44,13 @@ click the content behind the window.
 
 ## Test the physical behavior
 
-- Confirm the PNG is RGBA and exactly matches the manifest dimensions.
+- Confirm the PNG is RGBA and is exactly 1× or 2× the logical window dimensions.
 - Test clicks around curved edges, transparent holes, and soft shadows.
 - Move the window with its native toolbar handle; guest controls do not drag it.
 - Check that focus rings and menus stay inside the usable silhouette.
 - Preview at native size; a skin is not a responsive window treatment.
 
-The PNG belongs to immutable `assets/`; the native mask is defined by the template.
-Document data stays in host-managed state. Media import is deferred.
+Vite includes the imported PNG as an immutable content-addressed asset, even if no
+component renders it. Rust validates the PNG stream and infers its scale; the native
+mask uses that scale for crisp rendering. Document images imported by a user are separate
+attachments served by `app.attachments.url(id)`.

@@ -1,0 +1,3553 @@
+{
+  "environment": {
+    "created": "2026-09-28T21:56:31.955Z",
+    "version": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+    "cpu": "Apple M1\n",
+    "source": "e5645b75afeed5a79d9e6f0f503225c4e294c299\n",
+    "mode": "matrix",
+    "adapter": "indexed IDs and confirmed move patches; atomic fork staging retained; periodic 200ms autosave parity asserted",
+    "harnessHash": "e0760902b5169cd9b1879015bf8f2f271f0c5d00e35bd72005c0b5389ffcbb86",
+    "appHash": "e59691426b370a7896a56e8ae5f1ce0fb1e2a4d68d5addad002bbe09fd5959c8",
+    "swiftResolution": {
+      "originHash": "669521b1242a6c1d0f216977f9db6221cd2f6052d5da7bb042d30d8fbb0cc2ce",
+      "pins": [
+        {
+          "identity": "loro-swift",
+          "kind": "remoteSourceControl",
+          "location": "https://github.com/loro-dev/loro-swift.git",
+          "state": {
+            "revision": "92f04db76d86012c2ff7678affb1293083c31573",
+            "version": "1.16.2"
+          }
+        }
+      ],
+      "version": 3
+    },
+    "wasmBaseline": "1.16.1",
+    "matchedCore": "1.16.2",
+    "seedHash": "030261cccc9534039defdd54dbcbebc4a40d49ed0b79ec498322508c07495d90",
+    "method": "Fresh process, release build, identical 40 rendered rows including final row; nonpersistent WebKit stores; two rAFs are a render opportunity proxy, not compositor paint. Host and identified WebContent footprints exclude GPU/network processes. Local relay measurements are separate."
+  },
+  "rawDirectory": ".hitslop/v1-evidence/engine-placement/2026-09-28T21-56-29.931Z",
+  "groups": [
+    {
+      "rows": 1000,
+      "windows": 1,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 409.57796573638916,
+            "min": 350.2810001373291,
+            "max": 495.0209856033325
+          },
+          "memoryMiB": {
+            "median": 151.87969970703125,
+            "min": 139.239013671875,
+            "max": 155.47357177734375
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000.9999999999995,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 19,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 3.0000000000009095,
+            "max": 5.0000000000009095
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 7,
+                "min": 6.000000000000057,
+                "max": 7
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000006,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 7
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3.0000000000002274,
+                "min": 3,
+                "max": 3.0000000000002274
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.000000000000114,
+                "min": 32.999999999999886,
+                "max": 33.00000000000023
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3.0000000000002274
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 8,
+                "min": 7,
+                "max": 9
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000023,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 7,
+                "max": 8
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 2.9999999999995453
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 2.0000000000004547
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 427.1479845046997,
+            "min": 411.05806827545166,
+            "max": 474.4570255279541
+          },
+          "memoryMiB": {
+            "median": 152.39532470703125,
+            "min": 149.379638671875,
+            "max": 153.73919677734375
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 2999.000000000001,
+            "max": 3000.9999999999995
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 2.9999999999990905,
+            "min": 0,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 7,
+                "min": 5.999999999999972,
+                "max": 8
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000114,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 6.999999999999972,
+                "min": 5.999999999999972,
+                "max": 8
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 2.9999999999997726,
+                "max": 3.0000000000002274
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 32,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 2,
+                "max": 3.0000000000002274
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 7.000000000000227,
+                "min": 7,
+                "max": 8
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 6.000000000000227,
+                "max": 8
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 3
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 354.3119430541992,
+            "min": 341.0780429840088,
+            "max": 400.00391006469727
+          },
+          "memoryMiB": {
+            "median": 103.78564453125,
+            "min": 101.80120849609375,
+            "max": 112.06671142578125
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3001,
+            "min": 3000,
+            "max": 3001.000000000001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 2.9999999999990905,
+            "max": 4.0000000000009095
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 2.0000000000000284,
+                "min": 2,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000003,
+                "min": 34,
+                "max": 34.00000000000006
+              },
+              "engineP95MS": {
+                "median": 1.2390613555908203,
+                "min": 0.9369850158691406,
+                "max": 1.50299072265625
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 2,
+                "max": 4
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.00000000000023,
+                "min": 33,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 1.2450218200683594,
+                "min": 1.1180639266967773,
+                "max": 1.819014549255371
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 4
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 1.3810396194458008,
+                "min": 1.2359619140625,
+                "max": 2.250075340270996
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2,
+                "min": 2,
+                "max": 2.0000000000004547
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 1.055002212524414,
+                "min": 0.9520053863525391,
+                "max": 1.1080503463745117
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 1000,
+      "windows": 5,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 771.5760469436646,
+            "min": 713.0460739135742,
+            "max": 857.4010133743286
+          },
+          "memoryMiB": {
+            "median": 404.45001220703125,
+            "min": 402.26239013671875,
+            "max": 408.0123291015625
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 2999.9999999999995,
+            "max": 3000
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.000000000000455,
+            "min": 33,
+            "max": 33.99999999999909
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 3,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 6.999999999999943
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000006,
+                "min": 34,
+                "max": 34.000000000000114
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 6.999999999999943
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3.0000000000002274,
+                "min": 3,
+                "max": 3.0000000000002274
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.000000000000114,
+                "min": 33,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3.0000000000002274
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 8,
+                "min": 7,
+                "max": 9
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.99999999999977
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 6.000000000000455,
+                "max": 8.000000000000455
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 3
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 796.7180013656616,
+            "min": 731.5220832824707,
+            "max": 838.1489515304565
+          },
+          "memoryMiB": {
+            "median": 403.9031982421875,
+            "min": 401.6376953125,
+            "max": 406.13739013671875
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 2999.9999999999995,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 3.0000000000009095,
+            "min": 3,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 7,
+                "min": 6,
+                "max": 7.000000000000057
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000006,
+                "min": 34,
+                "max": 34.000000000000114
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 7.000000000000057
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3.0000000000002274
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.00000000000023,
+                "min": 32,
+                "max": 33.00000000000023
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 2,
+                "max": 3
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 7.000000000000455,
+                "min": 7,
+                "max": 9
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 7.000000000000455,
+                "min": 7,
+                "max": 8
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 2.0000000000004547
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 652.6620388031006,
+            "min": 622.3280429840088,
+            "max": 692.1130418777466
+          },
+          "memoryMiB": {
+            "median": 227.12066650390625,
+            "min": 222.1361083984375,
+            "max": 227.46435546875
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 2999.9999999999995,
+            "max": 3001.000000000001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 19,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 2.9999999999990905,
+            "max": 4.0000000000009095
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 2,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 1.3740062713623047,
+                "min": 1.356959342956543,
+                "max": 1.5639066696166992
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 2,
+                "min": 2,
+                "max": 2
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 30,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 1.1659860610961914,
+                "min": 1.074075698852539,
+                "max": 1.5839338302612305
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 2.9999999999997726,
+                "max": 5
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000023,
+                "min": 34,
+                "max": 39
+              },
+              "engineP95MS": {
+                "median": 1.7479658126831055,
+                "min": 1.540064811706543,
+                "max": 3.3910274505615234
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2,
+                "max": 5.999999999999545
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 1.1789798736572266,
+                "min": 1.0319948196411133,
+                "max": 1.8310546875
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 1000,
+      "windows": 10,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 1357.509970664978,
+            "min": 1238.4010553359985,
+            "max": 1716.9140577316284
+          },
+          "memoryMiB": {
+            "median": 711.3816528320312,
+            "min": 707.8977661132812,
+            "max": 724.7879028320312
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3001,
+            "min": 3000,
+            "max": 3001.000000000001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 0,
+            "max": 3
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 1.0000000000009095
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 7,
+                "min": 7,
+                "max": 7
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.00000000000023
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 7,
+                "max": 7
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 33,
+                "max": 33
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 8,
+                "min": 7,
+                "max": 9
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 7,
+                "max": 8
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 2.0000000000004547
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 2.0000000000004547
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 1387.7569437026978,
+            "min": 1293.715000152588,
+            "max": 1905.4549932479858
+          },
+          "memoryMiB": {
+            "median": 724.9442138671875,
+            "min": 714.006591796875,
+            "max": 731.0537719726562
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 2999.9999999999995,
+            "min": 2999,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 0,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 8
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000114
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 8
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3.0000000000002274
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 33,
+                "max": 34.00000000000023
+              },
+              "engineP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3.0000000000002274
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 8,
+                "min": 7,
+                "max": 8.999999999999545
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 7,
+                "min": 7,
+                "max": 8
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 2.0000000000004547
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 2.0000000000004547,
+                "min": 2.0000000000004547,
+                "max": 2.0000000000004547
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 1061.0710382461548,
+            "min": 973.6709594726562,
+            "max": 1160.8120203018188
+          },
+          "memoryMiB": {
+            "median": 377.39483642578125,
+            "min": 373.48876953125,
+            "max": 389.4727783203125
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3001,
+            "min": 3000,
+            "max": 3001.000000000001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 2,
+            "max": 4.9999999999990905
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000114,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 1.4619827270507812,
+                "min": 1.3189315795898438,
+                "max": 1.6309022903442383
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 2,
+                "min": 2,
+                "max": 2
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 33,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 1.1390447616577148,
+                "min": 1.1049509048461914,
+                "max": 1.2669563293457031
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 3,
+                "min": 3,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000023,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 1.5259981155395508,
+                "min": 1.4330148696899414,
+                "max": 1.5779733657836914
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 2,
+                "min": 2,
+                "max": 3
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 41
+              },
+              "engineP95MS": {
+                "median": 1.2340545654296875,
+                "min": 1.2099742889404297,
+                "max": 2.1320581436157227
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 5000,
+      "windows": 1,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 444.9939727783203,
+            "min": 419.7580814361572,
+            "max": 472.5080728530884
+          },
+          "memoryMiB": {
+            "median": 210.9737548828125,
+            "min": 181.9111328125,
+            "max": 238.25494384765625
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000.000000000001,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33.000000000000455,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 3,
+            "max": 5
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 14,
+                "min": 13,
+                "max": 15.999999999999972
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000006,
+                "min": 34,
+                "max": 34.000000000000114
+              },
+              "engineP95MS": {
+                "median": 14,
+                "min": 13,
+                "max": 15
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.00000000000023,
+                "min": 33,
+                "max": 33.00000000000023
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33,
+                "min": 29.999999999999773,
+                "max": 34
+              },
+              "renderOpportunityP95MS": {
+                "median": 47,
+                "min": 45,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 32,
+                "min": 29,
+                "max": 34
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 4.999999999999545,
+                "max": 5.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 4,
+                "max": 5.000000000000455
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 500.6459951400757,
+            "min": 407.51194953918457,
+            "max": 584.7610235214233
+          },
+          "memoryMiB": {
+            "median": 180.692626953125,
+            "min": 173.2081298828125,
+            "max": 216.6612548828125
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3001,
+            "min": 3000,
+            "max": 3002
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33,
+            "min": 33,
+            "max": 33.000000000000455
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 0,
+            "max": 15
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 16,
+                "min": 14,
+                "max": 18
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 16,
+                "min": 13,
+                "max": 17
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 32,
+                "min": 19,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 35,
+                "min": 29.999999999999773,
+                "max": 37
+              },
+              "renderOpportunityP95MS": {
+                "median": 50,
+                "min": 44.99999999999977,
+                "max": 50.000000000000455
+              },
+              "engineP95MS": {
+                "median": 34,
+                "min": 28.999999999999773,
+                "max": 36
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 4.999999999999545,
+                "max": 5.000000000000455
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 448.1220245361328,
+            "min": 401.0169506072998,
+            "max": 472.93102741241455
+          },
+          "memoryMiB": {
+            "median": 124.08245849609375,
+            "min": 104.06689453125,
+            "max": 125.4417724609375
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000.000000000001,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 2.9999999999990905,
+            "max": 9
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000057
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.00000000000006
+              },
+              "engineP95MS": {
+                "median": 3.837108612060547,
+                "min": 3.7369728088378906,
+                "max": 3.9609670639038086
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 4,
+                "max": 5
+              },
+              "renderOpportunityP95MS": {
+                "median": 33.00000000000023,
+                "min": 33,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 3.1620264053344727,
+                "min": 3.063082695007324,
+                "max": 4.538059234619141
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 7
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000023,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 4.625916481018066,
+                "min": 4.593014717102051,
+                "max": 5.995988845825195
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 4,
+                "max": 4
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 2.9981136322021484,
+                "min": 2.915024757385254,
+                "max": 3.1359195709228516
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 5000,
+      "windows": 5,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 956.7880630493164,
+            "min": 927.6219606399536,
+            "max": 972.9399681091309
+          },
+          "memoryMiB": {
+            "median": 516.12255859375,
+            "min": 480.1695556640625,
+            "max": 523.2633056640625
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000.000000000001,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 3.9999999999990905,
+            "min": 3,
+            "max": 4.0000000000009095
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 1
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 16,
+                "min": 14,
+                "max": 17
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 15,
+                "min": 13,
+                "max": 17
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 21.000000000000227,
+                "max": 33
+              },
+              "engineP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 34,
+                "min": 30,
+                "max": 37.999999999999545
+              },
+              "renderOpportunityP95MS": {
+                "median": 47.000000000000455,
+                "min": 41,
+                "max": 48.000000000000455
+              },
+              "engineP95MS": {
+                "median": 34,
+                "min": 30,
+                "max": 37
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000455
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 1031.1930179595947,
+            "min": 959.8740339279175,
+            "max": 1533.9350700378418
+          },
+          "memoryMiB": {
+            "median": 505.48199462890625,
+            "min": 498.18505859375,
+            "max": 521.0752563476562
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.000000000000455,
+            "min": 33,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 3,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 13.000000000000114,
+                "min": 13,
+                "max": 15
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000114
+              },
+              "engineP95MS": {
+                "median": 13.000000000000114,
+                "min": 12,
+                "max": 15
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 19,
+                "max": 33.00000000000023
+              },
+              "engineP95MS": {
+                "median": 5.000000000000455,
+                "min": 5,
+                "max": 6
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33,
+                "min": 31,
+                "max": 35
+              },
+              "renderOpportunityP95MS": {
+                "median": 45.999999999999545,
+                "min": 44,
+                "max": 50.000000000000455
+              },
+              "engineP95MS": {
+                "median": 32,
+                "min": 30,
+                "max": 35
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5.000000000000455,
+                "min": 5,
+                "max": 5.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000455
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 951.2579441070557,
+            "min": 864.9020195007324,
+            "max": 1042.3309803009033
+          },
+          "memoryMiB": {
+            "median": 256.46484375,
+            "min": 239.74603271484375,
+            "max": 259.58966064453125
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 2999.9999999999995,
+            "max": 3000.9999999999995
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.000000000000455,
+            "min": 33,
+            "max": 33.00000000000091
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 3,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 7
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000114,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 3.887057304382324,
+                "min": 3.6770105361938477,
+                "max": 3.9229393005371094
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 4,
+                "max": 5
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 32.999999999999886,
+                "max": 36
+              },
+              "engineP95MS": {
+                "median": 3.291964530944824,
+                "min": 3.1099319458007812,
+                "max": 3.881096839904785
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 7
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 4.852056503295898,
+                "min": 4.54103946685791,
+                "max": 5.900979042053223
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 4,
+                "max": 4
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 34.000000000000455
+              },
+              "engineP95MS": {
+                "median": 3.1130313873291016,
+                "min": 2.830982208251953,
+                "max": 3.332972526550293
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 5000,
+      "windows": 10,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 1965.2389287948608,
+            "min": 1845.4480171203613,
+            "max": 2812.006950378418
+          },
+          "memoryMiB": {
+            "median": 864.3204345703125,
+            "min": 858.7889404296875,
+            "max": 893.4448852539062
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3002
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 33,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 0,
+            "max": 5
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 14,
+                "min": 13,
+                "max": 15
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000023,
+                "min": 34,
+                "max": 34.00000000000023
+              },
+              "engineP95MS": {
+                "median": 14,
+                "min": 13,
+                "max": 15
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 32,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 5.000000000000455,
+                "min": 5,
+                "max": 6
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33,
+                "min": 31,
+                "max": 34.999999999999545
+              },
+              "renderOpportunityP95MS": {
+                "median": 48,
+                "min": 45,
+                "max": 56
+              },
+              "engineP95MS": {
+                "median": 32,
+                "min": 31,
+                "max": 33.999999999999545
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 5.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 4.0000000000009095,
+                "max": 5
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 2090.74604511261,
+            "min": 1827.2799253463745,
+            "max": 2275.894045829773
+          },
+          "memoryMiB": {
+            "median": 888.8980102539062,
+            "min": 837.1171875,
+            "max": 915.9453125
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3000.999999999999,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33,
+            "min": 20,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 4.0000000000009095,
+            "min": 3,
+            "max": 5
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 14,
+                "min": 14,
+                "max": 16
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 53
+              },
+              "engineP95MS": {
+                "median": 14,
+                "min": 13.000000000000227,
+                "max": 16
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 5.000000000000455,
+                "min": 5,
+                "max": 6.000000000000455
+              },
+              "renderOpportunityP95MS": {
+                "median": 32,
+                "min": 29,
+                "max": 34
+              },
+              "engineP95MS": {
+                "median": 5.000000000000455,
+                "min": 5,
+                "max": 6.000000000000455
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33,
+                "min": 30,
+                "max": 40
+              },
+              "renderOpportunityP95MS": {
+                "median": 49.999999999999545,
+                "min": 45,
+                "max": 65
+              },
+              "engineP95MS": {
+                "median": 32,
+                "min": 29,
+                "max": 39
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 6
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.00000000000091,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 5,
+                "min": 5,
+                "max": 6
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 1648.3190059661865,
+            "min": 1554.2789697647095,
+            "max": 1916.8819189071655
+          },
+          "memoryMiB": {
+            "median": 424.223876953125,
+            "min": 406.52044677734375,
+            "max": 440.37969970703125
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3000.9999999999995,
+            "min": 3000,
+            "max": 3002
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.000000000000455,
+            "min": 33,
+            "max": 34
+          },
+          "flushMS": {
+            "median": 3,
+            "min": 3,
+            "max": 4
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0.9999999999990905
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 5.000000000000114,
+                "max": 9
+              },
+              "renderOpportunityP95MS": {
+                "median": 35,
+                "min": 34,
+                "max": 35
+              },
+              "engineP95MS": {
+                "median": 4.050016403198242,
+                "min": 3.896951675415039,
+                "max": 6.493091583251953
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 3.0000000000002274,
+                "max": 5
+              },
+              "renderOpportunityP95MS": {
+                "median": 33,
+                "min": 31,
+                "max": 36
+              },
+              "engineP95MS": {
+                "median": 3.3060312271118164,
+                "min": 2.7920007705688477,
+                "max": 3.6600828170776367
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 6,
+                "min": 6,
+                "max": 8
+              },
+              "renderOpportunityP95MS": {
+                "median": 34.000000000000455,
+                "min": 34,
+                "max": 41
+              },
+              "engineP95MS": {
+                "median": 4.952073097229004,
+                "min": 4.567980766296387,
+                "max": 6.350994110107422
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 4,
+                "min": 4,
+                "max": 10
+              },
+              "renderOpportunityP95MS": {
+                "median": 34,
+                "min": 34,
+                "max": 47
+              },
+              "engineP95MS": {
+                "median": 3.1049251556396484,
+                "min": 2.9140710830688477,
+                "max": 6.928086280822754
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": true,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 40000,
+      "windows": 1,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 1042.739987373352,
+            "min": 1026.3160467147827,
+            "max": 1152.4039506912231
+          },
+          "memoryMiB": {
+            "median": 583.6001586914062,
+            "min": 438.3345947265625,
+            "max": 662.397705078125
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000.999999999998,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 13,
+            "min": 12,
+            "max": 20
+          },
+          "typingRenderP95MS": {
+            "median": 42,
+            "min": 39,
+            "max": 47
+          },
+          "flushMS": {
+            "median": 5,
+            "min": 0,
+            "max": 6
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 1
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 71,
+                "min": 69,
+                "max": 76
+              },
+              "renderOpportunityP95MS": {
+                "median": 84,
+                "min": 83,
+                "max": 100
+              },
+              "engineP95MS": {
+                "median": 70,
+                "min": 65,
+                "max": 76
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 27.000000000000455,
+                "min": 26,
+                "max": 28
+              },
+              "renderOpportunityP95MS": {
+                "median": 40.000000000000455,
+                "min": 35.999999999999545,
+                "max": 44
+              },
+              "engineP95MS": {
+                "median": 27.000000000000455,
+                "min": 26,
+                "max": 28
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 261,
+                "min": 236,
+                "max": 335.9999999999991
+              },
+              "renderOpportunityP95MS": {
+                "median": 358,
+                "min": 344,
+                "max": 414.0000000000009
+              },
+              "engineP95MS": {
+                "median": 260,
+                "min": 235.0000000000009,
+                "max": 335
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 28,
+                "min": 25,
+                "max": 31
+              },
+              "renderOpportunityP95MS": {
+                "median": 50.00000000000182,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 28,
+                "min": 25,
+                "max": 31
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 1099.586009979248,
+            "min": 1022.068977355957,
+            "max": 1293.6021089553833
+          },
+          "memoryMiB": {
+            "median": 540.7100219726562,
+            "min": 438.3656005859375,
+            "max": 647.7880249023438
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 13,
+            "min": 12,
+            "max": 15
+          },
+          "typingRenderP95MS": {
+            "median": 38.00000000000182,
+            "min": 38,
+            "max": 45
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 0,
+            "max": 5
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 72,
+                "min": 70,
+                "max": 87
+              },
+              "renderOpportunityP95MS": {
+                "median": 86,
+                "min": 83,
+                "max": 100
+              },
+              "engineP95MS": {
+                "median": 70.99999999999977,
+                "min": 69,
+                "max": 87
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 27.000000000000455,
+                "min": 27,
+                "max": 32
+              },
+              "renderOpportunityP95MS": {
+                "median": 44,
+                "min": 34.999999999999545,
+                "max": 45
+              },
+              "engineP95MS": {
+                "median": 27.000000000000455,
+                "min": 27,
+                "max": 31
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 252.9999999999991,
+                "min": 246.9999999999991,
+                "max": 279
+              },
+              "renderOpportunityP95MS": {
+                "median": 368,
+                "min": 299.9999999999991,
+                "max": 394.9999999999991
+              },
+              "engineP95MS": {
+                "median": 252.9999999999991,
+                "min": 246.9999999999991,
+                "max": 279
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 26.99999999999818,
+                "min": 25,
+                "max": 28.99999999999818
+              },
+              "renderOpportunityP95MS": {
+                "median": 50.99999999999818,
+                "min": 50.00000000000182,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 26.99999999999818,
+                "min": 25,
+                "max": 28.99999999999818
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 1397.2920179367065,
+            "min": 1369.6290254592896,
+            "max": 1486.464023590088
+          },
+          "memoryMiB": {
+            "median": 184.66131591796875,
+            "min": 171.72381591796875,
+            "max": 273.458251953125
+          },
+          "processesMeasured": {
+            "median": 2,
+            "min": 2,
+            "max": 2
+          },
+          "typingDurationMS": {
+            "median": 3000.999999999999,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000091,
+            "min": 31,
+            "max": 33.00000000000182
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 0,
+            "max": 6.0000000000009095
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 29,
+                "min": 27,
+                "max": 31
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50.00000000000023,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 27.08601951599121,
+                "min": 24.995923042297363,
+                "max": 28.085947036743164
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 19,
+                "min": 18.000000000000455,
+                "max": 21.999999999999545
+              },
+              "renderOpportunityP95MS": {
+                "median": 50,
+                "min": 49.000000000000455,
+                "max": 50.000000000000455
+              },
+              "engineP95MS": {
+                "median": 17.747044563293457,
+                "min": 17.089009284973145,
+                "max": 20.630955696105957
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33.000000000000455,
+                "min": 32,
+                "max": 38
+              },
+              "renderOpportunityP95MS": {
+                "median": 51.000000000000455,
+                "min": 51,
+                "max": 67
+              },
+              "engineP95MS": {
+                "median": 31.67903423309326,
+                "min": 31.21805191040039,
+                "max": 37.53995895385742
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 21,
+                "min": 18.00000000000091,
+                "max": 22
+              },
+              "renderOpportunityP95MS": {
+                "median": 50.00000000000091,
+                "min": 50,
+                "max": 55
+              },
+              "engineP95MS": {
+                "median": 19.572973251342773,
+                "min": 17.47000217437744,
+                "max": 20.776033401489258
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": false,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": true,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 40000,
+      "windows": 5,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 2362.6790046691895,
+            "min": 2265.3180360794067,
+            "max": 2704.4299840927124
+          },
+          "memoryMiB": {
+            "median": 1148.4692993164062,
+            "min": 1104.3908081054688,
+            "max": 1426.7039184570312
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000.999999999998,
+            "min": 3000,
+            "max": 3119
+          },
+          "typingSaves": {
+            "median": 13,
+            "min": 12,
+            "max": 22
+          },
+          "typingRenderP95MS": {
+            "median": 46,
+            "min": 37.99999999999818,
+            "max": 54
+          },
+          "flushMS": {
+            "median": 7,
+            "min": 4,
+            "max": 8.000000000001819
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 83,
+                "min": 75,
+                "max": 102
+              },
+              "renderOpportunityP95MS": {
+                "median": 99,
+                "min": 83.00000000000045,
+                "max": 111
+              },
+              "engineP95MS": {
+                "median": 83,
+                "min": 71,
+                "max": 102
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 28,
+                "min": 27,
+                "max": 38
+              },
+              "renderOpportunityP95MS": {
+                "median": 43,
+                "min": 31,
+                "max": 49
+              },
+              "engineP95MS": {
+                "median": 28,
+                "min": 27,
+                "max": 38
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 289.9999999999982,
+                "min": 256,
+                "max": 348
+              },
+              "renderOpportunityP95MS": {
+                "median": 400,
+                "min": 351,
+                "max": 487
+              },
+              "engineP95MS": {
+                "median": 288.9999999999982,
+                "min": 256,
+                "max": 347
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 27,
+                "min": 26,
+                "max": 28.00000000000182
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 27,
+                "min": 26,
+                "max": 28.00000000000182
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 2496.696949005127,
+            "min": 2344.228982925415,
+            "max": 2867.295980453491
+          },
+          "memoryMiB": {
+            "median": 1392.094482421875,
+            "min": 1143.5473022460938,
+            "max": 1438.5319213867188
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3001.999999999998
+          },
+          "typingSaves": {
+            "median": 13,
+            "min": 12,
+            "max": 14
+          },
+          "typingRenderP95MS": {
+            "median": 40.00000000000182,
+            "min": 39,
+            "max": 43
+          },
+          "flushMS": {
+            "median": 6,
+            "min": 5,
+            "max": 8.999999999998181
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 77,
+                "min": 75,
+                "max": 87.00000000000045
+              },
+              "renderOpportunityP95MS": {
+                "median": 90.99999999999955,
+                "min": 83,
+                "max": 99.00000000000045
+              },
+              "engineP95MS": {
+                "median": 77,
+                "min": 73,
+                "max": 87.00000000000045
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 29,
+                "min": 27,
+                "max": 31
+              },
+              "renderOpportunityP95MS": {
+                "median": 44,
+                "min": 33.00000000000091,
+                "max": 45
+              },
+              "engineP95MS": {
+                "median": 28.000000000000455,
+                "min": 27,
+                "max": 31
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 277,
+                "min": 251,
+                "max": 307.0000000000009
+              },
+              "renderOpportunityP95MS": {
+                "median": 419,
+                "min": 347,
+                "max": 423
+              },
+              "engineP95MS": {
+                "median": 277,
+                "min": 250,
+                "max": 306
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 28.00000000000182,
+                "min": 25.00000000000182,
+                "max": 32
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50,
+                "max": 68
+              },
+              "engineP95MS": {
+                "median": 28,
+                "min": 25,
+                "max": 32
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 4517.021059989929,
+            "min": 4224.171996116638,
+            "max": 5262.197971343994
+          },
+          "memoryMiB": {
+            "median": 621.3101196289062,
+            "min": 577.4972534179688,
+            "max": 631.76318359375
+          },
+          "processesMeasured": {
+            "median": 6,
+            "min": 6,
+            "max": 6
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 11,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33,
+            "min": 32,
+            "max": 33.00000000000182
+          },
+          "flushMS": {
+            "median": 5,
+            "min": 0,
+            "max": 19
+          },
+          "maxPending": 2,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 29,
+                "min": 29,
+                "max": 31
+              },
+              "renderOpportunityP95MS": {
+                "median": 51.000000000000455,
+                "min": 51,
+                "max": 59.000000000000455
+              },
+              "engineP95MS": {
+                "median": 27.24909782409668,
+                "min": 26.351094245910645,
+                "max": 29.185056686401367
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 18.999999999999545,
+                "min": 18,
+                "max": 32
+              },
+              "renderOpportunityP95MS": {
+                "median": 50.000000000000455,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 17.962098121643066,
+                "min": 17.135977745056152,
+                "max": 31.178951263427734
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 33,
+                "min": 31.00000000000091,
+                "max": 54
+              },
+              "renderOpportunityP95MS": {
+                "median": 51.00000000000091,
+                "min": 50.00000000000091,
+                "max": 84
+              },
+              "engineP95MS": {
+                "median": 31.750082969665527,
+                "min": 30.267000198364258,
+                "max": 48.96700382232666
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 22,
+                "min": 19.00000000000091,
+                "max": 28
+              },
+              "renderOpportunityP95MS": {
+                "median": 50,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 18.689990043640137,
+                "min": 16.790032386779785,
+                "max": 23.544907569885254
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": false,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": false,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    },
+    {
+      "rows": 40000,
+      "windows": 10,
+      "candidates": {
+        "baseline": {
+          "openMS": {
+            "median": 7464.141964912415,
+            "min": 5757.4450969696045,
+            "max": 11029.067993164062
+          },
+          "memoryMiB": {
+            "median": 1926.7930297851562,
+            "min": 1908.6996459960938,
+            "max": 2180.2155151367188
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3001.0000000000036,
+            "min": 3001,
+            "max": 3279
+          },
+          "typingSaves": {
+            "median": 14,
+            "min": 12,
+            "max": 60
+          },
+          "typingRenderP95MS": {
+            "median": 45,
+            "min": 42,
+            "max": 63
+          },
+          "flushMS": {
+            "median": 6,
+            "min": 0,
+            "max": 25
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 99,
+                "min": 93,
+                "max": 107
+              },
+              "renderOpportunityP95MS": {
+                "median": 116,
+                "min": 100,
+                "max": 118.00000000000091
+              },
+              "engineP95MS": {
+                "median": 98.00000000000091,
+                "min": 93,
+                "max": 106
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 28,
+                "min": 27,
+                "max": 35.00000000000091
+              },
+              "renderOpportunityP95MS": {
+                "median": 41,
+                "min": 33,
+                "max": 52
+              },
+              "engineP95MS": {
+                "median": 27.00000000000091,
+                "min": 27,
+                "max": 35.00000000000091
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 343,
+                "min": 255.99999999999818,
+                "max": 359
+              },
+              "renderOpportunityP95MS": {
+                "median": 395,
+                "min": 334,
+                "max": 468
+              },
+              "engineP95MS": {
+                "median": 343,
+                "min": 254.99999999999818,
+                "max": 358
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 27,
+                "min": 26,
+                "max": 35
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50.00000000000364,
+                "max": 67
+              },
+              "engineP95MS": {
+                "median": 26.000000000003638,
+                "min": 26,
+                "max": 35
+              }
+            }
+          }
+        },
+        "matched": {
+          "openMS": {
+            "median": 9268.905997276306,
+            "min": 7749.330043792725,
+            "max": 10969.80595588684
+          },
+          "memoryMiB": {
+            "median": 2164.949951171875,
+            "min": 2023.3558349609375,
+            "max": 2465.5910034179688
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3000,
+            "min": 3000,
+            "max": 3000
+          },
+          "typingSaves": {
+            "median": 16,
+            "min": 14,
+            "max": 18
+          },
+          "typingRenderP95MS": {
+            "median": 46,
+            "min": 44,
+            "max": 50
+          },
+          "flushMS": {
+            "median": 6,
+            "min": 0,
+            "max": 8
+          },
+          "maxPending": 1,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 97,
+                "min": 86,
+                "max": 106
+              },
+              "renderOpportunityP95MS": {
+                "median": 106,
+                "min": 88,
+                "max": 135
+              },
+              "engineP95MS": {
+                "median": 97,
+                "min": 86,
+                "max": 105
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 30,
+                "min": 27,
+                "max": 36
+              },
+              "renderOpportunityP95MS": {
+                "median": 43,
+                "min": 37,
+                "max": 47
+              },
+              "engineP95MS": {
+                "median": 30,
+                "min": 27,
+                "max": 35
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 308,
+                "min": 242,
+                "max": 390
+              },
+              "renderOpportunityP95MS": {
+                "median": 433,
+                "min": 298.9999999999982,
+                "max": 458
+              },
+              "engineP95MS": {
+                "median": 307.00000000000364,
+                "min": 242,
+                "max": 389
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 30,
+                "min": 26,
+                "max": 32
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 30,
+                "min": 26,
+                "max": 32
+              }
+            }
+          }
+        },
+        "native": {
+          "openMS": {
+            "median": 8979.586005210876,
+            "min": 8393.103003501892,
+            "max": 9474.658012390137
+          },
+          "memoryMiB": {
+            "median": 864.7575073242188,
+            "min": 823.8511962890625,
+            "max": 936.804443359375
+          },
+          "processesMeasured": {
+            "median": 11,
+            "min": 11,
+            "max": 11
+          },
+          "typingDurationMS": {
+            "median": 3000.999999999999,
+            "min": 2999.999999999999,
+            "max": 3001
+          },
+          "typingSaves": {
+            "median": 12,
+            "min": 12,
+            "max": 12
+          },
+          "typingRenderP95MS": {
+            "median": 33.00000000000182,
+            "min": 33,
+            "max": 40.00000000000182
+          },
+          "flushMS": {
+            "median": 4,
+            "min": 0,
+            "max": 14
+          },
+          "maxPending": 2,
+          "drainMS": {
+            "median": 0,
+            "min": 0,
+            "max": 0
+          },
+          "scenarios": {
+            "checkbox": {
+              "acceptedP95MS": {
+                "median": 35.000000000000455,
+                "min": 28.000000000000455,
+                "max": 182
+              },
+              "renderOpportunityP95MS": {
+                "median": 67,
+                "min": 51,
+                "max": 247
+              },
+              "engineP95MS": {
+                "median": 32.356977462768555,
+                "min": 26.371002197265625,
+                "max": 166.57590866088867
+              }
+            },
+            "typing": {
+              "acceptedP95MS": {
+                "median": 19,
+                "min": 19,
+                "max": 33
+              },
+              "renderOpportunityP95MS": {
+                "median": 50.00000000000091,
+                "min": 50,
+                "max": 51
+              },
+              "engineP95MS": {
+                "median": 18.49997043609619,
+                "min": 18.103957176208496,
+                "max": 32.081007957458496
+              }
+            },
+            "move": {
+              "acceptedP95MS": {
+                "median": 37,
+                "min": 34,
+                "max": 100.00000000000091
+              },
+              "renderOpportunityP95MS": {
+                "median": 67,
+                "min": 51,
+                "max": 130
+              },
+              "engineP95MS": {
+                "median": 34.77799892425537,
+                "min": 31.668901443481445,
+                "max": 87.7760648727417
+              }
+            },
+            "paste": {
+              "acceptedP95MS": {
+                "median": 20,
+                "min": 19,
+                "max": 74
+              },
+              "renderOpportunityP95MS": {
+                "median": 51,
+                "min": 50.00000000000091,
+                "max": 93
+              },
+              "engineP95MS": {
+                "median": 18.478035926818848,
+                "min": 17.940044403076172,
+                "max": 44.483065605163574
+              }
+            }
+          }
+        }
+      },
+      "gates": {
+        "ordinary": false,
+        "structuralWithin50ms": true,
+        "structuralWithin50msEveryRun": false,
+        "renderWithinFrame": true,
+        "queueDrained": true
+      }
+    }
+  ],
+  "transport": [
+    {
+      "rtt": 0,
+      "size": 256,
+      "directP95MS": {
+        "median": 2,
+        "min": 2,
+        "max": 3.9999999999999716
+      },
+      "hostP95MS": {
+        "median": 2,
+        "min": 2,
+        "max": 2
+      }
+    },
+    {
+      "rtt": 0,
+      "size": 4096,
+      "directP95MS": {
+        "median": 2,
+        "min": 2,
+        "max": 2
+      },
+      "hostP95MS": {
+        "median": 2,
+        "min": 2,
+        "max": 2.000000000000057
+      }
+    },
+    {
+      "rtt": 0,
+      "size": 65536,
+      "directP95MS": {
+        "median": 2,
+        "min": 2,
+        "max": 2
+      },
+      "hostP95MS": {
+        "median": 3,
+        "min": 3,
+        "max": 3
+      }
+    },
+    {
+      "rtt": 50,
+      "size": 256,
+      "directP95MS": {
+        "median": 52.000000000000114,
+        "min": 52,
+        "max": 52.00000000000023
+      },
+      "hostP95MS": {
+        "median": 53,
+        "min": 52,
+        "max": 64
+      }
+    },
+    {
+      "rtt": 50,
+      "size": 4096,
+      "directP95MS": {
+        "median": 52.000000000000455,
+        "min": 52,
+        "max": 52.000000000000455
+      },
+      "hostP95MS": {
+        "median": 52.00000000000091,
+        "min": 52.000000000000455,
+        "max": 53
+      }
+    },
+    {
+      "rtt": 50,
+      "size": 65536,
+      "directP95MS": {
+        "median": 53,
+        "min": 53,
+        "max": 56
+      },
+      "hostP95MS": {
+        "median": 54,
+        "min": 53,
+        "max": 54
+      }
+    },
+    {
+      "rtt": 150,
+      "size": 256,
+      "directP95MS": {
+        "median": 152.00000000000182,
+        "min": 152,
+        "max": 153
+      },
+      "hostP95MS": {
+        "median": 152.00000000000182,
+        "min": 152.00000000000182,
+        "max": 153
+      }
+    },
+    {
+      "rtt": 150,
+      "size": 4096,
+      "directP95MS": {
+        "median": 153,
+        "min": 152.00000000000182,
+        "max": 171
+      },
+      "hostP95MS": {
+        "median": 153,
+        "min": 152,
+        "max": 153
+      }
+    },
+    {
+      "rtt": 150,
+      "size": 65536,
+      "directP95MS": {
+        "median": 153,
+        "min": 153,
+        "max": 153.00000000000364
+      },
+      "hostP95MS": {
+        "median": 154,
+        "min": 154,
+        "max": 155
+      }
+    }
+  ],
+  "semanticAudit": {
+    "method": "Current SDK projection is the oracle; native Loro 1.16.2, baseline 1.16.1. These are semantic conformance probes, not speed measurements.",
+    "results": [
+      {
+        "name": "checklist_projection",
+        "pass": true,
+        "expected": {
+          "title": "Engine placement",
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg"
+            }
+          ]
+        },
+        "actual": {
+          "title": "Engine placement",
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg"
+            }
+          ]
+        },
+        "expectedIssues": [],
+        "rejected": null,
+        "versionUnchanged": true
+      },
+      {
+        "name": "rich_text_projection",
+        "pass": true,
+        "expected": {
+          "title": "Engine placement",
+          "body": {
+            "text": "Hello collaborative world",
+            "delta": [
+              {
+                "insert": "Hello collaborative world"
+              }
+            ]
+          },
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "z701ecv1pt3ksp3er33jxbwe0r"
+            }
+          ]
+        },
+        "actual": {
+          "rows": [
+            {
+              "$id": "z701ecv1pt3ksp3er33jxbwe0r",
+              "done": false,
+              "text": "Row 0"
+            }
+          ],
+          "body": {
+            "text": "Hello collaborative world",
+            "delta": [
+              {
+                "insert": "Hello collaborative world"
+              }
+            ]
+          },
+          "title": "Engine placement"
+        },
+        "expectedIssues": [],
+        "rejected": null,
+        "versionUnchanged": true
+      },
+      {
+        "name": "mixed_projection",
+        "pass": true,
+        "expected": {
+          "title": "Engine placement",
+          "body": {
+            "text": "Hello collaborative world",
+            "delta": [
+              {
+                "insert": "Hello collaborative world"
+              }
+            ]
+          },
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "0h6x7dcfbx3zfs7x46a3nn5j1w"
+            }
+          ],
+          "taps": 0,
+          "labels": {
+            "color": "blue"
+          },
+          "tree": []
+        },
+        "actual": {
+          "body": {
+            "text": "Hello collaborative world",
+            "delta": [
+              {
+                "insert": "Hello collaborative world"
+              }
+            ]
+          },
+          "rows": [
+            {
+              "$id": "0h6x7dcfbx3zfs7x46a3nn5j1w",
+              "text": "Row 0",
+              "done": false
+            }
+          ],
+          "tree": [],
+          "labels": {
+            "color": "blue"
+          },
+          "title": "Engine placement",
+          "taps": 0
+        },
+        "expectedIssues": [],
+        "rejected": null,
+        "versionUnchanged": true
+      },
+      {
+        "name": "atomic_rejection",
+        "pass": true,
+        "expected": {
+          "title": "Engine placement",
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg"
+            }
+          ]
+        },
+        "actual": {
+          "rows": [
+            {
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg",
+              "done": false,
+              "text": "Row 0"
+            }
+          ],
+          "title": "Engine placement"
+        },
+        "expectedIssues": [],
+        "rejected": "SpikeError(message: \"Expected scalar\")",
+        "versionUnchanged": true
+      },
+      {
+        "name": "merged_plain_text_scalar",
+        "pass": true,
+        "expected": {
+          "title": "",
+          "rows": [
+            {
+              "text": "Row 0",
+              "done": false,
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg"
+            }
+          ]
+        },
+        "actual": {
+          "title": "",
+          "rows": [
+            {
+              "$id": "0hga0e4efaxk1qhsaeb9hsxgqg",
+              "text": "Row 0",
+              "done": false
+            }
+          ]
+        },
+        "expectedIssues": [
+          {
+            "path": [
+              "title"
+            ],
+            "kind": "invalid",
+            "detail": "Expected LoroText"
+          }
+        ],
+        "rejected": null,
+        "versionUnchanged": true
+      }
+    ],
+    "missingCapabilities": [
+      "Full preserve-and-flag issue stream and derived identity ownership",
+      "Tree editing",
+      "Remote-aware text draft ancestry, IME and selection",
+      "Identity-addressed structural operations across stale UI revisions",
+      "Complete author SDK surface and subscriptions",
+      "Native creation from initial.json and mergeable composite initialization",
+      "Request idempotency / unknown-acceptance recovery",
+      "Durable missing-dependency buffering and discard rules",
+      "Integrated undo and real WebContent-crash recovery",
+      "Durable relay protocol and remote-visible-frame measurement"
+    ]
+  },
+  "counterProbe": {
+    "loro": "1.16.2",
+    "expected": 1,
+    "accepted": 1,
+    "replayed": 0,
+    "sameVersion": true,
+    "pass": false
+  },
+  "durableLogReplay": {
+    "pass": true,
+    "convergedTitle": "A Engine placement B",
+    "lostAckDeduplicated": true,
+    "reusedIDRefused": true,
+    "serverRestart": true,
+    "nativeReopen": true,
+    "wasmNativeConvergence": true,
+    "backlogEntries": 1000,
+    "backlogDurableReplayMS": 432.12825000000066,
+    "method": "Native headless processes own SQLite; controller delivers durable log pages directly. Does not measure WebSocket delivery or UI latency. Pending imports must complete within a page; durable missing-dependency buffering remains a gap."
+  },
+  "productionReady": false
+}

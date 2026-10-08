@@ -1,38 +1,42 @@
 ---
 title: Style a slop
-description: Plain CSS, public theme tokens, responsive layouts, and owner overrides.
+description: Plain CSS, a theme palette people can change, responsive layouts, and shared themes.
 ---
 
 Give the app one clear visual identity: paper for an invoice or note, an instrument for a timer or mixer, or a custom skin when the silhouette helps its job. Keep the primary action obvious at the initial window size. Build depth from a backing surface and purposeful controls rather than repeated generic cards.
 
-## Define public theme tokens
+## Declare the theme palette
 
-Root `theme.ts` is the source for owner-adjustable colors, fonts, and other visual values:
+`slop.ts`'s `theme` declares the colors a person may change. Every value is a lowercase `#rrggbb` color, or `#rrggbbaa` when it is translucent (an opaque color leaves out `ff`):
 
-```ts title="theme.ts"
-import { defineTheme } from "@hitslop/document/theme";
-export default defineTheme({
-  surface: "#f7f4eb",
-  panel: "#e3e9df",
-  ink: "#182126",
-  muted: "#687276",
-  accent: "#db6648",
-  rule: "color-mix(in srgb, var(--slop-ink) 15%, transparent)",
-  font: '"Avenir Next", Avenir, sans-serif',
-});
+```ts
+  theme: {
+    surface: "#f7f4eb",
+    panel: "#e3e9df",
+    ink: "#182126",
+    muted: "#687276",
+    accent: "#db6648",
+    accentSoft: "#db66482e",
+  },
 ```
 
-The builder writes immutable defaults to `assets/theme.json`; the runtime applies them and owner overrides before mounting the app. Each key becomes `--slop-KEY`, preserving case. `theme.vars` still provides typed references when needed in TypeScript. Do not maintain a second defaults stylesheet.
+The builder stores these defaults in the template and refuses anything that is not a palette color. The runtime applies them, with the person's changes, before mounting the app. Each key becomes `--slop-KEY`, preserving case. Declare only colors worth changing: the theme panel lists every one, in the order you wrote them.
+
+Fonts, sizes and colors derived from the palette belong in your CSS. A derived color that mixes a theme color follows the person's change automatically. Do not maintain a second defaults stylesheet.
 
 ## Write ordinary CSS
 
-For a Svelte app, the builder includes `styles.css` automatically and emits a separate, minified `assets/app.css`. A custom `main.ts` must import its styles explicitly. Styles ship as ordinary CSS.
+Import `styles.css` explicitly in `slop.ts`. Vite emits a separate, minified `ui.css`, including component styles and dependencies reached through CSS `@import` and `url()`. Styles ship as ordinary CSS.
 
 ```css title="styles.css"
-body { color: var(--slop-ink); background: var(--slop-surface); font-family: var(--slop-font); }
+:root {
+  --font: "Avenir Next", Avenir, sans-serif;
+  --rule: color-mix(in srgb, var(--slop-ink) 15%, transparent);
+}
+body { color: var(--slop-ink); background: var(--slop-surface); font-family: var(--font); }
 .my-slop-paper { padding: clamp(1rem, 5vw, 2.5rem); }
 .my-slop-footer {
-  border-top: 1px dashed var(--slop-rule);
+  border-top: 1px dashed var(--rule);
   background: var(--slop-panel);
   & > span { font-size: 12px; color: var(--slop-muted); }
   & button { border: 2px solid var(--slop-ink); background: var(--slop-accent); }
@@ -44,39 +48,70 @@ Use readable app-prefixed classes in markup. Group descendants and interaction s
 
 Bits UI menus can render in portals. Give the portal content its own class and target attributes directly, such as `.my-slop-menu [data-highlighted]`; a selector below the editor root cannot reach a portal outside that root. Svelte `<style>` blocks remain available for component-local rules, but plain CSS is the starter convention.
 
-## Let owners override tokens
+## Text selection
 
-Inspect the public contract and current effective theme:
+The host disables ordinary text selection in every slop's editor, including `slop dev`, so dragging across labels and controls feels like using an app. Inputs, textareas (including readonly fields), and `contenteditable` regions keep normal text selection and editing. Captures and PDF text are unaffected.
+
+Enable selection for content people may want to copy, such as notes, addresses, or code. Add an ordinary rule to `styles.css`; the host default has zero specificity and needs no `!important` override:
+
+```css
+/* Allow selection in a content region, including its descendants. */
+.my-slop-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Or allow selection throughout the slop, including portals. */
+body {
+  -webkit-user-select: text;
+  user-select: text;
+}
+```
+
+Choose the region rule or the whole-slop rule to suit your app. Put the region's class on portal content too when it should be copyable. This is an authoring CSS choice, not a theme setting.
+
+## Let people change the colors
+
+In the Mac app, the palette button in a document's toolbar, or **Window ▸ Theme**, opens the theme panel beside the window. It shows a color picker and hex field for every declared color. Changes restyle the slop as you make them and save with the document like any edit. **Reset to Original** returns every color to the template's. **Edit ▸ Undo** restores the previous colors; a color-picker drag is one undo step.
+
+**Export Theme…** saves the document's full palette as a theme file. **Import Theme…** replaces the palette with one exported from a document made with the same template; colors the file leaves out return to the template's. A file made for another template, or naming a color this template doesn't declare, is refused whole.
+
+The CLI does the same:
 
 ```sh
-bunx @hitslop/cli theme get My.slop
-bunx @hitslop/cli theme set My.slop --values '{"accent":"#7050ad","surface":"#f5efff"}'
-bunx @hitslop/cli theme reset My.slop --token accent
-bunx @hitslop/cli theme reset My.slop
+bunx hitslop theme get My.slop
+bunx hitslop theme set My.slop --values '{"accent":"#7050ad","surface":"#f5efff"}'
+bunx hitslop theme reset My.slop --token accent
+bunx hitslop theme reset My.slop
+bunx hitslop theme export My.slop --output Purple.json
+bunx hitslop theme import Other.slop Purple.json
 ```
 
-Themes are files inside the `.slop` package:
+A theme file names its template and every color:
 
-| File | Purpose |
+```json
+{
+  "template" : "my-slop",
+  "values" : {
+    "accent" : "#7050ad",
+    "surface" : "#f5efff"
+  }
+}
+```
+
+Themes live inside the `.slop` file:
+
+| Part | Purpose |
 | --- | --- |
-| `assets/theme.json` | Immutable defaults generated from the author's `theme.ts`. |
-| `state/theme.json` | Optional saved overrides for this writable document. |
-| `state/document.sqlite` | Loro document data; theme overrides are stored separately. |
+| Theme defaults | Immutable, from the author's `slop.ts` when the template is built. |
+| Theme overrides | The colors this writable document changed, saved with its contents. |
 
-For example, the override file can contain:
-
-```json title="state/theme.json"
-{"accent":"#7050ad","surface":"#f5efff"}
-```
-
-Only tokens declared by the author may be overridden. Use `theme get` to inspect them first. The Mac app currently has no built-in theme picker: use these CLI commands or ask an agent to run them. The website palette picker is an interactive illustration of customization.
-
-Overrides live in `state/theme.json` in a writable document. Use the CLI or an agent rather than editing that file while the document is open. Direct file edits are not watched. The live host applies accepted CLI changes after saving; unknown tokens and invalid values are rejected. Layout selectors stay authored and cannot be overridden. Registered masters and generated templates remain unchanged.
+Only declared colors can change, and a document stores only the ones that differ from the template's. An open window applies accepted CLI changes at once; unknown colors and invalid values are refused. Fonts and layout stay authored. Registered masters and generated templates remain unchanged.
 
 ## Design the window and its captures
 
-Every presentation mode receives host page resets, window sizing, and initial size variables. Wrap the interface in `<Slop>` and prefer `height: 100%`, grid, or flex inside it; override the page sizing deliberately only when your layout needs it. Keep surface styling in your app. Transparent and PNG-skinned modes also override ordinary `html`/`body` backgrounds with transparency, so paint the visible surface inside the wrapper. Use the native toolbar handle for dragging. See [manifest and windows](/docs/guides/manifest-and-windows/) and [PNG window skins](/docs/guides/png-window-skins/).
+Every presentation mode receives host page resets, window sizing, and initial size variables. The automatic app root fills the window; prefer `height: 100%`, grid, or flex inside it; override the page sizing deliberately only when your layout needs it. Keep surface styling in your app. Transparent and PNG-skinned modes also override ordinary `html`/`body` backgrounds with transparency, so paint the visible surface inside the wrapper. Use the native toolbar handle for dragging. See [manifest and windows](/docs/guides/manifest-and-windows/) and [PNG window skins](/docs/guides/png-window-skins/).
 
-Dedicated `icon` and `exportView` snippets use the same current document and theme as the editor. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `exportView`, mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
+Dedicated `icon` and `export` views render saved document data and theme in a fresh read-only page. Export layouts should use normal flow, without nested scrolling or fixed viewport heights. Without an `export` view, a fresh rendering of your `view` is the fallback; mark editor-only elements `data-slop-export="hide"`. See [icons and exports](/docs/guides/icons-and-exports/) for capture sizing and behavior.
 
-See [package anatomy](/docs/concepts/how-slop-files-work/) for how theme files travel with a document.
+See [how .slop files work](/docs/concepts/how-slop-files-work/) for how a theme travels with a document.

@@ -1,4 +1,4 @@
-name: Runtime contracts
+name: CI
 on:
   pull_request:
   push:
@@ -9,95 +9,144 @@ on:
         description: Verify warm template reuse and profile every bundled/preserved render
         type: boolean
         default: false
+      cache_namespace:
+        description: Optional isolated cache prefix for cold/warm CI validation
+        type: string
+        default: ""
 permissions:
   contents: read
   pull-requests: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+env:
+  CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
+  # What a pull request or push changed: the pull request's target, or the commit a push
+  # replaced. Manual runs compare with nothing and check everything.
+  CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
-  fast:
-    runs-on: ubuntu-latest
+  # No dependency installation or compilation: decide before allocating macOS.
+  select:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      fast: ${{ steps.select.outputs.fast }}
+      native: ${{ steps.select.outputs.native }}
+      rust: ${{ steps.select.outputs.rust }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+      - name: Select affected tiers
+        id: select
+        shell: bash
+        run: |
+          args=(--list --json --native)
+          if [[ -n "$CHANGE_BASE" ]]; then args+=(--base "$CHANGE_BASE"); else args+=(--all); fi
+          bun scripts/verify.ts "${args[@]}" > selection.json
+          jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
+          echo "fast=$(jq -r '[.tiers[].name | select(. == "hygiene" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-selection
+          path: selection.json
+  # Always reports: a failed/cancelled selector must never turn required checks green.
+  fast:
+    needs: select
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TIERS: ${{ needs.select.outputs.fast }}
+    steps:
+      - name: Require successful selection
+        env:
+          SELECTION_RESULT: ${{ needs.select.result }}
+        run: test "$SELECTION_RESULT" = success && test -n "$TIERS"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
-      - run: bun run hygiene
-      - run: bun run check
-      - run: bun run test
-      # Published tarballs installed outside the checkout: exports, types, init and preview.
-      - run: bun run packages:pack
-      - run: bun run test:packed
+        with:
+          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli')) && 'portable' || 'none' }}
+          nextest: "false"
+          rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed') }}
+          dependencies: ${{ env.TIERS != 'hygiene' }}
       - run: bun install --cwd apps/landing --frozen-lockfile
-      - run: bun run landing:check
+        if: contains(env.TIERS, 'landing')
+      - run: bun run verify --ci --keep-going "$TIERS"
+        env:
+          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'origin/master' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: fast-evidence
-          path: .hitslop/v1-evidence
+          path: .hitslop/evidence
           include-hidden-files: true
   native:
+    needs: select
+    if: needs.select.outputs.native != ''
     runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      TIERS: ${{ needs.select.outputs.native }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: paths
-        with:
-          filters: |
-            native:
-              - 'apps/apple/**'
-              - 'packages/document/src/**'
-              - 'packages/schema/src/**'
-              - 'packages/cli/src/**'
-              - 'packages/cli/templates/**'
-              - 'packages/cli/skills/hitslop-document/**'
-              - 'packages/cli/tests/fixtures/**'
-              - 'packages/*/tests/**/*.native.test.ts'
-              - 'packages/*/package.json'
-              - 'scripts/**'
-              - 'tests/**'
-              - 'runtimes/**'
-              - 'examples/slops/**'
-              - '.github/workflows/ci.yml'
-              - '.github/actions/**'
-              - 'bun.lock'
-              - 'package.json'
-              - 'tsconfig*.json'
       - uses: ./.github/actions/prepare-checks
-        if: steps.paths.outputs.native == 'true'
+        with:
+          nextest: ${{ contains(env.TIERS, 'rust') }}
+          bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || contains(env.TIERS, 'cli') && 'portable' || 'none' }}
+          dependencies: ${{ env.TIERS != 'rust' }}
+          webkit: ${{ contains(env.TIERS, 'native') }}
       - uses: ./.github/actions/native-cache
-        if: steps.paths.outputs.native == 'true'
+        if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:
           templates: fixtures
-      # Fixtures only; the full template corpus, check:built and the app build run on release.
-      - name: Validate native boundaries
-        if: steps.paths.outputs.native == 'true'
+      - name: Native tiers
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-        run: |
-          bun run build
-          bun run swift:test
-          bun run test:native
-          bun run test:render --fixtures
-          bun run test:native-helper
-          bun run test:storage
-          bun scripts/v1/crash-matrix.ts --native
-      - name: Native unaffected
-        if: steps.paths.outputs.native == 'false'
-        run: echo 'No native inputs changed'
+        run: bun run verify --ci --keep-going "$TIERS"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.paths.outputs.native == 'true'
+        if: always()
         with:
           name: native-evidence
-          path: .hitslop/v1-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
+  # Full Rust semantics plus both SQLite configurations, when affected.
+  linux-smoke:
+    needs: select
+    if: needs.select.outputs.rust != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TIERS: ${{ needs.select.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          bindings: none
+          dependencies: "false"
+      - run: bun run verify --ci --keep-going "$TIERS"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: linux-rust-evidence
+          path: .hitslop/evidence
           include-hidden-files: true
   # Tag runs can only restore caches saved on the default branch, so master keeps the
   # full template corpus warm for the next release. Manual runs can also profile
   # the complete render corpus without signing or publishing. Not a required check.
   release-templates:
+    timeout-minutes: 60
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'workflow_dispatch' && inputs.render_corpus)
     runs-on: macos-15
     steps:
@@ -114,19 +163,19 @@ jobs:
         run: |
           bun run build
           bun run build:templates
-          bun run check:sealed-templates
       - name: Verify warm template cache and profile full render corpus
         if: github.event_name == 'workflow_dispatch' && inputs.render_corpus
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          HITSLOP_RENDER: all
         run: |
-          cp .hitslop/v1-evidence/template-cache-templates.json .hitslop/v1-evidence/template-cache-first-build.json
+          cp .hitslop/evidence/template-cache-templates.json .hitslop/evidence/template-cache-first-build.json
           bun run build:templates
-          bun -e 'import { strict as assert } from "node:assert"; const report = await Bun.file(".hitslop/v1-evidence/template-cache-templates.json").json(); const inventory = await Bun.file("generated/v1/templates/inventory.json").json(); assert.equal(report.built, 0); assert.equal(report.hits, inventory.templates.length);'
-          bun run test:render
+          bun -e 'import { strict as assert } from "node:assert"; const report = await Bun.file(".hitslop/evidence/template-cache-templates.json").json(); const inventory = await Bun.file("generated/templates/inventory.json").json(); assert.equal(report.built, 0); assert.equal(report.hits, inventory.templates.length);'
+          bun run verify native render
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: release-templates-evidence
-          path: .hitslop/v1-evidence
+          path: .hitslop/evidence
           include-hidden-files: true

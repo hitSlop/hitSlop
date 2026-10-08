@@ -1,0 +1,328 @@
+:root {
+  --serif: ui-serif, "New York", Georgia, serif;
+  --sans: system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --sand-edge: color-mix(in srgb, var(--slop-sand), var(--slop-frame) 32%);
+  font-family: var(--sans);
+  color: var(--slop-ink);
+  color-scheme: light;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+/* The tint over the window's frost. A clearer glass color shows more of the desktop. */
+body {
+  background: var(--slop-glass);
+}
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 2px solid var(--slop-ink);
+  outline-offset: 2px;
+}
+
+/* The vessel. */
+.hourglass-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.hourglass-frame {
+  fill: var(--slop-frame);
+}
+.hourglass-glass-solid {
+  fill: color-mix(in srgb, var(--slop-glass), #ffffff 55%);
+}
+.hourglass-sand-edge {
+  stop-color: var(--sand-edge);
+}
+.hourglass-sand-middle {
+  stop-color: var(--slop-sand);
+}
+.hourglass-sand {
+  transition: opacity 240ms ease;
+  &[data-quiet="true"] {
+    opacity: 0.16;
+  }
+}
+.hourglass-stream {
+  stroke: var(--slop-sand);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 2 2.6;
+  animation: hourglass-fall 380ms linear infinite;
+}
+@keyframes hourglass-fall {
+  to {
+    stroke-dashoffset: -4.6;
+  }
+}
+.hourglass-rim-shade {
+  fill: none;
+  stroke: color-mix(in srgb, var(--slop-frame) 30%, transparent);
+  stroke-width: 3;
+}
+.hourglass-rim {
+  fill: none;
+  stroke: #ffffffa6;
+  stroke-width: 1.4;
+}
+.hourglass-shine path {
+  fill: none;
+  stroke: #ffffff80;
+  stroke-width: 5;
+  stroke-linecap: round;
+  &.hourglass-shine-soft {
+    stroke: #ffffff4d;
+    stroke-width: 3;
+  }
+}
+
+/* The window: everything is placed in the vessel's own points, so it scales with it. */
+.hourglass {
+  --u: calc(100vw / 280);
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+.hourglass-vessel,
+.hourglass-stand {
+  position: absolute;
+  inset: 0;
+}
+.hourglass-vessel {
+  &[data-turning="true"] {
+    animation: hourglass-turn 720ms cubic-bezier(0.65, 0, 0.3, 1) both;
+  }
+}
+@keyframes hourglass-turn {
+  from {
+    transform: perspective(900px) rotateX(0deg);
+  }
+  to {
+    transform: perspective(900px) rotateX(180deg);
+  }
+}
+.hourglass-title,
+.hourglass-presets,
+.hourglass-until,
+.hourglass-readout,
+.hourglass-actions {
+  position: absolute;
+  transition: opacity 200ms ease;
+}
+.hourglass[data-turning="true"] :is(.hourglass-title, .hourglass-readout, .hourglass-actions) {
+  opacity: 0;
+}
+
+.hourglass-title {
+  top: calc(8 * var(--u));
+  left: calc(26 * var(--u));
+  right: calc(26 * var(--u));
+  height: calc(30 * var(--u));
+  border: 0;
+  border-radius: calc(8 * var(--u));
+  background: transparent;
+  color: var(--slop-onFrame);
+  font-family: var(--serif);
+  font-size: max(13px, calc(15 * var(--u)));
+  letter-spacing: 0.04em;
+  text-align: center;
+  &::placeholder {
+    color: color-mix(in srgb, var(--slop-onFrame) 55%, transparent);
+  }
+  &:hover,
+  &:focus {
+    background: color-mix(in srgb, var(--slop-onFrame) 10%, transparent);
+  }
+  &:focus-visible {
+    outline-color: var(--slop-onFrame);
+  }
+}
+
+.hourglass-readout {
+  top: calc(62 * var(--u));
+  left: calc(36 * var(--u));
+  right: calc(36 * var(--u));
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  & strong {
+    font-family: var(--serif);
+    font-size: calc(52 * var(--u));
+    font-weight: 500;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  & .hourglass-done {
+    margin-top: calc(14 * var(--u));
+    font-size: calc(34 * var(--u));
+  }
+  & .hourglass-unit {
+    font-size: max(12px, calc(14 * var(--u)));
+    font-weight: 600;
+  }
+  & .hourglass-when {
+    margin-top: calc(4 * var(--u));
+    font-size: max(12px, calc(12.5 * var(--u)));
+    color: color-mix(in srgb, var(--slop-ink) 78%, transparent);
+  }
+}
+
+.hourglass-presets {
+  top: calc(64 * var(--u));
+  left: calc(54 * var(--u));
+  right: calc(54 * var(--u));
+  & p {
+    margin: 0 0 calc(8 * var(--u));
+    text-align: center;
+    font-family: var(--serif);
+    font-size: max(13px, calc(15 * var(--u)));
+  }
+  & div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: calc(6 * var(--u));
+  }
+}
+.hourglass-presets button,
+.hourglass-until button {
+  height: calc(32 * var(--u));
+  border: 1px solid color-mix(in srgb, var(--slop-ink) 28%, transparent);
+  border-radius: calc(16 * var(--u));
+  background: color-mix(in srgb, #ffffff 45%, transparent);
+  font-size: max(12px, calc(13 * var(--u)));
+  font-weight: 600;
+  &:hover {
+    background: color-mix(in srgb, var(--slop-sand) 45%, #ffffff);
+  }
+  &:active {
+    transform: translateY(1px);
+  }
+}
+
+.hourglass-until {
+  top: calc(282 * var(--u));
+  left: calc(50 * var(--u));
+  right: calc(50 * var(--u));
+  display: grid;
+  justify-items: center;
+  gap: calc(6 * var(--u));
+  & label {
+    font-family: var(--serif);
+    font-size: max(13px, calc(15 * var(--u)));
+  }
+  & input {
+    width: 100%;
+    height: calc(32 * var(--u));
+    padding: 0 calc(8 * var(--u));
+    border: 1px solid color-mix(in srgb, var(--slop-ink) 28%, transparent);
+    border-radius: calc(8 * var(--u));
+    background: color-mix(in srgb, #ffffff 55%, transparent);
+    font-size: max(12px, calc(12.5 * var(--u)));
+    font-variant-numeric: tabular-nums;
+  }
+  & button {
+    width: calc(110 * var(--u));
+  }
+  & p {
+    margin: 0;
+    min-height: 1.3em;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+  }
+}
+
+.hourglass-actions {
+  top: calc(420 * var(--u));
+  left: calc(22 * var(--u));
+  right: calc(22 * var(--u));
+  height: calc(34 * var(--u));
+  display: flex;
+  justify-content: center;
+  gap: calc(8 * var(--u));
+  & button {
+    flex: 1;
+    max-width: calc(120 * var(--u));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid color-mix(in srgb, var(--slop-onFrame) 30%, transparent);
+    border-radius: calc(10 * var(--u));
+    background: transparent;
+    color: var(--slop-onFrame);
+    font-size: max(12px, calc(13 * var(--u)));
+    font-weight: 600;
+    &:hover {
+      background: color-mix(in srgb, var(--slop-onFrame) 12%, transparent);
+    }
+    &:focus-visible {
+      outline-color: var(--slop-onFrame);
+    }
+  }
+}
+
+/* Captures: no frost to paint over, so the glass and page are drawn. */
+html[data-slop-capture] body {
+  background: transparent;
+}
+.hourglass-export {
+  width: 520px;
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: 32px;
+  padding: 36px 40px;
+  background: linear-gradient(var(--slop-glass), var(--slop-glass)), #ffffff;
+  & h1 {
+    margin: 0 0 14px;
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  & p {
+    margin: 0;
+    font-size: 14px;
+    color: color-mix(in srgb, var(--slop-ink) 78%, transparent);
+  }
+  & .hourglass-export-value {
+    margin-bottom: 4px;
+    color: var(--slop-ink);
+    font-weight: 600;
+    & strong {
+      font-family: var(--serif);
+      font-size: 44px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
+.hourglass-export-art {
+  width: 150px;
+  aspect-ratio: 280 / 460;
+}
+.hourglass-icon {
+  width: 278px;
+  height: 456px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hourglass-stream {
+    animation: none;
+  }
+  .hourglass-sand {
+    transition: none;
+  }
+}
