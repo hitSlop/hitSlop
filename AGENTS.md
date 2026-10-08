@@ -76,6 +76,19 @@ for visual changes. `_vibe` is inspiration only.
   store::`); run `bun run verify` before calling a step done, and `bun run verify --native`
   once at the end when Swift, the FFI or the helper changed. Release: `bun run release:check`.
 
+## Commit and PR attribution
+
+- Do not credit AI assistants in author/committer fields, `Co-authored-by` trailers,
+  or generated-by signatures on commits or pull requests. Human co-authors are welcome, and ordinary
+  discussion of AI tools is allowed.
+- The required `Attribution` check examines every incoming commit and the PR title
+  and description using trusted code from the default branch. Remove flagged credit,
+  amend/rebase the affected commits, and update the PR; changing the checker in the
+  same PR does not change the policy applied to it.
+- Known assistant identities and signatures are maintained in
+  `scripts/ci/attribution.ts`. Shared Claude settings prevent its default attribution;
+  they do not replace the required check. Review the final merge message too.
+
 ## Deferred
 
 Collaboration, a document history UI, schema evolution, synced folders, hosted
