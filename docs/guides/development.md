@@ -82,4 +82,13 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 Read AGENTS and the template's `slop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
 
-`archive/` (`archive/docs` and `archive/spikes` are tracked; the rest is local), `examples/archive/`, `_docs/`, and `_vibe/` material is not part of active contracts. Restore an old project only after updating its source to the current document API; there is no legacy document migration.
+`archive/`, `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`,
+`examples/archive/`, `_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
+Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
+and ideas pages. Restore an old project only after updating its source to the current
+document API; there is no legacy document migration.
+
+To stop tracking local material, use `git rm --cached` and add an ignore rule. Before
+integrating a commit that removes tracked files into another checkout, back up any
+local copies outside the repository and restore them afterward: Git can delete the
+previously tracked copies when switching or pulling.

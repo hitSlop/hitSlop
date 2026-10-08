@@ -1,8 +1,7 @@
 # Shared document core
 
 The document semantics every host uses: the Swift app, helper and `slop dev` use the
-native Rust engine. Bun SDK tests use the WASM adapter. The original spike is archived in
-`archive/spikes/hitslop-core`.
+native Rust engine. Bun SDK tests use the WASM adapter.
 
 - `hitslop-core`: descriptor interpretation, Loro operations, publications and bytes; with
   `storage`, the `.slop` file, its writer lock and the save policy.

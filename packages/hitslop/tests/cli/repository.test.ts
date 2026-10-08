@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTemplates, templateInventory } from "../../../../scripts/templates/discover";
 import { embedTemplates } from "../../../../scripts/templates/embed";
-import { assertDocs, assertNoGeneratedSource, assertSkill } from "../../../../scripts/hygiene";
+import { assertDocs, assertNoGeneratedSource, assertSkill, assertTrackedHygiene } from "../../../../scripts/hygiene";
 import { stageProject } from "../../src/cli/build";
 import { writeTemplate } from "./template-fixture";
 import { stageEngines } from "../../../../scripts/build/engines";
@@ -66,6 +66,26 @@ test("embedding replaces selection and never keeps a deselected starter", async 
     await Bun.spawn(["/bin/chmod", "-R", "u+w", root]).exited;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("hygiene keeps local history out of the tracked repository", () => {
+  for (const path of [
+    "archive/docs/review.md",
+    "archive/spikes/boundary-simplification/README.md",
+    "spikes/example/main.swift",
+    "plans/browser-host.md",
+    "SLOPS.todo",
+    "apps/promo/inspo/reference.mp4",
+    "examples/archive/retired/slop.ts",
+  ]) {
+    expect(() => assertTrackedHygiene([path])).toThrow(`Forbidden tracked artifacts:\n  - ${path}`);
+  }
+  expect(() => assertTrackedHygiene([
+    "docs/evidence/review.md",
+    "apps/promo/src/Promo.tsx",
+    "examples/slops/checklist/slop.ts",
+    "tests/compat/dev/release.json",
+  ])).not.toThrow();
 });
 
 test("hygiene allows authored JS and rejects broken skill links", async () => {

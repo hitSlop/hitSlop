@@ -160,8 +160,8 @@ Other performance diagnostics:
 (plain system WebKit). `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
 `HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
 `row_text_split_ms` field separates style from layout. Record a result under
-`docs/evidence/` when a doc cites it; a run the code has since superseded moves to
-`archive/docs/evidence/`.
+`docs/evidence/` when a doc cites it. Superseded runs may be kept locally under
+`archive/docs/evidence/`; remove or replace their tracked citations when untracking them.
 
 `bun run bench:growth` (it needs Doodle Board, Pixel Art and Morning Pages back in
 `examples/slops`) simulates up to 365 days of heavy use of those three through the native owner, with normal checkpoint thresholds

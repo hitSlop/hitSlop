@@ -23,7 +23,8 @@ published on hitslop.com. The pages here cover how the platform works and how to
 
 Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/skills).
 Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
-builds and environments named in each report, not current release acceptance. Superseded
-implementation studies live in [`archive/docs/evidence/`](../archive/docs/evidence/). [`archive/`](../archive/) holds historical
-material for provenance only; it is not a contract. The executed plans in `archive/docs`
-and the spikes in `archive/spikes` are tracked; the rest stays local.
+builds and environments named in each report, not current release acceptance. The
+[pre-launch simplification summary](evidence/prelaunch-simplification-2026-10-04.md)
+retains the decisions and integration findings from that work. Historical studies,
+spikes and working plans stay local and are not contracts; the architecture, direction
+and ideas above are the shared sources of truth.

@@ -92,5 +92,6 @@ for visual changes. `_vibe` is inspiration only.
 ## Deferred
 
 Collaboration, a document history UI, schema evolution, synced folders, hosted
-catalog/publishing, accounts/auth and sharing. `archive/`, `_docs/` and `deferred/` are
-not active contracts.
+catalog/publishing, accounts/auth and sharing. `archive/`, `spikes/`, `plans/`,
+`SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay local and are not active
+contracts. Shared decisions belong in the architecture, roadmap and ideas pages.

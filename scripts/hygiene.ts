@@ -42,7 +42,7 @@ async function gitFiles(): Promise<string[]> {
   return existing.filter((path): path is string => path !== null);
 }
 
-function assertTrackedHygiene(files: string[]): void {
+export function assertTrackedHygiene(files: string[]): void {
   const failures: string[] = [];
   for (const path of files) {
     const name = path.split("/").at(-1) ?? path;
@@ -55,11 +55,10 @@ function assertTrackedHygiene(files: string[]): void {
       /\.(p8|p12|key|jks|keystore|mobileprovision)$/i.test(name)
     )
       failures.push(path);
-    // Retain reviewed source and evidence referenced by the architecture plans.
-    // Unlisted private archives remain excluded by .gitignore and this gate.
+    // Local history, working plans and inspiration must not enter a release checkout.
     if (
-      /^(archive|examples\/archive)\//.test(path) &&
-      !["archive/docs/", "archive/spikes/"].some(prefix => path.startsWith(prefix))
+      /^(archive|spikes|plans|examples\/archive|apps\/promo\/inspo)\//.test(path) ||
+      path === "SLOPS.todo"
     )
       failures.push(path);
   }
@@ -114,7 +113,7 @@ async function assertTextHygiene(files: string[]): Promise<void> {
   const privatePaths: string[] = [];
   const privateKeys: string[] = [];
   for (const path of files) {
-    if (!extensions.has(extname(path)) && ![".gitignore", "SLOPS.todo"].includes(basename(path)))
+    if (!extensions.has(extname(path)) && basename(path) !== ".gitignore")
       continue;
     if (!(await stat(resolve(repository, path))).isFile()) continue;
     const bytes = new Uint8Array(await Bun.file(resolve(repository, path)).arrayBuffer());
@@ -273,6 +272,14 @@ async function checkHygiene(): Promise<void> {
     checkIgnored("deferred/README.md", true),
     checkIgnored("archive/templates/unlisted-private/slop.ts", true),
     checkIgnored("archive/apple/example.swift", true),
+    checkIgnored("archive/docs/review.md", true),
+    checkIgnored("archive/spikes/boundary-simplification/README.md", true),
+    checkIgnored("spikes/example/main.swift", true),
+    checkIgnored("plans/example.md", true),
+    checkIgnored("SLOPS.todo", true),
+    checkIgnored("apps/promo/inspo/reference.mp4", true),
+    checkIgnored("apps/promo/src/Promo.tsx", false),
+    checkIgnored("docs/evidence/review.md", false),
     checkIgnored("examples/archive/example/slop.ts", true),
     assertSkill(".agents/skills/hitslop-authoring/SKILL.md"),
     assertSkill(".agents/skills/hitslop-design/SKILL.md"),

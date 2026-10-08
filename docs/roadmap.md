@@ -93,8 +93,8 @@ In order, with the reasoning in [ideas](ideas.md):
   artwork. Captures use fresh saved-state pages, with a fresh `view` as the export
   fallback. `slop dev` runs the native owner on a disposable copy per preview page.
 
-Implementation decisions, measurements and verification are recorded in the
-[pre-launch simplification review](../archive/docs/evidence/prelaunch-simplification-2026-10-04.md).
+A historical summary of the ownership decisions and integration findings is retained in
+the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
 
