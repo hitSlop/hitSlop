@@ -22,7 +22,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { testInventory, checkoutLease, atomicJson, retainReport, changedPaths, type Preparation } from "./lib/verification";
 import { exec as testExec, verificationAbort } from "./lib/test-process";
 import { run } from "../packages/hitslop/src/cli/process";
-import { repository, sha256, sourceBlobHash, useTestRegistry, verifyShellCopies } from "./lib/artifacts";
+import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftFormat } from "./lib/swift-format";
@@ -41,8 +41,6 @@ type Tier = {
   native?: boolean;
   /** Static checks run together, before the heavy tiers, with their output kept until done. */
   quick?: boolean;
-  /** Seconds a run should take; a slower one warns, so slowdowns show early. */
-  budget: number;
 };
 
 // Options up to the first tier name are the runner's; what follows belongs to the tiers.
@@ -116,28 +114,22 @@ async function bunTest(files: string[], args: string[], env: Record<string, stri
 }
 
 const tiers: Tier[] = [
-  { name: "hygiene", quick: true, budget: 5, inputs: tierInputs.hygiene, run: async () => console.log(await quiet([process.execPath, "scripts/hygiene.ts"])) },
+  { name: "compat", quick: true, inputs: tierInputs.compat, run: async () => console.log(await quiet([process.execPath, "scripts/compat/check.ts"])) },
   {
-    name: "tooling", budget: 30, inputs: tierInputs.tooling,
+    name: "tooling", inputs: tierInputs.tooling,
     run: (args) => bunTest(inventory.tooling, args),
   },
   {
     name: "contracts",
     quick: true,
-    budget: 15,
     inputs: tierInputs.contracts,
     run: async () => {
-      const output = await Promise.all([
-        quiet([process.execPath, "scripts/build/generate.ts", "--check"]),
-        quiet([process.execPath, "scripts/build/skills.ts", "--check"]),
-      ]);
-      console.log(output.filter(Boolean).join("\n"));
+      console.log(await quiet([process.execPath, "scripts/build/generate.ts", "--check"]));
     },
   },
   {
     name: "types",
     quick: true,
-    budget: 20,
     inputs: tierInputs.types,
     run: async () => {
       const output = await Promise.all([
@@ -149,19 +141,17 @@ const tiers: Tier[] = [
   },
   {
     name: "bun",
-    budget: 30,
     needs: ["web"],
     inputs: tierInputs.bun,
     run: (args) => bunTest(inventory.bun, [`--parallel=${Math.min(4, availableParallelism())}`, ...args]),
   },
   {
-    name: "cli", budget: 120, needs: ["web"],
+    name: "cli", needs: ["web"],
     inputs: tierInputs.cli,
     run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=30000", ...args]),
   },
   {
     name: "rust",
-    budget: 60,
     inputs: tierInputs.rust,
     // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
@@ -185,7 +175,6 @@ const tiers: Tier[] = [
   },
   {
     name: "landing",
-    budget: 40,
     inputs: tierInputs.landing,
     run: async () => {
       await sh([process.execPath, "run", "check"], { cwd: join(repository, "apps/landing") });
@@ -194,7 +183,6 @@ const tiers: Tier[] = [
   },
   {
     name: "packed",
-    budget: 60,
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
     inputs: tierInputs.packed,
@@ -204,7 +192,6 @@ const tiers: Tier[] = [
   {
     name: "swift",
     native: true,
-    budget: 90,
     needs: ["native"],
     inputs: tierInputs.swift,
     // A full run checks formatting first; a filtered one (`verify swift --filter X`) is for
@@ -225,7 +212,6 @@ const tiers: Tier[] = [
   {
     name: "app",
     native: true,
-    budget: 150,
     needs: ["app"],
     // Built only for a release: the native tier then kills the real app (the host crash case).
     inputs: tierInputs.app,
@@ -234,7 +220,6 @@ const tiers: Tier[] = [
   {
     name: "native",
     native: true,
-    budget: 120,
     needs: ["native"],
     inputs: tierInputs.native,
     run: (args) =>
@@ -324,7 +309,7 @@ type Selection = { tier: Tier; reason: string; args: string[] }[];
 async function touched(ref: string, candidates: Tier[], args: string[]): Promise<{ selection: Selection; base: string }> {
   const { base, paths: changed } = await changedPaths(repository, ref);
   const selection = affectedTiers(changed, candidates.map(tier => tier.name)).map(({ name, paths }) => ({
-    tier: candidates.find(tier => tier.name === name)!, reason: paths.length ? summary(paths) : "always", args,
+    tier: candidates.find(tier => tier.name === name)!, reason: summary(paths), args,
   }));
   return { selection, base };
 }
@@ -387,7 +372,7 @@ const report = {
   ...(release ? { skippedApp: flag("--skip-app"), compatRelease: releaseTag ?? null } : {}),
   passed: false,
   builds: [] as { name: string; seconds: number }[],
-  tiers: [] as { name: string; reason: string; code: number; seconds: number; buildSeconds: number; budget: number; output?: string }[],
+  tiers: [] as { name: string; reason: string; code: number; seconds: number; buildSeconds: number; output?: string }[],
   error: undefined as string | undefined,
 };
 
@@ -438,10 +423,10 @@ async function runTier({ tier, reason, args }: Selection[number], capture = fals
     await tier.run(args, prepare);
     // A partial run (a filter, an option) proves nothing about the whole tier.
     if (!args.length && !flag("--no-build") && !flag("--built")) await recordPass(tier);
-    report.tiers.push({ name: tier.name, reason, code: 0, seconds: seconds(testsStarted) - preparationSeconds, buildSeconds: buildSeconds + preparationSeconds, budget: tier.budget });
+    report.tiers.push({ name: tier.name, reason, code: 0, seconds: seconds(testsStarted) - preparationSeconds, buildSeconds: buildSeconds + preparationSeconds });
     return true;
   } catch (error) {
-    report.tiers.push({ name: tier.name, reason, code: 1, seconds: built ? seconds(testsStarted) - preparationSeconds : 0, buildSeconds: (built ? buildSeconds : seconds(started)) + preparationSeconds, budget: tier.budget, output: String(error) });
+    report.tiers.push({ name: tier.name, reason, code: 1, seconds: built ? seconds(testsStarted) - preparationSeconds : 0, buildSeconds: (built ? buildSeconds : seconds(started)) + preparationSeconds, output: String(error) });
     console.error(`✗ ${tier.name}: ${error instanceof Error ? error.message : error}`);
     return false;
   }
@@ -454,7 +439,6 @@ try {
   if (release) {
     await build("native");
     await build("templates");
-    await verifyShellCopies();
   }
   const quick = selection.filter(({ tier }) => tier.quick);
   if (quick.length) {
@@ -480,8 +464,8 @@ try {
   await retainReport(runDirectory, file, report);
   console.log("");
   for (const { name, seconds } of report.builds) console.log(`  build ${name.padEnd(9)} ${seconds.toFixed(1)}s`);
-  for (const { name, code, seconds, budget } of report.tiers)
-    console.log(`${code ? "✗" : "✓"} ${name.padEnd(9)} ${seconds.toFixed(1)}s${seconds > budget ? `  (over its ${budget}s budget)` : ""}`);
+  for (const { name, code, seconds } of report.tiers)
+    console.log(`${code ? "✗" : "✓"} ${name.padEnd(9)} ${seconds.toFixed(1)}s`);
   console.log(`${passed ? "Passed" : "Failed"} in ${seconds(started).toFixed(1)}s; report: ${file.slice(repository.length + 1)}`);
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, [

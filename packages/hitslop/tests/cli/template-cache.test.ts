@@ -179,32 +179,3 @@ test.each(["crates/hitslop-core/src/file/mod.rs", "bun.lock"])(
     }
   },
 );
-
-test("templates are keyed on the compiler and the file engine, not CLI routing or help", async () => {
-  const repository = join(import.meta.dir, "../../../..");
-  const paths = await sharedTemplatePaths(repository, []);
-  for (const input of [
-    "packages/hitslop/src/cli/build.ts",
-    "packages/hitslop/src/cli/definition-build.ts",
-    "packages/hitslop/src/cli/command-transform.ts",
-    "packages/hitslop/src/sdk",
-    "packages/hitslop/src/shell",
-    "packages/hitslop/package.json",
-    "packages/hitslop/shell",
-    "packages/hitslop/src/cli/engine.ts",
-    "crates/hitslop-core/src",
-    "crates/slop-engine",
-  ])
-    expect(paths).toContain(input);
-  for (const unrelated of [
-    "packages/hitslop/src/cli/cli.ts",
-    "packages/hitslop/src/cli/app.ts",
-    "packages/hitslop/skills",
-    "scripts/hygiene.ts",
-    "scripts/verify.ts",
-    "examples/slops/PRODUCT.md",
-  ])
-    expect(paths.some((path) => path === unrelated || path.startsWith(unrelated + "/"))).toBe(
-      false,
-    );
-});

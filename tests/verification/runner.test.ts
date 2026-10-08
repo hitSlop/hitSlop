@@ -9,11 +9,11 @@ import { repository } from "../../scripts/lib/artifacts";
 import { verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
-  const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "hygiene,rust,swift,native"], { cwd: repository });
+  const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository });
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     base: null,
-    tiers: ["hygiene", "rust", "swift", "native"].map(name => ({ name, reason: "named" })),
+    tiers: ["compat", "rust", "swift", "native"].map(name => ({ name, reason: "named" })),
   });
 });
 
@@ -27,15 +27,19 @@ test("attribution policy PR #5 does not build the product or allocate macOS", ()
     "docs/testing.md",
     "scripts/ci/attribution.ts",
     "tests/verification/attribution.test.ts",
-  )).toEqual(["hygiene", "tooling", "types"]);
+  )).toEqual(["tooling", "types"]);
 });
 
-test("CI selects only affected boundaries and always keeps hygiene", () => {
-  expect(affected()).toEqual(["hygiene"]);
-  expect(affected("docs/architecture.md")).toEqual(["hygiene"]);
-  expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["hygiene", "types", "landing"]);
-  expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["hygiene", "swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["hygiene", "contracts", "bun", "cli", "rust", "packed", "swift", "native"]);
+test("CI skips unrelated edits and selects affected boundaries", () => {
+  expect(affected()).toEqual([]);
+  expect(affected("docs/architecture.md")).toEqual([]);
+  expect(affected(".gitignore", "AGENTS.md", ".vscode/launch.json", ".agents/skills/hitslop-native/SKILL.md")).toEqual([]);
+  expect(affected("packages/hitslop/skills/hitslop/SKILL.md")).not.toContain("contracts");
+  for (const path of ["tests/compat/dev/release.json", "scripts/compat/check.ts", "crates/hitslop-core/src/app/package_format_1.rs", "crates/hitslop-core/src/file/storage-1.sql"])
+    expect(affected(path)).toContain("compat");
+  expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
+  expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "rust", "packed", "swift", "native"]);
   for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js", "examples/slops/quick-checklist/App.svelte"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -44,10 +48,10 @@ test("CI selects only affected boundaries and always keeps hygiene", () => {
 
 test("policy and verification tests select tooling while shared execution stays conservative", () => {
   for (const path of [".github/workflows/block-ai-attribution.yml", ".github/workflows/secret-scan.yml"])
-    expect(affected(path)).toEqual(["hygiene", "tooling"]);
+    expect(affected(path)).toEqual(["tooling"]);
   for (const path of ["scripts/ci/attribution.ts", "tests/verification/runner.test.ts", "tests/verification/process.test.ts"])
-    expect(affected(path)).toEqual(["hygiene", "tooling", "types"]);
-  expect(affected(".github/actions/native-cache/action.yml")).toEqual(["hygiene", "swift", "native"]);
+    expect(affected(path)).toEqual(["tooling", "types"]);
+  expect(affected(".github/actions/native-cache/action.yml")).toEqual(["swift", "native"]);
   for (const path of ["scripts/ci/select.ts", ".github/actions/prepare-checks/action.yml", "scripts/verify.ts", "scripts/lib/test-process.ts"])
     expect(affected(path)).toEqual(candidates);
 });

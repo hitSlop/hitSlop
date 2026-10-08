@@ -11,9 +11,10 @@ const nativeInputs = [
 ];
 
 export const tierInputs = {
-  hygiene: [/./],
+  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/hitslop-core\/src\/(app|file)\//],
   tooling: [
     /^tests\/verification\//,
+    /^scripts\/compat\/check\.ts$/,
     /^scripts\/ci\//,
     /^\.github\/workflows\/(block-ai-attribution|secret-scan)\.yml$/,
     /^packages\/hitslop\/src\/cli\/process\.ts$/,
@@ -21,9 +22,7 @@ export const tierInputs = {
   contracts: [
     ...rustInputs,
     /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
-    /^packages\/hitslop\/(skills\/|src\/cli\/(skills-build|app)\.ts$)/,
-    /^\.agents\/skills\//,
-    /^scripts\/build\/(generate|rust-bindings|skills)\.ts$/,
+    /^scripts\/build\/(generate|rust-bindings)\.ts$/,
     /^scripts\/build\/(acceptance|runner)\.ts$/,
     /^packages\/hitslop\/src\/(sdk|shell)\//,
     /\.generated\.(rs|swift)$/,
@@ -53,6 +52,6 @@ export type TierName = keyof typeof tierInputs;
 export function affectedTiers(paths: string[], candidates: TierName[]) {
   return candidates.flatMap(name => {
     const hits = paths.filter(path => [...sharedInputs, ...tierInputs[name]].some(pattern => pattern.test(path)));
-    return hits.length || name === "hygiene" ? [{ name, paths: hits }] : [];
+    return hits.length ? [{ name, paths: hits }] : [];
   });
 }

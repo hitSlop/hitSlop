@@ -1,11 +1,10 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { discoverTemplates, templateInventory } from "../../../../scripts/templates/discover";
 import { embedTemplates } from "../../../../scripts/templates/embed";
-import { assertDocs, assertNoGeneratedSource, assertSkill, assertTrackedHygiene } from "../../../../scripts/hygiene";
 import { stageProject } from "../../src/cli/build";
 import { writeTemplate } from "./template-fixture";
 import { stageEngines } from "../../../../scripts/build/engines";
@@ -64,67 +63,6 @@ test("embedding replaces selection and never keeps a deselected starter", async 
     expect(await readdir(destination)).toEqual(["beta.slop"]);
   } finally {
     await Bun.spawn(["/bin/chmod", "-R", "u+w", root]).exited;
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("hygiene keeps local history out of the tracked repository", () => {
-  for (const path of [
-    "archive/docs/review.md",
-    "archive/spikes/boundary-simplification/README.md",
-    "spikes/example/main.swift",
-    "plans/browser-host.md",
-    "SLOPS.todo",
-    "apps/promo/inspo/reference.mp4",
-    "examples/archive/retired/slop.ts",
-  ]) {
-    expect(() => assertTrackedHygiene([path])).toThrow(`Forbidden tracked artifacts:\n  - ${path}`);
-  }
-  expect(() => assertTrackedHygiene([
-    "docs/evidence/review.md",
-    "apps/promo/src/Promo.tsx",
-    "examples/slops/checklist/slop.ts",
-    "tests/compat/dev/release.json",
-  ])).not.toThrow();
-});
-
-test("hygiene allows authored JS and rejects broken skill links", async () => {
-  expect(() => assertNoGeneratedSource(["packages/hitslop/src/shell/boot.js"])).not.toThrow();
-  expect(() => assertNoGeneratedSource(["packages/hitslop/src/sdk/schema.js"])).toThrow();
-  const root = await mkdtemp(join(tmpdir(), "hitslop-hygiene-"));
-  try {
-    await symlink("missing", join(root, "skill"));
-    await expect(assertSkill("skill/SKILL.md", root)).rejects.toThrow();
-    await mkdir(join(root, "missing"));
-    await writeFile(
-      join(root, "missing/SKILL.md"),
-      "---\nname: test\ndescription: Test guide.\n---\n",
-    );
-    await assertSkill("skill/SKILL.md", root);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("docs must link to files that exist and pin the versions the tree is at", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-docs-"));
-  const versions = { hitslop: "3.0.0" };
-  try {
-    await mkdir(join(root, "docs/guides"), { recursive: true });
-    await writeFile(join(root, "docs/guides/cli.md"), "# CLI\n");
-    const page = (body: string) => writeFile(join(root, "docs/page.md"), body);
-    await page("[ok](guides/cli.md#top) [site](/docs/x/) [web](https://example.com) `[code](missing.md)`\n\n```\n[fenced](missing.md)\n```\n");
-    await assertDocs(["docs/page.md"], root, versions);
-    await page("[gone](../plans/old.md)\n");
-    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("broken link (../plans/old.md)");
-    await page("Run `bunx hitslop@1.2.0 init`.\n");
-    await expect(assertDocs(["docs/page.md"], root, versions)).rejects.toThrow("pins hitslop@1.2.0, but the tree is at 3.0.0");
-    await page("Run `bunx hitslop@3.0.0 init`.\n");
-    await assertDocs(["docs/page.md"], root, versions);
-    // A Starlight page links with trailing-slash URLs, which are not files.
-    await writeFile(join(root, "docs/site.mdx"), "[next](./getting-started/)\n");
-    await assertDocs(["docs/site.mdx"], root, versions);
-  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

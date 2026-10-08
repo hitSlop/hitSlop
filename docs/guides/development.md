@@ -58,9 +58,10 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 `bun run verify` runs the tiers a change touches; `bun run verify TIER [args]` runs one.
 [Testing](../testing.md#running-tests) lists every tier.
 
-- `hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
-- `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), skills, package types, and discovered template types.
-- `bun`: SDK and shell tests over WASM, examples, release tooling, and verification-runner tests.
+- `compat`: frozen document fixtures remain unchanged and their recorded files are intact.
+- `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), package types, and discovered template types.
+- `bun`: SDK and shell tests over WASM, examples, and release tooling.
+- `tooling`: verification-runner and CI policy tests, without product builds.
 - `cli`: non-native CLI integration tests; `bun run test` runs both `bun` and `cli`.
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with two cached black-box apps and four presentation fixtures.
