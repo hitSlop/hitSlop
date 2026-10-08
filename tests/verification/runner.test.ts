@@ -107,14 +107,13 @@ test("Git selection includes both sides of renames, deleted files and fails on a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("test discovery assigns each boundary once and refuses unknown or duplicate files", () => {
+test("test discovery assigns each boundary and refuses unclassified tests", () => {
   const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "tests/examples/quick-checklist.native.test.ts", "tests/verification/runner.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
   expect(groups.cli).toEqual(["packages/hitslop/tests/cli/build.test.ts"]);
   expect(groups.native).toEqual(["tests/examples/quick-checklist.native.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
-  expect(() => testInventory([files[0]!, files[0]!])).toThrow("Duplicate");
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
 });
 

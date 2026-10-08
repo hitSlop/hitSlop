@@ -1,6 +1,6 @@
 /** The Swift sources `swift format` owns, styled by `apps/apple/.swift-format`: every Swift
- * file under apps/apple except generated bindings and contracts. The swift tier lints them;
- * `bun run swift:format` rewrites them. */
+ * file under apps/apple except generated bindings and contracts.
+ * Run explicitly with `bun run swift:format`. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
@@ -17,15 +17,14 @@ async function swiftSources(): Promise<string[]> {
     .filter((file) => file && !file.includes("/Generated/") && existsSync(join(repository, file)));
 }
 
-/** Lints the Swift sources (warnings fail), or rewrites them in place. */
-export async function swiftFormat(mode: "lint" | "format") {
+/** Formats the Swift sources in place. */
+async function swiftFormat() {
   const files = await swiftSources();
-  const command = mode === "lint" ? ["lint", "--strict"] : ["--in-place"];
-  const { code, stdout, stderr } = await exec(["swift", "format", ...command, "--parallel", ...files], {
+  const { code, stdout, stderr } = await exec(["swift", "format", "--in-place", "--parallel", ...files], {
     cwd: repository,
   });
   const output = (stdout + stderr).trim();
-  if (code) throw new Error(`swift format ${mode} failed; run \`bun run swift:format\`\n${output}`);
+  if (code) throw new Error(`swift format failed\n${output}`);
 }
 
-if (import.meta.main) await swiftFormat("format");
+if (import.meta.main) await swiftFormat();

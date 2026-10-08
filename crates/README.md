@@ -16,8 +16,8 @@ native Rust engine. Bun SDK tests use the WASM adapter.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
 main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
-and wasm-bindgen 0.2.127. The workspace's lints and `rustfmt.toml` apply to every crate;
-`bun run verify rust` checks both. Install the matching bindings generators and the test runner once
+and wasm-bindgen 0.2.127. `bun run verify rust` runs the workspace's lints and tests.
+Use `cargo fmt --all` to apply `rustfmt.toml` explicitly. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 
 ```sh

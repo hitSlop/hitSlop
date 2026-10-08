@@ -179,26 +179,3 @@ jobs:
           name: release-templates-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  timings:
-    needs: [select, fast, native, linux-smoke, release-templates]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: read
-    steps:
-      # Completed jobs include cache-save post steps, which verifier timings cannot see.
-      - name: Job wall times
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          gh api "repos/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" > jobs.json
-          {
-            echo '### Job wall times (including setup and cache saves)'
-            echo '| Job | Result | Wall time |'
-            echo '|---|---|---:|'
-            jq -r '.jobs[] | select(.name != "timings") | [.name, .conclusion, (if .conclusion == "skipped" then "—" elif .completed_at == null then "unfinished" else (((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) | tostring) + "s" end)] | "| " + join(" | ") + " |"' jobs.json
-          } >> "$GITHUB_STEP_SUMMARY"

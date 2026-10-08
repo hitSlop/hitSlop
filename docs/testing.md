@@ -51,10 +51,10 @@ bun run release:check          # verify --release: every tier, the shipped build
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell, example and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
-| `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
-| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
+| `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `native` | `*.native.test.ts` against the debug helper |
 
@@ -78,9 +78,9 @@ Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs `too
 unclassified test files rather than silently leaving them out.
 
 While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo clippy
---workspace --all-targets`), run `cargo fmt --all`, then run `bun run verify` before
-calling the step done. While changing Swift, iterate with `bun run verify swift --filter <name>`
-and run `bun run swift:format` before the full run. Run
+--workspace --all-targets`). While changing Swift, use `bun run verify swift --filter <name>`.
+Formatting is an explicit editing command: `cargo fmt --all` for Rust or
+`bun run swift:format` for Swift. It is not a prerequisite for running tests. Run
 `bun run verify --native` once at the end when Swift, the FFI surface or the helper
 changed. `bun run check`, `bun run test`, `bun run core:test`, `bun run swift:test` and
 `bun run test:native` remain as aliases (`test` covers both Bun tiers).
@@ -240,7 +240,6 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
 | `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus |
-| `timings` (Ubuntu) | Reports job wall time including preparation and cache-save steps |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
 CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UTC
@@ -271,7 +270,8 @@ activate it only after the corresponding workflows are installed (see
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
 verification results or retry failed tests automatically. Job summaries report cache
-restoration, setup duration, build/preparation and test duration, and complete job wall time.
+restoration, setup duration, build/preparation and test duration. GitHub Actions displays
+complete job wall times.
 Nightly runs have a separate concurrency group, so a master push cannot cancel cache warming.
 Successful default-branch runs populate caches that other branches can restore. A cache
 created on a PR merge ref is available only to that PR, so a successful PR alone does not

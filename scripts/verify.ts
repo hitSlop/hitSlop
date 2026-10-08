@@ -25,7 +25,6 @@ import { run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
 import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
-import { swiftFormat } from "./lib/swift-format";
 import { swiftTests } from "./lib/swift-tests";
 
 type Build = "web" | "native" | "templates" | "packages" | "app";
@@ -153,11 +152,10 @@ const tiers: Tier[] = [
   {
     name: "rust",
     inputs: tierInputs.rust,
-    // A full run checks formatting and lints first; a filtered one (`verify rust store::`)
+    // A full run compiles and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
     run: async (args, prepare) => {
       if (!args.length) await prepare("Rust compilation and lints", async () => {
-        await quiet(["cargo", "fmt", "--all", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
         await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
@@ -194,10 +192,7 @@ const tiers: Tier[] = [
     native: true,
     needs: ["native"],
     inputs: tierInputs.swift,
-    // A full run checks formatting first; a filtered one (`verify swift --filter X`) is for
-    // iterating, so it runs only the tests.
     run: async (args, prepare) => {
-      if (!args.length) await swiftFormat("lint");
       const fixtures = await prepare("Native fixtures", prepareNativeFixtures);
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();

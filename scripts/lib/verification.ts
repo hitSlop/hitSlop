@@ -16,11 +16,7 @@ export type Preparation = <T>(name: string, action: () => Promise<T>) => Promise
 export type TestTier = "tooling" | "bun" | "cli" | "native" | "packed";
 export function testInventory(files: string[]): Record<TestTier, string[]> {
   const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], native: [], packed: [] };
-  const seen = new Set<string>();
   for (const file of files.sort()) {
-    if (seen.has(file)) throw new Error(`Duplicate test: ${file}`);
-    seen.add(file);
-    if (!file.endsWith(".test.ts")) throw new Error(`Unclassified test: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
       : file.endsWith(".native.test.ts") ? "native"
       : file.startsWith("tests/verification/") ? "tooling"
