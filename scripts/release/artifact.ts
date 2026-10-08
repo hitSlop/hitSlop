@@ -1,3 +1,4 @@
+import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { builtTemplates } from "../templates/discover";
 import { digest, fileDigest, shellDestinations, shellFiles } from "../lib/artifacts";
 import { strict as assert } from "node:assert";
@@ -62,9 +63,8 @@ try {
   const starters = join(app, "Contents/Resources/StarterTemplates");
   assert.deepEqual((await readdir(starters)).sort(), selected.map((slug) => slug + ".slop").sort());
   const exhaustive = process.env.HITSLOP_TEMPLATE_EXHAUSTIVE === "1";
-  const fixtures = ["quick-checklist"];
-  for (const fixture of fixtures)
-    assert.ok(selected.includes(fixture), `Missing release fixture: ${fixture}`);
+  // The sampled starter is a packaging smoke, independent of its name or schema.
+  const fixtures = selected.slice(0, 1);
   for (const slug of selected) {
     console.log(`Validating packaged template: ${slug}`);
     const source = join(app, "Contents/Resources/StarterTemplates", slug + ".slop");
@@ -91,7 +91,8 @@ try {
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  await createDocument(resolve("generated/templates/quick-checklist.slop"), mutation, placement);
+  const fixture = await buildTemplate(resolve("tests/apps/document"), undefined, join(folder, "fixture.slop"));
+  await createDocument(fixture, mutation, placement);
   await engineRequest({ method: "batch", documentPath: mutation, batch: { intents: [{ type: "set", path: ["title"], value: "Installed engine verified" }] } }, placement);
   assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));
   console.log(

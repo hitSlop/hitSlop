@@ -77,7 +77,7 @@ public struct SlopFile: Sendable {
     window = opened.app.window
     views = opened.app.views
     switch window {
-    case .standard(_, _, _, _, _, let shape): silhouette = SlopSilhouette(parsed: shape)
+    case .standard(_, _, _, _, _, _, _, let shape): silhouette = SlopSilhouette(parsed: shape)
     case .skin:
       silhouette = SlopSilhouette(
         parsed: .radii(horizontal: [.init(value: 0, percent: false)], vertical: [.init(value: 0, percent: false)]))
@@ -108,20 +108,20 @@ public struct SlopFile: Sendable {
   public var isSkinned: Bool { if case .skin = window { true } else { false } }
   public var width: Int {
     switch window {
-    case .standard(let w, _, _, _, _, _), .skin(let w, _, _): Int(w)
+    case .standard(let w, _, _, _, _, _, _, _), .skin(let w, _, _, _): Int(w)
     }
   }
   public var height: Int {
     switch window {
-    case .standard(_, let h, _, _, _, _), .skin(_, let h, _): Int(h)
+    case .standard(_, let h, _, _, _, _, _, _), .skin(_, let h, _, _): Int(h)
     }
   }
-  public var lockAspect: Bool { if case .standard(_, _, _, let lock, _, _) = window { lock } else { true } }
+  public var lockAspect: Bool { if case .standard(_, _, _, _, _, let lock, _, _) = window { lock } else { true } }
   /// What the window shows behind the page.
   public var backdrop: SlopBackdrop {
     switch window {
     case .skin: .skin
-    case .standard(_, _, _, _, let background, _):
+    case .standard(_, _, _, _, _, _, let background, _):
       switch background {
       case nil: .window
       case .transparent: .clear
@@ -129,7 +129,21 @@ public struct SlopFile: Sendable {
       }
     }
   }
-  public var isResizable: Bool { if case .standard(_, _, let resizable, _, _, _) = window { resizable } else { false } }
+  public var isResizable: Bool {
+    if case .standard(_, _, _, _, let resizable, _, _, _) = window { resizable } else { false }
+  }
+  /// Host fullscreen is opt-in and independent of desktop resizing.
+  public var isFullscreenable: Bool {
+    switch window {
+    case .standard(_, _, let enabled, _, _, _, _, _), .skin(_, _, let enabled, _): enabled
+    }
+  }
+  public var fitsFullscreen: Bool {
+    switch window {
+    case .standard(_, _, _, let fit, _, _, _, _): fit
+    case .skin: true
+    }
+  }
   /// The window skin, decoded when the file was opened.
   public var skin: CGImage? { skinImage }
 

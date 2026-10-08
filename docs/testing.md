@@ -1,5 +1,14 @@
 # Testing
 
+**Do not create an automated test or test suite for each slop.** Creating, styling,
+animating, or updating a slop does not require new tests. Validate it with existing
+checks/builds and hands-on preview/export review. Shared SDK, storage, or host
+regressions belong in the existing tests at their owning boundary; do not duplicate
+that coverage in example-specific tests. Ordinary tests use deliberate infrastructure
+fixtures, never live examples. Generic shipped-template smoke checks and frozen
+compatibility replay protect artifacts without asserting a slop's workflow or design.
+Manual review and temporary diagnostic scripts do not become permanent tests.
+
 Tests live at the boundary that owns the behavior. Delete a test together with the code
 it protects, and never bend production code to keep an old test compiling. The one
 exception is the [compatibility corpus](#compatibility-corpus): released documents stay
@@ -11,9 +20,10 @@ openable, so its frozen entries never change.
 | Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
 | File engine | `crates/slop-engine/tests` | `pack`, `inspect` and `schema` as the CLI runs them; a refused build publishes nothing |
 | Shell over WASM | `packages/hitslop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
-| Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors and framework-neutral helpers |
+| Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
+| Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | WebKit behavior and the native Rust dev owner, without building Swift or the helper |
 | Native tools | `tests/native`, `packages/hitslop/tests/cli/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
 | App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app, including named commands through the raw Xcode Debug app without an evaluator override; release native tests also exercise host process death |
@@ -21,13 +31,15 @@ openable, so its frozen entries never change.
 | Presentation | `tests/presentation`, prepared for Swift/native tiers | Window shapes and capture fixtures |
 | Verification runner and CI policy | `tests/verification`, in `verify tooling` | Tier selection, evidence, subprocess lifecycle and attribution; no product build |
 | Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; release includes the build |
-| Examples | `tests/examples`, run with the package tests (`verify bun`, or `verify native` for `*.native.test.ts`) | An example's own behavior in WebKit through `slop dev`: editing, composition and captures. Kept outside the example, so a copied example stays self-contained |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
 
 `tests/fixtures/*` are small host apps (`document/`, a build stage, with `expected.json` and
 `scenario.json`) replayed by both the Bun fast tier and the Swift host-path test, which
 packs each stage and creates a document from it.
 `tests/abi/{owner-svelte,probe}` are Svelte and probe consumers used by Swift tests.
+`tests/apps` holds authored infrastructure fixtures: a small document app, an
+`EditableText` consumer and the Shape Lab instrument. They are never shipped as
+starter templates. Test media belongs to fixtures, not examples or the landing page.
 
 ## Running tests
 
@@ -49,13 +61,14 @@ bun run release:check          # verify --release: every tier, the shipped build
 |---|---|
 | `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; TypeScript and template types. Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
-| `bun` | SDK, shell, example and release tests; up to four isolated file workers |
+| `bun` | SDK, shell and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
 | `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
+| `browser` | `*.browser.test.ts` in Playwright WebKit, with the Rust engine/evaluator and shell; no Swift build. Included by `--native` while qualification remains macOS-only |
 | `native` | `*.native.test.ts` against the debug helper |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
@@ -84,11 +97,11 @@ that live owner through the usual socket registry. Stop the script with Ctrl-C; 
 files remain available for inspection. Do not use these files as shared documents after
 the harness stops: storage 1 has no persistent room binding.
 
-`bun run verify native live-sync` builds those binaries and runs the two-view WebKit test
+`bun run verify browser live-sync` builds those binaries and runs the two-view WebKit test
 (it is skipped when run without them),
 including CLI bursts, text and commands, duplicate/missing delivery, snapshot replacement,
-disconnect fencing, retained drafts and reopen. The test records loopback command/text
-timings and screenshots in its verification evidence directory. `bun run verify rust`
+disconnect fencing, retained drafts and reopen. With `HITSLOP_BENCH_SYNC=1` the test records
+loopback command/text timings and screenshots in its verification evidence directory. `bun run verify rust`
 also checks the feature-enabled owner, import and bounded framing tests alongside the
 ordinary configuration. Released builds do not enable this feature.
 
@@ -161,8 +174,8 @@ readiness (fonts included), presentation and page-relative `hitslop:*` boot mark
 document values or paths. `HITSLOP_STARTUP_BENCH=1 bun run swift:test --filter documentStartupTimings`
 measures fresh documents. For saved ones, use
 `HITSLOP_STARTUP_BENCH=1 bun run swift:test -c release --filter savedDocumentStartupTimings`:
-it seeds saved edits in a separate helper process, then reopens Quick Checklist, a
-1,000-row checklist and a skinned fixture ten times each, recording
+it seeds saved edits in a separate helper process, then reopens the document fixture, a
+1,000-row variant and a skinned fixture ten times each, recording
 preparation/readiness/reveal durations and whether progress appeared.
 `HITSLOP_STARTUP_CASE` measures one case first in a fresh process,
 `HITSLOP_STARTUP_SAMPLES` sets the count and `HITSLOP_STARTUP_FOREGROUND=1` activates the
@@ -283,8 +296,10 @@ are affected, so an unrelated change allocates no Mac runner. Selection includes
 paths of a rename and deleted files. The main CI workflow, shared preparation action,
 selector, verifier implementation and shared toolchain/dependency inputs select all tiers.
 Policy workflows and verification tests select tooling; they do not invalidate the product.
-Native-cache changes select the Swift/native tiers. Other product and build dependencies
-remain conservatively selected. For example, PR #5's attribution policy changes select
+Native-cache changes select the Swift/native tiers. Example source changes select authoring/type checks, not infrastructure suites;
+example Markdown changes select no product tiers. Test fixture changes select their
+consumers, and packaged starter changes still select CLI/browser/packed acceptance.
+Other product and build dependencies remain conservatively selected. For example, PR #5's attribution policy changes select
 only tooling and types, allocating no macOS runner. Documentation and repository-settings
 edits select no product tiers. The compatibility integrity tier runs when corpus files,
 its scripts or the core’s acceptance/storage modules change. Jobs execute exactly
@@ -308,7 +323,7 @@ created on a PR merge ref is available only to that PR, so a successful PR alone
 warm the next one. Rust caches separate checks, template builds and release builds; SwiftPM
 caches separate fixtures and the release corpus. This prevents a smaller concurrent job
 from filling an immutable cache key before the full suite finishes.
-Playwright WebKit is installed when the native browser tier is selected and for release
+Playwright WebKit is installed when the browser tier is selected and for release
 verification; lighter PR checks do not download a browser.
 
 The attribution workflow covers PRs into `master` and `release/*`, uses
@@ -361,12 +376,56 @@ authorizer proves `summary` never reads definition or asset/attachment payloads.
 page-policy probe proves path-scoped CSP blocks attachment scripts while canvas and
 ranges still work. The owner command tests cover stale-base retry and lifecycle fences.
 
-Quick Checklist's example UI test adds tasks by Enter and button, completes, files,
-restores and removes them through their controls. App acceptance separately launches the
-actual app with no `HITSLOP_EVALUATOR`, exercises those named commands through its live
-owner and checks saved state after reopening. `apple:build` runs this against the raw
+SDK browser tests exercise `EditableText` composition, focus, caret placement and
+autosizing with real document handles. Native export tests use controlled content to
+check saved-state capture, color, selectable text and editor isolation. App acceptance
+launches the actual app with no `HITSLOP_EVALUATOR`, executes the document fixture's
+insert, row-argument and remove commands through its live owner, and checks saved
+state after reopening. `apple:build` runs this against the raw
 Xcode product before adding the standalone renderer; release artifact acceptance runs
 it against the packaged app. Test-runner environment overrides cannot mask a missing
 bundled evaluator in these checks.
 The evaluator prelude and page context dispatch by runtime ABI; corpus replay uses the
 stored ABI and original embedded programs.
+
+### Fullscreen qualification
+
+`bun run verify swift --filter fullscreenCapabilityAndLayoutReachTheNativeHost` checks
+the declaration's native projection and fitted/reflowing content coordinates. On an
+interactive desktop run `HITSLOP_FULLSCREEN=1 bun run verify swift --filter
+nativeFullscreenKeepsThePageAndRestoresTheDesktop` to exercise actual macOS Spaces
+transitions, the retained page, painted content, display-resolution zoom, toolbar
+reachability, and restored frame/pinning for
+standard, fixed, shaped and PNG-skinned windows. This explicit test changes the active
+Space and must not run alongside other UI qualification. WebKit snapshots do not include
+the outer AppKit frame: also inspect a real fullscreen window for background artifacts
+and source-image scaling ([qualification evidence](evidence/native-fullscreen-2026-10-08.md)).
+
+## Infrastructure coverage ownership
+
+- Rust owns semantic matrices, refusals, model checks, storage, writer ownership and
+  real I/O failures. Replaying literal fixtures through WASM or Swift additionally
+  proves those bindings; this is not a reason to repeat the matrix through every UI.
+- SDK/shell tests own handles, async publication, composition, recovery and capture
+  coordination. Minimal browser fixtures own component interaction and rendering.
+- CLI tests own compilation, declaration discovery, assets, command separation and
+  protocol translation. Syntax permutations belong to the transform table; full
+  builds retain module resolution, registration and emitted-artifact cases.
+- Native tests own real window, catalog, WebView, save/close and export integration.
+  Controlled native-client doubles test coordination, not document semantics.
+- Package/release tests own installed artifacts, evaluator discovery and relocation.
+  Generic template smoke checks have no template-specific selectors or actions.
+- Frozen compatibility cases retain their original artifacts and expectations.
+
+The removed Hourglass cases asserted illustration/countdown behavior. The removed
+Quick Checklist suite mixed its workflow/export wording with four SDK component
+contracts; only the latter survive, in the SDK fixture. No example test directory is
+accepted by discovery. No test quota is associated with a slop.
+
+Performance samples in browser correctness scenarios are opt-in:
+`HITSLOP_BENCH_PREVIEW=1 bun run verify browser large-preview` and
+`HITSLOP_BENCH_SYNC=1 bun run verify browser live-sync`. Ordinary runs still check
+large-list identity and shared-authority correctness without repeated timing samples.
+`HITSLOP_BENCH_COMMANDS=1` enables repeated command-latency samples in `verify browser dev.browser`
+and `verify swift --filter pageAndCLICommandsShareTheNativeOwner`; normal runs still
+exercise accepted commands, invalid arguments and publication to the page.

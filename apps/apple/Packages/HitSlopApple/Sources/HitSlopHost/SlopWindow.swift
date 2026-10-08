@@ -65,6 +65,8 @@ class HoverView: NSView {
 
 final class ShapedView: HoverView {
   let windowMask: SlopWindowMask
+  /// Scales authored mask geometry without scaling WebKit's rasterized backing.
+  var compositionScale: CGFloat = 1 { didSet { if oldValue != compositionScale { needsLayout = true } } }
   private let maskLayer: CALayer
   /// A glass window's frosted material, below the page. It stays frosted while the
   /// window is inactive, as a widget on the desktop does, and light in dark mode: the
@@ -93,11 +95,14 @@ final class ShapedView: HoverView {
   required init?(coder: NSCoder) { nil }
   override func layout() {
     super.layout()
-    windowMask.update(maskLayer, bounds: bounds)
-    glass?.maskImage = windowMask.image(in: bounds)
+    windowMask.update(maskLayer, bounds: bounds, scale: compositionScale)
+    glass?.maskImage = windowMask.image(in: bounds, scale: compositionScale)
   }
   override func hitTest(_ point: NSPoint) -> NSView? {
-    windowMask.contains(point, in: bounds) ? super.hitTest(point) : nil
+    // AppKit supplies the point in the superview's coordinates. Fullscreen
+    // compositions may be both centered and scaled inside their opaque surface.
+    windowMask.contains(convert(point, from: superview), in: bounds, scale: compositionScale)
+      ? super.hitTest(point) : nil
   }
 }
 
@@ -146,6 +151,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// The theme panel beside the window, while shown.
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
+  var fullscreenRestore: SlopFullscreenRestore?
+  var fullscreenTransition = false
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
   /// Undo for this window's document; see `DocumentUndoManager`.
@@ -221,6 +228,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     window.backgroundColor = .clear
     window.hasShadow = session.file.backdrop != .clear
     window.isReleasedWhenClosed = false
+    window.collectionBehavior = spec.isFullscreenable ? [.fullScreenPrimary] : [.fullScreenNone]
     window.tabbingMode = .disallowed
     window.representedURL = self.url
     window.miniwindowTitle = window.title
@@ -257,11 +265,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// A discard or recovery replaced the page: show the new one and wait for it, clearing
   /// any failure overlay left by the renderer it replaced.
   public func pageSession(_ session: DocumentSession, didReplace view: WKWebView) {
-    guard let content = window?.contentView else { return }
+    guard let content = documentComposition else { return }
     view.frame = content.bounds
+    view.pageZoom = content.compositionScale
     view.autoresizingMask = [.width, .height]
     // Above the glass, and below a failure overlay.
-    if let glass = (content as? ShapedView)?.glass {
+    if let glass = content.glass {
       content.addSubview(view, positioned: .above, relativeTo: glass)
     } else {
       content.addSubview(view, positioned: .below, relativeTo: failedOverlay)
@@ -292,6 +301,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     throws -> CGSize
   {
     guard let window else { throw SlopFailure("document window is unavailable") }
+    if fullscreenRestore != nil {
+      let view = session.webView
+      return CGSize(width: view.bounds.width / view.pageZoom, height: view.bounds.height / view.pageZoom)
+    }
     var requested = requested
     let spec = session.file
     if spec.lockAspect == true {

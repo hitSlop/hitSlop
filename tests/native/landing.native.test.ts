@@ -12,7 +12,7 @@ import { PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/con
 test("landing generation reads current templates and preserves outputs when a later input fails", async () => {
   await prepareNativeFixtures();
   const destination = await mkdtemp(join(tmpdir(), "hitslop-landing-"));
-  const source = { slug: "quick-checklist", file: resolve("generated/native-fixtures/quick-checklist.slop") };
+  const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.slop") };
   try {
     const before = await readFile(source.file);
     await generateTemplates([source], destination);
@@ -23,7 +23,7 @@ test("landing generation reads current templates and preserves outputs when a la
     expect(template.title.length).toBeGreaterThan(0);
     expect(template.width).toBeGreaterThan(0);
     expect(template.colors.background).toMatch(/^#/);
-    const image = join(destination, "public/assets/templates/quick-checklist/preview.png");
+    const image = join(destination, "public/assets/templates/document-fixture/preview.png");
     const png = await readFile(image);
     expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     const invalid = join(destination, "invalid.slop");

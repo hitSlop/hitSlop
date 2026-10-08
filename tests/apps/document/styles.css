@@ -1,0 +1,6 @@
+html, body { margin: 0; font: 16px sans-serif; color: var(--slop-ink); }
+* { box-sizing: border-box; }
+[data-editor] { height: 100vh; overflow: auto; padding: 24px; background: var(--slop-surface); }
+[data-row] { display: flex; gap: 8px; min-height: 44px; }
+[data-export] { width: 480px; padding: 24px; background: var(--slop-surface); }
+[data-export] p { min-height: 44px; white-space: pre-wrap; overflow-wrap: anywhere; }

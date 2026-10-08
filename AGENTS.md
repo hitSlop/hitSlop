@@ -67,6 +67,13 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Testing
 
+- **Do not create an automated test or test suite for each slop.** Creating, styling,
+  animating, or updating a slop does not require new tests. Validate it with existing
+  checks/builds and hands-on preview/export review. Shared SDK, storage, or host
+  regressions belong in the existing tests at their owning boundary; do not duplicate
+  that coverage in example-specific tests. Use minimal infrastructure fixtures, never
+  a live example as a dependency of ordinary tests. Generic shipped-template smoke
+  checks and frozen compatibility replay are separate artifact contracts.
 - Tests live at the owning boundary: Rust semantics, the SDK over WASM, and Swift
   integration. Delete tests together with the code they protect. No tests of private
   call sequences, CSS strings or version numbers.

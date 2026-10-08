@@ -143,12 +143,13 @@ struct SlopToolbar: View {
   enum Action {
     /// A document operation, which the app runs like the menu bar's.
     case document(SlopDocumentCommand)
-    case close, minimize, togglePin, toggleTheme, reveal, copyPath
+    case close, minimize, toggleFullscreen, togglePin, toggleTheme, reveal, copyPath
     case openEditor(URL)
   }
   /// What the controls show and whether each is available.
   struct Controls {
     var pinned = false, canPin = false
+    var fullscreenable = false, fullscreen = false, canFullscreen = false, desktopControls = true
     /// Whether the theme panel is shown, and whether showing or hiding it is available.
     var themeShown = false, canToggleTheme = false
     /// Whether the app accepts document operations now.
@@ -162,10 +163,19 @@ struct SlopToolbar: View {
   let editors: [(String, URL)]
   var body: some View {
     HStack(spacing: 6) {
-      ToolbarDragHandle(onDrag: drag).frame(width: 18, height: 28).help("Drag window")
+      if controls.desktopControls {
+        ToolbarDragHandle(onDrag: drag).frame(width: 18, height: 28).help("Drag window")
+      }
       HStack(spacing: 0) {
         windowControl("xmark", "Close", .red) { act(.close) }
         windowControl("minus", "Minimize", .yellow) { act(.minimize) }
+          .disabled(!controls.desktopControls)
+        if controls.fullscreenable {
+          windowControl(
+            controls.fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+            controls.fullscreen ? "Exit Full Screen" : "Enter Full Screen", .green
+          ) { act(.toggleFullscreen) }.disabled(!controls.canFullscreen)
+        }
       }.fixedSize().background(SlopToolbarControlRegion())
       Divider().frame(height: 20).padding(.horizontal, 2)
       ToolbarFileMenu(identity: identity, reveal: { act(.reveal) }, copyPath: { act(.copyPath) })

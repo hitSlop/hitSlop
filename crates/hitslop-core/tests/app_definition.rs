@@ -122,6 +122,8 @@ fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
         ("/window", json!({"future":true})),
         ("/views", json!({"future":true})),
         ("/window", json!({"resizable":null})),
+        ("/window", json!({"fullscreenable":null})),
+        ("/window", json!({"fullscreenable":"true"})),
         ("/theme/0", json!({"future":true})),
         ("/commands/0", json!({"future":true})),
     ] {
@@ -143,6 +145,56 @@ fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
     value["window"].as_object_mut().unwrap().remove("resizable");
     value["window"]["skin"] = "media/../skin.png".into();
     assert_eq!(read(&metadata(), &value).unwrap_err().pointer(), "/window/skin");
+}
+
+#[test]
+fn fullscreen_is_opt_in_for_both_window_kinds_and_survives_the_page_and_file_projections() {
+    for skin in [false, true] {
+        for enabled in [None, Some(false), Some(true)] {
+            let mut value = definition();
+            if skin {
+                value["window"] = json!({"kind":"skin","width":320,"height":240,
+                    "skin":format!("media/{}.png", "a".repeat(64))});
+            }
+            if let Some(enabled) = enabled {
+                value["window"]["fullscreenable"] = enabled.into();
+            }
+            let app = read(&metadata(), &value).unwrap();
+            let actual = match app.window() {
+                WindowDefinition::Standard { fullscreenable, .. } | WindowDefinition::Skin { fullscreenable, .. } => {
+                    *fullscreenable
+                }
+            };
+            assert_eq!(actual, enabled.unwrap_or(false));
+            let page = serde_json::to_value(app.page_window()).unwrap();
+            assert_eq!(page.get("fullscreenable"), value["window"].get("fullscreenable"));
+            let saved = app.definition_json();
+            let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &saved).unwrap();
+            assert_eq!(reopened.definition_json(), saved);
+            assert_eq!(serde_json::to_value(reopened.page_window()).unwrap(), page);
+            // Authoring input has the same optional-boolean rule, including skins.
+            let mut invalid = page.clone();
+            invalid["fullscreenable"] = Value::Null;
+            assert!(serde_json::from_value::<hitslop_core::build::WindowInput>(invalid).is_err());
+            assert!(serde_json::from_value::<hitslop_core::build::WindowInput>(page).is_ok());
+        }
+    }
+}
+
+#[test]
+fn fullscreen_reflows_only_resizable_unshaped_unlocked_windows() {
+    for (extra, fits) in [
+        (json!({}), false),
+        (json!({"resizable":false}), true),
+        (json!({"lockAspect":true}), true),
+        (json!({"shape":"50%"}), true),
+    ] {
+        let mut value = definition();
+        value["window"].as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let app = read(&metadata(), &value).unwrap();
+        let WindowDefinition::Standard { fullscreen_fit, .. } = app.window() else { unreachable!() };
+        assert_eq!(*fullscreen_fit, fits);
+    }
 }
 
 #[test]

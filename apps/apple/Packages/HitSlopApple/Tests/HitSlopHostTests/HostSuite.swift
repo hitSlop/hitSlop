@@ -10,7 +10,7 @@ import Testing
 
 // One parent suite keeps shared AppKit/WebView integration tests serialized.
 @Suite(.serialized) struct HostTests {
-  func fixture(_ name: String = "quick-checklist") throws -> URL { try Fixtures.native(name) }
+  func fixture(_ name: String = "document-fixture") throws -> URL { try Fixtures.native(name) }
 
   /// The conformance app's document with the platform probe app (tests/abi/probe) in place of
   /// its frozen consumer; disposable documents are safe for host behavior probes. `edit`

@@ -17,6 +17,8 @@ pub enum WindowInput {
         width: f64,
         height: f64,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         resizable: Option<bool>,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         lock_aspect: Option<bool>,
@@ -28,6 +30,8 @@ pub enum WindowInput {
     Skin {
         width: f64,
         height: f64,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
         image: String,
     },
 }

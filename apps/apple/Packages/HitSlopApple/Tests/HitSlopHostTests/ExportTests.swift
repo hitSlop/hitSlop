@@ -67,7 +67,7 @@ extension HostTests {
   }
 
   @Test(arguments: [0, 1, 40])
-  @MainActor func checklistExportIncludesAllSavedRowsRegardlessOfSelectedTab(count: Int) async throws {
+  @MainActor func exportIncludesAllSavedRowsRegardlessOfLocalView(count: Int) async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -93,12 +93,12 @@ extension HostTests {
           ]
         ).ok)
       _ = try await session.webView.evaluateJavaScript(
-        "[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
+        "document.querySelector('[data-toggle-view]').click()")
       let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
       let page = try #require(pdf.page(at: 0))
       #expect(pdf.pageCount == 1)
       if count == 0 {
-        #expect(pdf.string?.contains("A little breathing room.") == true)
+        #expect(pdf.string?.contains("Empty fixture") == true)
       } else {
         #expect(pdf.string?.contains("Final task \(count - 1)") == true)
         #expect(pdf.string?.contains("Café") == true)
@@ -110,7 +110,7 @@ extension HostTests {
       if count == 40 { #expect(bounds.height > 1000) }
       #expect(
         try await session.webView.evaluateJavaScript(
-          "document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
+          "document.querySelector('[data-toggle-view]').getAttribute('aria-pressed') === 'true'") as? Bool == true)
     } catch {
       try await session.close()
       throw error
@@ -138,7 +138,7 @@ extension HostTests {
     controller.close()
   }
 
-  @Test @MainActor func checklistPDFPreservesSurfaceColorAndSelectableText() async throws {
+  @Test @MainActor func pdfPreservesSurfaceColorAndSelectableText() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -166,7 +166,7 @@ extension HostTests {
         let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
         #expect(CGFloat(png.pixelsWide) == bounds.width * 2)
         #expect(CGFloat(png.pixelsHigh) == bounds.height * 2)
-        // Sample the outer surface, away from text, the paper and its shadow.
+        // Sample the controlled solid surface away from text.
         let pdfColor = try #require(rendered.colorAt(x: 4, y: rendered.pixelsHigh / 2)?.usingColorSpace(.sRGB))
         let pngColor = try #require(png.colorAt(x: 8, y: png.pixelsHigh / 2)?.usingColorSpace(.sRGB))
         // Use the working PNG as the color-managed reference, rather than
@@ -179,11 +179,8 @@ extension HostTests {
           try await session.webView.evaluateJavaScript(
             "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
       }
-      // Capture must restore the editor's decorative background.
-      let editorBackground =
-        try await session.webView.evaluateJavaScript(
-          "getComputedStyle(document.querySelector('.checklist-shell')).backgroundImage") as? String
-      #expect(editorBackground?.contains("gradient") == true)
+      // Captures use a separate page; the editor remains mounted and interactive.
+      #expect(try await session.webView.evaluateJavaScript("!!document.querySelector('[data-editor]')") as? Bool == true)
     } catch {
       try await session.close()
       throw error
@@ -261,24 +258,15 @@ extension HostTests {
     let completedIcon = try #require(
       try await SlopRenderer.iconPNGData(session: session))
     #expect(completedIcon != firstIcon)
-    try await batch("archived")
-    let filed = try await savedValue(root)
-    let filedRows = try #require(filed?["tasks"] as? [[String: Any]])
-    #expect(filedRows.count == rows.count)
-    #expect(filedRows.allSatisfy { $0["archived"] as? Bool == true })
-    let pdf = try await SlopRenderer.exportPDFData(session: session)
-    #expect(PDFDocument(data: pdf)?.pageCount ?? 0 > 0)
-    #expect(PDFDocument(data: pdf)?.string?.contains("A little breathing room.") == true)
-    _ = try await view.evaluateJavaScript(
-      "[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
-    let filedPDF = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
-    #expect(filedPDF.string?.contains("A little breathing room.") == true)
-    #expect(filedPDF.string?.contains("Filed tasks") == false)
-    #expect(
-      try await view.evaluateJavaScript(
-        "document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
+    let accepted = try await savedValue(root)
+    _ = try await view.evaluateJavaScript("document.querySelector('[data-toggle-view]').click()")
+    let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+    #expect(pdf.pageCount > 0)
+    for row in rows { #expect(pdf.string?.contains(row["text"] as! String) == true) }
+    #expect(try await view.evaluateJavaScript(
+      "document.querySelector('[data-toggle-view]').getAttribute('aria-pressed') === 'true'") as? Bool == true)
     #expect(try await view.evaluateJavaScript(idle) as? Bool == true)
-    #expect(try await savedValue(root) == filed)
+    #expect(try await savedValue(root) == accepted)
     try await session.close()
     // Background renders read the saved document in place, without owning or writing it.
     let saved = try Data(contentsOf: root)

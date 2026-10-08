@@ -266,7 +266,7 @@ private final class PublicationTimes: @unchecked Sendable {
             const split = { js: [], layout: [], rest: [] };
             for (let i = 0; i < 20; i++) {
               await new Promise(r => setTimeout(r, 100));
-              const row = document.querySelectorAll(".checklist-row")[2];
+              const row = document.querySelectorAll("[data-row]")[2];
               const box = row?.querySelector("input[type=checkbox]");
               if (!box) break;
               const changed = new Promise(resolve => { const o = new MutationObserver(() => { o.disconnect(); resolve(); }); o.observe(row, { attributes: true, subtree: true, childList: true, characterData: true }); });
@@ -284,12 +284,12 @@ private final class PublicationTimes: @unchecked Sendable {
             const textSplit = { js: [], style: [], layout: [], rest: [], records: [] };
             for (let i = 0; i < 10; i++) {
               await new Promise(r => setTimeout(r, 100));
-              const list = document.querySelector(".checklist-list");
+              const list = document.querySelector("[data-rows]");
               if (!list) break;
               let records = 0;
               const all = new MutationObserver(m => { records += m.length; });
               all.observe(list, { attributes: true, subtree: true, childList: true, characterData: true });
-              const row = list.querySelector(".checklist-row");
+              const row = list.querySelector("[data-row]");
               const changed = new Promise(resolve => { const o = new MutationObserver(() => { o.disconnect(); resolve(); }); o.observe(row, { attributes: true, subtree: true, childList: true, characterData: true }); });
               const start = performance.now();
               void doc.fields.tasks.item(id).text.set("Task split " + i);
@@ -305,7 +305,7 @@ private final class PublicationTimes: @unchecked Sendable {
             }
             const median = a => a.sort((x,y) => x-y)[a.length >> 1];
             const rowTextSplit = Object.fromEntries(Object.entries(textSplit).map(([k, v]) => [k, median(v)]));
-            const scroller = document.querySelector(".checklist-scroller");
+            const scroller = document.querySelector("[data-editor]");
             const clickSplit = { js: median(split.js), layout: median(split.layout), rest: median(split.rest),
               viewport: [innerWidth, innerHeight], scrollerClient: scroller?.clientHeight, scrollerContent: scroller?.scrollHeight };
             handler.postMessage = post;

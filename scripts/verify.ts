@@ -27,7 +27,7 @@ import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
 
-type Build = "web" | "native" | "templates" | "packages" | "app";
+type Build = "browser" | "web" | "native" | "templates" | "packages" | "app";
 type Tier = {
   name: TierName;
   /** Runs the tier; `args` are a single-tier run's own arguments. */
@@ -100,7 +100,7 @@ async function quiet(command: string[]) {
   return output;
 }
 
-const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts"]
+const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "examples/slops/**/*.test.ts"]
   .flatMap(pattern => [...new Bun.Glob(pattern).scanSync(repository)]));
 
 /** `bun test` over `files`: positional `args` narrow them by path, options pass through. */
@@ -218,19 +218,27 @@ const tiers: Tier[] = [
     run: async () => {},
   },
   {
+    name: "browser", native: true, needs: ["browser"], inputs: tierInputs.browser,
+    run: async (args, prepare) => {
+      const filters = args.filter(arg => !arg.startsWith("-"));
+      const sync = inventory.browser.some(file => file.endsWith("live-sync.browser.test.ts") && (!filters.length || filters.some(filter => file.includes(filter))));
+      const syncEngine = join(repository, "target/dev-sync/release/slop-engine");
+      if (sync) await prepare("Development sync engine", () => quiet(["cargo", "build", "--locked", "--release", "-p", "slop-engine", "--features", "dev-sync", "--bins", "--target-dir", join(repository, "target/dev-sync")]));
+      await bunTest(inventory.browser, args, {
+        HITSLOP_TEST_EVIDENCE: runDirectory,
+        ...(sync ? { HITSLOP_DEV_SYNC_ENGINE: syncEngine } : {}),
+      });
+    },
+  },
+  {
     name: "native",
     native: true,
     needs: ["native"],
     inputs: tierInputs.native,
     run: async (args, prepare) => {
-      const filters = args.filter(arg => !arg.startsWith("-"));
-      const sync = inventory.native.some(file => file.endsWith("live-sync.native.test.ts") && (!filters.length || filters.some(filter => file.includes(filter))));
-      const syncEngine = join(repository, "target/dev-sync/release/slop-engine");
-      if (sync) await prepare("Development sync engine", () => quiet(["cargo", "build", "--locked", "--release", "-p", "slop-engine", "--features", "dev-sync", "--bins", "--target-dir", join(repository, "target/dev-sync")]));
       await bunTest(inventory.native, args, {
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
         HITSLOP_TEST_EVIDENCE: runDirectory,
-        ...(sync ? { HITSLOP_DEV_SYNC_ENGINE: syncEngine } : {}),
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
         ...(release && releaseTag ? { HITSLOP_COMPAT_RELEASE: releaseTag } : {}),
@@ -278,11 +286,11 @@ const candidates = named ? tiers.filter(tier => named.includes(tier.name))
 const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
 const toolchains = {
   rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
-  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.native)
+  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.native && tier.name !== "browser")
     ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.native ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.native && tier.name !== "browser" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -395,6 +403,10 @@ function build(name: Build): Promise<void> {
         await sh([process.execPath, "scripts/build/core.ts", "--wasm"]);
         await sh([process.execPath, "scripts/build/shell.ts"]);
         await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
+      }
+      if (name === "browser") {
+        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
+        await sh([process.execPath, "scripts/build/shell.ts"]);
       }
       if (name === "native") await sh([process.execPath, "scripts/build/build.ts"]);
       if (name === "templates") await sh([process.execPath, "scripts/templates/build.ts"]);

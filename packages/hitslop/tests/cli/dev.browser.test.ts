@@ -104,16 +104,18 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     const ui = page.frameLocator("iframe");
     await ui.getByRole("heading", { name: "Revision zero" }).waitFor();
     const frame = page.frames().find(f => f.url().includes("/app.html"))!;
-    const result = await frame.evaluate(async () => {
-      const { doc, addTask, attachments } = (globalThis as any).__devProbe;
+    const benchmark = process.env.HITSLOP_BENCH_COMMANDS === "1";
+    const iterations = benchmark ? 40 : 1;
+    const result = await frame.evaluate(async iterations => {
+      const { doc, addRow, attachments } = (globalThis as any).__devProbe;
       const times: number[] = [];
-      for (let i = 0; i < 40; i++) {
-        const start = performance.now(); await addTask({ text: "Latency probe " + i });
+      for (let i = 0; i < iterations; i++) {
+        const start = performance.now(); await addRow({ text: "Latency probe " + i });
         times.push(performance.now() - start);
       }
       const before = doc.current.tasks.length;
       let invalid = "";
-      try { await addTask({ text: 3 }); } catch (e) { invalid = String(e); }
+      try { await addRow({ text: 3 }); } catch (e) { invalid = String(e); }
       const ref = await attachments.import(new File(["imported media"], "fake.png", { type: "image/png" }),
         (tx: any, ref: any) => tx.fields.title.set(ref.id));
       const url = attachments.url(ref.id);
@@ -123,7 +125,8 @@ test("native preview serves sniffed attachments and fences disconnected owners",
         type: whole.headers.get("content-type"), sandbox: whole.headers.get("content-security-policy"),
         nosniff: whole.headers.get("x-content-type-options"), bytes: await whole.text(),
         rangeStatus: range.status, range: await range.text(), missing: missing.status };
-    });
+    }, iterations);
+    expect(result.before).toBe(3 + iterations);
     expect(result.before).toBe(result.after);
     expect(result.invalid).toContain("Invalid arguments");
     expect(result.type).toBe("application/octet-stream");
@@ -131,12 +134,12 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     expect(result.bytes).toBe("imported media"); expect(result.rangeStatus).toBe(206); expect(result.range).toBe("impo");
     expect(result.missing).toBe(404);
     const sorted = [...result.times].sort((a, b) => a - b);
-    console.log(`Native preview command latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
+    if (benchmark) console.log(`Native preview command latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
     const [owner] = await dev.diagnostics(); expect(owner).toBeDefined();
     process.kill(owner!.pid, "SIGKILL");
     await ui.locator("#hitslop-preview-failure").waitFor();
     const refused = await frame.evaluate(async () => {
-      try { await (globalThis as any).__devProbe.addTask({ text: "must not apply" }); return "accepted"; }
+      try { await (globalThis as any).__devProbe.addRow({ text: "must not apply" }); return "accepted"; }
       catch { return "refused"; }
     });
     expect(refused).toBe("refused");

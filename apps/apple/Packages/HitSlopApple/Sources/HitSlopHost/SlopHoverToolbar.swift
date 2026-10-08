@@ -90,15 +90,24 @@ import WebKit
       return
     }
     let front = front ?? NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
+    let fullscreen = window.styleMask.contains(.fullScreen)
+    let composition =
+      (window.contentView as? ShapedView)
+      ?? (window.contentView as? SlopFullscreenSurface)?.composition
     let overDocument: Bool
     // Clicks pass through transparent pixels, where the window server reports the window
     // behind; the shape decides unless another window covers this one at the point.
-    if window.frame.contains(point), let shaped = window.contentView as? ShapedView,
+    if window.frame.contains(point), let shaped = composition,
       front == window.windowNumber
         || front == (below ?? NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: window.windowNumber))
     {
       let local = shaped.convert(window.convertPoint(fromScreen: point), from: nil)
-      overDocument = shaped.windowMask.contains(local, in: shaped.bounds)
+      // In fullscreen only the top edge wakes the toolbar; moving within the app
+      // should not leave controls over an otherwise unattended display.
+      overDocument =
+        fullscreen
+        ? point.y >= window.frame.maxY - 12
+        : shaped.windowMask.contains(local, in: shaped.bounds)
     } else {
       overDocument = false
     }
@@ -132,6 +141,7 @@ import WebKit
     panel.isOpaque = false
     panel.backgroundColor = .clear
     panel.hasShadow = true
+    panel.collectionBehavior = [.fullScreenAuxiliary]
     panel.hidesOnDeactivate = false
     panel.isReleasedWhenClosed = false
     panel.isExcludedFromWindowsMenu = true
@@ -164,6 +174,7 @@ import WebKit
       act: { [weak self] action in
         guard let self else { return }
         if case .minimize = action {
+          guard controls().desktopControls else { return }
           hide()
           window?.miniaturize(nil)
         } else {
@@ -174,6 +185,7 @@ import WebKit
   }
 
   private func drag(with event: NSEvent) {
+    guard controls().desktopControls else { return }
     window?.performDrag(with: event)
     show()
   }
@@ -207,7 +219,10 @@ extension SlopDocumentWindowController {
   /// What the toolbar's controls show now.
   var toolbarControls: SlopToolbar.Controls {
     SlopToolbar.Controls(
-      pinned: isPinned, canPin: canPin, themeShown: isThemeShown, canToggleTheme: canToggleTheme,
+      pinned: isPinned, canPin: canPin,
+      fullscreenable: session.file.isFullscreenable, fullscreen: isFullscreen,
+      canFullscreen: canToggleFullscreen, desktopControls: fullscreenRestore == nil && !fullscreenTransition,
+      themeShown: isThemeShown, canToggleTheme: canToggleTheme,
       commandsEnabled: isAvailable(.duplicate))
   }
 
@@ -216,6 +231,7 @@ extension SlopDocumentWindowController {
     case .document(let command): request(command)
     case .close: request(.close)
     case .minimize: break  // The toolbar minimizes its window itself.
+    case .toggleFullscreen: toggleFullscreen()
     case .togglePin: togglePin()
     case .toggleTheme: toggleTheme()
     case .reveal: reveal()

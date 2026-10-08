@@ -120,7 +120,7 @@ extension SlopDocumentWindowController {
     presentedPageError = message
     failedOverlay?.removeFromSuperview()
     failedOverlay = nil
-    guard let message, let content = window?.contentView else { return }
+    guard let message, let content = documentComposition else { return }
     stopLoading()
     if session.rendererDead, let panel = documentAttention {
       window?.endSheet(panel)

@@ -113,6 +113,9 @@ pub enum WindowDefinition {
     Standard {
         width: u32,
         height: u32,
+        fullscreenable: bool,
+        /// Whether fullscreen fits the authored composition instead of reflowing it.
+        fullscreen_fit: bool,
         resizable: bool,
         lock_aspect: bool,
         background: Option<Background>,
@@ -121,6 +124,7 @@ pub enum WindowDefinition {
     Skin {
         width: u32,
         height: u32,
+        fullscreenable: bool,
         skin: String,
     },
 }
@@ -196,19 +200,23 @@ impl AppDefinition {
     pub fn page_window(&self) -> crate::build::WindowInput {
         use package_format_1::Window;
         match &self.stored.window {
-            Window::Standard { width, height, resizable, lock_aspect, background, shape } => {
+            Window::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
                 crate::build::WindowInput::Standard {
                     width: *width,
                     height: *height,
+                    fullscreenable: *fullscreenable,
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
                     background: background.map(Into::into),
                     shape: shape.clone(),
                 }
             }
-            Window::Skin { width, height, skin } => {
-                crate::build::WindowInput::Skin { width: *width, height: *height, image: format!("/assets/{skin}") }
-            }
+            Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {
+                width: *width,
+                height: *height,
+                fullscreenable: *fullscreenable,
+                image: format!("/assets/{skin}"),
+            },
         }
     }
     pub fn theme_json(&self) -> String {

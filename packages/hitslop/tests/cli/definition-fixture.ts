@@ -5,7 +5,7 @@ import { join } from "node:path";
 export async function definitionFixture(source: string) {
   await mkdir(join(source,"lib"),{recursive:true});
   await cp("tests/presentation/assets/washer.png",join(source,"skin.png"));
-  await cp("apps/landing/public/assets/hero/fonts/newsreader-latin.woff2",join(source,"font.woff2"));
+  await cp("tests/apps/assets/kalam.woff2",join(source,"font.woff2"));
   const files: Record<string,string | Buffer> = {
     "model.ts": `import {defineDocument,s} from 'hitslop'; export default defineDocument({title:s.string()});`,
     "actions.ts": `import {s} from 'hitslop'; import doc from './model';

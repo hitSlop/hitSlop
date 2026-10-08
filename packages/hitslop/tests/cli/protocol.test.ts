@@ -21,7 +21,6 @@ async function run(args: string[], env: Record<string, string> = {}) {
 }
 
 test("document commands send one request and print its reply", async () => {
-  if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-command-"));
   try {
     const helper = join(root, "helper");
@@ -58,7 +57,6 @@ test("document commands send one request and print its reply", async () => {
 // could not tell which of its operations to fix. Oracle: stderr names the operation and
 // the reason, then whether anything was applied.
 test("a refused edit names its operation and says whether it was applied", async () => {
-  if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-refused-"));
   try {
     const helper = join(root, "helper");
@@ -78,7 +76,6 @@ test("a refused edit names its operation and says whether it was applied", async
 // Failure: a reply of {ok: true} printed {ids: []} for a batch whose result
 // never arrived. Oracle: the exit status and stderr; nothing is printed as the result.
 test("a success missing its method's result is an unknown outcome", async () => {
-  if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-bare-success-"));
   try {
     const helper = join(root, "helper");
@@ -87,7 +84,7 @@ test("a success missing its method's result is an unknown outcome", async () => 
       `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: true }));\n`,
       { mode: 0o755 },
     );
-    for (const args of [["batch", "a.slop", "--ops", "[]"], ["export", "a.slop", "--format", "pdf", "--output", join(root, "a.pdf")]]) {
+    for (const args of [["batch", "a.slop", "--ops", "[]"], ...(process.platform === "darwin" ? [["export", "a.slop", "--format", "pdf", "--output", join(root, "a.pdf")]] : [])]) {
       const reply = await run(args, { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
       expect(reply.code).not.toBe(0);
       expect(reply.stdout).toBe("");
@@ -99,7 +96,6 @@ test("a success missing its method's result is an unknown outcome", async () => 
 });
 
 test("create and open name this CLI's protocol to the selected engine or native helper", async () => {
-  if (process.platform !== "darwin") return;
   const root = await mkdtemp(join(tmpdir(), "hsl-create-open-"));
   try {
     const helper = async (name: string, serves: boolean) => {
@@ -117,10 +113,12 @@ test("create and open name this CLI's protocol to the selected engine or native 
     expect(created.code).toBe(0);
     expect(created.stdout.trim()).toBe("my doc.slop");
     expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"create",from:"a template.slop",output:"my doc.slop"}});
+    if (process.platform === "darwin") {
     const opened = await run(["open", "my doc.slop"], { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
     expect(opened.code).toBe(0);
     expect(opened.stdout.trim()).toBe("my doc.slop");
     expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"open",documentPath:"my doc.slop"}});
+    }
     const refused = await run(create, { HITSLOP_ENGINE: await helper("newer", false) });
     expect(refused.code).not.toBe(0);
     expect(refused.stdout).toBe("");

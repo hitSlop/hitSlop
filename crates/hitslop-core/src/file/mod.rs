@@ -460,7 +460,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if key == "ui.js" {
             ui = true;
         }
-        if let WindowDefinition::Skin { width, height, skin: skin_key } = app.window()
+        if let WindowDefinition::Skin { width, height, skin: skin_key, .. } = app.window()
             && &key == skin_key
         {
             if kind.media_type != "image/png" {

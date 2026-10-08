@@ -79,8 +79,12 @@ controls for temporary review data rather than changing creation defaults.
 
 Run check and build, register, create a writable copy, type then immediately close,
 reopen, duplicate, and export PNG and PDF. Inspect the editor, export and icon from the
-same revision. Native tests are required for persistence, clipping, skins and desktop
-click-through. See [presentation fixtures](development.md#focused-checks) and the
+same revision. Review persistence, clipping, skins and desktop click-through in the
+native app. **Do not create an automated test or test suite for each slop.** Creating,
+styling, animating, or updating a slop requires existing checks/builds and hands-on
+review, not new example-specific tests. Shared SDK, storage, or host regressions belong
+in the existing tests at their owning boundary. See [testing](../testing.md),
+[presentation fixtures](development.md#focused-checks) and the
 packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
 
 ## Commands
@@ -145,6 +149,16 @@ theme, document, initial, view, ... })`. Import components and CSS explicitly. F
 such as `App.svelte`, `Export.svelte` and `schema.ts` are conventions, not discovery rules.
 The window is either `{ kind: "standard", width, height, ... }` or
 `{ kind: "skin", width, height, image: importedPNG }`.
+
+Both accept `fullscreenable: true` (default false), independently of `resizable`.
+This offers the native fullscreen button and View menu action; it never enters
+fullscreen automatically. A resizable standard window without an explicit shape or
+aspect lock fills the screen. Fixed, shaped, aspect-locked and PNG-skinned windows
+retain their authored composition, scaled to fit on a black backdrop. The live view
+stays mounted; fullscreen is not an export view or a saved document setting.
+Fitted pages render with host zoom so text stays sharp. PNG skins keep their source
+resolution when enlarged; use a larger skin image for large displays, or a vector
+window shape for a resolution-independent outline.
 
 Import template images and fonts in components, CSS `url()`s or the declaration. Vite
 collects the real bundle and rewrites them to `/assets/media/<sha256>.<ext>` URLs; duplicates

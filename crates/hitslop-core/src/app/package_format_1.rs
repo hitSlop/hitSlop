@@ -124,6 +124,8 @@ pub(super) enum Window {
         width: f64,
         height: f64,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         resizable: Option<bool>,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         lock_aspect: Option<bool>,
@@ -135,6 +137,8 @@ pub(super) enum Window {
     Skin {
         width: f64,
         height: f64,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
         skin: String,
     },
 }
@@ -150,27 +154,28 @@ pub(super) fn decode(metadata_json: &str, definition_json: &str) -> Result<AppDe
 pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> Result<AppDefinition> {
     authoring(&input.metadata, &input.window, &input.commands)?;
     let window = match &input.window {
-        WindowInput::Standard { width, height, resizable, lock_aspect, background, shape } => {
+        WindowInput::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
             if skin.is_some() {
                 return Err(err(Code::InvalidRequest, "A standard window has no skin").at("window"));
             }
             Window::Standard {
                 width: *width,
                 height: *height,
+                fullscreenable: *fullscreenable,
                 resizable: *resizable,
                 lock_aspect: *lock_aspect,
                 background: background.map(Into::into),
                 shape: shape.clone(),
             }
         }
-        WindowInput::Skin { width, height, image } => {
+        WindowInput::Skin { width, height, fullscreenable, image } => {
             let key = skin.ok_or_else(|| err(Code::InvalidRequest, "Missing imported skin").at("window"))?;
             if image != &format!("/assets/{key}") {
                 return Err(err(Code::InvalidRequest, "The skin image must resolve to its bundled asset")
                     .at("image")
                     .at("window"));
             }
-            Window::Skin { width: *width, height: *height, skin: key.into() }
+            Window::Skin { width: *width, height: *height, fullscreenable: *fullscreenable, skin: key.into() }
         }
     };
     bound(encode(&input.initial).len(), APP_TEXT_BYTES, "initial")?;
@@ -319,24 +324,33 @@ fn window(value: &Window) -> Result<WindowDefinition> {
         }
     }
     Ok(match value {
-        Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => WindowDefinition::Standard {
-            width: width as u32,
-            height: height as u32,
-            resizable: resizable.unwrap_or(true),
-            lock_aspect: lock_aspect.unwrap_or(false),
-            background: background.map(Into::into),
-            shape: shape::normalize(
-                geometry.clone().unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
-                width,
-                height,
-            )
-            .map_err(|e| e.at("shape"))?,
-        },
-        Window::Skin { skin, .. } => {
+        Window::Standard { fullscreenable, resizable, lock_aspect, background, shape: geometry, .. } => {
+            WindowDefinition::Standard {
+                width: width as u32,
+                height: height as u32,
+                fullscreenable: fullscreenable.unwrap_or(false),
+                fullscreen_fit: !resizable.unwrap_or(true) || lock_aspect.unwrap_or(false) || geometry.is_some(),
+                resizable: resizable.unwrap_or(true),
+                lock_aspect: lock_aspect.unwrap_or(false),
+                background: background.map(Into::into),
+                shape: shape::normalize(
+                    geometry.clone().unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
+                    width,
+                    height,
+                )
+                .map_err(|e| e.at("shape"))?,
+            }
+        }
+        Window::Skin { skin, fullscreenable, .. } => {
             if crate::media::asset_key(skin).is_none_or(|kind| kind.media_type != "image/png") {
                 return Err(err(Code::InvalidRequest, "Skin must name a content-addressed PNG asset").at("skin"));
             }
-            WindowDefinition::Skin { width: width as u32, height: height as u32, skin: skin.clone() }
+            WindowDefinition::Skin {
+                width: width as u32,
+                height: height as u32,
+                fullscreenable: fullscreenable.unwrap_or(false),
+                skin: skin.clone(),
+            }
         }
     })
 }

@@ -49,7 +49,7 @@ jobs:
           bun scripts/ci/select.ts > selection.json
           jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
           echo "fast=$(jq -r '[.tiers[].name | select(. == "compat" or . == "tooling" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
-          echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "browser" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
           echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -107,7 +107,7 @@ jobs:
           nextest: ${{ contains(env.TIERS, 'rust') }}
           bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || contains(env.TIERS, 'cli') && 'portable' || 'none' }}
           dependencies: ${{ env.TIERS != 'rust' }}
-          webkit: ${{ contains(env.TIERS, 'native') }}
+          webkit: ${{ contains(env.TIERS, 'browser') }}
       - uses: ./.github/actions/native-cache
         if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:

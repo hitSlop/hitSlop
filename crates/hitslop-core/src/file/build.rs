@@ -96,7 +96,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     {
         return Err(invalid("Build roles do not match the emitted programs and stylesheet"));
     }
-    if let WindowDefinition::Skin { width, height, skin } = app.window() {
+    if let WindowDefinition::Skin { width, height, skin, .. } = app.window() {
         let asset = assets
             .iter()
             .find(|asset| &asset.key == skin)

@@ -22,7 +22,7 @@ extension SlopDocumentWindowController {
     routing.command(command)
   }
   /// Pinning keeps the window above others; it needs the page's content.
-  public var canPin: Bool { isContentReady }
+  public var canPin: Bool { isContentReady && fullscreenRestore == nil && !fullscreenTransition }
   public func togglePin() {
     guard canPin else { return }
     setPinned(!isPinned)

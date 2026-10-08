@@ -6,7 +6,7 @@ import { startLiveSync } from "../../scripts/dev/live-sync";
 import { createFixture } from "../../packages/hitslop/tests/cli/dev-fixture";
 import { execute, request } from "../../packages/hitslop/src/cli/engine";
 
-// Runs when `bun run verify native live-sync` built the opt-in engine and `slop-room`.
+// Runs when `bun run verify browser live-sync` built the opt-in engine and `slop-room`.
 const engine = process.env.HITSLOP_DEV_SYNC_ENGINE;
 test.skipIf(!engine)("two live views and CLI share durable authority edits; snapshots, duplicate delivery and disconnects stay safe", async () => {
   const root = await mkdtemp(join(process.cwd(), ".live-sync-test-"));
@@ -23,8 +23,8 @@ export const bump = doc.command({description: "Add to the shared count", args: {
 `);
     const app = join(source, "App.svelte");
     await writeFile(app, (await readFile(app, "utf8"))
-      .replace("import {addTask}", "import {addTask, bump}")
-      .replace("{doc, addTask, attachments}", "{doc, addTask, bump, attachments}")
+      .replace("import {addRow}", "import {addRow, bump}")
+      .replace("{doc, addRow, attachments}", "{doc, addRow, bump, attachments}")
       .replace("<main data-probe>", '<main data-probe><input aria-label="Local draft" /><output data-hits>{doc.current.hits}</output>'));
     harness = await startLiveSync(source, { engine, directory: join(root, "room") });
     const pages = await Promise.all([browser.newPage(), browser.newPage()]);
@@ -67,11 +67,13 @@ export const bump = doc.command({description: "Add to the shared count", args: {
     await count(b, 8);
     await bump(b);
     await Promise.all(frames.map(frame => count(frame, 9)));
-    const timings = await a.evaluate(async () => {
+    const benchmark = process.env.HITSLOP_BENCH_SYNC === "1";
+    const sampleCount = benchmark ? 11 : 1;
+    const timings = await a.evaluate(async sampleCount => {
       const probe = (globalThis as any).__devProbe;
       const samples = { commands: [] as number[], text: [] as number[] };
       const input = document.querySelector<HTMLInputElement>('input[aria-label="Document title"]')!;
-      for (let i = 0; i < 11; i++) {
+      for (let i = 0; i < sampleCount; i++) {
         let start = performance.now();
         await probe.bump({}); await probe.doc.flush();
         if (i) samples.commands.push(performance.now() - start);
@@ -81,28 +83,29 @@ export const bump = doc.command({description: "Add to the shared count", args: {
         if (i) samples.text.push(performance.now() - start);
       }
       return samples;
-    });
-    await count(b, 20);
-    await b.waitForFunction(() => document.querySelector("[data-title]")?.textContent === "Shared draft 10 😀");
+    }, sampleCount);
+    const afterText = 9 + sampleCount;
+    await count(b, afterText);
+    await b.waitForFunction(text => document.querySelector("[data-title]")?.textContent === text, `Shared draft ${sampleCount - 1} 😀`);
     await Promise.all(Array.from({ length: 8 }, (_, index) => execute({ method: "batch",
       documentPath: index % 2 ? harness!.paths.a : harness!.paths.b,
       batch: { intents: [{ type: "increment", path: ["hits"], by: 1 }] } }, { binary: engine })));
-    await Promise.all(frames.map(frame => count(frame, 28)));
+    await Promise.all(frames.map(frame => count(frame, afterText + 8)));
     // A missing broadcast is detected from the next update's vector and requests a
     // checkpoint automatically; the mutation itself is never replayed.
     await harness.control("skipNext", "b");
-    await bump(a); await count(a, 29);
-    expect(await b.locator("[data-hits]").textContent()).toBe("28");
+    await bump(a); await count(a, afterText + 9);
+    expect(await b.locator("[data-hits]").textContent()).toBe(String(afterText + 8));
     await bump(a);
-    await count(b, 30);
+    await count(b, afterText + 10);
     const concurrentCommands = await Promise.all([harness.paths.a, harness.paths.b].map(documentPath =>
       request({ method: "call", documentPath, command: "bump", args: {} }, { binary: engine })));
     const acceptedCommands = concurrentCommands.filter(reply => reply.ok).length;
     expect(acceptedCommands).toBeGreaterThan(0);
     for (const reply of concurrentCommands) if (!reply.ok) expect(reply.code).toBe("rejected");
-    await Promise.all(frames.map(frame => count(frame, 30 + acceptedCommands)));
+    await Promise.all(frames.map(frame => count(frame, afterText + 10 + acceptedCommands)));
     await bump(a);
-    await count(b, 31 + acceptedCommands);
+    await count(b, afterText + 11 + acceptedCommands);
     await Promise.all(frames.map((frame, index) => frame.evaluate(async suffix => {
       const probe = (globalThis as any).__devProbe;
       const input = document.querySelector<HTMLInputElement>('input[aria-label="Document title"]')!;
@@ -122,9 +125,9 @@ export const bump = doc.command({description: "Add to the shared count", args: {
     };
     const measurements = { profile: "release", warmups: 1, commands: summary(timings.commands), text: summary(timings.text),
       concurrentCommands: { attempts: concurrentCommands.length, accepted: acceptedCommands, refused: concurrentCommands.length - acceptedCommands } };
-    console.log("Live sync round trips", JSON.stringify(measurements));
+    if (benchmark) console.log("Live sync round trips", JSON.stringify(measurements));
     const evidence = process.env.HITSLOP_TEST_EVIDENCE;
-    if (evidence) {
+    if (benchmark && evidence) {
       await writeFile(join(evidence, "live-sync-timings.json"), JSON.stringify(measurements, null, 2) + "\n");
       await Promise.all(pages.map((page, index) => page.screenshot({ path: join(evidence, `live-sync-${index ? "b" : "a"}.png`) })));
     }

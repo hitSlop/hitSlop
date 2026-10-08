@@ -15,7 +15,7 @@ bun run shape:lab build rounded
 bun run shape:lab open rounded
 bun run shape:lab open washer
 bun run shape:lab open washer --fallback
-bun run slop dev examples/slops/shape-lab
+bun run slop dev tests/apps/shape-lab
 ```
 
 `open` uses `generated/app/hitSlop.app` (build with `bun run apple:build`) or

@@ -30,6 +30,13 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Open now
 
+- Opt-in `window.fullscreenable` is implemented on the Mac, with
+  [native qualification](evidence/native-fullscreen-2026-10-08.md). Qualify the
+  current-runtime local browser round trip. Browser command evaluation must pass in an isolated WASM worker
+  before porting the durable owner. `slop dev` keeps its native owner; hosted sharing,
+  sender accounts and mobile browser delivery remain separate follow-ons.
+  The [evaluator probe](evidence/browser-evaluator-2026-10-08.md) passes in Chrome and
+  WebKit; the portable store, owner driver and actual browser document round trip remain.
 - Finish the launch foundation qualification: complete-value replacement, template
   acceptance, command declaration checks, the SDK/ABI cleanup, dedicated captures and
   document UUID copy rules. [Implementation evidence](evidence/launch-foundation-2026-10-07.md)

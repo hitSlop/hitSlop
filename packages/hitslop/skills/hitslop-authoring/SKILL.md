@@ -5,6 +5,14 @@ description: Create, preview, validate, build, and register hitSlop authoring pr
 
 # Author local mini apps
 
+**Do not create an automated test or test suite for each slop.** Creating, styling,
+animating, or updating a slop does not require new tests. Use the existing check/build
+commands and hands-on preview/export review. Shared SDK, storage, or host regressions
+belong in existing tests at their owning boundary; do not duplicate that coverage in
+example-specific tests or turn temporary review scripts into permanent tests.
+Ordinary tests use minimal infrastructure fixtures, not live examples; generic
+shipped-artifact smoke checks and frozen compatibility replay remain separate.
+
 Do not display “Saved,” “Saving…,” or routine persistence indicators inside authored slops. The native host owns save-failure and retry UI. Use task-specific feedback for explicit operations, such as “Importing skin…” or “Skin applied.”
 
 Read slop.ts first. It explicitly declares `defineSlop({ slug, title, description, author, categories, window, theme, document, initial, view, commands })` from `hitslop`. Import components for `view`, optional `export` and `icon`; import CSS explicitly. `document` is the `defineDocument` export. Vite builds the UI and a separate declaration/command program; the restricted Rust runner evaluates the declaration. The page must not import slop.ts: put shared values in their own module. Author schema.ts with defineDocument/s. Supported descriptors: s.text (merging typed text), s.boolean, s.string({minLength,maxLength}), s.number({min,max}), s.integer({min,max}), s.enum([...]) (last writer wins; string bounds count Unicode code points, while DOM/edit offsets count UTF-16 units; bounds are inclusive), s.optional(scalar, text or object) (absent until set; `clear()` removes it; inserts and initial values may omit it; an absent optional object gets creation defaults; replacing an existing object with `set` requires all required fields and reconciles surviving children; an unset optional text binds as "" and typing creates it), s.object, s.list(s.object) rows with $id, s.list(scalar) by index (`insert(v, i?)`, `set(i, v)`, `preview(i, v)`, `remove(i, n?)`, `replace(values)`; no move), s.record(scalar or object) by string key (`put(key, v)`, `delete(key)`, `entry(key)`; keys are 1–256 UTF-16 units, not `$id`/`__proto__`/`constructor`/`prototype`; putting a complete existing object reconciles text, lists and counters while preserving surviving identities; defaults apply only to absent entries; `doc.at(entry)` resolves an object entry) and integer s.counter. Trees and rich text are not implemented. Keep transient view state in $state.

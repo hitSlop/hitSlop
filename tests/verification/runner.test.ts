@@ -39,8 +39,8 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "rust", "packed", "swift", "native"]);
-  for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js", "examples/slops/quick-checklist/App.svelte"])
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "packed", "swift", "native"]);
+  for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
     expect(affected(path)).toEqual(candidates);
@@ -108,13 +108,15 @@ test("Git selection includes both sides of renames, deleted files and fails on a
 });
 
 test("test discovery assigns each boundary and refuses unclassified tests", () => {
-  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "tests/examples/quick-checklist.native.test.ts", "tests/verification/runner.test.ts"];
+  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "packages/hitslop/tests/sdk/editable-text.browser.test.ts", "tests/verification/runner.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
   expect(groups.cli).toEqual(["packages/hitslop/tests/cli/build.test.ts"]);
-  expect(groups.native).toEqual(["tests/examples/quick-checklist.native.test.ts"]);
+  expect(groups.browser).toEqual(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
+  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.browser.test.ts", "examples/slops/one/ui.test.ts"])
+    expect(() => testInventory([file])).toThrow("Per-example tests");
 });
 
 test("a successful filtered retry retains the failed full-run report", async () => {
@@ -151,4 +153,14 @@ test("Swift shard assignment is exhaustive, nonempty and rejects incomplete exec
   expect(() => assertShardComplete(ids, 2, 0)).toThrow("ran 2 of 3");
   expect(() => assertShardComplete(ids, 3, 1)).toThrow("exited 1");
   assertShardComplete(ids, 3, 0);
+});
+
+// Ordinary slop changes never select infrastructure suites through a borrowed example.
+test("example changes select authoring checks; infrastructure fixtures select their consumers", () => {
+  for (const path of ["examples/slops/one/App.svelte", "examples/slops/one/styles.css", "examples/slops/one/slop.ts"])
+    expect(affected(path)).toEqual(["types"]);
+  expect(affected("examples/slops/one/README.md")).toEqual([]);
+  expect(affected("tests/apps/document/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "swift", "native"]));
+  expect(affected("packages/hitslop/tests/sdk/editable-text.browser.test.ts")).toEqual(["types", "browser"]);
+  expect(affected("packages/hitslop/templates/checklist/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "packed"]));
 });

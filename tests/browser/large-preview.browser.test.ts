@@ -31,13 +31,14 @@ onMount(() => { requestAnimationFrame(() => requestAnimationFrame(() => {
     await page.frameLocator("iframe").locator("[data-rows] li").last().waitFor();
     const frame = page.frames().find(frame => frame.url().includes("/app.html"))!;
     await frame.waitForFunction(() => typeof (globalThis as any).__firstFrame === "number");
-    const measured = await frame.evaluate(async () => {
+    const benchmark = process.env.HITSLOP_BENCH_PREVIEW === "1";
+    const measured = await frame.evaluate(async benchmark => {
       const probe = (globalThis as any).__devProbe;
       const first = document.querySelector("[data-id='row-0']");
       const samples: number[] = [];
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < (benchmark ? 6 : 1); i++) {
         const start = performance.now();
-        await probe.addTask({ text: `Added ${i}` }); await probe.doc.flush();
+        await probe.addRow({ text: `Added ${i}` }); await probe.doc.flush();
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         if (i) samples.push(performance.now() - start);
       }
@@ -47,11 +48,11 @@ onMount(() => { requestAnimationFrame(() => requestAnimationFrame(() => {
         firstRenderedFrameMs: (globalThis as any).__firstFrame as number,
         commandThroughNextFrame: { p50Ms: samples[2], p95Ms: samples[4], samplesMs: samples },
         scope: "Svelte component creation through two animation frames; excludes Vite compilation. Command samples include flush and two frames; one warmup, five samples." };
-    });
-    expect(measured.rows).toBe(4006);
+    }, benchmark);
+    expect(measured.rows).toBe(benchmark ? 4006 : 4001);
     expect(measured.firstRowPreserved).toBe(true);
-    console.log("Large preview", JSON.stringify(measured));
-    if (process.env.HITSLOP_TEST_EVIDENCE) await writeFile(join(process.env.HITSLOP_TEST_EVIDENCE, "large-preview-timings.json"), JSON.stringify(measured, null, 2) + "\n");
+    if (benchmark) console.log("Large preview", JSON.stringify(measured));
+    if (benchmark && process.env.HITSLOP_TEST_EVIDENCE) await writeFile(join(process.env.HITSLOP_TEST_EVIDENCE, "large-preview-timings.json"), JSON.stringify(measured, null, 2) + "\n");
   } finally {
     await browser.close(); await dev?.close(); await rm(root, { recursive: true, force: true });
   }

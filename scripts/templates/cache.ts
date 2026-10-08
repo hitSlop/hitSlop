@@ -53,7 +53,7 @@ async function version(command: string[]) {
 
 /** Files every template build reads: compiler, SDK, page shell, file engine and native
  * renderer. */
-export async function sharedTemplatePaths(repository: string, sources: string[]) {
+export async function sharedTemplatePaths(repository: string, sources: string[], includeExamples = true) {
   const native = "apps/apple/Packages/HitSlopApple";
   const paths = [
     ".cargo/config.toml",
@@ -81,7 +81,7 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
     ])),
   ];
   // Shared authoring configs and directories, but not other templates, docs or local tool state.
-  for (const name of await readdir(join(repository, "examples/slops"))) {
+  for (const name of includeExamples ? await readdir(join(repository, "examples/slops")) : []) {
     const path = join("examples/slops", name);
     if (
       !ignored.has(name) &&
@@ -96,14 +96,14 @@ export async function sharedTemplatePaths(repository: string, sources: string[])
 }
 
 /** Shared files plus the toolchain that compiles and renders every template. */
-export async function sharedTemplateInputs(repository: string, sources: string[]): Promise<Inputs> {
+export async function sharedTemplateInputs(repository: string, sources: string[], includeExamples = true): Promise<Inputs> {
   const [build, xcode, swift] = await Promise.all([
     version(["/usr/bin/sw_vers", "-buildVersion"]),
     version(["xcodebuild", "-version"]),
     version(["swift", "--version"]),
   ]);
   return {
-    ...(await inputs(repository, await sharedTemplatePaths(repository, sources))),
+    ...(await inputs(repository, await sharedTemplatePaths(repository, sources, includeExamples))),
     "@macos": build,
     "@xcode": xcode,
     "@swift": swift,
@@ -151,13 +151,14 @@ export class TemplateCache {
   async build(source: string, slug: string, destination: string, build: () => Promise<unknown>, artwork = true) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error(`Invalid cache slug: ${slug}`);
     const template = await inputs(source, ["."]);
-    const key = sha256(JSON.stringify({ shared: this.shared, template }));
+    const key = sha256(JSON.stringify({ shared: this.shared, template, artwork }));
     const entry = join(this.directory, slug);
     let reason: string[];
     try {
       const metadata = JSON.parse(await readFile(join(entry, "entry.json"), "utf8"));
       if (metadata.key !== key)
         reason = [
+          ...(metadata.artwork !== artwork ? ["artwork requirement changed"] : []),
           ...changedInputs(metadata.shared, this.shared).map((path) => `shared ${path}`),
           ...changedInputs(metadata.template, template).map((path) => `template ${path}`),
         ];
@@ -181,7 +182,7 @@ export class TemplateCache {
     const checksum = await validateTemplate(destination, slug, artwork);
     await publishFolder(entry, async (stage) => {
       await copyFile(destination, join(stage, "template.slop"));
-      await writeFile(join(stage, "entry.json"), JSON.stringify({ key, checksum, shared: this.shared, template }));
+      await writeFile(join(stage, "entry.json"), JSON.stringify({ key, checksum, shared: this.shared, template, artwork }));
     });
     return "built" as const;
   }

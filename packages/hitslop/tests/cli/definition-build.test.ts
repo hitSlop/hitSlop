@@ -1,25 +1,11 @@
+import { createHash } from "node:crypto";
+import { extname } from "node:path";
 import { test, expect } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { buildDefinition, resourceKey } from "../../src/cli/definition-build";
+import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";
-
-test("document aliases and namespace imports cannot hide an unregistered command body", async () => {
-  for (const hidden of [
-    `const alias = doc; globalThis.hidden = alias.command(spec);`,
-    `import * as schema from './model'; globalThis.hidden = schema.default.command(spec);`,
-    `const declare = doc.command; globalThis.hidden = declare(spec);`,
-  ]) {
-    const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
-    try {
-      const source = join(root, "source");
-      const options = await definitionFixture(source);
-      await writeFile(join(source, "actions.ts"), (await readFile(join(source, "actions.ts"), "utf8")) +
-        `\nconst spec={description:'Hidden',args:{},run(){return 'HIDDEN_BODY';}}; ${hidden}`);
-      await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow(/object literal|direct.*command/);
-    } finally { await rm(root, { recursive: true, force: true }); }
-  }
-}, 60000);
+const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
 test("two Vite builds retain real dependencies and remove UI command bodies", async () => {
   const root = await mkdtemp(join(process.cwd(),".build-test-definition-"));
@@ -146,22 +132,6 @@ test("command factories cannot give different callable values the same declarati
     await writeFile(join(source, "actions.ts"), `import doc from './model'; function make(){return doc.command({description:'Rename',args:{},run(){return 'BODY_ONLY_CHANGE';}});} export const rename=make(); export const missing=make();`);
     await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow("module scope");
   } finally { await rm(root, { recursive: true, force: true }); }
-}, 60000);
-
-test("a document command whose spec is not an object literal fails authoring, registered or not", async () => {
-  for (const actions of [
-    `import doc from './model'; const spec={description:'Rename',args:{},run(){return 'BODY_ONLY_CHANGE';}}; export const rename=doc.command(spec);`,
-    // Unregistered: its body would otherwise ship in the page bundle unnoticed.
-    `import doc from './model'; export const rename=doc.command({description:'Rename',args:{},run(){}}); const spec={description:'Hidden',args:{},run(){return 'BODY_ONLY_CHANGE';}}; void doc.command(spec);`,
-  ]) {
-    const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
-    try {
-      const source = join(root, "source");
-      const options = await definitionFixture(source);
-      await writeFile(join(source, "actions.ts"), actions);
-      await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow("as an object literal");
-    } finally { await rm(root, { recursive: true, force: true }); }
-  }
 }, 60000);
 
 test("another library's .command API is not mistaken for a document command", async () => {

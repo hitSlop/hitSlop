@@ -470,3 +470,14 @@ Performance reports in [`evidence/`](evidence/) identify their producing build a
 measurement conditions. Older reports are historical baselines; they do not establish
 current startup, edit latency or memory behavior. Use the diagnostics in
 [testing](testing.md#native-macos) to measure the candidate being reviewed.
+
+## Fullscreen windows
+
+The optional `window.fullscreenable` declaration is Rust-owned and defaults false for
+both standard and skin windows. Native fullscreen keeps the existing owner and WebView.
+Rust projects whether the authored composition must fit (fixed-size, explicit shape,
+aspect lock or skin); other standard windows reflow to the viewport. Fitted content
+retains its mask and coordinate system inside an opaque black fullscreen surface.
+The host restores desktop frame, constraints and level on exit. Fullscreen state is
+transient host state; captures keep their independent saved-state layout. Browser
+fullscreen and durable browser owners remain under qualification, not shipped support.

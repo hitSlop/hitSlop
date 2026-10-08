@@ -4,7 +4,7 @@ import { join } from "node:path";
 // Dedicated integration fixture: accepted values, row IDs, and one mounted UI
 // detect broken HMR ownership through the generated Svelte entry.
 export async function createFixture(repository: string, source: string) {
-  await cp(join(repository, "packages/hitslop/templates/checklist"), source, { recursive: true });
+  await cp(join(repository, "tests/apps/document"), source, { recursive: true });
   await writeFile(join(source, "probe.svelte.ts"), "export const local = $state({count: 0});\n");
   await writeFile(
     join(source, "Child.svelte"),
@@ -24,13 +24,13 @@ export async function createFixture(repository: string, source: string) {
   import Circle from '@lucide/svelte/icons/circle';
   import doc from './schema';
   import {local} from './probe.svelte';
-  import {addTask} from './commands';
+  import {addRow} from './commands';
   import {attachments} from 'hitslop/svelte';
-  (globalThis as any).__devProbe = {doc, addTask, attachments};
+  (globalThis as any).__devProbe = {doc, addRow, attachments};
   import Child from './Child.svelte';
   let error = $state('');
   async function add() {
-    try { await addTask({text:'Accepted row'}); await doc.flush(); }
+    try { await addRow({text:'Accepted row'}); await doc.flush(); }
     catch (e) { error = String(e); }
   }
 </script>

@@ -15,7 +15,7 @@ export default defineSlop({
   description: "Native window presentation regression fixture.",
   author: { name: "hitSlop" },
   categories: ["productivity"],
-  window: variant.window,
+  window: { ...variant.window, fullscreenable: true },
   theme: { accent: "#245ba8" },
   document: schema,
   initial: { count: 0 },

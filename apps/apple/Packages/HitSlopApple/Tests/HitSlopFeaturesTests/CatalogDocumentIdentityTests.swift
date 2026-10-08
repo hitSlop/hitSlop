@@ -17,9 +17,9 @@ import Testing
 
 @Test @MainActor func recentsSearchMatchesFilenameFolderAndTemplate() async {
   let first = CatalogEntry(
-    id: "first", source: .recent(URL(fileURLWithPath: "/Work/Clients/Little things.slop")), title: "Quick Checklist")
+    id: "first", source: .recent(URL(fileURLWithPath: "/Work/Clients/Little things.slop")), title: "Document fixture")
   let second = CatalogEntry(
-    id: "second", source: .recent(URL(fileURLWithPath: "/Work/Personal/Little things.slop")), title: "Quick Checklist")
+    id: "second", source: .recent(URL(fileURLWithPath: "/Work/Personal/Little things.slop")), title: "Document fixture")
   let catalog = Catalog()
   catalog.recents = { [first, second] }
   let model = CatalogModel(client: catalog.client)
@@ -32,15 +32,15 @@ import Testing
   #expect(model.visibleEntries == [first, second])
   model.query = "clients"
   #expect(model.visibleEntries == [first])
-  model.query = "quick checklist"
+  model.query = "document fixture"
   #expect(model.visibleEntries == [first, second])
 }
 
 @Test func templateIdentityAndSearchStillUseManifestMetadata() {
   var entry = CatalogEntry(
-    id: "template", source: .local(URL(fileURLWithPath: "/Templates/quick-checklist.slop")), title: "Quick Checklist")
+    id: "template", source: .local(URL(fileURLWithPath: "/Templates/document-fixture.slop")), title: "Document fixture")
   entry.categories = [.productivity]
-  #expect(entry.displayTitle == "Quick Checklist")
+  #expect(entry.displayTitle == "Document fixture")
   #expect(entry.documentIdentity == nil)
   #expect(entry.searchableText.contains("productivity"))
   #expect(!entry.searchableText.contains("/templates/"))

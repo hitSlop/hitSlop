@@ -51,7 +51,7 @@ test("a portable build copies supplied artwork and needs no helper", async () =>
   process.env.HITSLOP_NATIVE_CLI = join(root, "missing-helper");
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const bare = await buildTemplate(source, undefined, join(root, "bare.slop"));
     expect((await inspect(bare)).artwork).toEqual([]);
     await mkdir(join(source, "artwork"));
@@ -75,7 +75,7 @@ test("a portable build refuses templates the app would refuse and keeps the prev
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const fixture = join(root, "fixture");
-    await cp("examples/slops/quick-checklist", fixture, { recursive: true });
+    await cp("tests/apps/document", fixture, { recursive: true });
     const output = await buildTemplate(fixture, undefined, join(root, "out.slop"));
     const before = await readFile(output);
     const cases: [string, (source: string) => Promise<unknown>, string][] = [
@@ -85,7 +85,7 @@ test("a portable build refuses templates the app would refuse and keeps the prev
         await overrideSlop(source, { artwork: "{preview}" }, 'import preview from "./artwork/preview.png";');
       }, "PNG"],
       ["skin", async (source) => {
-        // Quick Checklist's window is 480 × 620.
+        // Deliberately mismatch the declared fixture dimensions.
         await overrideSlop(source, { window: '{ kind: "skin", width: 480, height: 620, image: skin }' }, 'import skin from "./assets/skin.png";');
         await mkdir(join(source, "assets"), { recursive: true });
         await writeFile(join(source, "assets/skin.png"), png(481, 620));
@@ -109,7 +109,7 @@ test("build refuses a different project package and directs pinned authoring", a
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const sdk = join(source, "node_modules/hitslop");
     await mkdir(sdk, { recursive: true });
     await writeFile(join(sdk, "package.json"), JSON.stringify({ name: "hitslop", version: "2.0.0", type: "module", exports: { ".": "./index.js", "./package.json": "./package.json" } }));

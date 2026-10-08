@@ -42,6 +42,9 @@ pub enum WindowDefinition {
     Standard {
         width: u32,
         height: u32,
+        fullscreenable: bool,
+        /// Whether fullscreen fits the authored composition instead of reflowing it.
+        fullscreen_fit: bool,
         resizable: bool,
         lock_aspect: bool,
         background: Option<Background>,
@@ -50,6 +53,7 @@ pub enum WindowDefinition {
     Skin {
         width: u32,
         height: u32,
+        fullscreenable: bool,
         skin: String,
     },
 }
