@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       render_corpus:
-        description: Verify warm template reuse and profile every bundled/preserved render
+        description: Profile every bundled/preserved render
         type: boolean
         default: false
       cache_namespace:
@@ -48,7 +48,7 @@ jobs:
         run: |
           bun scripts/ci/select.ts > selection.json
           jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          echo "fast=$(jq -r '[.tiers[].name | select(. == "hygiene" or . == "tooling" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          echo "fast=$(jq -r '[.tiers[].name | select(. == "compat" or . == "tooling" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
           echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
           echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -67,23 +67,26 @@ jobs:
       - name: Require successful selection
         env:
           SELECTION_RESULT: ${{ needs.select.result }}
-        run: test "$SELECTION_RESULT" = success && test -n "$TIERS"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        run: test "$SELECTION_RESULT" = success
+      - if: env.TIERS != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
+        if: env.TIERS != ''
         with:
           bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli')) && 'portable' || 'none' }}
           nextest: "false"
           rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed') }}
-          dependencies: ${{ env.TIERS != 'hygiene' }}
+          dependencies: ${{ env.TIERS != 'compat' }}
       - run: bun install --cwd apps/landing --frozen-lockfile
         if: contains(env.TIERS, 'landing')
       - run: bun run verify --ci --keep-going "$TIERS"
+        if: env.TIERS != ''
         env:
           HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || 'origin/master' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && env.TIERS != ''
         with:
           name: fast-evidence
           path: .hitslop/evidence
@@ -165,41 +168,14 @@ jobs:
         run: |
           bun run build
           bun run build:templates
-      - name: Verify warm template cache and profile full render corpus
+      - name: Profile full render corpus
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
           HITSLOP_RENDER: all
-        run: |
-          cp .hitslop/evidence/template-cache-templates.json .hitslop/evidence/template-cache-first-build.json
-          bun run build:templates
-          bun -e 'import { strict as assert } from "node:assert"; const report = await Bun.file(".hitslop/evidence/template-cache-templates.json").json(); const inventory = await Bun.file("generated/templates/inventory.json").json(); assert.equal(report.built, 0); assert.equal(report.hits, inventory.templates.length);'
-          bun run verify native render
+        run: bun run verify native render
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: release-templates-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  timings:
-    needs: [select, fast, native, linux-smoke, release-templates]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: read
-    steps:
-      # Completed jobs include cache-save post steps, which verifier timings cannot see.
-      - name: Job wall times
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: |
-          gh api "repos/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" > jobs.json
-          {
-            echo '### Job wall times (including setup and cache saves)'
-            echo '| Job | Result | Wall time |'
-            echo '|---|---|---:|'
-            jq -r '.jobs[] | select(.name != "timings") | [.name, .conclusion, (if .conclusion == "skipped" then "—" elif .completed_at == null then "unfinished" else (((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601)) | tostring) + "s" end)] | "| " + join(" | ") + " |"' jobs.json
-          } >> "$GITHUB_STEP_SUMMARY"

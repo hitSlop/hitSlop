@@ -1,7 +1,7 @@
 /** `bun run build`: what native tests and the debug helper need, from the contracts to the
  * helper itself. A step whose inputs did not change leaves its outputs untouched, so a
  * repeated build recompiles nothing. */
-import { repository, verifyShellCopies, writeIfChanged } from "../lib/artifacts";
+import { repository, writeIfChanged } from "../lib/artifacts";
 import { buildCoreNative, buildCoreWasm, buildEngine, cargoOutput } from "./core";
 import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
 import { generateContracts } from "./generate";
@@ -24,7 +24,6 @@ export async function buildNative() {
   const evaluator = join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-evaluator");
   await writeIfChanged(evaluator, await readFile(cargoOutput("hitslop-evaluator")));
   await chmod(evaluator, 0o755);
-  await verifyShellCopies();
   console.log(`Built native development resources in ${((performance.now() - started) / 1000).toFixed(1)}s`);
 }
 

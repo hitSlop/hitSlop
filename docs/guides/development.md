@@ -58,9 +58,10 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 `bun run verify` runs the tiers a change touches; `bun run verify TIER [args]` runs one.
 [Testing](../testing.md#running-tests) lists every tier.
 
-- `hygiene`: repository skills, generated-source checks, and tracked-artifact rules.
-- `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), skills, package types, and discovered template types.
-- `bun`: SDK and shell tests over WASM, examples, release tooling, and verification-runner tests.
+- `compat`: frozen document fixtures remain unchanged and their recorded files are intact.
+- `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), package types, and discovered template types.
+- `bun`: SDK and shell tests over WASM, examples, and release tooling.
+- `tooling`: verification-runner and CI policy tests, without product builds.
 - `cli`: non-native CLI integration tests; `bun run test` runs both `bun` and `cli`.
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with two cached black-box apps and four presentation fixtures.
@@ -82,4 +83,13 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 Read AGENTS and the template's `slop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
 
-`archive/` (`archive/docs` and `archive/spikes` are tracked; the rest is local), `examples/archive/`, `_docs/`, and `_vibe/` material is not part of active contracts. Restore an old project only after updating its source to the current document API; there is no legacy document migration.
+`archive/`, `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`,
+`examples/archive/`, `_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
+Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
+and ideas pages. Restore an old project only after updating its source to the current
+document API; there is no legacy document migration.
+
+To stop tracking local material, use `git rm --cached` and add an ignore rule. Before
+integrating a commit that removes tracked files into another checkout, back up any
+local copies outside the repository and restore them afterward: Git can delete the
+previously tracked copies when switching or pulling.

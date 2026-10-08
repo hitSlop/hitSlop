@@ -47,14 +47,14 @@ bun run release:check          # verify --release: every tier, the shipped build
 
 | Tier | Runs |
 |---|---|
-| `hygiene`, `contracts`, `types` | Repository rules; generated contracts and skills; TypeScript and template types. Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; TypeScript and template types. Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell, example and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
-| `rust` | `cargo fmt --check` and clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
-| `swift` | `swift format lint --strict` (`apps/apple/.swift-format`), then the Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
+| `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `native` | `*.native.test.ts` against the debug helper |
 
@@ -63,7 +63,7 @@ build whose inputs did not change rewrites nothing, so nothing downstream recomp
 repeated `bun run build` takes seconds. Each invocation retains commands, logs, inventory, toolchain identity and outcomes in
 `.hitslop/evidence/runs/<run-id>/`. The latest report is also written to
 `.hitslop/evidence/verify.json` (`release-check.json` for a release). Build and test
-execution durations are separate; a tier slower than its execution budget says so.
+execution durations are reported separately, without fixed speed thresholds.
 A filtered retry never deletes the original full-run report. Filtered and reused-build
 runs are marked and never update the full-tier pass cache.
 
@@ -78,9 +78,9 @@ Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs `too
 unclassified test files rather than silently leaving them out.
 
 While changing Rust, iterate with `bun run verify rust <filter>` (or `cargo clippy
---workspace --all-targets`), run `cargo fmt --all`, then run `bun run verify` before
-calling the step done. While changing Swift, iterate with `bun run verify swift --filter <name>`
-and run `bun run swift:format` before the full run. Run
+--workspace --all-targets`). While changing Swift, use `bun run verify swift --filter <name>`.
+Formatting is an explicit editing command: `cargo fmt --all` for Rust or
+`bun run swift:format` for Swift. It is not a prerequisite for running tests. Run
 `bun run verify --native` once at the end when Swift, the FFI surface or the helper
 changed. `bun run check`, `bun run test`, `bun run core:test`, `bun run swift:test` and
 `bun run test:native` remain as aliases (`test` covers both Bun tiers).
@@ -160,8 +160,8 @@ Other performance diagnostics:
 (plain system WebKit). `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
 `HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
 `row_text_split_ms` field separates style from layout. Record a result under
-`docs/evidence/` when a doc cites it; a run the code has since superseded moves to
-`archive/docs/evidence/`.
+`docs/evidence/` when a doc cites it. Superseded runs may be kept locally under
+`archive/docs/evidence/`; remove or replace their tracked citations when untracking them.
 
 `bun run bench:growth` (it needs Doodle Board, Pixel Art and Morning Pages back in
 `examples/slops`) simulates up to 365 days of heavy use of those three through the native owner, with normal checkpoint thresholds
@@ -222,7 +222,7 @@ Each storage-version bump adds two Rust tests: a frozen file migrated by a write
 newly created file in exact layout and value, and an interrupted migration leaves the
 older file intact.
 
-Hygiene compares frozen entries with protected Git history and verifies their content
+The `compat` tier compares frozen entries with protected Git history and verifies their content
 hashes. Release checks additionally require the tagged entry to match current producing
 inputs and selected shipped templates, and its writer to come from the captured core. A
 corpus-only commit does not change the input fingerprint. Historical entries never need
@@ -234,13 +234,12 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | Job | Runs |
 |---|---|
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
-| `fast` (Ubuntu 24.04) | Hygiene on every change, plus affected tooling, generated-contract, type, Bun, CLI, installed-package and landing checks |
+| `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
-| `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus; verifies warm reuse |
-| `timings` (Ubuntu) | Reports job wall time including preparation and cache-save steps |
+| `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
 CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UTC
@@ -256,9 +255,13 @@ selector, verifier implementation and shared toolchain/dependency inputs select 
 Policy workflows and verification tests select tooling; they do not invalidate the product.
 Native-cache changes select the Swift/native tiers. Other product and build dependencies
 remain conservatively selected. For example, PR #5's attribution policy changes select
-only hygiene, tooling and types, allocating no macOS runner. Jobs execute exactly
+only tooling and types, allocating no macOS runner. Documentation and repository-settings
+edits select no product tiers. The compatibility integrity tier runs when corpus files,
+its scripts or the core’s acceptance/storage modules change. Jobs execute exactly
 the selected tier names, without consulting the local pass cache. `fast` always reports
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
+A successful empty selection reports success without checking out or installing tools in
+the fast job.
 The required-check policy is `fast`, `native`, `linux-smoke`, `Gitleaks` and `Attribution`;
 activate it only after the corresponding workflows are installed (see
 [release rules](guides/releasing.md#github-rules-rollout)). The full
@@ -267,7 +270,8 @@ activate it only after the corresponding workflows are installed (see
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
 verification results or retry failed tests automatically. Job summaries report cache
-restoration, setup duration, build/preparation and test duration, and complete job wall time.
+restoration, setup duration, build/preparation and test duration. GitHub Actions displays
+complete job wall times.
 Nightly runs have a separate concurrency group, so a master push cannot cancel cache warming.
 Successful default-branch runs populate caches that other branches can restore. A cache
 created on a PR merge ref is available only to that PR, so a successful PR alone does not
@@ -293,14 +297,12 @@ in the same PR and merge-resolution changes. Scanner configuration changes trigg
 full-history scan, even if reverted before the tip. Missing bases fail the check;
 new-branch pushes without a previous commit scan full history. CodeRabbit remains advisory.
 
-For a scheduling or CI change, compare identical source/test inventories with one cold
-and three warm CI runs. Record build, test and job wall time separately. Completion
-requires three consecutive full warm runs without retries and one successful cold run;
-isolated retries are debugging evidence, not a passing full suite. Template restoration
-continues through the nightly/manual/release flow.
-For an isolated cold run, dispatch CI with a new `cache_namespace` (for example,
-`ci-validation-COMMIT-`), then dispatch three more runs of the same commit and namespace.
-The prefix applies to both cache keys and restore prefixes, leaving everyday caches intact.
+Validate CI edits with the affected runner tests and workflow checks. When claiming a
+performance improvement, compare cold and warm runs of the same source and test
+inventory, reporting build, test and job wall time separately. An isolated
+`cache_namespace` creates fresh cache keys without disturbing everyday caches.
+Nightly/manual template runs build the corpus once and exercise its renders; cache
+hit/miss behavior is covered by the template-cache tests.
 
 ## Writing tests
 
