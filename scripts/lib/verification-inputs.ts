@@ -7,10 +7,17 @@ const nativeInputs = [
   /^tests\/(abi|presentation|fixtures|compat)\//,
   /^examples\/slops\//,
   /^scripts\/(lib|build|templates)\//,
+  /^\.github\/actions\/native-cache\//,
 ];
 
 export const tierInputs = {
   hygiene: [/./],
+  tooling: [
+    /^tests\/verification\//,
+    /^scripts\/ci\//,
+    /^\.github\/workflows\/(block-ai-attribution|secret-scan)\.yml$/,
+    /^packages\/hitslop\/src\/cli\/process\.ts$/,
+  ],
   contracts: [
     ...rustInputs,
     /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
@@ -22,8 +29,8 @@ export const tierInputs = {
     /\.generated\.(rs|swift)$/,
   ],
   types: [/\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
-  bun: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\//, /^examples\/slops\//],
-  cli: [...rustInputs, /^packages\//, /^tests\/(fixtures|compat)\//, /^scripts\//, /^examples\/slops\//],
+  bun: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\/(?!ci\/)/, /^examples\/slops\//],
+  cli: [...rustInputs, /^packages\//, /^tests\/(fixtures|compat)\//, /^scripts\/(?!ci\/)/, /^examples\/slops\//],
   rust: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^examples\/slops\//, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
@@ -32,7 +39,15 @@ export const tierInputs = {
   native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
 };
 
-export const sharedInputs = [/^\.github\//, /^scripts\/lib\/(verification(?:-inputs)?|test-process|artifacts)\.ts$/, /^tests\/verification\//, /^scripts\/verify\.ts$/, /^package\.json$/, /^bun\.lock$/, /^rust-toolchain\.toml$/];
+// Policy workflows and tests of the runner do not change how product checks execute.
+export const sharedInputs = [
+  /^\.github\/workflows\/ci\.yml$/,
+  /^\.github\/actions\/prepare-checks\//,
+  /^scripts\/ci\/select\.ts$/,
+  /^scripts\/lib\/(verification(?:-inputs)?|test-process|artifacts)\.ts$/,
+  /^scripts\/verify\.ts$/,
+  /^package\.json$/, /^bun\.lock$/, /^rust-toolchain\.toml$/,
+];
 
 export type TierName = keyof typeof tierInputs;
 export function affectedTiers(paths: string[], candidates: TierName[]) {

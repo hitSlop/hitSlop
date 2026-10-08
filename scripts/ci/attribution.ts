@@ -8,6 +8,10 @@ const assistantAddress = /^(?:noreply@anthropic\.com|(?:codex|agent)@openai\.com
 const generatedAgent = /^(?:claude|anthropic|codex|openai|copilot|github copilot|cursor|chatgpt|gemini|aider|devin|openhands|opencode|amp|an? ai(?: assistant)?)(?:\b|$)/i;
 
 export type Finding = { source: string; line: string };
+/** Release fixes follow the same trusted attribution policy as development PRs. */
+export function protectedPullBase(ref: string): boolean {
+  return ref === "master" || /^release\/[^/]+$/.test(ref);
+}
 export function assistantIdentity(name: string, email: string): boolean {
   return assistantName.test(name.trim()) || assistantAddress.test(email.trim());
 }
@@ -74,7 +78,7 @@ async function checkPullRequest() {
   };
   const pullPath = `pulls/${event.number}`;
   const pull = await api<Pull>(pullPath);
-  if (pull.state !== "open" || pull.base.ref !== "master") return;
+  if (pull.state !== "open" || !protectedPullBase(pull.base.ref)) return;
   if (![pull.head.sha, pull.base.sha].every(sha => /^[a-f0-9]{40}$/.test(sha))) throw new Error("Invalid PR commit SHA");
   const status = (state: "pending" | "success" | "failure" | "error", description: string) => api(`statuses/${pull.head.sha}`, {
     state, context: "Attribution", description,

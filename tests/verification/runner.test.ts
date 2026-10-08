@@ -6,6 +6,7 @@ import { checkoutLease, retainReport, shardTests, assertShardComplete, testInven
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
+import { verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "hygiene,rust,swift,native"], { cwd: repository });
@@ -18,6 +19,17 @@ test("machine-readable selection lists native tiers without running tools or tes
 
 const candidates = (Object.keys(tierInputs) as TierName[]).filter(name => name !== "app");
 const affected = (...paths: string[]) => affectedTiers(paths, candidates).map(tier => tier.name);
+test("attribution policy PR #5 does not build the product or allocate macOS", () => {
+  expect(affected(
+    ".claude/settings.json",
+    ".github/workflows/block-ai-attribution.yml",
+    "AGENTS.md",
+    "docs/testing.md",
+    "scripts/ci/attribution.ts",
+    "tests/verification/attribution.test.ts",
+  )).toEqual(["hygiene", "tooling", "types"]);
+});
+
 test("CI selects only affected boundaries and always keeps hygiene", () => {
   expect(affected()).toEqual(["hygiene"]);
   expect(affected("docs/architecture.md")).toEqual(["hygiene"]);
@@ -28,6 +40,30 @@ test("CI selects only affected boundaries and always keeps hygiene", () => {
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
     expect(affected(path)).toEqual(candidates);
+});
+
+test("policy and verification tests select tooling while shared execution stays conservative", () => {
+  for (const path of [".github/workflows/block-ai-attribution.yml", ".github/workflows/secret-scan.yml"])
+    expect(affected(path)).toEqual(["hygiene", "tooling"]);
+  for (const path of ["scripts/ci/attribution.ts", "tests/verification/runner.test.ts", "tests/verification/process.test.ts"])
+    expect(affected(path)).toEqual(["hygiene", "tooling", "types"]);
+  expect(affected(".github/actions/native-cache/action.yml")).toEqual(["hygiene", "swift", "native"]);
+  for (const path of ["scripts/ci/select.ts", ".github/actions/prepare-checks/action.yml", "scripts/verify.ts", "scripts/lib/test-process.ts"])
+    expect(affected(path)).toEqual(candidates);
+});
+
+test("nightly, manual and release branches select the full suite; ordinary changes use their base", () => {
+  const full = ["--list", "--json", "--native", "--all"];
+  for (const event of ["schedule", "workflow_dispatch"])
+    expect(verificationArgs({ GITHUB_EVENT_NAME: event })).toEqual(full);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "release/1.0" })).toEqual(full);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "release/1.0" })).toEqual(full);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "master" })).toEqual(["--list", "--json", "--native", "--base", "origin/master"]);
+  const before = "a".repeat(40);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master", CHANGE_BASE: before })).toEqual(["--list", "--json", "--native", "--base", before]);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master", CHANGE_BASE: "0".repeat(40) })).toEqual(full);
+  for (const env of [{}, { GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master" }, { GITHUB_EVENT_NAME: "pull_request" }])
+    expect(() => verificationArgs(env)).toThrow();
 });
 
 test("test-only edits and build inputs still select their owning checks", () => {
@@ -68,11 +104,12 @@ test("Git selection includes both sides of renames, deleted files and fails on a
 });
 
 test("test discovery assigns each boundary once and refuses unknown or duplicate files", () => {
-  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "tests/examples/quick-checklist.native.test.ts"];
+  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "tests/examples/quick-checklist.native.test.ts", "tests/verification/runner.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
   expect(groups.cli).toEqual(["packages/hitslop/tests/cli/build.test.ts"]);
   expect(groups.native).toEqual(["tests/examples/quick-checklist.native.test.ts"]);
+  expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
   expect(() => testInventory([files[0]!, files[0]!])).toThrow("Duplicate");
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
 });

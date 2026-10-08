@@ -2,7 +2,7 @@ name: Block AI Attribution
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, "release/*"]
     types: [opened, edited, synchronize, reopened, ready_for_review]
 
 permissions:

@@ -15,7 +15,7 @@
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
 import { tierInputs, sharedInputs, affectedTiers, type TierName } from "./lib/verification-inputs";
-import { lstat, mkdir, readFile, readlink } from "node:fs/promises";
+import { appendFile, lstat, mkdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { availableParallelism, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -117,6 +117,10 @@ async function bunTest(files: string[], args: string[], env: Record<string, stri
 
 const tiers: Tier[] = [
   { name: "hygiene", quick: true, budget: 5, inputs: tierInputs.hygiene, run: async () => console.log(await quiet([process.execPath, "scripts/hygiene.ts"])) },
+  {
+    name: "tooling", budget: 30, inputs: tierInputs.tooling,
+    run: (args) => bunTest(inventory.tooling, args),
+  },
   {
     name: "contracts",
     quick: true,
@@ -316,7 +320,7 @@ async function writePass(tier: Tier) {
 
 type Selection = { tier: Tier; reason: string; args: string[] }[];
 /** CI: the `candidates` a pull request or push touches, against its base `ref`. A change to
- * CI itself touches every tier. */
+ * shared CI execution touches every tier. */
 async function touched(ref: string, candidates: Tier[], args: string[]): Promise<{ selection: Selection; base: string }> {
   const { base, paths: changed } = await changedPaths(repository, ref);
   const selection = affectedTiers(changed, candidates.map(tier => tier.name)).map(({ name, paths }) => ({
@@ -479,6 +483,14 @@ try {
   for (const { name, code, seconds, budget } of report.tiers)
     console.log(`${code ? "✗" : "✓"} ${name.padEnd(9)} ${seconds.toFixed(1)}s${seconds > budget ? `  (over its ${budget}s budget)` : ""}`);
   console.log(`${passed ? "Passed" : "Failed"} in ${seconds(started).toFixed(1)}s; report: ${file.slice(repository.length + 1)}`);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    await appendFile(process.env.GITHUB_STEP_SUMMARY, [
+      `\n### Verification: ${passed ? "passed" : "failed"}\n`,
+      "| Tier | Result | Build/preparation | Tests |", "|---|---|---:|---:|",
+      ...report.tiers.map(tier => `| ${tier.name} | ${tier.code ? "failed" : "passed"} | ${tier.buildSeconds.toFixed(1)}s | ${tier.seconds.toFixed(1)}s |`),
+      `\nVerification wall time: ${seconds(started).toFixed(1)}s.\n`,
+    ].join("\n"));
+  }
   if (report.error) console.error(report.error);
 }
 process.exit(passed ? 0 : 1);

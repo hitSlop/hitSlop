@@ -2,8 +2,13 @@ import { expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assistantIdentity, attributionLines, inspectCommits } from "../../scripts/ci/attribution";
+import { assistantIdentity, attributionLines, inspectCommits, protectedPullBase } from "../../scripts/ci/attribution";
 import { run } from "../../scripts/lib/test-process";
+
+test("attribution checks development and release PRs", () => {
+  for (const base of ["master", "release/1.0", "release/2.1"]) expect(protectedPullBase(base)).toBe(true);
+  for (const base of ["feature/foo", "release", "release/", "release/1.0/extra"]) expect(protectedPullBase(base)).toBe(false);
+});
 
 test("recognizes assistant credit without rejecting human collaborators or prose", () => {
   for (const identity of [

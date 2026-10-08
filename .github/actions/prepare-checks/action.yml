@@ -1,6 +1,9 @@
 name: Prepare checks
 description: Install pinned tools; checks run through `bun run verify`
 inputs:
+  cache-scope:
+    description: "Build workload: checks, templates, or release (prevents partial builds filling the checks cache)"
+    default: checks
   bindings:
     description: "Binding generators: native, portable, or none"
     default: native
@@ -19,6 +22,9 @@ inputs:
 runs:
   using: composite
   steps:
+    - id: started
+      shell: bash
+      run: echo "seconds=$(date +%s)" >> "$GITHUB_OUTPUT"
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: "22"
@@ -26,21 +32,24 @@ runs:
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version: "1.4.2"
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - id: rust-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.rust == 'true'
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        key: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+    - id: tools-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.rust == 'true' && inputs.bindings != 'none'
       with:
         path: generated/core-tools
         key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.127-uniffi-0.32.2
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - id: bun-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.dependencies == 'true'
       with:
         path: ~/.bun/install/cache
@@ -76,3 +85,30 @@ runs:
             cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen --force
           fi
         fi
+    - name: Preparation summary
+      if: always()
+      shell: bash
+      env:
+        STARTED: ${{ steps.started.outputs.seconds }}
+        RUST_ENABLED: ${{ inputs.rust }}
+        BINDINGS: ${{ inputs.bindings }}
+        DEPENDENCIES: ${{ inputs.dependencies }}
+        RUST_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
+        TOOLS_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+        BUN_HIT: ${{ steps.bun-cache.outputs.cache-hit }}
+      run: |
+        status() {
+          case "$1" in true) echo 'exact hit';; false) echo 'fallback hit';; *) echo 'miss';; esac
+        }
+        {
+          echo '### Preparation'
+          echo "Setup wall time: $(( $(date +%s) - STARTED ))s"
+          echo
+          echo '| Cache | Restore |'
+          echo '|---|---|'
+          if [[ "$RUST_ENABLED" == true ]]; then
+            echo "| Rust | $(status "$RUST_HIT") |"
+            if [[ "$BINDINGS" != none ]]; then echo "| Binding generators | $(status "$TOOLS_HIT") |"; fi
+          fi
+          if [[ "$DEPENDENCIES" == true ]]; then echo "| Bun downloads | $(status "$BUN_HIT") |"; fi
+        } >> "$GITHUB_STEP_SUMMARY"
