@@ -104,6 +104,7 @@ jobs:
           nextest: ${{ contains(env.TIERS, 'rust') }}
           bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || contains(env.TIERS, 'cli') && 'portable' || 'none' }}
           dependencies: ${{ env.TIERS != 'rust' }}
+          webkit: ${{ contains(env.TIERS, 'native') }}
       - uses: ./.github/actions/native-cache
         if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:

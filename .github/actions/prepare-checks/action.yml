@@ -13,6 +13,9 @@ inputs:
   dependencies:
     description: Install workspace dependencies
     default: "true"
+  webkit:
+    description: Install the pinned Playwright WebKit browser for native browser tests
+    default: "false"
 runs:
   using: composite
   steps:
@@ -45,6 +48,10 @@ runs:
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}bun-downloads-${{ runner.os }}-${{ runner.arch }}-
     - run: bun install --frozen-lockfile
       if: inputs.dependencies == 'true'
+      shell: bash
+    - name: Install Playwright WebKit
+      if: inputs.webkit == 'true'
+      run: bun node_modules/playwright/cli.js install webkit
       shell: bash
     - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
       if: inputs.rust == 'true' && inputs.nextest == 'true'

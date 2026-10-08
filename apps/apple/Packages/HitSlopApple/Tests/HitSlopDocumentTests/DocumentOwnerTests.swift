@@ -14,7 +14,7 @@ import Testing
   func fixture(app: String = "throw new Error('authored code must not execute');") throws -> URL {
     try Fixtures.checklistDocument(app: app)
   }
-  func value(_ owner: DocumentOwner) async throws -> [String: Any] {
+  func value(_ owner: DocumentOwner, isolation: isolated (any Actor)? = #isolation) async throws -> [String: Any] {
     try Fixtures.object(await owner.state())
   }
   func hits(_ owner: DocumentOwner) async throws -> Int? {

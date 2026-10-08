@@ -253,6 +253,8 @@ Branch protection requires `fast`, `native`, `linux-smoke` and `Gitleaks`. The f
 limits; native has 45 minutes. Pinned binding generators have their own versioned cache,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
 verification results or retry failed tests automatically.
+Playwright WebKit is installed when the native browser tier is selected and for release
+verification; lighter PR checks do not download a browser.
 
 Secret scanning uses the PR merge base or the previous master commit through the
 checked-out commit. It scans every introduced commit, including a secret later removed

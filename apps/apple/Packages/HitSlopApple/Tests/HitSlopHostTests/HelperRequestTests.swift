@@ -36,7 +36,7 @@ extension HostTests {
   }
 
   /// One request as `slop` sends it (`slop-engine`), and its reply.
-  func request(_ body: [String: Any]) async throws -> [String: Any] {
+  func request(_ body: [String: Any], isolation: isolated (any Actor)? = #isolation) async throws -> [String: Any] {
     let result = try await cli(input: try JSONSerialization.data(withJSONObject: body))
     try #require(result.0 == 0, "\(body["method"] ?? ""): \(result.2)")
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])

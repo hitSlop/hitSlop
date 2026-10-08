@@ -57,6 +57,8 @@ jobs:
             fi
           done
       - uses: ./.github/actions/prepare-checks
+        with:
+          webkit: "true"
       - name: Download candidate engines
         env:
           GH_TOKEN: ${{ github.token }}
