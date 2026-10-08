@@ -24,7 +24,14 @@ export type At<M extends Mode = "live"> = <N extends Node>(value: Snapshot<N>) =
 export type TextHandle<M extends Mode = "live"> = {
   /** Replace the whole field with `value`, as the text is when the owner applies it. */
   set(value: string): Write<M>;
-};
+} & LiveOnly<
+  M,
+  {
+    /** Accepted text ("" while an optional text is unset). Read-only: `EditableText`
+     * and `bindText` keep pending typing/composition in their native input. */
+    readonly value: string;
+  }
+>;
 type LiveOnly<M extends Mode, T> = M extends "live" ? T : unknown;
 type ScalarWrites<V, M extends Mode> = {
   /** Live: shows `value` at once and resolves when it is accepted; a refusal reverts it. */
@@ -67,8 +74,11 @@ type ValueHandle<N extends Node, M extends Mode> =
         ? {
             /** The entry's handle; fields of an entry that is not set are not found. */
             entry(key: string): Handle<V, M>;
-            /** Creates or replaces the entry (an object entry holding text or lists is
-             * never replaced; edit its fields instead). */
+            /** Creates an absent entry with creation defaults. An existing entry requires
+             * all required fields, including defaulted fields, and reconciles children
+             * without replacing surviving identities. Omitted optional fields are removed.
+             * The type cannot tell whether the entry exists, so it accepts the creation form
+             * either way; the owner refuses an incomplete value for an existing entry. */
             put(key: string, value: Input<V>): Write<M>;
             /** Removes the entry; removing a missing key does nothing. */
             delete(key: string): Write<M>;
@@ -87,8 +97,13 @@ type ValueHandle<N extends Node, M extends Mode> =
 export type Handle<N extends Node, M extends Mode = "live"> =
   N extends OptionalNode<infer S>
     ? S extends ObjectNode
-      ? // Fields of an unset object are not found; `set` creates or replaces it.
-        ValueHandle<S, M> & { set(value: Input<S>): Write<M>; clear(): Write<M> }
+      ? ValueHandle<S, M> & {
+          /** Creates an absent object with defaults. An existing object requires all
+           * required fields (the type cannot tell which; the owner refuses an incomplete
+           * one); complete values reconcile children and remove omitted optionals. */
+          set(value: Input<S>): Write<M>;
+          clear(): Write<M>;
+        }
       : S extends Text
         ? // An unset text reads as "": `set` or typing into a bound field creates it.
           TextHandle<M> & { clear(): Write<M> }

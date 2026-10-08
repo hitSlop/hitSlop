@@ -1,7 +1,8 @@
 import App from "./App.svelte";
+import "hitslop/base.css";
 import "./styles.css";
-import Export from "./Export.svelte";
 import Icon from "./Icon.svelte";
+import Export from "./Export.svelte";
 import * as commands from "./commands";
 import { defineSlop } from "hitslop";
 import schema from "./schema";
@@ -36,9 +37,9 @@ export default defineSlop({
   initial: {
     title: "Little things, today",
     tasks: [
-      { text: "Send the first draft", done: true, archived: false },
-      { text: "Take a walk without my phone", done: false, archived: false },
-      { text: "Make a little room for the weekend", done: false, archived: false },
+      { text: "Send the first draft", done: true },
+      { text: "Take a walk without my phone" },
+      { text: "Make a little room for the weekend" },
     ],
   },
 });

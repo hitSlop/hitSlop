@@ -124,6 +124,29 @@ fn close(owner: &Owner) {
 }
 
 #[test]
+fn saved_state_fences_wait_for_an_earlier_command() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    let command = submit(&owner, command(json!({"title":"Included"})), None);
+    fixture.input(0);
+    let flushed = submit(&owner, Request::Flush, None);
+    let copy = fixture.dir.path().join("Copy.slop");
+    let copied = submit(&owner, Request::Copy { destination: copy.clone(), preview: None, icon: None }, None);
+    let closed = submit(&owner, Request::Close { preview: None, icon: None }, None);
+    assert_eq!(title(&owner), "Saved"); // The fences have reached the owner; reads still work.
+    let premature = flushed.try_recv();
+    assert_eq!(call(&owner, edit("too late")).unwrap_err().kind, FailureKind::Closing);
+    fixture.reply(0, accepted("Included")); // Always release the child before an assertion.
+    assert!(premature.is_err(), "flush must wait for the command outcome");
+    receive(command).unwrap();
+    receive(flushed).unwrap();
+    receive(copied).unwrap();
+    let saved = hitslop_core::store::Store::open(&copy, Mode::Snapshot).unwrap().document().unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&saved.value()).unwrap()["title"], "Included");
+    receive(closed).unwrap();
+}
+
+#[test]
 fn a_command_retries_one_stale_base_with_a_fresh_snapshot_and_stable_clock_and_seed() {
     let fixture = Fixture::new();
     let owner = fixture.open(true);
@@ -173,6 +196,25 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
 }
 
 #[test]
+fn a_refusal_for_the_person_keeps_its_message_under_its_own_reason() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    for (attempt, output, reason) in [
+        (0, json!({"ok":false,"error":"Enter a title.","refused":true}), "refused"),
+        (1, json!({"ok":false,"error":"Enter a title."}), "invalid_request"),
+    ] {
+        let reply = submit(&owner, command(json!({"title":"Command"})), None);
+        fixture.input(attempt);
+        fixture.reply(attempt, output);
+        let failure = receive(reply).unwrap_err();
+        assert_eq!((failure.kind, failure.reason.as_deref()), (FailureKind::Rejected, Some(reason)));
+        assert_eq!(failure.message, "Enter a title.");
+    }
+    assert_eq!(title(&owner), "Saved");
+    close(&owner);
+}
+
+#[test]
 fn arguments_are_checked_before_launch_and_missing_evaluators_never_fall_back() {
     let fixture = Fixture::new();
     let owner = fixture.open(false);
@@ -191,8 +233,8 @@ fn arguments_are_checked_before_launch_and_missing_evaluators_never_fall_back() 
 }
 
 #[test]
-fn late_commands_cannot_cross_page_replacement_discard_or_close() {
-    for action in ["replace", "discard", "close"] {
+fn late_commands_cannot_cross_page_replacement_or_discard() {
+    for action in ["replace", "discard"] {
         let fixture = Fixture::new();
         let owner = fixture.open(true);
         owner.attach("old".into());
@@ -203,14 +245,12 @@ fn late_commands_cannot_cross_page_replacement_discard_or_close() {
             "discard" => {
                 call(&owner, Request::Discard).unwrap();
             }
-            _ => close(&owner),
+            _ => unreachable!(),
         }
         fixture.reply(0, accepted("Late"));
         assert!(receive(reply).is_err(), "{action}");
-        if action != "close" {
-            assert_eq!(title(&owner), "Saved");
-            close(&owner);
-        }
+        assert_eq!(title(&owner), "Saved");
+        close(&owner);
         let saved = hitslop_core::store::Store::open(&fixture.path, Mode::Snapshot).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&saved.document().unwrap().value()).unwrap()["title"], "Saved");
     }

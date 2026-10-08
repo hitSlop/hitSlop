@@ -193,97 +193,72 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Sync between your own devices
 
-- **What:** a Mac and an iPhone editing one document are a person collaborating with
-  themselves, so one path serves devices and people: each device keeps its own `.slop`
-  file as a replica, and replicas exchange Loro updates computed from version vectors,
-  through the room described next.
-- **Why:** a slop made on the Mac should be in your pocket, without a second engine.
-- **Builds on:** the single file (the app travels with the data) and the owner's Loro
-  update import and export. Row-syncing SQLite services (Turso, SQLite Sync) were
-  considered and rejected: they replicate rows, while the document's merges live in Loro.
-- **Remaining work:** theme overrides already merge in Loro, last writer per color.
-  Attachments travel separately, by hash, so "edits synced" and "file complete" are
-  different states. Sync also needs retention and undo policies for offline replicas.
+A Mac and an iPhone editing one document can use the same room model as people
+collaborating. Each keeps a `.slop` replica and its local writer lease. Shared edits
+require a connection to the authority; ordinary unshared documents continue offline.
+Replicate accepted Loro updates, not SQL rows or a second JSON document. Attachments
+travel separately by hash, so installed data and a complete exportable file are distinct
+states until its blobs arrive.
 
 ### Realtime collaboration on Durable Objects
 
-- **What:** a shared document is a room, one Cloudflare Durable Object per share, reached
-  over a hibernating WebSocket. Each Mac keeps its own replica, writer lock and SQLite
-  file. The room keeps an update log plus a compacted snapshot, within the same caps as
-  `StorageLimits`, and relays updates between replicas. It is pinned to the document's
-  descriptor and template.
-- **Protocol:**
-  - On connect, the replica and the room exchange version vectors, and each sends what
-    the other lacks (`export(updates(vv))`). Live local updates follow.
-  - Import is idempotent. Each replica records the last version the room acknowledged
-    in its SQLite file, so a reconnect resends by diff and needs no outbox.
-  - Presence (cursors, who's here) travels as Loro `EphemeralStore` frames: timestamped,
-    last-writer-wins keys that expire. The room relays them and never stores them.
-  - Check Loro's own sync tooling before writing new framing.
-- **Placement:**
-  - The Rust core owns the sync messages and the acknowledged version (a `sync` feature).
-  - A future Swift sync adapter could handle remote networking and authentication,
-    carrying frames as opaque bytes. The Rust owner would schedule imports and saving;
-    this is separate from the local command socket it already owns.
-  - Remote frames enter the owner queue as `import`. The page sees them as publications,
-    exactly like a CLI edit, and text bindings already merge concurrent edits from the
-    history they saw.
-- **The room is not an authority.** It may run hitslop-core compiled to WASM to check
-  decoding, sizes and history-trimmed bytes, and to compact the log.
-- **Merged anomalies need a designed policy.** Two valid edits can merge into a state
-  outside the app's constraints, and refusing whichever import arrives second doesn't
-  converge. Today every accepted operation keeps the document valid and the core has no
-  anomaly handling, so the policy has to reconcile the two.
-- **Prerequisites:**
-  - a sync protocol of its own, never sharing a number with the command protocol. Its
-    handshake checks the document's identity, its app revision and layout, the sync
-    capabilities, and whether the peers retain enough common history to exchange
-    updates;
-  - a document identity that holds across machines (device and inode identify only the
-    local writer), and a rule for what duplicating a shared document means: a fork, or
-    another replica;
-  - one shared starting snapshot, made when sharing is turned on, for every joining
-    replica;
-  - one app revision and one layout inside a shared document. A lossless local migration
-    is not a safe replica migration, because another offline replica's operations may
-    address the old containers, so app upgrades wait or happen as a coordinated
-    operation;
-  - a replica refused as incompatible keeps its offline edits; they're never replaced by
-    the latest snapshot;
-  - attachment reclamation that allows for references arriving later from another
-    replica;
-  - the invitee has the same app, which a shared document carries;
-  - capability links until accounts exist;
-  - rate and connection limits;
-  - history retention that works with offline replicas: a replica merges only updates
-    made after the other's trimmed start, and closing trims to the last session at most.
-- **SDK additions (additive):**
-  - `presence`;
-  - selective undo that preserves remote changes; today's raw replica imports clear
-    undo/redo history, so they cannot be silently rolled back;
-  - `change(fn, { message })` for attribution;
-  - base versions on index-addressed scalar-list writes, so a remote insert cannot shift
-    a `set(index)`.
-- **Per-person state.** Today, view state that should survive a reopen lives in the shared
-  document: Slide Deck's `activeSlideIndex`; volume and mute in Alien Radio, Metronome and
-  Pocket Pod; Pocket Pod's now-playing, repeat and shuffle; Pixel Art's `selectedColor`;
-  Morning Pages' `currentKey`; Wordle's `mode`. Under collaboration these would sync
-  between people. Add `s.local(node)` for top-level fields: the same handles, snapshot and
-  CLI paths, stored in a second per-replica Loro document in its own SQLite table that is
-  never synced. Marking a field local changes how it replicates, not its data, so it can
-  ship as a compatible upgrade of those templates.
+The selected direction (2026-10-07) is **one semantic writer per room**. It supersedes
+the earlier raw-update relay and independently writable replicas. A Durable Object is
+one possible future host; a native loopback proof must qualify the model first.
 
-  | Tier | Survives reopen | Synced | Seen by export and Quick Look | For |
-  | --- | --- | --- | --- | --- |
-  | Svelte `$state` | no | no | only in-page captures | selection, hover, drags, menus, tabs |
-  | `s.local(...)` | yes | no | yes | a person's position and preferences |
-  | Field | yes | yes | yes | the document's content |
-  | Presence | no | yes | no | cursors, who's here |
+- **Authority:** the existing Rust owner validates and orders the same batches and named
+  commands as local documents. Commands evaluate against authority state; text uses its
+  existing version-aware merge. Clients do not author disconnected shared changes.
+- **Replicas:** each Rust owner keeps its file lock, installs validated accepted updates,
+  publishes immutable snapshots and persists them normally. Loro bytes stay in Rust.
+  Disconnection fences all shared mutation paths while preserving unsent drafts.
+- **Identity:** one document UUID and matching app digest/layout in the handshake.
+  Explicit Duplicate is independent and gets a fresh UUID. Bootstrap preserves the room
+  document identity. UUIDs are never Loro peer IDs.
+- **Transport:** a separate sync envelope around the existing mutation vocabulary,
+  with bounded requests, updates and snapshot transfer. It never borrows the command
+  protocol's number. Loro's framing and adapters may be useful for the hosted transport;
+  a raw update relay does not implement command authority.
+- **Local proof:** two editable development pages and CLI requests through one room,
+  accepted-update equality, ordered publications, reconnect/snapshot fallback and
+  identity refusals. No attachment imports or shared undo in this first proof. It
+  changes no production endpoint and writes no sync metadata.
+- **Durability track:** storage 2 adds atomic request receipts, client pending requests,
+  durable replica progress and epochs. Reuse the same request ID after an uncertain
+  reply; a changed payload under that ID refuses. Expired receipts do not prove an
+  operation was never accepted. Resolve pending outcomes before replacing replica state.
+- **Retention:** an authority can publish a new retained checkpoint and fence old bases.
+  Slow clients resync rather than merge offline edits; stale text bases preserve drafts
+  for recovery. Attachment transfer/reclamation and interrupted snapshot installation
+  need explicit tests before production sharing.
+- **Undo and presence:** whole-document `revert_to` is not personal undo. Authority
+  peers and temporary text peers need actor mapping before selective shared undo.
+  `EphemeralStore` remains a candidate for nondurable cursors and presence.
+- **Hosting gates:** qualify native-owner-to-WASM portability, restricted commands,
+  authentication, limits, Cloudflare execution and personal undo separately. Neither
+  the local proof nor schema identity proves these work.
 
-- **Contract change:**
-  - collaboration is deferred;
-  - Swift carrying sync frames relaxes "Loro bytes never reach Swift";
-  - `s.local` is a new descriptor kind, which lands in Rust, the SDK and a fixture together.
+Per-person persistent preferences remain a separate `s.local(node)` proposal. Today,
+keep temporary view state in Svelte and document content in fields. A new local-field
+kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;
+it is not implied by the authority model.
+
+The archived examples still supply useful cases: Slide Deck's selected slide; volume
+and mute in Alien Radio, Metronome and Pocket Pod; Pocket Pod's playback and repeat;
+Pixel Art's selected color; Morning Pages' current key; and Wordle's mode. Decide each
+field's intended scope before introducing locality.
+
+| State | Survives reopen | Shared | Fresh export sees it |
+| --- | --- | --- | --- |
+| Svelte `$state` | No | No | Default local state only |
+| Proposed `s.local(...)` | Yes | No | Policy to qualify |
+| Document field | Yes | Yes | Yes |
+| Presence | No | Yes | No |
+
+Potential SDK additions remain presence, actor-aware attribution and selective undo.
+Index-addressed scalar-list edits need an explicit stale-base rule so another person's
+insertion cannot silently redirect an edit. These are separate design tasks; the local
+proof does not freeze their API or promise that every future addition is compatible.
 
 ## What we won't take
 

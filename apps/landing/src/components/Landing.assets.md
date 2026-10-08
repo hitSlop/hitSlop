@@ -24,6 +24,17 @@ curated emoji tile. Commit the outputs: the Cloudflare build installs only
 server running (`bun run --cwd apps/landing dev`), then screenshotted in a browser at
 1200×630 and saved as JPEG. It reuses the product-tour poster.
 
+## File mascot
+
+`public/assets/file-mascot.webp` is the original decorative file sticker beside
+“I’m literally just a file.” Generated with the built-in image tool, then resized
+to 384×437 and encoded as WebP (quality 90) with its transparency preserved. The
+image is static, lazy-loaded, and has empty alt text; the heading carries the meaning.
+
+Generation prompt:
+
+> Use case: illustration-story. Asset type: transparent sticker mascot for the hitSlop landing page beside the headline ‘I’m literally just a file.’ Draw one original cute kawaii anime-style anthropomorphic paper file, full body, centered and tightly framed with a little clear margin. Cream paper body shaped like a softly rounded document with a folded lavender upper-right corner, dark navy ink outlines, closed u-shaped anime eyes and a tiny w-shaped uwu mouth, rosy pink cheek blush, tiny feet, little rounded hands, one hand raised in a shy wave. Slight jaunty tilt and charming hand-drawn linework, simple cel shading, warm approachable personality, crisp readable silhouette at 80–150 pixels wide. A thin cream sticker edge. Keep the face large and clear. The body is paper, not a folder. True transparent background; no backdrop, no ground plane, no checkerboard, no surrounding objects, no text, no watermark, no photorealism, no 3D.
+
 ## Fonts
 
 Self-hosted Latin WOFF2 files in `public/assets/hero/fonts/`, downloaded from Google

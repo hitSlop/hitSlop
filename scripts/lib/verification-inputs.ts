@@ -35,7 +35,7 @@ export const tierInputs = {
   packed: [...rustInputs, /^examples\/slops\//, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,
   app: [],
-  native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
+  native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//, /^scripts\/dev\/live-sync\.ts$/],
 };
 
 // Policy workflows and tests of the runner do not change how product checks execute.

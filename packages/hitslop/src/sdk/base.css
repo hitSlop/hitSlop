@@ -1,0 +1,16 @@
+/* Optional foundations. Element rules have zero specificity; pseudo-elements use
+   their minimum specificity. Authored classes and later equal rules win. */
+:where(*) { box-sizing: border-box; }
+:where(*)::before, :where(*)::after { box-sizing: inherit; }
+:where(html) { color-scheme: normal; font-synthesis: none; }
+:where(button, input, select, textarea) { font: inherit; color: inherit; }
+:where(button:enabled) { cursor: pointer; }
+:where(:focus-visible) { outline: 2px solid var(--slop-accent, Highlight); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  :where(*), :where(*)::before, :where(*)::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+}

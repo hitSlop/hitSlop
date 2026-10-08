@@ -1,6 +1,8 @@
 //! Bounded preview pipes. Only this thread touches stdin/stdout; owner callbacks never wait.
 use serde_json::Value;
-use std::os::fd::RawFd;
+use std::io::{Read, Write};
+use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::net::UnixStream;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -41,6 +43,7 @@ impl Drop for Nonblocking {
 pub(super) struct Output {
     send: mpsc::SyncSender<Vec<u8>>,
     failed: Arc<AtomicBool>,
+    wake: Arc<UnixStream>,
 }
 impl Output {
     pub(super) fn send(&self, frame: Value) {
@@ -48,6 +51,13 @@ impl Output {
         bytes.push(b'\n');
         if self.send.try_send(bytes).is_err() {
             self.failed.store(true, Ordering::Release);
+        }
+        // Wakes poll immediately when an owner callback enqueues output. A full wake
+        // socket already has readable bytes, so callbacks never wait for the reader.
+        match (&*self.wake).write(&[1]) {
+            Ok(_) => {}
+            Err(error) if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) => {}
+            Err(_) => self.failed.store(true, Ordering::Release),
         }
     }
 }
@@ -61,6 +71,8 @@ pub(super) struct Transport {
     output: Nonblocking,
     receive: mpsc::Receiver<Vec<u8>>,
     failed: Arc<AtomicBool>,
+    wake: UnixStream,
+    wake_open: bool,
     writing: Option<Writing>,
     buffer: Vec<u8>,
     scanned: usize,
@@ -72,18 +84,23 @@ impl Transport {
         let output = Nonblocking::new(libc::STDOUT_FILENO)?;
         let (send, receive) = mpsc::sync_channel(128);
         let failed = Arc::new(AtomicBool::new(false));
+        let (wake, notify) = UnixStream::pair().map_err(|error| error.to_string())?;
+        wake.set_nonblocking(true).map_err(|error| error.to_string())?;
+        notify.set_nonblocking(true).map_err(|error| error.to_string())?;
         Ok((
             Self {
                 input,
                 output,
                 receive,
                 failed: failed.clone(),
+                wake,
+                wake_open: true,
                 writing: None,
                 buffer: vec![],
                 scanned: 0,
                 eof: false,
             },
-            Output { send, failed },
+            Output { send, failed, wake: Arc::new(notify) },
         ))
     }
     fn begin_write(&mut self) {
@@ -136,12 +153,27 @@ impl Transport {
                 events: libc::POLLOUT,
                 revents: 0,
             },
+            libc::pollfd {
+                fd: if self.wake_open { self.wake.as_raw_fd() } else { -1 },
+                events: libc::POLLIN,
+                revents: 0,
+            },
         ];
         // SAFETY: fds is an initialized array of exactly the length passed to poll.
         if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, POLL_MILLIS) } < 0 {
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::Interrupted {
                 return Err(error.to_string());
+            }
+        }
+        if fds[2].revents != 0 {
+            let mut bytes = [0; 1024];
+            match self.wake.read(&mut bytes) {
+                Ok(0) => self.wake_open = false,
+                Ok(_) => {}
+                Err(error)
+                    if matches!(error.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted) => {}
+                Err(error) => return Err(error.to_string()),
             }
         }
         Ok(())

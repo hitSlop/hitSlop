@@ -1,0 +1,232 @@
+{
+  "checkpoint": {
+    "p50Ms": 0.707709,
+    "p95Ms": 0.7217089999999999,
+    "samplesMs": [
+      0.703958,
+      0.706584,
+      0.707709,
+      0.7110000000000001,
+      0.7217089999999999
+    ]
+  },
+  "churn": [
+    {
+      "checkpointMs": 19.71125,
+      "currentStateCheckpointBytes": 535275,
+      "reopen": {
+        "p50Ms": 31.761290999999996,
+        "p95Ms": 32.500291,
+        "samplesMs": [
+          31.681708000000004,
+          31.715917000000005,
+          31.761290999999996,
+          31.798083,
+          32.500291
+        ]
+      },
+      "retainedSnapshotBytes": 7387200,
+      "rounds": 200
+    },
+    {
+      "checkpointMs": 26.82225,
+      "currentStateCheckpointBytes": 535169,
+      "reopen": {
+        "p50Ms": 33.840666999999996,
+        "p95Ms": 35.943999999999996,
+        "samplesMs": [
+          32.006958000000004,
+          32.136917000000004,
+          33.840666999999996,
+          34.680833,
+          35.943999999999996
+        ]
+      },
+      "retainedSnapshotBytes": 14031639,
+      "rounds": 400
+    },
+    {
+      "checkpointMs": 34.607625000000006,
+      "currentStateCheckpointBytes": 535787,
+      "reopen": {
+        "p50Ms": 31.942667,
+        "p95Ms": 32.423083,
+        "samplesMs": [
+          31.816999999999997,
+          31.906292000000004,
+          31.942667,
+          32.241208,
+          32.423083
+        ]
+      },
+      "retainedSnapshotBytes": 20676281,
+      "rounds": 600
+    },
+    {
+      "checkpointMs": 45.369916,
+      "currentStateCheckpointBytes": 536183,
+      "reopen": {
+        "p50Ms": 31.870625,
+        "p95Ms": 32.029959,
+        "samplesMs": [
+          31.608249999999998,
+          31.8315,
+          31.870625,
+          31.877292,
+          32.029959
+        ]
+      },
+      "retainedSnapshotBytes": 27319108,
+      "rounds": 800
+    },
+    {
+      "checkpointMs": 53.8425,
+      "currentStateCheckpointBytes": 536617,
+      "reopen": {
+        "p50Ms": 33.582584,
+        "p95Ms": 34.070209,
+        "samplesMs": [
+          32.450582999999995,
+          32.82725,
+          33.582584,
+          33.87520799999999,
+          34.070209
+        ]
+      },
+      "retainedSnapshotBytes": 33961201,
+      "rounds": 1000
+    },
+    {
+      "checkpointMs": 56.970041,
+      "currentStateCheckpointBytes": 536204,
+      "reopen": {
+        "p50Ms": 32.065541,
+        "p95Ms": 32.262375000000006,
+        "samplesMs": [
+          31.988875,
+          31.994542,
+          32.065541,
+          32.201833,
+          32.262375000000006
+        ]
+      },
+      "retainedSnapshotBytes": 40605478,
+      "rounds": 1200
+    },
+    {
+      "checkpointMs": 65.092333,
+      "currentStateCheckpointBytes": 536388,
+      "reopen": {
+        "p50Ms": 31.911666999999998,
+        "p95Ms": 32.448875,
+        "samplesMs": [
+          31.727209,
+          31.808875,
+          31.911666999999998,
+          31.967416,
+          32.448875
+        ]
+      },
+      "retainedSnapshotBytes": 47247775,
+      "rounds": 1400
+    },
+    {
+      "checkpointMs": 87.396542,
+      "currentStateCheckpointBytes": 537292,
+      "reopen": {
+        "p50Ms": 32.611542,
+        "p95Ms": 35.181542,
+        "samplesMs": [
+          31.654959,
+          31.946375,
+          32.611542,
+          33.868833,
+          35.181542
+        ]
+      },
+      "retainedSnapshotBytes": 53893676,
+      "rounds": 1600
+    },
+    {
+      "checkpointMs": 68.875917,
+      "currentStateCheckpointBytes": 537157,
+      "reopen": {
+        "p50Ms": 34.730375,
+        "p95Ms": 35.307333,
+        "samplesMs": [
+          34.434041,
+          34.445707999999996,
+          34.730375,
+          35.005958,
+          35.307333
+        ]
+      },
+      "retainedSnapshotBytes": 60536849,
+      "rounds": 1800
+    },
+    {
+      "checkpointMs": 80.63425000000001,
+      "currentStateCheckpointBytes": 537099,
+      "reopen": {
+        "p50Ms": 34.304208,
+        "p95Ms": 35.082542000000004,
+        "samplesMs": [
+          33.818417000000004,
+          34.012916,
+          34.304208,
+          34.800791,
+          35.082542000000004
+        ]
+      },
+      "retainedSnapshotBytes": 67179398,
+      "rounds": 2000
+    }
+  ],
+  "initialSnapshotBytes": 730269,
+  "open": {
+    "p50Ms": 40.643041,
+    "p95Ms": 44.076417,
+    "samplesMs": [
+      40.418541000000005,
+      40.500417,
+      40.643041,
+      42.202999999999996,
+      44.076417
+    ]
+  },
+  "profile": "release",
+  "projection": {
+    "p50Ms": 8.562166,
+    "p95Ms": 8.685125,
+    "samplesMs": [
+      8.493292,
+      8.533375,
+      8.562166,
+      8.624834,
+      8.685125
+    ]
+  },
+  "rows": 4000,
+  "samples": 5,
+  "seed": 42,
+  "warmups": 1,
+  "environment": {
+    "architecture": "arm64",
+    "os": "macOS 26.6.2",
+    "baseRevision": "8dec1847",
+    "workingTree": "uncommitted foundation implementation; before history maintenance changes",
+    "concurrency": "other agent builds, tests and browsers paused during sampling",
+    "cpuModel": "not available in sandbox"
+  },
+  "process": {
+    "elapsedSeconds": 11.21,
+    "maximumResidentSetBytes": 892026880,
+    "scope": "whole diagnostic including temporary oracle Loro imports and repeated reopen samples; not isolated owner RSS"
+  },
+  "limitations": [
+    "Core-only workload; does not run Store save policy, SQLite I/O or page rendering.",
+    "Full snapshots are intentionally sampled beyond the persisted 32 MiB limit; these are not written to document files.",
+    "Five samples give a coarse upper sample for p95, not a reliable tail distribution.",
+    "Churn checkpoints have one sample each; repeat runs before optimization comparisons."
+  ]
+}

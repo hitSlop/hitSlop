@@ -1,3 +1,4 @@
+import { CommandBindings } from "./command-bindings";
 import { build, type InlineConfig, type Plugin } from "vite";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, realpath, writeFile } from "node:fs/promises";
@@ -5,6 +6,7 @@ import { dirname, extname, join, relative, resolve } from "node:path";
 import { findEngine } from "./engine";
 import { exec } from "./process";
 import { refuseHostImport, sveltePlugin, uiEntrySource, uiTransform } from "./app-vite";
+import { commandProvenanceModule, commandProvenanceSource, describeWithCommandProvenance, stripCommandProvenance, tagCommandDeclarations, type CommandSite } from "./command-transform";
 import { portableAssetURLs } from "./asset-url-transform";
 import { declaresModuleState, sharedStateIn } from "./capture-state";
 import type { BuildInput } from "../wire/app.generated";
@@ -37,15 +39,19 @@ export async function buildDefinition(source: string, stage: string, options: De
   // The UI's module graph, and the project's modules in it with top-level $state.
   const uiImports = new Map<string, string[]>();
   const statefulModules = new Set<string>();
+  // Commands the page declares; each must be registered to be callable.
+  const commandSites: CommandSite[] = [];
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
     for (const mode of ["definition", "ui"] as const) {
       const headless = mode === "definition";
+      const bindings = new CommandBindings();
       const inventory = outputs[mode];
       const boundary: Plugin = {
         name: "hitslop-explicit-entry", enforce: "pre",
         async resolveId(id, importer) {
+          if (headless && id === commandProvenanceModule) return "\0" + commandProvenanceModule;
           if (id === virtualEntry) {
             const resolved = await this.resolve("hitslop", entry, { skipSelf: true });
             if (!resolved) return this.error("Cannot resolve the project's hitslop SDK");
@@ -64,24 +70,33 @@ export async function buildDefinition(source: string, stage: string, options: De
           return found;
         },
         load(id) {
+          if (id === "\0" + commandProvenanceModule) return commandProvenanceSource;
           const clean = id.split("?", 1)[0]!;
           if (id.startsWith("\0hitslop-empty-style:")) return "export default {};";
           if (id === virtualEntry) return headless
             ? `import app from ${JSON.stringify(entry)};
 import {describeApp} from ${JSON.stringify(join(sdk,"app-definition.ts"))};
+import ${JSON.stringify(commandProvenanceModule)};
 globalThis.__slopCommands = app.commands ?? {};
-globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app)});`
+globalThis.__slopDescribe = () => JSON.stringify(${describeWithCommandProvenance("describeApp(app)", "app.commands ?? {}")});`
             : uiEntrySource(entry);
           if (headless && clean.endsWith(".svelte"))
             return `export default Object.freeze(${JSON.stringify({"~hitslop":"component",id:relative(source,clean)})});`;
         },
-        transform(code, id) {
-          if (headless) return;
+        async transform(code, id) {
           const clean = id.split("?", 1)[0]!;
+          const own = !(headless && clean.endsWith(".svelte")) && clean.startsWith(source + "/") && !clean.includes("/node_modules/") && /\.(?:[cm]?[jt]sx?|svelte)$/.test(clean) && clean === id;
+          const members = own ? await bindings.members(code, clean, source, async (specifier, importer) =>
+            (await this.resolve(specifier, importer, { skipSelf: true }))?.id) : new Set<number>();
+          if (headless) {
+            if (clean.startsWith(source + "/") && !clean.includes("/node_modules/") && /\.[cm]?[jt]sx?$/.test(clean))
+              return tagCommandDeclarations(code, clean, relative(source, clean), members);
+            return;
+          }
           // Only the project's own modules: a library's internal state is not editor state.
           if (clean.startsWith(source + "/") && !clean.includes("/node_modules/") && declaresModuleState(code, clean))
             statefulModules.add(clean);
-          return uiTransform(code, id, source, entry);
+          return uiTransform(code, id, source, entry, (site) => commandSites.push(site), members);
         },
         generateBundle() {
           const clean = (id: string) => id.split("?", 1)[0]!;
@@ -142,18 +157,28 @@ globalThis.__hitslopDescribe = () => JSON.stringify({ok:true,declaration:describ
     });
     if (evaluated.code) throw new Error(`Definition evaluator failed: ${evaluated.stderr}`);
     const reply = JSON.parse(evaluated.stdout) as
-      | { ok: true; declaration: ReturnType<typeof import("../sdk/app-definition").describeApp> }
+      | { ok: true; declaration: ReturnType<typeof import("../sdk/app-definition").describeApp>; commandSites: string[] }
       | { ok: false; error: string };
     if (reply.ok !== true) throw new Error(`Definition initialization failed: ${reply.error}`);
     const {artwork = {}, components, ...declaration} = reply.declaration;
     // Captures render saved state in a fresh page, so a module the editor sets shows only
-    // its initial value there. The editor itself as a capture renders that by design.
+    // its initial value there, even when the editor is reused as the export component.
     for (const role of ["export", "icon"]) {
       const component = components[role];
-      if (!component || component === components.view) continue;
+      if (!component) continue;
       const shared = sharedStateIn(join(source, component), uiImports, statefulModules);
       if (shared) throw new Error(`${component} (the ${role} view) imports ${relative(source, shared)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read doc.current there, and give a component shared with the editor that value as a prop.`);
     }
+    // A command the page can call but defineSlop never registered fails only when called.
+    // IDs identify the actual registered values; registration names and descriptions
+    // cannot make an unrelated declaration count as registered.
+    const registered = new Set(reply.commandSites);
+    for (const site of commandSites) {
+      if (registered.has(site.id)) continue;
+      const what = site.name ? `the command ${site.name}` : "a command";
+      throw new Error(`${relative(source, site.file)} declares ${what} that defineSlop({ commands }) does not register, so calling it fails. Export it and add it to commands in slop.ts.`);
+    }
+    program.bytes = new TextEncoder().encode(stripCommandProvenance(new TextDecoder().decode(program.bytes)));
     const hasCommands = declaration.commands.length > 0;
     const emittedKey = (url: unknown, role: string): string => {
       if (typeof url !== "string" || !url.startsWith("/assets/")) throw new Error(`${role} must reference an imported asset`);

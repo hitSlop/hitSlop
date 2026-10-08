@@ -23,6 +23,7 @@
     "hits": 5,
     "label": "compat 2",
     "lane": "done",
+    "lastHit": 2,
     "memo": "Replay 2 é 中文",
     "note": "compat 2",
     "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
@@ -51,6 +52,32 @@
       "muted": false,
       "volume": 2
     },
+    "slides": [
+      {
+        "$id": "compat-1",
+        "blocks": [],
+        "title": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+        "blocks": [
+          {
+            "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+            "text": "First block"
+          },
+          {
+            "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+            "text": "Second block"
+          }
+        ],
+        "title": "Nested composition"
+      },
+      {
+        "$id": "compat-2",
+        "blocks": [],
+        "title": "Replay 2 é 中文"
+      }
+    ],
     "title": "Replay 2 é 中文",
     "version": "compat 2"
   },

@@ -2,14 +2,19 @@
 // outside the example, so a copied example stays self-contained.
 import { expect, test } from "bun:test";
 import { webkit, type Page } from "playwright";
-import { mkdtemp, rm, cp } from "node:fs/promises";
+import { mkdtemp, rm, cp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startDev } from "../../packages/hitslop/src/cli/dev";
 
-async function preview(run: (page: Page) => Promise<void>) {
+async function preview(run: (page: Page) => Promise<void>, exposeDocument = false) {
   const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
   const source = join(root, "quick-checklist");
   await cp(join(import.meta.dir, "../../examples/slops/quick-checklist"), source, { recursive: true });
+  if (exposeDocument) {
+    const entry = join(source, "App.svelte");
+    await writeFile(entry, (await readFile(entry, "utf8")).replace('<script lang="ts">',
+      '<script lang="ts">\n(globalThis as any).__checklistProbe = doc;'));
+  }
   const dev = await startDev(source);
   const browser = await webkit.launch();
   try {
@@ -69,6 +74,23 @@ test("Enter while composing keeps the task editor; Enter after composing moves t
     expect(await focused(page)).toBe("New task");
   }), 60000);
 
+test("Escape preserves typed text and returns focus; composition keeps editing", () =>
+  preview(async (page) => {
+    const frame = page.frameLocator("iframe");
+    await frame.getByRole("textbox", { name: "Task 1" }).click();
+    const editor = frame.locator('textarea[aria-label="Task 1"]');
+    await editor.fill("Keep 日本😀 after Escape");
+    await editor.dispatchEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true });
+    expect(await editor.count()).toBe(1);
+    await editor.press("Escape");
+    await editor.waitFor({ state: "detached" });
+    expect(await focused(page)).toBe("Task 1");
+    // The detached binding drains asynchronously; the display reads accepted snapshots.
+    await app(page).waitForFunction(() =>
+      document.querySelector('[role="textbox"][aria-label="Task 1"]')?.textContent === "Keep 日本😀 after Escape");
+    expect(await frame.getByRole("textbox", { name: "Task 1" }).textContent()).toBe("Keep 日本😀 after Escape");
+  }), 60000);
+
 // A row is text until edited: the caret lands where the person clicked, the field grows
 // with its text, and leaving it shows text again.
 test("a task edits in place at the clicked caret, grows, and returns to text", () =>
@@ -96,16 +118,37 @@ test("a task edits in place at the clicked caret, grows, and returns to text", (
     expect(await frame.getByRole("textbox", { name: "Task 2" }).textContent()).toContain("back home again");
   }), 60000);
 
-// A fresh renderer starts with the default local view for both preview and export.
-test("fresh preview and export show the default active tasks", () =>
+// Programmatic owner updates must keep the DOM-derived sizing mirror in step.
+test("accepted external text updates resize an open editor", () =>
   preview(async (page) => {
+    const frame = page.frameLocator("iframe");
+    await frame.getByRole("textbox", { name: "Task 1" }).click();
+    const editor = frame.locator('textarea[aria-label="Task 1"]');
+    await editor.waitFor();
+    const before = await editor.evaluate(element => element.getBoundingClientRect().height);
+    await app(page).evaluate(async () => {
+      const doc = (globalThis as any).__checklistProbe;
+      await doc.at(doc.current.tasks[0]).text.set("First line\nSecond line 日本😀\nThird line\nFourth line");
+    });
+    await app(page).waitForFunction(() => {
+      const textarea = document.querySelector('textarea[aria-label="Task 1"]') as HTMLTextAreaElement;
+      return textarea?.value.includes("Fourth line");
+    });
+    expect(await editor.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(before * 2);
+    expect(await focused(page)).toBe("Task 1");
+  }, true), 60000);
+
+// Export reads saved active rows, independently of the editor's selected tab.
+test("preview and export include active completed tasks while the editor shows Filed", () =>
+  preview(async (page) => {
+    await page.frameLocator("iframe").getByRole("tab", { name: "Filed 0", exact: true }).click();
     const capture = (mode: "preview" | "export") =>
       app(page).evaluate(async (mode) => {
         const { capture } = (globalThis as any).__slop;
         const token = crypto.randomUUID();
         await capture.begin(token, mode);
         try {
-          return document.querySelector('[aria-label="Exported checklist"]')?.textContent ?? "";
+          return document.querySelector('[data-slop-active-target] [aria-label="Your checklist"]')?.textContent ?? "";
         } finally {
           await capture.restore(token);
         }
@@ -114,4 +157,5 @@ test("fresh preview and export show the default active tasks", () =>
     expect(preview).toContain("Send the first draft");
     expect(preview).not.toContain("No filed tasks yet");
     expect(await capture("export")).toContain("Send the first draft");
+    expect(await page.frameLocator("iframe").getByRole("tab", { name: "Filed 0", exact: true }).getAttribute("aria-selected")).toBe("true");
   }), 60000);

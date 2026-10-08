@@ -149,11 +149,15 @@ pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
         fs::create_dir_all(folder).map_err(|e| failed(format!("Cannot make the document's folder: {e}")))?;
     }
     let source = reader(template)?;
-    // The app is checked in the same read as the copy: a template the app would refuse
-    // to open publishes nothing.
+    // The app and its complete saved state are checked in the same read as the copy:
+    // a template the owner would refuse to open publishes nothing.
     let read = source.unchecked_transaction().map_err(sqlite("read"))?;
-    if opened(&read, template, true)?.kind != Kind::Template {
+    let accepted = opened(&read, template, true)?;
+    if accepted.kind != Kind::Template {
         return Err(invalid("Documents are created from a template"));
     }
+    // The one call from `file` into `store`: loading saved state is the store's, and this
+    // check must be exactly what opening the new document will run.
+    crate::store::validate_saved(&read, accepted.app.spec())?;
     copy(&read, dest, true, true, None)
 }

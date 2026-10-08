@@ -1,11 +1,11 @@
-import { s } from "hitslop";
+import { refuse, s } from "hitslop";
 import doc from "./schema";
 
 export const startUntil = doc.command({
   description: "Start counting down to an epoch millisecond timestamp in the future.",
   args: { end: s.number({ min: 0 }) },
   run({ tx, now }, { end }) {
-    if (end <= now) throw new Error("Pick a time that hasn't passed.");
+    if (end <= now) refuse("Pick a time that hasn't passed.");
     tx.fields.start.set(now);
     tx.fields.end.set(end);
   },
@@ -23,7 +23,7 @@ export const restart = doc.command({
   args: {},
   run({ current, tx, now }) {
     const duration = current.end - current.start;
-    if (duration <= 0) throw new Error("Choose a countdown first.");
+    if (duration <= 0) refuse("Choose a countdown first.");
     tx.fields.start.set(now);
     tx.fields.end.set(now + duration);
   },

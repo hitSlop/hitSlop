@@ -51,7 +51,7 @@ function presentationStageCSS(stage: PresentationStage): string {
     `:where(${root},${root} body){width:100%;height:100%}` +
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +
     `:where(${root} input,${root} textarea,${root} [contenteditable=""],${root} [contenteditable="true"],${root} [contenteditable="plaintext-only"]){-webkit-user-select:text;user-select:text}` +
-    `:where(${root} [data-hitslop-root],${root} body *:has([data-hitslop-root])){height:100%;min-height:0}` +
+    `:where(${root} [data-slop-root],${root} body *:has([data-slop-root])){height:100%;min-height:0}` +
     (stage.mode === "transparent" || stage.mode === "skin" ? `${root},${root} body{background:transparent}` : "") +
     (stage.mode === "skin" ? `:where(${root},${root} body){overflow:hidden}` : "")
   );
@@ -67,10 +67,10 @@ export function installPresentationStage(stage: PresentationStage): void {
     root.toggleAttribute("data-slop-resizable", stage.resizable);
     root.style.setProperty("--slop-window-width", `${stage.width}px`);
     root.style.setProperty("--slop-window-height", `${stage.height}px`);
-    let style = document.querySelector<HTMLStyleElement>("style[data-hitslop-host]");
+    let style = document.querySelector<HTMLStyleElement>("style[data-slop-host]");
     if (!style) {
       style = document.createElement("style");
-      style.dataset.hitslopHost = "";
+      style.dataset.slopHost = "";
       (document.head || root).appendChild(style);
     }
     style.textContent = presentationStageCSS(stage);

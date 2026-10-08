@@ -3,8 +3,7 @@
     "attachment": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
     "cells": {
       "A1": {
-        "input": "43",
-        "width": 10
+        "input": "Fresh entry edited"
       },
       "compat-1": {
         "input": "Compat 1 ✓ café 🦊"
@@ -28,13 +27,14 @@
     "hits": 10,
     "label": "Undo me",
     "lane": "doing",
+    "lastHit": 10,
     "memo": "Memo ✎",
     "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
     "place": {
       "name": "Café",
       "visits": 2
     },
-    "ratio": 0.75,
+    "ratio": 0.8,
     "rows": [
       {
         "$id": "compat-1",
@@ -63,7 +63,28 @@
         "text": "First ✓"
       },
       {
+        "$id": "acpyd98gxnb64vh0sbef5m0kmg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board C ✓"
+      },
+      {
         "$id": "vnr54bf611cx9q54925zktszdg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board A ✓"
+      },
+      {
+        "$id": "mmvscns1ywfyymp18htb6228cg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board B ✓"
+      },
+      {
+        "$id": "kawhbp1r6fx2g9vf2n8dne7td4",
         "done": true,
         "notes": {},
         "tags": [],
@@ -74,6 +95,46 @@
       "muted": true,
       "volume": 7
     },
+    "slides": [
+      {
+        "$id": "compat-1",
+        "blocks": [],
+        "title": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+        "blocks": [
+          {
+            "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+            "text": "First block"
+          },
+          {
+            "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+            "text": "Second block"
+          }
+        ],
+        "title": "Nested composition"
+      },
+      {
+        "$id": "compat-2",
+        "blocks": [],
+        "title": "Replay 2 é 中文"
+      },
+      {
+        "$id": "rh1t4jdssr7ta5v8pqs4whygy4",
+        "blocks": [
+          {
+            "$id": "mxb473vh7fyve7znjrjtdfgn3m",
+            "text": "Block B"
+          },
+          {
+            "$id": "9nv4eq7tpbnc3cgawaf88xyq60",
+            "text": "Block A edited"
+          }
+        ],
+        "title": "Edited slide"
+      }
+    ],
     "title": "Live ✓",
     "version": "compat 2"
   },

@@ -40,9 +40,9 @@ export async function verifyAppCommands(app: string) {
       batch: { intents: [{ type: "set", path: ["tasks", { id: added.$id }, "done"], value: true }] } }, placement);
     await call("archiveFinished");
     assert.equal((await tasks()).find(task => task.$id === added.$id)?.archived, true);
-    await call("restoreTask", { id: added.$id });
+    await call("restoreTask", { task: added.$id });
     assert.deepEqual((await tasks()).find(task => task.$id === added.$id), { ...added, done: false, archived: false });
-    await call("removeTask", { id: added.$id });
+    await call("removeTask", { task: added.$id });
     // Each CLI command is acknowledged only after saving. Reopen without the host to
     // prove these were real owner edits, not just successful evaluator responses.
     const accepted = await tasks();

@@ -55,13 +55,15 @@ Then describe the counter in `slop.ts`. Its `initial` values must fit the new sc
 import { defineSlop } from "hitslop";
 import schema from "./schema";
 import App from "./App.svelte";
-import { countOne } from "./commands";
+import Icon from "./Icon.svelte";
+import * as commands from "./commands";
 import "./styles.css";
 
 export default defineSlop({
   slug: "tiny-counter",
   view: App,
-  commands: { countOne },
+  icon: Icon,
+  commands,
   title: "Tiny Counter",
   description: "Count the small things worth counting.",
   author: { name: "Your Name" },
@@ -89,29 +91,22 @@ Replace `App.svelte` with:
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { bindText } from "hitslop/svelte";
+  import { EditableText } from "hitslop/svelte";
   import doc from "./schema";
   import { countOne } from "./commands";
 </script>
 <main class="counter">
-  <input aria-label="Counter title" use:bindText={doc.fields.title} />
+  <EditableText class="counter-title" field={doc.fields.title} label="Counter title" placeholder="Name it" />
   <p class="counter-value">{doc.current.count}</p>
-  <button onclick={() => countOne()}>
+  <button data-slop-export="hide" onclick={() => countOne()}>
     Count one
   </button>
 </main>
 ```
 
-`Export.svelte`:
+PNG and PDF exports render this view from the saved document in a fresh page; `data-slop-export="hide"` leaves the button out of them. Add a thin `export` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and mounts without the editor.
 
-```svelte title="Export.svelte"
-<script lang="ts">
-  import doc from "./schema";
-</script>
-<article class="counter"><h1>{doc.current.title}</h1><p>{doc.current.count}</p></article>
-```
-
-`Icon.svelte`:
+`Icon.svelte` draws the Finder icon:
 
 ```svelte title="Icon.svelte"
 <script lang="ts">
@@ -126,7 +121,7 @@ Give it ordinary CSS, using the starter's declared tokens:
 * { box-sizing: border-box; }
 body { background: var(--slop-surface); color: var(--slop-ink); font-family: system-ui; }
 .counter { padding: 2rem; text-align: center; }
-.counter input { width: 100%; font: inherit; }
+.counter-title { font-size: 1.4rem; font-weight: 600; }
 .counter-value { font-size: 4rem; font-variant-numeric: tabular-nums; }
 .counter button { padding: .8rem 1.2rem; background: var(--slop-accent); color: white; border: 0; border-radius: .5rem; }
 .counter button:focus-visible { outline: 3px solid var(--slop-ink); outline-offset: 3px; }

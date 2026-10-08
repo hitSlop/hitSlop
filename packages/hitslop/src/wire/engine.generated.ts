@@ -16,7 +16,7 @@ export type AttachmentTotals = { count: number, bytes: number, };
  */
 export type Catalog = { folders: Array<Folder>, templates: Array<Template>, issues: Array<string>, };
 
-export type Code = "type_mismatch" | "out_of_range" | "path_not_found" | "invalid_key" | "exists" | "duplicate_id" | "invalid_request" | "invalid_id" | "invalid_path" | "invalid_schema" | "too_large" | "stale_base" | "invalid_version" | "invalid_bytes" | "missing_dependencies" | "engine_error" | "invalid_shape" | "requires_update" | "is_template";
+export type Code = "type_mismatch" | "out_of_range" | "path_not_found" | "invalid_key" | "exists" | "duplicate_id" | "invalid_request" | "invalid_id" | "invalid_path" | "invalid_schema" | "too_large" | "stale_base" | "invalid_version" | "invalid_bytes" | "missing_dependencies" | "engine_error" | "invalid_shape" | "requires_update" | "is_template" | "refused";
 
 export type DescribeState = { metadata: AppMetadata, schema: Record<string, unknown>, version: string, value: unknown, theme: { [key in string]: string }, fields: Array<DescribedField>, commands: Record<string, { description: string; args: Record<string, unknown> }>, };
 

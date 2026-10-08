@@ -88,7 +88,8 @@ fn projection_agrees_on_closed_nested_objects_and_absent_optionals() {
             (Value::Null, false),
             (json!({"text":"a","unknown":1}), false),
             (json!({"text":"a","options":null}), false),
-            (json!({"text":"a","options":{}}), false),
+            // An omitted list is empty.
+            (json!({"text":"a","options":{}}), true),
             (json!({"text":"a","options":{"labels":[],"enabled":null}}), false),
             (json!({"text":"a","options":{"labels":[],"unknown":1}}), false),
         ],
@@ -151,11 +152,12 @@ fn descriptions_survive_projection_without_changing_validation() {
 #[test]
 fn diagnostics_identify_missing_unknown_and_wrong_typed_values() {
     let contract = args(json!({"options":{"kind":"object","properties":{
-        "labels":{"kind":"list","item":{"kind":"string"}}
+        "labels":{"kind":"list","item":{"kind":"string"}},
+        "name":{"kind":"string"}
     }}}));
     for (value, pointer) in [
         (json!({}), "/options"),
-        (json!({"options":{}}), "/options/labels"),
+        (json!({"options":{}}), "/options/name"),
         (json!({"options":{"labels":["ok",3]}}), "/options/labels/1"),
         (json!({"options":{"labels":[],"x/y~z":1}}), "/options/x~1y~0z"),
     ] {
@@ -163,4 +165,88 @@ fn diagnostics_identify_missing_unknown_and_wrong_typed_values() {
     }
     let error = args(json!({"text":{"kind":"string"}})).validate(&json!({"text":3})).unwrap_err();
     assert_eq!(format!("at {}: {}", error.pointer(), error.message), "at /text: must be a string");
+}
+
+#[test]
+fn omitted_arguments_take_their_defaults_and_are_not_required() {
+    let contract = args(json!({
+        "text":{"kind":"string"},
+        "done":{"kind":"boolean","default":false},
+        "size":{"kind":"integer","min":1,"default":2},
+        "labels":{"kind":"list","item":{"kind":"string"}}
+    }));
+    let schema = contract.json_schema();
+    assert_eq!(schema["required"], json!(["text"]));
+    assert_eq!(
+        (&schema["properties"]["done"]["default"], &schema["properties"]["size"]["default"]),
+        (&json!(false), &json!(2))
+    );
+    agrees(&contract, [(json!({"text":"a"}), true), (json!({"text":"a","size":0}), false), (json!({}), false)]);
+    let mut value = json!({"text":"a"});
+    contract.prepare(&mut value).unwrap();
+    assert_eq!(value, json!({"text":"a","done":false,"size":2,"labels":[]}));
+}
+
+#[test]
+fn row_arguments_are_row_ids_of_a_named_list() {
+    let contract = Arguments::parse(
+        &json!({"kind":"object","properties":{
+            "task":{"kind":"row","list":"tasks","description":"The task to restore"}
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(contract.row_lists().collect::<Vec<_>>(), ["tasks"]);
+    let schema = contract.json_schema();
+    assert_eq!(schema["properties"]["task"]["description"], "The task to restore");
+    let oracle = jsonschema::validator_for(&schema).unwrap();
+    for (value, accepted) in [
+        (json!({"task":"a1_B-c"}), true),
+        (json!({"task":"has space"}), false),
+        (json!({"task":""}), false),
+        (json!({"task":"x".repeat(65)}), false),
+        (json!({"task":3}), false),
+        (json!({}), false),
+    ] {
+        assert_eq!(contract.validate(&value).is_ok(), accepted, "{value}");
+        assert_eq!(oracle.is_valid(&value), accepted, "projection: {value}");
+    }
+    assert_eq!(contract.validate(&json!({"task":"has space"})).unwrap_err().pointer(), "/task");
+    for node in [
+        json!({"kind":"row"}),
+        json!({"kind":"row","list":"tasks","extra":1}),
+        json!({"kind":"list","item":{"kind":"row","list":"tasks"}}),
+    ] {
+        let schema = json!({"kind":"object","properties":{"value":node}});
+        let error = Arguments::parse(&schema.to_string()).unwrap_err();
+        assert_eq!((error.code, error.pointer()), (hitslop_core::Code::InvalidSchema, "/value".into()));
+    }
+    // A document field is never a row reference.
+    assert!(
+        hitslop_core::AppSpec::data(
+            &json!({"kind":"object","properties":{"task":{"kind":"row","list":"tasks"}}}).to_string()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn row_arguments_are_required_top_level_fields_only() {
+    for (node, pointer) in [
+        (json!({"kind":"optional","inner":{"kind":"row","list":"tasks"}}), "/value"),
+        (json!({"kind":"object","properties":{"task":{"kind":"row","list":"tasks"}}}), "/value/task"),
+        (
+            json!({"kind":"optional","inner":{"kind":"object","properties":{"task":{"kind":"row","list":"tasks"}}}}),
+            "/value/task",
+        ),
+        (
+            json!({"kind":"list","item":{"kind":"object","properties":{"task":{"kind":"row","list":"tasks"}}}}),
+            "/value/item/task",
+        ),
+        (json!({"kind":"record","value":{"kind":"row","list":"tasks"}}), "/value/value"),
+    ] {
+        let schema = json!({"kind":"object","properties":{"value":node}});
+        let error = Arguments::parse(&schema.to_string()).expect_err("rows resolve only at top level");
+        assert_eq!((error.code, error.pointer()), (hitslop_core::Code::InvalidSchema, pointer.into()));
+    }
 }

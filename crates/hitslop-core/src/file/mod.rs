@@ -259,6 +259,15 @@ fn layout(conn: &Connection, version: i64) -> Result<()> {
             return Err(invalid(format!("Unexpected rows in {table}")));
         }
     }
+    // A lowercase hyphenated UUID: 36 ASCII bytes, hyphens at 8, 13, 18 and 23.
+    if let Some(uuid) = rows::document_uuid(conn)?
+        && (uuid.len() != 36
+            || !uuid.bytes().enumerate().all(|(index, byte)| {
+                if matches!(index, 8 | 13 | 18 | 23) { byte == b'-' } else { matches!(byte, b'0'..=b'9' | b'a'..=b'f') }
+            }))
+    {
+        return Err(invalid("Invalid document identity"));
+    }
     Ok(())
 }
 /// Bound recursive definition bytes before decoding. Display reads never call this.
@@ -407,6 +416,9 @@ pub fn summary(path: &Path) -> Result<Summary> {
 /// Fully accepted app and resources, kept by the owner for its entire lifetime.
 pub struct OpenedApp {
     pub kind: Kind,
+    /// A document's immutable logical UUID. Templates have none; independent copies get
+    /// their own. This is never used as a Loro peer or as the file's writer-lock identity.
+    pub document_uuid: Option<String>,
     pub package_format: u64,
     pub runtime_abi: u64,
     pub app: AppDefinition,
@@ -473,6 +485,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     }
     Ok(OpenedApp {
         kind: summary.kind,
+        document_uuid: rows::document_uuid(conn)?,
         package_format: summary.package_format,
         runtime_abi: summary.runtime_abi,
         app,

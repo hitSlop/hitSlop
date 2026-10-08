@@ -282,10 +282,10 @@ extension HostTests {
       try await withPresentationSession(kind) { session in
         let preview = try await SlopRenderer.previewPNGData(session: session)
         let small = try #require(NSBitmapImageRep(data: preview))
-        #expect(small.pixelsWide == (kind.contains("washer") ? 320 : 480))
+        #expect(small.pixelsWide == (kind.contains("washer") ? 320 : 480) * 2)
         let png = try await SlopRenderer.exportPNGData(session: session)
         let image = try #require(NSBitmapImageRep(data: png))
-        #expect(image.pixelsWide == small.pixelsWide * 2)
+        #expect(image.pixelsWide == small.pixelsWide)
         for bitmap in [small, image] {
           #expect((bitmap.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) == 0)
           let scale = Double(bitmap.pixelsWide) / 480
@@ -323,7 +323,7 @@ extension HostTests {
         export default { mount(ctx, target) {
             document.body.style.margin = '0';
             const content = document.createElement('main');
-            content.dataset.hitslopRoot = '';
+            content.dataset.slopRoot = '';
             content.style.cssText = 'height:1600px;background:white';
             content.textContent = ctx.document.current.title;
             target.append(content);

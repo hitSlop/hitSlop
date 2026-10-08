@@ -25,7 +25,9 @@ reviews:
     available context is insufficient; name the missing evidence. Classify by
     changed behavior, not file names alone; docs and tests do not become High
     merely because they mention Loro. Passing CI does not erase the impact of a
-    risky change. Include "Document compatibility" with the affected boundary,
+    risky change. For changes unrelated to document compatibility, report
+    "Document compatibility: not affected" with a brief reason. For relevant
+    changes, include "Document compatibility" with the affected boundary,
     expected impact on existing slops opening, rendering, editing, saving, and
     reopening, and evidence for that assessment. Say "not verified" when evidence
     is missing; unrelated green checks do not prove compatibility.
@@ -36,7 +38,8 @@ reviews:
     advisory assessment; do not describe an AI rating as proof of safe merging.
   collapse_walkthrough: true
   sequence_diagrams: false
-  poem: false
+  poem: true
+  in_progress_fortune: false
   auto_review:
     enabled: true
     auto_incremental_review: true

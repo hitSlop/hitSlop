@@ -6,7 +6,6 @@
   let root: HTMLElement;
   let size = $state({ width: 0, height: 0 });
   let pointer = $state("Move over the grid");
-  let error = $state("");
   onMount(() => {
     const observer = new ResizeObserver(([entry]) => {
       if (entry) size = { width: Math.round(entry.contentRect.width), height: Math.round(entry.contentRect.height) };
@@ -15,14 +14,10 @@
     return () => observer.disconnect();
   });
   async function hit(target: string) {
-    try {
-      await doc.change(tx => { tx.fields.hits.increment(); tx.fields.lastTarget.set(target); });
-      error = "";
-    } catch (cause) { error = String(cause); }
+    await doc.change(tx => { tx.fields.hits.increment(); tx.fields.lastTarget.set(target); });
   }
   async function resize(width: number, height: number) {
-    try { await resizeWindow({ width, height }); error = ""; }
-    catch (cause) { error = String(cause); }
+    await resizeWindow({ width, height });
   }
   function locate(event: PointerEvent) {
     const rect = root.getBoundingClientRect();
@@ -47,5 +42,4 @@
     {#if !variant.skin}<div class="shape-lab-resize" data-slop-export="hide"><button onclick={() => resize(480, 360)}>480 × 360</button><button onclick={() => resize(600, 400)}>600 × 400</button></div>{/if}
     <span>02 / BOTTOM</span>
   </footer>
-  {#if error}<p role="alert" class="shape-lab-error">{error}</p>{/if}
 </main>

@@ -178,6 +178,118 @@ fn records_optionals_and_scalar_lists_reconcile() {
 }
 
 #[test]
+fn complete_optional_and_record_sets_preserve_surviving_text_and_row_identity() {
+    let child = json!({"kind":"object","properties":{
+        "text":{"kind":"text"}, "count":{"kind":"counter"},
+        "rows":{"kind":"list","item":{"kind":"object","properties":{
+            "text":{"kind":"text"}, "done":{"kind":"boolean"}
+        }}}
+    }});
+    let schema = json!({"kind":"object","properties":{
+        "box":{"kind":"optional","inner":child},
+        "entries":{"kind":"record","value":child}
+    }});
+    let initial = json!({"text":"Keep", "count":1,
+        "rows":[{"$id":"a","text":"Alpha","done":false},{"$id":"b","text":"Beta","done":false}]});
+    for path in [json!(["box"]), json!(["entries", "key"])] {
+        let spec = app(schema.to_string());
+        let mut d = Document::create(&spec, &json!({"box":initial,"entries":{"key":initial}}).to_string()).unwrap();
+        let mut view = View::of(&d);
+        let base = d.version();
+        let replacement = json!({"text":"Keep", "count":2,
+            "rows":[{"$id":"b","text":"Beta","done":true},{"$id":"a","text":"Alpha","done":true}]});
+        apply(&mut d, &mut view, &json!({"intents":[{"type":"set","path":path,"value":replacement}]}).to_string());
+        view.check(&d, "after a complete complex-object set");
+        let mut text_path = path.as_array().unwrap().clone();
+        text_path.push(json!("text"));
+        let typed = type_text(&mut d, &base, json!(text_path), "Keep", "Keep!", 5).unwrap();
+        view.publish(&typed.publication.unwrap());
+        let mut row_path = path.as_array().unwrap().clone();
+        row_path.extend([json!("rows"), json!({"id":"a"}), json!("text")]);
+        let typed = type_text(&mut d, &base, json!(row_path), "Alpha", "Alpha!", 6).unwrap();
+        view.publish(&typed.publication.unwrap());
+        view.check(&d, "old text bindings still target retained containers");
+        let reopened = Document::open(&spec, &d.checkpoint().unwrap(), &[]).unwrap();
+        assert_eq!(value(&reopened), value(&d));
+    }
+}
+
+#[test]
+fn clearing_and_recreating_map_children_invalidates_old_text_bindings_even_after_undo() {
+    let child = json!({"kind":"object","properties":{"text":{"kind":"text"}}});
+    let schema = json!({"kind":"object","properties":{
+        "memo":{"kind":"optional","inner":{"kind":"text"}},
+        "box":{"kind":"optional","inner":child},
+        "entries":{"kind":"record","value":child}
+    }});
+    let initial = json!({"memo":"Old","box":{"text":"Old"},"entries":{"key":{"text":"Old"}}});
+    for (path, text_path, replacement) in [
+        (json!(["memo"]), json!(["memo"]), json!("Old")),
+        (json!(["box"]), json!(["box", "text"]), json!({"text":"Old"})),
+        (json!(["entries", "key"]), json!(["entries", "key", "text"]), json!({"text":"Old"})),
+    ] {
+        for undo in [false, true] {
+            let mut d = Document::create(&app(schema.to_string()), &initial.to_string()).unwrap();
+            let mut view = View::of(&d);
+            let base = d.version();
+            apply(&mut d, &mut view, &json!({"intents":[{"type":"clear","path":path}]}).to_string());
+            if undo {
+                view.publish(&d.undo().unwrap().publication.unwrap());
+            } else {
+                apply(
+                    &mut d,
+                    &mut view,
+                    &json!({"intents":[{"type":"set","path":path,"value":replacement}]}).to_string(),
+                );
+            }
+            assert_eq!(value(&d), initial);
+            let before = d.state().unwrap();
+            assert_eq!(
+                type_text(&mut d, &base, text_path.clone(), "Old", "Old!", 4).unwrap_err().code,
+                Code::PathNotFound
+            );
+            assert_eq!(d.state().unwrap(), before);
+            view.check(&d, "recreated map child has old content and a fresh identity");
+        }
+    }
+}
+
+#[test]
+fn undoing_a_row_removal_restores_its_id_and_content_with_fresh_containers() {
+    use loro::{Container, ContainerTrait, LoroDoc, ValueOrContainer};
+    let identities = |d: &Document| {
+        let saved = LoroDoc::new();
+        saved.import(&d.checkpoint().unwrap()).unwrap();
+        let Some(ValueOrContainer::Container(Container::MovableList(rows))) = saved.get_map("data").get("rows") else {
+            panic!("rows")
+        };
+        let Some(ValueOrContainer::Container(Container::Map(row))) = rows.get(0) else { panic!("row") };
+        let Some(ValueOrContainer::Container(text)) = row.get("text") else { panic!("text") };
+        (row.id(), text.id())
+    };
+    let (mut d, mut view) = open("checklist");
+    let base = d.version();
+    let before = identities(&d);
+    apply(&mut d, &mut view, &json!({"intents":[{"type":"remove","path":["rows"],"id":A}]}).to_string());
+    view.publish(&d.undo().unwrap().publication.unwrap());
+    let after = identities(&d);
+    assert_ne!(before.0, after.0);
+    assert_ne!(before.1, after.1);
+    assert_eq!(value(&d)["rows"][0], json!({"$id":A,"text":"A","done":false}));
+    let restored = d.state().unwrap();
+    assert_eq!(
+        type_text(&mut d, &base, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap_err().code,
+        Code::PathNotFound
+    );
+    assert_eq!(d.state().unwrap(), restored);
+    let current = d.version();
+    let typed = type_text(&mut d, &current, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
+    view.publish(&typed.publication.unwrap());
+    assert_eq!(value(&d)["rows"][0]["text"], "AX");
+    view.check(&d, "the restored row is editable through a current binding");
+}
+
+#[test]
 fn a_path_replaces_one_part() {
     let (mut d, mut view) = open("checklist");
     let before = value(&d);

@@ -16,7 +16,7 @@ Import your components and register `view`, optional `export`, and optional `ico
 </main>
 ```
 
-An export component (here `Export.svelte`, registered as `export`):
+Captures render saved state in a fresh page, with transient state at its defaults. A dedicated export mounts without the editor and owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without an `export` component, preview and export mount `view`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default Quick Look preview is a 2× snapshot of the window that preserves its silhouette. An export component (here `Export.svelte`, registered as `export`):
 
 ```svelte
 <script lang="ts">

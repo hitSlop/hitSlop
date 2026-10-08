@@ -122,7 +122,7 @@ independent of the window silhouette. Radius shapes expose their radius to the
 page as `--slop-window-radius`; path shapes set it to `0`.
 
 The window is the stage in every mode. The host resets the page margins, and
-the automatic app root (or a framework-neutral `data-hitslop-root` element) and its mount
+the automatic app root (or a framework-neutral `data-slop-root` element) and its mount
 ancestors fill the window. Prefer `height: 100%`, grid, or flex inside it rather
 than repeating page sizing or using `100vh`; deliberate overrides remain possible.
 For a transparent window, draw the visible surface inside your app: the host

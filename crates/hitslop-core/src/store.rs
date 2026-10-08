@@ -5,9 +5,11 @@
 //! sees anything but opaque Loro bytes.
 //!
 //! History is trimmed when nothing is editing: a session that edited a document larger
-//! than `TRIM_BYTES` closes with no history. While open, a checkpoint trims only past
-//! `SESSION_BYTES`, keeping the session's history when that fits, so a concurrent text
-//! edit can still branch from where the session opened. Compaction keeps no history.
+//! than the budget's `trim_bytes` closes with no history. While open, retained history past the
+//! budget's `session_bytes` is bounded: a live owner rebuilds its document from a shallow
+//! checkpoint (`owner::maintenance`), and a direct `Store` user trims the checkpoint,
+//! keeping the session's history when that fits, so a concurrent text edit can still
+//! branch from where the session opened. Compaction keeps no history.
 //!
 //! A host keeps two serial queues: edits and `Store::job` on one, every other
 //! `Store` call on the other, so a slow write never blocks edits.
@@ -24,14 +26,31 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// A save checkpoints instead of appending once the log reaches either.
-const CHECKPOINT_ROWS: i64 = 256;
-const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
-/// A closing session that edited a document larger than this trims its history. Trimming
-/// is not free: Loro re-encodes what it keeps instead of reusing its cached snapshot.
-const TRIM_BYTES: i64 = 4 * 1024 * 1024;
-/// A checkpoint larger than this trims history while the session is still open.
-const SESSION_BYTES: usize = 16 * 1024 * 1024;
+/// When saves checkpoint and how much history an open document keeps. Hosts use
+/// `DEFAULT`; tests shrink it to reach the same paths with small documents.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Budget {
+    /// A save checkpoints instead of appending once the log reaches either.
+    pub checkpoint_rows: i64,
+    pub checkpoint_bytes: i64,
+    /// Retained history past this is bounded while the document is open.
+    pub session_bytes: usize,
+    /// A closing session that edited a document larger than this trims its history.
+    /// Trimming is not free: Loro re-encodes what it keeps instead of reusing its cached
+    /// snapshot.
+    pub trim_bytes: i64,
+    /// How long editing must pause before a due history rebuild starts.
+    pub rebuild_idle: std::time::Duration,
+}
+impl Budget {
+    pub(crate) const DEFAULT: Self = Self {
+        checkpoint_rows: 256,
+        checkpoint_bytes: 4 * 1024 * 1024,
+        session_bytes: 16 * 1024 * 1024,
+        trim_bytes: 4 * 1024 * 1024,
+        rebuild_idle: std::time::Duration::from_secs(2),
+    };
+}
 
 /// A core failure while loading: a document this build is too old for is a refusal the
 /// host names; anything else is a storage failure.
@@ -89,13 +108,21 @@ struct Account {
     meta: Metadata,
     /// The version the durable state covers.
     saved: VersionVector,
-    /// The version this session opened at: where a checkpoint trimmed while open keeps
-    /// history from, and how close tells whether the session edited.
+    /// Where a checkpoint trimmed while open keeps history from: the version this session
+    /// opened at, or the start of the history its last rebuild kept.
     opened: Frontiers,
     /// Whether this session saved an edit or stored an attachment: only then can a blob
-    /// have lost its last reference, so a session that only read reclaims nothing.
+    /// have lost its last reference, and only then does close trim history.
     changed: bool,
+    /// Retained size after the last rebuild, or the size a failed rebuild could not
+    /// shrink. A document whose live value is that large rebuilds again only after
+    /// another checkpoint's worth of history.
+    rebuilt_size: usize,
+    budget: Budget,
 }
+#[cfg(test)]
+type RebuildHook = Box<dyn Fn(bool) -> std::result::Result<(), crate::owner::Failure> + Send>;
+
 /// One document's storage. `Document` mode owns the file: it holds the writer lock and
 /// persists writes. `Snapshot` mode reads the saved state without the lock and writes
 /// nothing, so a render never locks the file or changes what it holds (it may finish
@@ -111,6 +138,8 @@ pub struct Store {
     /// for its whole transaction, so checking ownership never waits for a save.
     owned: AtomicBool,
     account: Mutex<Account>,
+    #[cfg(test)]
+    pub(crate) rebuild_hook: Mutex<Option<RebuildHook>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -122,6 +151,14 @@ pub enum Mode {
 pub struct SaveJob {
     rows: Rows,
     version: VersionVector,
+    /// A replacement's history start and size, recorded only once it is written.
+    rebuilt: Option<Rebuilt>,
+    /// The retained history this checkpoint measured, when it is past the budget.
+    rebuild: Option<usize>,
+}
+struct Rebuilt {
+    opened: Frontiers,
+    size: usize,
 }
 /// A save's Loro bytes: the updates since the last save, or a checkpoint replacing the log.
 enum Rows {
@@ -132,6 +169,11 @@ impl SaveJob {
     pub fn is_checkpoint(&self) -> bool {
         matches!(self.rows, Rows::Checkpoint(_))
     }
+    /// The retained history this checkpoint measured, when a live owner should rebuild
+    /// it. Measured by the export the checkpoint already made; appends never measure.
+    pub(crate) fn rebuild_due(&self) -> Option<usize> {
+        self.rebuild
+    }
 }
 
 /// The updates since `saved`, when appending them keeps the log within the limits.
@@ -139,22 +181,37 @@ fn append(doc: &Document, saved: &VersionVector, meta: Metadata) -> Result<Optio
     let bytes = doc.doc.export(ExportMode::updates(saved)).map_err(failed)?;
     Ok(within(meta.rows + 1, meta.stored() + bytes.len() as i64).then_some(bytes))
 }
-/// A checkpoint that fits: the whole history while it is small, else the session's own
-/// history, else none. Compaction keeps no history.
-fn checkpoint(doc: &mut Document, opened: &Frontiers, compact: bool) -> Result<Option<Vec<u8>>> {
+/// A checkpoint that fits, and the retained size when it asks a live owner to rebuild:
+/// the whole history while it is within the budget, else (for an owner that rebuilds)
+/// the whole history once more, else the session's own history, else none. Compaction
+/// keeps no history.
+fn checkpoint(
+    doc: &mut Document,
+    opened: &Frontiers,
+    compact: bool,
+    budget: &Budget,
+    rebuild_threshold: Option<usize>,
+) -> Result<Option<(Vec<u8>, Option<usize>)>> {
     let fits = |bytes: &[u8]| within(0, checkpoint_row(bytes.len()));
     let latest = doc.doc.oplog_frontiers();
     if compact {
-        return trimmed(doc, &latest, fits);
+        return Ok(trimmed(doc, &latest, fits)?.map(|bytes| (bytes, None)));
     }
     let bytes = doc.doc.export(ExportMode::Snapshot).map_err(failed)?;
-    if bytes.len() <= SESSION_BYTES && fits(&bytes) {
-        return Ok(Some(bytes));
+    if bytes.len() <= budget.session_bytes && fits(&bytes) {
+        return Ok(Some((bytes, None)));
     }
-    match trimmed(doc, opened, |b| b.len() <= SESSION_BYTES && fits(b))? {
+    // An owner that rebuilds keeps writing the whole history it already exported until
+    // its rebuild runs: trimming here would export again, only to be replaced.
+    let rebuild = rebuild_threshold.filter(|threshold| bytes.len() > *threshold).map(|_| bytes.len());
+    if rebuild_threshold.is_some() && fits(&bytes) {
+        return Ok(Some((bytes, rebuild)));
+    }
+    let checkpoint = match trimmed(doc, opened, |b| b.len() <= budget.session_bytes && fits(b))? {
         Some(bytes) => Ok(Some(bytes)),
         None => trimmed(doc, &latest, fits),
-    }
+    }?;
+    Ok(checkpoint.map(|bytes| (bytes, rebuild)))
 }
 /// A checkpoint keeping only the history since `start`, when `accept` takes its bytes.
 /// The document's edits may no longer branch from before `start`.
@@ -194,6 +251,12 @@ fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)>
         }
     })?;
     Ok((doc, meta))
+}
+
+/// A new file may be published only after its saved state has passed the same acceptance
+/// as opening it. The caller keeps the source read transaction through its copy.
+pub(crate) fn validate_saved(conn: &Connection, app: &crate::AppSpec) -> Result<()> {
+    load(conn, app).map(|_| ())
 }
 
 impl Store {
@@ -239,7 +302,11 @@ impl Store {
                 saved: VersionVector::default(),
                 opened: Frontiers::default(),
                 changed: false,
+                rebuilt_size: 0,
+                budget: Budget::DEFAULT,
             }),
+            #[cfg(test)]
+            rebuild_hook: Mutex::new(None),
         })
     }
 
@@ -280,8 +347,14 @@ impl Store {
             load(&read, self.app.app.spec())
         })?;
         let mut account = lock(&self.account);
-        *account =
-            Account { meta, saved: doc.doc.oplog_vv(), opened: doc.doc.oplog_frontiers(), changed: account.changed };
+        *account = Account {
+            meta,
+            saved: doc.doc.oplog_vv(),
+            opened: doc.doc.oplog_frontiers(),
+            changed: account.changed,
+            rebuilt_size: 0,
+            budget: account.budget,
+        };
         Ok(doc)
     }
 
@@ -289,17 +362,30 @@ impl Store {
     /// checkpoint is requested. Exports only what it writes: the updates since the last
     /// save, or a checkpoint once the log is long, full or a checkpoint is requested.
     pub fn job(&self, doc: &mut Document, force_checkpoint: bool) -> Result<Option<SaveJob>> {
-        let (meta, saved, opened) = {
+        self.prepare_job(doc, force_checkpoint, false)
+    }
+
+    /// The next write for a live owner that rebuilds its history (`rebuilds`): past the
+    /// budget, its checkpoints keep the whole history and say when to rebuild, instead of
+    /// trimming. The hard storage limit never changes.
+    pub(crate) fn owner_job(&self, doc: &mut Document, rebuilds: bool) -> Result<Option<SaveJob>> {
+        self.prepare_job(doc, false, rebuilds)
+    }
+
+    fn prepare_job(&self, doc: &mut Document, force_checkpoint: bool, rebuilds: bool) -> Result<Option<SaveJob>> {
+        let (meta, saved, opened, budget, rebuilt_size) = {
             let account = lock(&self.account);
-            (account.meta, account.saved.clone(), account.opened.clone())
+            (account.meta, account.saved.clone(), account.opened.clone(), account.budget, account.rebuilt_size)
         };
+        let rebuild_threshold =
+            rebuilds.then(|| budget.session_bytes.max(rebuilt_size.saturating_add(budget.checkpoint_bytes as usize)));
         let version = doc.doc.oplog_vv();
         if version == saved && !force_checkpoint {
             return Ok(None);
         }
-        // A checkpoint first when one is requested or the log is due for one; optional
-        // maintenance never prevents an append that still fits.
-        let due = meta.rows >= CHECKPOINT_ROWS || meta.update_bytes >= CHECKPOINT_BYTES;
+        // A checkpoint first when one is requested or the log is due for one; a due
+        // rebuild never prevents an append that still fits.
+        let due = meta.rows >= budget.checkpoint_rows || meta.update_bytes >= budget.checkpoint_bytes;
         let order: &[bool] = if force_checkpoint {
             &[true]
         } else if due {
@@ -308,33 +394,36 @@ impl Store {
             &[false, true]
         };
         for &as_checkpoint in order {
-            let bytes =
-                if as_checkpoint { checkpoint(doc, &opened, force_checkpoint)? } else { append(doc, &saved, meta)? };
-            if let Some(bytes) = bytes {
+            let bytes = if as_checkpoint {
+                checkpoint(doc, &opened, force_checkpoint, &budget, rebuild_threshold)?
+            } else {
+                append(doc, &saved, meta)?.map(|bytes| (bytes, None))
+            };
+            if let Some((bytes, rebuild)) = bytes {
                 let rows = if as_checkpoint { Rows::Checkpoint(bytes) } else { Rows::Append(bytes) };
-                return Ok(Some(SaveJob { rows, version }));
+                return Ok(Some(SaveJob { rows, version, rebuilt: None, rebuild }));
             }
         }
         Err(Error::Full)
     }
 
     /// The checkpoint to write as the owner closes, after its last save: a session that
-    /// edited a document larger than `TRIM_BYTES` leaves no history. Undo covers the open
+    /// edited a document larger than the budget's `trim_bytes` leaves no history. Undo covers the open
     /// session only, so nothing reads it later. None when nothing would shrink.
     pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
-        let (meta, opened) = {
+        let (meta, changed, trim_bytes) = {
             let account = lock(&self.account);
-            (account.meta, account.opened.clone())
+            (account.meta, account.changed, account.budget.trim_bytes)
         };
         let stored = meta.stored();
-        let latest = doc.doc.oplog_frontiers();
-        if latest == opened || stored <= TRIM_BYTES {
+        if !changed || stored <= trim_bytes {
             return Ok(None);
         }
+        let latest = doc.doc.oplog_frontiers();
         let smaller = |bytes: &[u8]| (bytes.len() as i64) < stored && within(0, checkpoint_row(bytes.len()));
         let version = doc.doc.oplog_vv();
         let bytes = trimmed(doc, &latest, smaller)?;
-        Ok(bytes.map(|bytes| SaveJob { rows: Rows::Checkpoint(bytes), version }))
+        Ok(bytes.map(|bytes| SaveJob { rows: Rows::Checkpoint(bytes), version, rebuilt: None, rebuild: None }))
     }
 
     /// Writes a job in one transaction. An error may follow the commit, so the durable
@@ -354,6 +443,10 @@ impl Store {
         let mut account = lock(&self.account);
         account.meta = meta;
         account.saved = job.version.clone();
+        if let Some(rebuilt) = &job.rebuilt {
+            account.opened = rebuilt.opened.clone();
+            account.rebuilt_size = rebuilt.size;
+        }
         account.changed = true;
         Ok(())
     }
@@ -528,6 +621,88 @@ impl Store {
         self.check(true)?;
         self.read(|conn| file::copy(conn, dest, false, false, None))
     }
+
+    /// Copies the open document to `dest` as it is stored, durably: the same document
+    /// (its identity, history and artwork), unlike Duplicate's copy of its own. The owner
+    /// flushes before queuing it.
+    pub fn backup(&self, dest: &Path) -> Result<()> {
+        file::document_destination(dest)?;
+        self.check(true)?;
+        self.read(|conn| file::copy(conn, dest, false, true, None))
+    }
+
+    /// The checkpoint that replaces the saved state with `candidate`, a validated document
+    /// whose checkpoint is `bytes`, written even when its version equals the saved one (a
+    /// rebuild keeps the version and drops history). Changes neither the live document nor
+    /// this store's accounting until it is written.
+    pub(crate) fn replacement_job(&self, candidate: &Document, bytes: Vec<u8>) -> Result<SaveJob> {
+        self.check(true)?;
+        if !within(0, checkpoint_row(bytes.len())) {
+            return Err(Error::Full);
+        }
+        Ok(SaveJob {
+            rebuilt: Some(Rebuilt { opened: candidate.doc.oplog_frontiers(), size: bytes.len() }),
+            rows: Rows::Checkpoint(bytes),
+            version: candidate.doc.oplog_vv(),
+            rebuild: None,
+        })
+    }
+    /// The checkpoint that replaces the saved state with `candidate`, a document already
+    /// checked against this store's app: a replica's installed snapshot.
+    pub fn replacement(&self, candidate: &Document) -> Result<SaveJob> {
+        let bytes = candidate.checkpoint().map_err(load_failure)?;
+        self.replacement_job(candidate, bytes)
+    }
+    /// A rebuild of `size` retained bytes failed: the next is due only after another
+    /// checkpoint's worth of history.
+    pub(crate) fn defer_rebuild(&self, size: usize) {
+        lock(&self.account).rebuilt_size = size;
+    }
+    pub(crate) fn budget(&self) -> Budget {
+        lock(&self.account).budget
+    }
+    #[cfg(test)]
+    pub(crate) fn set_budget(&self, budget: Budget) {
+        lock(&self.account).budget = budget;
+    }
+    #[cfg(test)]
+    pub(crate) fn rebuilt_size(&self) -> usize {
+        lock(&self.account).rebuilt_size
+    }
+
+    /// A digest of the app this file holds: its whole `app` row and assets, typed and
+    /// length-delimited. Two files hold the same app exactly when their digests match;
+    /// document state and artwork are not part of it.
+    pub fn app_digest(&self) -> Result<String> {
+        self.check(false)?;
+        self.read(|conn| {
+            let mut digest = Sha256::new();
+            digest.update(b"hitslop-app-1");
+            for query in ["SELECT * FROM app ORDER BY id", "SELECT * FROM assets ORDER BY key"] {
+                let mut statement = conn.prepare(query).map_err(sqlite("read app"))?;
+                let count = statement.column_count();
+                let mut rows = statement.query([]).map_err(sqlite("read app"))?;
+                digest.update(query.as_bytes());
+                while let Some(row) = rows.next().map_err(sqlite("read app"))? {
+                    digest.update([0xff]);
+                    for column in 0..count {
+                        use rusqlite::types::ValueRef;
+                        let (tag, bytes) = match row.get_ref(column).map_err(sqlite("read app"))? {
+                            ValueRef::Null => (0, vec![]),
+                            ValueRef::Integer(n) => (1, n.to_be_bytes().to_vec()),
+                            ValueRef::Real(n) => (2, n.to_bits().to_be_bytes().to_vec()),
+                            ValueRef::Text(bytes) => (3, bytes.to_vec()),
+                            ValueRef::Blob(bytes) => (4, bytes.to_vec()),
+                        };
+                        digest.update([tag]);
+                        digest.update((bytes.len() as u64).to_be_bytes());
+                        digest.update(&bytes);
+                    }
+                }
+            }
+            Ok(crate::hex(digest.finalize().as_slice()))
+        })
+    }
     /// Deletes the attachments the saved state no longer references, in a transaction of
     /// their own, and returns how many. The owner calls it as it closes, after its final
     /// save, when no import can be waiting for its reference. A session that saved no edit
@@ -566,6 +741,7 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
         return Err(Error::Full);
     }
     let tx = file::begin_write(conn, "clean copy")?;
+    rows::renew_document(&tx)?;
     rows::put_checkpoint(&tx, &state)?;
     rows::clear_updates(&tx)?;
     rows::clear_artwork(&tx)?;

@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 fn evaluate(code: &str) -> Value {
     let args = json!({});
     let bundle = format!(
-        "globalThis.__slopCommands = {{probe:Object.assign(()=>{{}}, {{[Symbol.for('hitslop.command')]:{{spec:{{args:{args},run(ctx){{{code}}}}}}}}})}};"
+        "globalThis.__slopCommands = {{probe:Object.assign(()=>{{}}, {{[Symbol.for('slop.command')]:{{spec:{{args:{args},run(ctx){{{code}}}}}}}}})}};"
     );
     let request = json!({"name":"probe","args":{},"value":{"count":0},"descriptor":{"kind":"object","properties":{"count":{"kind":"counter"}}},"now":1234,"seed":[1,2,3,4]});
     let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();

@@ -8,12 +8,29 @@
   "hits": 0,
   "label": "",
   "lane": "todo",
+  "lastHit": 0,
   "ratio": 0.5,
   "rows": [],
   "settings": {
     "muted": false,
     "volume": 5
   },
+  "slides": [
+    {
+      "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+      "blocks": [
+        {
+          "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+          "text": "First block"
+        },
+        {
+          "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+          "text": "Second block"
+        }
+      ],
+      "title": "Nested composition"
+    }
+  ],
   "title": "Svelte ABI 2",
   "version": "Authored version"
 }

@@ -1,7 +1,8 @@
 <script lang="ts">
-    import doc from "./schema";
+  import doc from "./schema";
   import variant from "./variant";
-  let { mode }: { mode: "preview" | "export" } = $props();
+  import type { CaptureMode } from "hitslop/svelte";
+  let { mode }: { mode: Exclude<CaptureMode, "icon"> } = $props();
 </script>
 
 <article class="shape-lab-export">

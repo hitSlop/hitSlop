@@ -43,6 +43,7 @@ pub enum Code {
     InvalidShape,
     RequiresUpdate,
     IsTemplate,
+    Refused,
 }
 #[uniffi::remote(Enum)]
 pub enum NativeRequest {

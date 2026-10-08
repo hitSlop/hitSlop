@@ -672,7 +672,7 @@
       "error": "out_of_range"
     },
     {
-      "name": "an entry holding text is never replaced",
+      "name": "a complete object entry set reconciles its text",
       "intents": [
         {
           "type": "set",
@@ -695,7 +695,38 @@
           }
         }
       ],
-      "error": "exists"
+      "after": {
+        "title": "Board",
+        "done": {},
+        "widths": {
+          "A": 100
+        },
+        "cells": {},
+        "pages": {
+          "d1": {
+            "text": "b"
+          }
+        },
+        "pixels": [
+          "#fff",
+          "#fff",
+          "#fff"
+        ],
+        "presets": [
+          60,
+          90
+        ],
+        "habits": [
+          {
+            "$id": "h1",
+            "name": "Walk",
+            "checkins": {}
+          }
+        ],
+        "stats": {
+          "guesses": []
+        }
+      }
     },
     {
       "name": "a scalar list element outside its bounds is refused",

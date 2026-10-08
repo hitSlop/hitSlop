@@ -17,6 +17,12 @@ pub(super) struct Invocation {
     origin: Origin,
     attempt: u8,
     callback: Option<Completion>,
+    pub(super) session: Option<session::Context>,
+}
+impl Invocation {
+    pub(super) fn take_callback(&mut self) -> Completion {
+        take(&mut self.callback)
+    }
 }
 const _: () = assert!(
     crate::RUNTIME_ABI == hitslop_runner::RUNTIME_ABI,
@@ -43,6 +49,9 @@ struct Refusal {
     #[serde(rename = "ok")]
     _ok: False,
     error: String,
+    /// The command called `refuse(message)`: a message for the person, not a fault.
+    #[serde(default)]
+    refused: bool,
 }
 /// The intents a command built for `abi` returns, in the core's current vocabulary. ABI 1's
 /// are today's. A later ABI that changes the vocabulary translates an older one here; the
@@ -69,6 +78,7 @@ pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: m
             let output = evaluator.run(runtime_abi, &bundle, &input).map_err(host_fault)?;
             serde_json::from_str(&output).map_err(|_| match serde_json::from_str::<Refusal>(&output) {
                 // The command threw: its own refusal.
+                Ok(Refusal { error, refused: true, .. }) => Failure::rejected(Code::Refused, error),
                 Ok(refusal) => rejected(refusal.error),
                 Err(_) => host_fault("it returned an invalid reply"),
             })
@@ -95,7 +105,7 @@ impl Actor {
         if self.evaluating {
             return Err(rejected("Another command is running; wait for it to finish"));
         }
-        let args: Value = crate::parse(&args_json)?;
+        let mut args: Value = crate::parse(&args_json)?;
         let command = self
             .store
             .app()
@@ -104,7 +114,7 @@ impl Actor {
             .iter()
             .find(|command| command.name == name)
             .ok_or_else(|| rejected(format!("No command named {name}; run slop describe")))?;
-        command.args.validate(&args).map_err(|error| {
+        command.args.prepare(&mut args).map_err(|error| {
             rejected(format!("Invalid arguments for {name} at {}: {}", error.pointer(), error.message))
         })?;
         if self.evaluate.is_none() {
@@ -114,6 +124,7 @@ impl Actor {
         let mut bytes = [0; 16];
         getrandom::getrandom(&mut bytes).map_err(rejected)?;
         let seed = std::array::from_fn(|i| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().expect("four bytes")));
+        let session = self.session_command();
         self.evaluate_command(Invocation {
             generation: self.generation,
             version: self.core.version(),
@@ -126,6 +137,7 @@ impl Actor {
             origin,
             attempt: 0,
             callback: Some(take(callback)),
+            session,
         });
         Ok(())
     }
@@ -155,13 +167,13 @@ impl Actor {
         let (bundle, input) = match prepare() {
             Ok(input) => input,
             Err(error) => {
-                complete(take(&mut invocation.callback), Err(error));
+                self.command_answered(&mut invocation, Err(error));
                 return;
             }
         };
         let Some(evaluate) = &self.evaluate else {
-            complete(
-                take(&mut invocation.callback),
+            self.command_answered(
+                &mut invocation,
                 Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator")),
             );
             return;
@@ -171,7 +183,7 @@ impl Actor {
             evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
-            complete(take(&mut invocation.callback), Err(closed()));
+            self.command_answered(&mut invocation, Err(closed()));
         }
     }
     pub(super) fn command_finished(&mut self, mut invocation: Invocation, result: Result<Evaluation>) {
@@ -212,7 +224,8 @@ impl Actor {
             invocation.version = self.core.version();
             self.evaluate_command(invocation);
         } else {
-            complete(take(&mut invocation.callback), applied);
+            self.command_answered(&mut invocation, applied);
         }
+        self.release_held();
     }
 }

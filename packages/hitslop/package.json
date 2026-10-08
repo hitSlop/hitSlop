@@ -28,7 +28,8 @@
     "skills",
     ".crust/root/skills",
     "shell",
-    "engine"
+    "engine",
+    "tsconfig.slop.json"
   ],
   "engines": {
     "bun": ">=1.4.2"
@@ -47,7 +48,9 @@
   "exports": {
     ".": "./src/sdk/schema.ts",
     "./svelte": "./src/sdk/app/store.svelte.ts",
+    "./base.css": "./src/sdk/base.css",
     "./embed": "./src/sdk/app/embed.ts",
+    "./tsconfig.json": "./tsconfig.slop.json",
     "./package.json": "./package.json"
   }
 }

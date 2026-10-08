@@ -11,6 +11,113 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
+  @Test @MainActor func largestDefaultPreviewStaysWithinRasterBudget() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      try Fixtures.updateApp(stage) {
+        $0["window"] = ["kind": "standard", "width": 4096, "height": 4096]
+      }
+      try Fixtures.writeApp(
+        "export default { mount(ctx, target) { target.textContent = 'Large preview'; } };", to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let preview = try #require(NSBitmapImageRep(data: try await SlopRenderer.previewPNGData(url: root)))
+    #expect(preview.pixelsWide == 4096 && preview.pixelsHigh == 4096)
+    #expect(preview.pixelsWide * preview.pixelsHigh <= Limits.imagePixels)
+  }
+
+  @Test @MainActor func dedicatedExportCanBeWiderThanItsWindow() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      try Fixtures.updateApp(stage) {
+        $0["window"] = ["kind": "standard", "width": 280, "height": 300]
+      }
+      try Fixtures.writeApp(
+        """
+        export default { mount(ctx, target) {
+          const surface = document.createElement('section');
+          surface.style.cssText = 'width:520px;height:160px;background:white;position:relative';
+          surface.innerHTML = '<span style="position:absolute;left:400px;top:60px;background:red">Right edge</span>';
+          surface.hidden = true;
+          target.append(surface);
+          const stop = ctx.capture.registerTarget('export', {
+            element: surface,
+            prepare() { surface.hidden = false; },
+            restore() { surface.hidden = true; }
+          });
+          return { unmount() { stop(); surface.remove(); } };
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    do {
+      let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
+      #expect(png.pixelsWide == 1040)
+      let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+      #expect(pdf.page(at: 0)?.bounds(for: .mediaBox).width == 520)
+      #expect(pdf.string?.contains("Right edge") == true)
+    } catch {
+      try await session.close()
+      throw error
+    }
+    try await session.close()
+  }
+
+  @Test(arguments: [0, 1, 40])
+  @MainActor func checklistExportIncludesAllSavedRowsRegardlessOfSelectedTab(count: Int) async throws {
+    _ = NSApplication.shared
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    do {
+      let rows = (0..<count).map { index -> [String: Any] in
+        [
+          "$id": "export-\(index)", "text": "Final task \(index)\nCafé 😀 multiline",
+          "done": index % 2 == 0, "archived": false,
+        ]
+      }
+      #expect(
+        try await command(
+          "batch", url: root,
+          [
+            "batch": [
+              "intents": [
+                ["type": "replace", "path": ["tasks"], "value": rows]
+              ]
+            ]
+          ]
+        ).ok)
+      _ = try await session.webView.evaluateJavaScript(
+        "[...document.querySelectorAll('[role=tab]')].find(e => e.textContent.includes('Filed')).click()")
+      let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+      let page = try #require(pdf.page(at: 0))
+      #expect(pdf.pageCount == 1)
+      if count == 0 {
+        #expect(pdf.string?.contains("A little breathing room.") == true)
+      } else {
+        #expect(pdf.string?.contains("Final task \(count - 1)") == true)
+        #expect(pdf.string?.contains("Café") == true)
+      }
+      let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
+      let bounds = page.bounds(for: .mediaBox)
+      #expect(abs(CGFloat(png.pixelsWide) - bounds.width * 2) <= 2)
+      #expect(abs(CGFloat(png.pixelsHigh) - bounds.height * 2) <= 2)
+      if count == 40 { #expect(bounds.height > 1000) }
+      #expect(
+        try await session.webView.evaluateJavaScript(
+          "document.querySelector('[role=tab][aria-selected=true]')?.textContent.includes('Filed')") as? Bool == true)
+    } catch {
+      try await session.close()
+      throw error
+    }
+    try await session.close()
+  }
+
   @Test @MainActor func captureDoesNotTouchTheEditorDuringResize() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -346,7 +453,7 @@ extension HostTests {
     let root = try contractFixture { stage in
       let script = """
         export default { mount(ctx, target) {
-          const root = document.createElement('main'); root.dataset.hitslopRoot = '';
+          const root = document.createElement('main'); root.dataset.slopRoot = '';
           root.textContent = 'Fallback: ' + ctx.document.current.title;
           target.append(root); return { unmount() { root.remove(); } };
         } };

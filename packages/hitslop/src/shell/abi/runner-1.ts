@@ -1,9 +1,10 @@
 /** The restricted command process has only ECMAScript and this protocol. */
 import { evaluate, type CommandInput } from "../commands";
 import { commandInfo } from "../../sdk/commands";
+import { isRefused } from "../../sdk/errors";
 
 declare global {
-  var __hitslopRun: (input: string) => string;
+  var __slopRun: (input: string) => string;
   var __slopCommands: Record<string, unknown> | undefined;
 }
 
@@ -22,14 +23,15 @@ globalThis.Date = RestrictedDate;
 // Every date reaches the constructor through its prototype; that path is restricted too.
 Object.defineProperty(OriginalDate.prototype, "constructor", { value: RestrictedDate });
 Math.random = refuse;
-globalThis.__hitslopRun = (input: string): string => {
+globalThis.__slopRun = (input: string): string => {
   try {
     const request = JSON.parse(input) as CommandInput & { name: string };
     const commands = globalThis.__slopCommands;
     const info = commands && Object.hasOwn(commands, request.name) ? commandInfo(commands[request.name]) : undefined;
     if (!info) throw new Error(`No command named ${request.name}`);
-    return JSON.stringify({ ok: true, ...evaluate(request, info.spec.run) });
+    return JSON.stringify({ ok: true, ...evaluate(request, info.spec.run, info.spec.args) });
   } catch (error) {
-    return JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    return JSON.stringify({ ok: false, error: message, ...(isRefused(error) ? { refused: true } : {}) });
   }
 };

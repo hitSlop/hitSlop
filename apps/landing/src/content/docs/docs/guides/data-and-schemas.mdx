@@ -11,12 +11,12 @@ The Rust document owner (on Loro), shared by the hitSlop app and CLI, merges and
 import { defineDocument, s } from "hitslop";
 export default defineDocument({
   title: s.text(),
-  archived: s.boolean(),
+  archived: s.boolean({ default: false }),
   budget: s.number({ min: 0 }),
   mood: s.integer({ min: 1, max: 5 }),
   lane: s.enum(["todo", "doing", "done"]),
   note: s.optional(s.string({ maxLength: 280 })),
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean(), due: s.optional(s.string()) })),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean({ default: false }), due: s.optional(s.string()) })),
   visits: s.counter(),
 });
 ```
@@ -34,19 +34,19 @@ Choose each field by how edits from several places should merge:
 | `s.record(value)` | Scalars or objects by key: check-ins by date, cells by `"A1"` | Per key; object entries per field |
 | `s.counter()` | Tallies | Increments add up |
 
-`minLength` and `maxLength` count characters (Unicode code points, so 😀 is one), bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing. Inserts and initial values may leave optional fields out. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state; anything an export or icon shows must be a field, because they render from the saved document.
+`minLength` and `maxLength` count characters (Unicode code points, so 😀 is one), bounds are inclusive, and integers are safe integers; a write outside the rules is refused and changes nothing.
 
-A new document starts from `slop.ts`'s `initial`, which must fit the schema:
+A field that inserts and initial values leave out takes its default: text starts empty, lists and records start empty, counters start at 0, and a scalar takes the `default` it declares, such as `s.boolean({ default: false })` or `s.enum(["low", "high"], { default: "low" })`. A scalar without a default must be given. Optional fields are left absent. An optional object is created or replaced with `set`, unless it holds lists, counters or text; edit those fields instead. An unset optional text shows as empty in a bound field, and typing creates it. Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Records use `put(key, value)`, `delete(key)` and `entry(key)`; keys are 1–256 characters and can't be `$id`, `__proto__`, `constructor` or `prototype`. Replacing an object entry that holds text or lists is refused; edit its fields instead. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state; anything an export or icon shows must be a field, because they render from the saved document.
+
+A new document starts from `slop.ts`'s `initial`, which must fit the schema. Fields with a default may be left out:
 
 ```ts
   initial: {
     title: "Weekend",
-    archived: false,
     budget: 120,
     mood: 4,
     lane: "todo",
-    tasks: [{ text: "Buy groceries", done: false }],
-    visits: 0,
+    tasks: [{ text: "Buy groceries" }],
   },
 ```
 
@@ -58,10 +58,10 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 ```svelte
 <script lang="ts">
-  import { bindText } from "hitslop/svelte";
+  import { EditableText } from "hitslop/svelte";
   import doc from "./schema";
 </script>
-  <input aria-label="Title" use:bindText={doc.fields.title} />
+  <EditableText class="title" field={doc.fields.title} label="Title" placeholder="Untitled" />
   <input type="checkbox" bind:checked={doc.fields.archived.value} />
   <input type="range" min="1" max="5" bind:value={doc.fields.mood.value} />
   <select bind:value={doc.fields.lane.value}>
@@ -71,19 +71,42 @@ The builder validates initial values and stores the schema's descriptor and the 
   {#each doc.current.tasks as task (task.$id)}
     {@const row = doc.at(task)}
     <input type="checkbox" bind:checked={row.done.value} />
-    <input aria-label="Task" use:bindText={row.text} />
+    <EditableText class="task" field={row.text} label="Task" />
   {/each}
 ```
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
-`bindText` keeps what the person types in the field and sends each change for the app to merge, so edits made elsewhere at the same time (another window, or an agent writing from the version it read) are kept, and the caret stays put, including during IME composition. `text.set(value)` replaces a whole field.
+`EditableText` shows a text field and turns into a growing textarea where the person clicks. It keeps what they type and sends each change for the app to merge, so edits made elsewhere at the same time (another window, or an agent writing from the version it read) are kept, and the caret stays put, including during IME composition. Style it through its one `class`, and `[data-placeholder]` inside it for the empty text; `onenter` handles Enter, which otherwise adds a line. To bind your own `<input>` or `<textarea>` instead, use `use:bindText={handle}`. A text handle's `value` reads the shown text, and `text.set(value)` replaces a whole field.
 
 Scalar fields (booleans, strings, numbers, integers and enums) have a `value` for Svelte's `bind:`, which works with native inputs and with component libraries such as bits-ui. Assigning shows the value at once and saves it once the person pauses, so dragging a range or typing a date writes once. An emptied control clears an optional field. Svelte binds only to a name or a property path, so give a row's handle a name with `{@const row = doc.at(task)}` before binding its fields.
 
 Writes are asynchronous. `set` on a scalar shows the new value in `doc.current` at once; every write's promise resolves once the app has accepted it and `doc.current` shows it, so read row inserts and moves after awaiting. A resolved write is not yet on disk or rendered: use `await doc.flush()` when it must be saved and Svelte's `tick()` when the next step depends on the DOM.
 
 A refused write leaves the saved value in `doc.current`, and hitSlop shows the person what went wrong. You don't need to catch it: `await doc.fields.tasks.insert(...)` followed by clearing a composer keeps the composer's text when the insert is refused. Catch a rejection only to show your own message; one you catch is not reported again.
+
+## Composers, motion and notices
+
+`hitslop/svelte` handles behavior most slops repeat, and leaves the markup to you:
+
+```svelte
+<script lang="ts">
+  import { draft, motion, notify } from "hitslop/svelte";
+  import doc from "./schema";
+  import { addTask, archiveFinished } from "./commands";
+  const task = draft(text => addTask({ text }));
+  const ratio = $derived(doc.current.tasks.filter((t) => t.done).length / Math.max(1, doc.current.tasks.length));
+  const fill = motion(() => ratio);
+</script>
+<form onsubmit={task.submit}>
+  <input aria-label="New task" bind:value={task.value} />
+  <button disabled={!task.ready}>Add</button>
+</form>
+<div class="bar" style:transform={`scaleX(${fill.current})`}></div>
+<button onclick={async () => notify(`${await archiveFinished()} filed.`)}>File finished</button>
+```
+
+`draft` trims the text, ignores a second submit while one runs, and clears the input once the command is accepted, unless the person typed more meanwhile. `motion` eases a number toward its target, jumps when the person prefers reduced motion, and settles before a capture. `notify` shows a message in the window's notice region, `[data-slop-notice]`, which holds the current message as a `<p>`; restyle it from your CSS. A command's `refuse("Enter a task.")` appears there too.
 
 ## Previews for drags and drawing
 
@@ -94,7 +117,7 @@ While a person drags or draws, call `handle.preview(value)` on each frame: `doc.
 Every row has `$id`. Key Svelte loops and selection state by that ID, not by index:
 
 ```ts
-const { id } = await doc.fields.tasks.insert({ text: "Book tickets", done: false }, { after: task.$id });
+const { id } = await doc.fields.tasks.insert({ text: "Book tickets" }, { after: task.$id });
 await doc.fields.tasks.move(id, { before: anotherTask.$id });
 await doc.fields.tasks.item(id).text.set("Book train tickets");
 await doc.fields.tasks.remove(id);
@@ -108,7 +131,7 @@ await doc.fields.visits.increment();
 ```ts
 await doc.change(tx => {
   for (const task of finished) tx.at(task).done.set(true);
-  const { id } = tx.fields.tasks.insert({ text: "Plan next weekend", done: false });
+  const { id } = tx.fields.tasks.insert({ text: "Plan next weekend" });
   tx.fields.tasks.move(id, { before: finished[0].$id });
   tx.fields.archived.set(false);
 });
@@ -140,7 +163,8 @@ Every kind's merge rules, error codes and CLI paths are in the [document types r
 ### Handling refused edits
 
 Use `isRejected(error)` from `hitslop` when catching a semantic refusal;
-its `reason` and `opIndex` identify the core rule and operation. Use
+its `reason` and `opIndex` identify the core rule and operation. `isRefused(error)`
+recognizes a command's `refuse(message)`. Use
 `isDocumentError(error)` to distinguish other document outcomes from application
 errors. Use these guards rather than `instanceof`. An unknown outcome does not prove
 an edit was refused; read current state before another edit.

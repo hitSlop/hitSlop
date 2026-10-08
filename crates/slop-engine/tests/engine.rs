@@ -8,6 +8,18 @@ use std::process::{Command, Stdio};
 fn protocol() -> String {
     hitslop_core::command::protocol().parse::<Value>().unwrap()["version"].to_string()
 }
+
+#[test]
+fn the_engine_does_not_expose_development_rooms() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("untouched.slop");
+    for entry in ["--dev-room", "--dev-replica-owner"] {
+        let result = invoke(&["--client-protocol", &protocol(), entry, path.to_str().unwrap()], b"{}\n", None);
+        assert_eq!(result.status.code(), Some(2));
+        assert!(result.stdout.is_empty());
+        assert!(!path.exists());
+    }
+}
 fn invoke(args: &[&str], input: &[u8], helper: Option<&Path>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_slop-engine"));
     command.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -105,7 +117,7 @@ fn invalid_requests_are_classified_and_never_publish() {
 
 #[test]
 fn the_engine_keeps_its_private_evaluator_entrypoint() {
-    let input = json!({"runtimeABI":1,"mode":"definition","bundle":"globalThis.__hitslopDescribe=()=>JSON.stringify({ok:true,probe:'shared runner'});","request":"{}"});
+    let input = json!({"runtimeABI":1,"mode":"definition","bundle":"globalThis.__slopDescribe=()=>JSON.stringify({ok:true,probe:'shared runner'});","request":"{}"});
     let output = invoke(&["--evaluate-command"], input.to_string().as_bytes(), None);
     assert!(output.status.success());
     assert_eq!(serde_json::from_slice::<Value>(&output.stdout).unwrap(), json!({"ok":true,"probe":"shared runner"}));

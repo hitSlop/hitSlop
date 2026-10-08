@@ -2,29 +2,14 @@
   --font: "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
   --headingFont: Georgia, "Times New Roman", serif;
 }
-* {
-  box-sizing: border-box;
-}
-
 :root {
   font-family: var(--font);
   color-scheme: light;
-  font-synthesis: none;
 }
 
 body {
   background: var(--slop-surface);
   color: var(--slop-ink);
-}
-
-button,
-input {
-  font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
 }
 
 button:disabled {
@@ -333,23 +318,6 @@ html[data-slop-capture] .checklist-row {
   opacity: 0.7;
 }
 
-.checklist-row [data-checkbox-root] {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1.5px solid color-mix(in srgb, var(--slop-muted) 65%, transparent);
-  border-radius: 7px;
-  background: transparent;
-  color: var(--slop-onAccent);
-}
-
-.checklist-row [data-state="checked"] {
-  border-color: var(--slop-successBorder);
-  background: var(--slop-success);
-}
-
 .checklist-task-text {
   width: 100%;
   min-height: 24px;
@@ -362,8 +330,7 @@ html[data-slop-capture] .checklist-row {
   overflow-wrap: anywhere;
 }
 
-.checklist-row[data-done="true"] .checklist-task-text,
-.checklist-row[data-done="true"] > span {
+.checklist-row[data-done="true"] .checklist-task-text {
   color: var(--slop-muted);
   text-decoration: line-through;
   text-decoration-color: var(--slop-muted);
@@ -486,31 +453,24 @@ html[data-slop-capture] .checklist-row {
   font-size: 11px;
 }
 
-.checklist-notice {
-  position: absolute;
-  right: 28px;
+/* The window's notice region, shared by refusals and notify(). */
+[data-slop-notice] {
+  inset-inline: 28px;
   bottom: 26px;
-  z-index: 30;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  justify-content: flex-end;
+}
+
+[data-slop-notice] p {
   min-width: 180px;
   padding: 10px 12px;
   border: 2px solid var(--slop-ink);
   border-radius: 8px;
   background: var(--slop-highlight);
   box-shadow: 3px 3px 0 color-mix(in srgb, var(--slop-ink) 20%, transparent);
+  color: var(--slop-ink);
+  font: inherit;
   font-size: 12px;
-}
-
-.checklist-notice button {
-  border: 0;
-  padding: 5px 7px;
-  border-radius: 5px;
-  background: var(--slop-paper);
-  color: var(--slop-accent);
-  font-weight: 700;
+  text-align: start;
 }
 
 .checklist-empty {
@@ -534,16 +494,8 @@ html[data-slop-capture] .checklist-row {
   font-size: 12px;
 }
 
-.checklist-error {
-  font-size: 13px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--slop-paper);
-  color: var(--slop-accent);
-  overflow-wrap: anywhere;
-}
 
-html[data-slop-capture="static"] .checklist-shell {
+.checklist-export {
   /* WebKit's vector PDF path paints the layered gradients black. */
   background: var(--slop-surface);
   display: block;
@@ -552,22 +504,24 @@ html[data-slop-capture="static"] .checklist-shell {
   overflow: visible;
 }
 
-html[data-slop-capture="static"] .checklist-row {
+.checklist-export .checklist-row {
   grid-template-columns: 25px minmax(0, 1fr);
 }
 
-html[data-slop-capture="static"] .checklist-paper {
+.checklist-export .checklist-paper {
   height: auto;
   min-height: 0;
   display: block;
 }
 
-html[data-slop-capture="static"] .checklist-scroller {
-  overflow: visible;
+.checklist-export .checklist-list {
+  padding-bottom: 28px;
 }
 
-html[data-slop-capture="static"] .checklist-list {
-  padding-bottom: 28px;
+.checklist-export .checklist-title,
+.checklist-export .checklist-task-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .checklist-icon-tile {

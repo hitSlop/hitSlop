@@ -162,6 +162,11 @@ const tiers: Tier[] = [
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
+      if (!args.length) {
+        const sync = ["-p", "hitslop-core", "-p", "slop-engine", "--features", "dev-sync"];
+        await prepare("Development sync compilation and lints", () => quiet(["cargo", "clippy", "--locked", ...sync, "--all-targets", "--", "-D", "warnings"]));
+        await sh(["cargo", "nextest", "run", "--locked", ...sync, ...(ci ? ["--profile", "ci"] : [])]);
+      }
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
           await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
@@ -217,14 +222,21 @@ const tiers: Tier[] = [
     native: true,
     needs: ["native"],
     inputs: tierInputs.native,
-    run: (args) =>
-      bunTest(inventory.native, args, {
+    run: async (args, prepare) => {
+      const filters = args.filter(arg => !arg.startsWith("-"));
+      const sync = inventory.native.some(file => file.endsWith("live-sync.native.test.ts") && (!filters.length || filters.some(filter => file.includes(filter))));
+      const syncEngine = join(repository, "target/dev-sync/release/slop-engine");
+      if (sync) await prepare("Development sync engine", () => quiet(["cargo", "build", "--locked", "--release", "-p", "slop-engine", "--features", "dev-sync", "--bins", "--target-dir", join(repository, "target/dev-sync")]));
+      await bunTest(inventory.native, args, {
         HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
+        HITSLOP_TEST_EVIDENCE: runDirectory,
+        ...(sync ? { HITSLOP_DEV_SYNC_ENGINE: syncEngine } : {}),
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
         ...(release && releaseTag ? { HITSLOP_COMPAT_RELEASE: releaseTag } : {}),
         ...(release && !flag("--skip-app") ? { HITSLOP_APP_BINARY: join(repository, "generated/app/hitSlop.app/Contents/MacOS/hitSlop") } : {}),
-      }),
+      });
+    },
   },
 ];
 const tierNames = tiers.map((tier) => tier.name);

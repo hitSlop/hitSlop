@@ -2,7 +2,8 @@
 import doc from "./schema";
 import Vessel from "./Vessel.svelte";
 import { read } from "./model";
-let { mode }: { mode: "preview" | "export" } = $props();
+import type { CaptureMode } from "hitslop/svelte";
+let { mode }: { mode: Exclude<CaptureMode, "icon"> } = $props();
 const reading = $derived(read(doc.current, Date.now()));
 </script>
 

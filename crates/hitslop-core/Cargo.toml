@@ -22,6 +22,9 @@ doctest = false
 
 [features]
 default = ["storage"]
+# The shared owner session of the native loopback proof (`owner/sync.rs`, used by the
+# `slop-room` development binary); never enabled in shipped builds.
+dev-sync = ["storage"]
 # Code generation only; never enabled by the WASM build or shipped native library.
 ts = ["dep:ts-rs", "storage"]
 # Durable storage for native hosts: the document file (SQLite), the writer lock and the
@@ -58,6 +61,10 @@ png = "=0.18.1"
 jsonschema = { version = "=0.58.3", default-features = false }
 
 [[test]]
+name = "replication"
+required-features = ["storage"]
+
+[[test]]
 name = "file"
 required-features = ["storage"]
 
@@ -92,3 +99,7 @@ required-features = ["storage"]
 [[example]]
 name = "export_bindings"
 required-features = ["ts"]
+
+[[example]]
+name = "bench_owner_history"
+required-features = ["storage"]

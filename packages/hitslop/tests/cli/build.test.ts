@@ -136,7 +136,7 @@ for (const [name, properties, initial, code] of [
   const root = await mkdtemp(join(process.cwd(), ".core-validation-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("packages/hitslop/templates/checklist", source, { recursive: true });
     await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties});`);
     await overrideSlop(source, { initial: JSON.stringify(initial) });
     await expect(stage(source, join(root, "invalid"))).rejects.toThrow(code);
@@ -164,9 +164,9 @@ test("a capture view cannot read state the editor sets", async () => {
     await writeFile(join(source,"ui.svelte.ts"), `export const ui = $state({ tab: "tasks" });\n`);
     await writeFile(join(source,"Tab.svelte"), `<script lang="ts">import { ui } from "./ui.svelte";</script><b>{ui.tab}</b>`);
     await writeFile(join(source,"Export.svelte"), `<script lang="ts">import Tab from "./Tab.svelte";</script><Tab />`);
-    // The editor reads it, also when the editor itself renders captures.
+    // Reusing the editor does not make its transient state available to captures.
     await overrideSlop(source, { view: "Tab", export: "Tab" }, `import Tab from "./Tab.svelte";`);
-    await stage(source,join(root,"editor"));
+    await expect(stage(source,join(root,"editor"))).rejects.toThrow("fresh page");
     // A capture view sees only the initial value, even through a shared component.
     await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
     await expect(stage(source,join(root,"export"))).rejects.toThrow("fresh page");

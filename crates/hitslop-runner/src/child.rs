@@ -43,8 +43,8 @@ fn evaluate(input: Input) -> Result<String, String> {
         ctx.eval::<(), _>(strict(prelude)).catch(&ctx).map_err(|e| e.to_string())?;
         ctx.eval::<(), _>(strict(&input.bundle)).catch(&ctx).map_err(|e| e.to_string())?;
         let function = match input.mode {
-            Mode::Command => "__hitslopRun",
-            Mode::Definition => "__hitslopDescribe",
+            Mode::Command => "__slopRun",
+            Mode::Definition => "__slopDescribe",
         };
         let run: Function = ctx.globals().get(function).catch(&ctx).map_err(|e| e.to_string())?;
         run.call::<_, String>((input.request,)).catch(&ctx).map_err(|e| e.to_string())

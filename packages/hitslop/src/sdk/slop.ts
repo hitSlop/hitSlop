@@ -1,5 +1,6 @@
 import type { Definition, Input, ObjectNode } from "./schema";
 import type { Component } from "svelte";
+import type { CaptureMode } from "../wire/page.generated";
 import type { AppMetadata, Category, WindowInput } from "../wire/app.generated";
 
 /** `A`, refusing every key only `B` has: the two window forms never mix. */
@@ -15,7 +16,9 @@ export type AppDeclaration<S extends Definition<ObjectNode>> = Omit<AppMetadata,
   window: Only<StandardWindowInput, SkinWindowInput> | Only<SkinWindowInput, StandardWindowInput>;
   theme: Readonly<Record<string, `#${string}`>>;
   view: Component;
-  export?: Component<{ mode: "preview" | "export" }>;
+  /** A dedicated composition derived from the saved document, independent of editor state. */
+  /** A capture layout, given `mode` (`preview` or `export`) when it declares it. */
+  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }> | Component<Record<string, never>>;
   icon?: Component;
   commands?: Record<string, unknown>;
   artwork?: { preview?: string; icon?: string };

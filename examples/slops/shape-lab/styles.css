@@ -25,7 +25,6 @@
 .shape-lab-resize { display: flex; gap: 4px; margin-left: auto; }
 .shape-lab-resize button { font-size: 10px; padding: 3px 5px; }
 .shape-lab-pointer { display: none; }
-.shape-lab-error { position: absolute; bottom: 120px; left: 70px; right: 70px; background: var(--slop-paper); color: #9c291b; padding: 8px; }
 .shape-lab-skin-count { display: none; }
 .shape-lab-skin .shape-lab-skin-count { display: block; font-size: 10px; line-height: 12px; }
 .shape-lab-skin { color: var(--slop-paper); background: transparent; min-height: 0; }

@@ -184,6 +184,22 @@ fn commands_are_named_unique_and_use_the_descriptor_subset() {
 }
 
 #[test]
+fn row_arguments_name_a_list_of_objects_in_the_document() {
+    let mut value = definition();
+    value["document"]["properties"]["tasks"] =
+        json!({"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}});
+    value["document"]["properties"]["tags"] = json!({"kind":"list","item":{"kind":"string"}});
+    for (list, accepted) in [("tasks", true), ("tags", false), ("title", false), ("missing", false)] {
+        value["commands"][0]["args"]["properties"]["task"] = json!({"kind":"row","list":list});
+        let result = read(&metadata(), &value);
+        assert_eq!(result.is_ok(), accepted, "{list}");
+        if let Err(error) = result {
+            assert_eq!((error.code, error.pointer()), (Code::InvalidSchema, "/commands/0/args".into()));
+        }
+    }
+}
+
+#[test]
 fn build_declarations_share_acceptance_and_check_initial_values() {
     let mut value = definition();
     value["metadata"] = metadata();

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { bindText } from "hitslop/svelte";
+import { refuse } from "hitslop";
 import { prefersReducedMotion } from "svelte/motion";
 import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 import CalendarClock from "@lucide/svelte/icons/calendar-clock";
@@ -18,7 +19,6 @@ const choosing = $derived(changing || reading.state === "unset");
 /** The sand shown while the glass turns over: the amount it had before the turn. */
 let turning = $state<number | null>(null);
 let custom = $state(localInput(Date.now() + day));
-let problem = $state("");
 let visible = $state(document.visibilityState === "visible");
 
 // The clock only ticks while sand is falling in a window someone can see.
@@ -35,32 +35,29 @@ function visibilityChanged() {
 
 /** Turns the glass over: it runs from now until `end`. */
 async function turnOver(end: number) {
-  if (!prefersReducedMotion.current) turning = reading.remaining;
+  const previous = reading.remaining;
+  await actions.startUntil({ end });
+  if (!prefersReducedMotion.current) turning = previous;
   changing = false;
-  problem = "";
-  const at = Date.now();
-  now = at;
-  try { await actions.startUntil({ end }); }
-  catch (error) { problem = error instanceof Error ? error.message : String(error); changing = true; }
+  now = Date.now();
 }
 async function again() {
-  if (!prefersReducedMotion.current) turning = reading.remaining;
+  const previous = reading.remaining;
+  await actions.restart();
+  if (!prefersReducedMotion.current) turning = previous;
   now = Date.now();
-  try { await actions.restart(); }
-  catch (error) { problem = error instanceof Error ? error.message : String(error); }
 }
 function change() {
   const { end } = doc.current;
   custom = localInput(end > Date.now() ? end : Date.now() + day);
-  problem = "";
   changing = true;
 }
-function until(event: SubmitEvent) {
+async function until(event: SubmitEvent) {
   event.preventDefault();
   const end = new Date(custom).getTime();
-  if (!custom || Number.isNaN(end)) problem = "Pick a date and time.";
-  else if (end <= Date.now()) problem = "Pick a time that hasn't passed.";
-  else void turnOver(end);
+  if (!custom || Number.isNaN(end)) refuse("Pick a date and time.");
+  if (end <= Date.now()) refuse("Pick a time that hasn't passed.");
+  await turnOver(end);
 }
 </script>
 
@@ -97,7 +94,6 @@ function until(event: SubmitEvent) {
       <label for="hourglass-until-input">or until</label>
       <input id="hourglass-until-input" type="datetime-local" bind:value={custom} />
       <button type="submit">Start</button>
-      <p aria-live="polite">{problem}</p>
     </form>
   {:else}
     <section class="hourglass-readout" role="timer" aria-label={doc.current.title || "Countdown"}>

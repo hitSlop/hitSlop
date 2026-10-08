@@ -1,7 +1,11 @@
 {
   "actions" : [
     {
-      "selector" : "[aria-label=\"Checklist title\"]",
+      "focus" : true,
+      "selector" : "[role=\"textbox\"][aria-label=\"Checklist title\"]"
+    },
+    {
+      "selector" : "textarea[aria-label=\"Checklist title\"]",
       "value" : "Checklist edited ✓"
     }
   ],

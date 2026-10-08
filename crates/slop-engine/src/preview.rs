@@ -36,21 +36,27 @@ fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     }
 }
 pub fn serve(path: &Path) -> ExitCode {
+    serve_configured(path, |_| Ok(()))
+}
+/// `serve`, with `configure` run on the owner before the page connects: the development
+/// room makes it a replica there.
+pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Result<(), String>) -> ExitCode {
     let Ok((mut transport, send)) = transport::Transport::new() else {
         return ExitCode::FAILURE;
     };
     let mut shutdown = None;
     let events = send.clone();
     let result = (|| -> Result<(), String> {
-        let evaluator = super::evaluator()?;
-        let owner = Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
+        let evaluator = crate::evaluator()?;
+        let owner = Arc::new(Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
             let message = match event {
                 Event::Publication { json: publication } => json!({"type":"push","pushes":[{"type":"publication","publication":serde_json::from_str::<Value>(&publication).expect("publication")}]}),
                 Event::SaveStatus { status, failure } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
                 _ => return,
             };
             events.send(message);
-        }), Some(evaluator)).map_err(|e| e.to_string())?;
+        }), Some(evaluator)).map_err(|e| e.to_string())?);
+        configure(owner.clone())?;
         let resources = owner.resource_reader().map_err(|e| e.to_string())?;
         let view = "preview";
         owner.attach(view.into());
@@ -67,7 +73,7 @@ pub fn serve(path: &Path) -> ExitCode {
                         else {
                             return Err(error.to_string());
                         };
-                        send.send(json!({"type":"reply","id":id,"reply":super::rejected("invalid_request", error)}));
+                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected("invalid_request", error)}));
                         continue;
                     }
                 };
@@ -123,7 +129,7 @@ pub fn serve(path: &Path) -> ExitCode {
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::value::RawValue::from_string(super::rejected("invalid_request", error))
+        let error = serde_json::value::RawValue::from_string(crate::rejected("invalid_request", error))
             .expect("serialized failure");
         send.send(json!({"type":"fatal","error":error}));
     }

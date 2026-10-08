@@ -30,7 +30,7 @@ at the skin's fixed size.
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
 transparency with more-specific or `!important` page backgrounds. The generated Svelte entry provides the app root automatically;
-mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
+mark a framework-neutral root with `data-slop-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
 are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
 

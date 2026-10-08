@@ -53,8 +53,8 @@ pub(super) fn replace(
     }
 }
 
-/// The present object `map` becomes `value`, written as its differences (`set` of an
-/// object that holds only scalars).
+/// The present object `map` becomes the fully validated `value`, written as its
+/// differences so surviving text, lists and rows retain their identities.
 pub(super) fn object(
     doc: &LoroDoc,
     map: &LoroMap,

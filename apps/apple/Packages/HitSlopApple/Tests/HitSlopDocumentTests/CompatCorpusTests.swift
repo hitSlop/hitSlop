@@ -150,6 +150,11 @@ import WebKit
       const field = matches[0];
       if (field.disabled || field.readOnly || !field.getClientRects().length) throw new Error(`Unavailable control: ${action.selector}`);
       if (action.click) { field.click(); await globalThis.__slop.flush(); continue; }
+      // Editable text first focuses its display, then mounts the native text control.
+      // Yield through the page barrier before the next action queries that control.
+      if (action.focus) { field.focus(); await globalThis.__slop.flush(); continue; }
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement))
+        throw new Error(`Not an editable native control: ${action.selector}`);
       field.focus();
       field.value = action.value;
       field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: action.value }));

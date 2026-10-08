@@ -41,7 +41,7 @@ for (const mode of ["standard", "transparent", "glass", "skin"] as const) {
           aside { position: fixed; top: 12px; left: 450px; }
           .copyable { -webkit-user-select: text; user-select: text; }
         </style>
-        <main data-hitslop-root>
+        <main data-slop-root>
           <p><span id="label">Ordinary label</span></p>
           <button id="button">Ordinary button</button>
           <input aria-label="Input" value="Editable input">
@@ -123,7 +123,7 @@ test("glass keeps an authored page background that transparent and skin windows 
     const backgrounds: Record<string, string> = {};
     for (const mode of ["standard", "transparent", "glass", "skin"] as const) {
       await page.setContent(
-        `<!doctype html><style>body { background: rgba(10, 20, 30, 0.5); }</style><main data-hitslop-root></main>`,
+        `<!doctype html><style>body { background: rgba(10, 20, 30, 0.5); }</style><main data-slop-root></main>`,
       );
       backgrounds[mode] = await page.evaluate(async ({ source, mode }) => {
         const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));

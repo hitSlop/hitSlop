@@ -38,6 +38,8 @@ pub enum Code {
     InvalidShape,
     RequiresUpdate,
     IsTemplate,
+    /// A command refused with a message for the person (`refuse()`), not a fault.
+    Refused,
 }
 
 impl Code {
@@ -62,6 +64,7 @@ impl Code {
             Self::InvalidShape => "invalid_shape",
             Self::RequiresUpdate => "requires_update",
             Self::IsTemplate => "is_template",
+            Self::Refused => "refused",
         }
     }
 }
@@ -93,6 +96,7 @@ impl Code {
         Self::InvalidShape,
         Self::RequiresUpdate,
         Self::IsTemplate,
+        Self::Refused,
     ];
 }
 

@@ -44,7 +44,26 @@ pub(crate) fn clear_updates(conn: &Connection) -> Result<()> {
 }
 /// The document row that makes a copy of a template a document.
 pub(crate) fn add_document(conn: &Connection) -> Result<()> {
-    conn.execute("INSERT INTO document(id) VALUES(1)", []).map(|_| ()).map_err(sqlite("create the document"))
+    let mut bytes = [0u8; 16];
+    crate::random(&mut bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = crate::hex(&bytes);
+    let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
+    conn.execute("INSERT INTO document(id,uuid) VALUES(1,?)", [uuid]).map(|_| ()).map_err(sqlite("create the document"))
+}
+/// An independent copy is a new document. Only its unpublished staged file replaces the
+/// singleton; the original file's identity is immutable and never updated.
+pub(crate) fn renew_document(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM document", []).map_err(sqlite("create the copy's identity"))?;
+    add_document(conn)
+}
+/// The logical document identity, absent on templates. Call after the layout has bounded
+/// the row and its UUID; this identity is unrelated to the inode-based writer lease.
+pub(crate) fn document_uuid(conn: &Connection) -> Result<Option<String>> {
+    conn.query_row("SELECT uuid FROM document WHERE id=1", [], |row| row.get(0))
+        .optional()
+        .map_err(sqlite("read the document identity"))
 }
 
 /// The stored attachments' count, largest size and total size.

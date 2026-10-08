@@ -1,5 +1,5 @@
-/** Type-checks every active template in one compiler program, with the starter's
- * self-contained tsconfig. Discovery keeps archived examples out. */
+/** Type-checks every active template in one compiler program, with the compiler options
+ * every slop's tsconfig extends. Discovery keeps archived examples out. */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
@@ -7,7 +7,7 @@ import { repository } from "../lib/artifacts";
 import { discoverTemplates } from "./discover";
 
 const templates = await discoverTemplates();
-const standard = await Bun.file(join(repository, "packages/hitslop/templates/checklist/tsconfig.json")).json();
+const standard = await Bun.file(join(repository, "packages/hitslop/tsconfig.slop.json")).json();
 const temporary = await mkdtemp(join(repository, ".build-test-check-"));
 try {
   const config = join(temporary, "tsconfig.json");

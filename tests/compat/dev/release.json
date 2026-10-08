@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "b4e8765a130e86c96cab044ec0869e3683c3afbd-dirty",
-  "captured": "2026-10-07T17:59:36.145Z",
+  "commit": "8dec1847e8b782e762619fc446cc6366f3d20d6a-dirty",
+  "captured": "2026-10-08T07:41:07.378Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,48 +10,48 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "9a30c2542a70b16c650565a37ecfef811163097dfbbba33b9cfe75504cafb284",
+  "inputs": "6ef7c4203c7a6f58066c9202a71cf496a8527cad2aea2759d71ec5c58f09091b",
   "producer": {
-    "coreBuildID": "b74e64f911e389bd",
-    "shell": "29562c12bccf99d7fae039304f1c3e2696fed916b05fed3ebc2a9d15f882c914",
+    "coreBuildID": "bae15743e37f74a7",
+    "shell": "9471f643f7219473ee48da8088dc0b366f158fd4a6f38d5b2b5bfa166a92dd62",
     "runner": {
-      "1": "2890144f8f1884350fd8cac880fea0d807f2be6ea82e7c58aae2c5d9a9d0a026"
+      "1": "310933c09ee9d4eb421213b815c3f184b22239f059f68d0161e2e60690f2780e"
     }
   },
   "files": {
-    "commands/hourglass.json": "6975ef795a959e0f4b451814096d7b20df358a0d7a33cdb064cdf58aabc57307",
-    "commands/quick-checklist.json": "9ca0a0571e76d29cdd50b7a5dad86324e2bc5dd7337e75977d068337baf06053",
-    "documents/conformance-compacted.page.slop": "4c38062591ec2e64f9f637d423df5764f6384e1fd0e08ab05bd7b897b7071cdb",
-    "documents/conformance-compacted.slop": "ac79ef6072e90616067957788a0edad91640d74964414487dbc76ea730bbcade",
-    "documents/conformance.page.slop": "a42c8e64eecf02f1cd0c1f00e7884abe9389082fa15c1f6ea61b3106cbe14742",
-    "documents/conformance.slop": "81048c038c5bed2abf17ac0dcf1121aae4779b70055e7211fbdf09f146532e16",
-    "documents/fixture-checklist.page.slop": "91f491ed9c018501842892082dc16c17985bd613f5eec49a1d6282997b586dd2",
-    "documents/fixture-checklist.slop": "e2e97032f969ed712a4964f284763fea6cb62269b25bb1e43620a0e7836b85ea",
-    "documents/fixture-collections.page.slop": "c6b1d1febdb4a19dc908702cc90f90bdd342ea560c8fae99712690e92bb2878a",
-    "documents/fixture-collections.slop": "a19394626cef3da19bad77f979a30745f3ca4eb8508ff13c046d955ebbaf2a5f",
-    "documents/fixture-scalars.page.slop": "5395dc4375919ececcf19298e1c91e83c58552192e6fe078f51c4ca13cf1cf11",
-    "documents/fixture-scalars.slop": "6eac3637596e9d8266e43583162df5c4b1563a659adee204b46eaa012b59a359",
-    "documents/hourglass.page.slop": "75658fbb3439e7e2e9a024229c03f59c19c7e6c285430ec90119b7c194192291",
-    "documents/hourglass.slop": "69c10c55be248781318251f4dd0c98330f76384cd3bf85c8b6e94cc526951289",
-    "documents/presentation-ellipse.page.slop": "9bcccbab0cf5b489eb81af8f8dcb4108eae5cce254b058b44baa26e83725d8f9",
-    "documents/presentation-ellipse.slop": "29bc7cba4493a11e36d754896a6a509580fa2a91f077b1d5f737e23eb3f0c5db",
-    "documents/presentation-glass.page.slop": "93828f562c7cb8639c7230eb31245ceadd22ef052e22436f5eec928aef0d9bdd",
-    "documents/presentation-glass.slop": "9b27c2a49ff5a9280b4511e4b836471b6c1d1245be21b2245e310c5d06868e1b",
-    "documents/presentation-notch.page.slop": "cff17ab6fa7c0a89ee042a8c2e5c285a6521a23a021d044f7239f324be95b805",
-    "documents/presentation-notch.slop": "8404281adf78568431e6d6f4ea6b44a478bba4adcbccb73de3050b7038123d4c",
-    "documents/presentation-washer-2x.page.slop": "2ab148e8b04bb230133924074058ad63218cb55c13e3df8d7f12fe3909605c4b",
-    "documents/presentation-washer-2x.slop": "2e817e3c9cf625cc6ed32a42d72a10de9e411321879deb8b9b703b5cc7046df9",
-    "documents/presentation-washer.page.slop": "ac75f4317fd8016c2ed2d45fd57af6d44d63bb2d65d8638cf7f486fc051c7f10",
-    "documents/presentation-washer.slop": "220448118e1e926ee5c190122cdcbf39122cbabcf9d6f8fffedb72db84bd79a4",
-    "documents/quick-checklist-compacted.page.slop": "4e94b03cbeadcb7ff6ed9af71d966497d13c6d653029a273d83f43dc8d6ded2b",
-    "documents/quick-checklist-compacted.slop": "06472f1783369f11fb1b2810e95664ae6f9687fca5f5e73aa6e4782c6a090f4d",
-    "documents/quick-checklist.page.slop": "b89a3876a754284e0f499ac1e78549a2dda32bad8a2c2a35aa65f3b1eb33b8ad",
-    "documents/quick-checklist.slop": "3e29254da2edbfddd865e47217439a93e10d7e317384160bd69cb1f7b02fb012",
-    "engine/darwin-arm64/slop-engine": "fa4698a2ccdd445546f41596f76704320081e9138f614707ae360e73665c3e57",
-    "expected/conformance-compacted.json": "db77553233e4a8a0787bb54e20d3cbd8660b9b43d2827f409e4d77d9c5a3d189",
-    "expected/conformance-compacted.page.json": "322b3dee8acfe710eb942bd599bdba7cedb5626b2acc4060510da1b0c9fe96a1",
-    "expected/conformance.json": "db77553233e4a8a0787bb54e20d3cbd8660b9b43d2827f409e4d77d9c5a3d189",
-    "expected/conformance.page.json": "322b3dee8acfe710eb942bd599bdba7cedb5626b2acc4060510da1b0c9fe96a1",
+    "commands/hourglass.json": "9d2d4be957ce2478e76c18fb654c43212091aafd66de010358161e05400d839f",
+    "commands/quick-checklist.json": "56e9866fa62ad88916d0dd1a85b9116473513ff2e1395751be49cd955722d1a7",
+    "documents/conformance-compacted.page.slop": "662d5a9c4184a89b99b3e8fa22714d0b03a41e1a619cd33afdb6f4ebc76b0634",
+    "documents/conformance-compacted.slop": "ecfc962a679589db7d48a01382656f53a09cb4861407ac0b5face57005b318f1",
+    "documents/conformance.page.slop": "9888e72bdfded63c74a19f9c73ae96854b93a5e2c29b8c3097b926f7b65376d5",
+    "documents/conformance.slop": "57c5513af4fb01da03ced6f32ea52e51cbc77d737a80fa8dc891f0007341d50f",
+    "documents/fixture-checklist.page.slop": "3579a81263d1ea686ed6ca3619be138c65b92db0a6f35275a6e861a6ebc6e5c8",
+    "documents/fixture-checklist.slop": "ba24724012b3c2bf523867562becf69fd2c4d2384ebc35548190c26418be8a6d",
+    "documents/fixture-collections.page.slop": "8d15cb0194a57e5adabdb9711e92dccb0e892f1079f65feaba78156ba18de0fb",
+    "documents/fixture-collections.slop": "53d9cee273ee2deb6d30789a468d74da494f818f3d2ec871eb4f00491309226a",
+    "documents/fixture-scalars.page.slop": "96b78bb99d6b54e701ef821c8363d69feda7aac323da746f38f7d739a6786827",
+    "documents/fixture-scalars.slop": "06d5076f8fd117afd0459e58e83e7a1eb61545241629b4799e75cc6822eee12a",
+    "documents/hourglass.page.slop": "93b852f62b8ec42e84d205e5b43c6c511ccdd478dc17d5133670253c3c017487",
+    "documents/hourglass.slop": "16e54a07e166c250eaebd008b4603172d92c9e1a4123f417661881f968022aab",
+    "documents/presentation-ellipse.page.slop": "ad5d3850c390aa666be64b33235421f01d57360a0821f9c3f6ec50cf39f8691c",
+    "documents/presentation-ellipse.slop": "4eb1987ad6a6a6f38e64204fa36fd5697e3ddf3efd1c9c74fc5248d4fe891337",
+    "documents/presentation-glass.page.slop": "4944d453e4a137704c0924a86d10fc7a77f929e63ea1335a95a3ac6eaf462fe2",
+    "documents/presentation-glass.slop": "16dd4033bf825eda73cb9f5bbaa54383ef6e0fafbab1fcac863e2660c01c601c",
+    "documents/presentation-notch.page.slop": "cf8dbc4454b91d924e30f1b4f240bfec3066cb400037ca139396c45f8f44ce89",
+    "documents/presentation-notch.slop": "34e0a60fb83580064940bc9e15190188b3a5255ab87190645c2f855be5b3e68f",
+    "documents/presentation-washer-2x.page.slop": "aaf29a82bdd64c2c5142f6b79bfe121b471de6d48deb3dfe10797a1476b0327b",
+    "documents/presentation-washer-2x.slop": "bb55d2175ab938fddc4125d8f708c285be8bbb239d5c8c2f25802be29d5887be",
+    "documents/presentation-washer.page.slop": "b1dd8f11359c1aa1bc21f666f6f3d803fe5061c288f19f16e41a6d7c2cc0393a",
+    "documents/presentation-washer.slop": "64efafd99be72f76bd67ac5501c6e8b6327ed8bc96b30f40866b7d4b87192c7c",
+    "documents/quick-checklist-compacted.page.slop": "148a5d52614832610780a059f0a8faf22fb85675bcfe425dbcb4e9f31c5eb3d5",
+    "documents/quick-checklist-compacted.slop": "53e7e4bf3f717566e023b8946837d417aa498185c0422fccbfb06d54ae35b564",
+    "documents/quick-checklist.page.slop": "7bcf62473162e89ab4e5eb2f4d7e5c8c91e1c6a0a1fed2545cd55aa3346c7771",
+    "documents/quick-checklist.slop": "8ab297e0544d36849429fcf8018c234e3d1ceaf417ee28df45ee4830287502a7",
+    "engine/darwin-arm64/slop-engine": "32ba2fa000cf944b77e377f6022cbccfc86d0d3145445fb5544b6ccc7443a400",
+    "expected/conformance-compacted.json": "b3fb6f7ef486c1bfe8070ded2fb78c35d9ed5af10292b8cbbe86a14ad9d7545f",
+    "expected/conformance-compacted.page.json": "ae58684877dd175c9c41838b09467544189ecdeb8b2d6a48a571db6c5f2a16d3",
+    "expected/conformance.json": "b3fb6f7ef486c1bfe8070ded2fb78c35d9ed5af10292b8cbbe86a14ad9d7545f",
+    "expected/conformance.page.json": "ae58684877dd175c9c41838b09467544189ecdeb8b2d6a48a571db6c5f2a16d3",
     "expected/fixture-checklist.json": "1964ae032a49ac9bda10e0b58a06fd1e42153493ed340662c33270370cfe7835",
     "expected/fixture-checklist.page.json": "141e3912f3234773cc8783e6c48f3c1e0b9cc06007e35ec7f405096700e436d4",
     "expected/fixture-collections.json": "f05a595feae9b29ef978fa080607f11cca3254fead7414f9f51389abf2b271d7",
@@ -60,7 +60,7 @@
     "expected/fixture-scalars.page.json": "de1edb2ec3e49d92524bec2a2e8deb3af676f763d55c4d6b555486254b6f3deb",
     "expected/hourglass.json": "60787ee81a4c2011e199c66a491fe0ef8de4801c9fff49c09084b9c1c98941cc",
     "expected/hourglass.page.json": "edf61cae41e71429d0944703cebc08b38229f601df49be44a63a87ea6a989fa5",
-    "expected/new-conformance.json": "3bbfd996e4d43581e419a0fcf14c2c31a039c18f7c72f9f9a74ac6a2061d6b0b",
+    "expected/new-conformance.json": "34f8f9d5c7717f7131fab1b92673995232af6f34b6b8f85611a18bab10d4ef36",
     "expected/new-fixture-checklist.json": "095af5baa71998048de7a4c829200093690396fba33931929dd8288a91dd3f51",
     "expected/new-fixture-collections.json": "52d06bdca3663c8c7dcfd01300880263e13c1490eb516f8a52b3d735281a2e47",
     "expected/new-fixture-scalars.json": "fe5f8bff2bd4f77d82a165d57138b2c6a2353a61663109f1829af88cef3380f5",
@@ -85,8 +85,8 @@
     "expected/quick-checklist-compacted.page.json": "86c257d72679d707fdbd39922a8331edbc4fbac107c32cb31f33774a1ca3ff46",
     "expected/quick-checklist.json": "d18d4761ca6b98a0bb06ba90551c0d955da75c5db36cc15afe26796198b4382f",
     "expected/quick-checklist.page.json": "86c257d72679d707fdbd39922a8331edbc4fbac107c32cb31f33774a1ca3ff46",
-    "pages/conformance-compacted.json": "0c21d1aa9673b882103281d001d23a26406fed852b5e9c4cb1b9a8c115972a99",
-    "pages/conformance.json": "0c21d1aa9673b882103281d001d23a26406fed852b5e9c4cb1b9a8c115972a99",
+    "pages/conformance-compacted.json": "8336bf7bfba5291a72cf9076a0b641924e81307013222fd1348e230db593aaec",
+    "pages/conformance.json": "8336bf7bfba5291a72cf9076a0b641924e81307013222fd1348e230db593aaec",
     "pages/fixture-checklist.json": "fc51229a46d7810f6531fa8370612580b0d401cc7ae5cf8ab2fd976dc8e449a7",
     "pages/fixture-collections.json": "145bb517ca97dcfb5072bf052ee8d17c46544389eda1aa2ea28189298bfb3c35",
     "pages/fixture-scalars.json": "181180a8be6a83b9269eb2ba3173c382032a739e33df7d75f321ec3b150b494f",
@@ -96,12 +96,12 @@
     "pages/presentation-notch.json": "668c5ce3350dd5930aeb02757ba40af0c44ab28e44b6ba0dfcb361c49606e5f8",
     "pages/presentation-washer-2x.json": "668c5ce3350dd5930aeb02757ba40af0c44ab28e44b6ba0dfcb361c49606e5f8",
     "pages/presentation-washer.json": "668c5ce3350dd5930aeb02757ba40af0c44ab28e44b6ba0dfcb361c49606e5f8",
-    "pages/quick-checklist-compacted.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
-    "pages/quick-checklist.json": "ecdf690a744123923f37b6ef99ba0398e13b0569e3c5b1d3ad766e06add9116c",
-    "scenarios/conformance-compacted.json": "2590841ee909ab7704f3aec2b77b6e9943d56c68cfe7f61e1270e596cfcc8185",
-    "scenarios/conformance-compacted.page.json": "2f519bd432059cb5352d3496455b0af4c9cb2a6b134fb01f282e821267cedb07",
-    "scenarios/conformance.json": "2590841ee909ab7704f3aec2b77b6e9943d56c68cfe7f61e1270e596cfcc8185",
-    "scenarios/conformance.page.json": "2f519bd432059cb5352d3496455b0af4c9cb2a6b134fb01f282e821267cedb07",
+    "pages/quick-checklist-compacted.json": "410967c5c7dcd23cf3b23507c5ae0bba03b5d71f94bbf874fd87966391386007",
+    "pages/quick-checklist.json": "410967c5c7dcd23cf3b23507c5ae0bba03b5d71f94bbf874fd87966391386007",
+    "scenarios/conformance-compacted.json": "704c5ef553f3497c16e982e75f25b11aeef338d92c938d9d2456b2bcc97d7601",
+    "scenarios/conformance-compacted.page.json": "94a47979b50ca96d987c680f9f1d2791ea571f09f16e3e6778fcd7cbfe0eb2b3",
+    "scenarios/conformance.json": "704c5ef553f3497c16e982e75f25b11aeef338d92c938d9d2456b2bcc97d7601",
+    "scenarios/conformance.page.json": "94a47979b50ca96d987c680f9f1d2791ea571f09f16e3e6778fcd7cbfe0eb2b3",
     "scenarios/fixture-checklist.json": "7b14af9bb7f83e376b60776f32037309073b514a27af411a5a7d3efb02073a4f",
     "scenarios/fixture-checklist.page.json": "7b14af9bb7f83e376b60776f32037309073b514a27af411a5a7d3efb02073a4f",
     "scenarios/fixture-collections.json": "eb3e14e4d9b233bf3e66d76e683448159921fdaeae15c978960b839801d21234",
@@ -124,39 +124,39 @@
     "scenarios/quick-checklist-compacted.page.json": "28b6b48b9c19d57e7d0e1a580e7fb0f08346c25431a3874740e1ac2bc4414284",
     "scenarios/quick-checklist.json": "28b6b48b9c19d57e7d0e1a580e7fb0f08346c25431a3874740e1ac2bc4414284",
     "scenarios/quick-checklist.page.json": "28b6b48b9c19d57e7d0e1a580e7fb0f08346c25431a3874740e1ac2bc4414284",
-    "templates/conformance.slop": "9b58ccc894fc452f14460649bc6fbe372a17db2d3b6098821f7c6d8659742929",
-    "templates/fixture-checklist.slop": "21820c43326f8cfa4907df2b1bf1b85d7d1ba88d66bad446872c616b6339428e",
-    "templates/fixture-collections.slop": "a181459b81a1c3911cc9ffd6b52de05bae311003280240a932e8f6446275c864",
-    "templates/fixture-scalars.slop": "38aeab2bdff68f358fca260d906f5f9b22fc73008634c1cd6638f95241b664b4",
-    "templates/hourglass.slop": "dece98f7bd372947f070725bdf89f83b357e82c1f38a20f0b412fc2a968c5b26",
-    "templates/presentation-ellipse.slop": "0baf778b7b1b36a02ad918782315e7dc873f5b5db8a2eda93b3380d80e396a43",
-    "templates/presentation-glass.slop": "7d3f2ed01ca997560b037fcc6a208d5437e676a6e66096963cc05a801a51e8e7",
-    "templates/presentation-notch.slop": "d6c8dbe900f76cc0772dcece46728e06ad0b84b345a2ce1e6780546495919fca",
-    "templates/presentation-washer-2x.slop": "a9ecc375d7c536b9e5480d91b39fa4d7ab71a5b254584e99c16c07ba665a52f2",
-    "templates/presentation-washer.slop": "59f30294542cc6b533d5cf766091d2a4f5207d5051da5d025b654bb49d9b6858",
-    "templates/quick-checklist.slop": "d20f8d33ec7a5bfa1d9132ac083cc4382e12e301a0e2cf5a52dfeb9fc2884811"
+    "templates/conformance.slop": "20f16256cd012ab24dba890d0ecf3270a6b50b0256fb599866f23d524b8126db",
+    "templates/fixture-checklist.slop": "ecc5ec8afadde667588dee59e76872240ca8498f8165a754ccf63d7347bdcca1",
+    "templates/fixture-collections.slop": "c8a1e2e206a474755d38f0b935b10737fab644f02ad35cb5a4984858675abd67",
+    "templates/fixture-scalars.slop": "a855064ddd8620c053f668ed01e12ad0eb8c4befec8b2df3d6eefdd9428b4311",
+    "templates/hourglass.slop": "4a6e908bfc4a2cc11115ce73e0efbbc2774ece59af02c2ddad5a2d6d74ccf712",
+    "templates/presentation-ellipse.slop": "2449376b95bfe7fdb350bd5b41c79ca2044ec5ba0cba8304830f0bc368fcc41c",
+    "templates/presentation-glass.slop": "e45dee11b3e14913a2234e5dfade43d44599b42e625e4ea8c0aeacd2f1ef0c95",
+    "templates/presentation-notch.slop": "922503d5d4263ee4726fc6818b93b94b8976325febccdf0f5fb7c6c77a732154",
+    "templates/presentation-washer-2x.slop": "0cdbc7e4bb79a56dcbb49e5bba0fd8a65fa7d274edf0f313db2c97fad118eb9e",
+    "templates/presentation-washer.slop": "2a7ca58e977b92f7da554ab614049ffc9d27cd4609475a74c9c23d56f9f8b95d",
+    "templates/quick-checklist.slop": "813acbddc1b0ccb85731541c7e50954012603c2dfce5f4013b99f8039780def7"
   },
   "acceptance": {
-    "crates/hitslop-core/src/app/package_format_1.rs": "321aa5057f2d5e57abc90d77692023790f4d01934b635fdf442bd3ff76a776dc",
-    "crates/hitslop-core/src/file/storage-1.sql": "57de8b46610cce658c2f4c96aad9ad7fcfbf13f5bb7d06b332ecea02ece7e012"
+    "crates/hitslop-core/src/app/package_format_1.rs": "6a9e50e4e4850e5a5116a33c4a95ef9d82b2afe6ce5d49b67af69cc7594e4612",
+    "crates/hitslop-core/src/file/storage-1.sql": "3f60d99d5915423c1316b31f11fc162bdb6a8b77ff437fca6d23e2371e6cfc78"
   },
   "templates": {
-    "quick-checklist": "d20f8d33ec7a5bfa1d9132ac083cc4382e12e301a0e2cf5a52dfeb9fc2884811",
-    "hourglass": "dece98f7bd372947f070725bdf89f83b357e82c1f38a20f0b412fc2a968c5b26",
-    "fixture-scalars": "38aeab2bdff68f358fca260d906f5f9b22fc73008634c1cd6638f95241b664b4",
-    "fixture-collections": "a181459b81a1c3911cc9ffd6b52de05bae311003280240a932e8f6446275c864",
-    "fixture-checklist": "21820c43326f8cfa4907df2b1bf1b85d7d1ba88d66bad446872c616b6339428e",
-    "conformance": "9b58ccc894fc452f14460649bc6fbe372a17db2d3b6098821f7c6d8659742929",
-    "presentation-washer": "59f30294542cc6b533d5cf766091d2a4f5207d5051da5d025b654bb49d9b6858",
-    "presentation-washer-2x": "a9ecc375d7c536b9e5480d91b39fa4d7ab71a5b254584e99c16c07ba665a52f2",
-    "presentation-glass": "7d3f2ed01ca997560b037fcc6a208d5437e676a6e66096963cc05a801a51e8e7",
-    "presentation-ellipse": "0baf778b7b1b36a02ad918782315e7dc873f5b5db8a2eda93b3380d80e396a43",
-    "presentation-notch": "d6c8dbe900f76cc0772dcece46728e06ad0b84b345a2ce1e6780546495919fca"
+    "quick-checklist": "813acbddc1b0ccb85731541c7e50954012603c2dfce5f4013b99f8039780def7",
+    "hourglass": "4a6e908bfc4a2cc11115ce73e0efbbc2774ece59af02c2ddad5a2d6d74ccf712",
+    "fixture-scalars": "a855064ddd8620c053f668ed01e12ad0eb8c4befec8b2df3d6eefdd9428b4311",
+    "fixture-collections": "c8a1e2e206a474755d38f0b935b10737fab644f02ad35cb5a4984858675abd67",
+    "fixture-checklist": "ecc5ec8afadde667588dee59e76872240ca8498f8165a754ccf63d7347bdcca1",
+    "conformance": "20f16256cd012ab24dba890d0ecf3270a6b50b0256fb599866f23d524b8126db",
+    "presentation-washer": "2a7ca58e977b92f7da554ab614049ffc9d27cd4609475a74c9c23d56f9f8b95d",
+    "presentation-washer-2x": "0cdbc7e4bb79a56dcbb49e5bba0fd8a65fa7d274edf0f313db2c97fad118eb9e",
+    "presentation-glass": "e45dee11b3e14913a2234e5dfade43d44599b42e625e4ea8c0aeacd2f1ef0c95",
+    "presentation-ellipse": "2449376b95bfe7fdb350bd5b41c79ca2044ec5ba0cba8304830f0bc368fcc41c",
+    "presentation-notch": "922503d5d4263ee4726fc6818b93b94b8976325febccdf0f5fb7c6c77a732154"
   },
   "writer": {
-    "buildId": "b74e64f911e389bd",
-    "commit": "b4e8765a130e86c96cab044ec0869e3683c3afbd-dirty",
-    "sha256": "fa4698a2ccdd445546f41596f76704320081e9138f614707ae360e73665c3e57"
+    "buildId": "bae15743e37f74a7",
+    "commit": "8dec1847e8b782e762619fc446cc6366f3d20d6a-dirty",
+    "sha256": "32ba2fa000cf944b77e377f6022cbccfc86d0d3145445fb5544b6ccc7443a400"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -164,112 +164,112 @@
     "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
     "macos": "26.6.2",
     "loro": "1.16.2",
-    "svelte": "5.57.1"
+    "svelte": "5.57.2"
   },
-  "clock": 1791374400000,
+  "clock": 1791460800000,
   "storage": {
     "conformance": {
-      "checkpointBytes": 833,
+      "checkpointBytes": 1508,
       "updates": 5
     },
     "conformance-compacted": {
-      "checkpointBytes": 1666,
+      "checkpointBytes": 2279,
       "updates": 0
     },
     "fixture-checklist": {
-      "checkpointBytes": 700,
+      "checkpointBytes": 706,
       "updates": 3
     },
     "fixture-collections": {
-      "checkpointBytes": 1053,
+      "checkpointBytes": 1059,
       "updates": 3
     },
     "fixture-scalars": {
-      "checkpointBytes": 718,
+      "checkpointBytes": 724,
       "updates": 3
     },
     "hourglass": {
-      "checkpointBytes": 389,
+      "checkpointBytes": 395,
       "updates": 3
     },
     "presentation-ellipse": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 3
     },
     "presentation-glass": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 3
     },
     "presentation-notch": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 3
     },
     "presentation-washer": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 3
     },
     "presentation-washer-2x": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 3
     },
     "quick-checklist": {
-      "checkpointBytes": 1137,
+      "checkpointBytes": 1139,
       "updates": 3
     },
     "quick-checklist-compacted": {
-      "checkpointBytes": 1174,
+      "checkpointBytes": 1171,
       "updates": 0
     },
     "conformance.page": {
-      "checkpointBytes": 833,
-      "updates": 11
+      "checkpointBytes": 1508,
+      "updates": 13
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 1666,
-      "updates": 7
+      "checkpointBytes": 2279,
+      "updates": 9
     },
     "fixture-checklist.page": {
-      "checkpointBytes": 700,
+      "checkpointBytes": 706,
       "updates": 5
     },
     "fixture-collections.page": {
-      "checkpointBytes": 1053,
+      "checkpointBytes": 1059,
       "updates": 4
     },
     "fixture-scalars.page": {
-      "checkpointBytes": 718,
+      "checkpointBytes": 724,
       "updates": 5
     },
     "hourglass.page": {
-      "checkpointBytes": 389,
+      "checkpointBytes": 395,
       "updates": 4
     },
     "presentation-ellipse.page": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 4
     },
     "presentation-glass.page": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 4
     },
     "presentation-notch.page": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 4
     },
     "presentation-washer.page": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 4
     },
     "presentation-washer-2x.page": {
-      "checkpointBytes": 294,
+      "checkpointBytes": 300,
       "updates": 4
     },
     "quick-checklist.page": {
-      "checkpointBytes": 1137,
+      "checkpointBytes": 1139,
       "updates": 4
     },
     "quick-checklist-compacted.page": {
-      "checkpointBytes": 1174,
+      "checkpointBytes": 1171,
       "updates": 1
     }
   }

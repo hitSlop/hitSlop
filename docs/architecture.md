@@ -36,6 +36,15 @@ callback on its output. A full output queue or a stalled reader fails the dispos
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
+An opt-in `dev-sync` build may run a local authority and two replica owners as a
+development proof: the `slop-room` binary hosts them, and the owner's shared session
+(`owner/sync.rs`, chosen in place of the local `owner/session.rs`) forwards a replica's
+mutations to the authority. The document operations it uses (`replication.rs`) are
+ordinary core code. Accepted Loro bytes travel only between Rust processes. The proof disables shared undo and attachment
+imports, uses temporary files, and adds no released format or production listener.
+Disconnected-write fencing requires the replica owner to remain alive with its lock.
+Stopped harness files are inspection artifacts, not restart-safe shared documents.
+
 Native operations keep a separate process boundary: the typed TypeScript CLI invokes
 `slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
 Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
@@ -173,6 +182,10 @@ version it read (`--base`); its set has no `from`, so the core reads the field's
 - Every token is checked against the document's history before Loro sees it: a
   malformed one is `invalid_version` and a foreign or trimmed one `stale_base`, never a
   panic.
+- A mounted binding retains a `stale_base` draft and stops automatic sends. Flush and
+  close report the refusal until the user copies the draft and presses Escape to
+  discard it; Escape adopts the latest accepted text without authoring an edit. Composition
+  keeps its normal Escape behavior. Recovery after the control unmounts is still open.
 
 A text set without a base (a text handle's `set(value)`, or the CLI without `--base`)
 replaces the whole field as it is when the owner applies it, through the same script.
@@ -249,23 +262,75 @@ snapshots or persistent undo records.
   page learns durability only through `flush`, which resolves once saved and rejects
   when the save fails.
 
-Storage is `document(id)`, `checkpoint(bytes)` and `updates(seq, bytes)`. Creating a
-document atomically writes its identity and initial checkpoint before publishing the file. Saved updates without a checkpoint are
+Storage is `document(id, uuid)`, `checkpoint(bytes)` and `updates(seq, bytes)`. Creating a
+document validates the template's complete saved state in the source read transaction,
+then atomically writes a fresh UUID and initial checkpoint before publishing the file.
+The UUID names the logical document, not its writer or its inode-based lease. Open,
+save, rename, capture snapshots and internal backups preserve it; explicit Duplicate
+and independent editable copies receive a new UUID. Templates have no UUID. The core
+keeps this identity outside authored state; it is never a Loro peer ID.
+Saved updates without a checkpoint are
 refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
 4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
 [`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
 
 History is trimmed when nothing is editing. After its final save, a session that edited
 a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
-no history: undo covers the open session only, so nothing reads it later. While open, a checkpoint over 16 MiB keeps the session's
-history when that fits and none otherwise, so a concurrent text edit can still branch
-from where the session opened. There is no public live-compaction command. Only the checkpoint may
+no history: undo covers the open session only, so nothing reads it later. Ordinary
+checkpoint selection retains the session's history when it fits 16 MiB and current state
+otherwise. When local owner maintenance is due, the already exported full checkpoint
+may be saved first if it fits the 32 MiB hard limit; the worker then writes the bounded
+replacement. This avoids constructing an expensive intermediate shallow checkpoint.
+There is no public live-compaction command. Only the checkpoint may
 start history late. Rollback rebuilds from where history starts; a version before it
 is `stale_base`, and a concurrent text edit never branches from before the latest cut,
 so no saved update depends on trimmed history. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
 loads, and the core is the only code that opens a `.slop` file.
+
+The local owner also rebuilds live history when a normal checkpoint measures a full
+snapshot above 16 MiB. It prefers a two-second editing pause; after thirty seconds it
+starts at the next opportunity when accepted edits are saved and no command is evaluating.
+Edits arriving during the rebuild still wait in a bounded admission queue. Ordinary
+reads continue against the original document. Flush and saved-state copies may proceed
+when no earlier edit is waiting; otherwise they queue behind that edit. These fences also
+wait for earlier command evaluations, including commands released from the queue. Close
+waits in order and refuses subsequent edits.
+
+The existing persistence worker builds and validates a shallow candidate, writes its
+checkpoint, then the owner installs it. Preparation first forks the immutable source on
+that worker to avoid holding the live document's Loro locks throughout historical export.
+The fork still briefly contends with reads and temporarily increases memory. In the
+measured 4,000-row workload, maintenance held later mutations for roughly one second;
+see the [owner benchmark](evidence/owner-history-2026-10-08.md). Those measurements preceded
+the idle scheduling change; scheduling reduces interruptions, not the duration of a rebuild.
+Sequence, writer peer, visible container identities and the attached view survive.
+The candidate retains the undo/redo window when it fits; otherwise it expires redo,
+then progressively retires older undo steps. Previously expired text bases never become
+valid again. This bounds serialized history, not total process RSS.
+
+An optional rebuild failure retains the original live core and releases queued requests;
+it is not a failure to save document edits, which were already durable before rebuilding.
+If the replacement write might have committed, the live core conservatively advances its
+text-history floor to the candidate's floor. The next rebuild waits for another 4 MiB
+of measured history growth past the failed baseline. A successful rebuild uses its new
+size as that baseline. Actual document-save failures retain their normal retry behavior.
+Discard cancels a rebuild's installation and rejects held work; the serial persistence
+worker finishes any already-running write before reloading durable state. Close can still
+trim history after a successful rebuild.
+
+The development shared roles disable this local retention policy. Their loopback proof
+establishes replication with an online authoritative writer using the current layout and
+exact integer counters. It does not qualify offline multi-writer editing, restart recovery,
+shared undo, attachment transfer, or Cloudflare hosting; those remain deferred. Replication
+primitives stay in core, while the feature-gated session and `slop-room` remain development
+infrastructure, with no production listener or new stored format.
+
+Live commits record timestamps and the messages `page`, `agent`, `command:{name}`,
+`window`, `undo`, `redo` and `create`, including temporary text branches. Template
+seeding uses deterministic operations without wall-clock timestamps. These messages
+describe origins; they are neither unique request IDs nor a durable audit log.
 
 ## The file, its lock and copies
 

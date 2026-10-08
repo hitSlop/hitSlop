@@ -73,6 +73,30 @@ and writer registry (an explicit registry override is preserved). Test-process h
 bound subprocess lifetimes, drain diagnostics and stop descendants on cancellation.
 The packed preview uses an OS-assigned port and waits for its reported URL.
 
+## Local authority proof
+
+`bun scripts/dev/live-sync.ts examples/slops/quick-checklist` builds the opt-in
+`dev-sync` engine and its `slop-room` binary in `target/dev-sync`, packs one app and
+prints two Vite URLs and a
+temporary directory. Open one browser page per URL. The room and each replica own a
+different SQLite file; ordinary `slop get`/`slop call` against a replica path reaches
+that live owner through the usual socket registry. Stop the script with Ctrl-C; its
+files remain available for inspection. Do not use these files as shared documents after
+the harness stops: storage 1 has no persistent room binding.
+
+`bun run verify native live-sync` builds those binaries and runs the two-view WebKit test
+(it is skipped when run without them),
+including CLI bursts, text and commands, duplicate/missing delivery, snapshot replacement,
+disconnect fencing, retained drafts and reopen. The test records loopback command/text
+timings and screenshots in its verification evidence directory. `bun run verify rust`
+also checks the feature-enabled owner, import and bounded framing tests alongside the
+ordinary configuration. Released builds do not enable this feature.
+
+All Loro bytes stay in Rust. Credentials are ephemeral and passed through stdin; the
+page receives ordinary owner publications. Shared undo/redo and attachment imports are
+refused. There is no automatic mutation retry after an unknown outcome, offline merge,
+restart recovery or production endpoint in this proof.
+
 Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs `tooling`,
 `bun` and `cli`; `verify tooling` runs the build-free infrastructure tests. Discovery rejects
 unclassified test files rather than silently leaving them out.
@@ -153,6 +177,12 @@ without concurrent tests or compilation; these timings are not test assertions.
 The [2026-10-07 samples](evidence/replace-2026-10-07.json) compare the same-order
 row fast path with the original reconciler; shared-machine timing variation limits
 the comparison.
+`cargo run --release -p hitslop-core --example bench_owner_history` runs a live owner
+through 20 checkpoint cycles of constant-size churn and records retained history, peak
+RSS, flush latency and the pause each history rebuild holds edits for
+([2026-10-08 results](evidence/owner-history-2026-10-08.md)).
+`cargo test -p hitslop-core --test counter_exactness -- --ignored` reproduces Loro
+counter rounding past 2^53, the reason counters stay exact integers.
 
 Other performance diagnostics:
 `HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`,

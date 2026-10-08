@@ -160,7 +160,7 @@ impl AppDefinition {
     /// imported skin URL to a resource key; the URL itself never enters stored JSON.
     pub fn from_declaration(declaration: &BuildDeclaration, skin: Option<&str>) -> Result<Self> {
         let app = package_format_1::from_declaration(declaration, skin)?;
-        app.spec.schema.validate(&declaration.initial, false)?;
+        app.spec.schema.validate(&app.spec.schema.with_defaults(&declaration.initial), false)?;
         Ok(app)
     }
 

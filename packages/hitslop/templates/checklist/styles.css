@@ -1,18 +1,9 @@
-* {
-  box-sizing: border-box;
-}
-
 html,
 body {
   background: var(--slop-surface);
   color: var(--slop-ink);
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 15px;
-}
-
-button,
-input {
-  font: inherit;
 }
 
 .slop-paper {
@@ -49,8 +40,14 @@ input {
   outline-offset: 4px;
 }
 
-.slop-title:focus-visible {
+.slop-title:focus-within {
   outline: 2px solid var(--slop-accent);
+}
+
+/* EditableText shows the placeholder in this element while the text is empty. */
+.slop-title [data-placeholder],
+.slop-text [data-placeholder] {
+  color: var(--slop-muted);
 }
 
 .slop-summary {
@@ -108,12 +105,12 @@ input {
   color: var(--slop-ink);
 }
 
-.slop-text:focus-visible {
+.slop-text:focus-within {
   outline: 2px solid var(--slop-accent);
   outline-offset: 2px;
 }
 
-.slop-text[data-done="true"] {
+.slop-row[data-done="true"] .slop-text {
   text-decoration: line-through;
   color: var(--slop-muted);
 }
@@ -196,9 +193,4 @@ input {
   color: var(--slop-muted);
 }
 
-.slop-error {
-  color: #a13224;
-  font-size: 13px;
-  line-height: 1.4;
-}
 .checklist-icon { display: block; width: 512px; height: 512px; }

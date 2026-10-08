@@ -49,7 +49,7 @@ test("generated Svelte app mounts with theme defaults before native capture", as
   }
 }, 90000);
 
-test("discovered capture components share the document and receive preview/export mode", async () => {
+test("dedicated capture components share the document and mode without mounting the editor", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "source");
   try {
@@ -59,7 +59,9 @@ test("discovered capture components share the document and receive preview/expor
       `
       <script lang="ts">
         import doc from "./schema";
-        if (doc.fields !== (globalThis as any).appFields) throw new Error("Child received another document");
+        const previous = (globalThis as any).captureFields;
+        if (previous && doc.fields !== previous) throw new Error("Child received another document");
+        (globalThis as any).captureFields = doc.fields;
       </script>
       <h1>{doc.current.title}</h1>
     `,
@@ -68,19 +70,17 @@ test("discovered capture components share the document and receive preview/expor
       join(source, "App.svelte"),
       `
       <script lang="ts">
-        import Child from "./Child.svelte";
-        import doc from "./schema";
-        (globalThis as any).appFields = doc.fields;
+        throw new Error("The editor mounted during a dedicated capture");
       </script>
-      <Child />
     `,
     );
-    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child />');
+    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child /><Child />');
     await writeFile(join(source, "Export.svelte"), `<script>
       import Child from "./Child.svelte";
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
+    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
     const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);

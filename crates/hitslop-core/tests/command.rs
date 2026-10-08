@@ -233,7 +233,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
 }
 
 #[test]
-fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
+fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
@@ -248,13 +248,26 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
     let mut huge = batch(&path);
     huge["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"x".repeat(1024 * 1024 + 1)}]});
     assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
+    close(&owner);
+    server.stop();
+}
+
+#[test]
+fn the_socket_client_limit_is_bounded() {
+    let (_dir, path) = document();
+    let owner = open(&path);
+    // A reply can arrive before its worker releases its slot. Start with no previous
+    // clients, so none of these partial frames is rejected by a finishing worker.
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let get = request(&path, "get").to_string();
     let mut partial = Vec::new();
     for _ in 0..16 {
         let mut client = UnixStream::connect(server.path()).unwrap();
         client.write_all(b"{").unwrap();
         partial.push(client);
     }
-    std::thread::sleep(Duration::from_millis(100));
+    // The listener admits connections in order, reserving each slot before spawning
+    // its worker. The partial frames keep all slots occupied without a timing guess.
     // Use the bounded client: on macOS, setting SO_RCVTIMEO after the server has
     // already rejected and closed an excess connection can itself fail with EINVAL.
     assert!(socket::call(server.path(), &get).is_err(), "client limit admitted a reply");

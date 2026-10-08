@@ -4,7 +4,7 @@ import Export from "./Export.svelte";
 import Icon from "./Icon.svelte";
 import { defineSlop } from "hitslop";
 import schema from "./schema";
-import { bump } from "./actions";
+import { bump, decline } from "./actions";
 
 export default defineSlop({
   slug: "owner-svelte",
@@ -18,7 +18,7 @@ export default defineSlop({
   window: { kind: "standard", width: 480, height: 480 },
   theme: { accent: "#335577" },
   document: schema,
-  commands: { bump },
+  commands: { bump, decline },
   initial: {
     title: "Svelte ABI 2",
     version: "Authored version",
@@ -34,5 +34,6 @@ export default defineSlop({
     colors: [],
     checkins: {},
     cells: {},
+    slides: [{ title: "Nested composition", blocks: [{ text: "First block" }, { text: "Second block" }] }],
   },
 });
