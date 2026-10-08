@@ -10,6 +10,35 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
+  @Test func screenshotsRefuseDocumentDestinations() async throws {
+    let root = try contractFixture()
+    let before = try Data(contentsOf: root)
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let other = folder.appendingPathComponent("other.SLOP")
+    let renamed = folder.appendingPathComponent("renamed.png")
+    let symbolic = folder.appendingPathComponent("symbolic.png")
+    let hard = folder.appendingPathComponent("hard.png")
+    try before.write(to: other)
+    try before.write(to: renamed)
+    try FileManager.default.createSymbolicLink(at: symbolic, withDestinationURL: root)
+    try FileManager.default.linkItem(at: root, to: hard)
+    for output in [root, other, renamed, symbolic, hard] {
+      let body = try JSONSerialization.data(withJSONObject: [
+        "method": "screenshot", "documentPath": root.path, "output": output.path,
+        "target": "preview", "ifPresent": false,
+      ])
+      let (_, json, _) = try await cli(input: body, tool: "hitslop-native")
+      let reply = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+      #expect(reply["ok"] as? Bool == false)
+      #expect(reply["reason"] as? String == "invalid_request")
+      #expect(try Data(contentsOf: output) == before)
+    }
+  }
+
   @Test func nativeWireCrossesFFIAsTypes() throws {
     let request = try decodeNativeRequest(
       input: Data(

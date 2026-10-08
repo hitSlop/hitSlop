@@ -21,6 +21,16 @@ import WebKit
     try await withSavedRenderer(session) { try await capture(session: $0, output: .pdf) }
   }
 
+  /// Renders artwork from a source already acquired by a copy operation.
+  static func artwork(url: URL, telemetry: SlopTelemetry) async -> SlopRenderedArtwork? {
+    do {
+      return try await withRenderSession(url: url) { await artwork(session: $0, telemetry: telemetry) }
+    } catch {
+      if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+      return nil
+    }
+  }
+
   /// The artwork a closing window writes into its document: its preview and, when the
   /// app draws one, its icon. A capture that fails is reported and left out.
   public static func artwork(session: DocumentSession, telemetry: SlopTelemetry, trace: SlopCloseTrace? = nil) async

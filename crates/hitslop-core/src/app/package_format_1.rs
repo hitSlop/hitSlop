@@ -5,8 +5,8 @@
 //! 1 releases and may only loosen. `authoring` is what `pack` and `init` require of a new
 //! app; it may tighten at any time, because it never runs on a saved file.
 use super::{
-    AppDefinition, AppMetadata, Background, Category, CommandDefinition, CommandInput, ThemeInput, Views,
-    WindowDefinition,
+    AppDefinition, AppMetadata, Background, Category, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
+    Views, WindowDefinition, WindowFrame,
 };
 use crate::arguments::Arguments;
 use crate::build::{BuildDeclaration, WindowInput};
@@ -313,8 +313,10 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
 }
 
 fn window(value: &Window) -> Result<WindowDefinition> {
-    let (width, height) = match value {
-        Window::Standard { width, height, .. } | Window::Skin { width, height, .. } => (*width, *height),
+    let (width, height, fullscreenable) = match value {
+        Window::Standard { width, height, fullscreenable, .. } | Window::Skin { width, height, fullscreenable, .. } => {
+            (*width, *height, fullscreenable.unwrap_or(false))
+        }
     };
     for (name, n, min) in
         [("width", width, f64::from(WINDOW_MIN_WIDTH)), ("height", height, f64::from(WINDOW_MIN_HEIGHT))]
@@ -323,12 +325,9 @@ fn window(value: &Window) -> Result<WindowDefinition> {
             return Err(err(Code::InvalidRequest, format!("Must be an integer from {min} to {WINDOW_MAX}")).at(name));
         }
     }
-    Ok(match value {
-        Window::Standard { fullscreenable, resizable, lock_aspect, background, shape: geometry, .. } => {
-            WindowDefinition::Standard {
-                width: width as u32,
-                height: height as u32,
-                fullscreenable: fullscreenable.unwrap_or(false),
+    let frame = match value {
+        Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => WindowFrame::Standard {
+            frame: StandardFrame {
                 fullscreen_fit: !resizable.unwrap_or(true) || lock_aspect.unwrap_or(false) || geometry.is_some(),
                 resizable: resizable.unwrap_or(true),
                 lock_aspect: lock_aspect.unwrap_or(false),
@@ -339,20 +338,16 @@ fn window(value: &Window) -> Result<WindowDefinition> {
                     height,
                 )
                 .map_err(|e| e.at("shape"))?,
-            }
-        }
-        Window::Skin { skin, fullscreenable, .. } => {
+            },
+        },
+        Window::Skin { skin, .. } => {
             if crate::media::asset_key(skin).is_none_or(|kind| kind.media_type != "image/png") {
                 return Err(err(Code::InvalidRequest, "Skin must name a content-addressed PNG asset").at("skin"));
             }
-            WindowDefinition::Skin {
-                width: width as u32,
-                height: height as u32,
-                fullscreenable: fullscreenable.unwrap_or(false),
-                skin: skin.clone(),
-            }
+            WindowFrame::Skin { skin: skin.clone() }
         }
-    })
+    };
+    Ok(WindowDefinition { width: width as u32, height: height as u32, fullscreenable, frame })
 }
 
 fn text(value: &str, min: usize, max: usize) -> Result<()> {

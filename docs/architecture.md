@@ -348,15 +348,18 @@ removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
-Duplicate and Share a Copy flush what the page accepted, render artwork from the saved
-state, then copy from the owner's own connection with SQLite's online backup, so saves
-queue behind the copy. The copy is made a document of its own before it is published
+Duplicate and Share a Copy flush what the page accepted and acquire a temporary saved
+source through the owner. Both artwork and the new document come from that source, so
+edits accepted while rendering cannot make the preview disagree with the copy. After
+rendering, a temporary native owner takes the source's lock and performs the clean copy;
+no authored code runs in that owner. The copy is made a document of its own before it is published
 (`Store::copy_clean`): its saved state becomes a checkpoint with no history, it keeps
 only the attachments that state references, and it carries the rendered artwork, or none
 if rendering failed, never the original's. Nothing deleted before the copy is in it, and
 writers zero deleted content (`secure_delete=FAST`) on every platform. The copy is
 published without replacing anything. A capture's source is a plain backup, rendered
-once and deleted. A window writes the file's
+once and deleted. Share staging lives until the sharing picker is cancelled or the
+selected service finishes, independently of the originating window. A window writes the file's
 artwork as it closes ([close](#close-export-and-capture)). Finder, Mail and the share sheet
 show it through the app's Quick Look extensions, which read the file's artwork read-only;
 a file without artwork shows the `.slop` document icon.
@@ -401,6 +404,8 @@ ts-rs exports the CLI's TypeScript. The engine forwards open, screenshot and exp
 to `hitslop-native`. Rust decodes its `NativeRequest` subset once and passes the request
 to Swift through UniFFI, rejecting document edits before starting AppKit. Exports still use
 the Rust command router, so the live owner or a closed document's renderer handles them.
+Screenshot output may replace an existing regular PNG, but refuses documents, links and
+destinations changed during rendering. New screenshot destinations are created exclusively.
 
 Both executables check the frozen first-position `--client-protocol N` before other
 arguments or stdin: mismatches exit 2 with one stderr line. Identity queries remain

@@ -2,8 +2,8 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 
-/// New documents: created from a template here, or copied by an open document's owner
-/// (`DocumentOwner.copy(to:artwork:)`), so saves wait behind the copy.
+/// New documents: created from a template here, or copied from a frozen source by
+/// `DocumentSession.copy(to:renderArtwork:)`. Rust publishes both kinds of file.
 extension SlopFile {
   /// Where a new document goes: `url` with the `.slop` extension, outside a folder iCloud
   /// syncs. The core refuses the other places documents may not go.

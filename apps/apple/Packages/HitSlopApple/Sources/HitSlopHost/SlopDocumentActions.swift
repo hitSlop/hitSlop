@@ -82,13 +82,12 @@ extension SlopDocumentWindowController {
       return nil
     }
     telemetry.send(.breadcrumb(.duplicate, .started))
-    try await saveAccepted(for: .duplicate)
     do {
-      let copied = try await session.copy(to: try SlopFile.newDocumentURL(target), artwork: await copyArtwork())
+      let copied = try await copyDocument(to: try SlopFile.newDocumentURL(target))
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return copied
     } catch {
-      telemetry.failure(.duplicate, error: error)
+      reportLifecycleFailure(.duplicate, error: error)
       throw error
     }
   }
@@ -97,34 +96,25 @@ extension SlopDocumentWindowController {
   /// accepted, saved and copied through the owner, never the live file.
   func shareCopy() async throws {
     telemetry.send(.breadcrumb(.share, .started))
-    try await saveAccepted(for: .share)
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("hitSlop Share \(UUID().uuidString)")
-    let copy = folder.appendingPathComponent(url.lastPathComponent)
     do {
-      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-      try await session.copy(to: copy, artwork: await copyArtwork())
+      let operation = try await SlopShareOperation.prepare(filename: url.lastPathComponent, telemetry: telemetry) {
+        target in
+        _ = try await self.copyDocument(to: target)
+      }
+      try operation.present(in: isHiddenForClose ? nil : window?.contentView)
     } catch {
-      telemetry.failure(.share, error: error)
+      reportLifecycleFailure(.share, error: error)
       throw error
     }
-    guard let view = window?.contentView else { return }
-    NSSharingServicePicker(items: [copy]).show(relativeTo: .zero, of: view, preferredEdge: .minY)
-    telemetry.send(.breadcrumb(.share, .completed))
   }
 
-  /// The artwork a copy carries, rendered from the saved state it is made from: the
-  /// document's own artwork can show what was since deleted. None when rendering fails.
-  private func copyArtwork() async -> SlopRenderedArtwork? {
-    guard session.isReady else { return nil }
-    return await SlopRenderer.artwork(session: session, telemetry: telemetry)
-  }
-
-  /// Saves what the document accepted before it is copied: a live page sends unsent text
-  /// first; without one, the owner saves what it accepted.
-  private func saveAccepted(for operation: SlopTelemetryEvent.Failure) async throws {
-    do { try await session.saveAccepted() } catch {
-      reportLifecycleFailure(operation, error: error)
-      throw error
+  /// The copy and its artwork consume one saved source, even if the editor changes or closes.
+  private func copyDocument(to target: URL) async throws -> URL {
+    let canRender = session.isReady && !session.rendererDead
+    let telemetry = telemetry
+    return try await session.copy(to: target) { source in
+      guard canRender else { return nil }
+      return await SlopRenderer.artwork(url: source, telemetry: telemetry)
     }
   }
 

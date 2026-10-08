@@ -23,7 +23,7 @@ pub use pack::{APP_INPUT_BYTES, pack, validate_app};
 pub use places::{TemplateSource, template_roots};
 pub(crate) use places::{document_destination, document_location};
 
-use crate::app::{AppDefinition, AppMetadata, Author, WindowDefinition};
+use crate::app::{AppDefinition, AppMetadata, Author, WindowFrame};
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};
 use crate::wire::{ASSET_PATH_BYTES, MANIFEST_BYTES};
 use assets::{assets_within, read_asset};
@@ -460,14 +460,17 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if key == "ui.js" {
             ui = true;
         }
-        if let WindowDefinition::Skin { width, height, skin: skin_key, .. } = app.window()
+        if let WindowFrame::Skin { skin: skin_key } = &app.window().frame
             && &key == skin_key
         {
             if kind.media_type != "image/png" {
                 return Err(invalid("Window skins must be PNG"));
             }
-            crate::images::check(&bytes, crate::images::Purpose::Skin { width: *width, height: *height })
-                .map_err(Error::Rejected)?;
+            crate::images::check(
+                &bytes,
+                crate::images::Purpose::Skin { width: app.window().width, height: app.window().height },
+            )
+            .map_err(Error::Rejected)?;
             skin = Some(bytes.clone());
         }
         if key == "commands.js" {
@@ -477,7 +480,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     if !ui {
         return Err(invalid("Missing ui.js"));
     }
-    if matches!(app.window(), WindowDefinition::Skin { .. }) && skin.is_none() {
+    if matches!(app.window().frame, WindowFrame::Skin { .. }) && skin.is_none() {
         return Err(invalid("Missing window skin"));
     }
     if commands.is_some() == app.commands().is_empty() {

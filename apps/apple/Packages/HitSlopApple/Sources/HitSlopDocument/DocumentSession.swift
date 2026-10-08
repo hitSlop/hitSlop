@@ -426,26 +426,47 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   public func artwork(_ name: SlopArtwork.Name) async -> Data? {
     try? await owner.artwork(name)
   }
-  /// Copies the document to `destination`, with everything the owner accepted saved first,
-  /// as a document of its own: no history, only the attachments its state references, and
-  /// `artwork` rendered for it (none when nil). Never replaces an existing file. The copy
-  /// gets its own Finder icon: file metadata is not part of the copy.
-  /// Returns the copy's canonical URL (the identity Recents and live owners use).
-  @discardableResult public func copy(to destination: URL, artwork: SlopRenderedArtwork?) async throws -> URL {
-    guard !closed, !closing else { throw SlopFailure("Document is closing") }
-    try await owner.copy(to: destination, artwork: artwork)
-    let copied = try SlopFile.resolvedRoot(destination)
-    SlopFinderIcon.refresh(copied)
-    return copied
-  }
-
   public var isSnapshot: Bool { owner.mode == .snapshot }
+
+  /// Saves accepted edits and acquires one source for the artwork and clean copy.
+  /// The copy has a new identity, no history, only referenced attachments and the
+  /// rendered artwork (none when nil). Never replaces an existing destination.
+  /// Returns its canonical URL, with its own Finder icon refreshed.
+  @discardableResult public func copy(
+    to destination: URL, renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
+  ) async throws -> URL {
+    guard !closed, !closing else { throw SlopFailure("Document is closing") }
+    return try await withSavedSource(prepare: { try await self.saveAccepted() }) { source in
+      let artwork = await renderArtwork(source)
+      try Task.checkCancellation()
+      // A native owner gives the private source a writer lease for the clean copy.
+      // It has no page and never consults the original document again.
+      let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
+      do {
+        try await frozen.copy(to: destination, artwork: artwork)
+      } catch {
+        try? await frozen.close()
+        throw error
+      }
+      try await frozen.close()
+      let copied = try SlopFile.resolvedRoot(destination)
+      SlopFinderIcon.refresh(copied)
+      return copied
+    }
+  }
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the
   /// editor barrier; the independent copy remains alive even if this window then closes.
   public func withCaptureSnapshot<T>(trace: SlopCloseTrace? = nil, _ render: @MainActor (URL) async throws -> T)
     async throws -> T
   {
+    try await withSavedSource(trace: trace, prepare: { try await self.flush() }, render)
+  }
+
+  private func withSavedSource<T>(
+    trace: SlopCloseTrace? = nil, prepare: @MainActor () async throws -> Void,
+    _ consume: @MainActor (URL) async throws -> T
+  ) async throws -> T {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -454,10 +475,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
       let interval = trace?.begin("Snapshot acquisition")
       defer { trace?.end("Snapshot acquisition", interval) }
       guard !closed else { throw SlopFailure("Document closed") }
-      if !closePrepared { try await flush() }
+      if !closePrepared { try await prepare() }
       try await owner.captureSource(to: source)
     }
-    return try await render(source)
+    return try await consume(source)
   }
 
   /// Whether this session saved any change, so its document's artwork may be out of date.

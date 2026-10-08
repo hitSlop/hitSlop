@@ -57,11 +57,12 @@ import ImageIO
 
   init(file: SlopFile) {
     backdrop = file.backdrop
-    if let skin = file.skin {
+    switch file.outline {
+    case .skin(let skin):
       content = .image(skin)
       imageScale = CGFloat(skin.width) / CGFloat(file.width)
-    } else {
-      content = .vector(file.silhouette)
+    case .shape(let silhouette):
+      content = .vector(silhouette)
       imageScale = 1
     }
   }

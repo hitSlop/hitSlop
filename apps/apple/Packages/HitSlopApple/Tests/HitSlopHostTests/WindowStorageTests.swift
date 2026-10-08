@@ -10,6 +10,41 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
+  @Test(arguments: [false, true]) @MainActor
+  func saveFailureWaitsForAnUnrelatedSheet(recovered: Bool) async throws {
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    await controller.waitForPresentation()
+    let window = try #require(controller.window)
+    let other = NSPanel(
+      contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.beginSheet(other, completionHandler: nil)
+    controller.pageSession(controller.session, saveStatus: .failed(.busy))
+    if recovered { controller.pageSession(controller.session, saveStatus: .saved) }
+    window.endSheet(other)
+    other.orderOut(nil)
+    if recovered {
+      // Drain the sheet-end notification and its deferred presentation turn.
+      await Task.yield()
+      await Task.yield()
+      #expect(controller.documentAttention == nil)
+    } else {
+      await eventually { controller.documentAttention != nil }
+      #expect(controller.documentAttention != nil)
+      controller.pageSession(controller.session, saveStatus: .failed(.busy))
+      if let sheet = controller.documentAttention {
+        window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
+        sheet.orderOut(nil)
+      }
+      await Task.yield()
+      await Task.yield()
+      #expect(controller.documentAttention == nil)
+    }
+    try await controller.session.close()
+  }
+
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()

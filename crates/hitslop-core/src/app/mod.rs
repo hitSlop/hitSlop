@@ -109,24 +109,27 @@ pub struct Views {
 
 /// Native window semantics, independent of the stored definition's decoding rules.
 #[derive(Clone, Debug)]
-pub enum WindowDefinition {
-    Standard {
-        width: u32,
-        height: u32,
-        fullscreenable: bool,
-        /// Whether fullscreen fits the authored composition instead of reflowing it.
-        fullscreen_fit: bool,
-        resizable: bool,
-        lock_aspect: bool,
-        background: Option<Background>,
-        shape: shape::Silhouette,
-    },
-    Skin {
-        width: u32,
-        height: u32,
-        fullscreenable: bool,
-        skin: String,
-    },
+pub struct WindowDefinition {
+    pub width: u32,
+    pub height: u32,
+    pub fullscreenable: bool,
+    pub frame: WindowFrame,
+}
+
+#[derive(Clone, Debug)]
+pub enum WindowFrame {
+    Standard { frame: StandardFrame },
+    Skin { skin: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct StandardFrame {
+    /// Whether fullscreen fits the authored composition instead of reflowing it.
+    pub fullscreen_fit: bool,
+    pub resizable: bool,
+    pub lock_aspect: bool,
+    pub background: Option<Background>,
+    pub shape: shape::Silhouette,
 }
 
 #[derive(Clone, Debug)]

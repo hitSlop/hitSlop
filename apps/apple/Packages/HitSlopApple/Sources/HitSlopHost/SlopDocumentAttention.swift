@@ -48,6 +48,7 @@ extension SlopDocumentWindowController {
       showDocumentAttention()
     case .saved:
       attentionFailure = nil
+      attentionWaitingForSheet = false
       if let panel = documentAttention {
         window?.endSheet(panel, returnCode: .abort)
         panel.orderOut(nil)
@@ -80,8 +81,14 @@ extension SlopDocumentWindowController {
   }
   /// The save-failure sheet: unsaved work is at risk, so it blocks the window. Issues that
   /// leave the slop running show as the issue badge instead.
-  private func showDocumentAttention() {
+  func showDocumentAttention() {
+    guard documentAttention == nil, let window, !isHiddenForClose else { return }
     guard let message = attentionFailure?.localizedDescription else { return }
+    guard window.attachedSheet == nil else {
+      attentionWaitingForSheet = true
+      return
+    }
+    attentionWaitingForSheet = false
     let invalidated = attentionFailure == .invalidated
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
@@ -95,7 +102,6 @@ extension SlopDocumentWindowController {
     alert.messageText = invalidated ? "The document engine needs recovery" : "Changes could not be saved"
     alert.informativeText = message
     for entry in actions { alert.addButton(withTitle: entry.title) }
-    guard let window, window.attachedSheet == nil else { return }
     documentAttention = alert.window as? NSPanel
     alert.beginSheetModal(for: window) { [weak self] result in
       guard let self else { return }
@@ -104,6 +110,14 @@ extension SlopDocumentWindowController {
       let index = result.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
       if actions.indices.contains(index) { self.respond(actions[index].action) }
     }
+  }
+  /// Only an unrelated sheet defers a failure. Dismissing our own alert is final until
+  /// another failure arrives, including when the person chose Keep Open.
+  public func windowDidEndSheet(_ notification: Notification) {
+    guard attentionWaitingForSheet else { return }
+    attentionWaitingForSheet = false
+    // AppKit finishes detaching the sheet after notifying its delegate.
+    DispatchQueue.main.async { [weak self] in self?.showDocumentAttention() }
   }
   /// Recovery is a command like any other, so it never runs beside a close or export. Its
   /// outcome returns as save status: saved dismisses the sheet, a new failure shows again.

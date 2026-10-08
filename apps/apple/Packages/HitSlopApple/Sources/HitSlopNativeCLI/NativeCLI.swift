@@ -50,6 +50,7 @@ import HitSlopHost
         bootstrapApp()
         let file = URL(fileURLWithPath: documentPath)
         let output = URL(fileURLWithPath: outputPath)
+        let destination = try SlopScreenshotDestination(output: output, source: file)
         let data: Data?
         switch target {
         case .preview: data = try await SlopRenderer.previewPNGData(url: file)
@@ -63,7 +64,7 @@ import HitSlopHost
               error: "The slop does not define a \(name) render target.", code: .rejected,
               reason: .invalidRequest, opIndex: nil))
         }
-        try data.write(to: output, options: .atomic)
+        try destination.publish(data)
         reply = encoded(.screenshot(output: output.path))
       case .open(let documentPath):
         let file = URL(fileURLWithPath: documentPath)
@@ -79,6 +80,8 @@ import HitSlopHost
         try await NSWorkspace.shared.open([file], withApplicationAt: app, configuration: configuration)
         reply = encoded(.open(documentPath: file.path))
       }
+    } catch let failure as OwnerFailure where failure.kind == .rejected {
+      return write(.failure(error: failure.message, code: .rejected, reason: failure.refusal, opIndex: failure.opIndex))
     } catch NativeRefusal.Refused(let reply) {
       return write(reply)
     } catch is SlopRequiresUpdate {

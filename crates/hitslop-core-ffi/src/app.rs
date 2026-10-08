@@ -1,5 +1,7 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
-use hitslop_core::app::{self, AppMetadata, Author, Background, Category, ThemeInput, Views, WindowDefinition};
+use hitslop_core::app::{
+    self, AppMetadata, Author, Background, Category, StandardFrame, ThemeInput, Views, WindowDefinition, WindowFrame,
+};
 use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, Summary};
 use hitslop_core::shape::Silhouette;
 
@@ -37,25 +39,25 @@ pub enum Background {
     Transparent,
     Glass,
 }
+#[uniffi::remote(Record)]
+pub struct WindowDefinition {
+    pub width: u32,
+    pub height: u32,
+    pub fullscreenable: bool,
+    pub frame: WindowFrame,
+}
 #[uniffi::remote(Enum)]
-pub enum WindowDefinition {
-    Standard {
-        width: u32,
-        height: u32,
-        fullscreenable: bool,
-        /// Whether fullscreen fits the authored composition instead of reflowing it.
-        fullscreen_fit: bool,
-        resizable: bool,
-        lock_aspect: bool,
-        background: Option<Background>,
-        shape: Silhouette,
-    },
-    Skin {
-        width: u32,
-        height: u32,
-        fullscreenable: bool,
-        skin: String,
-    },
+pub enum WindowFrame {
+    Standard { frame: StandardFrame },
+    Skin { skin: String },
+}
+#[uniffi::remote(Record)]
+pub struct StandardFrame {
+    pub fullscreen_fit: bool,
+    pub resizable: bool,
+    pub lock_aspect: bool,
+    pub background: Option<Background>,
+    pub shape: Silhouette,
 }
 #[uniffi::remote(Record)]
 pub struct ThemeInput {
