@@ -99,10 +99,15 @@ previously tracked copies when switching or pulling.
 
 `bun scripts/build/browser.ts` builds the Chrome runtime packaged with the CLI.
 It requires `wasm32-unknown-unknown`, wasm-bindgen CLI 0.2.129, LLVM clang/llvm-ar
-with the WebAssembly target, and Binaryen's `wasm-opt`. On macOS install LLVM and
-Binaryen with `brew install llvm binaryen`; Apple's clang cannot compile SQLite
-for this target. `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`
-can override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
+with the WebAssembly target, and Binaryen 132. Run
+`bash scripts/build/install-binaryen.sh` to install the checksum-verified official
+Binaryen release under `generated/core-tools/binaryen`, as CI does. The build checks
+the optimizer version before compiling: `HITSLOP_WASM_OPT` overrides that local
+installation, with PATH used only when neither is provided. Ubuntu's older Binaryen
+package cannot parse the browser module's `table.fill` instruction.
+On macOS install LLVM with `brew install llvm`; Apple's clang cannot compile SQLite
+for this target. `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown` can
+override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
 
 `bun run verify browser local-host` exercises actual Google Chrome with a temporary
 persistent profile. Install Google Chrome first. This checks the durable browser

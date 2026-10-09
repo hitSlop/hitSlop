@@ -44,11 +44,13 @@ async function run(command: string[]) {
 }
 /** A pinned generator: `generated/core-tools/bin/<name>` (or `variable`), refused at any
  * other version. */
-async function generator(name: string, version: string, variable: string, install: string) {
-  const local = join(repository, "generated/core-tools/bin", name);
+async function generator(name: string, version: string, variable: string, install: string, localPath = `generated/core-tools/bin/${name}`) {
+  const local = join(repository, localPath);
   const binary = process.env[variable] ?? (existsSync(local) ? local : name);
   const { stdout, code } = await exec([binary, "--version"], { env }).catch(() => ({ stdout: "", code: 1 }));
-  if (code || stdout.trim() !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
+  // Official Binaryen archives append a release tag; Homebrew omits it.
+  const reported = stdout.trim().replace(/ \(version_\d+\)$/, "");
+  if (code || reported !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
   return binary;
 }
 
@@ -71,6 +73,9 @@ export async function buildCoreWasm() {
 
 /** SQLite and QuickJS compile C for wasm32; Apple's clang has no WebAssembly backend. */
 export async function buildBrowserWasm() {
+  const optimizer = await generator("wasm-opt", "version 132", "HITSLOP_WASM_OPT",
+    "bash scripts/build/install-binaryen.sh (requires Binaryen 132; HITSLOP_WASM_OPT may select its wasm-opt)",
+    "generated/core-tools/binaryen/bin/wasm-opt");
   const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
   const browserEnv = {
     ...env,
@@ -86,7 +91,7 @@ export async function buildBrowserWasm() {
     if (code) throw new Error(`Browser ${name} build failed`);
     await publishFolder(join(repository, "generated/browser", name), async stage => {
       await run([bindgen, "--target", "web", "--out-dir", stage, join(repository, "target", target, "wasm/hitslop_core_wasm.wasm")]);
-      await run(["wasm-opt", "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-nontrapping-float-to-int", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", join(stage, "hitslop_core_wasm_bg.wasm"), "-o", join(stage, "hitslop_core_wasm_bg.wasm")]);
+      await run([optimizer, "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-nontrapping-float-to-int", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", join(stage, "hitslop_core_wasm_bg.wasm"), "-o", join(stage, "hitslop_core_wasm_bg.wasm")]);
     });
   }
 }

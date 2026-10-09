@@ -47,7 +47,7 @@ runs:
       if: inputs.rust == 'true' && inputs.bindings != 'none'
       with:
         path: generated/core-tools
-        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.129-uniffi-0.32.2
+        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.129-uniffi-0.32.2-binaryen-132
     - id: bun-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.dependencies == 'true'
@@ -76,12 +76,13 @@ runs:
         rustup show active-toolchain
         rustup target add wasm32-unknown-unknown
         if [ "${{ runner.os }}" = macOS ]; then
-          brew install llvm binaryen
+          brew install llvm
         else
           sudo apt-get update
-          sudo apt-get install -y clang llvm binaryen
+          sudo apt-get install -y clang llvm
         fi
         if [ "$BINDINGS" != none ]; then
+          bash scripts/build/install-binaryen.sh
           if [ "$(generated/core-tools/bin/wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen 0.2.129" ]; then
             cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools --force
           fi
