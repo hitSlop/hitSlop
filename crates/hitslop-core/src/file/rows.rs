@@ -166,3 +166,56 @@ pub(super) fn put_asset(
     .map(|_| ())
     .map_err(sqlite("write asset"))
 }
+
+/// The immutable app digest. Query text, row order and typed bytes are part of its encoding.
+pub(crate) fn app_digest(conn: &Connection) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    digest.update(b"hitslop-app-1");
+    for query in ["SELECT * FROM app ORDER BY id", "SELECT * FROM assets ORDER BY key"] {
+        let mut statement = conn.prepare(query).map_err(sqlite("read app"))?;
+        let count = statement.column_count();
+        let mut rows = statement.query([]).map_err(sqlite("read app"))?;
+        digest.update(query.as_bytes());
+        while let Some(row) = rows.next().map_err(sqlite("read app"))? {
+            digest.update([0xff]);
+            for column in 0..count {
+                use rusqlite::types::ValueRef;
+                let (tag, bytes) = match row.get_ref(column).map_err(sqlite("read app"))? {
+                    ValueRef::Null => (0, vec![]),
+                    ValueRef::Integer(n) => (1, n.to_be_bytes().to_vec()),
+                    ValueRef::Real(n) => (2, n.to_bits().to_be_bytes().to_vec()),
+                    ValueRef::Text(bytes) => (3, bytes.to_vec()),
+                    ValueRef::Blob(bytes) => (4, bytes.to_vec()),
+                };
+                digest.update([tag]);
+                digest.update((bytes.len() as u64).to_be_bytes());
+                digest.update(&bytes);
+            }
+        }
+    }
+    Ok(crate::hex(digest.finalize().as_slice()))
+}
+
+/// Streams pages from the caller's read transaction without retaining the file in memory.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn export_pages(conn: &Connection, mut write: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
+    use crate::error::failed;
+    let count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sqlite("export"))?;
+    let mut statement = conn.prepare("SELECT pgno,data FROM sqlite_dbpage ORDER BY pgno").map_err(sqlite("export"))?;
+    let mut rows = statement.query([]).map_err(sqlite("export"))?;
+    let mut expected = 1;
+    while let Some(row) = rows.next().map_err(sqlite("export"))? {
+        let page: i64 = row.get(0).map_err(sqlite("export"))?;
+        if page != expected {
+            return Err(failed("Missing export page"));
+        }
+        let data = row.get_ref(1).map_err(sqlite("export"))?;
+        write(data.as_blob().map_err(failed)?)?;
+        expected += 1;
+    }
+    if expected != count + 1 {
+        return Err(failed("Incomplete export"));
+    }
+    Ok(())
+}

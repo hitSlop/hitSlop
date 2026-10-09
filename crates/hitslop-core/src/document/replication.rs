@@ -4,7 +4,8 @@
 //! opening is, and a refused one leaves the replica as it was. These are document
 //! operations only: transport, rooms and identity belong to the host.
 
-use crate::*;
+use super::*;
+use crate::PatchOp;
 
 impl Document {
     /// Binary Loro version vector. It is transport-internal, never a page version token.

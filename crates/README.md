@@ -7,7 +7,8 @@ native Rust engine. Bun SDK tests use the WASM adapter.
   `storage`, the `.slop` file, its writer lock and the save policy.
 - `hitslop-core-ffi`: UniFFI adapter used by the Apple host, its Quick Look extensions and
   the native helper.
-- `hitslop-core-wasm`: wasm-bindgen adapter for SDK tests; not used by browser development.
+- `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests, durable browser copies and their
+  command evaluator; browser authoring development uses the native owner.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
   `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
@@ -53,3 +54,10 @@ every open runs; its `store` decides what a save writes (the checkpoint, the upd
 overrides and attachments), its `owner` schedules saves, and its `registry` owns the
 writer lock. Swift's `DocumentOwner` is the owner's façade.
 See [the architecture](../docs/architecture.md).
+
+The semantic implementation lives under `document/`: session history, frontier tokens,
+replication and history maintenance stay beside `Document`. The crate root re-exports its
+public types. `store/` separates save planning, attachments, native copies and browser
+storage; `file/` separates connections, acceptance and app reads. `owner/` keeps the
+actor's admission and save ordering together, with failures and serial persistence in
+child modules.

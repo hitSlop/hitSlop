@@ -16,10 +16,18 @@ import WebKit
       ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
+  /// The entries `verify` chose for an ordinary run (`replayedEntries` in
+  /// scripts/compat/corpus.ts); unset, every entry.
+  static let selected = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ENTRIES"].map {
+    Set($0.split(separator: ",").map(String.init))
+  }
+
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
     let entries = (try? FileManager.default.contentsOfDirectory(atPath: corpus.path)) ?? []
-    return entries.sorted().filter { recording == nil || $0 == recording }.flatMap { entry in
+    return entries.sorted().filter {
+      recording == nil ? selected?.contains($0) ?? true : $0 == recording
+    }.flatMap { entry in
       ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path))
         ?? [])
         .filter { $0.hasSuffix(".json") }.sorted().map { "\(entry)/\(($0 as NSString).deletingPathExtension)" }

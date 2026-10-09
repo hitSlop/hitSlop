@@ -226,7 +226,7 @@ pub(super) struct Typed {
 }
 
 /// A text set from the batch's base: `at` is the field, `value` its new text.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "text merge inputs belong to one bounded operation")]
 pub(super) fn set(
     doc: &LoroDoc,
     schema: &Node,

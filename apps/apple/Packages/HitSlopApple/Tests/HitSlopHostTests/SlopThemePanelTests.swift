@@ -43,7 +43,7 @@ import Testing
   #expect(screen.contains(slopThemePanelFrame(document: screen, visible: screen)))
 }
 
-@Test @MainActor func themePanelOpensBesideTheWindowAndRecolorsThePage() async throws {
+@Test(.nightly) @MainActor func themePanelOpensBesideTheWindowAndRecolorsThePage() async throws {
   let root = try themeWindowFixture()
   defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
   let controller = try await SlopDocumentWindowController.open(url: root)

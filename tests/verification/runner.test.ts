@@ -6,7 +6,7 @@ import { checkoutLease, retainReport, shardTests, assertShardComplete, testInven
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
-import { ciJobs, verificationArgs } from "../../scripts/ci/select";
+import { ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository });
@@ -73,23 +73,38 @@ test("nightly, manual and release branches select the full suite; ordinary chang
 test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
   const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event);
   const core = jobs(["crates/hitslop-core/src/store.rs"]);
-  expect(core.native).toBe("rust,swift,native");
+  expect(core.native).toBe("swift,native");
+  expect(core.nativeRust).toBe("rust");
   expect(core.rust).toBe("rust");
   expect(core.fast.split(",")).toEqual(expect.arrayContaining(["contracts", "bun", "cli", "packed"]));
   expect(core.qualification).toBe("");
   const corpus = jobs(["tests/compat/dev/release.json"]);
   expect(corpus.fast.split(",")).toContain("compat");
-  expect(corpus.native).toBe("rust,swift,native");
-  expect(jobs(["docs/testing.md"])).toEqual({ fast: "", native: "", rust: "", qualification: "" });
-  expect(jobs(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", native: "", rust: "", qualification: "" });
+  expect(corpus.native).toBe("swift,native");
+  const none = { native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
+  expect(jobs(["docs/testing.md"])).toEqual({ fast: "", ...none });
+  expect(jobs(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", ...none });
   expect(jobs(["packages/hitslop/src/browser/worker.ts"]).fast.split(",")).toContain("packed");
   for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
     const all = ciJobs(candidates, event);
-    for (const job of [all.fast, all.native, all.rust]) {
+    for (const job of [all.fast, all.native, all.nativeRust, all.rust]) {
       expect(job.split(",")).not.toContain("browser");
       expect(job.split(",")).not.toContain("dev-sync");
     }
     expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,dev-sync,cli,packed" : "");
+  }
+});
+
+test("a pull request defers Swift/native tiers unless it can affect opening documents", () => {
+  const sdk = ["packages/hitslop/src/sdk/index.ts"];
+  expect(touchesNativeGate(sdk)).toBe(false);
+  const deferred = ciJobs(affected(...sdk), "pull_request", touchesNativeGate(sdk));
+  expect(deferred.native).toBe("");
+  expect(deferred.deferred.split(",")).toEqual(expect.arrayContaining(["swift", "native"]));
+  for (const path of ["crates/hitslop-core/src/file/open.rs", "apps/apple/Packages/HitSlopApple/Sources/HitSlopHost/SlopWindow.swift",
+    "packages/hitslop/src/shell/owner.ts", "tests/compat/dev/release.json", "tests/native/crash.native.test.ts"]) {
+    expect(touchesNativeGate([path])).toBe(true);
+    expect(ciJobs(affected(path), "pull_request", true).deferred).toBe("");
   }
 });
 

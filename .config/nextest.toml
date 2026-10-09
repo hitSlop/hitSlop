@@ -2,6 +2,21 @@
 # cores. A test still running after two minutes is a hang, reported by name.
 [profile.default]
 slow-timeout = { period = "20s", terminate-after = 6 }
+# Nightly and release only (`HITSLOP_NIGHTLY=1` or `verify --release` adds
+# `--ignore-default-filter`): storage-growth and history-trim budgets, scheduling latency,
+# and a busy display read that waits out the reader's timeouts. None of them guards
+# opening, editing or saving a document.
+default-filter = """not (
+  test(/^a_busy_file_is_reported_busy_not_as_having_no_artwork$/)
+  | test(/^closing_a_large_document_keeps_no_history_and_compaction_trims_to_now$/)
+  | test(/^a_session_too_large_to_keep_closes_with_no_history$/)
+  | test(/^a_small_document_keeps_its_history_when_closed$/)
+  | test(/^a_session_past_its_limit_trims_while_open$/)
+  | test(/^doodle_like_use_stays_bounded$/)
+  | test(/^checkpoints_reclaim_free_pages$/)
+  | test(/::a_rebuild_waits_for_editing_to_pause$/)
+  | test(/::close_right_after_a_rebuild_still_trims_history$/)
+)"""
 
 [profile.ci]
 fail-fast = false

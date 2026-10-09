@@ -6,39 +6,43 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "storage")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "socket.generated.ts"))]
-#[serde(tag = "method", deny_unknown_fields)]
-#[allow(non_snake_case)]
+#[serde(tag = "method", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum SocketRequest {
     #[serde(rename = "attachments.list")]
-    AttachmentsList { protocol: u64, documentPath: String },
+    AttachmentsList { protocol: u64, document_path: String },
     #[serde(rename = "attachments.read")]
-    AttachmentsRead { protocol: u64, documentPath: String, attachmentID: String },
+    AttachmentsRead {
+        protocol: u64,
+        document_path: String,
+        #[serde(rename = "attachmentID")]
+        attachment_id: String,
+    },
     #[serde(rename = "theme.export")]
-    ThemeExport { protocol: u64, documentPath: String },
+    ThemeExport { protocol: u64, document_path: String },
     #[serde(rename = "get")]
-    Get { protocol: u64, documentPath: String },
+    Get { protocol: u64, document_path: String },
     #[serde(rename = "call")]
     Call {
         protocol: u64,
-        documentPath: String,
+        document_path: String,
         command: String,
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         args: serde_json::Value,
     },
     #[serde(rename = "describe")]
-    Describe { protocol: u64, documentPath: String },
+    Describe { protocol: u64, document_path: String },
     #[serde(rename = "batch")]
     Batch {
         protocol: u64,
-        documentPath: String,
+        document_path: String,
         batch: super::Batch,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
     #[serde(rename = "copy")]
-    Copy { protocol: u64, documentPath: String, output: String },
+    Copy { protocol: u64, document_path: String, output: String },
     #[serde(rename = "export")]
-    Export { protocol: u64, documentPath: String, format: ExportFormat, output: String },
+    Export { protocol: u64, document_path: String, format: ExportFormat, output: String },
 }
 
 #[cfg(feature = "storage")]
@@ -66,7 +70,7 @@ impl SocketRequest {
         check_path(self.path())?;
         match self {
             Self::Call { command, .. } if !super::engine::valid_command_name(command) => Err("Invalid command name"),
-            Self::AttachmentsRead { attachmentID, .. } if !super::valid_attachment_id(attachmentID) => {
+            Self::AttachmentsRead { attachment_id, .. } if !super::valid_attachment_id(attachment_id) => {
                 Err("Invalid attachment ID")
             }
             Self::Batch { batch, attachments, .. } => check_batch(batch, attachments.as_deref()),
@@ -89,21 +93,20 @@ impl SocketRequest {
     }
     pub fn path(&self) -> &str {
         match self {
-            Self::AttachmentsList { documentPath, .. } => documentPath,
-            Self::AttachmentsRead { documentPath, .. } => documentPath,
-            Self::ThemeExport { documentPath, .. } => documentPath,
-            Self::Get { documentPath, .. } => documentPath,
-            Self::Batch { documentPath, .. }
-            | Self::Call { documentPath, .. }
-            | Self::Describe { documentPath, .. } => documentPath,
-            Self::Copy { documentPath, .. } | Self::Export { documentPath, .. } => documentPath,
+            Self::AttachmentsList { document_path, .. } => document_path,
+            Self::AttachmentsRead { document_path, .. } => document_path,
+            Self::ThemeExport { document_path, .. } => document_path,
+            Self::Get { document_path, .. } => document_path,
+            Self::Batch { document_path, .. }
+            | Self::Call { document_path, .. }
+            | Self::Describe { document_path, .. } => document_path,
+            Self::Copy { document_path, .. } | Self::Export { document_path, .. } => document_path,
         }
     }
 }
 #[cfg(feature = "storage")]
 #[derive(Debug, Serialize)]
 #[serde(tag = "method", deny_unknown_fields)]
-#[allow(non_snake_case)]
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum SocketSuccess {
     #[serde(rename = "call")]
@@ -127,16 +130,15 @@ pub(crate) enum SocketSuccess {
 }
 
 #[cfg(feature = "storage")]
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(non_snake_case)]
+#[derive(Debug, Serialize)]
 pub(crate) struct SocketFailure {
     pub error: String,
     pub code: OutcomeCode,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
+    pub reason: Option<Code>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub opIndex: Option<u32>,
+    #[serde(rename = "opIndex")]
+    pub op_index: Option<u32>,
 }
 
 /// The only fields a discovery reader interprets. Other fields are always ignored,

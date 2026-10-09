@@ -65,6 +65,6 @@ public struct SlopScreenshotDestination {
   }
 
   private static func refusal(_ message: String) -> OwnerFailure {
-    OwnerFailure(kind: .rejected, message: message, reason: CoreErrorCode.invalidRequest.rawValue, opIndex: nil)
+    OwnerFailure(kind: .rejected, message: message, reason: .invalidRequest, opIndex: nil)
   }
 }

@@ -1,17 +1,27 @@
 /** Event policy only; file ownership remains in verification-inputs.ts. */
 import { run } from "../../packages/hitslop/src/cli/process";
 import { repository } from "../lib/artifacts";
-import type { TierName } from "../lib/verification-inputs";
+import { nativeGateInputs, sharedInputs, type TierName } from "../lib/verification-inputs";
+import { changedPaths } from "../lib/verification";
 
-/** Required jobs exercise shipping boundaries. Browser/sync qualification never blocks a PR. */
-export function ciJobs(tiers: TierName[], event: string | undefined) {
+/** Required jobs exercise shipping boundaries. Browser/sync qualification never blocks a PR.
+ * `nativeGate` is false for a pull request into master that changes nothing in
+ * `nativeGateInputs`: its Swift/native tiers are deferred to the master push. */
+export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true) {
   const pick = (names: TierName[]) => tiers.filter(name => names.includes(name)).join(",");
   return {
     fast: pick(["compat", "tooling", "contracts", "types", "bun", "cli", "packed", "landing"]),
-    native: pick(["rust", "swift", "native"]),
+    native: nativeGate ? pick(["swift", "native"]) : "",
+    nativeRust: pick(["rust"]),
     rust: pick(["rust"]),
+    deferred: nativeGate ? "" : pick(["swift", "native"]),
     qualification: event === "schedule" || event === "workflow_dispatch" ? "browser,dev-sync,cli,packed" : "",
   };
+}
+
+/** Whether a pull request into master changes an input of the native gate. */
+export function touchesNativeGate(paths: string[]) {
+  return paths.some(path => [...sharedInputs, ...nativeGateInputs].some(pattern => pattern.test(path)));
 }
 
 export function verificationArgs(env: Record<string, string | undefined>): string[] {
@@ -37,5 +47,8 @@ export function verificationArgs(env: Record<string, string | undefined>): strin
 
 if (import.meta.main) {
   const selection = JSON.parse(await run([process.execPath, "scripts/verify.ts", ...verificationArgs(process.env)], { cwd: repository }));
-  console.log(JSON.stringify({ ...selection, jobs: ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME) }));
+  const base = process.env.GITHUB_BASE_REF;
+  const gate = process.env.GITHUB_EVENT_NAME !== "pull_request" || !base || base.startsWith("release/")
+    || touchesNativeGate((await changedPaths(repository, `origin/${base}`)).paths);
+  console.log(JSON.stringify({ ...selection, jobs: ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME, gate) }));
 }

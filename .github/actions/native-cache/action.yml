@@ -1,5 +1,5 @@
 name: Native build cache
-description: Reuse compatible SwiftPM and completed template builds
+description: Reuse compatible SwiftPM and completed template builds (pull requests restore only)
 inputs:
   templates:
     description: "Template cache set: fixtures (everyday CI) or release (full corpus)"
@@ -13,13 +13,29 @@ runs:
         TOOLCHAIN_HASH=$( (xcodebuild -version; swift --version) | shasum -a 256 | cut -d ' ' -f 1)
         echo "hash=$TOOLCHAIN_HASH" >> "$GITHUB_OUTPUT"
     - id: swift-cache
+      if: github.event_name != 'pull_request'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: apps/apple/Packages/HitSlopApple/.build
         key: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
+    - id: swift-cache-restore
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: apps/apple/Packages/HitSlopApple/.build
+        key: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
     - id: template-cache
+      if: github.event_name != 'pull_request'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .hitslop/template-cache
+        key: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-
+    - id: template-cache-restore
+      if: github.event_name == 'pull_request'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .hitslop/template-cache
         key: ${{ env.CI_CACHE_NAMESPACE }}templates-v2-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -27,8 +43,8 @@ runs:
     - name: Native cache summary
       shell: bash
       env:
-        SWIFT_HIT: ${{ steps.swift-cache.outputs.cache-hit }}
-        TEMPLATE_HIT: ${{ steps.template-cache.outputs.cache-hit }}
+        SWIFT_HIT: ${{ steps.swift-cache.outputs.cache-hit || steps.swift-cache-restore.outputs.cache-hit }}
+        TEMPLATE_HIT: ${{ steps.template-cache.outputs.cache-hit || steps.template-cache-restore.outputs.cache-hit }}
       run: |
         status() {
           case "$1" in true) echo 'exact hit';; false) echo 'fallback hit';; *) echo 'miss';; esac

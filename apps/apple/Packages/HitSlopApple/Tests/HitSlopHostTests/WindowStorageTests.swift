@@ -10,41 +10,6 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  @Test(arguments: [false, true]) @MainActor
-  func saveFailureWaitsForAnUnrelatedSheet(recovered: Bool) async throws {
-    let root = try contractFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    await controller.waitForPresentation()
-    let window = try #require(controller.window)
-    let other = NSPanel(
-      contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    window.beginSheet(other, completionHandler: nil)
-    controller.pageSession(controller.session, saveStatus: .failed(.busy))
-    if recovered { controller.pageSession(controller.session, saveStatus: .saved) }
-    window.endSheet(other)
-    other.orderOut(nil)
-    if recovered {
-      // Drain the sheet-end notification and its deferred presentation turn.
-      await Task.yield()
-      await Task.yield()
-      #expect(controller.documentAttention == nil)
-    } else {
-      await eventually { controller.documentAttention != nil }
-      #expect(controller.documentAttention != nil)
-      controller.pageSession(controller.session, saveStatus: .failed(.busy))
-      if let sheet = controller.documentAttention {
-        window.endSheet(sheet, returnCode: .alertSecondButtonReturn)
-        sheet.orderOut(nil)
-      }
-      await Task.yield()
-      await Task.yield()
-      #expect(controller.documentAttention == nil)
-    }
-    try await controller.session.close()
-  }
-
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
@@ -174,39 +139,6 @@ extension HostTests {
     #expect(!Fixtures.isLocked(root))
   }
 
-  // Failure: close unmounted the app before the native close, so a failed close left an
-  // open, editable window with no app in it.
-  @Test @MainActor func failedCloseKeepsTheAppMountedAndEditable() async throws {
-    _ = NSApplication.shared
-    let root = try contractFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await SlopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
-    let session = controller.session
-    let events = SessionEvents(next: controller)
-    events.status = { _ in }
-    events.failure = { _ in }
-    session.delegate = events
-    // Another process holds the database: the edit is applied, but no save completes.
-    let hold = try Fixtures.DatabaseHold(root)
-    #expect(try await command("batch", url: root, setTitle("Unsaved while held")).code == .saveFailed)
-    await #expect(throws: (any Error).self) { try await session.close() }
-    hold.release()
-    let edited =
-      try await session.webView.callAsyncJavaScript(
-        """
-        const edit = document.getElementById('edit');
-        if (!edit) return false;
-        edit.click();
-        return true
-        """, arguments: [:], in: nil, contentWorld: .page) as? Bool
-    #expect(edited == true)
-    try await session.flush()
-    #expect((try await savedValue(root)?["title"] as? String)?.hasPrefix("Edited") == true)
-    try await session.close()
-    #expect(!Fixtures.isLocked(root))
-  }
-
   // Gap: failed-save retry tests do not prove that explicit discard reloads bytes,
   // awaits the bridge, retains ownership, and remounts the visible app.
   @Test @MainActor func discardRestoresSavedStateWithoutReleasingOwnership() async throws {
@@ -237,77 +169,77 @@ extension HostTests {
     #expect(try await savedValue(root)?["title"] as? String == "After discard")
   }
 
-  @Test @MainActor func failedSaveRetainsOwnershipAndRendererDeathReleasesOnClose() async throws {
-    let root = try contractFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    var operations: [SlopTelemetryEvent.Failure] = []
-    let controller = try await SlopDocumentWindowController.open(
-      url: root, telemetry: SlopTelemetry { if case .failed(let operation, _) = $0 { operations.append(operation) } })
-    try await controller.session.waitUntilReady()
-    // Preserve production status handling, without displaying a sheet in the test harness.
-    let events = SessionEvents(next: controller)
-    events.status = { [weak controller] status in controller?.recordSaveStatus(status) }
-    events.failure = { _ in }
-    controller.session.delegate = events
-    let hold = try Fixtures.DatabaseHold(root)
-    #expect(try await command("batch", url: root, setTitle("Recovered edit")).code == .saveFailed)
-    do {
-      try await controller.prepareToClose(operation: .quit)
-      try await controller.finishClose(operation: .quit)
-      Issue.record("Failed save allowed close")
-    } catch {}
-    // Gap: propagated close/quit errors must not duplicate the storage incident.
-    #expect(operations == [.save])
-    hold.release()
-    #expect(Fixtures.isLocked(root))
-    try await controller.session.flush()
-    let pid = try #require(
-      controller.session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
-    #expect(pid > 0)
-    if pid > 0 { #expect(Darwin.kill(pid, SIGKILL) == 0) }
-    await eventually(timeout: .seconds(3)) { controller.session.rendererDead }
-    #expect(controller.session.rendererDead)
-    try await controller.prepareToClose()
-    try await controller.session.close()
-    controller.window?.orderOut(nil)
-    #expect(try await savedValue(root)?["title"] as? String == "Recovered edit")
-  }
-
-  // Failure: a close stopped by a failed save showed the save-failure sheet and a second,
-  // generic alert. Oracle: the close fails as a save failure, which the coordinator leaves
-  // to the window, and the window shows one sheet.
-  @Test @MainActor func aCloseStoppedByAFailedSaveShowsOneSheet() async throws {
+  // A save that fails while another process holds the database, end to end through the
+  // window controller. One hold covers what each failure once proved separately:
+  // - a close stopped by the failed save fails as a save failure and never hands the window
+  //   off (whether its alert shows, and once, is `SaveAttentionTests`; that the coordinator
+  //   adds no second alert is `AppModelTests`);
+  // - propagated close and quit failures do not report the storage incident twice;
+  // - a capture never acquires a source, and ownership stays;
+  // - close used to unmount the app first, leaving an open window with no app: the page
+  //   stays mounted and editable;
+  // - once the hold ends the edit saves, and a renderer death still closes and releases.
+  @Test @MainActor func aFailedSaveKeepsTheDocumentOwnedEditableAndRecoverable() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var handedOff = false
+    var operations: [SlopTelemetryEvent.Failure] = []
     let controller = try await SlopDocumentWindowController.open(
-      url: root, routing: SlopDocumentRouting(command: { _ in }, closeHidden: { handedOff = true }))
+      url: root, routing: SlopDocumentRouting(command: { _ in }, closeHidden: { handedOff = true }),
+      telemetry: SlopTelemetry { if case .failed(let operation, _) = $0 { operations.append(operation) } })
+    controller.window?.moveOffScreen()
     try await controller.session.waitUntilReady()
-    controller.showWindow(nil)
-    await controller.waitForPresentation()
-    let window = try #require(controller.window)
+    let session = controller.session
+    // The window's save telemetry, without presenting its alert: a sheet would bring the
+    // window on screen.
+    let events = SessionEvents(next: controller)
+    events.status = { [weak controller] status in controller?.recordSaveStatus(status) }
+    events.failure = { _ in }
+    session.delegate = events
     let hold = try Fixtures.DatabaseHold(root)
-    #expect(try await command("batch", url: root, setTitle("Unsaved")).code == .saveFailed)
+    #expect(try await command("batch", url: root, setTitle("Unsaved while held")).code == .saveFailed)
+
     var failure: SlopDocumentFailure?
     do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
     #expect(failure == .save)
     #expect(!handedOff)
-    #expect(window.isVisible)
     #expect(!controller.isHiddenForClose)
-    #expect(window.sheets.count == 1)
-    #expect(controller.attentionFailure == .busy)
-    let sheet = try #require(window.attachedSheet)
-    window.endSheet(sheet, returnCode: .abort)
-    sheet.orderOut(nil)
+    await #expect(throws: (any Error).self) { try await controller.prepareToClose(operation: .quit) }
+    #expect(operations == [.save])
+
+    var rendered = false
+    await #expect(throws: (any Error).self) { try await session.withCaptureSnapshot { _ in rendered = true } }
+    #expect(!rendered && !session.capturing)
+    #expect(Fixtures.isLocked(root))
     hold.release()
-    try await controller.session.flush()
-    try await controller.finishClose()
+
+    let edited =
+      try await session.webView.callAsyncJavaScript(
+        """
+        const edit = document.getElementById('edit');
+        if (!edit) return false;
+        edit.click();
+        return true
+        """, arguments: [:], in: nil, contentWorld: .page) as? Bool
+    #expect(edited == true)
+    try await session.flush()
+    #expect((try await savedValue(root)?["title"] as? String)?.hasPrefix("Edited") == true)
+
+    let pid = try #require(session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
+    #expect(pid > 0)
+    if pid > 0 { #expect(Darwin.kill(pid, SIGKILL) == 0) }
+    await eventually(timeout: .seconds(3)) { session.rendererDead }
+    #expect(session.rendererDead)
+    try await controller.prepareToClose()
+    try await session.close()
+    controller.window?.orderOut(nil)
+    #expect(!Fixtures.isLocked(root))
   }
 }
 
 extension HostTests {
-  @Test @MainActor func saveTelemetryReportsOneFailureUntilRecovery() async throws {
+  @Test(.nightly) @MainActor func saveTelemetryReportsOneFailureUntilRecovery() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var events: [SlopTelemetryEvent] = []
@@ -332,26 +264,31 @@ extension HostTests {
   // Failure: every reported issue opened a blocking sheet, so a refused edit (a typed
   // number past its bound) interrupted the person. Oracle: only a save failure, which
   // puts unsaved work at risk, attaches a sheet.
-  @Test @MainActor func onlySaveFailuresBlockTheWindow() async throws {
+  // The alert adapter, on a real window: `SaveAttention` decides, this presents it. An
+  // authored issue shows the badge and never the sheet. Nightly: a sheet brings its window
+  // on screen.
+  @Test(.nightly) @MainActor func saveFailureSheetPresentsOnTheWindow() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
     await controller.waitForPresentation()
     controller.pageSession(
-      controller.session,
-      didReport: SlopPageIssue(
-        message: "DocumentError: out_of_range", isOperation: true))
+      controller.session, didReport: SlopPageIssue(message: "DocumentError: out_of_range", isOperation: true))
     #expect(controller.issueBadge != nil)
     #expect(controller.window?.attachedSheet == nil)
     controller.pageSession(controller.session, saveStatus: .failed(.busy))
-    let sheet = try #require(controller.window?.attachedSheet)
-    #expect(controller.issueBadge != nil)
-    controller.window?.endSheet(sheet, returnCode: .alertSecondButtonReturn)
-    sheet.orderOut(nil)
+    controller.pageSession(controller.session, saveStatus: .failed(.busy))
+    let window = try #require(controller.window)
+    #expect(window.sheets.count == 1)
+    let alert = try #require(window.attachedSheet)
+    #expect(Set(alert.contentView.map { buttons(in: $0) } ?? []) == ["Retry Save", "Keep Open"])
+    controller.pageSession(controller.session, saveStatus: .saved)
+    await eventually { window.attachedSheet == nil }
+    #expect(window.attachedSheet == nil)
     try await controller.session.close()
   }
 
-  @Test @MainActor func authoredTelemetryUsesOnlyFixedCategories() async throws {
+  @Test(.nightly) @MainActor func authoredTelemetryUsesOnlyFixedCategories() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var failures: [SlopFailureContext] = []
@@ -373,7 +310,7 @@ extension HostTests {
 
   // Gap: readiness and WebKit callbacks can report the same renderer failure twice.
   // Expect one incident until a new renderer is ready, then permit another incident.
-  @Test @MainActor func rendererTelemetryDeduplicatesUntilReady() async throws {
+  @Test(.nightly) @MainActor func rendererTelemetryDeduplicatesUntilReady() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var failures = 0
@@ -394,7 +331,7 @@ extension HostTests {
 extension HostTests {
   // Gap: duplication has success analytics but no error reporting. A rejected destination
   // must report once, cancellation must not fail, and the source must remain usable.
-  @Test @MainActor func duplicateTelemetryReportsRejectedDestinationWithoutLosingSource() async throws {
+  @Test(.nightly) @MainActor func duplicateTelemetryReportsRejectedDestinationWithoutLosingSource() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var failures: [SlopFailureContext] = []
@@ -411,5 +348,13 @@ extension HostTests {
     #expect(Fixtures.isLocked(root))
     try await controller.session.flush()
     try await controller.session.close()
+  }
+}
+
+/// The titles of the buttons inside an alert's view, in order.
+@MainActor private func buttons(in view: NSView) -> [String] {
+  view.subviews.flatMap { subview -> [String] in
+    if let button = subview as? NSButton, button.bezelStyle != .disclosure, !button.title.isEmpty { return [button.title] }
+    return buttons(in: subview)
   }
 }

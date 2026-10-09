@@ -32,7 +32,7 @@ extension OwnerFailure {
     case .moved: SaveFailure.moved
     case .saveFailed: SaveFailure.io(message)
     case .failed: SlopFailure(message)
-    case .rejected where refusal == .requiresUpdate: SlopRequiresUpdate()
+    case .rejected where reason == .requiresUpdate: SlopRequiresUpdate()
     case .rejected, .invalidated: self
     }
   }
@@ -50,12 +50,12 @@ extension OwnerFailure {
     case is OwnerReplaced: self.init(kind: .replaced, message: message, reason: nil, opIndex: nil)
     case is DocumentLocked: self.init(kind: .locked, message: message, reason: nil, opIndex: nil)
     case is SlopRequiresUpdate:
-      self.init(kind: .rejected, message: message, reason: CoreErrorCode.requiresUpdate.rawValue, opIndex: nil)
+      self.init(kind: .rejected, message: message, reason: .requiresUpdate, opIndex: nil)
     case let error as OwnerError:
       switch error {
       case .closed, .closing: self.init(kind: .closing, message: message, reason: nil, opIndex: nil)
       case .readOnly, .rejected:
-        self.init(kind: .rejected, message: message, reason: CoreErrorCode.invalidRequest.rawValue, opIndex: nil)
+        self.init(kind: .rejected, message: message, reason: .invalidRequest, opIndex: nil)
       }
     case is SaveFailure: self.init(kind: .saveFailed, message: message, reason: nil, opIndex: nil)
     default: self.init(kind: .failed, message: message, reason: nil, opIndex: nil)

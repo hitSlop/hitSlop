@@ -225,9 +225,9 @@ fn dispatch(
                     .collect();
                 SocketSuccess::AttachmentsList { state: fragment(state)? }
             }
-            SocketRequest::AttachmentsRead { attachmentID, .. } => {
+            SocketRequest::AttachmentsRead { attachment_id, .. } => {
                 let Reply::Bytes { bytes: Some(bytes) } =
-                    call(owner, Request::ReadAttachment { id: attachmentID }, deadline)?
+                    call(owner, Request::ReadAttachment { id: attachment_id }, deadline)?
                 else {
                     return Err(unexpected());
                 };
@@ -235,10 +235,10 @@ fn dispatch(
                     state: fragment(json!({"bytes": data_encoding::BASE64.encode(&bytes)}))?,
                 }
             }
-            SocketRequest::Copy { documentPath, output, .. } => {
+            SocketRequest::Copy { document_path, output, .. } => {
                 saving = true;
                 let output = if exporter.is_some() {
-                    export(ExportRequest { document_path: documentPath, format: None, output }, exporter, deadline)?
+                    export(ExportRequest { document_path, format: None, output }, exporter, deadline)?
                 } else {
                     call(
                         owner,
@@ -249,12 +249,8 @@ fn dispatch(
                 };
                 SocketSuccess::Copy { output }
             }
-            SocketRequest::Export { documentPath, format, output, .. } => SocketSuccess::Export {
-                output: export(
-                    ExportRequest { document_path: documentPath, format: Some(format), output },
-                    exporter,
-                    deadline,
-                )?,
+            SocketRequest::Export { document_path, format, output, .. } => SocketSuccess::Export {
+                output: export(ExportRequest { document_path, format: Some(format), output }, exporter, deadline)?,
             },
         })
     })();
@@ -290,26 +286,28 @@ fn prepare(request: wire::engine::EngineRequest, protocol: u64) -> Result<Socket
         Ok(path.to_string_lossy().into_owned())
     };
     let request = match request {
-        E::Get { document_path } => SocketRequest::Get { protocol, documentPath: path(document_path)? },
-        E::Describe { document_path } => SocketRequest::Describe { protocol, documentPath: path(document_path)? },
+        E::Get { document_path } => SocketRequest::Get { protocol, document_path: path(document_path)? },
+        E::Describe { document_path } => SocketRequest::Describe { protocol, document_path: path(document_path)? },
         E::Call { document_path, command, args } => {
-            SocketRequest::Call { protocol, documentPath: path(document_path)?, command, args }
+            SocketRequest::Call { protocol, document_path: path(document_path)?, command, args }
         }
         E::Batch { document_path, batch, attachments } => {
-            SocketRequest::Batch { protocol, documentPath: path(document_path)?, batch, attachments }
+            SocketRequest::Batch { protocol, document_path: path(document_path)?, batch, attachments }
         }
-        E::ThemeExport { document_path } => SocketRequest::ThemeExport { protocol, documentPath: path(document_path)? },
+        E::ThemeExport { document_path } => {
+            SocketRequest::ThemeExport { protocol, document_path: path(document_path)? }
+        }
         E::AttachmentsList { document_path } => {
-            SocketRequest::AttachmentsList { protocol, documentPath: path(document_path)? }
+            SocketRequest::AttachmentsList { protocol, document_path: path(document_path)? }
         }
         E::AttachmentsRead { document_path, attachment_id } => {
-            SocketRequest::AttachmentsRead { protocol, documentPath: path(document_path)?, attachmentID: attachment_id }
+            SocketRequest::AttachmentsRead { protocol, document_path: path(document_path)?, attachment_id }
         }
         E::Copy { document_path, output } => {
-            SocketRequest::Copy { protocol, documentPath: path(document_path)?, output }
+            SocketRequest::Copy { protocol, document_path: path(document_path)?, output }
         }
         E::Export { document_path, format, output } => {
-            SocketRequest::Export { protocol, documentPath: path(document_path)?, format, output }
+            SocketRequest::Export { protocol, document_path: path(document_path)?, format, output }
         }
         _ => return Err(invalid("Not a document command")),
     };
@@ -355,9 +353,9 @@ pub fn request_with_evaluator(
             match discovery(&path) {
                 Ok(socket) => Connection::Live(socket),
                 Err(_) => {
-                    let SocketRequest::Export { documentPath, format, output, .. } = request else { unreachable!() };
+                    let SocketRequest::Export { document_path, format, output, .. } = request else { unreachable!() };
                     return match export(
-                        ExportRequest { document_path: documentPath, format: Some(format), output },
+                        ExportRequest { document_path, format: Some(format), output },
                         exporter.as_ref(),
                         Instant::now() + COMMAND_TIMEOUT,
                     ) {

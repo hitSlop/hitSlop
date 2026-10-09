@@ -2,7 +2,7 @@
 //! memory, so a long session that edits a lot grows without bound even when its saved
 //! checkpoint stays small. When a checkpoint measures more retained history than the
 //! budget (`Store::owner_job`), the owner rebuilds its document from a shallow checkpoint
-//! that keeps the supported undo window (`crate::maintenance`):
+//! that keeps the supported undo window (`crate::document::maintenance`):
 //!
 //! - It waits for a quiet moment: editing paused for the budget's `rebuild_idle`, or 30 s
 //!   after the rebuild fell due if edits keep coming, and every edit saved.

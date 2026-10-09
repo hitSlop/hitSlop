@@ -253,14 +253,18 @@ fn a_preview_owner_refuses_an_unknown_page_request_and_keeps_serving() {
     assert_eq!((replies[1]["id"].clone(), reply(1)["ok"].clone()), (json!(2), json!(true)));
 }
 
+// A preview whose reader stalls closes and saves without waiting for it once its input
+// closes, and fails even while its input remains open. Both wait out the write timeout, so
+// they run at once.
 #[test]
-fn a_preview_with_stalled_output_closes_and_saves_without_waiting_for_its_reader() {
-    stalled_preview(true);
-}
-
-#[test]
-fn a_preview_with_stalled_output_fails_even_while_its_input_remains_open() {
-    stalled_preview(false);
+fn a_preview_with_stalled_output_saves_and_never_waits_for_its_reader() {
+    std::thread::scope(|scope| {
+        for run in [scope.spawn(|| stalled_preview(true)), scope.spawn(|| stalled_preview(false))] {
+            if let Err(panic) = run.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
 }
 
 fn stalled_preview(close_input: bool) {

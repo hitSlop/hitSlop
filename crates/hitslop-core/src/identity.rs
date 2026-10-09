@@ -36,9 +36,31 @@ pub(super) fn rows(list: &LoroMovableList) -> Vec<String> {
     });
     ids
 }
-#[cfg(feature = "storage")]
-#[test]
-fn derived_ids_are_stable() {
-    assert_eq!(derived("cid:7@12345:Map"), "x-r01fjb7pch2ptdbhx3heg86d");
-    assert_eq!(derived("2@99"), "x-8ytk4r1fvcw0kgf6n48rg87f");
+pub(super) fn application_id() -> String {
+    let mut bytes = [0u8; 16];
+    random(&mut bytes);
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    let mut out = String::new();
+    for byte in bytes {
+        buffer = (buffer << 8) | u32::from(byte);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(wire::ID_ALPHABET[((buffer >> bits) & 31) as usize] as char);
+        }
+    }
+    out.push(wire::ID_ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
+    out
+}
+
+#[cfg(all(test, feature = "storage", not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derived_ids_are_stable() {
+        assert_eq!(derived("cid:7@12345:Map"), "x-r01fjb7pch2ptdbhx3heg86d");
+        assert_eq!(derived("2@99"), "x-8ytk4r1fvcw0kgf6n48rg87f");
+    }
 }

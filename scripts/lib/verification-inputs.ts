@@ -39,6 +39,22 @@ export const tierInputs = {
   native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/native\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
 };
 
+/** On a pull request into master, the Swift and native tiers are required only when one of
+ * these changes: what can break opening an existing document (the Rust core and FFI, the
+ * native host, the page shell and wire types, the compatibility corpus) or the native checks
+ * themselves. Each `.slop` carries its own app, so SDK, template and CLI-only changes cannot.
+ * Their Swift/native tiers run after merge, on the master push. */
+export const nativeGateInputs = [
+  ...rustInputs,
+  /^apps\/apple\//,
+  /^packages\/hitslop\/(src\/(shell|wire)|generated|acceptance)\//,
+  /^tests\/(abi|compat|fixtures|native|presentation)\//,
+  /\.native\.test\.ts$/,
+  /^scripts\/(build|compat)\//,
+  /^scripts\/lib\/(native|native-fixtures|swift-tests)\.ts$/,
+  /^\.github\/actions\/native-cache\//,
+];
+
 // Policy workflows and tests of the runner do not change how product checks execute.
 export const sharedInputs = [
   /^\.github\/workflows\/ci\.yml$/,

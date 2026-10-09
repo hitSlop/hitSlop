@@ -59,6 +59,22 @@ export async function releases(): Promise<{ name: string; root: string; release:
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The entries the app-level replays (native CLI/helper and Swift page) run on an ordinary
+ * change: the newest entry, and the newest entry for each set of format markers, since only
+ * a marker change makes an older file different to read. Nightly, release and a required
+ * release entry (`HITSLOP_COMPAT_RELEASE`) replay all. Rust replays every entry, always. */
+export function replayedEntries<T extends { name: string; release: Release }>(entries: T[], all: boolean): T[] {
+  if (all || entries.length <= 1) return entries;
+  const newest = (list: T[]) => list.reduce((a, b) => (b.release.captured > a.release.captured ? b : a));
+  const byMarkers = new Map<string, T[]>();
+  for (const entry of entries) {
+    const key = JSON.stringify(entry.release.markers);
+    byMarkers.set(key, [...(byMarkers.get(key) ?? []), entry]);
+  }
+  const chosen = new Set([newest(entries), ...[...byMarkers.values()].map(newest)]);
+  return entries.filter((entry) => chosen.has(entry));
+}
+
 export async function documents(root: string): Promise<string[]> {
   return (await readdir(join(root, "documents")))
     .filter((name) => name.endsWith(".slop"))

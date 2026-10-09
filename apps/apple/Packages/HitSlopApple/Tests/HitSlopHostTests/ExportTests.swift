@@ -44,7 +44,7 @@ extension HostTests {
     #expect(throws: (any Error).self) { _ = try SlopScreenshotDestination(output: text, source: source) }
   }
 
-  @Test @MainActor func largestDefaultPreviewStaysWithinRasterBudget() async throws {
+  @Test(.nightly) @MainActor func largestDefaultPreviewStaysWithinRasterBudget() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       try Fixtures.updateApp(stage) {
@@ -59,7 +59,7 @@ extension HostTests {
     #expect(preview.pixelsWide * preview.pixelsHigh <= Limits.imagePixels)
   }
 
-  @Test @MainActor func dedicatedExportCanBeWiderThanItsWindow() async throws {
+  @Test(.nightly) @MainActor func dedicatedExportCanBeWiderThanItsWindow() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       try Fixtures.updateApp(stage) {
@@ -151,7 +151,7 @@ extension HostTests {
     try await session.close()
   }
 
-  @Test @MainActor func captureDoesNotTouchTheEditorDuringResize() async throws {
+  @Test(.nightly) @MainActor func captureDoesNotTouchTheEditorDuringResize() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let controller = try await SlopDocumentWindowController.open(url: root)
@@ -171,7 +171,7 @@ extension HostTests {
     controller.close()
   }
 
-  @Test @MainActor func pdfPreservesSurfaceColorAndSelectableText() async throws {
+  @Test(.nightly) @MainActor func pdfPreservesSurfaceColorAndSelectableText() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -352,7 +352,7 @@ extension HostTests {
     #expect(Fixtures.hasCustomIcon(root), "Finder shows the new artwork as the file's icon")
   }
 
-  @Test @MainActor func longDocumentPreviewIsCappedWhileExportKeepsFullLength() async throws {
+  @Test(.nightly) @MainActor func longDocumentPreviewIsCappedWhileExportKeepsFullLength() async throws {
     _ = NSApplication.shared
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -447,31 +447,6 @@ extension HostTests {
     #expect(try await savedValue(root)?["title"] as? String == "Later edit")
   }
 
-  @Test @MainActor func failedSaveDoesNotAcquireCaptureSourceOrReleaseOwnership() async throws {
-    let root = try contractFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let session = try await DocumentSession.open(url: root)
-    session.load()
-    try await session.waitUntilReady()
-    let hold = try Fixtures.DatabaseHold(root)
-    _ = try await session.owner.apply(
-      batch: Fixtures.json([
-        "intents": [
-          [
-            "type": "set", "path": ["title"], "value": "Unsaved edit",
-          ]
-        ]
-      ]))
-    var rendered = false
-    await #expect(throws: (any Error).self) {
-      try await session.withCaptureSnapshot { _ in rendered = true }
-    }
-    #expect(!rendered && !session.capturing)
-    #expect(Fixtures.isLocked(root))
-    hold.release()
-    try await session.close()
-  }
-
   @Test @MainActor func missingExportUsesFreshReadOnlyApp() async throws {
     let root = try contractFixture { stage in
       let script = """
@@ -496,7 +471,7 @@ extension HostTests {
 }
 
 extension HostTests {
-  @Test @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws {
+  @Test(.nightly) @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws {
     let root = try contractFixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
     defer {

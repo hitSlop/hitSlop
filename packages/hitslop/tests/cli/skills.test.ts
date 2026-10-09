@@ -18,7 +18,11 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { buildSkills } from "../../src/cli/skills-build";
 
-test("skills are deterministic, self-contained and describe the active commands", async () => {
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
+test.if(nightly)("skills are deterministic, self-contained and describe the active commands", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-skills-"));
   try {
     const first = join(root, "first/skills"),
@@ -99,7 +103,7 @@ async function globalCopy(bun: string) {
 
 const repositoryCli = resolve("packages/hitslop");
 
-test("agent skills link to the global CLI and follow its upgrades", async () => {
+test.if(nightly)("agent skills link to the global CLI and follow its upgrades", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-skill-global-"));
   try {
     const { home, project, bun, run } = await sandbox(root);
@@ -135,7 +139,7 @@ test("agent skills link to the global CLI and follow its upgrades", async () => 
   }
 });
 
-test("copies outside the global install never install or repair agent skill links", async () => {
+test.if(nightly)("copies outside the global install never install or repair agent skill links", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-skill-local-"));
   try {
     const { home, project, run } = await sandbox(root);

@@ -5,14 +5,9 @@ use hitslop_core::owner::{Failure, FailureKind};
 pub mod preview;
 
 /// A classified refusal, as every engine reply spells one.
-pub fn rejected(reason: &str, error: impl std::fmt::Display) -> String {
+pub fn rejected(reason: hitslop_core::Code, error: impl std::fmt::Display) -> String {
     command::failure(
-        Failure {
-            kind: FailureKind::Rejected,
-            message: error.to_string(),
-            reason: Some(reason.into()),
-            op_index: None,
-        },
+        Failure { kind: FailureKind::Rejected, message: error.to_string(), reason: Some(reason), op_index: None },
         false,
         false,
     )

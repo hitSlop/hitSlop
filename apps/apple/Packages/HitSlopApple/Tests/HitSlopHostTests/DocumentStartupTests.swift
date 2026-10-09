@@ -359,7 +359,7 @@ extension HostTests {
 
   // Gap: installing telemetry only after open returns loses early guest startup failures.
   // A disposable fixture throws before mounting; expect one sanitized authored incident.
-  @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
+  @Test(.nightly) @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
     let root = try contractFixture { stage in
       try Data("throw new Error('private startup contents');".utf8).write(
         to: stage.appendingPathComponent("assets/ui.js"))

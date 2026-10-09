@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, reason = "each integration test binary uses a different subset of these fixtures")]
 pub mod generate;
 use hitslop_core::Origin;
 use hitslop_core::{AppSpec, Applied, Document, Error};

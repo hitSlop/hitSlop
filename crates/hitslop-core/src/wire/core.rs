@@ -147,10 +147,10 @@ impl Intent {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "core.generated.ts"))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(non_snake_case)]
 pub struct Batch {
     #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
-    pub ifVersion: Option<String>,
+    #[serde(rename = "ifVersion")]
+    pub if_version: Option<String>,
     #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
     pub base: Option<String>,
     pub intents: Vec<Intent>,

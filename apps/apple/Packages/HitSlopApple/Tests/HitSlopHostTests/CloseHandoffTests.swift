@@ -45,6 +45,7 @@ extension HostTests {
             #expect(observed?.window?.isVisible == false)
             #expect(Fixtures.isLocked(root), "handoff must retain ownership")
           }))
+      controller.window?.moveOffScreen()
       observed = controller
       controller.showWindow(nil)
       await controller.waitForPresentation()

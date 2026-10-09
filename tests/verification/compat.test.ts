@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { assertFrozenCorpus } from "../../scripts/compat/check";
+import { replayedEntries, type Release } from "../../scripts/compat/corpus";
 
 test("released fixtures cannot be rewritten, unfrozen or deleted; new releases can be added", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-frozen-"));
@@ -35,4 +36,14 @@ test("released fixtures cannot be rewritten, unfrozen or deleted; new releases c
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("ordinary app-level replays keep the newest entry of every format-marker generation", () => {
+  const markers = (runtimeABI: number) => ({ packageFormat: 1, runtimeABI, storage: 1, layout: 1, protocol: 1 });
+  const entry = (name: string, captured: string, runtimeABI: number) =>
+    ({ name, release: { captured, markers: markers(runtimeABI) } as Release });
+  const entries = [entry("1.0.0", "2026-11-01", 1), entry("1.1.0", "2026-12-01", 1), entry("2.0.0", "2027-02-01", 2), entry("2.1.0", "2027-03-01", 2)];
+  expect(replayedEntries(entries, false).map(({ name }) => name)).toEqual(["1.1.0", "2.1.0"]);
+  expect(replayedEntries(entries, true)).toEqual(entries);
+  expect(replayedEntries(entries.slice(0, 1), false)).toEqual(entries.slice(0, 1));
 });

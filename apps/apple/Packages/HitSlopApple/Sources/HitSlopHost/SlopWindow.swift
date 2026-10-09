@@ -144,8 +144,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var failedOverlay: NSHostingView<FailureOverlay>?
   var presentedPageError: String?
   var documentAttention: NSPanel?
-  var attentionFailure: SaveFailure?
-  var attentionWaitingForSheet = false
+  var saveAttention = SaveAttention()
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?
@@ -487,7 +486,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public func windowWillMiniaturize(_ notification: Notification) { toolbar.hide() }
   public func windowWillClose(_ notification: Notification) {
-    attentionWaitingForSheet = false
+    saveAttention.windowClosed()
     isContentReady = false
     stopLoading()
     documentAttention?.close()

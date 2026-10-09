@@ -2,7 +2,7 @@
 //! from a shallow checkpoint that keeps the supported undo window. Preparation never
 //! changes the old document; the owner swaps the rebuilt one in only after its checkpoint
 //! is written (`owner::maintenance`). No page sequence, writer peer or identity changes.
-use crate::*;
+use super::*;
 
 /// What the owner hands its persistence worker while it holds edits back. Loro's clone
 /// is a reference clone; this type only reads it, never mutating or publishing, so reads
@@ -124,6 +124,7 @@ impl Seed {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn app() -> AppSpec {
         AppSpec::new(

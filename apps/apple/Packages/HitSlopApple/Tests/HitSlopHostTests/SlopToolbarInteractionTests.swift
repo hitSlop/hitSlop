@@ -41,7 +41,7 @@ extension HostTests {
   // Clicks pass through a transparent document's empty pixels, so the window server reports
   // the window behind it there. The document's shape still decides hover unless another
   // window covers the point.
-  @Test @MainActor func toolbarFollowsShapeOverTransparentPixels() async throws {
+  @Test(.nightly) @MainActor func toolbarFollowsShapeOverTransparentPixels() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -70,7 +70,7 @@ extension HostTests {
 
   // A toolbar first shown while unpinned must still float above other apps' windows
   // after pinning: a window ordered front over it (a click in another app) must not bury it.
-  @Test @MainActor func pinnedToolbarStaysAboveOtherWindows() async throws {
+  @Test(.nightly) @MainActor func pinnedToolbarStaysAboveOtherWindows() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -110,7 +110,7 @@ extension HostTests {
 
   // A guest must not retain visible/focusable controls after native chrome hides.
   // Existing deadline tests do not exercise delivery into a real WKWebView.
-  @Test @MainActor func guestControlsFollowNativeToolbar() async throws {
+  @Test(.nightly) @MainActor func guestControlsFollowNativeToolbar() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
       // Wrap the probe app with an authored control that follows the native toolbar.

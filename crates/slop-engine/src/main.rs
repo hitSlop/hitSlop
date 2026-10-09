@@ -3,7 +3,7 @@
 //! document operations to the live owner or acquires its lock and runs the same owner.
 //! AppKit operations forward the original JSON to the native helper. Only build/protocol
 //! queries and the exact restricted evaluator entry point are outside the JSON wire.
-use hitslop_core::{EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
+use hitslop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
 use slop_engine::{evaluator, preview, rejected};
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -42,7 +42,7 @@ fn success(result: EngineSuccess) -> String {
 fn native(protocol: u64, method: &str, input: &str) -> String {
     let path = match helper() {
         Ok(path) => path,
-        Err(error) => return rejected("invalid_request", error),
+        Err(error) => return rejected(Code::InvalidRequest, error),
     };
     let mut child = match Command::new(path)
         .args(["--client-protocol", &protocol.to_string()])
@@ -52,7 +52,7 @@ fn native(protocol: u64, method: &str, input: &str) -> String {
         .spawn()
     {
         Ok(child) => child,
-        Err(error) => return rejected("invalid_request", error),
+        Err(error) => return rejected(Code::InvalidRequest, error),
     };
     let sent = child.stdin.take().expect("piped stdin").write_all(input.as_bytes());
     // Always reap, including an early refusal that closed stdin before the write.
@@ -61,7 +61,7 @@ fn native(protocol: u64, method: &str, input: &str) -> String {
         Err(error) => return unknown(error),
     };
     if output.status.code() == Some(2) {
-        return rejected("requires_update", String::from_utf8_lossy(&output.stderr).trim());
+        return rejected(Code::RequiresUpdate, String::from_utf8_lossy(&output.stderr).trim());
     }
     const NO_REPLY: &str =
         "Native helper stopped without a valid reply; inspect the document and output before retrying";
@@ -125,11 +125,11 @@ fn dispatch(request: EngineRequest) -> String {
 }
 fn request(input: &str, protocol: u64) -> String {
     if input.len() > command::MAX_REQUEST_BYTES {
-        return rejected("too_large", "Engine request is too large");
+        return rejected(Code::TooLarge, "Engine request is too large");
     }
     let request = match EngineRequest::parse(input) {
         Ok(request) => request,
-        Err(error) => return rejected("invalid_request", error),
+        Err(error) => return rejected(Code::InvalidRequest, error),
     };
     match request {
         EngineRequest::Open { .. } | EngineRequest::Screenshot { .. } | EngineRequest::Export { .. } => {
@@ -189,7 +189,7 @@ fn main() -> ExitCode {
     let mut input = String::new();
     let reply = match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
         Ok(_) => request(&input, protocol),
-        Err(error) => rejected("invalid_request", error),
+        Err(error) => rejected(Code::InvalidRequest, error),
     };
     println!("{}", reply.trim_end());
     ExitCode::SUCCESS

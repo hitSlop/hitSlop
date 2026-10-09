@@ -49,7 +49,7 @@ pub fn failure(error: Failure, accepted: bool, saving: bool) -> String {
             error: message,
             code,
             reason: (code == OutcomeCode::Rejected).then_some(error.reason).flatten(),
-            opIndex: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
+            op_index: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
         },
     })
 }
@@ -230,6 +230,23 @@ mod tests {
             serde_json::from_str(&failure(Failure::new(FailureKind::Replaced, refusal), false, false)).unwrap();
         assert_eq!(refused["code"], "owner_replaced");
         assert_eq!(refused["error"], refusal);
+        assert!(refused.get("reason").is_none());
+        assert!(refused.get("opIndex").is_none());
+
+        let rejected = Failure {
+            kind: FailureKind::Rejected,
+            message: "Invalid edit".into(),
+            reason: Some(Code::InvalidRequest),
+            op_index: Some(2),
+        };
+        assert_eq!(
+            failure(rejected.clone(), false, false),
+            r#"{"ok":false,"error":"Invalid edit","code":"rejected","reason":"invalid_request","opIndex":2}"#
+        );
+        let accepted: serde_json::Value = serde_json::from_str(&failure(rejected, true, false)).unwrap();
+        assert_eq!(accepted["code"], "unknown_outcome");
+        assert!(accepted.get("reason").is_none());
+        assert!(accepted.get("opIndex").is_none());
     }
 
     #[test]
