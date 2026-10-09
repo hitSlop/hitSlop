@@ -39,9 +39,11 @@ export function appcastBuild(xml: string) {
 
 /** npm promotion can succeed before GitHub does; a retry must respect both. */
 export function preservesLatest(candidate: string, latest: string) {
-  if (![candidate, latest].every(version => /^\d+\.\d+\.\d+$/.test(version)))
-    throw new Error("Expected stable npm release versions");
-  const a = candidate.split(".").map(BigInt), b = latest.split(".").map(BigInt);
+  // npm can assign latest to the bootstrap package before the first stable release.
+  const previous = /^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(latest);
+  if (!/^\d+\.\d+\.\d+$/.test(candidate) || !previous)
+    throw new Error("Expected a stable release candidate and valid npm latest version");
+  const a = candidate.split(".").map(BigInt), b = previous[1]!.split(".").map(BigInt);
   for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index]! > b[index]!;
   return true;
 }

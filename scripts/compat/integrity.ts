@@ -12,7 +12,7 @@ export async function sourceFingerprint(root = repository): Promise<string> {
   assert.equal(code, 0, error);
   const inputs = [...new Set(out.split("\0"))].filter(path =>
     /^(Cargo\.(toml|lock)|rust-toolchain\.toml|bun\.lock|package\.json|tsconfig[^/]*\.json)$/.test(path) ||
-    /^(crates|scripts|apps\/apple|examples\/slops|tests\/abi|tests\/fixtures)\//.test(path) ||
+    /^(crates|scripts|apps\/apple|examples\/slops|tests\/abi|tests\/fixtures|tests\/apps|tests\/presentation)\//.test(path) ||
     /^packages\/(?:hitslop)\/(?:src\/|generated\/|acceptance\/|templates\/|skills\/|package\.json$)/.test(path),
   ).sort();
   const hash = createHash("sha256");
@@ -71,10 +71,13 @@ export async function verifyCorpus(root: string, release: Release) {
 }
 
 /** Only the release being published must match current producing inputs. */
-export async function verifyCandidate(root: string, release: Release) {
-  assert.equal(await sourceFingerprint(), release.inputs, "Release inputs changed after compatibility capture; capture a new candidate");
+export async function verifyCandidate(root: string, release: Pick<Release, "inputs" | "templates">, candidateRoot = repository) {
+  assert.equal(await sourceFingerprint(candidateRoot), release.inputs, "Release inputs changed after compatibility capture; capture a new candidate");
   for (const [slug, hash] of Object.entries(release.templates)) {
     if (slug === "conformance" || slug.startsWith("fixture-")) continue;
-    assert.equal(await fileDigest(join(repository, "generated/templates", `${slug}.slop`)), hash, `Captured template differs from candidate: ${slug}`);
+    const file = slug.startsWith("presentation-")
+      ? join(candidateRoot, "generated/presentation", `${slug.slice("presentation-".length)}.slop`)
+      : join(candidateRoot, "generated/templates", `${slug}.slop`);
+    assert.equal(await fileDigest(file), hash, `Captured template differs from candidate: ${slug}`);
   }
 }
