@@ -22,7 +22,7 @@ pub use wire::{OutcomeCode, native, page as page_wire, preview, socket as socket
 #[cfg(feature = "storage")]
 pub mod app;
 #[cfg(feature = "storage")]
-pub use wire::{HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
+pub use wire::{HELPER_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
 pub mod arguments;
 mod check;
 mod descriptor;
@@ -30,7 +30,7 @@ mod execute;
 mod identity;
 #[cfg(feature = "storage")]
 pub mod images;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 mod maintenance;
 #[cfg(feature = "storage")]
 pub mod media;
@@ -111,6 +111,7 @@ fn random(buffer: &mut [u8]) {
 }
 /// `bytes` random bytes in lowercase hex.
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
     random(&mut buffer);
@@ -214,6 +215,7 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 
 /// The peer a template's initial operations belong to (`Document::initial_checkpoint`).
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 const TEMPLATE_PEER: u64 = 1;
 /// `doc` with the layout marker and `value`, a validated value of `schema`, committed.
 fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
@@ -225,6 +227,7 @@ fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
 }
 /// Gives every row in `value` that has no `$id` one derived from its place (`at`).
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 fn name_rows(node: &Node, value: &mut Value, at: &str) {
     match (node, value) {
         (Node::Optional { inner }, value) => name_rows(inner, value, at),
@@ -258,6 +261,7 @@ fn name_rows(node: &Node, value: &mut Value, at: &str) {
 /// Semantic seed equality: object order and integral number spelling may differ,
 /// but converting an integer to a double must not silently round its value.
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 fn same_seed(a: &Value, b: &Value) -> bool {
     fn integer_float(integer: &serde_json::Number, float: f64) -> bool {
         if float.fract() != 0.0 {
@@ -459,6 +463,7 @@ impl Document {
     /// without an `$id` get one derived from their place, and the operations belong to a
     /// fixed peer. A document that opens it edits as a peer of its own.
     #[cfg(feature = "storage")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn initial_checkpoint(app: &AppSpec, initial: &str) -> Result<Vec<u8>> {
         let mut initial: Value = parse(initial)?;
         app.schema.fill_defaults(&mut initial);
@@ -860,20 +865,23 @@ fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 mod error;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod file;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod registry;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod store;
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod owner;
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod command;
 pub mod describe;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod socket;
+
+#[cfg(feature = "storage")]
+pub use wire::browser as browser_wire;

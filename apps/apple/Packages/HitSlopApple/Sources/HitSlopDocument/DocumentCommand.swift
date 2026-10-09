@@ -14,7 +14,7 @@ import HitSlopCoreBinding
     return await withCheckedContinuation { done in
       commandRequest(
         json: String(decoding: json, as: UTF8.self), protocol: UInt64(version),
-        exporter: export.map(NativeExports.init),
+        exporter: export.map { NativeExports($0) },
         completion: CommandCompletion { done.resume(returning: $0) })
     }
   }

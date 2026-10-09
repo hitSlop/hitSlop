@@ -137,6 +137,7 @@ fn request(input: &str, protocol: u64) -> String {
         }
         EngineRequest::Get { .. }
         | EngineRequest::Batch { .. }
+        | EngineRequest::Copy { .. }
         | EngineRequest::ThemeExport { .. }
         | EngineRequest::AttachmentsList { .. }
         | EngineRequest::AttachmentsRead { .. }

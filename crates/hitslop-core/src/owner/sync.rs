@@ -167,7 +167,7 @@ impl Actor {
         &mut self,
         request: Request,
         view: Option<String>,
-        deadline: Option<Instant>,
+        deadline: Option<Duration>,
         callback: &mut Option<Completion>,
     ) -> Result<Option<Request>> {
         if !self.session.shared() {

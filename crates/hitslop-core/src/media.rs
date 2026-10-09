@@ -119,6 +119,65 @@ pub fn attachment_type(bytes: &[u8]) -> &'static str {
     "application/octet-stream"
 }
 
+/// Same passive sniffing as `attachment_type`, without buffering a large attachment.
+/// ISO brands may occupy a large ftyp box; examine those in bounded blocks too.
+#[cfg(feature = "storage")]
+pub(crate) fn attachment_type_stream<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    size: usize,
+) -> std::io::Result<&'static str> {
+    use std::io::SeekFrom;
+    reader.seek(SeekFrom::Start(0))?;
+    let mut prefix = vec![0; size.min(8192)];
+    reader.read_exact(&mut prefix)?;
+    let initial = attachment_type(&prefix);
+    if prefix.get(4..8) != Some(b"ftyp") || prefix.len() < 16 {
+        return Ok(initial);
+    }
+    let length = u32::from_be_bytes(prefix[..4].try_into().expect("header")) as usize;
+    if length <= prefix.len() || length > size || length < 16 || !(length - 16).is_multiple_of(4) {
+        return Ok(initial);
+    }
+    // Preserve the signature precedence before ISO media.
+    if prefix.starts_with(b"\x89PNG\r\n\x1a\n")
+        || prefix.starts_with(b"\xff\xd8\xff")
+        || prefix.starts_with(b"GIF87a")
+        || prefix.starts_with(b"GIF89a")
+        || prefix.starts_with(b"RIFF")
+    {
+        return Ok(initial);
+    }
+    let rank = |kind| match kind {
+        "image/avif" => 0,
+        "image/heic" => 1,
+        "audio/mp4" => 2,
+        "video/quicktime" => 3,
+        "video/mp4" => 4,
+        _ => 5,
+    };
+    let mut probe = [0u8; 20];
+    probe[..16].copy_from_slice(&prefix[..16]);
+    probe[..4].copy_from_slice(&20u32.to_be_bytes());
+    let mut result = initial;
+    reader.seek(SeekFrom::Start(16))?;
+    let mut chunk = [0u8; 8192];
+    let mut remaining = length - 16;
+    while remaining > 0 {
+        let n = remaining.min(chunk.len());
+        reader.read_exact(&mut chunk[..n])?;
+        for brand in chunk[..n].chunks_exact(4) {
+            probe[16..].copy_from_slice(brand);
+            if let Some(kind) = iso_media(&probe)
+                && rank(kind) < rank(result)
+            {
+                result = kind;
+            }
+        }
+        remaining -= n;
+    }
+    Ok(result)
+}
+
 fn iso_media(bytes: &[u8]) -> Option<&'static str> {
     if bytes.get(4..8)? != b"ftyp" {
         return None;

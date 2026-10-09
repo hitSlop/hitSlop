@@ -16,6 +16,7 @@ child = ["dep:rquickjs", "dep:seccompiler"]
 serde.workspace = true
 serde_json.workspace = true
 rquickjs = { version = "=0.14.0", optional = true }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]

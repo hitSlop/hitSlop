@@ -21,22 +21,22 @@ const PATIENCE: Duration = Duration::from_secs(30);
 #[derive(Default)]
 pub(super) struct Maintenance {
     /// When a rebuild fell due, and the retained history that made it due.
-    due: Option<(Instant, usize)>,
+    due: Option<(Duration, usize)>,
     /// The retained history of the rebuild being prepared or written.
     running: Option<usize>,
     /// When the last edit was admitted.
-    last_edit: Option<Instant>,
+    last_edit: Option<Duration>,
 }
 
 impl Actor {
     /// A checkpoint measured `size` bytes of retained history, past the budget.
     pub(super) fn rebuild_due(&mut self, size: usize) {
         if self.maintenance.due.is_none() && self.maintenance.running.is_none() {
-            self.maintenance.due = Some((Instant::now(), size));
+            self.maintenance.due = Some((self.now, size));
         }
     }
     pub(super) fn maintenance_edited(&mut self) {
-        self.maintenance.last_edit = Some(Instant::now());
+        self.maintenance.last_edit = Some(self.now);
     }
     pub(super) fn maintenance_running(&self) -> bool {
         self.maintenance.running.is_some()
@@ -48,7 +48,7 @@ impl Actor {
     }
     /// When a due rebuild may start, or none while something else must happen first; the
     /// message that ends that wait polls again.
-    pub(super) fn maintenance_wake(&self) -> Option<Instant> {
+    pub(super) fn maintenance_wake(&self) -> Option<Duration> {
         let (since, _) = self.maintenance.due?;
         let ready = self.maintenance.running.is_none()
             && self.mode == store::Mode::Document
@@ -68,7 +68,7 @@ impl Actor {
     }
     /// Starts a due rebuild once its wake time has passed.
     pub(super) fn maintenance_poll(&mut self) {
-        if self.maintenance_wake().is_none_or(|wake| wake > Instant::now()) {
+        if self.maintenance_wake().is_none_or(|wake| wake > self.now) {
             return;
         }
         let Some((_, size)) = self.maintenance.due.take() else {

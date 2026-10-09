@@ -635,7 +635,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply, W
   func startDiscovery() throws {
     guard server == nil, owner.mode == .document else { return }
     server = try owner.startServer(
-      exporter: NativeExports { [weak self] _, format, output, deadline in
+      exporter: NativeExports(copy: { [weak self] output, deadline in
+        guard let self, !closed, !closing, isReady, !rendererDead else { throw OwnerError.closing }
+        try deadline.check()
+        _ = try await self.copy(to: output)
+        try deadline.check()
+      }) { [weak self] _, format, output, deadline in
         guard let self, !closed, !closing else { throw OwnerError.closing }
         guard let onExport, isReady, !rendererDead else { throw SlopFailure("Export unavailable") }
         try await onExport(format, output, deadline)

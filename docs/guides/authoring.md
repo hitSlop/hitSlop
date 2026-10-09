@@ -113,6 +113,13 @@ export const rename = doc.command({
 
 A button imports `rename` and awaits `rename({ title: "Weekend" })`. The CLI discovers it
 with `slop describe My.slop` and calls `slop call My.slop rename --args '{"title":"Weekend"}'`.
+
+Teach this in order: declare the command, import its exports with
+`import * as commands from "./commands"`, register `commands` in `defineSlop`, then
+call the same export from the page. The [public command walkthrough](../../apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
+shows discovery, invocation, direct field edits and their responses. A command like
+`rename` with no return value and no inserts prints `{"result":null,"ids":[]}`;
+read the changed fields with `get`.
 Descriptions on fields use options such as `s.text({ description: "Window title." })`.
 
 Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`, and

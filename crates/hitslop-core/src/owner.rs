@@ -1,4 +1,4 @@
-//! One native document owner. Admission, publication order and save scheduling live on
+//! One document owner. Admission, publication order and save scheduling live on
 //! the edit worker; SQLite work runs serially on the persistence worker. Callbacks run
 //! without locks and may enqueue another request, but must not wait for its completion.
 use crate::file::{self, Artwork};
@@ -6,7 +6,9 @@ use crate::{Code, Document, Origin, store, theme};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
@@ -64,6 +66,10 @@ impl From<store::Error> for Failure {
         Self::new(kind, e.to_string())
     }
 }
+#[cfg(target_arch = "wasm32")]
+mod browser;
+#[cfg(target_arch = "wasm32")]
+pub use browser::BrowserDriver;
 mod barrier;
 mod commands;
 mod maintenance;
@@ -72,6 +78,7 @@ mod maintenance;
 #[cfg_attr(feature = "dev-sync", path = "owner/sync.rs")]
 pub mod session;
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
+#[cfg(not(target_arch = "wasm32"))]
 pub use hitslop_runner::Evaluator;
 
 type Result<T> = std::result::Result<T, Failure>;
@@ -228,11 +235,15 @@ pub struct Owner {
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
+    #[cfg(not(target_arch = "wasm32"))]
+    epoch: Instant,
 }
 impl Owner {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
         Self::open_with_evaluator(path, mode, listener, None)
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_evaluator(
         path: &Path,
         mode: store::Mode,
@@ -241,8 +252,6 @@ impl Owner {
     ) -> Result<Self> {
         let path = file::resolve(path)?;
         let store = Arc::new(store::Store::open(&path, mode)?);
-        let core = store.document()?;
-        let sequence = core.sequence();
         let (sender, receive) = mpsc::channel();
         let session = session::State::new(&sender, &store)?;
         let (persist, work) = mpsc::channel();
@@ -265,38 +274,13 @@ impl Owner {
             }
             None => None,
         };
-        let actor = Actor {
-            evaluate,
-            evaluating: false,
-            core,
-            mode,
-            store: store.clone(),
-            generation: 0,
-            persist,
-            listener,
-            view: None,
-            lifecycle: Lifecycle::Open,
-            invalidated: false,
-            discarding: false,
-            sequence,
-            saved: 0,
-            revision: 0,
-            session,
-            writing: false,
-            requested: false,
-            deadline: None,
-            unsaved_since: None,
-            failure: None,
-            waiters: vec![],
-            undo: (false, false),
-            barrier: barrier::Barrier::default(),
-            maintenance: maintenance::Maintenance::default(),
-        };
+        let epoch = Instant::now();
+        let actor = Actor::new(store.clone(), mode, listener, persist, evaluate, session)?;
         std::thread::Builder::new()
             .name("hitslop.owner".into())
-            .spawn(move || actor.run(receive))
+            .spawn(move || actor.run(receive, epoch))
             .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-        Ok(Self { sender, store, path, mode })
+        Ok(Self { sender, store, path, mode, epoch })
     }
     pub fn mode(&self) -> store::Mode {
         self.mode
@@ -316,6 +300,7 @@ impl Owner {
     pub fn app(&self) -> &file::OpenedApp {
         self.store.app()
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         Ok(self.store.resource_reader()?)
     }
@@ -327,9 +312,11 @@ impl Owner {
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
         Ok(self.store.publish_discovery(json)?)
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
         self.store.withdraw_discovery();
     }
@@ -337,10 +324,11 @@ impl Owner {
         self.enqueue(request, view, None, callback);
     }
     /// The deadline is checked on the edit worker, before the command is admitted.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
-        self.enqueue(request, view, Some(deadline), callback);
+        self.enqueue(request, view, Some(deadline.saturating_duration_since(self.epoch)), callback);
     }
-    fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Instant>, callback: Completion) {
+    fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
         if let Err(mpsc::SendError(Message::Request { callback, .. })) =
             self.sender.send(Message::Request { request, view, deadline, callback })
         {
@@ -365,7 +353,7 @@ enum Message {
     Request {
         request: Request,
         view: Option<String>,
-        deadline: Option<Instant>,
+        deadline: Option<Duration>,
         callback: Completion,
     },
     Attach(String),
@@ -429,6 +417,7 @@ enum Work {
     },
 }
 /// The artwork a window rendered, by name, leaving out what it did not render.
+#[cfg(not(target_arch = "wasm32"))]
 fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
     [(Artwork::Preview, preview), (Artwork::Icon, icon)]
         .into_iter()
@@ -444,89 +433,116 @@ enum StorageAction {
     ReadAttachment(String),
     PutAttachment(Vec<u8>),
 }
+#[cfg(not(target_arch = "wasm32"))]
 fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
-        let done = match work {
-            Work::Maintain { generation, seed, budget } => {
-                let result = contained(|| {
-                    #[cfg(test)]
-                    if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                        hook(false)?;
-                    }
-                    let (rebuilt, bytes) = seed.build(budget)?;
-                    let job = store.replacement_job(&rebuilt, bytes)?;
-                    let written = contained(|| {
-                        store.write(&job).map_err(Failure::from)?;
-                        #[cfg(test)]
-                        if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                            hook(true)?;
-                        }
-                        Ok(())
-                    });
-                    Ok((Box::new(rebuilt), written))
-                });
-                Message::Maintained { generation, result }
-            }
-            Work::Save { generation, target, job } => Message::Saved {
-                generation,
-                target,
-                rebuild: job.rebuild_due(),
-                result: contained(|| store.write(&job).map_err(Failure::from)),
-            },
-            Work::Restore { generation, callback } => Message::Restored {
-                generation,
-                callback,
-                result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
-            },
-            Work::Store { generation, action, callback } => {
-                let result = contained(|| {
-                    Ok(match action {
-                        StorageAction::Copy { path, preview, icon } => {
-                            store.copy_clean(&path, &named_artwork(&preview, &icon))?;
-                            Reply::Unit
-                        }
-                        StorageAction::CaptureSource(path) => {
-                            store.capture_source(&path)?;
-                            Reply::Unit
-                        }
-                        StorageAction::Backup(path) => {
-                            store.backup(&path)?;
-                            Reply::Unit
-                        }
-                        StorageAction::Artwork(name) => Reply::Bytes { bytes: store.artwork(name)? },
-                        StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
-                        StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
-                        StorageAction::PutAttachment(bytes) => {
-                            Reply::Attachment { item: store.put_attachment(&bytes)? }
-                        }
-                    })
-                });
-                Message::Stored { generation, result, callback, closing: false }
-            }
-            Work::Close { generation, job, preview, icon, callback } => {
-                let result = contained(|| {
-                    // Housekeeping cannot fail a close whose final save succeeded.
-                    if let Some(job) = job {
-                        let _ = store.write(&job);
-                    }
-                    let artwork = named_artwork(&preview, &icon);
-                    if !artwork.is_empty() {
-                        let _ = store.set_artwork(&artwork);
-                    }
-                    // After the final save, when no import can be waiting for its
-                    // reference: the page's barrier drained its imports, and an agent's
-                    // blobs arrive in the batch that references them.
-                    let _ = store.reclaim_attachments();
-                    store.close()?;
-                    Ok(Reply::Unit)
-                });
-                Message::Stored { generation, result, callback, closing: true }
-            }
-        };
+        let done = perform(&store, work);
         if let Err(mpsc::SendError(Message::Stored { callback, .. } | Message::Restored { callback, .. })) =
             sender.send(done)
         {
             complete(callback, Err(closed()))
+        }
+    }
+}
+/// One serial storage effect, driven by a native thread or a browser worker.
+fn perform(store: &store::Store, work: Work) -> Message {
+    match work {
+        Work::Maintain { generation, seed, budget } => {
+            let result = contained(|| {
+                #[cfg(test)]
+                if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
+                    hook(false)?;
+                }
+                let (rebuilt, bytes) = seed.build(budget)?;
+                let job = store.replacement_job(&rebuilt, bytes)?;
+                let written = contained(|| {
+                    store.write(&job).map_err(Failure::from)?;
+                    #[cfg(test)]
+                    if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
+                        hook(true)?;
+                    }
+                    Ok(())
+                });
+                Ok((Box::new(rebuilt), written))
+            });
+            Message::Maintained { generation, result }
+        }
+        Work::Save { generation, target, job } => Message::Saved {
+            generation,
+            target,
+            rebuild: job.rebuild_due(),
+            result: contained(|| store.write(&job).map_err(Failure::from)),
+        },
+        Work::Restore { generation, callback } => Message::Restored {
+            generation,
+            callback,
+            result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
+        },
+        Work::Store { generation, action, callback } => {
+            let result = contained(|| {
+                Ok(match action {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    StorageAction::Copy { path, preview, icon } => {
+                        store.copy_clean(&path, &named_artwork(&preview, &icon))?;
+                        Reply::Unit
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    StorageAction::CaptureSource(path) => {
+                        store.capture_source(&path)?;
+                        Reply::Unit
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    StorageAction::Backup(path) => {
+                        store.backup(&path)?;
+                        Reply::Unit
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    StorageAction::Copy { path, preview, icon } => {
+                        drop((path, preview, icon));
+                        return Err(Failure::rejected(
+                            Code::InvalidRequest,
+                            "Native path operation is unavailable in the browser",
+                        ));
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    StorageAction::CaptureSource(path) | StorageAction::Backup(path) => {
+                        drop(path);
+                        return Err(Failure::rejected(
+                            Code::InvalidRequest,
+                            "Native path operation is unavailable in the browser",
+                        ));
+                    }
+                    StorageAction::Artwork(name) => Reply::Bytes { bytes: store.artwork(name)? },
+                    StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
+                    StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
+                    StorageAction::PutAttachment(bytes) => Reply::Attachment { item: store.put_attachment(&bytes)? },
+                })
+            });
+            Message::Stored { generation, result, callback, closing: false }
+        }
+        Work::Close { generation, job, preview, icon, callback } => {
+            let result = contained(|| {
+                // Housekeeping cannot fail a close whose final save succeeded.
+                if let Some(job) = job {
+                    let _ = store.write(&job);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let artwork = named_artwork(&preview, &icon);
+                    if !artwork.is_empty() {
+                        let _ = store.set_artwork(&artwork);
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                let _ = (preview, icon);
+                // After the final save, when no import can be waiting for its
+                // reference: the page's barrier drained its imports, and an agent's
+                // blobs arrive in the batch that references them.
+                let _ = store.reclaim_attachments();
+                store.close()?;
+                Ok(Reply::Unit)
+            });
+            Message::Stored { generation, result, callback, closing: true }
         }
     }
 }
@@ -549,6 +565,9 @@ struct Waiter {
     next: AfterSave,
 }
 struct Actor {
+    /// Driver-supplied time; shared admission and save scheduling never read an OS clock.
+    now: Duration,
+    unix_ms: u64,
     evaluate: Option<mpsc::Sender<EvaluationWork>>,
     evaluating: bool,
     core: Document,
@@ -572,8 +591,8 @@ struct Actor {
     session: session::State,
     writing: bool,
     requested: bool,
-    deadline: Option<Instant>,
-    unsaved_since: Option<Instant>,
+    deadline: Option<Duration>,
+    unsaved_since: Option<Duration>,
     failure: Option<Failure>,
     waiters: Vec<Waiter>,
     undo: (bool, bool),
@@ -581,22 +600,174 @@ struct Actor {
     maintenance: maintenance::Maintenance,
 }
 impl Actor {
+    fn new(
+        store: Arc<store::Store>,
+        mode: store::Mode,
+        listener: Listener,
+        persist: mpsc::Sender<Work>,
+        evaluate: Option<mpsc::Sender<EvaluationWork>>,
+        session: session::State,
+    ) -> Result<Self> {
+        let core = store.document()?;
+        let sequence = core.sequence();
+        Ok(Self {
+            now: Duration::ZERO,
+            unix_ms: 0,
+            evaluate,
+            evaluating: false,
+            core,
+            mode,
+            store,
+            generation: 0,
+            persist,
+            listener,
+            view: None,
+            lifecycle: Lifecycle::Open,
+            invalidated: false,
+            discarding: false,
+            sequence,
+            saved: 0,
+            revision: 0,
+            session,
+            writing: false,
+            requested: false,
+            deadline: None,
+            unsaved_since: None,
+            failure: None,
+            waiters: vec![],
+            undo: (false, false),
+            barrier: barrier::Barrier::default(),
+            maintenance: maintenance::Maintenance::default(),
+        })
+    }
     fn emit(&self, event: Event) {
         let _ = catch_unwind(AssertUnwindSafe(|| (self.listener)(event)));
     }
-    fn run(mut self, messages: mpsc::Receiver<Message>) {
+    fn start(&self) {
         self.emit(Event::UndoState { can_undo: false, can_redo: false });
         self.status(SaveStatus::Saved);
-        loop {
-            if self.deadline.is_some_and(|deadline| deadline <= Instant::now()) {
-                self.deadline = None;
-                self.requested = true;
-                self.pump();
+    }
+    fn clock(&mut self, now: Duration, unix_ms: u64) {
+        self.now = self.now.max(now);
+        self.unix_ms = unix_ms;
+    }
+    fn tick(&mut self) {
+        if self.deadline.is_some_and(|deadline| deadline <= self.now) {
+            self.deadline = None;
+            self.requested = true;
+            self.pump();
+        }
+        self.maintenance_poll();
+    }
+    fn wake(&self) -> Option<Duration> {
+        [self.deadline, self.maintenance_wake()].into_iter().flatten().min()
+    }
+    fn step(&mut self, message: Message) -> bool {
+        match message {
+            Message::Stop => return false,
+            Message::Session(message) => {
+                if catch_unwind(AssertUnwindSafe(|| self.session_message(message))).is_err() {
+                    self.invalidated = true;
+                    self.fail(poisoned(), u64::MAX);
+                }
             }
-            self.maintenance_poll();
-            let wake = [self.deadline, self.maintenance_wake()].into_iter().flatten().min();
-            let message = match wake {
-                Some(wake) => match messages.recv_timeout(wake.saturating_duration_since(Instant::now())) {
+            Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
+            Message::Attach(view) => self.view = Some(view),
+            Message::Read(read) => {
+                let _ = catch_unwind(AssertUnwindSafe(|| read(&self.core)));
+            }
+            Message::PageAdmission { view, callback } => {
+                complete(callback, self.admit(false, Some(&view)).map(|()| Reply::Unit))
+            }
+            Message::Request { request, view, deadline, callback } => self.dispatch(request, view, deadline, callback),
+            Message::Maintained { generation, result } => self.maintenance_finished(generation, result),
+            Message::Saved { generation, target, rebuild, result } => {
+                if generation != self.generation {
+                    return true;
+                }
+                self.writing = false;
+                match result {
+                    Ok(()) => {
+                        if let Err(error) = self.session_installed() {
+                            self.fail(error, target);
+                            return true;
+                        }
+                        self.saved = self.saved.max(target);
+                        self.failure = None;
+                        self.status(if self.revision > self.saved { SaveStatus::Saving } else { SaveStatus::Saved });
+                        self.settle();
+                        self.session_saved();
+                        if let Some(size) = rebuild {
+                            self.rebuild_due(size);
+                        }
+                    }
+                    Err(error) => self.fail(error, target),
+                }
+                if self.requested || !self.waiters.is_empty() {
+                    self.pump();
+                }
+            }
+            Message::Restored { generation, result, callback } => {
+                if generation != self.generation {
+                    complete(callback, Err(replaced()));
+                    return true;
+                }
+                self.discarding = false;
+                self.writing = false;
+                match result {
+                    Ok(core) => {
+                        self.core = *core;
+                        self.sequence = self.core.sequence();
+                        self.revision += 1;
+                        self.saved = self.revision;
+                        self.invalidated = false;
+                        self.view = None;
+                        self.requested = false;
+                        self.unsaved_since = None;
+                        self.failure = None;
+                        self.status(SaveStatus::Saved);
+                        self.refresh_undo();
+                        self.emit(Event::ThemeChanged);
+                        complete(callback, Ok(Reply::Unit));
+                    }
+                    Err(error) => {
+                        self.fail(error.clone(), u64::MAX);
+                        complete(callback, Err(error));
+                    }
+                }
+            }
+            Message::Stored { generation, mut result, callback, closing } => {
+                if closing
+                    && let Err(failure) = &mut result
+                    && failure.kind == FailureKind::Failed
+                {
+                    failure.kind = FailureKind::SaveFailed;
+                }
+                if generation != self.generation {
+                    complete(callback, Err(replaced()));
+                    return true;
+                }
+                if closing {
+                    self.lifecycle = if result.is_ok() { Lifecycle::Closed } else { Lifecycle::Open };
+                }
+                complete(callback, result);
+            }
+        }
+        true
+    }
+    fn shutdown(&mut self) {
+        self.reject_waiters(closed());
+        self.fail_held(closed());
+        self.session_shutdown();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run(mut self, messages: mpsc::Receiver<Message>, epoch: Instant) {
+        self.start();
+        loop {
+            self.clock(epoch.elapsed(), native_unix_ms());
+            self.tick();
+            let message = match self.wake() {
+                Some(wake) => match messages.recv_timeout(wake.saturating_sub(epoch.elapsed())) {
                     Ok(message) => message,
                     Err(mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(_) => break,
@@ -606,111 +777,17 @@ impl Actor {
                     Err(_) => break,
                 },
             };
-            match message {
-                Message::Stop => break,
-                Message::Session(message) => {
-                    if catch_unwind(AssertUnwindSafe(|| self.session_message(message))).is_err() {
-                        self.invalidated = true;
-                        self.fail(poisoned(), u64::MAX);
-                    }
-                }
-                Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
-                Message::Attach(view) => self.view = Some(view),
-                Message::Read(read) => {
-                    let _ = catch_unwind(AssertUnwindSafe(|| read(&self.core)));
-                }
-                Message::PageAdmission { view, callback } => {
-                    complete(callback, self.admit(false, Some(&view)).map(|()| Reply::Unit))
-                }
-                Message::Request { request, view, deadline, callback } => {
-                    self.dispatch(request, view, deadline, callback)
-                }
-                Message::Maintained { generation, result } => self.maintenance_finished(generation, result),
-                Message::Saved { generation, target, rebuild, result } => {
-                    if generation != self.generation {
-                        continue;
-                    }
-                    self.writing = false;
-                    match result {
-                        Ok(()) => {
-                            if let Err(error) = self.session_installed() {
-                                self.fail(error, target);
-                                continue;
-                            }
-                            self.saved = self.saved.max(target);
-                            self.failure = None;
-                            self.status(if self.revision > self.saved {
-                                SaveStatus::Saving
-                            } else {
-                                SaveStatus::Saved
-                            });
-                            self.settle();
-                            self.session_saved();
-                            if let Some(size) = rebuild {
-                                self.rebuild_due(size);
-                            }
-                        }
-                        Err(error) => self.fail(error, target),
-                    }
-                    if self.requested || !self.waiters.is_empty() {
-                        self.pump();
-                    }
-                }
-                Message::Restored { generation, result, callback } => {
-                    if generation != self.generation {
-                        complete(callback, Err(replaced()));
-                        continue;
-                    }
-                    self.discarding = false;
-                    self.writing = false;
-                    match result {
-                        Ok(core) => {
-                            self.core = *core;
-                            self.sequence = self.core.sequence();
-                            self.revision += 1;
-                            self.saved = self.revision;
-                            self.invalidated = false;
-                            self.view = None;
-                            self.requested = false;
-                            self.unsaved_since = None;
-                            self.failure = None;
-                            self.status(SaveStatus::Saved);
-                            self.refresh_undo();
-                            self.emit(Event::ThemeChanged);
-                            complete(callback, Ok(Reply::Unit));
-                        }
-                        Err(error) => {
-                            self.fail(error.clone(), u64::MAX);
-                            complete(callback, Err(error));
-                        }
-                    }
-                }
-                Message::Stored { generation, mut result, callback, closing } => {
-                    if closing
-                        && let Err(failure) = &mut result
-                        && failure.kind == FailureKind::Failed
-                    {
-                        failure.kind = FailureKind::SaveFailed;
-                    }
-                    if generation != self.generation {
-                        complete(callback, Err(replaced()));
-                        continue;
-                    }
-                    if closing {
-                        self.lifecycle = if result.is_ok() { Lifecycle::Closed } else { Lifecycle::Open };
-                    }
-                    complete(callback, result);
-                }
+            self.clock(epoch.elapsed(), native_unix_ms());
+            if !self.step(message) {
+                break;
             }
         }
-        self.reject_waiters(closed());
-        self.fail_held(closed());
-        self.session_shutdown();
+        self.shutdown();
     }
     /// Admits one request, answering its callback unless the request handed it on. A
     /// panic poisons the owner, as any engine panic does.
-    fn dispatch(&mut self, request: Request, view: Option<String>, deadline: Option<Instant>, callback: Completion) {
-        if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
+    fn dispatch(&mut self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
+        if deadline.is_some_and(|deadline| deadline <= self.now) {
             complete(callback, Err(Failure::new(FailureKind::Closing, "Request expired before admission")));
             return;
         }
@@ -764,7 +841,7 @@ impl Actor {
         &mut self,
         request: Request,
         view: Option<String>,
-        deadline: Option<Instant>,
+        deadline: Option<Duration>,
         callback: &mut Option<Completion>,
     ) -> Result<Option<Reply>> {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
@@ -884,7 +961,7 @@ impl Actor {
         if was_saved {
             self.status(SaveStatus::Saving);
         }
-        let now = Instant::now();
+        let now = self.now;
         let since = *self.unsaved_since.get_or_insert(now);
         self.deadline = Some((now + Duration::from_millis(150)).min(since + Duration::from_millis(1000)));
     }
@@ -1028,4 +1105,9 @@ impl Actor {
             complete(waiter.callback, Err(error.clone()));
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn native_unix_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }

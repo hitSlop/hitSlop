@@ -3,11 +3,17 @@ import { OutcomeCodes } from "../schema/constants";
 import { DocumentError } from "../sdk/internal";
 import { preview } from "./preview";
 
+let browserBridge: ((request: unknown) => Promise<string>) | undefined;
+/** Installed only by the host frame bootstrap, before authored code loads. */
+export function installBrowserBridge(bridge: (request: unknown) => Promise<string>) { browserBridge = bridge; }
+export const hasBrowserBridge = () => Boolean(browserBridge);
+
 /** One native request path. WebKit correlates each reply with its returned promise. */
 export async function call<M extends PageMethod>(request: PageRequest<M>): Promise<PageResult<M>> {
   let reply: unknown;
   try {
-    if (preview.host) reply = await preview.host.request(request);
+    if (browserBridge) reply = await browserBridge(request);
+    else if (preview.host) reply = await preview.host.request(request);
     else {
       const handler = globalThis.webkit?.messageHandlers?.hitslop;
       if (!handler) throw new Error("Native document bridge is unavailable");

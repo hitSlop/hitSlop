@@ -14,6 +14,15 @@ bun run check
 bun run build
 ```
 
+Expected responses (tool progress omitted; paths vary):
+
+```text
+svelte-check found 0 errors and 0 warnings
+/Users/you/my-slop/dist/my-slop.slop
+```
+
+A build without supplied or native artwork also reports that no artwork was captured.
+
 Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
 Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
@@ -32,6 +41,12 @@ A template's Finder preview and icon come from one of three places:
 bun run register
 ```
 
+Response after a successful build and artwork capture:
+
+```text
+/Users/you/.hitslop/templates/my-slop.slop
+```
+
 Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering replaces the previous master once the new build is complete; it does not modify documents already created from it.
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
@@ -40,12 +55,22 @@ For terminal document creation, see [create and open a writable document](/docs/
 
 For a reusable app, distribute the freshly built `.slop` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the hitSlop app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.hitslop/templates` and refresh.
 
-For a filled document, use **Share a Copy** in the document window: it saves what you typed and shares a separate copy, while you keep editing. The copy carries the actual document, its attachments and theme overrides; inspect that content before sharing it (`slop inspect` lists what a file holds). Distributing source or a clean template does not include it. Keep active documents outside synced folders.
+For a filled document:
+
+1. Open it and choose **Share a Copy…** in its toolbar. hitSlop saves what you typed and prepares a separate copy.
+2. Choose a destination in the Mac share sheet.
+3. Keep editing your original. The recipient gets an independent document with its attachments and theme overrides.
+
+The copy includes the document’s content; distributing source or a clean template does not. Keep active documents outside synced folders.
 
 For read-only output, export PNG or PDF:
 
 ```sh
 bunx hitslop export My.slop --format pdf --output My.pdf
+```
+
+```text
+/Users/you/Documents/My.pdf
 ```
 
 See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-state capture behavior. Live collaboration is [coming soon](/docs/guides/live-sharing/). Public template publishing and hosted discovery remain future work; file distribution and image/PDF exports work locally today.

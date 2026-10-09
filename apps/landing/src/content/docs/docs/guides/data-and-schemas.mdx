@@ -156,7 +156,15 @@ bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}
 bunx hitslop apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
-Edits print `{ids}` and are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/).
+Example responses (schema and value excerpts; other fields are omitted):
+
+| Command | Response |
+| --- | --- |
+| `schema My.slop` | The title descriptor: `{"kind":"text"}`. |
+| `get My.slop` | A task row: `{"$id":"example-task-id","text":"Book train","done":false}`. |
+| Either `apply` above | `{"ids":[]}` — no rows inserted. Use the real row ID in place of `<$id>`. |
+
+Edits are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/). The [numbered command walkthrough](/docs/guides/edit-installed-data/) includes full discovery and read responses.
 
 Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).
 

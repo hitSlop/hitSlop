@@ -66,7 +66,7 @@ Quick Checklist is the reference example. Active projects under `examples/slops`
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
-- `browser`: Playwright WebKit and the Rust dev owner, without Swift/helper compilation; included by `--native`.
+- `browser`: Chrome durable copies and WebKit native-owner preview, without Swift/helper compilation; included by `--native`.
 - `native` (`bun run test:native`): native CLI owners, the relocated helper, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
@@ -94,3 +94,16 @@ To stop tracking local material, use `git rm --cached` and add an ignore rule. B
 integrating a commit that removes tracked files into another checkout, back up any
 local copies outside the repository and restore them afterward: Git can delete the
 previously tracked copies when switching or pulling.
+
+## Local browser runtime
+
+`bun scripts/build/browser.ts` builds the Chrome runtime packaged with the CLI.
+It requires `wasm32-unknown-unknown`, wasm-bindgen CLI 0.2.129, LLVM clang/llvm-ar
+with the WebAssembly target, and Binaryen's `wasm-opt`. On macOS install LLVM and
+Binaryen with `brew install llvm binaryen`; Apple's clang cannot compile SQLite
+for this target. `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown`
+can override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
+
+`bun run verify browser local-host` exercises actual Google Chrome with a temporary
+persistent profile. Install Google Chrome first. This checks the durable browser
+host; `slop dev` continues to use the native Rust owner.

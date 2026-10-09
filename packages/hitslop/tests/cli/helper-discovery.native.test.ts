@@ -15,7 +15,7 @@ test("the helper reports its protocol and refuses unknown or unnamed protocols b
   const direct = await run(["--protocol"]);
   expect(direct.code).toBe(0);
   expect(JSON.parse(direct.stdout)).toEqual({ version: HelperProtocol.version });
-  expect(await run(["--client-protocol", "1", "--protocol"])).toEqual(direct);
+  expect(await run(["--client-protocol", String(HelperProtocol.version), "--protocol"])).toEqual(direct);
   // The permanent refusal path: status 2 and one line naming the side to update.
   const newer = await run(["--client-protocol", String(HelperProtocol.version + 1), "export"]);
   expect(newer.code).toBe(2);

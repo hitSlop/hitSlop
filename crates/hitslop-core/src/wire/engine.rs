@@ -1,6 +1,7 @@
 //! Engine process messages. Rust owns the shape and checks; ts-rs exports the client types.
 
 use super::{Code, OutcomeCode, Segment, present_option};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::file::Catalog;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
@@ -81,6 +82,8 @@ pub enum EngineRequest {
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
+    #[serde(rename = "copy")]
+    Copy { document_path: String, output: String },
     #[serde(rename = "export")]
     Export { document_path: String, format: ExportFormat, output: String },
     #[serde(rename = "templates")]
@@ -163,6 +166,7 @@ impl EngineRequest {
             Self::ThemeExport { .. } => "theme.export",
             Self::Get { .. } => "get",
             Self::Batch { .. } => "batch",
+            Self::Copy { .. } => "copy",
             Self::Export { .. } => "export",
             Self::Templates { .. } => "templates",
             Self::Create { .. } => "create",
@@ -204,7 +208,8 @@ impl EngineRequest {
                     return Err("Invalid command name");
                 }
             }
-            Self::Export { document_path, output, .. }
+            Self::Copy { document_path, output }
+            | Self::Export { document_path, output, .. }
             | Self::Screenshot { document_path, output, .. }
             | Self::ArtworkExport { file: document_path, output, .. } => {
                 check_path(document_path)?;
@@ -384,6 +389,8 @@ pub enum EngineSuccess {
     Get { ok: True, state: GetState },
     #[serde(rename = "batch")]
     Batch { ok: True, ids: Vec<String> },
+    #[serde(rename = "copy")]
+    Copy { ok: True, output: String },
     #[serde(rename = "export")]
     Export { ok: True, output: String },
     #[serde(rename = "theme.export")]
@@ -400,6 +407,7 @@ pub enum EngineSuccess {
         ids: Vec<String>,
     },
     #[serde(rename = "templates")]
+    #[cfg(not(target_arch = "wasm32"))]
     Templates { ok: True, catalog: Catalog },
     #[serde(rename = "create")]
     Create { ok: True, document_path: String },

@@ -29,7 +29,7 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for tests only; `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
+  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 

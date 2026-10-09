@@ -2,7 +2,7 @@
 // the ctx handed to SlopApp.mount is the only interface apps use.
 import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
-import { call } from "./bridge";
+import { call, hasBrowserBridge } from "./bridge";
 import { createCaptureController } from "./capture";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
@@ -19,7 +19,7 @@ import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 
-const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop);
+const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop) || hasBrowserBridge();
 /** Reports a page error to the host, or to the console in the browser preview. */
 const report = (native: boolean, kind: "application" | "operation", error: unknown) => {
   if (native) void call({ method: "pageError", kind, error: describe(error) }).catch(() => {});

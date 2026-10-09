@@ -17,12 +17,15 @@
 pub use crate::error::{Error, Result};
 use crate::error::{failed, rejected, sqlite};
 use crate::file::{self, Artwork, Kind, OpenedApp, rows};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::registry::Lease;
 use crate::{Document, lock};
 use loro::{ExportMode, Frontiers, VersionVector};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -102,6 +105,7 @@ fn checked_bounds(conn: &Connection) -> Result<Metadata> {
 /// connection closes before the lock is released.
 struct Backing {
     conn: Option<Connection>,
+    #[cfg(not(target_arch = "wasm32"))]
     lease: Option<Lease>,
 }
 struct Account {
@@ -128,8 +132,14 @@ type RebuildHook = Box<dyn Fn(bool) -> std::result::Result<(), crate::owner::Fai
 /// nothing, so a render never locks the file or changes what it holds (it may finish
 /// rolling back a crashed write, as any reader does).
 pub struct Store {
+    #[cfg(target_arch = "wasm32")]
+    browser_file: (String, String),
+    #[cfg(target_arch = "wasm32")]
+    resource_cache: std::sync::Arc<Mutex<file::ResourceCache>>,
+    #[cfg(not(target_arch = "wasm32"))]
     path: PathBuf,
     /// The file's device and inode when opened; a rename or replacement is `Moved`.
+    #[cfg(not(target_arch = "wasm32"))]
     inode: (u64, u64),
     /// The app the document was built with, checked once when it opened.
     app: OpenedApp,
@@ -255,6 +265,7 @@ fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)>
 
 /// A new file may be published only after its saved state has passed the same acceptance
 /// as opening it. The caller keeps the source read transaction through its copy.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn validate_saved(conn: &Connection, app: &crate::AppSpec) -> Result<()> {
     load(conn, app).map(|_| ())
 }
@@ -264,6 +275,7 @@ impl Store {
     /// the file, including SQLite's quick check; a template is never opened as a document
     /// (`file::create_document` makes one from it). `Snapshot` mode reads a document's
     /// saved state, or a template's initial values, once.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
         let (lease, conn, app) = match mode {
             Mode::Document => {
@@ -310,6 +322,93 @@ impl Store {
         })
     }
 
+    /// The browser driver holds this copy's Web Lock before installing its VFS.
+    /// No filesystem paths, secondary connections or native registry are involved.
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_vfs(name: &str, vfs: &str, imported: bool) -> Result<Self> {
+        let conn = Connection::open_with_flags_and_vfs(
+            name,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            vfs,
+        )
+        .map_err(sqlite("open"))?;
+        file::configure_connection(&conn)?;
+        let mut app = file::opened(&conn, Path::new(name), true)?;
+        if app.kind != Kind::Document {
+            return Err(rejected(crate::Code::IsTemplate, "A template opens by creating a document from it"));
+        }
+        // Validate the Loro checkpoint too, before changing a connection pragma.
+        load(&conn, app.app.spec())?;
+        file::configure_writer(&conn)?;
+        if imported {
+            let tx = conn.unchecked_transaction().map_err(sqlite("import identity"))?;
+            rows::renew_document(&tx)?;
+            tx.commit().map_err(sqlite("import identity"))?;
+            app.document_uuid = rows::document_uuid(&conn)?;
+        }
+        Ok(Self {
+            resource_cache: Default::default(),
+            browser_file: (name.into(), vfs.into()),
+            app,
+            owned: AtomicBool::new(true),
+            backing: Mutex::new(Backing { conn: Some(conn) }),
+            account: Mutex::new(Account {
+                meta: Metadata::default(),
+                saved: VersionVector::default(),
+                opened: Frontiers::default(),
+                changed: false,
+                rebuilt_size: 0,
+                budget: Budget::DEFAULT,
+            }),
+        })
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn browser_needs_recovery(&self) -> bool {
+        self.owned.load(Ordering::Acquire) && lock(&self.backing).conn.is_none()
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn resource_info(&self, route: file::ResourceRoute, key: &str) -> Result<Option<file::ResourceInfo>> {
+        self.read(|conn| file::ResourceReader::with_cache(conn, self.resource_cache.clone()).info(route, key))
+    }
+    #[cfg(target_arch = "wasm32")]
+    pub fn resource_range(
+        &self,
+        route: file::ResourceRoute,
+        key: &str,
+        offset: u64,
+        length: u64,
+    ) -> Result<Option<Vec<u8>>> {
+        self.read(|conn| {
+            file::ResourceReader::with_cache(conn, self.resource_cache.clone()).read_range(route, key, offset, length)
+        })
+    }
+    /// Streams SQLite pages from a single read transaction. The browser writes each slice
+    /// directly to a sync OPFS export handle, never materializing the whole file in memory.
+    #[cfg(target_arch = "wasm32")]
+    pub fn export_pages(&self, mut write: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
+        self.check(true)?;
+        let backing = lock(&self.backing);
+        let conn = backing.conn.as_ref().ok_or(Error::Closed)?;
+        let tx = conn.unchecked_transaction().map_err(sqlite("export"))?;
+        let count: i64 = tx.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sqlite("export"))?;
+        let mut statement =
+            tx.prepare("SELECT pgno,data FROM sqlite_dbpage ORDER BY pgno").map_err(sqlite("export"))?;
+        let mut rows = statement.query([]).map_err(sqlite("export"))?;
+        let mut expected = 1;
+        while let Some(row) = rows.next().map_err(sqlite("export"))? {
+            let page: i64 = row.get(0).map_err(sqlite("export"))?;
+            if page != expected {
+                return Err(failed("Missing export page"));
+            }
+            let data = row.get_ref(1).map_err(sqlite("export"))?;
+            write(data.as_blob().map_err(failed)?)?;
+            expected += 1;
+        }
+        if expected != count + 1 {
+            return Err(failed("Incomplete export"));
+        }
+        Ok(())
+    }
     /// The app this store's file holds, as its open checked it.
     pub fn app(&self) -> &OpenedApp {
         &self.app
@@ -317,6 +416,7 @@ impl Store {
     /// A reader of the app's assets on its own connection, which pages read from while this
     /// store saves. The file is the one this store's open checked, or the reader fails with
     /// `Moved`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         let conn = file::reader(&self.path)?;
         self.check(false)?;
@@ -327,6 +427,7 @@ impl Store {
     pub fn check(&self, writable: bool) -> Result<()> {
         // A stat, never the backing mutex a save holds: a theme change never waits for one.
         let owned = self.owned.load(Ordering::Acquire);
+        #[cfg(not(target_arch = "wasm32"))]
         match crate::registry::identity(&self.path) {
             Ok((dev, ino, links)) if (dev, ino) == self.inode && (links == 1 || !owned) => {}
             _ => return Err(Error::Moved),
@@ -455,7 +556,25 @@ impl Store {
     /// (`Moved`). When the path again names this store's file, the store reconnects and the
     /// work runs once more; a writer's lease never left the file.
     fn connected<T>(&self, conn: &mut Option<Connection>, work: impl Fn(&Connection) -> Result<T>) -> Result<T> {
+        #[cfg(target_arch = "wasm32")]
+        if conn.is_none() {
+            *lock(&self.resource_cache) = Default::default();
+            self.check(false)?;
+            let (name, vfs) = &self.browser_file;
+            let fresh = Connection::open_with_flags_and_vfs(
+                name,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                vfs.as_str(),
+            )
+            .map_err(sqlite("reopen"))?;
+            file::configure_connection(&fresh)?;
+            let app = file::opened(&fresh, Path::new(name), true)?;
+            load(&fresh, app.app.spec())?;
+            file::configure_writer(&fresh)?;
+            *conn = Some(fresh);
+        }
         match work(conn.as_ref().ok_or(Error::Closed)?) {
+            #[cfg(not(target_arch = "wasm32"))]
             Err(Error::Moved) if self.check(false).is_ok() => {
                 let fresh = if self.owned.load(Ordering::Acquire) {
                     let writer = file::writer(&self.path, false)?;
@@ -466,6 +585,15 @@ impl Store {
                 };
                 // Replacing closes the stale connection, which holds no transaction.
                 work(conn.insert(fresh))
+            }
+            // An OPFS I/O failure can poison SQLite's pager even after space is
+            // available again. Keep the Web Lock and unsaved owner state, but close
+            // this connection. The next explicit attempt reopens through the same
+            // VFS and recovers its journal before retrying the save.
+            #[cfg(target_arch = "wasm32")]
+            Err(error @ Error::Failed(_)) => {
+                drop(conn.take());
+                Err(error)
             }
             other => other,
         }
@@ -508,6 +636,7 @@ impl Store {
             return Err(failed(format!("close; retaining document ownership: {e}")));
         }
         self.owned.store(false, Ordering::Release);
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(lease) = backing.lease.take() {
             lease.withdraw();
         }
@@ -571,6 +700,7 @@ impl Store {
     /// window renders it from the open document as it closes. Checked as `pack` checks it,
     /// and optimized at oxipng's fastest level, before the connection is taken: a close
     /// releases the writer lock only after this write.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_artwork(&self, artwork: &[(Artwork, &[u8])]) -> Result<()> {
         self.check(true)?;
         let optimized = optimized_artwork(artwork)?;
@@ -594,9 +724,11 @@ impl Store {
     }
 
     /// Names the live owner for clients: a writer publishes its socket in the registry.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
         lock(&self.backing).lease.as_ref().ok_or(Error::Closed)?.publish(json)
     }
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
         if let Some(lease) = &lock(&self.backing).lease {
             lease.withdraw();
@@ -608,6 +740,7 @@ impl Store {
     /// the attachments that state references, and `artwork` (none when empty) in place of
     /// the original's, which can show what was since deleted. Duplicate and Share a Copy
     /// use it after flushing; the original and its session are untouched.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn copy_clean(&self, dest: &Path, artwork: &[(Artwork, &[u8])]) -> Result<()> {
         file::document_destination(dest)?;
         self.check(true)?;
@@ -617,6 +750,7 @@ impl Store {
     }
     /// Copies the open document to `dest` as it is stored, without syncing: a capture's
     /// source, rendered once and then deleted.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn capture_source(&self, dest: &Path) -> Result<()> {
         self.check(true)?;
         self.read(|conn| file::copy(conn, dest, false, false, None))
@@ -625,6 +759,7 @@ impl Store {
     /// Copies the open document to `dest` as it is stored, durably: the same document
     /// (its identity, history and artwork), unlike Duplicate's copy of its own. The owner
     /// flushes before queuing it.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn backup(&self, dest: &Path) -> Result<()> {
         file::document_destination(dest)?;
         self.check(true)?;
@@ -723,6 +858,7 @@ impl Store {
 
 /// Artwork as a write stores it: checked as `pack` checks it, and optimized at oxipng's
 /// fastest level, before any connection is taken.
+#[cfg(not(target_arch = "wasm32"))]
 fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u8>)>> {
     artwork
         .iter()
@@ -734,6 +870,7 @@ fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u
 }
 /// A copy's state made its own, in one transaction: the current state without history,
 /// the attachments it references, and `artwork` in place of the original's.
+#[cfg(not(target_arch = "wasm32"))]
 fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
     let (doc, _) = load(conn, app)?;
     let state = doc.doc.export(ExportMode::shallow_snapshot(&doc.doc.oplog_frontiers())).map_err(failed)?;

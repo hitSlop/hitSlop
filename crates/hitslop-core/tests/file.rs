@@ -1298,3 +1298,23 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     assert!(reopened.document().unwrap().value().contains("Edited"));
     assert_eq!(reopened.app().app.metadata().title, title);
 }
+
+#[test]
+fn streaming_attachment_verification_preserves_large_iso_brand_headers() {
+    use file::ResourceRoute::Attachment;
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    // A valid ISO signature whose compatible brand lies beyond the sniffing prefix.
+    let mut bytes = vec![0u8; 2 << 20];
+    let length = bytes.len() as u32;
+    bytes[..4].copy_from_slice(&length.to_be_bytes());
+    bytes[4..8].copy_from_slice(b"ftyp");
+    bytes[8..12].copy_from_slice(b"isom");
+    bytes[length as usize - 4..].copy_from_slice(b"avif");
+    let attachment = store.put_attachment(&bytes).unwrap();
+    let reader = store.resource_reader().unwrap();
+    assert_eq!(reader.info(Attachment, &attachment.id).unwrap().unwrap().media_type, "image/avif");
+    assert_eq!(reader.read_range(Attachment, &attachment.id, 1 << 20, 16).unwrap(), Some(vec![0; 16]));
+    store.close().unwrap();
+}

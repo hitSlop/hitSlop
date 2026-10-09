@@ -93,8 +93,8 @@ async function sh(command: string[], options: { env?: Record<string, string | un
   if (code) throw new Error(`${command.join(" ")} exited with ${code}`);
 }
 /** `command`, its output returned with its status: quick tiers print theirs when done. */
-async function quiet(command: string[]) {
-  const { code, stdout, stderr } = await logged(command);
+async function quiet(command: string[], options: { env?: Record<string, string | undefined> } = {}) {
+  const { code, stdout, stderr } = await logged(command, options);
   const output = (stdout + stderr).trim();
   if (code) throw new Error(`${command.join(" ")} exited with ${code}${output ? `\n${output}` : ""}`);
   return output;
@@ -159,6 +159,11 @@ const tiers: Tier[] = [
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
         await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
+        const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
+        for (const feature of ["browser", "evaluator"]) await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", feature, "--", "-D", "warnings"], { env: {
+          CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
+          AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
+        } });
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
@@ -405,6 +410,7 @@ function build(name: Build): Promise<void> {
         await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
       }
       if (name === "browser") {
+        await sh([process.execPath, "scripts/build/browser.ts"]);
         await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
         await sh([process.execPath, "scripts/build/shell.ts"]);
       }

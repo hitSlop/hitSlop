@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 /// How many requests may wait; past it a request is refused before admission (`Busy`).
 const HELD_REQUESTS: usize = 128;
 
-type Held = (Request, Option<String>, Option<Instant>, Completion);
+type Held = (Request, Option<String>, Option<Duration>, Completion);
 
 #[derive(Default)]
 pub(super) struct Barrier {
@@ -33,7 +33,7 @@ impl Actor {
         &mut self,
         request: Request,
         view: Option<String>,
-        deadline: Option<Instant>,
+        deadline: Option<Duration>,
         callback: &mut Option<Completion>,
     ) -> Result<()> {
         if self.barrier.held.len() >= HELD_REQUESTS {

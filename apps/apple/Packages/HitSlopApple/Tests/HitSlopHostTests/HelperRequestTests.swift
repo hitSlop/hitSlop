@@ -122,6 +122,38 @@ extension HostTests {
     }
   }
 
+  @Test @MainActor func browserSnapshotDrainsLiveDraftAndReopensIndependently() async throws {
+    let root = try contractFixture()
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    do {
+      try await controller.session.waitUntilReady()
+      _ = try await controller.session.webView.callAsyncJavaScript(
+        """
+        const input = document.querySelector('#draft');
+        input.focus();
+        input.dispatchEvent(new CompositionEvent('compositionstart'));
+        input.value = 'Browser snapshot draft';
+        input.dispatchEvent(new InputEvent('input', {bubbles:true, isComposing:true}));
+        return true;
+        """, arguments: [:], in: nil, contentWorld: .page)
+      let output = folder.appendingPathComponent("browser.slop")
+      let reply = try await request(["method": "copy", "documentPath": root.path, "output": output.path])
+      #expect(reply["ok"] as? Bool == true, "\(reply)")
+      #expect(try await savedValue(output)?["title"] as? String == "Browser snapshot draft")
+      #expect(try await command("batch", url: output, setTitle("Independent copy")).ok)
+      #expect(try await savedValue(root)?["title"] as? String == "Browser snapshot draft")
+      try await controller.session.close()
+    } catch {
+      try? await controller.session.close()
+      throw error
+    }
+  }
+
   @Test @MainActor func rejectedEditsPreserveSavedStateAndComposingDraft() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }

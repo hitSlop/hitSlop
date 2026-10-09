@@ -84,6 +84,13 @@ bunx hitslop export My.slop --format png --output My.png
 bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
+Successful responses, respectively (your paths will differ):
+
+```text
+/Users/you/Documents/My.png
+/Users/you/Documents/My.pdf
+```
+
 An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy in a fresh page. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
 
 The editor barrier lasts through saving and copying; rendering then proceeds independently. Capture waits for fonts, visible images and a stable layout in the fresh page. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.

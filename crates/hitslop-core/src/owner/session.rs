@@ -24,7 +24,7 @@ impl Actor {
         &mut self,
         request: Request,
         _: Option<String>,
-        _: Option<Instant>,
+        _: Option<Duration>,
         _: &mut Option<Completion>,
     ) -> Result<Option<Request>> {
         Ok(Some(request))

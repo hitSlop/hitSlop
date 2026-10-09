@@ -24,7 +24,19 @@ list of object rows with `$id`; list of scalars by index; record of scalars or o
 by key; and counter. [Document types](reference/document-types.md) describes each
 kind's snapshot, merge, write rules, handles and CLI paths.
 
-The same core compiles to WASM for SDK tests. `slop dev` uses a temporary `.slop`
+The same core compiles to WASM for SDK tests and the local Chrome browser beta.
+`slop open --browser file.slop` asks the native owner for a clean snapshot, then imports
+it into an independent OPFS copy. A dedicated worker runs the shared Rust owner, Loro
+and SQLite; disposable QuickJS workers evaluate named commands and return intents.
+The trusted host stays on `127.0.0.1:41238`; authored apps run in per-copy
+`<id>.localhost:41238` frames. Each copy has a Web Lock, its own SQLite VFS pool
+and a Service Worker resource channel bound to that frame client. Each successful import renews the document UUID; reload preserves it. Downloads drain
+pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
+when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
+uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
+Safari, mobile and hosted sharing are deferred.
+
+ `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
 owner, while a changed declaration invalidates it and creates a fresh preview. Linux
 preview qualification is deferred.
@@ -485,4 +497,4 @@ aspect lock or skin); other standard windows reflow to the viewport. Fitted cont
 retains its mask and coordinate system inside an opaque black fullscreen surface.
 The host restores desktop frame, constraints and level on exit. Fullscreen state is
 transient host state; captures keep their independent saved-state layout. Browser
-fullscreen and durable browser owners remain under qualification, not shipped support.
+fullscreen follows the manifest flag; the durable browser host is a local Chrome beta. Safari qualification and hosted sharing remain deferred.

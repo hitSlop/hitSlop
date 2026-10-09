@@ -4,7 +4,9 @@
 //! `inspect` and the asset reader read the tables directly.
 
 use super::Artwork;
+#[cfg(not(target_arch = "wasm32"))]
 use super::assets::Encoding;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -121,6 +123,7 @@ pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Ve
     Ok(png.filter(|png| crate::images::header(png).is_ok()))
 }
 /// Writes one artwork image, in place of any by that name.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Result<()> {
     conn.execute(
         "INSERT INTO artwork(name, png) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png",
@@ -130,11 +133,13 @@ pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Resul
     .map_err(sqlite("write artwork"))
 }
 /// Deletes every artwork image.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM artwork").map_err(sqlite("clear artwork"))
 }
 
 /// The `app` row `pack` writes once.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
     use crate::app::package_format_1::category_column as column;
     let m = app.metadata();
@@ -145,6 +150,7 @@ pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u6
     ).map(|_| ()).map_err(sqlite("write app"))
 }
 /// One asset, before the app row seals the inventory.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_asset(
     conn: &Connection,
     key: &str,

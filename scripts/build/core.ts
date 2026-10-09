@@ -57,9 +57,9 @@ async function generator(name: string, version: string, variable: string, instal
 export async function buildCoreWasm() {
   const bindgen = await generator(
     "wasm-bindgen",
-    "0.2.127",
+    "0.2.129",
     "HITSLOP_WASM_BINDGEN",
-    "cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools",
+    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools",
   );
   const target = "wasm32-unknown-unknown";
   await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "--target", target, "-p", "hitslop-core-wasm"]);
@@ -67,6 +67,28 @@ export async function buildCoreWasm() {
   await publishFolder(join(repository, "generated/core/wasm"), (stage) =>
     run([bindgen, "--target", "web", "--out-dir", stage, cargoOutput("hitslop_core_wasm.wasm", target)]),
   );
+}
+
+/** SQLite and QuickJS compile C for wasm32; Apple's clang has no WebAssembly backend. */
+export async function buildBrowserWasm() {
+  const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
+  const browserEnv = {
+    ...env,
+    CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
+    AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
+  };
+  const bindgen = await generator("wasm-bindgen", "0.2.129", "HITSLOP_WASM_BINDGEN",
+    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools");
+  const target = "wasm32-unknown-unknown";
+  for (const [feature, name] of [["browser", "core"], ["evaluator", "evaluator"]] as const) {
+    const command = ["cargo", "build", "--locked", "--profile", "wasm", "--target", target, "-p", "hitslop-core-wasm", "--features", feature];
+    const { code } = await exec(command, { cwd: repository, env: browserEnv, inherit: ["stdout", "stderr"] });
+    if (code) throw new Error(`Browser ${name} build failed`);
+    await publishFolder(join(repository, "generated/browser", name), async stage => {
+      await run([bindgen, "--target", "web", "--out-dir", stage, join(repository, "target", target, "wasm/hitslop_core_wasm.wasm")]);
+      await run(["wasm-opt", "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-nontrapping-float-to-int", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", join(stage, "hitslop_core_wasm_bg.wasm"), "-o", join(stage, "hitslop_core_wasm_bg.wasm")]);
+    });
+  }
 }
 
 /** Every platform a published CLI carries a file engine for, built by the engines workflow

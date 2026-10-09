@@ -8,6 +8,12 @@ use serde_json::{Value, json};
 
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
+        (
+            "BrowserHost",
+            json!({"port": browser::PORT, "protocol": browser::PROTOCOL, "containerFormat": browser::CONTAINER_FORMAT, "chunkBytes": browser::TRANSFER_BYTES, "fileBytes": browser::FILE_BYTES, "commandTimeout": hitslop_runner::WATCHDOG_MS}),
+        ),
+        ("BrowserResourcePolicy", json!(browser::page_policy())),
+        ("BrowserHostPolicy", json!(browser::host_policy())),
         ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
         ("SlopCategories", json!(crate::app::Category::ALL)),
         (

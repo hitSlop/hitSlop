@@ -23,7 +23,7 @@ openable, so its frozen entries never change.
 | Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
-| Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | WebKit behavior and the native Rust dev owner, without building Swift or the helper |
+| Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift or the helper |
 | Native tools | `tests/native`, `packages/hitslop/tests/cli/*.native.test.ts`, `bun run verify native` | The CLI against the engine and helper, both relocated into an app bundle, every template's native render, an engine or host killed mid-edit, and the corpus replay |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
 | App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app, including named commands through the raw Xcode Debug app without an evaluator override; release native tests also exercise host process death |
@@ -68,7 +68,7 @@ bun run release:check          # verify --release: every tier, the shipped build
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `browser` | `*.browser.test.ts` in Playwright WebKit, with the Rust engine/evaluator and shell; no Swift build. Included by `--native` while qualification remains macOS-only |
+| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Included by `--native` while qualification remains macOS-only |
 | `native` | `*.native.test.ts` against the debug helper |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
@@ -366,8 +366,8 @@ hit/miss behavior is covered by the template-cache tests.
 The two-build Vite fixture covers imported component CSS, CSS fonts/images, unrendered
 skins, export-only assets and command stripping. Browser integration uses a native Rust
 owner, exercises HMR and command calls, checks attachment URL ranges/types, and kills an
-owner to prove the page fences further edits. WASM remains an SDK test adapter; it is not
-shipped in the CLI or used by `slop dev`.
+owner to prove the page fences further edits. The local `slop open --browser` host uses the durable WASM build; `slop dev`
+continues to use the native owner. The SDK tests use a separate WASM adapter.
 
 Rust package tests cover the seven-table layout, app-row seal and replacement bypasses,
 marker-first refusals, streaming PNG checks, descriptor argument validation, the JSON
@@ -429,3 +429,11 @@ large-list identity and shared-authority correctness without repeated timing sam
 `HITSLOP_BENCH_COMMANDS=1` enables repeated command-latency samples in `verify browser dev.browser`
 and `verify swift --filter pageAndCLICommandsShareTheNativeOwner`; normal runs still
 exercise accepted commands, invalid arguments and publication to the page.
+
+The `browser` tier includes the local Chrome host boundary in
+`tests/browser/local-host.browser.test.ts`: real WASM commands, OPFS save/reload,
+independent origins and document identities, exclusive tab ownership, bounded resource
+streams, wake-lock state, container-marker refusal, Save As cancellation and cleanup,
+Rust flush-before-export (including save failure), and native reopening. Run it with `bun run verify browser local-host`. It launches installed
+Google Chrome with an isolated persistent profile; Safari qualification is deferred.
+The Rust tier also compiles both durable-browser and evaluator WASM feature sets.

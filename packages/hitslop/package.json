@@ -28,6 +28,7 @@
     "skills",
     ".crust/root/skills",
     "shell",
+    "browser",
     "engine",
     "tsconfig.slop.json"
   ],

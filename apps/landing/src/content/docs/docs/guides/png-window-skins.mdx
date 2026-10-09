@@ -18,12 +18,15 @@ window accepts pointer input. Import it in `slop.ts` and use the skin window:
 import skin from "./assets/window-mask.png";
 
 // Inside defineSlop({ ... })
-window: { kind: "skin", width: 480, height: 480, image: skin },
+window: { kind: "skin", width: 480, height: 480, image: skin, fullscreenable: true },
 ```
 
-A skin window contains `kind`, `width`, `height`, and `image`. It cannot
+A skin window contains `kind`, `width`, `height`, and `image`, with optional
+`fullscreenable` (default false). It cannot
 also specify `shape`, `background`, or `resizable`, and the native window stays
-at the skin's fixed size.
+at the skin's fixed size on the desktop. With fullscreen enabled, the same composition
+scales to fit on black; it does not reflow. PNGs retain their source resolution when
+enlarged. See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 
 ## Align the WebView to the skin
 

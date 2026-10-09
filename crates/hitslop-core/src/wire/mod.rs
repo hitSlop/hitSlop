@@ -33,3 +33,6 @@ where
 
 #[cfg(feature = "storage")]
 pub mod preview;
+
+#[cfg(feature = "storage")]
+pub mod browser;

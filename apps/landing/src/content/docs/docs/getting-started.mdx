@@ -18,6 +18,21 @@ bun install
 bun run dev
 ```
 
+After the setup questions, an example response is:
+
+```text
+Created /Users/you/tiny-counter. Run bun install in that directory, then bun run dev.
+```
+
+`cd` prints nothing on success. `bun install` prints an installation summary (counts
+and timings vary). `bun run dev` starts a long-running preview and prints:
+
+```text
+Disposable preview: http://localhost:5173/
+```
+
+The port may differ if that one is busy. Stop the preview before continuing with builds.
+
 Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
 
 See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, moving data between documents, export, and agent skill installation.
@@ -68,12 +83,16 @@ export default defineSlop({
   description: "Count the small things worth counting.",
   author: { name: "Your Name" },
   categories: ["utilities"],
-  window: { kind: "standard", width: 360, height: 360 },
+  window: { kind: "standard", width: 360, height: 360, fullscreenable: true },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
   document: schema,
   initial: { title: "Tiny Counter", count: 0 },
 });
 ```
+
+`fullscreenable: true` enables the native fullscreen control. This flexible window
+fills the screen; fixed and shaped designs fit their composition on black.
+See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 
 Replace the starter's `commands.ts` with a counter action:
 
@@ -86,6 +105,10 @@ export const countOne = doc.command({
   run({ tx }) { tx.fields.count.increment(); },
 });
 ```
+
+The `commands` import above registers this export under its name, `countOne`.
+The page and CLI can now invoke the same action. Declare commands at module scope;
+their `args` use `s.*` descriptors, or `{}` when no arguments are needed.
 
 Replace `App.svelte` with:
 
@@ -136,6 +159,69 @@ bun run build
 bun run register
 ```
 
+Expected responses, respectively (tool progress omitted; paths vary):
+
+```text
+svelte-check found 0 errors and 0 warnings
+/Users/you/tiny-counter/dist/tiny-counter.slop
+/Users/you/.hitslop/templates/tiny-counter.slop
+```
+
+Build without artwork also reports that no artwork was captured. Register captures it.
+
 Build emits `dist/tiny-counter.slop`. Register renders its Finder artwork with the Mac app and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.
+
+
+## Discover and run your action
+
+Save the writable copy as `My Counter.slop`. From the directory containing it:
+
+```sh
+bunx hitslop describe "My Counter.slop"
+```
+
+Response excerpt:
+
+```text
+Commands (slop call PATH NAME --args JSON)
+  countOne — Count one more.
+    args: {"additionalProperties":false,"properties":{},"type":"object"}
+```
+
+`describe` also includes the fields, operations, version and current values.
+
+```sh
+bunx hitslop call "My Counter.slop" countOne
+```
+
+```json
+{"result":null,"ids":[]}
+```
+
+This action returns no value and inserts no rows, but it increments the saved counter.
+If you started at zero, read it back:
+
+```sh
+bunx hitslop get "My Counter.slop"
+```
+
+```json
+{"count":1,"title":"Tiny Counter"}
+```
+
+You can also edit the counter directly:
+
+```sh
+bunx hitslop apply "My Counter.slop" --op '{"type":"increment","path":["count"],"by":1}'
+```
+
+```json
+{"ids":[]}
+```
+
+The window now shows **2**. A named action lets an agent reuse your app’s behavior;
+`apply` and `batch` are available for direct field edits. **Edit ▸ Undo** can undo
+agent edits. See the [Checklist walkthrough](/docs/guides/edit-installed-data/)
+for commands with arguments and stable row IDs.

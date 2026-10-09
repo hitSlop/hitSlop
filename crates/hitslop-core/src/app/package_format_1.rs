@@ -106,6 +106,7 @@ const CATEGORY_COLUMNS: [(Category, &str); 13] = [
     (Category::Music, "music"),
     (Category::Other, "other"),
 ];
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn category_column(category: Category) -> &'static str {
     CATEGORY_COLUMNS.iter().find(|(c, _)| *c == category).map(|(_, name)| *name).expect("every category has a column")
 }
