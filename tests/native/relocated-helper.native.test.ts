@@ -30,7 +30,7 @@ beforeAll(async () => {
     env: { HITSLOP_NATIVE_CLI: join(helpers, "hitslop-native"), HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_TEST_REGISTRY: process.env.HITSLOP_TEST_REGISTRY },
   };
   document = join(folder, "List.slop");
-  await createDocument(resolve("generated/native-fixtures/quick-checklist.slop"), document, placement);
+  await createDocument(resolve("generated/native-fixtures/document-fixture.slop"), document, placement);
 }, 120_000);
 afterAll(() => rm(folder, { recursive: true, force: true }));
 
@@ -51,7 +51,7 @@ async function batch(path: string, ops: import("../../packages/hitslop/src/schem
 test("a bundled master is never edited", async () => {
   const master = join(folder, "hitSlop.app/Contents/Resources/StarterTemplates/Checklist.slop");
   await mkdir(join(master, ".."), { recursive: true });
-  await copyFile(resolve("generated/native-fixtures/quick-checklist.slop"), master);
+  await copyFile(resolve("generated/native-fixtures/document-fixture.slop"), master);
   const bytes = await readFile(master);
   await batch(master, [{ type: "set", path: ["title"], value: "Must refuse" }], "is_template");
   expect((await readFile(master)).equals(bytes)).toBe(true);

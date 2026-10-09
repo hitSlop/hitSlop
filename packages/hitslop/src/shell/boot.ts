@@ -2,13 +2,13 @@
 // the ctx handed to SlopApp.mount is the only interface apps use.
 import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
-import { call } from "./bridge";
+import { call, hasBrowserBridge } from "./bridge";
 import { createCaptureController } from "./capture";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
 import { installPresentationStage, presentationStage } from "./presentation";
 import type { ObjectNode } from "../sdk/schema";
-import { fromDescriptor } from "../sdk/internal";
+import { fromDescriptor, isRefused } from "../sdk/internal";
 import { applyTheme } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
 import { checkedApp } from "./app-module";
@@ -19,7 +19,7 @@ import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 
-const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop);
+const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop) || hasBrowserBridge();
 /** Reports a page error to the host, or to the console in the browser preview. */
 const report = (native: boolean, kind: "application" | "operation", error: unknown) => {
   if (native) void call({ method: "pageError", kind, error: describe(error) }).catch(() => {});
@@ -72,6 +72,10 @@ const describe = (error: unknown) => {
   );
 };
 
+/** Offers a refusal's message to the app; true when the app showed it. */
+const claimed = (message: string) =>
+  !globalThis.document.dispatchEvent(new CustomEvent("slop:refused", { detail: message, cancelable: true }));
+
 /** Visible sessions: open the document, then mount the package's app module. */
 export async function boot() {
   const native = isNative();
@@ -81,6 +85,12 @@ export async function boot() {
         "reason" in event
           ? event.reason
           : ((event as ErrorEvent).error ?? (event as ErrorEvent).message);
+      // A refusal is a message for the person. The app shows it (the Svelte root does)
+      // by cancelling `slop:refused`; otherwise it is reported like any outcome.
+      if (isRefused(error) && claimed(error.message)) {
+        event.preventDefault();
+        return;
+      }
       report(native, isDocumentError(error) ? "operation" : "application", error);
     });
   // Failures inside the package's own module are authored failures, reported as such.
@@ -109,7 +119,7 @@ export async function boot() {
   const view = checkedApp(await app, config.descriptor);
   const capture = createCaptureController();
   const reportError = (error: unknown) => {
-    globalThis.document.dispatchEvent(new CustomEvent("hitslop:render-error", { detail: error }));
+    globalThis.document.dispatchEvent(new CustomEvent("slop:render-error", { detail: error }));
     report(native, "application", error);
   };
   const ctx = contextFor(config.runtimeABI)(doc as Document<ObjectNode>, {

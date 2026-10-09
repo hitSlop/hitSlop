@@ -6,6 +6,7 @@ export default defineDocument({
   epoch: s.integer(),
   done: s.boolean(),
   hits: s.counter(),
+  lastHit: s.integer({ default: 0 }),
   rows: s.list(s.object({ text: s.text(), done: s.boolean(), tags: s.list(s.string()), notes: s.record(s.string()) })),
   label: s.string({ maxLength: 40 }),
   ratio: s.number({ min: 0, max: 1 }),
@@ -18,6 +19,7 @@ export default defineDocument({
   colors: s.list(s.string()),
   checkins: s.record(s.integer({ min: 0 })),
   cells: s.record(s.object({ input: s.text(), width: s.optional(s.integer({ min: 0 })) })),
+  slides: s.list(s.object({ title: s.text(), blocks: s.list(s.object({ text: s.text() })) })),
   attachment: s.optional(s.string()),
   photo: s.optional(s.string()),
 });

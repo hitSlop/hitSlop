@@ -24,7 +24,7 @@ concurrency:
 env:
   CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
-  # replaced. Nightly, manual and release-branch runs always check every tier.
+  # replaced. Nightly, manual and release-branch runs check all required tiers.
   CHANGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'push' && github.event.before || '' }}
 jobs:
   # No dependency installation or compilation: decide before allocating macOS.
@@ -35,6 +35,7 @@ jobs:
       fast: ${{ steps.select.outputs.fast }}
       native: ${{ steps.select.outputs.native }}
       rust: ${{ steps.select.outputs.rust }}
+      qualification: ${{ steps.select.outputs.qualification }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,10 +48,10 @@ jobs:
         shell: bash
         run: |
           bun scripts/ci/select.ts > selection.json
-          jq -r '.tiers[] | "\(.name): \(.reason)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          echo "fast=$(jq -r '[.tiers[].name | select(. == "compat" or . == "tooling" or . == "contracts" or . == "types" or . == "bun" or . == "cli" or . == "packed" or . == "landing")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
-          echo "native=$(jq -r '[.tiers[].name | select(. == "rust" or . == "cli" or . == "packed" or . == "swift" or . == "native")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
-          echo "rust=$(jq -r '[.tiers[].name | select(. == "rust")] | join(",")' selection.json)" >> "$GITHUB_OUTPUT"
+          jq -r '.jobs | to_entries[] | "\(.key): \(.value)"' selection.json >> "$GITHUB_STEP_SUMMARY"
+          for job in fast native rust qualification; do
+            echo "$job=$(jq -r --arg job "$job" '.jobs[$job]' selection.json)" >> "$GITHUB_OUTPUT"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-selection
@@ -75,7 +76,7 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         if: env.TIERS != ''
         with:
-          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli')) && 'portable' || 'none' }}
+          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed')) && 'portable' || 'none' }}
           nextest: "false"
           rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed') }}
           dependencies: ${{ env.TIERS != 'compat' }}
@@ -105,9 +106,8 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           nextest: ${{ contains(env.TIERS, 'rust') }}
-          bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || contains(env.TIERS, 'cli') && 'portable' || 'none' }}
+          bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || 'none' }}
           dependencies: ${{ env.TIERS != 'rust' }}
-          webkit: ${{ contains(env.TIERS, 'native') }}
       - uses: ./.github/actions/native-cache
         if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:
@@ -143,6 +143,31 @@ jobs:
         if: always()
         with:
           name: linux-rust-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
+  # Browser hosting and collaboration are unshipped. Keep their qualification, and
+  # the second-platform portable checks, outside required PR jobs.
+  qualification:
+    needs: select
+    if: needs.select.outputs.qualification != ''
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          bindings: portable
+          webkit: "true"
+      - name: Optional qualification
+        env:
+          TIERS: ${{ needs.select.outputs.qualification }}
+        run: bun run verify --ci --keep-going "$TIERS"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: qualification-evidence
           path: .hitslop/evidence
           include-hidden-files: true
   # Nightly runs keep the default branch's full template corpus warm for releases.

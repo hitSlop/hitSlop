@@ -6,7 +6,7 @@ import { checkoutLease, retainReport, shardTests, assertShardComplete, testInven
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
-import { verificationArgs } from "../../scripts/ci/select";
+import { ciJobs, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository });
@@ -39,8 +39,8 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "rust", "packed", "swift", "native"]);
-  for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js", "examples/slops/quick-checklist/App.svelte"])
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "dev-sync", "packed", "swift", "native"]);
+  for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
     expect(affected(path)).toEqual(candidates);
@@ -68,6 +68,39 @@ test("nightly, manual and release branches select the full suite; ordinary chang
   expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master", CHANGE_BASE: "0".repeat(40) })).toEqual(full);
   for (const env of [{}, { GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master" }, { GITHUB_EVENT_NAME: "pull_request" }])
     expect(() => verificationArgs(env)).toThrow();
+});
+
+test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
+  const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event);
+  const core = jobs(["crates/hitslop-core/src/store.rs"]);
+  expect(core.native).toBe("rust,swift,native");
+  expect(core.rust).toBe("rust");
+  expect(core.fast.split(",")).toEqual(expect.arrayContaining(["contracts", "bun", "cli", "packed"]));
+  expect(core.qualification).toBe("");
+  const corpus = jobs(["tests/compat/dev/release.json"]);
+  expect(corpus.fast.split(",")).toContain("compat");
+  expect(corpus.native).toBe("rust,swift,native");
+  expect(jobs(["docs/testing.md"])).toEqual({ fast: "", native: "", rust: "", qualification: "" });
+  expect(jobs(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", native: "", rust: "", qualification: "" });
+  expect(jobs(["packages/hitslop/src/browser/worker.ts"]).fast.split(",")).toContain("packed");
+  for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
+    const all = ciJobs(candidates, event);
+    for (const job of [all.fast, all.native, all.rust]) {
+      expect(job.split(",")).not.toContain("browser");
+      expect(job.split(",")).not.toContain("dev-sync");
+    }
+    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,dev-sync,cli,packed" : "");
+  }
+});
+
+test("experimental sync requires explicit selection, including in full and release runs", async () => {
+  for (const args of [["--native", "--all"], ["--release"], ["dev-sync"]]) {
+    const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", ...args], { cwd: repository });
+    expect(result.code).toBe(0);
+    const names = JSON.parse(result.stdout).tiers.map((tier: { name: string }) => tier.name);
+    expect(names.includes("dev-sync")).toBe(args.includes("dev-sync"));
+    if (!args.includes("dev-sync")) expect(names).toEqual(expect.arrayContaining(["rust", "swift", "native"]));
+  }
 });
 
 test("test-only edits and build inputs still select their owning checks", () => {
@@ -108,13 +141,15 @@ test("Git selection includes both sides of renames, deleted files and fails on a
 });
 
 test("test discovery assigns each boundary and refuses unclassified tests", () => {
-  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "tests/examples/quick-checklist.native.test.ts", "tests/verification/runner.test.ts"];
+  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "packages/hitslop/tests/sdk/editable-text.browser.test.ts", "tests/verification/runner.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
   expect(groups.cli).toEqual(["packages/hitslop/tests/cli/build.test.ts"]);
-  expect(groups.native).toEqual(["tests/examples/quick-checklist.native.test.ts"]);
+  expect(groups.browser).toEqual(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
+  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.browser.test.ts", "examples/slops/one/ui.test.ts"])
+    expect(() => testInventory([file])).toThrow("Per-example tests");
 });
 
 test("a successful filtered retry retains the failed full-run report", async () => {
@@ -151,4 +186,14 @@ test("Swift shard assignment is exhaustive, nonempty and rejects incomplete exec
   expect(() => assertShardComplete(ids, 2, 0)).toThrow("ran 2 of 3");
   expect(() => assertShardComplete(ids, 3, 1)).toThrow("exited 1");
   assertShardComplete(ids, 3, 0);
+});
+
+// Ordinary slop changes never select infrastructure suites through a borrowed example.
+test("example changes select authoring checks; infrastructure fixtures select their consumers", () => {
+  for (const path of ["examples/slops/one/App.svelte", "examples/slops/one/styles.css", "examples/slops/one/slop.ts"])
+    expect(affected(path)).toEqual(["types"]);
+  expect(affected("examples/slops/one/README.md")).toEqual([]);
+  expect(affected("tests/apps/document/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "swift", "native"]));
+  expect(affected("packages/hitslop/tests/sdk/editable-text.browser.test.ts")).toEqual(["types", "browser"]);
+  expect(affected("packages/hitslop/templates/checklist/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "packed"]));
 });

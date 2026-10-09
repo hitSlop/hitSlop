@@ -210,18 +210,22 @@ test("the installed CLI previews the project with its own page shell and core", 
         });
         await page.goto(origin + "/");
         const frame = page.frameLocator("iframe");
-        await frame.getByRole("textbox", { name: "List title", exact: true }).fill("Installed SDK works");
-        expect(await frame.locator("[data-hitslop-root]").count()).toBe(1);
+        // EditableText shows text until clicked, then edits it in a textarea of the same name.
+        const title = frame.getByRole("textbox", { name: "List title", exact: true });
+        await title.click();
+        await title.fill("Installed SDK works");
+        await title.press("Tab");
+        expect(await frame.locator("[data-slop-root]").count()).toBe(1);
         const styles = join(project(), "styles.css");
         await writeFile(styles, (await readFile(styles, "utf8")) + "\n.slop-eyebrow { color: rgb(11, 22, 33); }\n");
         await page.frames().find((frame) => frame.url().includes("/app.html"))!.waitForFunction(
           () => getComputedStyle(document.querySelector(".slop-eyebrow")!).color === "rgb(11, 22, 33)",
         );
-        expect(await frame.getByRole("textbox", { name: "List title", exact: true }).inputValue()).toBe("Installed SDK works");
+        expect(await frame.getByRole("textbox", { name: "List title", exact: true }).textContent()).toBe("Installed SDK works");
         await frame.getByRole("textbox", { name: "New task", exact: true }).fill("From the page command");
         await frame.getByRole("button", { name: "Add", exact: true }).click();
         await page.frames().find((frame) => frame.url().includes("/app.html"))!.waitForFunction(
-          () => [...document.querySelectorAll<HTMLInputElement>('[aria-label="Task text"]')].some(input => input.value === "From the page command"),
+          () => [...document.querySelectorAll('[aria-label="Task text"]')].some(text => text.textContent === "From the page command"),
         );
       } finally {
         await browser.close();

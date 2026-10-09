@@ -3,12 +3,11 @@ use super::*;
 use crate::engine::{False, True};
 use serde::Deserialize;
 use serde_json::Value;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) struct Invocation {
     generation: u64,
     view: Option<String>,
-    deadline: Option<Instant>,
+    deadline: Option<Duration>,
     version: String,
     name: String,
     args: Value,
@@ -17,6 +16,12 @@ pub(super) struct Invocation {
     origin: Origin,
     attempt: u8,
     callback: Option<Completion>,
+    pub(super) session: Option<session::Context>,
+}
+impl Invocation {
+    pub(super) fn take_callback(&mut self) -> Completion {
+        take(&mut self.callback)
+    }
 }
 const _: () = assert!(
     crate::RUNTIME_ABI == hitslop_runner::RUNTIME_ABI,
@@ -43,6 +48,9 @@ struct Refusal {
     #[serde(rename = "ok")]
     _ok: False,
     error: String,
+    /// The command called `refuse(message)`: a message for the person, not a fault.
+    #[serde(default)]
+    refused: bool,
 }
 /// The intents a command built for `abi` returns, in the core's current vocabulary. ABI 1's
 /// are today's. A later ABI that changes the vocabulary translates an older one here; the
@@ -61,23 +69,35 @@ fn rejected(error: impl ToString) -> Failure {
     Failure::rejected(Code::InvalidRequest, error.to_string())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
-    for Work { invocation, bundle, input, runtime_abi } in work {
+    for work in work {
+        let output = evaluator.run(work.runtime_abi, &work.bundle, &work.input);
+        let done = work.finish(output);
+        if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) = sender.send(done) {
+            complete(take(&mut invocation.callback), Err(closed()));
+        }
+    }
+}
+
+impl Work {
+    #[cfg(target_arch = "wasm32")]
+    pub(super) fn input(&self) -> std::result::Result<String, String> {
+        hitslop_runner::command_input(self.runtime_abi, &self.bundle, &self.input)
+    }
+    pub(super) fn finish(self, output: std::result::Result<String, String>) -> Message {
         let result = contained(|| {
-            // The evaluator process failed (it could not start, timed out, or replied
-            // nothing usable): a host fault, not the command refusing. Nothing was applied.
-            let output = evaluator.run(runtime_abi, &bundle, &input).map_err(host_fault)?;
+            let output = output.map_err(host_fault)?;
+            if output.len() > hitslop_runner::OUTPUT {
+                return Err(host_fault("Command output is too large"));
+            }
             serde_json::from_str(&output).map_err(|_| match serde_json::from_str::<Refusal>(&output) {
-                // The command threw: its own refusal.
+                Ok(Refusal { error, refused: true, .. }) => Failure::rejected(Code::Refused, error),
                 Ok(refusal) => rejected(refusal.error),
                 Err(_) => host_fault("it returned an invalid reply"),
             })
         });
-        if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) =
-            sender.send(Message::Evaluated { invocation, result })
-        {
-            complete(take(&mut invocation.callback), Err(closed()));
-        }
+        Message::Evaluated { invocation: self.invocation, result }
     }
 }
 
@@ -88,14 +108,14 @@ impl Actor {
         args_json: String,
         origin: Origin,
         view: Option<String>,
-        deadline: Option<Instant>,
+        deadline: Option<Duration>,
         callback: &mut Option<Completion>,
     ) -> Result<()> {
         self.mutation()?;
         if self.evaluating {
             return Err(rejected("Another command is running; wait for it to finish"));
         }
-        let args: Value = crate::parse(&args_json)?;
+        let mut args: Value = crate::parse(&args_json)?;
         let command = self
             .store
             .app()
@@ -104,16 +124,17 @@ impl Actor {
             .iter()
             .find(|command| command.name == name)
             .ok_or_else(|| rejected(format!("No command named {name}; run slop describe")))?;
-        command.args.validate(&args).map_err(|error| {
+        command.args.prepare(&mut args).map_err(|error| {
             rejected(format!("Invalid arguments for {name} at {}: {}", error.pointer(), error.message))
         })?;
         if self.evaluate.is_none() {
             return Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator"));
         }
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(rejected)?.as_millis() as u64;
+        let now = self.unix_ms;
         let mut bytes = [0; 16];
         getrandom::getrandom(&mut bytes).map_err(rejected)?;
         let seed = std::array::from_fn(|i| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().expect("four bytes")));
+        let session = self.session_command();
         self.evaluate_command(Invocation {
             generation: self.generation,
             version: self.core.version(),
@@ -126,6 +147,7 @@ impl Actor {
             origin,
             attempt: 0,
             callback: Some(take(callback)),
+            session,
         });
         Ok(())
     }
@@ -155,13 +177,13 @@ impl Actor {
         let (bundle, input) = match prepare() {
             Ok(input) => input,
             Err(error) => {
-                complete(take(&mut invocation.callback), Err(error));
+                self.command_answered(&mut invocation, Err(error));
                 return;
             }
         };
         let Some(evaluate) = &self.evaluate else {
-            complete(
-                take(&mut invocation.callback),
+            self.command_answered(
+                &mut invocation,
                 Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator")),
             );
             return;
@@ -171,7 +193,7 @@ impl Actor {
             evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
-            complete(take(&mut invocation.callback), Err(closed()));
+            self.command_answered(&mut invocation, Err(closed()));
         }
     }
     pub(super) fn command_finished(&mut self, mut invocation: Invocation, result: Result<Evaluation>) {
@@ -184,7 +206,7 @@ impl Actor {
             if invocation.generation != self.generation {
                 return Err(replaced());
             }
-            if invocation.deadline.is_some_and(|d| d <= Instant::now()) {
+            if invocation.deadline.is_some_and(|d| d <= self.now) {
                 return Err(rejected("Command expired before its intents were admitted"));
             }
             let output = result?;
@@ -212,7 +234,8 @@ impl Actor {
             invocation.version = self.core.version();
             self.evaluate_command(invocation);
         } else {
-            complete(take(&mut invocation.callback), applied);
+            self.command_answered(&mut invocation, applied);
         }
+        self.release_held();
     }
 }

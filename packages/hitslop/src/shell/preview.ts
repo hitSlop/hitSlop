@@ -9,5 +9,5 @@ export type PreviewHost = {
   request(request: unknown): Promise<unknown>;
   onPush(receiver: (pushes: PagePush[]) => void): void;
 };
-export const preview: { host?: PreviewHost } = { host: globalThis.__hitslopPreview };
-delete globalThis.__hitslopPreview;
+export const preview: { host?: PreviewHost } = { host: globalThis.__slopPreview };
+delete globalThis.__slopPreview;

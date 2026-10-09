@@ -29,7 +29,7 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core is for tests only; `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
+  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
@@ -67,6 +67,13 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Testing
 
+- **Do not create an automated test or test suite for each slop.** Creating, styling,
+  animating, or updating a slop does not require new tests. Validate it with existing
+  checks/builds and hands-on preview/export review. Shared SDK, storage, or host
+  regressions belong in the existing tests at their owning boundary; do not duplicate
+  that coverage in example-specific tests. Use minimal infrastructure fixtures, never
+  a live example as a dependency of ordinary tests. Generic shipped-template smoke
+  checks and frozen compatibility replay are separate artifact contracts.
 - Tests live at the owning boundary: Rust semantics, the SDK over WASM, and Swift
   integration. Delete tests together with the code they protect. No tests of private
   call sequences, CSS strings or version numbers.
@@ -90,6 +97,13 @@ for visual changes. `_vibe` is inspiration only.
   they do not replace the required check. Review the final merge message too.
 
 ## Deferred
+
+Development exception: an opt-in `dev-sync` native loopback proof (the `slop-room`
+development binary and the owner's shared session, `owner/sync.rs`) may use one authority
+and two temporary replica owners. Loro bytes stay in Rust; shared undo and attachment
+imports are disabled. The harness adds no released format or production endpoint.
+Shared-session fencing applies while its owners hold their locks; restart-safe sharing
+and durable request recovery remain deferred.
 
 Collaboration, a document history UI, schema evolution, synced folders, hosted
 catalog/publishing, accounts/auth and sharing. `archive/`, `spikes/`, `plans/`,

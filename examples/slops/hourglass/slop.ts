@@ -17,7 +17,7 @@ export default defineSlop({
   description: "A frosted sand glass that drains toward a time you choose.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
   categories: ["productivity", "personal"],
-  window: { kind: "standard",
+  window: { kind: "standard", fullscreenable: true,
     width,
     height,
     shape: { path: silhouette, viewBox: [width, height] },

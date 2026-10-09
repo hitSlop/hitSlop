@@ -1,0 +1,41 @@
+{
+  "profile": "release",
+  "warmups": 1,
+  "commands": {
+    "p50Ms": 38,
+    "p95Ms": 48,
+    "samplesMs": [
+      41,
+      31,
+      30,
+      47,
+      41,
+      32,
+      38,
+      36,
+      48,
+      33
+    ]
+  },
+  "text": {
+    "p50Ms": 15,
+    "p95Ms": 43,
+    "samplesMs": [
+      43,
+      13,
+      16,
+      13,
+      13,
+      16,
+      13,
+      15,
+      16,
+      13
+    ]
+  },
+  "concurrentCommands": {
+    "attempts": 2,
+    "accepted": 1,
+    "refused": 1
+  }
+}

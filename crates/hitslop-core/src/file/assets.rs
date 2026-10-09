@@ -3,6 +3,7 @@
 use crate::error::{Result, failed, invalid, sqlite};
 use crate::wire::ASSET_PATH_BYTES;
 use rusqlite::{Connection, MAIN_DB, OptionalExtension};
+#[cfg(not(target_arch = "wasm32"))]
 use std::borrow::Cow;
 use std::io::Read;
 
@@ -80,6 +81,7 @@ pub(super) fn read_asset(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>
 /// anything else as it is, so media ranges read straight from the file. Quality 10 stores
 /// within a page or so of 11 in half the time; past 4 MiB it takes seconds, so larger
 /// assets use 9.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a, [u8]>)> {
     let kind = content_type(key);
     if kind.starts_with("text/") || matches!(kind, "application/json" | "image/svg+xml" | "application/wasm") {
@@ -132,14 +134,23 @@ struct ResourceRow {
 
 /// One query-only connection, with first-touch attachment verification and decoded text
 /// caching. Identity media ranges use SQLite BLOB reads without loading the whole asset.
-pub struct ResourceReader {
-    conn: Connection,
-    verified: std::cell::RefCell<std::collections::HashSet<String>>,
-    decoded: std::cell::RefCell<std::collections::HashMap<String, Vec<u8>>>,
+#[derive(Default)]
+pub(crate) struct ResourceCache {
+    verified: std::collections::HashSet<String>,
+    decoded: std::collections::VecDeque<(String, Vec<u8>)>,
+    bytes: usize,
 }
-impl ResourceReader {
-    pub(crate) fn new(conn: Connection) -> Self {
-        Self { conn, verified: Default::default(), decoded: Default::default() }
+pub struct ResourceReader<C = Connection> {
+    conn: C,
+    cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>,
+}
+impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn new(conn: C) -> Self {
+        Self::with_cache(conn, Default::default())
+    }
+    pub(crate) fn with_cache(conn: C, cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>) -> Self {
+        Self { conn, cache }
     }
     fn row(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceRow>> {
         let row = match route {
@@ -148,6 +159,7 @@ impl ResourceReader {
                     return Ok(None);
                 }
                 self.conn
+                    .borrow()
                     .prepare_cached("SELECT rowid,encoding,size,media_type FROM assets WHERE key=?")
                     .and_then(|mut s| {
                         s.query_row([key], |r| {
@@ -166,6 +178,7 @@ impl ResourceReader {
                     return Ok(None);
                 }
                 self.conn
+                    .borrow()
                     .prepare_cached("SELECT rowid,length(bytes),media_type FROM attachments WHERE id=?")
                     .and_then(|mut s| {
                         s.query_row([key], |r| {
@@ -190,15 +203,29 @@ impl ResourceReader {
         {
             return Err(invalid("Resource exceeds its byte limit"));
         }
-        if route == ResourceRoute::Attachment && !self.verified.borrow().contains(key) {
+        if route == ResourceRoute::Attachment && !crate::lock(&self.cache).verified.contains(key) {
             use sha2::{Digest, Sha256};
-            let bytes = super::rows::read_attachment(&self.conn, key)?.ok_or_else(|| invalid("Missing attachment"))?;
-            if data_encoding::HEXLOWER.encode(&Sha256::digest(&bytes)) != key
-                || crate::media::attachment_type(&bytes) != row.info.media_type
-            {
+            use std::io::{Read, Seek, SeekFrom};
+            let mut blob = self
+                .conn
+                .borrow()
+                .blob_open(MAIN_DB, "attachments", "bytes", row.id, true)
+                .map_err(sqlite("verify attachment"))?;
+            let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize).map_err(failed)?;
+            blob.seek(SeekFrom::Start(0)).map_err(failed)?;
+            let mut hash = Sha256::new();
+            let mut chunk = vec![0; crate::wire::browser::TRANSFER_BYTES];
+            loop {
+                let count = blob.read(&mut chunk).map_err(failed)?;
+                if count == 0 {
+                    break;
+                }
+                hash.update(&chunk[..count]);
+            }
+            if data_encoding::HEXLOWER.encode(&hash.finalize()) != key || media != row.info.media_type {
                 return Err(failed("An attachment is damaged; keep the file for recovery"));
             }
-            self.verified.borrow_mut().insert(key.into());
+            crate::lock(&self.cache).verified.insert(key.into());
         }
         if route == ResourceRoute::App
             && crate::media::asset_key(key).is_none_or(|kind| kind.media_type != row.info.media_type)
@@ -214,18 +241,33 @@ impl ResourceReader {
         let Some(row) = self.row(route, key)? else { return Ok(None) };
         let start = offset.min(row.info.size) as usize;
         let length = length.min(row.info.size.saturating_sub(offset)) as usize;
+        if length == 0 {
+            return Ok(Some(Vec::new()));
+        }
         if row.encoding != Encoding::Identity {
-            if !self.decoded.borrow().contains_key(key) {
-                let bytes = read_asset(&self.conn, key)?.ok_or_else(|| invalid("Missing resource"))?;
-                self.decoded.borrow_mut().insert(key.into(), bytes);
-            }
-            return Ok(Some(self.decoded.borrow()[key][start..start + length].to_vec()));
+            const CACHE_BYTES: usize = 32 << 20;
+            let mut cache = crate::lock(&self.cache);
+            let entry = if let Some(index) = cache.decoded.iter().position(|(name, _)| name == key) {
+                cache.decoded.remove(index).expect("cached entry")
+            } else {
+                let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
+                while cache.bytes + bytes.len() > CACHE_BYTES {
+                    let Some((_, old)) = cache.decoded.pop_front() else { break };
+                    cache.bytes -= old.len();
+                }
+                cache.bytes += bytes.len();
+                (key.into(), bytes)
+            };
+            let result = entry.1[start..start + length].to_vec();
+            cache.decoded.push_back(entry);
+            return Ok(Some(result));
         }
         let table = match route {
             ResourceRoute::App => "assets",
             ResourceRoute::Attachment => "attachments",
         };
-        let blob = self.conn.blob_open(MAIN_DB, table, "bytes", row.id, true).map_err(sqlite("read resource"))?;
+        let blob =
+            self.conn.borrow().blob_open(MAIN_DB, table, "bytes", row.id, true).map_err(sqlite("read resource"))?;
         let mut bytes = vec![0; length];
         blob.read_at_exact(&mut bytes, start).map_err(sqlite("read resource"))?;
         Ok(Some(bytes))

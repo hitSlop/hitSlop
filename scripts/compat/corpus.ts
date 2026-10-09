@@ -47,7 +47,7 @@ type ThemeState = { overrides: Record<string,string>; effective: Record<string,s
 export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
  * with page-minted row IDs replaced by `minted-N`. */
-export type Page = { script: "contractTest" | "actions"; actions?: ({ selector: string; value: string; enter?: boolean } | { selector: string; click: true })[]; value: unknown };
+export type Page = { script: "contractTest" | "actions"; actions?: ({ selector: string; value: string; enter?: boolean } | { selector: string; click: true } | { selector: string; focus: true })[]; value: unknown };
 export async function releases(): Promise<{ name: string; root: string; release: Release }[]> {
   const found = [];
   for (const entry of await readdir(corpus, { withFileTypes: true }).catch(() => [])) {

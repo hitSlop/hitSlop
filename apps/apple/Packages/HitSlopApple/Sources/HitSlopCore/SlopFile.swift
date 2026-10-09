@@ -53,10 +53,14 @@ public struct SlopFile: Sendable {
   public let metadata: AppMetadata
   public let window: WindowDefinition
   public let views: Views
-  public let silhouette: SlopSilhouette
+  public let outline: SlopOutline
+  public let lockAspect: Bool
+  /// What the window shows behind the page.
+  public let backdrop: SlopBackdrop
+  public let isResizable: Bool
+  public let fitsFullscreen: Bool
   /// The file's size in bytes.
   public let byteCount: Int64
-  private let skinImage: CGImage?
 
   /// Opens and checks the file at `url` for display (the catalog, a template opened from
   /// Finder), without SQLite's quick check. A document an owner edits comes from its store
@@ -76,13 +80,26 @@ public struct SlopFile: Sendable {
     metadata = opened.app.metadata
     window = opened.app.window
     views = opened.app.views
-    switch window {
-    case .standard(_, _, _, _, _, let shape): silhouette = SlopSilhouette(parsed: shape)
+    switch window.frame {
+    case .standard(let frame):
+      outline = .shape(SlopSilhouette(parsed: frame.shape))
+      lockAspect = frame.lockAspect
+      isResizable = frame.resizable
+      fitsFullscreen = frame.fullscreenFit
+      backdrop =
+        switch frame.background {
+        case nil: .window
+        case .transparent: .clear
+        case .glass: .glass
+        }
     case .skin:
-      silhouette = SlopSilhouette(
-        parsed: .radii(horizontal: [.init(value: 0, percent: false)], vertical: [.init(value: 0, percent: false)]))
+      guard let png = opened.skinPng else { throw SlopError.invalid("window skin is missing") }
+      outline = .skin(try Self.decodeSkin(png))
+      lockAspect = true
+      isResizable = false
+      fitsFullscreen = true
+      backdrop = .skin
     }
-    skinImage = try opened.skinPng.map(Self.decodeSkin)
   }
 
   /// Runs a core call that opens a file, reporting a newer file as `SlopRequiresUpdate`, a
@@ -105,33 +122,10 @@ public struct SlopFile: Sendable {
     try opening { try fileKind(path: url.path) }
   }
 
-  public var isSkinned: Bool { if case .skin = window { true } else { false } }
-  public var width: Int {
-    switch window {
-    case .standard(let w, _, _, _, _, _), .skin(let w, _, _): Int(w)
-    }
-  }
-  public var height: Int {
-    switch window {
-    case .standard(_, let h, _, _, _, _), .skin(_, let h, _): Int(h)
-    }
-  }
-  public var lockAspect: Bool { if case .standard(_, _, _, let lock, _, _) = window { lock } else { true } }
-  /// What the window shows behind the page.
-  public var backdrop: SlopBackdrop {
-    switch window {
-    case .skin: .skin
-    case .standard(_, _, _, _, let background, _):
-      switch background {
-      case nil: .window
-      case .transparent: .clear
-      case .glass: .glass
-      }
-    }
-  }
-  public var isResizable: Bool { if case .standard(_, _, let resizable, _, _, _) = window { resizable } else { false } }
-  /// The window skin, decoded when the file was opened.
-  public var skin: CGImage? { skinImage }
+  public var width: Int { Int(window.width) }
+  public var height: Int { Int(window.height) }
+  /// Host fullscreen is opt-in and independent of desktop resizing.
+  public var isFullscreenable: Bool { window.fullscreenable }
 
   /// A `.slop` file's canonical URL: a regular file, never a link.
   public static func resolvedRoot(_ url: URL) throws -> URL {
@@ -161,6 +155,12 @@ public struct SlopFile: Sendable {
     else { throw SlopError.invalid("window skin must be a valid PNG") }
     return image
   }
+}
+
+/// The checked window outline: vector geometry or the skin's decoded pixels.
+public enum SlopOutline: Sendable {
+  case shape(SlopSilhouette)
+  case skin(CGImage)
 }
 
 /// What a window shows behind its page, from the presentation.

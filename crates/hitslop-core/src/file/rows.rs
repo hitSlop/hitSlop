@@ -4,7 +4,9 @@
 //! `inspect` and the asset reader read the tables directly.
 
 use super::Artwork;
+#[cfg(not(target_arch = "wasm32"))]
 use super::assets::Encoding;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -44,7 +46,26 @@ pub(crate) fn clear_updates(conn: &Connection) -> Result<()> {
 }
 /// The document row that makes a copy of a template a document.
 pub(crate) fn add_document(conn: &Connection) -> Result<()> {
-    conn.execute("INSERT INTO document(id) VALUES(1)", []).map(|_| ()).map_err(sqlite("create the document"))
+    let mut bytes = [0u8; 16];
+    crate::random(&mut bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = crate::hex(&bytes);
+    let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
+    conn.execute("INSERT INTO document(id,uuid) VALUES(1,?)", [uuid]).map(|_| ()).map_err(sqlite("create the document"))
+}
+/// An independent copy is a new document. Only its unpublished staged file replaces the
+/// singleton; the original file's identity is immutable and never updated.
+pub(crate) fn renew_document(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM document", []).map_err(sqlite("create the copy's identity"))?;
+    add_document(conn)
+}
+/// The logical document identity, absent on templates. Call after the layout has bounded
+/// the row and its UUID; this identity is unrelated to the inode-based writer lease.
+pub(crate) fn document_uuid(conn: &Connection) -> Result<Option<String>> {
+    conn.query_row("SELECT uuid FROM document WHERE id=1", [], |row| row.get(0))
+        .optional()
+        .map_err(sqlite("read the document identity"))
 }
 
 /// The stored attachments' count, largest size and total size.
@@ -102,6 +123,7 @@ pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Ve
     Ok(png.filter(|png| crate::images::header(png).is_ok()))
 }
 /// Writes one artwork image, in place of any by that name.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Result<()> {
     conn.execute(
         "INSERT INTO artwork(name, png) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png",
@@ -111,11 +133,13 @@ pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Resul
     .map_err(sqlite("write artwork"))
 }
 /// Deletes every artwork image.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM artwork").map_err(sqlite("clear artwork"))
 }
 
 /// The `app` row `pack` writes once.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
     use crate::app::package_format_1::category_column as column;
     let m = app.metadata();
@@ -126,6 +150,7 @@ pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u6
     ).map(|_| ()).map_err(sqlite("write app"))
 }
 /// One asset, before the app row seals the inventory.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_asset(
     conn: &Connection,
     key: &str,

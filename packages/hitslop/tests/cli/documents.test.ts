@@ -126,7 +126,7 @@ test("templates lists the catalog and create takes a listed slug", async () => {
   const folder = await mkdtemp(join(tmpdir(), "hsl-templates-"));
   try {
     const templates = join(folder, "templates");
-    await writeTemplate(join(templates, "quick-checklist.slop"));
+    await writeTemplate(join(templates, "fixture-one.slop"));
     // Isolate the bundled catalog too: an installed pre-launch app may contain disposable old files.
     const contents = join(folder, "Fixture.app/Contents");
     await mkdir(join(contents, "Resources/StarterTemplates"), { recursive: true });
@@ -138,10 +138,10 @@ test("templates lists the catalog and create takes a listed slug", async () => {
     expect(listed.code).toBe(0);
     const catalog = JSON.parse(listed.out);
     expect(catalog.folders).toContainEqual({ source: "installed", path: templates });
-    expect(catalog.templates.filter((t: { source: string }) => t.source === "installed").map((t: { slug: string; source: string }) => [t.slug, t.source])).toEqual([["quick-checklist", "installed"]]);
+    expect(catalog.templates.filter((t: { source: string }) => t.source === "installed").map((t: { slug: string; source: string }) => [t.slug, t.source])).toEqual([["fixture-one", "installed"]]);
     expect(catalog.issues).toEqual([]);
     const output = join(folder, "Checklist.slop");
-    const created = await run(["create", "--from", "quick-checklist", "--output", output], env);
+    const created = await run(["create", "--from", "fixture-one", "--output", output], env);
     expect(created.code).toBe(0);
     expect((await cli("get", output)).code).toBe(0);
     const unknown = join(folder, "Unknown.slop");

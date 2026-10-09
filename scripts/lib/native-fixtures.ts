@@ -3,37 +3,38 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { stageProject } from "../../packages/hitslop/src/cli/build";
 import { buildTemplate } from "../../packages/hitslop/src/cli/template";
-import { buildTemplates, templateCache } from "../templates/build";
-import { discoverTemplates } from "../templates/discover";
+import { templateCache } from "../templates/build";
+import { debugHelper } from "./native";
 
-export const nativeFixtureSlugs = ["quick-checklist"];
+export const nativeFixtureSlugs = ["document-fixture"];
 const output = join(repository, "generated/native-fixtures");
 
-/** Native tests' templates: the active trial template, the ABI owner app and the
+/** Native tests' templates: the minimal document fixture, the ABI owner app and the
  * presentation fixtures, by name. All go through the template cache, so a run that changed
  * none of their inputs only copies them. */
 export async function prepareNativeFixtures() {
-  await buildTemplates(output, nativeFixtureSlugs);
-  const cache = await templateCache("fixtures");
-  // Fixtures render no native artwork.
+  const cache = await templateCache("fixtures", false);
+  // Only the document fixture needs initial artwork for catalog and save/close tests.
   const build: Builder = async (source, slug, destination) => {
     await mkdir(dirname(destination), { recursive: true });
     await rm(destination, { force: true });
-    await cache.build(source, slug, destination, () => buildTemplate(source, undefined, destination), false);
+    const artwork = slug === "document-fixture";
+    const renderer = artwork ? { env: { ...process.env, HITSLOP_NATIVE_CLI: debugHelper } } : undefined;
+    await cache.build(source, slug, destination, () => buildTemplate(source, renderer, destination), artwork);
     return destination;
   };
+  await build(join(repository, "tests/apps/document"), "document-fixture", join(output, "document-fixture.slop"));
   await build(join(repository, "tests/abi/owner-svelte"), "owner-svelte", join(repository, "generated/abi/owner-svelte.slop"));
   return buildPresentationFixtures(build);
 }
 
-/** Each trial template's build stage beside it (`generated/native-fixtures/<slug>`), which
+/** The document fixture's build stage beside it (`generated/native-fixtures/<slug>`), which
  * benchmarks change before packing. */
 export async function stageNativeFixtures() {
-  const templates = await discoverTemplates();
   for (const slug of nativeFixtureSlugs) {
     const stage = join(output, slug);
     await rm(stage, { recursive: true, force: true });
-    const input = await stageProject(templates.find((template) => template.slug === slug)!.source, stage);
+    const input = await stageProject(join(repository, "tests/apps/document"), stage);
     await writeFile(join(stage, "input.json"), JSON.stringify(input));
   }
 }
@@ -120,7 +121,7 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
   const key = `${kind}${fallback ? "-fallback" : ""}`;
   // The folder's name is the slug.
   const source = join(shapeLabRoot, "sources", `shape-lab-${key}`);
-  await withVariant(join(repository, "examples/slops/shape-lab"), source, {
+  await withVariant(join(repository, "tests/apps/shape-lab"), source, {
     kind,
     name: variant.name,
     title: `Shape Lab · ${variant.name}${fallback ? " · fallback" : ""}`,

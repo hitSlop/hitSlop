@@ -57,7 +57,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
     expect(await readdir(destination)).toEqual(["beta.slop"]);
     // A document, even one a template became, is never embedded as a starter.
     const document = new Database(join(root, "alpha.slop"));
-    document.run("INSERT INTO document(id) VALUES(1)");
+    document.run("INSERT INTO document(id,uuid) VALUES(1,?)", [crypto.randomUUID()]);
     document.close();
     await expect(embedTemplates(root, destination, inventory("alpha"))).rejects.toThrow("Not a template");
     expect(await readdir(destination)).toEqual(["beta.slop"]);
@@ -84,7 +84,9 @@ test("complete public slop.ts examples follow the current contract", async () =>
         await mkdir(project);
         await writeFile(join(project, "schema.ts"), schema!);
         await writeFile(join(project, "slop.ts"), slop);
-        await writeFile(join(project, "App.svelte"), "<h1>Guide example</h1>");
+        // Components are the guide's to show in full; the contract here is slop.ts.
+        for (const [, component] of slop.matchAll(/from "\.\/(\w+\.svelte)"/g))
+          await writeFile(join(project, component!), "<h1>Guide example</h1>");
         const [commands] = blocks("commands.ts");
         if (commands) await writeFile(join(project, "commands.ts"), commands);
         await writeFile(join(project, "styles.css"), "");

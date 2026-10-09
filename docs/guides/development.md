@@ -51,7 +51,7 @@ Discovery scans immediate project directories with a `slop.ts`, without running 
 
 Embedding replaces the entire generated StarterTemplates directory, so deselected templates disappear from the next app build. It never edits a user's installed templates or documents. The native catalog already discovers any valid local template and reads its categories from its app metadata.
 
-Quick Checklist is the reference example; the other examples wait in `examples/archive` until they move to `slop.ts`. New templates need no edits to build loops. App-specific tests can remain schema-specific; generic release checks cannot assume fields such as `title`.
+Quick Checklist is the reference example. Active projects under `examples/slops` declare `slop.ts`; projects in `examples/archive` are inactive. New templates need no edits to build loops. Do not add a test suite for each slop. Infrastructure tests use deliberate fixtures; generic release checks cannot assume fields such as `title`.
 
 ## Focused checks
 
@@ -60,12 +60,13 @@ Quick Checklist is the reference example; the other examples wait in `examples/a
 
 - `compat`: frozen document fixtures remain unchanged and their recorded files are intact.
 - `contracts` and `types` (`bun run check`): generated contract drift (change Rust source and regenerate rather than editing generated files), package types, and discovered template types.
-- `bun`: SDK and shell tests over WASM, examples, and release tooling.
+- `bun`: SDK and shell tests over WASM, and release tooling.
 - `tooling`: verification-runner and CI policy tests, without product builds.
 - `cli`: non-native CLI integration tests; `bun run test` runs both `bun` and `cli`.
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
-- `swift` (`bun run swift:test`): native tests with two cached black-box apps and four presentation fixtures.
+- `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
+- `browser`: Chrome durable copies and WebKit native-owner preview, without Swift/helper compilation; included by `--native`.
 - `native` (`bun run test:native`): native CLI owners, the relocated helper, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
@@ -93,3 +94,21 @@ To stop tracking local material, use `git rm --cached` and add an ignore rule. B
 integrating a commit that removes tracked files into another checkout, back up any
 local copies outside the repository and restore them afterward: Git can delete the
 previously tracked copies when switching or pulling.
+
+## Local browser runtime
+
+`bun scripts/build/browser.ts` builds the Chrome runtime packaged with the CLI.
+It requires `wasm32-unknown-unknown`, wasm-bindgen CLI 0.2.129, LLVM clang/llvm-ar
+with the WebAssembly target, and Binaryen 132. Run
+`bash scripts/build/install-binaryen.sh` to install the checksum-verified official
+Binaryen release under `generated/core-tools/binaryen`, as CI does. The build checks
+the optimizer version before compiling: `HITSLOP_WASM_OPT` overrides that local
+installation, with PATH used only when neither is provided. Ubuntu's older Binaryen
+package cannot parse the browser module's `table.fill` instruction.
+On macOS install LLVM with `brew install llvm`; Apple's clang cannot compile SQLite
+for this target. `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown` can
+override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
+
+`bun run verify browser local-host` exercises actual Google Chrome with a temporary
+persistent profile. Install Google Chrome first. This checks the durable browser
+host; `slop dev` continues to use the native Rust owner.

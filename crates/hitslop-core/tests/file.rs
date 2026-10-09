@@ -104,6 +104,96 @@ fn publication_reports_unsynced_directory_and_preserves_the_destination() {
     assert_eq!(file::open(&document, true).unwrap().kind, Kind::Document);
     assert!(temporaries(&destination).is_empty());
 }
+
+#[test]
+fn creation_refuses_invalid_template_state_without_publishing_or_repairing_it() {
+    use loro::{ExportMode, LoroDoc};
+    let wrong_value = LoroDoc::new();
+    wrong_value.get_map("meta").insert("layout", hitslop_core::LAYOUT).unwrap();
+    wrong_value.get_map("data").insert("title", 7).unwrap();
+    let newer_layout = LoroDoc::new();
+    newer_layout.get_map("meta").insert("layout", hitslop_core::LAYOUT + 1).unwrap();
+    newer_layout.get_map("data").insert("title", "Initial").unwrap();
+    let dependent = LoroDoc::new();
+    dependent.get_map("meta").insert("layout", hitslop_core::LAYOUT).unwrap();
+    dependent.commit();
+    let base = dependent.oplog_vv();
+    dependent.get_map("data").insert("title", "Initial").unwrap();
+    for checkpoint in [
+        vec![0, 0, 0],
+        wrong_value.export(ExportMode::Snapshot).unwrap(),
+        newer_layout.export(ExportMode::Snapshot).unwrap(),
+        dependent.export(ExportMode::updates(&base)).unwrap(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = template(dir.path());
+        raw(&source).execute("UPDATE checkpoint SET bytes=?", [&checkpoint]).unwrap();
+        let before = fs::read(&source).unwrap();
+        let destination = dir.path().join("Refused.slop");
+        assert!(file::create_document(&source, &destination).is_err(), "invalid saved state must refuse creation");
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&source).unwrap(), before);
+        assert!(temporaries(dir.path()).is_empty());
+    }
+}
+
+#[test]
+fn document_uuid_survives_reopen_and_capture_but_independent_copies_get_new_uuids() {
+    let uuid = |path: &Path| file::open(path, false).unwrap().document_uuid.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let source = template(dir.path());
+    let first = dir.path().join("First.slop");
+    let second = dir.path().join("Second.slop");
+    file::create_document(&source, &first).unwrap();
+    file::create_document(&source, &second).unwrap();
+    let original = uuid(&first);
+    assert_eq!(original.len(), 36);
+    assert_ne!(uuid(&second), original);
+    let store = Store::open(&first, Mode::Document).unwrap();
+    let mut document = store.document().unwrap();
+    document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Saved"}]}"#, Origin::Page).unwrap();
+    store.write(&store.job(&mut document, false).unwrap().unwrap()).unwrap();
+    assert_eq!(uuid(&first), original);
+    let capture = dir.path().join("Capture.slop");
+    store.capture_source(&capture).unwrap();
+    assert_eq!(uuid(&capture), original);
+    let duplicate = dir.path().join("Duplicate.slop");
+    store.copy_clean(&duplicate, &[]).unwrap();
+    assert_ne!(uuid(&duplicate), original);
+    store.close().unwrap();
+    let moved = dir.path().join("Moved.slop");
+    fs::rename(&first, &moved).unwrap();
+    Store::open(&moved, Mode::Document).unwrap().close().unwrap();
+    assert_eq!(uuid(&moved), original);
+    let backup = dir.path().join("Backup.slop");
+    fs::copy(&moved, &backup).unwrap();
+    assert_eq!(uuid(&backup), original);
+    assert!(file::open(&source, false).unwrap().document_uuid.is_none());
+}
+
+#[test]
+fn document_uuid_is_immutable_and_malformed_identities_are_refused_without_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = document(dir.path());
+    let original = file::open(&path, false).unwrap().document_uuid.unwrap();
+    assert!(
+        Connection::open(&path)
+            .unwrap()
+            .execute("UPDATE document SET uuid=?", ["00000000-0000-4000-8000-000000000000"])
+            .is_err()
+    );
+    assert_eq!(file::open(&path, false).unwrap().document_uuid.as_deref(), Some(original.as_str()));
+    for invalid in ["00000000-0000-4000-8000-00000000000A", "00000000_0000-4000-8000-000000000000", "short"] {
+        let corrupt = raw(&path);
+        corrupt.execute_batch("PRAGMA ignore_check_constraints=ON").unwrap();
+        corrupt.execute("UPDATE document SET uuid=?", [invalid]).unwrap();
+        drop(corrupt);
+        let before = fs::read(&path).unwrap();
+        assert!(Store::open(&path, Mode::Document).is_err());
+        assert!(file::summary(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+}
 /// Each marker raised one past what this build writes.
 fn raised(doc: &Path) -> [String; 3] {
     let storage: i64 = raw(doc).query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
@@ -430,7 +520,11 @@ fn stored_values_are_bounded_as_writes_bound_them() {
             "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')",
             None,
         ),
-        ("a second document row", "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2)", None),
+        (
+            "a second document row",
+            "PRAGMA ignore_check_constraints=ON; INSERT INTO document VALUES(2,'00000000-0000-4000-8000-000000000000')",
+            None,
+        ),
         ("a misnumbered app row", "PRAGMA ignore_check_constraints=ON; UPDATE app SET id=2", None),
     ];
     let mut accepted = vec![];
@@ -1203,4 +1297,24 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     let reopened = Store::open(&doc, Mode::Snapshot).unwrap();
     assert!(reopened.document().unwrap().value().contains("Edited"));
     assert_eq!(reopened.app().app.metadata().title, title);
+}
+
+#[test]
+fn streaming_attachment_verification_preserves_large_iso_brand_headers() {
+    use file::ResourceRoute::Attachment;
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    // A valid ISO signature whose compatible brand lies beyond the sniffing prefix.
+    let mut bytes = vec![0u8; 2 << 20];
+    let length = bytes.len() as u32;
+    bytes[..4].copy_from_slice(&length.to_be_bytes());
+    bytes[4..8].copy_from_slice(b"ftyp");
+    bytes[8..12].copy_from_slice(b"isom");
+    bytes[length as usize - 4..].copy_from_slice(b"avif");
+    let attachment = store.put_attachment(&bytes).unwrap();
+    let reader = store.resource_reader().unwrap();
+    assert_eq!(reader.info(Attachment, &attachment.id).unwrap().unwrap().media_type, "image/avif");
+    assert_eq!(reader.read_range(Attachment, &attachment.id, 1 << 20, 16).unwrap(), Some(vec![0; 16]));
+    store.close().unwrap();
 }

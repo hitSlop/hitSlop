@@ -1,32 +1,213 @@
 ---
 title: Edit installed documents
-description: Inspect schemas, edit through the native owner, and change or share a document's theme colors.
+description: Discover app actions, call them from the CLI, edit fields, and see each response.
 ---
 
-Document commands read and edit the document through the app's Rust core, which persists it in SQLite. `apply` and `batch` accept JSON operations; `get` returns a read-only JSON snapshot. There is no editable `data.json` file.
+Work on the same document as the person using the app. Named commands run the app’s
+authored actions; `apply` and `batch` edit fields directly. Both go through the Rust
+owner, save accepted edits, and update an open window. **Edit ▸ Undo** includes agent edits.
 
-Create a writable copy before editing. Registered templates are immutable masters.
+This walkthrough uses the bundled **Quick Checklist**, with Bun and the Mac app installed.
+Run `bunx hitslop` as below, or install globally and use `slop`. Responses show example
+paths, versions and shortened row IDs; use the values your own CLI prints. JSON is
+compacted in a few places for readability.
 
-The [CLI workflows guide](/docs/guides/cli-workflows/) shows how to create that copy from the terminal, move data between documents, transfer attachments, and export PNG/PDF. It also covers direct native commands when you do not have Bun installed.
+## 1. Create and open your own copy
 
-```sh
-bunx hitslop schema My.slop
-bunx hitslop get My.slop
-bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Weekend"}'
-bunx hitslop batch My.slop --ops '[{"type":"set","path":["title"],"value":"Ready"}]'
-```
-
-Read the descriptor and current state before choosing operations. The CLI prints JSON and reports failures on stderr. Successful mutations acknowledge persistence. If transport fails, run `get` before another edit; do not blindly retry.
-
-The Rust engine sends edits to the open document's socket, or edits a closed document directly without loading its interface. The CLI uses its own bundled engine on macOS and Linux. It never bypasses a busy writer, and an edit to an open document never interrupts typing in its window. The `slop` CLI runs with Bun; document edits do not require the Mac app.
-
-Theme colors use separate commands, or the theme panel in the window, and are saved with the document's edits, in the same database:
+Templates are immutable. Create a writable document at a new path:
 
 ```sh
-bunx hitslop theme get My.slop
-bunx hitslop theme set My.slop --values '{"accent":"#7050ad"}'
-bunx hitslop theme reset My.slop
-bunx hitslop theme export My.slop --output Mine.json
+bunx hitslop create --from quick-checklist --output Today.slop
 ```
 
-Only declared colors may be changed. They affect the editor and captures, not application data, fonts or layout. Do not edit SQLite or initial values underneath a live document. See [data and schemas](/docs/guides/data-and-schemas/) and [styling](/docs/guides/styling/).
+```text
+/Users/you/Documents/Today.slop
+```
+
+```sh
+bunx hitslop open Today.slop
+```
+
+```text
+/Users/you/Documents/Today.slop
+```
+
+Keep this terminal in the directory containing `Today.slop`, or use its full quoted path.
+Opening the window needs the Mac app; reading and editing a file also work on Linux.
+
+## 2. Discover fields and actions
+
+```sh
+bunx hitslop describe Today.slop
+```
+
+<details>
+<summary>Response: fields, command arguments, and current values</summary>
+
+```text
+Quick Checklist: A blush pocket utility for capturing, finishing, and filing short task lists.
+Version: 000000000000000100000077
+
+Fields
+  ["tasks"]: list (insert, remove, move, replace)
+  ["tasks",{"id":"$id"}]: object (replace)
+  ["tasks",{"id":"$id"},"archived"]: boolean (set) — Filed away from the to-do list.
+  ["tasks",{"id":"$id"},"done"]: boolean (set)
+  ["tasks",{"id":"$id"},"text"]: text (set)
+  ["title"]: text (set) — The title shown in the window.
+
+Commands (slop call PATH NAME --args JSON)
+  addTask — Add an unfinished task and return its stable row ID.
+    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}
+  archiveFinished — File every completed task and return the number filed.
+    args: {"additionalProperties":false,"properties":{},"type":"object"}
+  removeTask — Remove a task from the checklist.
+    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+  restoreTask — Return a filed task to the active list, unfinished.
+    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+
+Value (rows retain their $id)
+{
+  "tasks": [
+    {
+      "$id": "starter-1",
+      "archived": false,
+      "done": true,
+      "text": "Send the first draft"
+    },
+    {
+      "$id": "starter-2",
+      "archived": false,
+      "done": false,
+      "text": "Take a walk without my phone"
+    },
+    {
+      "$id": "starter-3",
+      "archived": false,
+      "done": false,
+      "text": "Make a little room for the weekend"
+    }
+  ],
+  "title": "Little things, today"
+}
+```
+
+</details>
+
+`describe` lists the commands actually stored in this document. Add `--json` for a
+structured description for tools. A different app may expose different actions, or none.
+
+## 3. Run the app’s addTask action
+
+```sh
+bunx hitslop call Today.slop addTask --args '{"text":"Book train"}'
+```
+
+```json
+{"result":{"id":"train"},"ids":["train"]}
+```
+
+The real ID will differ. The command returns its result and any inserted IDs. Its
+argument validation and behavior are the same as the app’s action; a refusal applies
+nothing. A successful call is one atomic edit and one undo step.
+
+Read the document to see the new task alongside the starter tasks:
+
+```sh
+bunx hitslop get Today.slop
+```
+
+```json
+{
+  "tasks": [
+    {
+      "$id": "starter-1",
+      "archived": false,
+      "done": true,
+      "text": "Send the first draft"
+    },
+    {
+      "$id": "starter-2",
+      "archived": false,
+      "done": false,
+      "text": "Take a walk without my phone"
+    },
+    {
+      "$id": "starter-3",
+      "archived": false,
+      "done": false,
+      "text": "Make a little room for the weekend"
+    },
+    {
+      "$id": "train",
+      "archived": false,
+      "done": false,
+      "text": "Book train"
+    }
+  ],
+  "title": "Little things, today"
+}
+```
+
+## 4. Edit a field directly
+
+Replace `train` with the `$id` returned above. Row IDs stay stable even if a list is reordered.
+
+```sh
+bunx hitslop apply Today.slop --op '{"type":"set","path":["tasks",{"id":"train"},"done"],"value":true}'
+```
+
+```json
+{"ids":[]}
+```
+
+The box checks itself in the open window. An empty `ids` list means no rows were inserted;
+it does not mean no edit happened. You can also apply several operations atomically:
+
+```sh
+bunx hitslop batch Today.slop --ops '[{"type":"set","path":["tasks",{"id":"train"},"done"],"value":false},{"type":"set","path":["tasks",{"id":"train"},"archived"],"value":false}]'
+```
+
+```json
+{"ids":[]}
+```
+
+This restores the task to unfinished and unfiled. If one operation is invalid, none apply.
+
+## 5. Check the result
+
+```sh
+bunx hitslop get Today.slop
+```
+
+Response excerpt (the other tasks and title are still present):
+
+```json
+{"$id":"train","archived":false,"done":false,"text":"Book train"}
+```
+
+Check `get` before retrying after an uncertain outcome, especially an insertion.
+Errors go to stderr with a nonzero exit status. For example, an empty task is refused:
+
+```sh
+bunx hitslop call Today.slop addTask --args '{"text":""}'
+```
+
+```text
+Error: Enter a task. (refused)
+Not applied.
+```
+
+The CLI routes to the open document’s owner or edits a closed document without loading
+its interface. It never bypasses a busy writer. There is no editable `data.json` file;
+`get` is a read-only snapshot, and templates’ initial values do not change saved work.
+
+For text rewrites based on a read, use `get --snapshot` and pass its `version` with
+`apply --base` or `batch --base` so the edit merges with typing since that read.
+
+## More document commands
+
+The [CLI workflows guide](/docs/guides/cli-workflows/) shows schema inspection, theme
+responses, attachments, data transfer, and PNG/PDF export. Theme changes also appear
+in the window’s palette panel and save with the document. Only declared colors may
+change; see [styling](/docs/guides/styling/) for the authoring side.

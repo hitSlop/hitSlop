@@ -4,7 +4,7 @@ import { test, expect } from "bun:test";
 import { execute } from "../../src/cli/engine";
 import { negotiate } from "../../src/cli/engine";
 import { exec, run } from "../../../../scripts/lib/test-process";
-import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { overrideSlop, stage } from "./source-fixture";
 import { buildTemplate } from "../../src/cli/template";
@@ -26,7 +26,7 @@ test("apps contain no runtime code and cannot reach the engine, bridge or remote
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const output = await stage(source, join(root, "built"));
     const js = await readFile(join(output, "resources/ui.js"), "utf8");
     expect(js).not.toContain("/__shell__/");
@@ -58,7 +58,7 @@ test("build refuses a theme that is not a palette of hex colors", async () => {
       ["derived", `{ rule: "color-mix(in srgb, var(--slop-ink) 14%, transparent)" }`, "Theme color rule"],
     ] as const) {
       const source = join(root, name);
-      await cp("examples/slops/quick-checklist", source, { recursive: true });
+      await cp("tests/apps/document", source, { recursive: true });
       await overrideSlop(source, { theme });
       await expect(stage(source, join(root, name))).rejects.toThrow(error);
     }
@@ -72,7 +72,7 @@ test("build paths and fresh source evaluation follow the declaration", async () 
   try {
     // The explicit slug is independent of paths, which may hold spaces.
     const source = join(root, "path with spaces", "starter");
-    await cp("packages/hitslop/templates/checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { slug: '"starter"' });
     const defaultOutput = await buildTemplate(source, undefined);
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
@@ -90,7 +90,7 @@ test("imported fonts are content addressed, deduplicated, and keep their CSS URL
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await mkdir(join(source, "fonts"));
     await writeFile(join(source, "fonts/My Font.woff2"), new Uint8Array([119,79,70,50,1,2,3,4]));
     await writeFile(join(source, "fonts/unused.txt"), "not imported");
@@ -113,7 +113,7 @@ test("Svelte styles compile identically in different checkout locations", async 
     const outputs: string[] = [];
     for (const location of ["first-checkout", "second-checkout"]) {
       const source = join(root, location);
-      await cp("packages/hitslop/templates/checklist", source, { recursive: true });
+      await cp("tests/apps/document", source, { recursive: true });
       await writeFile(
         join(source, "App.svelte"),
         "<p>Portable styles</p><style>p { color: rebeccapurple; }</style>",
@@ -136,9 +136,10 @@ for (const [name, properties, initial, code] of [
   const root = await mkdtemp(join(process.cwd(), ".core-validation-test-"));
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties});`);
-    await overrideSlop(source, { initial: JSON.stringify(initial) });
+    await writeFile(join(source, "commands.ts"), "export {};\n");
+    await overrideSlop(source, { initial: JSON.stringify(initial), commands: "{}" });
     await expect(stage(source, join(root, "invalid"))).rejects.toThrow(code);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -147,7 +148,11 @@ test("only explicit roles are built; unrelated filenames are ignored", async () 
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root,"source");
-    await cp("packages/hitslop/templates/checklist",source,{recursive:true});
+    await cp("tests/apps/document",source,{recursive:true});
+    // Keep the declared view distinct on case-insensitive filesystems too.
+    await rename(join(source, "Export.svelte"), join(source, "Capture.svelte"));
+    const declaration = join(source, "slop.ts");
+    await writeFile(declaration, (await readFile(declaration, "utf8")).replace("./Export.svelte", "./Capture.svelte"));
     await writeFile(join(source,"main.ts"), "this is not valid typescript");
     await writeFile(join(source,"export.svelte"), "<script>const = ;</script>");
     await stage(source,join(root,"built"));
@@ -160,13 +165,13 @@ test("a capture view cannot read state the editor sets", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root,"source");
-    await cp("packages/hitslop/templates/checklist",source,{recursive:true});
+    await cp("tests/apps/document",source,{recursive:true});
     await writeFile(join(source,"ui.svelte.ts"), `export const ui = $state({ tab: "tasks" });\n`);
     await writeFile(join(source,"Tab.svelte"), `<script lang="ts">import { ui } from "./ui.svelte";</script><b>{ui.tab}</b>`);
     await writeFile(join(source,"Export.svelte"), `<script lang="ts">import Tab from "./Tab.svelte";</script><Tab />`);
-    // The editor reads it, also when the editor itself renders captures.
+    // Reusing the editor does not make its transient state available to captures.
     await overrideSlop(source, { view: "Tab", export: "Tab" }, `import Tab from "./Tab.svelte";`);
-    await stage(source,join(root,"editor"));
+    await expect(stage(source,join(root,"editor"))).rejects.toThrow("fresh page");
     // A capture view sees only the initial value, even through a shared component.
     await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
     await expect(stage(source,join(root,"export"))).rejects.toThrow("fresh page");

@@ -3,7 +3,7 @@
   "args": {
     "text": "Frozen command replay ✓"
   },
-  "now": 1791374400000,
+  "now": 1791460800000,
   "seed": [
     1,
     2,
@@ -19,9 +19,7 @@
           "tasks"
         ],
         "value": {
-          "text": "Frozen command replay ✓",
-          "done": false,
-          "archived": false
+          "text": "Frozen command replay ✓"
         },
         "id": "00pg00000000103gb808179r0g"
       }

@@ -12,12 +12,12 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "sentinel");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const sentinel = `slop-ts-sentinel-${crypto.randomUUID()}`;
     await overrideSlop(source, { initial: `{ ...slop.initial, title: ${JSON.stringify(sentinel)} }` });
     const output = join(root, "built");
     const app = await stageProject(source, output);
-    expect(app.declaration.metadata.slug).toBe("quick-checklist");
+    expect(app.declaration.metadata.slug).toBe("document-fixture");
     expect(app.declaration.initial).toMatchObject({ title: sentinel });
     expect(await readFile(join(output, "resources/ui.js"), "utf8")).not.toContain(sentinel);
     for (const [name, fields, statements, error] of [
@@ -29,12 +29,12 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
       ["theme", { theme: '{ accent: "#ABCDEF" }' }, "", "Theme color"],
     ] as const) {
       const project = join(root, name);
-      await cp("examples/slops/quick-checklist", project, { recursive: true });
+      await cp("tests/apps/document", project, { recursive: true });
       await overrideSlop(project, fields, statements);
       await expect(stage(project, join(root, name + "-stage"))).rejects.toThrow(error);
     }
-    const misnamed = join(root, "Quick Checklist");
-    await cp("examples/slops/quick-checklist", misnamed, { recursive: true });
+    const misnamed = join(root, "Fixture With Spaces");
+    await cp("tests/apps/document", misnamed, { recursive: true });
     await stage(misnamed, join(root, "misnamed-stage"));
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -47,7 +47,7 @@ test("an app that imports slop.ts is refused", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "imports-slop");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const app = await readFile(join(source, "App.svelte"), "utf8");
     await writeFile(
       join(source, "App.svelte"),
@@ -65,7 +65,7 @@ test("slop check reports slop.ts errors a build would refuse", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "checked");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const check = async () => {
       const {stderr, code} = await exec([process.execPath, "packages/hitslop/src/cli/cli.ts", "check", source], {timeout: 60_000});
       return { stderr, code };

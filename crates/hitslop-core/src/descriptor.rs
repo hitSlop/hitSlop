@@ -4,12 +4,17 @@ use crate::wire::present_option as present;
 // The descriptor is authored data, never executable application code. Parsed, two
 // descriptors compare by meaning: key order and number spelling never matter.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "descriptor.generated.ts"))]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
-pub(super) enum Node {
+pub enum Node {
     // Empty struct variants, not unit variants: serde ignores unknown fields on unit
     // variants of an internally tagged enum, which would accept `{"kind":"text","x":1}`.
     Text {},
-    Boolean {},
+    /// Scalars may declare the `default` an object field takes when a write omits it.
+    Boolean {
+        #[serde(default, deserialize_with = "present")]
+        default: Option<bool>,
+    },
     /// An exact safe-integer total; increments serialize through the single writer.
     Counter {},
     /// Last writer wins. Length bounds count Unicode code points.
@@ -18,6 +23,8 @@ pub(super) enum Node {
         min_length: Option<u64>,
         #[serde(default, rename = "maxLength", deserialize_with = "present")]
         max_length: Option<u64>,
+        #[serde(default, deserialize_with = "present")]
+        default: Option<String>,
     },
     /// A finite f64. Integral values project as JSON integers.
     Number {
@@ -25,6 +32,8 @@ pub(super) enum Node {
         min: Option<f64>,
         #[serde(default, deserialize_with = "present")]
         max: Option<f64>,
+        #[serde(default, deserialize_with = "present")]
+        default: Option<f64>,
     },
     /// A safe integer (±2^53−1), stored as i64.
     Integer {
@@ -32,9 +41,13 @@ pub(super) enum Node {
         min: Option<i64>,
         #[serde(default, deserialize_with = "present")]
         max: Option<i64>,
+        #[serde(default, deserialize_with = "present")]
+        default: Option<i64>,
     },
     Enum {
         values: Vec<String>,
+        #[serde(default, deserialize_with = "present")]
+        default: Option<String>,
     },
     /// Absent until set; `clear` removes it.
     Optional {
@@ -61,7 +74,7 @@ pub(super) fn valid_key(key: &str) -> bool {
 /// The stored form of a validated scalar.
 pub(super) fn loro_scalar(node: &Node, value: &Value) -> loro::LoroValue {
     match unwrap_optional(node) {
-        Node::Boolean {} => value.as_bool().expect("validated boolean").into(),
+        Node::Boolean { .. } => value.as_bool().expect("validated boolean").into(),
         Node::Number { .. } => value.as_f64().expect("validated number").into(),
         Node::Integer { .. } => integer(value).expect("validated integer").into(),
         _ => value.as_str().expect("validated string or enum").into(),
@@ -80,8 +93,18 @@ pub(super) fn utf16_len(s: &str) -> u64 {
 pub(super) fn is_scalar(node: &Node) -> bool {
     matches!(
         node,
-        Node::Boolean {} | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. }
+        Node::Boolean { .. } | Node::String { .. } | Node::Number { .. } | Node::Integer { .. } | Node::Enum { .. }
     )
+}
+/// The scalar's declared default, as JSON.
+fn declared_default(node: &Node) -> Option<Value> {
+    match node {
+        Node::Boolean { default } => default.map(Value::from),
+        Node::String { default, .. } | Node::Enum { default, .. } => default.clone().map(Value::from),
+        Node::Number { default, .. } => default.map(|n| json!(n)),
+        Node::Integer { default, .. } => default.map(Value::from),
+        _ => None,
+    }
 }
 pub(super) const MAX_SCALAR_LIST: usize = 100_000;
 /// Whether replacing a value of this kind would discard identity-bearing collections.
@@ -117,15 +140,17 @@ impl Node {
                 if !matches!(**item, Self::Object { .. }) && !is_scalar(item) {
                     return Err(err(Code::InvalidSchema, "Lists contain object rows or scalars"));
                 }
+                fields_only(item)?;
                 item.check(depth + 1)?;
             }
             Self::Record { value } => {
                 if !matches!(**value, Self::Object { .. }) && !is_scalar(value) {
                     return Err(err(Code::InvalidSchema, "Record values are scalars or objects"));
                 }
+                fields_only(value)?;
                 value.check(depth + 1)?;
             }
-            Self::String { min_length, max_length } => {
+            Self::String { min_length, max_length, .. } => {
                 if min_length.is_some_and(|n| n > MAX_SAFE as u64)
                     || max_length.is_some_and(|n| n > MAX_SAFE as u64)
                     || matches!((min_length, max_length), (Some(a), Some(b)) if a > b)
@@ -136,7 +161,7 @@ impl Node {
                     ));
                 }
             }
-            Self::Number { min, max } => {
+            Self::Number { min, max, .. } => {
                 if min.is_some_and(|n| !n.is_finite())
                     || max.is_some_and(|n| !n.is_finite())
                     || matches!((min, max), (Some(a), Some(b)) if a > b)
@@ -144,7 +169,7 @@ impl Node {
                     return Err(err(Code::InvalidSchema, "Number bounds must be finite with min ≤ max"));
                 }
             }
-            Self::Integer { min, max } => {
+            Self::Integer { min, max, .. } => {
                 if min.is_some_and(|n| !safe(n))
                     || max.is_some_and(|n| !safe(n))
                     || matches!((min, max), (Some(a), Some(b)) if a > b)
@@ -152,7 +177,7 @@ impl Node {
                     return Err(err(Code::InvalidSchema, "Integer bounds must be safe with min ≤ max"));
                 }
             }
-            Self::Enum { values } => {
+            Self::Enum { values, .. } => {
                 let unique: BTreeSet<_> = values.iter().collect();
                 if values.is_empty() || values.len() > 1024 || unique.len() != values.len() {
                     return Err(err(Code::InvalidSchema, "Enum needs 1–1024 unique values"));
@@ -164,6 +189,9 @@ impl Node {
                 if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text {}) {
                     return Err(err(Code::InvalidSchema, "Optional holds a scalar, text or an object"));
                 }
+                if declared_default(inner).is_some() {
+                    return Err(err(Code::InvalidSchema, "An optional field is absent until set; it has no default"));
+                }
                 if let Self::Object { properties } = &**inner
                     && (properties.contains_key("set") || properties.contains_key("clear"))
                 {
@@ -171,9 +199,67 @@ impl Node {
                 }
                 inner.check(depth + 1)?;
             }
-            Self::Text {} | Self::Boolean {} | Self::Counter {} => {}
+            Self::Text {} | Self::Boolean { .. } | Self::Counter {} => {}
+        }
+        if let Some(default) = declared_default(self) {
+            check::scalar(self, &default)
+                .map_err(|e| err(Code::InvalidSchema, format!("A default must fit its field ({})", e.message)))?;
         }
         Ok(())
+    }
+    /// The value an object field takes when a write omits it: empty text, lists and
+    /// records, a zero counter, a scalar's declared default, or an object of its own
+    /// defaults. Optional fields stay absent.
+    fn default_value(&self) -> Option<Value> {
+        match self {
+            Self::Text {} => Some(json!("")),
+            Self::List { .. } => Some(json!([])),
+            Self::Record { .. } => Some(json!({})),
+            Self::Object { .. } if self.omittable() => Some(json!({})),
+            Self::Counter {} => Some(json!(0)),
+            Self::Object { .. } | Self::Optional { .. } => None,
+            scalar => declared_default(scalar),
+        }
+    }
+    /// Whether an object field of this kind may be left out of a write: it is optional,
+    /// or it has a default (an object, when every field of it may be left out).
+    pub(super) fn omittable(&self) -> bool {
+        match self {
+            Self::Optional { .. } => true,
+            Self::Object { properties } => properties.values().all(Self::omittable),
+            node => node.default_value().is_some(),
+        }
+    }
+    /// Adds the defaults of the fields `value` omits, at every depth. A field without a
+    /// default stays missing, so validation names it.
+    pub(super) fn fill_defaults(&self, value: &mut Value) {
+        match self {
+            Self::Object { properties } => {
+                let Some(map) = value.as_object_mut() else { return };
+                for (key, node) in properties {
+                    if !map.contains_key(key)
+                        && let Some(default) = node.default_value()
+                    {
+                        map.insert(key.clone(), default);
+                    }
+                    if let Some(child) = map.get_mut(key) {
+                        node.fill_defaults(child);
+                    }
+                }
+            }
+            Self::Optional { inner } => inner.fill_defaults(value),
+            Self::List { item } => value.as_array_mut().into_iter().flatten().for_each(|row| item.fill_defaults(row)),
+            Self::Record { value: entry } => {
+                value.as_object_mut().into_iter().flat_map(|map| map.values_mut()).for_each(|v| entry.fill_defaults(v))
+            }
+            _ => {}
+        }
+    }
+    /// `value` with its omitted fields' defaults.
+    pub(super) fn with_defaults(&self, value: &Value) -> Value {
+        let mut value = value.clone();
+        self.fill_defaults(&mut value);
+        value
     }
     pub(super) fn validate(&self, value: &Value, row: bool) -> Result<()> {
         match self {
@@ -237,6 +323,15 @@ impl Node {
     }
 }
 
+/// List elements and record entries are always written whole, so their scalars have no
+/// default.
+fn fields_only(node: &Node) -> Result<()> {
+    if declared_default(node).is_some() {
+        return Err(err(Code::InvalidSchema, "Defaults apply to object fields"));
+    }
+    Ok(())
+}
+
 /// The longest description, in UTF-16 units.
 const DESCRIPTION: u64 = 500;
 /// Checks a node's `description` and its children's, then removes them. Descriptions tell
@@ -262,6 +357,10 @@ fn strip_descriptions(node: &mut Value) -> Result<()> {
 pub(super) fn descriptor(s: &str) -> Result<Node> {
     descriptor_value(parse(s)?)
 }
+/// The scalar default an argument or field declares, for projections.
+pub(super) fn declared(node: &Node) -> Option<Value> {
+    declared_default(node)
+}
 pub(super) fn descriptor_value(mut root: Value) -> Result<Node> {
     strip_descriptions(&mut root)?;
     let root: Node = serde_json::from_value(root).map_err(|e| err(Code::InvalidRequest, e))?;
@@ -279,7 +378,8 @@ pub fn validate(schema: &str, initial: &str) -> Result<()> {
 /// The parsed descriptor, once the initial values are checked against it.
 pub(crate) fn checked(schema: &str, initial: &str) -> Result<Node> {
     let schema = descriptor(schema)?;
-    let initial: Value = parse(initial)?;
+    let mut initial: Value = parse(initial)?;
+    schema.fill_defaults(&mut initial);
     schema.validate(&initial, false)?;
     Ok(schema)
 }

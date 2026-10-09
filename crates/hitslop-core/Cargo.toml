@@ -8,6 +8,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+hitslop-runner = { path = "../hitslop-runner", optional = true, default-features = false }
+
 loro.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -17,11 +19,21 @@ svgtypes = "=0.16.1"
 kurbo = "=0.13.1"
 ts-rs = { version = "=12.0.1", optional = true, features = ["serde-json-impl", "no-serde-warnings"] }
 
+fluent-uri = { version = "=0.4.1", optional = true }
+rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"], optional = true }
+sha2 = { version = "=0.11.0", optional = true }
+data-encoding = { version = "=2.11.1", optional = true }
+brotli = { version = "=9.0.0", optional = true }
+png = { version = "=0.18.1", optional = true }
+
 [lib]
 doctest = false
 
 [features]
 default = ["storage"]
+# The shared owner session of the native loopback proof (`owner/sync.rs`, used by the
+# `slop-room` development binary); never enabled in shipped builds.
+dev-sync = ["storage"]
 # Code generation only; never enabled by the WASM build or shipped native library.
 ts = ["dep:ts-rs", "storage"]
 # Durable storage for native hosts: the document file (SQLite), the writer lock and the
@@ -36,26 +48,23 @@ bundled-sqlite = ["storage", "rusqlite/bundled"]
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hitslop-runner = { path = "../hitslop-runner", optional = true, default-features = false }
-fluent-uri = { version = "=0.4.1", optional = true }
-rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"], optional = true }
-sha2 = { version = "=0.11.0", optional = true }
 libc = { version = "0.2", optional = true }
-data-encoding = { version = "=2.11.1", optional = true }
 # Brotli for the app's stored text assets, which every release must keep decoding. Only
 # `pack` encodes; the app links the decoder.
-brotli = { version = "=9.0.0", optional = true }
 # Lossless PNG optimization for stored artwork (`pack`, and a closing window's): no
 # threads, no zopfli. It compiles libdeflate (C), so the wasm core never links it.
 oxipng = { version = "=10.2.1", default-features = false, optional = true }
-png = { version = "=0.18.1", optional = true }
 
 [dev-dependencies]
 rusqlite = { version = "=0.40.2", features = ["hooks"] }
-tempfile = "3"
 png = "=0.18.1"
+tempfile = "3"
 # Differential oracle for the output-only argument projection. Production uses Node.
 jsonschema = { version = "=0.58.3", default-features = false }
+
+[[test]]
+name = "replication"
+required-features = ["storage"]
 
 [[test]]
 name = "file"
@@ -92,3 +101,7 @@ required-features = ["storage"]
 [[example]]
 name = "export_bindings"
 required-features = ["ts"]
+
+[[example]]
+name = "bench_owner_history"
+required-features = ["storage"]

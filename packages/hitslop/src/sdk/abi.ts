@@ -15,19 +15,37 @@ import type { LiveDocument } from "./schema";
  *   `/assets/ui.css` when present; it mounts the app only when `SlopApp.descriptor` equals
  *   the file's stored descriptor as JSON, so the host passes that descriptor unnormalized.
  * - Command program (`commands.js`): it sets `globalThis.__slopCommands` (name → command)
- *   and `__hitslopDescribe`; a command carries `Symbol.for("hitslop.command")` →
+ *   and `__slopDescribe`; a command carries `Symbol.for("slop.command")` →
  *   `{ definition, spec: { description, args, run }, name }`. The ABI's evaluator prelude
- *   defines `__hitslopRun(json)` and replies `{ ok, intents, result }` or `{ ok: false,
+ *   defines `__slopRun(json)` and replies `{ ok, intents, result }` or `{ ok: false,
  *   error }`, with intents in the core's vocabulary for that ABI.
- * - Errors: `Symbol.for("hitslop.operation-error")` brands refusals; apps treat an
- *   unknown `code` or `reason` as an outcome.
- * - Markup the host styles: `[data-hitslop-root]` (the app's root, sized to the window),
- *   `[data-slop-capture-target]` and `[data-hitslop-active-target]` (capture targets,
+ * - Errors: `Symbol.for("slop.operation-error")` brands document outcomes; apps treat an
+ *   unknown `code` or `reason` as an outcome. `refuse()` throws a DocumentError with
+ *   code `rejected` and reason `refused`; the evaluator replies
+ *   `{ ok: false, error, refused: true }`. The shell offers an unhandled refusal to the
+ *   app as a cancelable `slop:refused` event on `document` whose `detail` is the
+ *   message; an app that cancels it has shown the message, otherwise it is reported.
+ * - Markup the host styles: `[data-slop-root]` (the app's root, sized to the window),
+ *   `[data-slop-capture-target]` and `[data-slop-active-target]` (capture targets,
  *   children of `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the
  *   attributes the host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
- *   `data-slop-resizable`, `data-slop-renderer`.
+ *   `data-slop-resizable`, `data-slop-renderer`, `data-slop-controls`. The Svelte root renders
+ *   `[data-slop-notice]`, a status region holding the current notice as a `<p>`.
  * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
  *   `--slop-window-width` and `--slop-window-height`.
+ * - Host-internal, not app ABI (the shell and host ship together and may change them):
+ *   `slop:render-error` (the shell telling itself a remount failed), the
+ *   `style[data-slop-host]` sheet, the `__slop` host entry point, and `__slopPreview`
+ *   with the `slop:*` messages of the `slop dev` preview transport. Apps never read them.
+ *
+ * Lifecycle decisions: mount/rendered/unmount remain framework-neutral. Awaited writes
+ * expose the accepted immutable snapshot, not a promise of DOM paint. subscribe allows
+ * multiple listeners; observe allows one adapter, with identity-safe cleanup so an old
+ * adapter cannot detach its replacement. Text merge/IME/caret behavior stays in the host.
+ * Capture detection, AbortSignal preparations and one target per role remain host APIs;
+ * preparation includes hooks registered by the capture view itself, and cleanup pairs
+ * with failed or canceled preparation. Draft, motion and notice presentation stay in
+ * the SDK. They do not add host APIs. Rust owns the capture enum and shared limits.
  * The conformance app in the frozen corpus (`tests/abi/owner-svelte`) exercises these
  * against every later shell.
  */
@@ -42,7 +60,8 @@ export type Scope<N extends ObjectNode> = {
 };
 export type AttachmentInfo = import("../schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
-export type CaptureMode = "preview" | "export" | "icon";
+export type { CaptureMode } from "../wire/page.generated";
+import type { CaptureMode } from "../wire/page.generated";
 
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
@@ -107,7 +126,8 @@ export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
   runCommand<R>(name: string, args: unknown): Promise<R>;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
-   * record the dependency (Svelte reads its own signal here). One observer at a time. */
+   * record the dependency (Svelte reads its own signal here). Replaces the active
+   * observer; its idempotent disposer only removes that same observer. */
   observe(read: () => void): () => void;
 }
 export type { Definition };

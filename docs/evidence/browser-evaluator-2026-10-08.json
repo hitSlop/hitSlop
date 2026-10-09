@@ -1,0 +1,519 @@
+{
+  "date": "2026-10-08T18:08:15.791Z",
+  "versions": {
+    "chromium": "154.0.8037.98",
+    "webkit": "27.2"
+  },
+  "wasmBytes": 832636,
+  "results": [
+    {
+      "engine": "chromium",
+      "label": "hourglass",
+      "result": {
+        "ok": true,
+        "intents": [
+          {
+            "type": "set",
+            "path": [
+              "start"
+            ],
+            "value": 1791460800000
+          },
+          {
+            "type": "set",
+            "path": [
+              "end"
+            ],
+            "value": 1791460860000
+          }
+        ],
+        "result": null
+      },
+      "ms": 44.5,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "quick-checklist",
+      "result": {
+        "ok": true,
+        "intents": [
+          {
+            "type": "insert",
+            "path": [
+              "tasks"
+            ],
+            "value": {
+              "text": "Frozen command replay \u2713"
+            },
+            "id": "00pg00000000103gb808179r0g"
+          }
+        ],
+        "result": {
+          "id": "00pg00000000103gb808179r0g"
+        }
+      },
+      "ms": 37,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "authority",
+      "result": {
+        "ok": true,
+        "intents": [],
+        "result": [
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined"
+        ]
+      },
+      "ms": 33.299999952316284,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "while(true){}",
+      "result": {
+        "error": "Error: interrupted\n    at run (eval_script:2:1)\n    at z (eval_script:2:5015)\n    at <anonymous> (eval_script:2:6037)\n",
+        "ok": false
+      },
+      "ms": 2005.1999998092651,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "const a=[];while(true)a.push(new Array(100000).fill('x'))",
+      "result": {
+        "ok": false,
+        "error": "Worker deadline exceeded"
+      },
+      "terminated": true
+    },
+    {
+      "engine": "chromium",
+      "label": "return new Uint8Array(300*1024*1024).length",
+      "result": {
+        "ok": false,
+        "error": "out of memory"
+      },
+      "ms": 9.5,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "return Date.now()",
+      "result": {
+        "ok": false,
+        "error": "Use the host-provided ctx.now and ctx.random()"
+      },
+      "ms": 5.799999952316284,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "return Promise.resolve(1)",
+      "result": {
+        "ok": false,
+        "error": "Commands are synchronous"
+      },
+      "ms": 5.5,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "ctx.tx.fields.count.increment(1);throw Error('no')",
+      "result": {
+        "ok": false,
+        "error": "no"
+      },
+      "ms": 4.200000047683716,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "authored refusal",
+      "result": {
+        "ok": false,
+        "error": "Enter a task.",
+        "refused": true
+      },
+      "ms": 10,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "output limit",
+      "result": {
+        "ok": false,
+        "error": "Command output is too large"
+      },
+      "ms": 338.30000019073486,
+      "memory": 30408704,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "future ABI",
+      "result": {
+        "error": "Unsupported command runtime ABI",
+        "ok": false
+      },
+      "ms": 0.5999999046325684,
+      "memory": 1310720,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "chromium",
+      "label": "input limit",
+      "fault": "Error: Command input is too large"
+    },
+    {
+      "engine": "chromium",
+      "label": "stack limit",
+      "fault": "Error: RangeError: Maximum call stack size exceeded  RangeError: Maximum call stack size exceeded"
+    },
+    {
+      "engine": "chromium",
+      "label": "fresh realm",
+      "passed": true
+    },
+    {
+      "engine": "webkit",
+      "label": "hourglass",
+      "result": {
+        "ok": true,
+        "intents": [
+          {
+            "type": "set",
+            "path": [
+              "start"
+            ],
+            "value": 1791460800000
+          },
+          {
+            "type": "set",
+            "path": [
+              "end"
+            ],
+            "value": 1791460860000
+          }
+        ],
+        "result": null
+      },
+      "ms": 43,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "quick-checklist",
+      "result": {
+        "ok": true,
+        "intents": [
+          {
+            "type": "insert",
+            "path": [
+              "tasks"
+            ],
+            "value": {
+              "text": "Frozen command replay \u2713"
+            },
+            "id": "00pg00000000103gb808179r0g"
+          }
+        ],
+        "result": {
+          "id": "00pg00000000103gb808179r0g"
+        }
+      },
+      "ms": 33,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "authority",
+      "result": {
+        "ok": true,
+        "intents": [],
+        "result": [
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined",
+          "undefined"
+        ]
+      },
+      "ms": 22,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "while(true){}",
+      "result": {
+        "error": "Error: interrupted\n    at run (eval_script:2:1)\n    at z (eval_script:2:5015)\n    at <anonymous> (eval_script:2:6037)\n",
+        "ok": false
+      },
+      "ms": 2009,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "const a=[];while(true)a.push(new Array(100000).fill('x'))",
+      "result": {
+        "ok": false,
+        "error": "Worker deadline exceeded"
+      },
+      "terminated": true
+    },
+    {
+      "engine": "webkit",
+      "label": "return new Uint8Array(300*1024*1024).length",
+      "result": {
+        "ok": false,
+        "error": "out of memory"
+      },
+      "ms": 33,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "return Date.now()",
+      "result": {
+        "ok": false,
+        "error": "Use the host-provided ctx.now and ctx.random()"
+      },
+      "ms": 29,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "return Promise.resolve(1)",
+      "result": {
+        "ok": false,
+        "error": "Commands are synchronous"
+      },
+      "ms": 34,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "ctx.tx.fields.count.increment(1);throw Error('no')",
+      "result": {
+        "ok": false,
+        "error": "no"
+      },
+      "ms": 34,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "authored refusal",
+      "result": {
+        "ok": false,
+        "error": "Enter a task.",
+        "refused": true
+      },
+      "ms": 40,
+      "memory": 1572864,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "output limit",
+      "result": {
+        "ok": false,
+        "error": "Command output is too large"
+      },
+      "ms": 291,
+      "memory": 30408704,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "future ABI",
+      "result": {
+        "error": "Unsupported command runtime ABI",
+        "ok": false
+      },
+      "ms": 0,
+      "memory": 1310720,
+      "imports": [
+        {
+          "module": "env",
+          "name": "__rquickjs_host_now_us",
+          "kind": "function"
+        }
+      ]
+    },
+    {
+      "engine": "webkit",
+      "label": "input limit",
+      "fault": "Error: Command input is too large"
+    },
+    {
+      "engine": "webkit",
+      "label": "stack limit",
+      "fault": "Error: RangeError: Maximum call stack size exceeded.  JS_CallInternal@browser_evaluator_spike.wasm:wasm-function[687]"
+    },
+    {
+      "engine": "webkit",
+      "label": "fresh realm",
+      "passed": true
+    }
+  ],
+  "wasmGzipBytes": 346621,
+  "wasmSha256": "9960b5c6733428b0251d4bbc3a9d5e365aa7b3100b4f406ad3b1be750306d972",
+  "preludeSha256": "310933c09ee9d4eb421213b815c3f184b22239f059f68d0161e2e60690f2780e"
+}

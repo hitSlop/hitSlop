@@ -9,7 +9,7 @@ import { previewResizeScript } from "./preview-resize";
 import { cliRoot, shellDirectory } from "./paths";
 import { stageWorker } from "./build";
 import { execute } from "./engine";
-import { PreviewOwners } from "./preview-owner";
+import { PreviewOwners, type PreviewOwnerFactory } from "./preview-owner";
 import { previewClient } from "./preview-client";
 import type { BuildInput } from "../wire/app.generated";
 import { appContentSecurityPolicy } from "../schema/policy";
@@ -29,11 +29,11 @@ export function byteRange(header: string | undefined, size: number): [number, nu
   return [Math.max(0,size-last),size];
 }
 
-export async function startDev(source: string, port = 0, signal?: AbortSignal) {
+export async function startDev(source: string, port = 0, signal?: AbortSignal, owner?: PreviewOwnerFactory) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
   let stage = "", template = "", input: BuildInput;
-  const hosts = new PreviewOwners(temporary, () => template);
+  const hosts = new PreviewOwners(temporary, () => template, owner);
   let dependencies = new Set([join(source,"slop.ts")]);
   let closed = false, failed = false;
   let server: ViteDevServer | undefined, child: {kill():void} | undefined;
@@ -56,6 +56,14 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
     finally { child = undefined; }
   };
   const rebuild = () => {
+    // A supplied owner holds a particular embedded app. A new declaration requires a
+    // new harness session; it must never silently replace that owner's document.
+    if (owner) {
+      failed = true;
+      void hosts.invalidate().catch(console.error);
+      server?.ws.send({ type: "error", err: { message: "Definition changed; restart the shared development harness", stack: "", plugin: "hitslop-definition" } });
+      return;
+    }
     wanted = true;
     rebuilding ??= (async () => {
       while (wanted && !closed) {

@@ -87,6 +87,21 @@ bunx hitslop theme export My.slop --output Purple.json
 bunx hitslop theme import Other.slop Purple.json
 ```
 
+Each read or edit prints the complete `defaults`, `overrides`, and `effective`
+palettes. Example responses for the declared palette above (only the changed tokens
+are shown in `defaults` and `effective`; `overrides` is complete):
+
+| Command | Response excerpt |
+| --- | --- |
+| `theme get My.slop` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{},"effective":{"accent":"#db6648","surface":"#f7f4eb"}}` |
+| `theme set My.slop …` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"accent":"#7050ad","surface":"#f5efff"},"effective":{"accent":"#7050ad","surface":"#f5efff"}}` |
+| `theme reset My.slop --token accent` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"surface":"#f5efff"},"effective":{"accent":"#db6648","surface":"#f5efff"}}` |
+| `theme reset My.slop` | The original palette from the first response, with `"overrides":{}`. |
+| `theme export My.slop --output Purple.json` | `/Users/you/Documents/Purple.json` (your path will differ). |
+| `theme import Other.slop Purple.json` | The original palette from the first response, assuming the same template. |
+
+This sequence exports after resetting. Export before resetting to keep your custom colors.
+
 A theme file names its template and every color:
 
 ```json

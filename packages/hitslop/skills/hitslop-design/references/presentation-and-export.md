@@ -15,7 +15,7 @@ An unskinned slop may call `resizeWindow({ width, height })` from
 
 In every presentation mode the host resets `html`/`body` margins and makes them,
 the automatic app root, and its mount ancestors fill the window. Framework-neutral apps
-mark their root `data-hitslop-root`. Size the shell with `height: 100%`, grid, or
+mark their root `data-slop-root`. Size the shell with `height: 100%`, grid, or
 flex and scroll inside panes. Prefer these defaults over repeated `html`/`body`
 sizing or `100vh`; override deliberately when the layout requires it. Native
 masks radius/path shapes and skins, so keep controls inside the visible silhouette.

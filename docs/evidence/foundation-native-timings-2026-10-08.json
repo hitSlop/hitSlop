@@ -1,0 +1,61 @@
+{
+  "runId": "2026-10-08T07-41-51-144Z-82906",
+  "liveSync": {
+    "profile": "release",
+    "warmups": 1,
+    "commands": {
+      "p50Ms": 25,
+      "p95Ms": 28,
+      "samplesMs": [
+        22,
+        21,
+        27,
+        24,
+        28,
+        28,
+        22,
+        26,
+        23,
+        25
+      ]
+    },
+    "text": {
+      "p50Ms": 12,
+      "p95Ms": 14,
+      "samplesMs": [
+        11,
+        12,
+        14,
+        12,
+        14,
+        12,
+        12,
+        10,
+        11,
+        10
+      ]
+    },
+    "concurrentCommands": {
+      "attempts": 2,
+      "accepted": 1,
+      "refused": 1
+    }
+  },
+  "largePreview": {
+    "rows": 4006,
+    "firstRowPreserved": true,
+    "firstRenderedFrameMs": 281,
+    "commandThroughNextFrame": {
+      "p50Ms": 100,
+      "p95Ms": 150,
+      "samplesMs": [
+        85,
+        98,
+        100,
+        117,
+        150
+      ]
+    },
+    "scope": "Svelte component creation through two animation frames; excludes Vite compilation. Command samples include flush and two frames; one warmup, five samples."
+  }
+}

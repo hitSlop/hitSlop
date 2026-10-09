@@ -37,3 +37,24 @@ async function collectors(file: File) {
   return id;
 }
 void collectors;
+
+// A capture component may declare its host-provided mode or take no props; one that needs
+// other props cannot be an export.
+function exportRoles(
+  plain: Component<Record<string, never>>,
+  capture: Component<{ mode: "preview" | "export" }>,
+  needy: Component<{ task: string }>,
+) {
+  const document = defineDocument({ title: s.string() });
+  const fields = {
+    slug: "fixture", title: "Fixture", description: "A typed declaration",
+    author: { name: "Test" }, categories: ["utilities"] as const,
+    theme: {}, document, initial: { title: "Initial" }, view: plain,
+    window: { kind: "standard", width: 320, height: 320 } as const,
+  };
+  defineSlop({ ...fields, export: plain });
+  defineSlop({ ...fields, export: capture });
+  // @ts-expect-error An export receives only its capture mode.
+  defineSlop({ ...fields, export: needy });
+}
+void exportRoles;

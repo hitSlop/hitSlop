@@ -35,6 +35,8 @@ pub enum SocketRequest {
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
+    #[serde(rename = "copy")]
+    Copy { protocol: u64, documentPath: String, output: String },
     #[serde(rename = "export")]
     Export { protocol: u64, documentPath: String, format: ExportFormat, output: String },
 }
@@ -68,7 +70,7 @@ impl SocketRequest {
                 Err("Invalid attachment ID")
             }
             Self::Batch { batch, attachments, .. } => check_batch(batch, attachments.as_deref()),
-            Self::Export { output, .. } => check_path(output),
+            Self::Copy { output, .. } | Self::Export { output, .. } => check_path(output),
             _ => Ok(()),
         }
     }
@@ -81,6 +83,7 @@ impl SocketRequest {
             Self::Batch { .. } => "batch",
             Self::Call { .. } => "call",
             Self::Describe { .. } => "describe",
+            Self::Copy { .. } => "copy",
             Self::Export { .. } => "export",
         }
     }
@@ -93,7 +96,7 @@ impl SocketRequest {
             Self::Batch { documentPath, .. }
             | Self::Call { documentPath, .. }
             | Self::Describe { documentPath, .. } => documentPath,
-            Self::Export { documentPath, .. } => documentPath,
+            Self::Copy { documentPath, .. } | Self::Export { documentPath, .. } => documentPath,
         }
     }
 }
@@ -101,6 +104,7 @@ impl SocketRequest {
 #[derive(Debug, Serialize)]
 #[serde(tag = "method", deny_unknown_fields)]
 #[allow(non_snake_case)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum SocketSuccess {
     #[serde(rename = "call")]
     Call { result: Box<serde_json::value::RawValue>, ids: Vec<String> },
@@ -110,6 +114,8 @@ pub(crate) enum SocketSuccess {
     Get { state: Box<serde_json::value::RawValue> },
     #[serde(rename = "batch")]
     Batch { ids: Vec<String> },
+    #[serde(rename = "copy")]
+    Copy { output: String },
     #[serde(rename = "export")]
     Export { output: String },
     #[serde(rename = "theme.export")]
@@ -167,12 +173,14 @@ pub(crate) fn check_protocol(input: &str) -> Result<(), Error> {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum Hello {
     #[serde(rename = "hello")]
     Hello { protocol: u64 },
 }
 #[derive(Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum HelloSuccess {
     #[serde(rename = "hello")]
     Hello {

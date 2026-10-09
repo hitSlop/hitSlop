@@ -12,11 +12,22 @@ crate-type = ["cdylib"]
 test = false
 doctest = false
 
+[features]
+browser = ["hitslop-core/storage", "dep:sqlite-wasm-vfs", "dep:rsqlite-vfs", "dep:wasm-bindgen-futures", "dep:getrandom", "dep:serde_json"]
+evaluator = ["dep:hitslop-runner"]
+
 [dependencies]
 hitslop-core = { path = "../hitslop-core", default-features = false }
 
 # Only the WASM build compiles the adapter: on the host, wasm-bindgen's proc macros would
 # change the features of every other proc macro, and so the whole host graph.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "=0.2.127"
-js-sys = "=0.3.104"
+wasm-bindgen = "=0.2.129"
+js-sys = "=0.3.106"
+
+wasm-bindgen-futures = { version = "=0.4.79", optional = true }
+sqlite-wasm-vfs = { version = "=0.3.0", features = ["sahpool"], optional = true }
+rsqlite-vfs = { version = "=0.2.0", optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+serde_json = { workspace = true, optional = true }
+hitslop-runner = { path = "../hitslop-runner", optional = true }

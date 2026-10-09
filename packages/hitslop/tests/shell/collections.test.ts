@@ -48,8 +48,10 @@ test("record handles put, edit, resolve and delete entries by key", async () => 
     await expect(doc.fields.cells.entry("Z9").input.set("x")).rejects.toThrow("path_not_found");
     await expect(doc.fields.done.put("__proto__", true)).rejects.toThrow("invalid_key");
     await doc.fields.pages.put("d1", { text: "a" });
-    await expect(doc.fields.pages.put("d1", { text: "b" })).rejects.toThrow("exists");
-    await doc.fields.pages.entry("d1").text.set("edited");
+    const heldText = doc.fields.pages.entry("d1").text;
+    await doc.fields.pages.put("d1", { text: "b" });
+    expect(heldText.value).toBe("b");
+    await heldText.set("edited");
     expect(saved().pages).toEqual({ d1: { text: "edited" } });
   } finally {
     core.free();

@@ -28,7 +28,7 @@
   style:display={kind === "icon" && active ? "grid" : undefined}
   style:place-items={kind === "icon" ? "center" : undefined}>
   {#if active}
-    <svelte:boundary onerror={(error) => { failure = { error }; }}>
+    <svelte:boundary onerror={(error) => { failure = { error }; ctx.reportError(error); }}>
       {@render content()}
     </svelte:boundary>
   {/if}

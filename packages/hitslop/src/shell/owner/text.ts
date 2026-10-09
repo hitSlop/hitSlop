@@ -1,4 +1,4 @@
-import { isRejected } from "../../sdk/errors";
+import { DocumentError, isRejected } from "../../sdk/errors";
 // Stateless text binding. The DOM keeps the user's text; the owner merges each change
 // from the text the binding last confirmed. No draft identity survives a request.
 import type { Batch, OwnerPath } from "../../schema/core";
@@ -57,6 +57,7 @@ export function bindText(
   let drain: Promise<void> | undefined;
   let removed = false;
   let outcomeFailure: unknown;
+  let expiredBase: DocumentError | undefined;
   /** A dispatched request whose outcome is unknown: the text before it and the text sent. */
   let uncertainText: { from: string; sent: string } | undefined;
   let inflight: Promise<void> | undefined;
@@ -93,14 +94,14 @@ export function bindText(
     }
     removed = false;
     setDisabled();
-    if (inflight || composing || element.value !== confirmed.text) return;
+    if (expiredBase || inflight || composing || element.value !== confirmed.text) return;
     confirmed = { text: current.text, version: current.version };
     write(current.text);
   };
   const value = () => detached?.text ?? element.value;
   /** Sends the DOM value as one change from `confirmed`; one request at a time. */
   const send = () => {
-    if (outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed.text) return;
+    if (expiredBase || outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed.text) return;
     const target = path;
     const from = confirmed;
     const sent = value();
@@ -166,7 +167,16 @@ export function bindText(
           if (!quiet) host.report(error);
           return;
         }
-        // Definite refusals show the owner's text again.
+        if (error.reason === "stale_base") {
+          // Retention can expire a long-lived draft's merge base. Keep it in the DOM;
+          // neither overwriting it nor rebasing/replaying it is an accepted recovery.
+          expiredBase = new DocumentError("rejected",
+            "This edit is too old to merge. Your draft is still in this field. Copy it before leaving, or press Escape to discard it.",
+            "stale_base");
+          if (!quiet) host.report(expiredBase);
+          return;
+        }
+        // Other definite refusals show the owner's text again.
         confirmed = { text: "", version: "" };
         const current = host.read(path);
         if (typeof current.text === "string") {
@@ -192,6 +202,16 @@ export function bindText(
     composing = false;
     send();
   };
+  const onKeyDown = (event: Event) => {
+    const key = event as KeyboardEvent;
+    if (!expiredBase || key.key !== "Escape" || composing || key.isComposing || key.keyCode === 229) return;
+    const current = host.read(path);
+    if (typeof current.text !== "string") return;
+    expiredBase = undefined;
+    confirmed = { text: current.text, version: current.version };
+    write(current.text);
+    event.preventDefault();
+  };
   // Undo belongs to the document: the field's own history knows nothing of edits made
   // elsewhere, and replaying it would author them again as new typing.
   const onBeforeInput = (event: Event) => {
@@ -215,6 +235,8 @@ export function bindText(
   element.addEventListener("compositionstart", onStart);
   element.addEventListener("compositionend", onEnd);
   element.addEventListener("beforeinput", onBeforeInput);
+  // Run before an author's Escape handler ends/unmounts the editor.
+  element.addEventListener("keydown", onKeyDown, true);
   return {
     get detached() { return detached !== undefined; },
     refresh: adopt,
@@ -223,6 +245,7 @@ export function bindText(
       composing = false;
       send();
       while (inflight) await inflight;
+      if (expiredBase) throw expiredBase;
       if (outcomeFailure) {
         await host.recover();
         if (uncertainText) {
@@ -241,6 +264,7 @@ export function bindText(
           while (inflight) await inflight;
         } finally { barrierResend = false; }
         if (outcomeFailure) throw outcomeFailure;
+        if (expiredBase) throw expiredBase;
       }
     },
     /** Detach immediately, but retain the final draft and target until it drains. */
@@ -255,6 +279,7 @@ export function bindText(
       element.removeEventListener("compositionstart", onStart);
       element.removeEventListener("compositionend", onEnd);
       element.removeEventListener("beforeinput", onBeforeInput);
+      element.removeEventListener("keydown", onKeyDown, true);
       drain = this.commit();
       host.track(drain);
       return drain;

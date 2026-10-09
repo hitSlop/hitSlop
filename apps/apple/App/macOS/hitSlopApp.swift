@@ -127,6 +127,7 @@ private struct UpdateSettingsView: View {
     guard let command = sender.representedObject as? SlopDocumentCommand else { return }
     coordinator.sendToActiveDocument(command)
   }
+  @objc private func toggleFullscreen() { coordinator.activeController?.toggleFullscreen() }
   @objc private func togglePin() { coordinator.activeController?.togglePin() }
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
   @objc private func showSettings() {
@@ -155,11 +156,13 @@ private struct UpdateSettingsView: View {
     let appItem = NSMenuItem()
     let fileItem = NSMenuItem()
     let editItem = NSMenuItem()
+    let viewItem = NSMenuItem()
     let windowItem = NSMenuItem()
     let helpItem = NSMenuItem()
     main.addItem(appItem)
     main.addItem(fileItem)
     main.addItem(editItem)
+    main.addItem(viewItem)
     main.addItem(windowItem)
     main.addItem(helpItem)
 
@@ -223,6 +226,11 @@ private struct UpdateSettingsView: View {
     edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
     edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
+    let view = NSMenu(title: "View")
+    viewItem.submenu = view
+    item(view, "Enter Full Screen", #selector(toggleFullscreen), "f")
+      .keyEquivalentModifierMask = [.control, .command]
+
     let windows = NSMenu(title: "Window")
     windowItem.submenu = windows
     windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
@@ -276,6 +284,9 @@ private struct UpdateSettingsView: View {
     case #selector(documentCommand(_:)):
       guard let command = menuItem.representedObject as? SlopDocumentCommand else { return false }
       return controller?.isAvailable(command) ?? false
+    case #selector(toggleFullscreen):
+      menuItem.title = controller?.isFullscreen == true ? "Exit Full Screen" : "Enter Full Screen"
+      return controller?.canToggleFullscreen ?? false
     case #selector(togglePin):
       menuItem.state = controller?.isPinned == true ? .on : .off
       return controller?.canPin ?? false

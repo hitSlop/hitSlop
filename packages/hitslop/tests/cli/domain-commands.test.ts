@@ -12,10 +12,10 @@ test("command imports stay inside the real project when it is reached through a 
   const root = await mkdtemp(join(process.cwd(), ".build-test-command-link-"));
   try {
     const source = join(root, "source"), alias = join(root, "alias"), stage = join(root, "stage");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await symlink(source, alias);
     const input = await stageProject(alias, stage);
-    expect(input.declaration.commands.map(c => c.name)).toContain("addTask");
+    expect(input.declaration.commands.map(c => c.name)).toContain("addRow");
   } finally { await rm(root, { recursive: true, force: true }); }
 }, 30_000);
 
@@ -24,10 +24,10 @@ test("stored commands validate arguments, return typed results and refuse atomic
   const named = ["--client-protocol", String(HelperProtocol.version)];
   try {
     const source = join(root, "source");
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     const file = join(source, "commands.ts");
     await writeFile(file, (await readFile(file, "utf8")) + `
-export const refuse = doc.command({ description: "Refuse after collecting", args: {}, run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate refusal"); } });
+export const failing = doc.command({ description: "Fail after collecting", args: {}, run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate failure"); } });
 export const ambient = doc.command({ description: "No host APIs", args: {}, run() { return [typeof process, typeof fetch, typeof Bun]; } });
 `);
     const template = await buildTemplate(source, undefined, join(root, "master.slop"));
@@ -36,9 +36,9 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
     const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });
     const describe = async () => (await execute({ method: "describe", documentPath: document })).state;
     const first = await describe();
-    expect(first.commands.addTask.args).toMatchObject({ properties: { text: { type: "string" } } });
+    expect(first.commands.addRow.args).toMatchObject({ properties: { text: { type: "string" } } });
     expect(first.fields.find(field => field.path[0] === "title")?.description).toBeTruthy();
-    const added = await run("addTask", { text: "From command" });
+    const added = await run("addRow", { text: "From command" });
     expect(added.ok, JSON.stringify(added)).toBe(true);
     if (!added.ok) throw new Error(added.error);
     expect(added.ids).toHaveLength(1);
@@ -48,9 +48,10 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
     const tasks = (before.value as { tasks: unknown[] }).tasks;
     expect(tasks.at(-1)).toMatchObject({ text: "From command" });
     for (const [name, args, error] of [
-      ["addTask", { text: 7 }, "Invalid arguments"],
-      ["addTask", { text: "x", unexpected: true }, "Invalid arguments"],
-      ["refuse", {}, "Deliberate refusal"],
+      ["addRow", { text: 7 }, "Invalid arguments"],
+      ["addRow", { text: "x", unexpected: true }, "Invalid arguments"],
+      ["failing", {}, "Deliberate failure"],
+      ["removeRow", { task: "not an id" }, "Invalid arguments"],
       ["missing", {}, "No command named"],
     ] as const) {
       const reply = await run(name, args);
@@ -62,7 +63,23 @@ export const ambient = doc.command({ description: "No host APIs", args: {}, run(
     const ambient = await run("ambient", {});
     if (!ambient.ok) throw new Error(ambient.error);
     expect(ambient.result).toEqual(["undefined", "undefined", "undefined"]);
-    expect((await run("archiveFinished", {})).ok).toBe(true);
+    // refuse() and a missing row are messages for the person, under their own reason.
+    for (const [name, args, message] of [
+      ["addRow", { text: "   " }, "Text required."],
+      ["resetRow", { task: "gone" }, "That task no longer exists."],
+    ] as const) {
+      const reply = await run(name, args);
+      if (reply.ok) throw new Error(`Expected ${name} to be refused`);
+      expect([reply.error, reply.reason]).toEqual([message, "refused"]);
+    }
+    // A row argument is resolved from the document; omitted fields took their defaults.
+    const restoreArgs = first.commands.resetRow!.args as { properties: { task: { description: string } } };
+    expect(restoreArgs.properties.task.description).toBe("The $id of a row in tasks");
+    const id = added.ids[0]!;
+    expect(tasks.at(-1)).toMatchObject({ done: false, archived: false });
+    expect((await run("resetRow", { task: id })).ok).toBe(true);
+    expect((await run("removeRow", { task: id })).ok).toBe(true);
+    expect(((await describe()).value as { tasks: { $id: string }[] }).tasks.some(task => task.$id === id)).toBe(false);
     // Unsupported authoring shapes are rejected before replacing the previous build.
     const old = await readFile(template);
     await writeFile(file, (await readFile(file, "utf8")) + "\nexport const notACommand = 7;\n");

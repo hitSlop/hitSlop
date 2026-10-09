@@ -30,7 +30,7 @@ fn document() -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = 1;
+const PROTOCOL: u64 = hitslop_core::HELPER_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -63,6 +63,24 @@ fn close(owner: &Owner) {
 }
 fn open(path: &Path) -> Arc<Owner> {
     Arc::new(Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap())
+}
+
+#[test]
+fn browser_snapshot_is_a_clean_independent_document_and_never_overwrites() {
+    let (dir, path) = document();
+    assert_eq!(run(batch(&path))["ok"], true);
+    let before = std::fs::read(&path).unwrap();
+    let output = dir.path().join("browser.slop");
+    let copy = json!({"method":"copy","documentPath":path,"output":output});
+    assert_eq!(run(copy.clone())["ok"], true);
+    let original = file::open(&path, true).unwrap();
+    let copied = file::open(&output, true).unwrap();
+    assert_ne!(original.document_uuid, copied.document_uuid);
+    assert_eq!(run(request(&output, "get"))["state"]["value"]["hits"], 1);
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let saved = std::fs::read(&output).unwrap();
+    assert_eq!(run(copy)["ok"], false);
+    assert_eq!(std::fs::read(&output).unwrap(), saved);
 }
 struct NoExport;
 impl ExportHandler for NoExport {
@@ -106,7 +124,7 @@ fn future_socket_protocol_is_refused_before_interpreting_its_payload() {
     // belongs to the future protocol, not to this build's request decoder.
     let reply = checked(command::serve(
         &owner,
-        r#"{"protocol":2,"method":"future.method","payload":1e999}"#,
+        &format!(r#"{{"protocol":{},"method":"future.method","payload":1e999}}"#, PROTOCOL + 1),
         None,
         std::time::Instant::now() + Duration::from_secs(1),
     ));
@@ -204,11 +222,14 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    let malformed = checked(socket::call(server.path(), r#"{"protocol":1,"method":"surprise"}"#).unwrap());
+    let malformed =
+        checked(socket::call(server.path(), &json!({"protocol":PROTOCOL,"method":"surprise"}).to_string()).unwrap());
     assert_eq!(malformed["code"], "rejected");
     // The permanent refusal path: another protocol, even with a method this build has never
     // heard of, gets exactly this flat reply, naming the side to update.
-    for (protocol, update) in [(2, "update hitSlop"), (9_999, "update hitSlop"), (0, "update the hitSlop CLI")] {
+    for (protocol, update) in
+        [(PROTOCOL + 1, "update hitSlop"), (9_999, "update hitSlop"), (0, "update the hitSlop CLI")]
+    {
         for mut other in [batch(&path), json!({"documentPath": path, "method": "a-later-method"})] {
             other["protocol"] = protocol.into();
             other["surprise"] = "a field of another protocol".into();
@@ -233,7 +254,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
 }
 
 #[test]
-fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
+fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
@@ -248,13 +269,26 @@ fn partial_frames_oversized_requests_and_client_limit_are_bounded() {
     let mut huge = batch(&path);
     huge["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"x".repeat(1024 * 1024 + 1)}]});
     assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
+    close(&owner);
+    server.stop();
+}
+
+#[test]
+fn the_socket_client_limit_is_bounded() {
+    let (_dir, path) = document();
+    let owner = open(&path);
+    // A reply can arrive before its worker releases its slot. Start with no previous
+    // clients, so none of these partial frames is rejected by a finishing worker.
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let get = request(&path, "get").to_string();
     let mut partial = Vec::new();
     for _ in 0..16 {
         let mut client = UnixStream::connect(server.path()).unwrap();
         client.write_all(b"{").unwrap();
         partial.push(client);
     }
-    std::thread::sleep(Duration::from_millis(100));
+    // The listener admits connections in order, reserving each slot before spawning
+    // its worker. The partial frames keep all slots occupied without a timing guess.
     // Use the bounded client: on macOS, setting SO_RCVTIMEO after the server has
     // already rejected and closed an excess connection can itself fail with EINVAL.
     assert!(socket::call(server.path(), &get).is_err(), "client limit admitted a reply");
@@ -594,4 +628,21 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     snapshot.attach("capture".into());
     assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
     close(&snapshot);
+}
+
+#[test]
+fn browser_envelopes_refuse_invalid_fields_before_dispatch() {
+    use hitslop_core::browser_wire::{BrowserRequest, TRANSFER_BYTES};
+    let valid = json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES});
+    assert!(BrowserRequest::decode(&valid.to_string()).is_ok());
+    for invalid in [
+        json!({"type":"flush","id":"r","extra":true}),
+        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":-1,"length":1}),
+        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES + 1}),
+        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":null}),
+        json!({"type":"evaluated","output":"{}","error":"both"}),
+        json!({"type":"open","copy":"------------------------------------","source":null}),
+    ] {
+        assert!(BrowserRequest::decode(&invalid.to_string()).is_err(), "{invalid}");
+    }
 }

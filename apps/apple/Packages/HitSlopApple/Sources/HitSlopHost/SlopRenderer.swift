@@ -21,6 +21,16 @@ import WebKit
     try await withSavedRenderer(session) { try await capture(session: $0, output: .pdf) }
   }
 
+  /// Renders artwork from a source already acquired by a copy operation.
+  static func artwork(url: URL, telemetry: SlopTelemetry) async -> SlopRenderedArtwork? {
+    do {
+      return try await withRenderSession(url: url) { await artwork(session: $0, telemetry: telemetry) }
+    } catch {
+      if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+      return nil
+    }
+  }
+
   /// The artwork a closing window writes into its document: its preview and, when the
   /// app draws one, its icon. A capture that fails is reported and left out.
   public static func artwork(session: DocumentSession, telemetry: SlopTelemetry, trace: SlopCloseTrace? = nil) async
@@ -159,7 +169,7 @@ import WebKit
     return try await withCapture(session) { view, token, originalFrame in
       var measurement = try await begin(view, token: token, mode: isPreview ? .preview : .export)
       let dedicated = measurement.dedicated
-      var width = originalFrame.width
+      var width = dedicated && !isPreview ? max(1, try geometry(measurement).width) : originalFrame.width
       var height =
         isPreview ? originalFrame.height : max(dedicated ? 1 : originalFrame.height, try geometry(measurement).height)
       var rect = CGRect(x: 0, y: 0, width: width, height: height)
@@ -207,25 +217,34 @@ import WebKit
         width = max(box.width, 1)
         height = max(min(box.height, previewHeight(box)), 1)
         rect = CGRect(x: box.minX, y: box.minY, width: width, height: height)
-      } else if output == .exportPNG {
+      } else if output == .exportPNG || (output == .pdf && dedicated) {
         var settled = false
         for _ in 0..<4 {
-          try validateSize(width: width, height: height, output: output, scale: 2)
+          try validateSize(width: width, height: height, output: output, scale: output == .pdf ? 1 : 2)
           try await resizeAndSettle(
-            view, to: CGSize(width: width, height: height), token: token, measurement: &measurement)
-          let next = max(dedicated ? 1 : originalFrame.height, try geometry(measurement).height)
-          if abs(next - height) < 1 {
+            view, to: CGSize(width: width, height: output == .pdf ? originalFrame.height : height),
+            token: token, measurement: &measurement)
+          let box = try geometry(measurement)
+          let nextWidth = dedicated ? max(1, box.width) : originalFrame.width
+          let nextHeight = max(dedicated ? 1 : originalFrame.height, box.height)
+          if abs(nextHeight - height) < 1 && abs(nextWidth - width) < 1 {
             settled = true
+            rect = CGRect(x: dedicated ? box.minX : 0, y: dedicated ? box.minY : 0, width: width, height: height)
             break
           }
-          height = next
+          width = nextWidth
+          height = nextHeight
         }
         guard settled else {
-          throw SlopFailure("Export layout keeps changing with viewport height; use normal flow in Export.svelte")
+          throw SlopFailure("Export layout keeps changing with viewport size; use normal flow in Export.svelte")
         }
-        rect = CGRect(x: 0, y: 0, width: width, height: height)
       }
-      let scale: CGFloat = output == .exportPNG || (isPreview && dedicated) ? 2 : 1
+      // Large standard windows that fit at 1× must still have a preview.
+      // Explicit PNG exports retain the documented 2× output and its size limit.
+      let doubleSizeFits =
+        width * 2 <= CGFloat(Limits.imageSide)
+        && height * 2 <= CGFloat(Limits.imageSide) && width * height * 4 <= CGFloat(Limits.imagePixels)
+      let scale: CGFloat = output == .exportPNG || (isPreview && (dedicated || doubleSizeFits)) ? 2 : 1
       try validateSize(width: width, height: height, output: output, scale: scale)
       let data: Data
       switch output {

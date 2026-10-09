@@ -4,8 +4,7 @@
     "attachment" : "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
     "cells" : {
       "A1" : {
-        "input" : "43",
-        "width" : 10
+        "input" : "Fresh entry edited"
       },
       "compat-1" : {
         "input" : "Compat 1 ✓ café 🦊"
@@ -29,13 +28,14 @@
     "hits" : 10,
     "label" : "Undo me",
     "lane" : "doing",
+    "lastHit" : 10,
     "memo" : "Memo ✎",
     "photo" : "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
     "place" : {
       "name" : "Café",
       "visits" : 2
     },
-    "ratio" : 0.75,
+    "ratio" : 0.80000000000000004,
     "rows" : [
       {
         "$id" : "compat-1",
@@ -73,6 +73,39 @@
       },
       {
         "$id" : "minted-2",
+        "done" : false,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Board C ✓"
+      },
+      {
+        "$id" : "minted-3",
+        "done" : false,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Board A ✓"
+      },
+      {
+        "$id" : "minted-4",
+        "done" : false,
+        "notes" : {
+
+        },
+        "tags" : [
+
+        ],
+        "text" : "Board B ✓"
+      },
+      {
+        "$id" : "minted-5",
         "done" : true,
         "notes" : {
 
@@ -87,6 +120,50 @@
       "muted" : true,
       "volume" : 7
     },
+    "slides" : [
+      {
+        "$id" : "compat-1",
+        "blocks" : [
+
+        ],
+        "title" : "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id" : "x-611hw3t1mqm7pgacasdhqp8z",
+        "blocks" : [
+          {
+            "$id" : "x-tfvqkneg2g8jzh2av6kzp1jz",
+            "text" : "First block"
+          },
+          {
+            "$id" : "x-dxvqkneg3g8jfrv9v6kz61jz",
+            "text" : "Second block"
+          }
+        ],
+        "title" : "Nested composition"
+      },
+      {
+        "$id" : "compat-2",
+        "blocks" : [
+
+        ],
+        "title" : "Replay 2 é 中文"
+      },
+      {
+        "$id" : "minted-6",
+        "blocks" : [
+          {
+            "$id" : "minted-7",
+            "text" : "Block B"
+          },
+          {
+            "$id" : "minted-8",
+            "text" : "Block A edited"
+          }
+        ],
+        "title" : "Edited slide"
+      }
+    ],
     "title" : "Live ✓",
     "version" : "compat 2"
   }

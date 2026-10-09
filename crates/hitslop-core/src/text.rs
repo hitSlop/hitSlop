@@ -15,6 +15,7 @@ const SCRIPT_TIMEOUT_MS: f64 = 50.0;
 /// operations after checking its text equals `from`, and never imports later changes.
 fn branch_at(doc: &LoroDoc, base: &Frontiers) -> Result<LoroDoc> {
     let branch = LoroDoc::new();
+    branch.set_record_timestamp(true);
     branch.import(&doc.export(ExportMode::state_only(Some(base))).map_err(engine)?).map_err(engine)?;
     Ok(branch)
 }
@@ -208,7 +209,7 @@ pub(super) struct Base {
 pub(super) struct Texts<'a> {
     pub(super) base: Option<&'a Base>,
     pub(super) floor: &'a VersionVector,
-    pub(super) agent: bool,
+    pub(super) message: &'a str,
     pub(super) typed: Option<Typed>,
 }
 /// The page's text edit: the field went from `from` to `to` with the caret at `caret`
@@ -327,18 +328,14 @@ pub(super) fn set(
         return Err(err(Code::StaleBase, "The field was not `from` at `base`"));
     }
     text.apply_delta(&delta).map_err(engine)?;
-    if texts.agent {
-        branch.set_next_commit_message(AGENT);
-    }
+    branch.set_next_commit_message(texts.message);
     branch.commit();
     let [start, end] = selection.map(|offset| {
         text.get_cursor(offset, Side::Middle).ok_or_else(|| err(Code::OutOfRange, "Cannot anchor selection"))
     });
     let cursors = [start?, end?];
-    // Importing commits the batch's earlier intents first; they are the agent's too.
-    if texts.agent {
-        doc.set_next_commit_message(AGENT);
-    }
+    // Importing commits earlier intents too; all belong to this batch's origin.
+    doc.set_next_commit_message(texts.message);
     doc.import(&branch.export(ExportMode::updates(&base.vv)).map_err(engine)?)
         .map_err(|e| err(Code::InvalidBytes, e))?;
     let merged = current.to_string();

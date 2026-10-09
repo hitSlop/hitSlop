@@ -58,6 +58,11 @@
     if (stored > 0 && stored < presets.length) pick(stored);
   });
   const active = $derived(presets[selected] ?? presets[0]!);
+  const accentResponse = $derived(JSON.stringify({
+    defaults: { accent: "#a43d59" },
+    overrides: active.accent === "#a43d59" ? {} : { accent: active.accent },
+    effective: { accent: active.accent },
+  }, null, 2));
   const customProperties = $derived([
     `--theme-surface:${active.surface}`,
     `--theme-paper:${active.paper}`,
@@ -105,9 +110,9 @@
   </div>
 
   <div class="theme-file">
-    <span class="status-dot" aria-hidden="true"></span>
-    <code>slop theme set</code>
-    <span><code>{`{ "accent": "${active.accent}" }`}</code></span>
+    <small>Example: change Checklist’s accent</small>
+    <code>{`slop theme set Today.slop --values '{"accent":"${active.accent}"}'`}</code>
+    <details><summary>Response · accent excerpt</summary><pre><code>{accentResponse}</code></pre></details>
   </div>
   <p class="sr-only" aria-live="polite">{active.label} theme selected.</p>
 </div>
@@ -144,10 +149,11 @@
   .task small { color: var(--theme-muted); font-size: .75rem; }
   .checklist footer { padding-top: 20px; display: flex; align-items: center; justify-content: space-between; color: var(--theme-muted); font-size: .8rem; }
   .checklist footer b { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--theme-on-accent); background: var(--theme-accent); font-size: 1rem; }
-  .theme-file { min-height: 54px; padding: 0 17px; display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 9px; border-top: 1px solid var(--theme-rule); background: var(--theme-paper); }
-  .theme-file .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--theme-accent); }
-  .theme-file code { font-size: .82rem; font-weight: 700; }
-  .theme-file > span:last-child { justify-self: end; color: var(--theme-muted); font-size: .8rem; }
+  .theme-file { padding: 17px; display: grid; gap: 9px; border-top: 1px solid var(--theme-rule); background: var(--theme-paper); }
+  .theme-file code { font-size: .82rem; font-weight: 700; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .theme-file small, .theme-file summary { font-size: .8rem; }
+  .theme-file summary { cursor: pointer; }
+  .theme-file summary:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 3px; }
   button:focus-visible { outline: 3px solid var(--theme-accent); outline-offset: 2px; }
   @media (min-width: 560px) {
     .preset-bar { grid-template-columns: 1fr minmax(360px, 2fr); }
@@ -158,8 +164,6 @@
   @media (max-width: 430px) {
     .preview-stage { min-height: 430px; padding: 27px 17px; }
     .checklist { padding-inline: 20px; }
-    .theme-file { grid-template-columns: auto 1fr; }
-    .theme-file > span:last-child { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .theme-switcher, .preset-bar, .preview-stage, .checklist { transition: none; }

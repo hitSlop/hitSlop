@@ -150,7 +150,10 @@ const actions: Record<string, NonNullable<Page["actions"]>> = {
   "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
   "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
   "hourglass": [{ selector: '[aria-label="What it counts down to"]', value: "Hourglass edited ✓" }],
-  "quick-checklist": [{ selector: '[aria-label="Checklist title"]', value: "Checklist edited ✓" }],
+  "quick-checklist": [
+    { selector: '[role="textbox"][aria-label="Checklist title"]', focus: true },
+    { selector: 'textarea[aria-label="Checklist title"]', value: "Checklist edited ✓" },
+  ],
   ...Object.fromEntries(["washer", "washer-2x", "glass", "ellipse", "notch"].map((kind) => [`presentation-${kind}`, [{ selector: "button", click: true }]])),
 };
 for (const slug of Object.keys(templates)) {

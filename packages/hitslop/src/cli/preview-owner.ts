@@ -14,6 +14,15 @@ type Session = {
   close(): Promise<void>;
 };
 
+/** Internal development harness hook. The caller owns the existing file and supplies
+ * the native process; ordinary previews keep creating disposable local documents. */
+export type PreviewOwnerFactory = (template: string) => Promise<{
+  path: string;
+  command: string[];
+  startup?: unknown;
+  dispose(): Promise<void>;
+}>;
+
 /** Vite already owns the loopback WebSocket. This adapter only frames requests;
  * the native owner holds all state, attachments, validation and save scheduling. */
 export class PreviewOwners {
@@ -23,7 +32,7 @@ export class PreviewOwners {
   private stopped = false;
   private available = true;
   private closing = new Set<Promise<void>>();
-  constructor(private root: string, private template: () => string) {}
+  constructor(private root: string, private template: () => string, private factory?: PreviewOwnerFactory) {}
 
   attach(server: ViteDevServer) {
     const admitted = new WeakSet<WebSocketClient["socket"]>();
@@ -35,10 +44,10 @@ export class PreviewOwners {
       });
       if (origins.includes(request.headers.origin ?? "")) admitted.add(socket);
     });
-    server.ws.on("hitslop:open", (data, client) => {
+    server.ws.on("slop:open", (data, client) => {
       if (!admitted.has(client.socket) || data?.token !== this.token || this.sessions.has(client)) return;
       if (this.stopped || !this.available) {
-        client.send("hitslop:fatal", { error: this.stopped ? "The preview server stopped" : "The app failed to build; fix the error and save to reload" });
+        client.send("slop:fatal", { error: this.stopped ? "The preview server stopped" : "The app failed to build; fix the error and save to reload" });
         return;
       }
       const generation = this.generation;
@@ -46,11 +55,11 @@ export class PreviewOwners {
       this.sessions.set(client, opening);
       client.socket.once("close", () => this.remove(client));
       opening.catch(error => {
-        if (generation === this.generation) client.send("hitslop:fatal", { error: String(error) });
+        if (generation === this.generation) client.send("slop:fatal", { error: String(error) });
         this.remove(client);
       });
     });
-    server.ws.on("hitslop:request", (data, client) => {
+    server.ws.on("slop:request", (data, client) => {
       if (!admitted.has(client.socket) || data?.token !== this.token || this.stopped || !this.available) return;
       const session = this.sessions.get(client);
       if (!session) return;
@@ -61,8 +70,8 @@ export class PreviewOwners {
         void session.then(session => {
           if (generation !== this.generation || !this.sessions.has(client)) return;
           session.send(frame);
-        }).catch(error => { client.send("hitslop:fatal", { error: String(error) }); this.remove(client); });
-      } catch (error) { client.send("hitslop:fatal", { error: String(error) }); this.remove(client); }
+        }).catch(error => { client.send("slop:fatal", { error: String(error) }); this.remove(client); });
+      } catch (error) { client.send("slop:fatal", { error: String(error) }); this.remove(client); }
     });
   }
 
@@ -79,7 +88,7 @@ export class PreviewOwners {
     this.available = false;
     this.generation++;
     for (const client of this.sessions.keys()) {
-      client.send("hitslop:fatal", { error: "Preview definition changed; rebuilding" });
+      client.send("slop:fatal", { error: "Preview definition changed; rebuilding" });
       this.remove(client);
     }
     await Promise.all(this.closing);
@@ -101,12 +110,20 @@ export class PreviewOwners {
   }
 
   private async open(client: WebSocketClient, generation: number): Promise<Session> {
-    const directory = await mkdtemp(join(this.root, "session-"));
-    const path = join(directory, "preview.slop");
+    const supplied = await this.factory?.(this.template());
+    const directory = supplied ? undefined : await mkdtemp(join(this.root, "session-"));
+    const path = supplied?.path ?? join(directory!, "preview.slop");
+    let disposed = false;
+    const dispose = async () => {
+      if (disposed) return;
+      disposed = true;
+      if (supplied) await supplied.dispose();
+      else await rm(directory!, { recursive: true, force: true });
+    };
     try {
-      await execute({ method: "create", from: this.template(), output: path });
+      if (!supplied) await execute({ method: "create", from: this.template(), output: path });
       if (this.stopped || generation !== this.generation) throw new Error("Preview session replaced");
-      const child = Bun.spawn([...negotiate(await findEngine()), "--preview-owner", path], {
+      const child = Bun.spawn(supplied?.command ?? [...negotiate(await findEngine()), "--preview-owner", path], {
         stdin: "pipe", stdout: "pipe", stderr: "pipe",
       });
       const resourceToken = crypto.randomUUID();
@@ -133,33 +150,36 @@ export class PreviewOwners {
               const frame = JSON.parse(text.slice(0, end)); text = text.slice(end + 1);
               if (frame.type === "ready") {
                 ready.resolve();
-                if (active()) client.send("hitslop:ready", {resourceToken});
+                if (active()) client.send("slop:ready", {resourceToken});
               } else if (frame.type === "resource") {
                 const read = reads.get(frame.id);
                 if (read) { reads.delete(frame.id); clearTimeout(read.timer); read.resolve(frame); }
               } else if (frame.type === "reply") {
                 pending.delete(frame.id);
-                if (active()) client.send("hitslop:reply", frame);
+                if (active()) client.send("slop:reply", frame);
               } else if (frame.type === "push") {
-                if (active()) client.send("hitslop:push", frame.pushes);
+                if (active()) client.send("slop:push", frame.pushes);
               } else if (frame.type === "fatal") {
                 throw new Error(frame.error?.error ?? "Preview owner failed");
               } else if (frame.type === "save" && frame.error) {
                 // Keep ownership until an explicit reset/close discards this preview.
-                if (active()) client.send("hitslop:fatal", { error: `Preview save failed: ${frame.error}. Reload to reset the disposable preview.` });
+                if (active()) client.send("slop:fatal", { error: `Preview save failed: ${frame.error}. Reload to reset the disposable preview.` });
               }
             }
           }
           if (!ended) throw new Error("Preview owner disconnected; outcome unknown. Reload before editing.");
         } catch (error) {
           ready.reject(error);
-          if (active()) client.send("hitslop:fatal", { error: String(error) });
+          if (active()) client.send("slop:fatal", { error: String(error) });
           this.remove(client);
         } finally { reader.releaseLock(); }
       })();
-      const stderr = new Response(child.stderr).text();
+      const stderr = new Response(child.stderr).text().then(output => {
+        if (supplied && output.trim()) console.error(output.trim());
+        return output;
+      });
       const disconnected = (error: unknown) => {
-        if (active()) client.send("hitslop:fatal", { error: String(error) });
+        if (active()) client.send("slop:fatal", { error: String(error) });
         this.remove(client);
       };
       const session: Session = {
@@ -188,16 +208,26 @@ export class PreviewOwners {
             reads.clear();
             child.stdin.end();
             const kill = setTimeout(() => child.kill(), 12000);
-            try { await child.exited; await read; await stderr; }
-            finally { clearTimeout(kill); await rm(directory, { recursive: true, force: true }); }
+            try {
+              const code = await child.exited;
+              await read; const errors = await stderr;
+              if (supplied && code) throw new Error(`Replica owner close failed (${code}): ${errors}`);
+            }
+            finally { clearTimeout(kill); await dispose(); }
           })();
         },
       };
-      try { await ready.promise; return session; }
+      try {
+        if (supplied?.startup !== undefined) {
+          child.stdin.write(JSON.stringify(supplied.startup) + "\n");
+          await child.stdin.flush();
+        }
+        await ready.promise; return session;
+      }
       catch (error) { await session.close(); throw error; }
       finally { clearTimeout(timer); }
     } catch (error) {
-      await rm(directory, { recursive: true, force: true });
+      await dispose();
       throw error;
     }
   }

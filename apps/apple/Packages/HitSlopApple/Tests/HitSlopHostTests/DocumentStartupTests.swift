@@ -12,7 +12,7 @@ extension HostTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_STARTUP_BENCH"] == "1"))
   @MainActor func documentStartupTimings() async throws {
     _ = NSApplication.shared
-    for name in ["quick-checklist"] {
+    for name in ["document-fixture"] {
       for sample in 0..<3 {
         let root = try fixture(name)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -40,7 +40,7 @@ extension HostTests {
       NSApp.activate()
     }
     let samples = max(1, Int(environment["HITSLOP_STARTUP_SAMPLES"] ?? "10") ?? 10)
-    var names = ["quick-checklist", "large-checklist"]
+    var names = ["document-fixture", "large-checklist"]
     var skinSource: String?
     if let fixtures = environment["HITSLOP_PRESENTATION_FIXTURES"] {
       skinSource = try JSONDecoder().decode([String: String].self, from: Data(fixtures.utf8))["washer"]
@@ -53,7 +53,7 @@ extension HostTests {
       if name == "washer", let skinSource {
         root = try Fixtures.document(from: URL(fileURLWithPath: skinSource))
       } else {
-        root = try fixture(name == "large-checklist" ? "quick-checklist" : name)
+        root = try fixture(name == "large-checklist" ? "document-fixture" : name)
       }
       defer { try? FileManager.default.removeItem(at: root) }
       var operations: [[String: Any]] =

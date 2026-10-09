@@ -2,7 +2,7 @@ export type { Command, CommandContext } from "./commands";
 import { makeCommand, type CommandSpec, type Command } from "./commands";
 import type { Arguments } from "./commands";
 export type { DocumentError } from "./errors";
-export { isDocumentError, isRejected } from "./errors";
+export { isDocumentError, isRejected, isRefused, refuse } from "./errors";
 export { defineSlop, type AppDeclaration } from "./slop";
 export type { Scope } from "./abi";
 export type { InsertResult } from "./handle-types";
@@ -15,18 +15,24 @@ import { documentFor } from "./app/context";
  * Only kinds the Rust core, the SDK and a fixture implement are offered here; a new
  * kind lands in all three at once.
  */
+/** Text an object field omits starts empty. */
 export type Text = Description & { kind: "text" };
-export type BooleanNode = Description & { kind: "boolean" };
+/** `default`: the value an object field takes when a write or `initial` omits it. */
+export type BooleanNode = Description & { kind: "boolean"; default?: boolean };
 /** Last writer wins. Length bounds count Unicode code points, not UTF-16 units. */
-export type StringNode = Description & { kind: "string"; minLength?: number; maxLength?: number };
+export type StringNode = Description & { kind: "string"; minLength?: number; maxLength?: number; default?: string };
 /** A finite number; bounds are inclusive. */
-export type NumberNode = Description & { kind: "number"; min?: number; max?: number };
+export type NumberNode = Description & { kind: "number"; min?: number; max?: number; default?: number };
 /** A safe integer; bounds are inclusive. */
-export type IntegerNode = Description & { kind: "integer"; min?: number; max?: number };
-export type EnumNode<V extends readonly string[] = readonly string[]> = Description & { kind: "enum"; values: V };
+export type IntegerNode = Description & { kind: "integer"; min?: number; max?: number; default?: number };
+export type EnumNode<V extends readonly string[] = readonly string[]> = Description & { kind: "enum"; values: V; default?: V[number] };
 export type Scalar = StringNode | NumberNode | IntegerNode | BooleanNode | EnumNode;
-/** An exact checked integer counter in the single-writer owner. */
+/** An exact checked integer counter in the single-writer owner. It starts at 0. */
 export type CounterNode = Description & { kind: "counter" };
+/** A command argument naming one row of a list in the document: `s.row("tasks")`. The
+ * caller passes the row or its `$id`; `run` receives the row from `current`. A row that
+ * no longer exists refuses the command with "That task no longer exists." */
+export type RowNode<L extends string = string> = Description & { kind: "row"; list: L };
 export interface ObjectNode<P extends Record<string, Node> = Record<string, Node>> extends Description {
   kind: "object";
   properties: P;
@@ -59,12 +65,22 @@ export type Snapshot<N extends Node> = { readonly [snapshotNode]: N };
 type OptionalKeys<P extends Record<string, Node>> = {
   [K in keyof P]: P[K] extends OptionalNode ? K : never;
 }[keyof P];
+/** Whether a write may leave the field out: it is optional, or it has a default (text,
+ * lists, records and counters start empty; an object when all its fields may be left out). */
+type Omittable<N extends Node> = N extends OptionalNode | Text | ListNode | RecordNode | CounterNode
+  ? true
+  : N extends ObjectNode<infer P>
+    ? false extends { [K in keyof P]: Omittable<P[K]> }[keyof P] ? false : true
+    : N extends { default: unknown } ? true : false;
+type OmittableKeys<P extends Record<string, Node>> = {
+  [K in keyof P]: Omittable<P[K]> extends true ? K : never;
+}[keyof P];
 type ObjectValue<P extends Record<string, Node>> = {
   readonly [K in Exclude<keyof P, OptionalKeys<P>>]: Value<P[K]>;
 } & { readonly [K in OptionalKeys<P>]?: Value<P[K]> };
 type ObjectInput<P extends Record<string, Node>> = {
-  [K in Exclude<keyof P, OptionalKeys<P>>]: Input<P[K]>;
-} & { [K in OptionalKeys<P>]?: Input<P[K]> };
+  [K in Exclude<keyof P, OmittableKeys<P>>]: Input<P[K]>;
+} & { [K in OmittableKeys<P>]?: Input<P[K]> };
 export type Value<N extends Node> = ProjectedValue<N>;
 type ProjectedValue<N extends Node, Origin extends Node = N> = N extends Text | StringNode
   ? string
@@ -104,21 +120,31 @@ export type Descriptor = ObjectNode;
 export type Definition<N extends ObjectNode> = { descriptor: N };
 
 type Bounds = Description & { min?: number; max?: number };
-const options = <T extends object>(base: T, extra: object | undefined) =>
+/** Omission is safe only when the supplied default is guaranteed to survive serialization. */
+type Defaulted<N, E> = E extends { default: infer D } ? undefined extends D ? N : N & { default: D } : N;
+/** `base` with the options given; the declared return type of each builder types it. */
+const options = <T>(base: object, extra: object | undefined) =>
   ({
     ...base,
     ...Object.fromEntries(Object.entries(extra ?? {}).filter(([, v]) => v !== undefined)),
   }) as T;
 export const s = {
   text: (extra?: Description): Text => options({ kind: "text" }, extra),
-  boolean: (extra?: Description): BooleanNode => options({ kind: "boolean" }, extra),
-  string: (extra?: Description & { minLength?: number; maxLength?: number }): StringNode => options({ kind: "string" }, extra),
-  number: (extra?: Bounds): NumberNode => options({ kind: "number" }, extra),
-  integer: (extra?: Bounds): IntegerNode => options({ kind: "integer" }, extra),
-  enum: <const V extends readonly [string, ...string[]]>(values: V, extra?: Description): EnumNode<V> => options({
-    kind: "enum",
-    values,
-  }, extra),
+  boolean: <E extends Description & { default?: boolean } = {}>(extra?: E): Defaulted<BooleanNode, E> =>
+    options({ kind: "boolean" }, extra),
+  string: <E extends Description & { minLength?: number; maxLength?: number; default?: string } = {}>(
+    extra?: E,
+  ): Defaulted<StringNode, E> => options({ kind: "string" }, extra),
+  number: <E extends Bounds & { default?: number } = {}>(extra?: E): Defaulted<NumberNode, E> =>
+    options({ kind: "number" }, extra),
+  integer: <E extends Bounds & { default?: number } = {}>(extra?: E): Defaulted<IntegerNode, E> =>
+    options({ kind: "integer" }, extra),
+  enum: <const V extends readonly [string, ...string[]], E extends Description & { default?: V[number] } = {}>(
+    values: V,
+    extra?: E,
+  ): Defaulted<EnumNode<V>, E> => options({ kind: "enum", values }, extra),
+  /** Command arguments only: the `$id` of a row in the document's list `list`. */
+  row: <const L extends string>(list: L, extra?: Description): RowNode<L> => options({ kind: "row", list }, extra),
   optional: <S extends Scalar | Text | ObjectNode>(inner: S, extra?: Description): OptionalNode<S> => options({ kind: "optional", inner }, extra),
   record: <V extends Scalar | ObjectNode>(value: V, extra?: Description): RecordNode<V> => options({ kind: "record", value }, extra),
   counter: (extra?: Description): CounterNode => options({ kind: "counter" }, extra),

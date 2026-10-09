@@ -290,12 +290,17 @@ pub(super) fn execute(
             if !is_scalar(kind) && !replaces_object && !creates_text {
                 return Err(err(Code::TypeMismatch, "set accepts text, scalars, optional values and record entries"));
             }
+            // Defaults belong to creation. Replacing a present object requires its
+            // complete value, so omitting a field cannot silently reset saved content.
+            let created;
+            let value = if at.absent {
+                created = kind.with_defaults(value);
+                &created
+            } else {
+                value
+            };
             kind.validate(value, false)?;
             if !at.absent {
-                // Replacing an object must not discard identity-bearing collections.
-                if replaces_object && holds_collections(kind) {
-                    return Err(err(Code::Exists, "Object is already set; edit its fields"));
-                }
                 // A present object takes the value field by field: unchanged fields write
                 // nothing, so concurrent edits to them survive.
                 if let (true, ValueOrContainer::Container(Container::Map(object))) = (replaces_object, &at.value) {
@@ -336,6 +341,7 @@ pub(super) fn execute(
             if index.is_some() {
                 return Err(err(Code::InvalidRequest, "Rows insert by anchor, not index"));
             }
+            let value = &item.with_defaults(value);
             item.validate(value, true)?;
             let id = id.clone().unwrap_or_else(application_id);
             if !valid_id(&id) {

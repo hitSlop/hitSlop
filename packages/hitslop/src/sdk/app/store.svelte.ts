@@ -1,7 +1,6 @@
 // The Svelte adapter, compiled into each slop. It depends only on ctx.
 import { mount, tick, unmount, type Component } from "svelte";
-import type { Binding, SlopApp, SlopContext } from "../abi";
-import type { TextHandle } from "../handle-types";
+import type { CaptureMode, SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
 import { bindCommands } from "../commands";
@@ -10,16 +9,19 @@ export type { SlopApp, SlopContext } from "../abi";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
 export { capture, type CaptureMode, type CaptureTarget } from "./capture";
 export { default as EditableText } from "./EditableText.svelte";
+export { notify } from "./notice.svelte";
+export { draft } from "./draft.svelte";
+export { motion } from "./motion.svelte";
+export { bindText } from "./bind-text";
 
 /**
- * A Svelte app's entry: `export default svelteApp(App, { schema })`; the host mounts it.
- * The generated entry passes the default exports of `schema.ts`, `Export.svelte` and
- * `Icon.svelte`. Once mounted, `schema` is the live document.
+ * The generated entry adapts the components registered in `defineSlop` to the host.
+ * Once mounted, `schema` is the live document; component filenames are unrestricted.
  */
 export function svelteApp(App: Component, options: {
   schema: Definition<ObjectNode>;
   commands?: Record<string, unknown>;
-  export?: Component<{ mode: "preview" | "export" }>;
+  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }>;
   icon?: Component;
 }): SlopApp {
   bindCommands(options.commands ?? {}, options.schema);
@@ -75,17 +77,6 @@ function createAdapter(doc: SlopContext["document"]) {
     redo: () => doc.redo(),
   };
   return { document, dispose };
-}
-
-/** Svelte action for text fields: `use:bindText={doc.fields.title}`. It keeps what the
- * person types, merges edits made elsewhere, and survives IME composition. Scalars use
- * `bind:value={doc.fields.done.value}` instead. For text in a list's rows, use
- * `EditableText`, which mounts a field only while it is edited. */
-export function bindText(
-  element: HTMLInputElement | HTMLTextAreaElement,
-  handle: TextHandle,
-): Binding<TextHandle> {
-  return current().bind.text(element, handle);
 }
 
 /** Request a window content size; ignored where the host has no window. */

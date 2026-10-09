@@ -1,6 +1,8 @@
 //! The artwork a file may hold: its names, and the PNG rules every write and open apply.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::error::{Result, invalid};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::images::{self, Purpose};
 
 /// The artwork a file holds and hosts read; rows with other names are ignored. Its name is the
@@ -30,6 +32,7 @@ impl rusqlite::ToSql for Artwork {
     }
 }
 /// Every write fully decodes a bounded image before publishing it.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn check_artwork(name: Artwork, bytes: &[u8]) -> Result<()> {
     let purpose = match name {
         Artwork::Preview => Purpose::Preview,
@@ -38,11 +41,13 @@ pub(crate) fn check_artwork(name: Artwork, bytes: &[u8]) -> Result<()> {
     images::check(bytes, purpose).map(|_| ()).map_err(|e| invalid(format!("artwork/{name}.png: {}", e.message)))
 }
 /// The decoded bytes optimizing may hold: artwork larger than this is stored as it is.
+#[cfg(not(target_arch = "wasm32"))]
 const OPTIMIZE_DECODED_BYTES: usize = 64 << 20;
 /// Artwork that `check_artwork` accepted, losslessly smaller when oxipng finds a smaller
 /// encoding at `level`: every pixel decodes the same, fully transparent ones too. Anything
 /// oxipng refuses, panics on or cannot shrink is kept as it is, so optimizing never fails
 /// a write.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn optimize_png(bytes: Vec<u8>, level: u8) -> Vec<u8> {
     let options = oxipng::Options {
         // oxipng's display chunks (`StripChunks::Safe`) plus gAMA and cHRM, which macOS may

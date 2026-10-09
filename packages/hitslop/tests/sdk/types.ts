@@ -1,6 +1,13 @@
 // Compile-time checks of the async author API (typechecked by `bun run check`). Each
 // definition is also the live document authors import, so the checks use `typeof`.
-import { defineDocument, s, type Input } from "../../src/sdk/schema";
+import { defineDocument, s, type Input, type Node } from "../../src/sdk/schema";
+import type { Node as WireNode } from "../../src/wire/descriptor.generated";
+
+// The SDK may narrow Rust's accepted descriptors, but must never invent a wire shape.
+// Its immutable enum tuples are intentionally readonly unlike generated wire arrays.
+type DeepReadonly<T> = T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
+type Assert<T extends true> = T;
+type DescriptorsStayAligned = Assert<Node extends DeepReadonly<WireNode> ? true : false>;
 
 const counters = defineDocument({ count: s.counter() });
 export function counterTypes(doc: typeof counters) {
@@ -43,6 +50,46 @@ export async function asyncHandleTypes(doc: typeof checklist) {
   return sync;
 }
 
+// Fields with a default may be left out of inserts and initial values: text, lists,
+// records and counters start empty, scalars take their declared default.
+const defaults = defineDocument({
+  title: s.text(),
+  tasks: s.list(s.object({
+    text: s.text(),
+    done: s.boolean({ default: false }),
+    size: s.enum(["s", "l"], { default: "s" }),
+    owner: s.string(),
+  })),
+});
+export async function defaultTypes(doc: typeof defaults) {
+  const initial: Input<typeof defaults.descriptor> = { tasks: [{ owner: "Ana" }] };
+  await doc.fields.tasks.insert({ owner: "Ana" });
+  // @ts-expect-error A field without a default is still required.
+  await doc.fields.tasks.insert({ text: "x" });
+  // @ts-expect-error A default must be one of the field's values.
+  s.enum(["s", "l"], { default: "m" });
+  // Reads always hold the field.
+  const done: boolean = doc.current.tasks[0]!.done;
+  // Text handles read the shown text; typing goes through a binding.
+  const title: string = doc.fields.title.value;
+  // @ts-expect-error A text handle's value is read-only.
+  doc.fields.title.value = "Typed";
+  return { initial, done, title };
+}
+
+export function undefinedDefaultTypes(possible: boolean | undefined) {
+  const required = defineDocument({
+    absent: s.boolean({ default: undefined }),
+    uncertain: s.boolean({ default: possible }),
+  });
+  const complete: Input<typeof required.descriptor> = { absent: false, uncertain: true };
+  // @ts-expect-error An undefined default is absent from the emitted descriptor.
+  const absent: Input<typeof required.descriptor> = { uncertain: true };
+  // @ts-expect-error A possibly-undefined default cannot guarantee omission is valid.
+  const uncertain: Input<typeof required.descriptor> = { absent: false };
+  return { complete, absent, uncertain };
+}
+
 const scalars = defineDocument({
   currency: s.enum(["CAD", "USD"]),
   amount: s.number({ min: 0 }),
@@ -64,9 +111,8 @@ export async function scalarTypes(doc: typeof scalars) {
   doc.fields.amount.preview(3);
   await doc.fields.photo.set({ id: "a" });
   await doc.fields.photo.id.set("b");
-  // Optional keys may be omitted from inserts; required ones may not.
+  // Optional keys may be omitted from inserts, and so may text, which starts empty.
   await doc.fields.rows.insert({ text: "row" });
-  // @ts-expect-error Required row values cannot be omitted.
   await doc.fields.rows.insert({ limit: 3 });
   const valid: Input<typeof scalars.descriptor> = { currency: "CAD", amount: 1, rows: [] };
   return { currency, note, required, valid };

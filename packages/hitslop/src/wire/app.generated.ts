@@ -38,6 +38,6 @@ export type Views = { export: boolean, icon: boolean, };
  * A source declaration: the skin image is an imported URL. Acceptance resolves it
  * to a resource key; the stored window never keeps a source URL.
  */
-export type WindowInput = { "kind": "standard", width: number, height: number, resizable?: boolean, lockAspect?: boolean, background?: Background, shape?: WindowShape, } | { "kind": "skin", width: number, height: number, image: string, };
+export type WindowInput = { "kind": "standard", width: number, height: number, fullscreenable?: boolean, resizable?: boolean, lockAspect?: boolean, background?: Background, shape?: WindowShape, } | { "kind": "skin", width: number, height: number, fullscreenable?: boolean, image: string, };
 
 export type WindowShape = string | PathShape;

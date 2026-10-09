@@ -15,11 +15,20 @@ serde_json.workspace = true
 hitslop-runner = { path = "../hitslop-runner" }
 libc = "0.2"
 data-encoding = { version = "=2.11.1" }
+serde = { workspace = true, optional = true }
+sha2 = { version = "=0.11.0", optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [features]
+# The `slop-room` development binary and the shared owner session it drives. Never shipped.
+dev-sync = ["hitslop-core/dev-sync", "dep:serde", "dep:sha2", "dep:getrandom"]
 # SQLite's own amalgamation, for platforms without a system SQLite (release builds only:
 # the app and tests link the platform library).
 bundled-sqlite = ["hitslop-core/bundled-sqlite"]
+
+[[bin]]
+name = "slop-room"
+required-features = ["dev-sync"]
 
 [dev-dependencies]
 tempfile = "3"

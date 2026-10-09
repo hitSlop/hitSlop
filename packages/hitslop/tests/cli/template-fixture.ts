@@ -7,7 +7,7 @@ import { PackageFormat, RuntimeABI } from "../../src/schema/constants";
 
 /** A minimal template file at `output`, packed by the file engine from a stage with preview
  * artwork: what tests of template handling need, without building an app. Returns `output`. */
-export async function writeTemplate(output: string, slug = "quick-checklist") {
+export async function writeTemplate(output: string, slug = "fixture-one") {
   const stage = output + ".stage";
   await mkdir(join(stage, "assets"), { recursive: true });
   await mkdir(join(stage, "artwork"));

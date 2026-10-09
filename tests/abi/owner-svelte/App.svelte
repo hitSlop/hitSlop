@@ -3,7 +3,7 @@
   import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
   import { isDocumentError, isRejected } from "hitslop";
   import doc from "./schema";
-  import { bump } from "./actions";
+  import { bump, decline } from "./actions";
   // App media the corpus must keep serving: an image, audio and a font (styles.css).
   import swatch from "./media/swatch.png";
   import tone from "./media/tone.wav";
@@ -66,6 +66,23 @@
       doc.fields.settings.muted.value = true;
       await doc.flush();
       check(doc.current.ratio === 0.75 && doc.current.settings.volume === 7 && doc.current.settings.muted, "Previews were not committed");
+      // A drawing/slider gesture previews on separate frames but authors one undo step.
+      await doc.fields.ratio.set(0.1);
+      for (const value of [0.2, 0.4, 0.6]) {
+        await new Promise<void>((resolve) => {
+          // A windowless native conformance view may suspend animation frames.
+          // Visible views use real frames; the fallback still separates event turns.
+          const frame = requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+          const timer = setTimeout(() => { cancelAnimationFrame(frame); resolve(); }, 50);
+        });
+        doc.fields.ratio.preview(value);
+        check(doc.current.ratio === value, "Gesture preview did not show immediately");
+      }
+      await doc.fields.ratio.set(0.8);
+      await doc.undo();
+      check(doc.current.ratio === 0.1, "Gesture previews created extra undo steps");
+      await doc.redo();
+      check(doc.current.ratio === 0.8, "Gesture redo did not restore the final value");
       // Optional scalars, text and objects.
       await doc.fields.note.set("Optional note");
       await doc.fields.note.clear();
@@ -98,6 +115,19 @@
         "Row edits were lost",
       );
       check(!doc.current.rows.some((r) => r.$id === second), "Removed row survived");
+      // Several board submissions start together; each promise names its own durable row.
+      const submissions = ["Board A", "Board B", "Board C"];
+      const added = await Promise.all(submissions.map((text) =>
+        doc.fields.rows.insert({ text, done: false, tags: [], notes: {} }),
+      ));
+      check(new Set(added.map(({ id }) => id)).size === submissions.length, "Concurrent submissions reused a row ID");
+      await doc.fields.rows.move(added[2]!.id, { before: added[0]!.id });
+      await Promise.all(added.map(({ id }, index) => doc.fields.rows.item(id).text.set(`${submissions[index]} ✓`)));
+      for (const [index, { id }] of added.entries()) {
+        check(doc.current.rows.find((row) => row.$id === id)?.text === `${submissions[index]} ✓`, "A board edit reached the wrong row");
+      }
+      check(doc.current.rows.findIndex((row) => row.$id === added[2]!.id) <
+        doc.current.rows.findIndex((row) => row.$id === added[0]!.id), "A board move lost row identity");
       // Scalar lists, including an element preview.
       await doc.fields.colors.replace([]);
       await doc.fields.colors.insert("#ffffff");
@@ -114,8 +144,42 @@
       await doc.fields.cells.put("A1", { input: "42" });
       await doc.fields.cells.entry("A1").input.set("43");
       await doc.fields.cells.entry("A1").width.set(10);
-      await refused(doc.fields.cells.put("A1", { input: "replace" }), "exists");
-      check(doc.current.checkins["2026-10-02"] === 2 && doc.current.cells.A1?.input === "43", "Record edits were lost");
+      await doc.fields.cells.put("A1", { input: "replace" });
+      check(doc.current.checkins["2026-10-02"] === 2 && doc.current.cells.A1?.input === "replace" &&
+        doc.current.cells.A1.width === undefined, "Complete record replacement failed");
+      // A keyed journal editor is removed during composition and then recreated at the
+      // same key. Late events from the detached control must not edit its successor.
+      await tick();
+      const oldEntry = document.querySelector<HTMLTextAreaElement>('[aria-label="Keyed entry"]')!;
+      check(oldEntry?.value === "replace", "The keyed text binding did not render");
+      oldEntry.dispatchEvent(new CompositionEvent("compositionstart"));
+      oldEntry.value = "Unfinished old entry";
+      oldEntry.dispatchEvent(new Event("input"));
+      await doc.fields.cells.delete("A1");
+      await tick();
+      check(!oldEntry.isConnected, "Deleting a key retained its editor");
+      await doc.fields.cells.put("A1", { input: "Fresh entry" });
+      await tick();
+      const newEntry = document.querySelector<HTMLTextAreaElement>('[aria-label="Keyed entry"]')!;
+      check(newEntry !== oldEntry && newEntry.value === "Fresh entry", "Recreated keyed text retained its old binding");
+      oldEntry.dispatchEvent(new CompositionEvent("compositionend"));
+      oldEntry.dispatchEvent(new Event("input"));
+      await doc.flush();
+      check(doc.current.cells.A1?.input === "Fresh entry", "A stale binding overwrote the recreated entry");
+      newEntry.value = "Fresh entry edited";
+      newEntry.dispatchEvent(new Event("input"));
+      await doc.flush();
+      check(doc.current.cells.A1?.input === "Fresh entry edited", "The recreated binding could not edit");
+      // Slide-deck rows contain their own rows; moving a block preserves both identities.
+      const slide = (await doc.fields.slides.insert({ title: "Edited slide" })).id;
+      const blocks = doc.fields.slides.item(slide).blocks;
+      const blockA = (await blocks.insert({ text: "Block A" })).id;
+      const blockB = (await blocks.insert({ text: "Block B" })).id;
+      await blocks.move(blockB, { before: blockA });
+      await blocks.item(blockA).text.set("Block A edited");
+      const renderedSlide = doc.current.slides.find((entry) => entry.$id === slide)!;
+      check(renderedSlide.blocks.map((block) => block.$id).join() === [blockB, blockA].join() &&
+        renderedSlide.blocks[1]?.text === "Block A edited", "Nested row identity or text was lost");
       // Counters add up; a change applies all of its writes or none.
       const hits = doc.current.hits;
       await doc.fields.hits.increment(5);
@@ -143,13 +207,24 @@
       // A command runs in the owner: its arguments are checked there, it returns its
       // result after its edit reaches this page, and it is one undo step.
       const before = doc.current.hits;
-      check((await bump({ by: 2 })) === before + 2 && doc.current.hits === before + 2, "Command result or edit was lost");
+      const previousHit = doc.current.lastHit;
+      check((await bump({ by: 2 })) === before + 2 && doc.current.hits === before + 2 &&
+        doc.current.lastHit === before + 2, "Command result or atomic edits were lost");
       await refused(bump({ by: 100 }), "invalid_request");
-      check(doc.current.hits === before + 2, "A refused command changed the document");
+      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "A refused command changed the document");
       await doc.undo();
-      check(doc.current.hits === before, "Undo did not revert the command");
+      check(doc.current.hits === before && doc.current.lastHit === previousHit, "Undo did not revert the whole command");
       await doc.redo();
-      check(doc.current.hits === before + 2, "Redo did not reapply the command");
+      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "Redo did not reapply the whole command");
+      // A command's refusal reaches its caller as `refused`; left unhandled, it is shown
+      // in the notice region (the root cancels `slop:refused`) rather than reported.
+      await refused(decline(), "refused");
+      const offered = new Promise<string>((resolve) =>
+        document.addEventListener("slop:refused", (event) => resolve((event as CustomEvent<string>).detail), { once: true }));
+      void decline();
+      check((await offered) === "Not today.", "An unhandled refusal was not offered to the app");
+      await tick();
+      check(document.querySelector("[data-slop-notice] p")?.textContent === "Not today.", "The refusal was not shown");
       // Host services: attachments, capture and the window.
       const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),
@@ -157,7 +232,7 @@
       check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
       check((await (await attachments.read(ref.id)).text()) === "conformance", "Attachment bytes differ");
       check((await (await fetch(attachments.url(ref.id))).text()) === "conformance", "Attachment URL bytes differ");
-      check(document.querySelector("[data-hitslop-root]") !== null, "The app root is not marked for the host");
+      check(document.querySelector("[data-slop-root]") !== null, "The app root is not marked for the host");
       // The app's own media load from its embedded assets.
       for (const url of [swatch, tone]) check((await fetch(url)).ok, `App media did not load: ${url}`);
       await document.fonts.load('16px "Conformance Hand"');
@@ -184,6 +259,9 @@
   <p bind:this={shown}>{doc.current.title}</p>
   <textarea aria-label="Title" bind:this={input} use:bindText={doc.fields.title}></textarea>
   <input aria-label="Done" type="checkbox" bind:this={checkbox} bind:checked={doc.fields.done.value} />
+  {#if doc.current.cells.A1}
+    <textarea aria-label="Keyed entry" use:bindText={doc.fields.cells.entry("A1").input}></textarea>
+  {/if}
   <ul>
     {#each doc.current.rows as row (row.$id)}<li>{row.text}</li>{/each}
   </ul>

@@ -1,3 +1,4 @@
+import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,7 +21,8 @@ export async function verifyAppCommands(app: string) {
   const document = join(folder, "Commands.slop");
   let host: ReturnType<typeof testProcess> | undefined;
   try {
-    await createDocument(join(app, "Contents/Resources/StarterTemplates/quick-checklist.slop"), document, placement);
+    const template = await buildTemplate(resolve("tests/apps/document"), undefined, join(folder, "fixture.slop"));
+    await createDocument(template, document, placement);
     host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 60_000 });
     let exited = false;
     void host.output.finally(() => { exited = true; }).catch(() => {});
@@ -33,16 +35,14 @@ export async function verifyAppCommands(app: string) {
     const initial = await tasks();
     const call = (command: string, args: Record<string, unknown> = {}) =>
       engineRequest({ method: "call", documentPath: document, command, args }, placement);
-    await call("addTask", { text: "App bundle command regression" });
+    await call("addRow", { text: "App bundle command regression" });
     const added = (await tasks()).find(task => task.text === "App bundle command regression");
     assert.ok(added, "The app did not add the task");
     await engineRequest({ method: "batch", documentPath: document,
       batch: { intents: [{ type: "set", path: ["tasks", { id: added.$id }, "done"], value: true }] } }, placement);
-    await call("archiveFinished");
-    assert.equal((await tasks()).find(task => task.$id === added.$id)?.archived, true);
-    await call("restoreTask", { id: added.$id });
+    await call("resetRow", { task: added.$id });
     assert.deepEqual((await tasks()).find(task => task.$id === added.$id), { ...added, done: false, archived: false });
-    await call("removeTask", { id: added.$id });
+    await call("removeRow", { task: added.$id });
     // Each CLI command is acknowledged only after saving. Reopen without the host to
     // prove these were real owner edits, not just successful evaluator responses.
     const accepted = await tasks();
@@ -53,7 +53,7 @@ export async function verifyAppCommands(app: string) {
     await host.stop();
     host = undefined;
     assert.deepEqual(await tasks(), accepted);
-    console.log("PASS app add/file/restore/remove commands and reopen, without an evaluator override");
+    console.log("PASS app insert/row-argument/remove commands and reopen, without an evaluator override");
   } finally {
     if (host) await host.stop();
     await rm(folder, { recursive: true, force: true });

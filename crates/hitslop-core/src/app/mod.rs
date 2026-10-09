@@ -109,20 +109,27 @@ pub struct Views {
 
 /// Native window semantics, independent of the stored definition's decoding rules.
 #[derive(Clone, Debug)]
-pub enum WindowDefinition {
-    Standard {
-        width: u32,
-        height: u32,
-        resizable: bool,
-        lock_aspect: bool,
-        background: Option<Background>,
-        shape: shape::Silhouette,
-    },
-    Skin {
-        width: u32,
-        height: u32,
-        skin: String,
-    },
+pub struct WindowDefinition {
+    pub width: u32,
+    pub height: u32,
+    pub fullscreenable: bool,
+    pub frame: WindowFrame,
+}
+
+#[derive(Clone, Debug)]
+pub enum WindowFrame {
+    Standard { frame: StandardFrame },
+    Skin { skin: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct StandardFrame {
+    /// Whether fullscreen fits the authored composition instead of reflowing it.
+    pub fullscreen_fit: bool,
+    pub resizable: bool,
+    pub lock_aspect: bool,
+    pub background: Option<Background>,
+    pub shape: shape::Silhouette,
 }
 
 #[derive(Clone, Debug)]
@@ -160,7 +167,7 @@ impl AppDefinition {
     /// imported skin URL to a resource key; the URL itself never enters stored JSON.
     pub fn from_declaration(declaration: &BuildDeclaration, skin: Option<&str>) -> Result<Self> {
         let app = package_format_1::from_declaration(declaration, skin)?;
-        app.spec.schema.validate(&declaration.initial, false)?;
+        app.spec.schema.validate(&app.spec.schema.with_defaults(&declaration.initial), false)?;
         Ok(app)
     }
 
@@ -196,19 +203,23 @@ impl AppDefinition {
     pub fn page_window(&self) -> crate::build::WindowInput {
         use package_format_1::Window;
         match &self.stored.window {
-            Window::Standard { width, height, resizable, lock_aspect, background, shape } => {
+            Window::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
                 crate::build::WindowInput::Standard {
                     width: *width,
                     height: *height,
+                    fullscreenable: *fullscreenable,
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
                     background: background.map(Into::into),
                     shape: shape.clone(),
                 }
             }
-            Window::Skin { width, height, skin } => {
-                crate::build::WindowInput::Skin { width: *width, height: *height, image: format!("/assets/{skin}") }
-            }
+            Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {
+                width: *width,
+                height: *height,
+                fullscreenable: *fullscreenable,
+                image: format!("/assets/{skin}"),
+            },
         }
     }
     pub fn theme_json(&self) -> String {

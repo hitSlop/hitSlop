@@ -1,0 +1,17 @@
+{
+  "rows": 4006,
+  "firstRowPreserved": true,
+  "firstRenderedFrameMs": 325,
+  "commandThroughNextFrame": {
+    "p50Ms": 99,
+    "p95Ms": 101,
+    "samplesMs": [
+      83,
+      99,
+      99,
+      100,
+      101
+    ]
+  },
+  "scope": "Svelte component creation through two animation frames; excludes Vite compilation. Command samples include flush and two frames; one warmup, five samples."
+}

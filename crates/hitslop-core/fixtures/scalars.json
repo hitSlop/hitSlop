@@ -370,13 +370,13 @@
           "path": [
             "label"
           ],
-          "value": "\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+          "value": "😀😀😀"
         }
       ],
       "after": {
         "title": "Trip",
         "currency": "CAD",
-        "label": "\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+        "label": "😀😀😀",
         "ratio": 0.5,
         "rating": 3,
         "rows": [
@@ -479,7 +479,7 @@
       "error": "type_mismatch"
     },
     {
-      "name": "a set object holding a list is never replaced",
+      "name": "a complete set of an unchanged optional object writes nothing",
       "initial": {
         "title": "Trip",
         "currency": "CAD",
@@ -502,7 +502,17 @@
           }
         }
       ],
-      "error": "exists"
+      "after": {
+        "title": "Trip",
+        "currency": "CAD",
+        "label": "ab",
+        "ratio": 0.5,
+        "rating": 3,
+        "box": {
+          "items": []
+        },
+        "rows": []
+      }
     },
     {
       "name": "a batch refused at its second intent leaves nothing applied",
@@ -532,7 +542,7 @@
           "path": [
             "label"
           ],
-          "value": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00"
+          "value": "😀😀😀😀😀"
         }
       ],
       "error": "out_of_range"

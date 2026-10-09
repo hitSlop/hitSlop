@@ -1,0 +1,228 @@
+{
+  "afterClose": {
+    "checkpointBytes": 2177676,
+    "rows": 1,
+    "updateBytes": 16753
+  },
+  "artifacts": "/var/folders/65/cphbbk0d3nz54qzltlnk7mmw0000gn/T/hitslop-owner-history-tpsjwh",
+  "beforeClose": {
+    "checkpointBytes": 2177676,
+    "rows": 1,
+    "updateBytes": 16753
+  },
+  "checkpointFlush": {
+    "maxMs": 280.566416,
+    "p50Ms": 194.30991699999998,
+    "p95Ms": 280.566416,
+    "samples": 8
+  },
+  "closeMs": 0.412292,
+  "coreBuild": "9aeb73d092f3b2bb",
+  "cycles": [
+    {
+      "checkpointFlushMs": 89.098166,
+      "cycle": 1,
+      "databaseBytes": 5058560,
+      "elapsedSeconds": 1.95598675,
+      "history": {
+        "current_state_bytes": 511884,
+        "full_export_ms": 12.505459,
+        "retained_snapshot_bytes": 5000425,
+        "state_export_ms": 44.536
+      },
+      "maintenanceFenceMs": 0.014833,
+      "maxRssAfterProbeBytes": 85327872,
+      "maxRssBeforeProbeBytes": 84852736,
+      "postCheckpointReadMs": 18.325958,
+      "rounds": 129,
+      "savedCheckpointBytes": 5000429,
+      "savedUpdateBytes": 129,
+      "savedUpdateRows": 1,
+      "stateReadMs": 16.041834
+    },
+    {
+      "checkpointFlushMs": 194.30991699999998,
+      "cycle": 2,
+      "databaseBytes": 9322496,
+      "elapsedSeconds": 3.916756166,
+      "history": {
+        "current_state_bytes": 511887,
+        "full_export_ms": 6.610041,
+        "retained_snapshot_bytes": 9260055,
+        "state_export_ms": 47.285959000000005
+      },
+      "maintenanceFenceMs": 0.0135,
+      "maxRssAfterProbeBytes": 122470400,
+      "maxRssBeforeProbeBytes": 119619584,
+      "postCheckpointReadMs": 18.443250000000003,
+      "rounds": 257,
+      "savedCheckpointBytes": 9260055,
+      "savedUpdateBytes": 0,
+      "savedUpdateRows": 0,
+      "stateReadMs": 16.964750000000002
+    },
+    {
+      "checkpointFlushMs": 225.95516600000002,
+      "cycle": 3,
+      "databaseBytes": 13623296,
+      "elapsedSeconds": 6.022223583,
+      "history": {
+        "current_state_bytes": 511887,
+        "full_export_ms": 22.297250000000002,
+        "retained_snapshot_bytes": 13535607,
+        "state_export_ms": 68.517834
+      },
+      "maintenanceFenceMs": 0.030083,
+      "maxRssAfterProbeBytes": 182173696,
+      "maxRssBeforeProbeBytes": 182173696,
+      "postCheckpointReadMs": 27.641417,
+      "rounds": 386,
+      "savedCheckpointBytes": 13545478,
+      "savedUpdateBytes": 129,
+      "savedUpdateRows": 1,
+      "stateReadMs": 19.027625
+    },
+    {
+      "checkpointFlushMs": 240.69075,
+      "cycle": 4,
+      "databaseBytes": 2228224,
+      "elapsedSeconds": 9.099614083,
+      "history": {
+        "current_state_bytes": 511928,
+        "full_export_ms": 60.231166,
+        "retained_snapshot_bytes": 2177655,
+        "state_export_ms": 16.858042
+      },
+      "maintenanceFenceMs": 999.0055,
+      "maxRssAfterProbeBytes": 303300608,
+      "maxRssBeforeProbeBytes": 303300608,
+      "postCheckpointReadMs": 25.939542,
+      "rounds": 514,
+      "savedCheckpointBytes": 2177655,
+      "savedUpdateBytes": 0,
+      "savedUpdateRows": 0,
+      "stateReadMs": 11.049042
+    },
+    {
+      "checkpointFlushMs": 166.076125,
+      "cycle": 5,
+      "databaseBytes": 6524928,
+      "elapsedSeconds": 11.245745541,
+      "history": {
+        "current_state_bytes": 511928,
+        "full_export_ms": 69.554042,
+        "retained_snapshot_bytes": 6467628,
+        "state_export_ms": 16.518874999999998
+      },
+      "maintenanceFenceMs": 0.016208,
+      "maxRssAfterProbeBytes": 303300608,
+      "maxRssBeforeProbeBytes": 303300608,
+      "postCheckpointReadMs": 10.302083,
+      "rounds": 643,
+      "savedCheckpointBytes": 6467621,
+      "savedUpdateBytes": 129,
+      "savedUpdateRows": 1,
+      "stateReadMs": 11.078084
+    },
+    {
+      "checkpointFlushMs": 193.134917,
+      "cycle": 6,
+      "databaseBytes": 10788864,
+      "elapsedSeconds": 13.392962666,
+      "history": {
+        "current_state_bytes": 511928,
+        "full_export_ms": 60.23025,
+        "retained_snapshot_bytes": 10718783,
+        "state_export_ms": 16.775667000000002
+      },
+      "maintenanceFenceMs": 0.014459,
+      "maxRssAfterProbeBytes": 303300608,
+      "maxRssBeforeProbeBytes": 303300608,
+      "postCheckpointReadMs": 12.261332999999999,
+      "rounds": 771,
+      "savedCheckpointBytes": 10718783,
+      "savedUpdateBytes": 0,
+      "savedUpdateRows": 0,
+      "stateReadMs": 10.746583000000001
+    },
+    {
+      "checkpointFlushMs": 266.207834,
+      "cycle": 7,
+      "databaseBytes": 15081472,
+      "elapsedSeconds": 15.538520875,
+      "history": {
+        "current_state_bytes": 511928,
+        "full_export_ms": 88.180459,
+        "retained_snapshot_bytes": 15001448,
+        "state_export_ms": 17.841375
+      },
+      "maintenanceFenceMs": 0.011875,
+      "maxRssAfterProbeBytes": 303300608,
+      "maxRssBeforeProbeBytes": 303300608,
+      "postCheckpointReadMs": 11.622708000000001,
+      "rounds": 900,
+      "savedCheckpointBytes": 15001441,
+      "savedUpdateBytes": 129,
+      "savedUpdateRows": 1,
+      "stateReadMs": 10.324667
+    },
+    {
+      "checkpointFlushMs": 280.566416,
+      "cycle": 8,
+      "databaseBytes": 2228224,
+      "elapsedSeconds": 18.793415041,
+      "history": {
+        "current_state_bytes": 511928,
+        "full_export_ms": 53.497042,
+        "retained_snapshot_bytes": 2177676,
+        "state_export_ms": 16.153916000000002
+      },
+      "maintenanceFenceMs": 1124.8385,
+      "maxRssAfterProbeBytes": 356302848,
+      "maxRssBeforeProbeBytes": 356302848,
+      "postCheckpointReadMs": 83.41362500000001,
+      "rounds": 1028,
+      "savedCheckpointBytes": 2177676,
+      "savedUpdateBytes": 0,
+      "savedUpdateRows": 0,
+      "stateReadMs": 10.992750000000001
+    }
+  ],
+  "cyclesCompleted": 8,
+  "cyclesTarget": 8,
+  "edit": {
+    "maxMs": 10.912457999999999,
+    "p50Ms": 3.203083,
+    "p95Ms": 4.475708,
+    "samples": 2056
+  },
+  "flushIncludingCheckpointConstructionAndSQLite": {
+    "maxMs": 280.566416,
+    "p50Ms": 3.120083,
+    "p95Ms": 4.766042,
+    "samples": 2056
+  },
+  "initialHistory": {
+    "current_state_bytes": 511831,
+    "full_export_ms": 2.657041,
+    "retained_snapshot_bytes": 708457,
+    "state_export_ms": 52.969042
+  },
+  "maxOwnerProcessRssBytes": 356302848,
+  "measurementLimits": [
+    "Single workload run; quantiles are per-operation samples, not repeated-run confidence bounds",
+    "Flush includes owner scheduling, checkpoint construction when due, SQLite write and fsync; write-only time is not isolated",
+    "RSS includes temporary checkpoint export buffers; fixture packing and validation run in separate child processes",
+    "No WebKit page; State request measures owner projection, not UI frame latency"
+  ],
+  "openMs": 50.668625,
+  "ownerRole": "local",
+  "profile": "release",
+  "reopenValidation": "passed in separate processes before and after close",
+  "retainedUndoRedo": "both produced publications after the measured workload and restored the original live state",
+  "rounds": 1028,
+  "rows": 4000,
+  "savePolicy": "Explicit flush after every mutation; measures durable per-edit worst case without debounce/group commit",
+  "seed": 42,
+  "textBytesPerRound": 16384
+}

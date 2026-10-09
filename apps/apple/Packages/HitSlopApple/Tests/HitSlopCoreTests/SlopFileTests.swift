@@ -49,8 +49,12 @@ import Testing
     let file = try SlopFile(url: url)
     #expect(file.kind == kind)
     #expect(file.metadata.categories == [.productivity, .other])
-    #expect(file.silhouette.path(in: CGRect(x: 0, y: 0, width: 320, height: 240)).contains(CGPoint(x: 160, y: 120)))
-    #expect(file.backdrop == .window && file.isResizable && !file.isSkinned)
+    guard case .shape(let silhouette) = file.outline else {
+      Issue.record("Expected a shape")
+      return
+    }
+    #expect(silhouette.path(in: CGRect(x: 0, y: 0, width: 320, height: 240)).contains(CGPoint(x: 160, y: 120)))
+    #expect(file.backdrop == .window && file.isResizable)
     // The panel lists colors in the order the author declared them.
     #expect(file.themeTokens.map(\.name) == ["paper", "accent"])
     #expect(file.byteCount == (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init))
@@ -62,8 +66,22 @@ import Testing
   let document = try Fixtures.document(stage: source)
   defer { try? FileManager.default.removeItem(at: document) }
   let file = try SlopFile(url: document)
-  #expect(file.isSkinned && file.backdrop == .skin && !file.isResizable)
-  #expect(file.skin?.width == 320 && file.skin?.height == 240)
+  guard case .skin(let image) = file.outline else {
+    Issue.record("Expected a skin")
+    return
+  }
+  #expect(file.backdrop == .skin && !file.isResizable && file.lockAspect && file.fitsFullscreen)
+  #expect(image.width == 320 && image.height == 240)
+}
+
+@Test func aSkinFrameRequiresItsDecodedImage() throws {
+  let document = try Fixtures.document(stage: stage(skin: true))
+  defer { try? FileManager.default.removeItem(at: document) }
+  var opened = try openFile(path: document.path)
+  opened.skinPng = nil
+  #expect(throws: SlopError.self) { _ = try SlopFile(url: document, opened: opened) }
+  opened.skinPng = Data("invalid PNG".utf8)
+  #expect(throws: SlopError.self) { _ = try SlopFile(url: document, opened: opened) }
 }
 
 @Test func theBackdropFollowsThePresentationsBackground() throws {

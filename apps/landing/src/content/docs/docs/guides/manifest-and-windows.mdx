@@ -23,20 +23,40 @@ export default defineDocument({ count: s.counter() });
 import { defineSlop } from "hitslop";
 import schema from "./schema";
 import App from "./App.svelte";
+import * as commands from "./commands";
 
 export default defineSlop({
   slug: "tiny-counter",
   view: App,
+  commands,
   title: "Tiny Counter",
   description: "A small counter that stays on your desktop.",
   author: { name: "Your Name", url: "https://example.com" },
   categories: ["utilities"],
-  window: { kind: "standard", width: 420, height: 520, resizable: true, shape: "22px" },
+  window: { kind: "standard", width: 420, height: 520, resizable: true, fullscreenable: true },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
   document: schema,
   initial: { count: 0 },
 });
 ```
+
+Define the registered action in `commands.ts`:
+
+```ts title="commands.ts"
+import doc from "./schema";
+
+export const countOne = doc.command({
+  description: "Count one more.",
+  args: {},
+  run({ tx }) { tx.fields.count.increment(); },
+});
+```
+
+An `App.svelte` button imports `countOne` and calls `countOne()`. The CLI discovers
+the registered name through `slop describe` and runs it through `slop call`. Both
+execute the same action. Declare actions at module scope; use `s.*` descriptors for
+arguments. See the [complete counter tutorial](/docs/getting-started/) and
+[command walkthrough](/docs/guides/edit-installed-data/).
 
 Vite compiles the declaration and its imports. A restricted native evaluator initializes
 it, then Rust checks the resulting definition and resource inventory. Metadata and
@@ -70,9 +90,28 @@ Standard windows support these options:
 | Option | Values | Behavior |
 | --- | --- | --- |
 | `resizable` | `true` or `false` | Whether the user can resize the window. The host defaults to `true`. |
+| `fullscreenable` | Boolean, default false | Enables the native fullscreen control; also supported by PNG-skinned windows. |
 | `shape` | CSS radius string or SVG path object | Defines the native silhouette; defaults to `"22px"`. |
 | `lockAspect` | Boolean, default false | Preserves the initial width/height ratio when resizing. |
 | `background` | `transparent` or `glass` | `transparent` shows the desktop behind a custom HTML surface; `glass` frosts it. |
+
+## Enable fullscreen
+
+Set `fullscreenable: true` inside `window` to offer the green fullscreen control
+and **View ▸ Enter Full Screen** in the Mac app. This works for both `standard`
+and `skin` windows, independently of `resizable`; it never enters fullscreen automatically.
+
+A resizable standard window with no explicit `shape` or `lockAspect` fills the
+screen. Fixed, explicitly shaped, aspect-locked and PNG-skinned windows keep their
+authored composition, scaled to fit on a black backdrop. PNGs retain their source
+resolution when enlarged; test skins on a large display.
+
+The same live app stays mounted as you enter and leave fullscreen. Fullscreen is
+window behavior, not saved document data or an export layout. Build and create a
+new document to try a changed declaration; existing documents keep their embedded app.
+
+For a small tool you want to keep visible on the desktop, use the toolbar's
+**Always on Top** pin. It does not require an authoring option.
 
 ## Choose a window shape
 
@@ -122,7 +161,7 @@ independent of the window silhouette. Radius shapes expose their radius to the
 page as `--slop-window-radius`; path shapes set it to `0`.
 
 The window is the stage in every mode. The host resets the page margins, and
-the automatic app root (or a framework-neutral `data-hitslop-root` element) and its mount
+the automatic app root (or a framework-neutral `data-slop-root` element) and its mount
 ancestors fill the window. Prefer `height: 100%`, grid, or flex inside it rather
 than repeating page sizing or using `100vh`; deliberate overrides remain possible.
 For a transparent window, draw the visible surface inside your app: the host

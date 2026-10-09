@@ -1,7 +1,7 @@
 //! Acceptance of a compiler's explicit resource inventory. The accepted result owns
 //! every byte that packing will write; no source is opened again after validation.
 use super::Artwork;
-use crate::app::{AppDefinition, WindowDefinition};
+use crate::app::{AppDefinition, WindowFrame};
 use crate::build::{BuildInput, ResourceKind};
 use crate::error::{Error, Result, invalid};
 use crate::media;
@@ -96,7 +96,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     {
         return Err(invalid("Build roles do not match the emitted programs and stylesheet"));
     }
-    if let WindowDefinition::Skin { width, height, skin } = app.window() {
+    if let WindowFrame::Skin { skin } = &app.window().frame {
         let asset = assets
             .iter()
             .find(|asset| &asset.key == skin)
@@ -104,8 +104,11 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         if asset.media_type != "image/png" {
             return Err(invalid("The window skin must be a PNG app resource"));
         }
-        crate::images::check(&asset.bytes, crate::images::Purpose::Skin { width: *width, height: *height })
-            .map_err(Error::Rejected)?;
+        crate::images::check(
+            &asset.bytes,
+            crate::images::Purpose::Skin { width: app.window().width, height: app.window().height },
+        )
+        .map_err(Error::Rejected)?;
     }
     let mut artwork = Vec::new();
     for (name, path) in [(Artwork::Preview, input.artwork.preview), (Artwork::Icon, input.artwork.icon)] {

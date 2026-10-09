@@ -30,8 +30,17 @@ adding a template and choosing which templates ship.
   Svelte `$state`; files are attachments, never base64 in fields.
 - Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `slop.ts`'s
   `initial`, which seeds new documents only. Changing the schema makes a new document type.
-- Don't silence writes with `.catch(() => {})`: the host reports a refused write. Catch
-  only to show the template's own message. Order rows with `move`, not a position field.
+- Don't silence writes with `.catch(() => {})`: the host reports a refused write, and the
+  window shows a command's `refuse(message)` in its notice region. Catch only to react in
+  the template's own way. Order rows with `move`, not a position field.
+- Declare a scalar's `default` in the schema instead of repeating it at every insert.
+- Use `EditableText` for text, `draft` for composers, `motion` for animated numbers and
+  `notify` for messages (all from `hitslop/svelte`) rather than reimplementing them.
+- Use a thin dedicated export with natural height for growing content; derive its data
+  from `doc.current` and keep editor controls and effects out of it. For simple default
+  captures, mark editing controls `data-slop-export="hide"`.
+- Import optional `hitslop/base.css` before app styles for low-specificity form, focus
+  and reduced-motion defaults. App CSS still owns typography, layout and palette.
 - Capture views and export hooks never change saved state to prepare a view.
 
 ## Design standards
@@ -70,14 +79,22 @@ controls for temporary review data rather than changing creation defaults.
 
 Run check and build, register, create a writable copy, type then immediately close,
 reopen, duplicate, and export PNG and PDF. Inspect the editor, export and icon from the
-same revision. Native tests are required for persistence, clipping, skins and desktop
-click-through. See [presentation fixtures](development.md#focused-checks) and the
+same revision. Review persistence, clipping, skins and desktop click-through in the
+native app. **Do not create an automated test or test suite for each slop.** Creating,
+styling, animating, or updating a slop requires existing checks/builds and hands-on
+review, not new example-specific tests. Shared SDK, storage, or host regressions belong
+in the existing tests at their owning boundary. See [testing](../testing.md),
+[presentation fixtures](development.md#focused-checks) and the
 packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
 
 ## Commands
 
-Keep the stored shape in `schema.ts`, declare actions with `doc.command(...)` in any module,
-and register them by name in `defineSlop({ commands })`. The same action can be called by a
+Keep the stored shape in `schema.ts`, declare actions at module scope with
+`doc.command({ description, args, run })` in a TypeScript command module, and register
+them by name in `defineSlop({ commands })`. Registration may rename or re-export the
+command value; descriptions do not identify it. Declarations in Svelte components,
+functions, loops or classes, and dynamically assembled command specifications are
+build errors. The same action can be called by a
 page button or `slop call`; either way it runs in the owner's restricted evaluator. Start with the few verbs
 that matter; ordinary handles, bindings and `doc.change()` remain available.
 
@@ -96,6 +113,13 @@ export const rename = doc.command({
 
 A button imports `rename` and awaits `rename({ title: "Weekend" })`. The CLI discovers it
 with `slop describe My.slop` and calls `slop call My.slop rename --args '{"title":"Weekend"}'`.
+
+Teach this in order: declare the command, import its exports with
+`import * as commands from "./commands"`, register `commands` in `defineSlop`, then
+call the same export from the page. The [public command walkthrough](../../apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
+shows discovery, invocation, direct field edits and their responses. A command like
+`rename` with no return value and no inserts prints `{"result":null,"ids":[]}`;
+read the changed fields with `get`.
 Descriptions on fields use options such as `s.text({ description: "Window title." })`.
 
 Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`, and
@@ -104,13 +128,22 @@ time, random sources, browser APIs, I/O and promises. Register commands by key i
 `defineSlop({ commands: { rename } })`. Page buttons and CLI calls both execute in the
 restricted child; module globals do not survive a call and `run` cannot capture Svelte
 state. Argument objects are strict automatically. Arguments support `s.string`, number,
-integer, boolean, enum, optional, nested objects and lists of scalars. Text, counters,
+integer, boolean, enum, `s.row`, optional, nested objects and lists of scalars. Text, counters,
 records, object lists and unions are not argument types. `description` is allowed on any
 node. String `minLength` and `maxLength` count Unicode code points: an emoji is one;
 HTML `maxlength` and DOM caret positions count UTF-16 units instead.
 A successful command is one undo step. CLI completion means the batch was saved; page
 completion means its snapshot published. A definite stale conflict retries once with the
 same clock and seed; an unknown outcome never retries.
+
+`s.row("tasks")` takes one row of the document's list `tasks`: callers pass the row or its
+`$id`, Rust checks the ID and that the list exists, and the command program hands `run` the
+row from `current`, so `tx.at(task)` works without a search. A row that no longer exists
+refuses the command with "That task no longer exists." `refuse(message)` from `hitslop`
+stops a command with a message for the person: nothing changes, the reason is `refused`,
+and the window shows it in its notice region. Anything else a command throws is a fault.
+Arguments with a `default` may be omitted. A command the page declares but `defineSlop`
+does not register fails `check` and `build`.
 
 Command metadata lives in `definition_json`; `commands.js` is private and immutable.
 JSON Schema is computed only for `describe` tool clients, never stored or accepted as input.
@@ -124,6 +157,16 @@ such as `App.svelte`, `Export.svelte` and `schema.ts` are conventions, not disco
 The window is either `{ kind: "standard", width, height, ... }` or
 `{ kind: "skin", width, height, image: importedPNG }`.
 
+Both accept `fullscreenable: true` (default false), independently of `resizable`.
+This offers the native fullscreen button and View menu action; it never enters
+fullscreen automatically. A resizable standard window without an explicit shape or
+aspect lock fills the screen. Fixed, shaped, aspect-locked and PNG-skinned windows
+retain their authored composition, scaled to fit on a black backdrop. The live view
+stays mounted; fullscreen is not an export view or a saved document setting.
+Fitted pages render with host zoom so text stays sharp. PNG skins keep their source
+resolution when enlarged; use a larger skin image for large displays, or a vector
+window shape for a resolution-independent outline.
+
 Import template images and fonts in components, CSS `url()`s or the declaration. Vite
 collects the real bundle and rewrites them to `/assets/media/<sha256>.<ext>` URLs; duplicates
 share one resource. A skin or export-only image is included even if the editor never
@@ -136,3 +179,13 @@ User-imported images are attachments, separate from template assets. Import thro
 `app.attachments.url(ref.id)` in an image or media element. `read(id)` fetches a Blob when
 code needs bytes. The host supplies the media type and serves ranges without a base64
 read bridge. Attachments stay with the document when it is copied or shared.
+
+### Command declarations
+
+Declare commands at module scope with `document.command({ description, args, run })` and
+register them in `slop.ts`. The build follows document imports, re-exports, namespace
+members and immutable aliases to distinguish these declarations from other libraries'
+`.command()` methods. Write the specification as an object literal; do not extract or
+destructure the document's `command` method, or declare commands in a factory or Svelte
+component. Import registered callables into components instead. Development and packed
+builds apply the same rules.

@@ -78,6 +78,13 @@
     {
       "type": "set",
       "path": [
+        "lastHit"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
         "memo"
       ],
       "value": "Compat 3 ✓ café 🦊"
@@ -143,6 +150,27 @@
       "value": 3
     },
     {
+      "type": "insert",
+      "path": [
+        "slides"
+      ],
+      "id": "compat-3",
+      "value": {
+        "blocks": [],
+        "title": "Compat 3 ✓ café 🦊"
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "slides"
+      ],
+      "id": "compat-1",
+      "at": {
+        "after": "compat-2"
+      }
+    },
+    {
       "type": "set",
       "path": [
         "title"
@@ -186,6 +214,7 @@
     "hits": 9,
     "label": "compat 3",
     "lane": "todo",
+    "lastHit": 3,
     "memo": "Compat 3 ✓ café 🦊",
     "note": "compat 3",
     "photo": "compat 3",
@@ -221,6 +250,37 @@
       "muted": true,
       "volume": 3
     },
+    "slides": [
+      {
+        "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+        "blocks": [
+          {
+            "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+            "text": "First block"
+          },
+          {
+            "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+            "text": "Second block"
+          }
+        ],
+        "title": "Nested composition"
+      },
+      {
+        "$id": "compat-2",
+        "blocks": [],
+        "title": "Replay 2 é 中文"
+      },
+      {
+        "$id": "compat-1",
+        "blocks": [],
+        "title": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-3",
+        "blocks": [],
+        "title": "Compat 3 ✓ café 🦊"
+      }
+    ],
     "title": "Compat 3 ✓ café 🦊",
     "version": "compat 3"
   }

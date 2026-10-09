@@ -27,7 +27,7 @@ export default defineDocument({
   mood: s.integer({ min: 1, max: 5 }),
   lane: s.enum(["todo", "doing", "done"]),
   note: s.optional(s.string({ maxLength: 280 })),
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean({ default: false }) })),
   tags: s.list(s.string()),
   checkins: s.record(s.integer({ min: 1 })),
   visits: s.counter(),
@@ -64,6 +64,20 @@ Trees and rich text are not implemented; no slop uses them.
   between edits.
 - `doc.at(value)` returns the typed handle for any object taken from `doc.current`: the
   root, a row, a nested object or a record entry.
+
+**Defaults.** A field that an insert, creation of an absent entry or optional object, or
+`initial` leaves out takes its default: text `""`, an empty list or record, a counter at
+0, an object whose own fields all have defaults, or the `default` a scalar declares
+(`s.boolean({ default: false })`, `s.enum([...], { default })`, and on `string`, `number`
+and `integer`). A scalar without a default is required, and optional fields stay absent.
+A default must satisfy its field's rules, and only object fields have one: optional
+values, list elements and record values do not. Defaults are part of the descriptor, so
+changing one makes a new document type; command arguments take defaults the same way.
+Replacing a present object with `set`/`put` requires every required field, including
+fields with creation defaults. `replace` requires a complete supplied subtree, including
+new rows and entries within it; it never fills defaults. Omitting optional fields or
+record keys removes them. Input types cannot know whether a keyed value already exists,
+so callers of `put`/`set` must follow this state-dependent completeness rule.
 
 **Writes are asynchronous.**
 - `await handle.set(x)` resolves once the owner has accepted the edit and `doc.current`
@@ -122,7 +136,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `out_of_range` | outside numeric or string-length bounds, or an index past the end |
 | `path_not_found` | no such field, row, entry or element (including fields of an unset optional or entry) |
 | `invalid_key` | a record key that is empty, longer than 256 UTF-16 units, or reserved |
-| `exists` | replacing an object whose value holds text, a list or a counter |
+| `exists` | a destination already exists and cannot be replaced |
 | `duplicate_id` | inserting a row whose `id` already exists |
 | `invalid_request` | a malformed request, rows addressed by index, or scalar elements by id |
 | `invalid_id` | a row `id` outside 1–64 characters of `A–Z a–z 0–9 _ -` |
@@ -130,6 +144,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `stale_base` | a text edit whose `from` no longer matches the field at its version, a version before the document's retained history, or one from another history |
 | `invalid_version` | a version token that is not one the core issued |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
+| `refused` | a command called `refuse(message)`, or a row argument names a row that no longer exists; the message is for the person |
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
@@ -154,11 +169,13 @@ neither side's typing is lost.
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
   binding sends its unsent text first.
-- **`EditableText`** (from `hitslop/svelte`) is that binding for text that repeats, such
-  as a field in every row: it shows the text and mounts a textarea only while edited,
-  since WebKit form controls are too expensive to mount by the thousand. It places the
-  caret where the person clicked, grows with its text, and leaves IME Enter to the
-  composition.
+- **`EditableText`** (from `hitslop/svelte`, `field={handle}`) is that binding for any
+  text, including a field in every row: it shows the text and mounts a textarea only
+  while edited, since WebKit form controls are too expensive to mount by the thousand.
+  It places the caret where the person clicked, grows with its text, and leaves IME
+  Enter to the composition.
+- **`handle.value`** on a live text handle reads the shown text (`""` while an optional
+  text is unset); it is read-only.
 - **`text.set(value)`** replaces the whole field as the owner holds it when it applies
   the set. It uses a minimal edit script, so typing still on its way from a binding
   merges with it; typing the owner already accepted is replaced unless `value` keeps it.
@@ -217,19 +234,20 @@ agent's increments all count, where a `set` of a number read earlier would lose 
   - inserts and initial values may leave it out.
   - `null` is never a value.
 - **Optional objects:**
-  - `set` creates the object, or replaces it when it holds only scalars.
-  - If its descriptor holds text, a list or a counter, a second `set` is refused
-    (`exists`), so identities are never discarded; edit its fields instead.
+  - `set` creates an absent object with creation defaults, or reconciles a complete
+    replacement with the existing object. Surviving text, lists and rows keep identity.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
 - `set` on an object that is already set writes only the fields that differ.
+- Clearing and then setting creates a fresh incarnation. A text edit based on the old
+  incarnation is `path_not_found`, even when the new text happens to be identical.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
 
-`s.object({...})` groups fields, each edited on its own. An object always exists
-(unless it is optional) and is never replaced as a whole.
+`s.object({...})` groups fields, each edited through its handle. An object always exists
+(unless it is optional). The CLI's `replace` can reconcile its complete value in place.
 
 ## Rows
 
@@ -287,8 +305,9 @@ widths by column. Values are scalars or objects.
   - `entry(key)` is the entry's handle, and its fields are `path_not_found` while the
     entry is unset;
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
-- **Entries behave like optional fields.** Replacing an object entry that holds text or
-  a list is refused (`exists`).
+- **Entries behave like optional fields.** A new object entry receives creation
+  defaults; replacing an existing entry requires a complete value and reconciles its
+  surviving children. Delete followed by put creates a fresh incarnation.
 - **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
@@ -344,9 +363,23 @@ Every container is created with its value by `insert_container` and goes with it
 Stored state always matches the descriptor: every row is a map with a unique `$id`
 string, and a map holds only declared fields (and a row's `$id`). Opening checks this.
 
-Agent (CLI and socket) commits carry the commit message `agent`. Rows in an app's initial
-value without a `$id` get one derived from their position by a frozen function
-(`identity.rs`), so packing the same app writes the same template.
+Complete replacements retain surviving containers. Ordinary delete/clear followed by
+creation makes new containers. Undo of deletion restores the content with fresh map and
+text containers too, including a removed row; the restored row keeps its public `$id`.
+Text edits based on the deleted incarnation refuse with `path_not_found`; a binding
+opened on the restored version edits normally. Moving a surviving row keeps its
+containers and `$id`.
+
+Live commits record timestamps and an origin message: `page`, `agent` (CLI and socket),
+`command:<name>`, `window`, `undo`, `redo` or `create`. Retained history is bounded;
+these messages are attribution for the retained changes, not a durable audit log.
+Local history maintenance retains supported undo/redo while it fits the history budget.
+When it cannot fit, redo and older undo steps expire; a text edit needing a version before
+the retained floor refuses with `stale_base`. The rebuild preserves current row/text
+identities and the publication sequence. Undo remains session-only.
+Template creation uses the deterministic message `create` and timestamp zero. Rows in
+an app's initial value without a `$id` get one derived from their position by a frozen
+function (`identity.rs`), so packing the same app writes the same template.
 
 ## Not supported
 

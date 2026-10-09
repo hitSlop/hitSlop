@@ -59,7 +59,7 @@ import Testing
   #expect(controller.owns(panel), "menu commands reach the document while the panel is key")
   #expect(!panel.frame.intersects(window.frame))
   // The panel keeps the slop's height and scrolls its colors; its content never sizes it.
-  try await Task.sleep(for: .milliseconds(200))
+  await eventually { panel.frame.height == window.frame.height && panel.frame.maxY == window.frame.maxY }
   #expect(
     panel.frame.height == window.frame.height && panel.frame.maxY == window.frame.maxY,
     "panel \(panel.frame) beside window \(window.frame)")

@@ -1,4 +1,5 @@
 import App from "./App.svelte";
+import "hitslop/base.css";
 import "./styles.css";
 import Icon from "./Icon.svelte";
 import * as commands from "./commands";
@@ -21,8 +22,8 @@ export default defineSlop({
     title: "A little room to think",
     tasks: [
       { text: "Make something small", done: true },
-      { text: "Try a change from the terminal", done: false },
-      { text: "Close this list and open it again", done: false },
+      { text: "Try a change from the terminal" },
+      { text: "Close this list and open it again" },
     ],
   },
 });

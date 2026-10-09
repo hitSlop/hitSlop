@@ -13,25 +13,29 @@ import Testing
   session.load()
   do {
     try await session.waitUntilReady()
+    let benchmark = ProcessInfo.processInfo.environment["HITSLOP_BENCH_COMMANDS"] == "1"
+    let iterations = benchmark ? 40 : 1
     let measured =
       try await session.webView.callAsyncJavaScript(
         """
         const post = async request => JSON.parse(await webkit.messageHandlers.hitslop.postMessage(JSON.stringify(request)));
         const times = [];
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < iterations; i++) {
           const start = performance.now();
-          const reply = await post({method:'commands.run', name:'addTask', args:{text:'Native command ' + i}});
+          const reply = await post({method:'commands.run', name:'addRow', args:{text:'Native command ' + i}});
           if (!reply.ok || reply.ids.length !== 1) throw new Error(JSON.stringify(reply));
           times.push(performance.now() - start);
         }
-        const invalid = await post({method:'commands.run', name:'addTask', args:{text:3}});
+        const invalid = await post({method:'commands.run', name:'addRow', args:{text:3}});
         if (invalid.ok || invalid.code !== 'rejected') throw new Error('Unchecked arguments');
         times.sort((a,b) => a-b);
-        return [times[20], times[37]];
-        """, arguments: [:], in: nil, contentWorld: .page) as? [Double]
+        return times;
+        """, arguments: ["iterations": iterations], in: nil, contentWorld: .page) as? [Double]
     let times = try #require(measured)
-    print("Native WebKit command latency, 40 fresh evaluations: p50=\(times[0])ms p95=\(times[1])ms")
-    let cli = try await command("call", url: root, ["command": "addTask", "args": ["text": "CLI command"]])
+    if benchmark {
+      print("Native WebKit command latency, 40 fresh evaluations: p50=\(times[20])ms p95=\(times[37])ms")
+    }
+    let cli = try await command("call", url: root, ["command": "addRow", "args": ["text": "CLI command"]])
     #expect(cli.ok && cli.ids?.count == 1)
     // The page receives the CLI command's publication without reopening.
     #expect(
@@ -43,7 +47,7 @@ import Testing
     try await session.close()
     let value = try JSONSerialization.jsonObject(with: await commandState("get", url: root)) as! [String: Any]
     let tasks = (value["value"] as! [String: Any])["tasks"] as! [[String: Any]]
-    #expect(tasks.filter { ($0["text"] as? String)?.hasPrefix("Native command ") == true }.count == 40)
+    #expect(tasks.filter { ($0["text"] as? String)?.hasPrefix("Native command ") == true }.count == iterations)
     #expect(tasks.last?["text"] as? String == "CLI command")
   } catch {
     try? await session.close()

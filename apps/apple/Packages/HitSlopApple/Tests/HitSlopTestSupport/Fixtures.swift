@@ -281,8 +281,8 @@ public enum Fixtures {
   }
 
   /// A copy of a stage the native build prepared (`generated/native-fixtures/<slug>`), the
-  /// build of an example app before packing.
-  public static func nativeStage(_ slug: String = "quick-checklist") throws -> URL {
+  /// build of a dedicated infrastructure app before packing.
+  public static func nativeStage(_ slug: String = "document-fixture") throws -> URL {
     try stage("generated/native-fixtures/\(slug)")
   }
 
@@ -378,7 +378,7 @@ public enum Fixtures {
   }
 
   /// A new document from a template the native build prepared (`generated/native-fixtures`).
-  public static func native(_ slug: String = "quick-checklist") throws -> URL {
+  public static func native(_ slug: String = "document-fixture") throws -> URL {
     try document(from: repository.appendingPathComponent("generated/native-fixtures/\(slug).slop"))
   }
 }

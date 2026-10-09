@@ -66,7 +66,7 @@ export async function request(body: EngineRequest, { binary, ...options }: Engin
 }
 
 const replyFields = {
-  get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
+  copy: ["output"], get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
   "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
   "artwork.export": ["output"], templates: ["catalog"], create: ["documentPath"], inspect: ["info"], schema: ["schema"],
   pack: [], validateApp: [], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
@@ -85,7 +85,7 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
   const fields = ["ok", "method", ...replyFields[method]];
   if (fields.some(key => !Object.hasOwn(reply, key)) || Object.keys(reply).some(key => !fields.includes(key))) return false;
   if (method === "batch" || method === "call") return Array.isArray(reply.ids) && reply.ids.every(id => typeof id === "string");
-  if (method === "export") return typeof reply.output === "string";
+  if (method === "export" || method === "copy") return typeof reply.output === "string";
   if (method === "screenshot" || method === "artwork.export") return reply.output === null || typeof reply.output === "string";
   if (method === "create" || method === "open") return typeof reply.documentPath === "string";
   return true;

@@ -17,7 +17,7 @@ inputs:
     description: Install workspace dependencies
     default: "true"
   webkit:
-    description: Install the pinned Playwright WebKit browser for native browser tests
+    description: Install Playwright WebKit and Google Chrome for browser tests
     default: "false"
 runs:
   using: composite
@@ -47,7 +47,7 @@ runs:
       if: inputs.rust == 'true' && inputs.bindings != 'none'
       with:
         path: generated/core-tools
-        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.127-uniffi-0.32.2
+        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.129-uniffi-0.32.2-binaryen-132
     - id: bun-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.dependencies == 'true'
@@ -58,9 +58,9 @@ runs:
     - run: bun install --frozen-lockfile
       if: inputs.dependencies == 'true'
       shell: bash
-    - name: Install Playwright WebKit
+    - name: Install browser test engines
       if: inputs.webkit == 'true'
-      run: bun node_modules/playwright/cli.js install webkit
+      run: bun node_modules/playwright/cli.js install webkit chrome
       shell: bash
     - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
       if: inputs.rust == 'true' && inputs.nextest == 'true'
@@ -75,9 +75,16 @@ runs:
       run: |
         rustup show active-toolchain
         rustup target add wasm32-unknown-unknown
+        if [ "${{ runner.os }}" = macOS ]; then
+          brew install llvm
+        else
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+        fi
         if [ "$BINDINGS" != none ]; then
-          if [ "$(generated/core-tools/bin/wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen 0.2.127" ]; then
-            cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools --force
+          bash scripts/build/install-binaryen.sh
+          if [ "$(generated/core-tools/bin/wasm-bindgen --version 2>/dev/null || true)" != "wasm-bindgen 0.2.129" ]; then
+            cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools --force
           fi
         fi
         if [ "$BINDINGS" = native ] && [ "$RUNNER_OS" = macOS ]; then

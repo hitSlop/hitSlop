@@ -44,7 +44,7 @@ export async function mountViewLifecycle(options: {
       const failed = (event: Event) => {
         failure = { error: (event as CustomEvent).detail };
       };
-      target.ownerDocument.addEventListener("hitslop:render-error", failed);
+      target.ownerDocument.addEventListener("slop:render-error", failed);
       try {
         await view.unmount();
         view = await mount();
@@ -53,7 +53,7 @@ export async function mountViewLifecycle(options: {
         await fontsSettled(target.ownerDocument);
         await recovered?.();
       } finally {
-        target.ownerDocument.removeEventListener("hitslop:render-error", failed);
+        target.ownerDocument.removeEventListener("slop:render-error", failed);
       }
     },
     flush: () => doc.flush(),

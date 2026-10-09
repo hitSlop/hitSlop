@@ -87,7 +87,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .apple-icon { width: 17px; height: 17px; flex: 0 0 auto; }
 
 /* ---------- Masthead ---------- */
-.masthead { position: sticky; top: 12px; z-index: 100; width: var(--page); min-height: 66px; margin: 12px auto 0; padding: 0 10px 0 14px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border: 1px solid #ffffffb0; border-radius: 30px; background: #ffffff85; box-shadow: 0 10px 34px #4a2a9c1a, 0 1px 0 #ffffffcc inset; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%); }
+.masthead { position: sticky; top: 12px; z-index: 100; width: var(--page); min-height: 66px; margin: 12px auto 0; padding: 0 10px 0 14px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border: 1px solid #ffffffb0; border-radius: 30px; background: linear-gradient(rgb(255 255 255 / .82), rgb(255 255 255 / .70)); box-shadow: 0 10px 34px #4a2a9c1a, 0 1px 1px #fffffff2 inset, 0 -1px 1px #4a2a9c14 inset; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%); }
 .wordmark { width: max-content; display: inline-flex; align-items: center; gap: 10px; font-family: "HitSlop Display", sans-serif; font-size: 1.65rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
 .wordmark > span:last-child { padding-top: .1em; }
 .brand-mark { width: 40px; height: 40px; display: grid; place-items: center; overflow: hidden; border-radius: 11px; box-shadow: 0 4px 10px #b8860b38; transition: transform 300ms var(--spring); }

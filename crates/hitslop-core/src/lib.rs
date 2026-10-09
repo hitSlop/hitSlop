@@ -2,6 +2,7 @@
 
 #[cfg(feature = "ts")]
 pub mod bindings;
+mod replication;
 mod wire;
 use loro::{
     Container, ContainerID, ContainerTrait, ExportMode, Frontiers, ID, Index, LoroDoc, LoroMap, LoroMovableList,
@@ -21,7 +22,7 @@ pub use wire::{OutcomeCode, native, page as page_wire, preview, socket as socket
 #[cfg(feature = "storage")]
 pub mod app;
 #[cfg(feature = "storage")]
-pub use wire::{HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
+pub use wire::{HELPER_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
 pub mod arguments;
 mod check;
 mod descriptor;
@@ -30,11 +31,15 @@ mod identity;
 #[cfg(feature = "storage")]
 pub mod images;
 #[cfg(feature = "storage")]
+mod maintenance;
+#[cfg(feature = "storage")]
 pub mod media;
 mod project;
 mod publication;
 mod replace;
 pub mod shape;
+#[cfg(all(test, feature = "storage"))]
+mod testing;
 mod text;
 pub mod theme;
 pub use descriptor::validate;
@@ -106,6 +111,7 @@ fn random(buffer: &mut [u8]) {
 }
 /// `bytes` random bytes in lowercase hex.
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0u8; bytes];
     random(&mut buffer);
@@ -209,9 +215,11 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 
 /// The peer a template's initial operations belong to (`Document::initial_checkpoint`).
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 const TEMPLATE_PEER: u64 = 1;
 /// `doc` with the layout marker and `value`, a validated value of `schema`, committed.
 fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
+    doc.set_next_commit_message("create");
     doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
     fill(&doc.get_map("data"), schema, value, &mut Rows::new(&HashMap::new()))?;
     doc.commit();
@@ -219,6 +227,7 @@ fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
 }
 /// Gives every row in `value` that has no `$id` one derived from its place (`at`).
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 fn name_rows(node: &Node, value: &mut Value, at: &str) {
     match (node, value) {
         (Node::Optional { inner }, value) => name_rows(inner, value, at),
@@ -252,6 +261,7 @@ fn name_rows(node: &Node, value: &mut Value, at: &str) {
 /// Semantic seed equality: object order and integral number spelling may differ,
 /// but converting an integer to a double must not silently round its value.
 #[cfg(feature = "storage")]
+#[cfg(not(target_arch = "wasm32"))]
 fn same_seed(a: &Value, b: &Value) -> bool {
     fn integer_float(integer: &serde_json::Number, float: f64) -> bool {
         if float.fract() != 0.0 {
@@ -311,12 +321,19 @@ pub enum Origin {
     Window,
     Agent,
 }
-/// The commit message of agent edits, saved with the history for attribution.
-const AGENT: &str = "agent";
+impl Origin {
+    fn message(self) -> &'static str {
+        match self {
+            Self::Page => "page",
+            Self::Window => "window",
+            Self::Agent => "agent",
+        }
+    }
+}
 /// The undo step being extended: a typing run in one text field (its text and caret, in
 /// UTF-16, after the last edit), a run of agent batches, or a run of the window's changes
 /// to one palette color (a color panel drag).
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Run {
     Typing { path: Vec<Segment>, text: String, caret: usize },
     Agent,
@@ -324,6 +341,7 @@ enum Run {
 }
 /// One document edit, restored by Loro as a new change. Only version references are
 /// kept here; document values and their history remain in Loro.
+#[derive(Clone)]
 struct Step {
     before: Frontiers,
     after: Frontiers,
@@ -413,6 +431,7 @@ impl Document {
             check::stored(&app.schema, Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))))?;
             app.theme.check_stored(&doc.get_map(theme::ROOT))?;
         }
+        doc.set_record_timestamp(true);
         let events = Events::default();
         subscribe(&doc, &events);
         let this = Self {
@@ -431,9 +450,12 @@ impl Document {
     }
     /// A new document of `app` holding `initial`, its values as JSON.
     pub fn create(app: &AppSpec, initial: &str) -> Result<Self> {
-        let initial: Value = parse(initial)?;
+        let mut initial: Value = parse(initial)?;
+        app.schema.fill_defaults(&mut initial);
         app.schema.validate(&initial, false)?;
-        let doc = filled(LoroDoc::new(), &app.schema, &initial)?;
+        let doc = LoroDoc::new();
+        doc.set_record_timestamp(true);
+        let doc = filled(doc, &app.schema, &initial)?;
         Self::from_doc(doc, app.clone(), false)
     }
     /// A template's initial state, as the checkpoint every document of it starts from. The
@@ -441,8 +463,10 @@ impl Document {
     /// without an `$id` get one derived from their place, and the operations belong to a
     /// fixed peer. A document that opens it edits as a peer of its own.
     #[cfg(feature = "storage")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn initial_checkpoint(app: &AppSpec, initial: &str) -> Result<Vec<u8>> {
         let mut initial: Value = parse(initial)?;
+        app.schema.fill_defaults(&mut initial);
         app.schema.validate(&initial, false)?;
         name_rows(&app.schema, &mut initial, "");
         let doc = LoroDoc::new();
@@ -523,6 +547,12 @@ impl Document {
         if self.doc.get_pending_txn_len() == 0 && self.doc.state_frontiers() == *before {
             return Ok(());
         }
+        self.rebuild_at(before)
+    }
+    /// Replaces the Loro document with one replayed to `before`, under a new peer.
+    /// Unconditional: an import Loro refused can keep operations whose dependencies are
+    /// missing without moving its frontiers.
+    fn rebuild_at(&mut self, before: &loro::Frontiers) -> Result<()> {
         let fresh = replica_at(&self.doc, before).inspect_err(|_| self.broken = true)?;
         lock(&self.events).clear();
         subscribe(&fresh, &self.events);
@@ -590,10 +620,11 @@ impl Document {
         let before = self.doc.state_frontiers();
         let mut ids = vec![];
         let mut failure = None;
+        let message = command.map_or_else(|| origin.message().to_owned(), |name| format!("command:{name}"));
+        self.doc.set_next_commit_message(&message);
         let typed = {
             let mut rows = Rows::new(&self.lists);
-            let mut texts =
-                text::Texts { base: base.as_ref(), floor: &self.floor, agent: origin == Origin::Agent, typed: None };
+            let mut texts = text::Texts { base: base.as_ref(), floor: &self.floor, message: &message, typed: None };
             for (index, op) in batch.intents.iter().enumerate() {
                 let result =
                     if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
@@ -613,11 +644,7 @@ impl Document {
             self.abort(&before)?;
             return Err(e);
         }
-        if let Some(name) = command {
-            self.doc.set_next_commit_message(&format!("command:{name}"));
-        } else if origin == Origin::Agent {
-            self.doc.set_next_commit_message(AGENT);
-        }
+        self.doc.set_next_commit_message(&message);
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
         if published.is_some() {
@@ -678,12 +705,14 @@ impl Document {
         let before = self.doc.state_frontiers();
         // A new change that makes the document what it was at `target`. Loro applies it
         // all or nothing, so a refusal leaves the document as it was.
+        self.doc.set_next_commit_message(if undo { "undo" } else { "redo" });
         self.doc.revert_to(&target).map_err(|e| match e {
             loro::LoroError::SwitchToVersionBeforeShallowRoot | loro::LoroError::FrontiersNotFound(_) => {
                 err(Code::StaleBase, "That version precedes this document's retained history")
             }
             e => engine(e),
         })?;
+        self.doc.set_next_commit_message(if undo { "undo" } else { "redo" });
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
         // A refused revert leaves the stacks and grouping untouched.
@@ -742,12 +771,17 @@ impl Document {
     /// theme?}`. Applying it to the previous snapshot yields a fresh snapshot. `None`
     /// when the document did not change: no publication, and the sequence stays.
     fn publish(&mut self) -> Result<Option<Published>> {
+        self.publish_with(false)
+    }
+    /// A publication of what changed, or with `always`, one that only names the new
+    /// version when nothing visible did (an import of operations with no visible effect).
+    fn publish_with(&mut self, always: bool) -> Result<Option<Published>> {
         let events = std::mem::take(&mut *lock(&self.events));
         let theme = publication::theme_changed(&self.doc, &events)
             .then(|| self.app.theme.effective(&self.doc.get_map(theme::ROOT)))
             .transpose()?;
         let ops = publication::publish(&self.doc, &self.app.schema, &mut self.lists, events)?;
-        if ops.is_none() && theme.is_none() {
+        if ops.is_none() && theme.is_none() && !always {
             return Ok(None);
         }
         let next = self.sequence.checked_add(1).ok_or_else(|| err(Code::TooLarge, "Publication sequence"))?;
@@ -813,6 +847,7 @@ pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc
     let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;
     let start = doc.shallow_since_vv().to_vv();
     let replica = LoroDoc::new();
+    replica.set_record_timestamp(true);
     if doc.is_shallow() {
         let base = doc.export(ExportMode::state_only(Some(&doc.shallow_since_frontiers()))).map_err(engine)?;
         replica.import(&base).map_err(engine)?;
@@ -830,20 +865,23 @@ fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 mod error;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod file;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod registry;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod store;
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod owner;
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(feature = "storage")]
 pub mod command;
 pub mod describe;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub mod socket;
+
+#[cfg(feature = "storage")]
+pub use wire::browser as browser_wire;

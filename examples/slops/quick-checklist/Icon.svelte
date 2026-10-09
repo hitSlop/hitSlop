@@ -1,7 +1,6 @@
 <script lang="ts">
-import { checklistView } from "./model";
 import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
+import doc, { checklistView } from "./schema";
 const { marks } = $derived(checklistView(doc.current));
 </script>
 

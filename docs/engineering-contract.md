@@ -5,7 +5,9 @@ How the system works is in [architecture](architecture.md).
 ## Compatibility
 
 Before launch we start fresh: no legacy handling, migration or backwards-compatible
-reader, and pre-launch documents are unsupported. From the first public release, every
+reader, and pre-launch documents are unsupported. Keep package format, runtime ABI,
+storage, document layout and internal protocol markers at 1 until the first public
+release; update that baseline in place during development. From the first public release, every
 document a released build wrote must open, render, edit, save and reopen in every later
 build, on supported macOS versions. Downgrades are not supported: an older build refuses
 newer formats with `requires_update` and writes nothing.
@@ -19,6 +21,22 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
 | CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
+
+### Local browser storage
+
+The Chrome beta uses browser-container format 1, separate from the `.slop` storage
+version. Each `copies/<id>/container.json` marker is checked before sahpool opens or
+cleanup touches that pool. Unknown and unmarked pre-launch containers are refused
+without repair or migration. IndexedDB version 1 stores only the copies catalog.
+Record and qualify changes to the pinned VFS against persisted pool fixtures before
+shipping browser storage publicly; current pre-launch copies remain unsupported.
+
+Import validates the staged SQLite file before renewing its document UUID in one
+transaction. Reopening a browser copy retains its UUID. Export drains page drafts,
+then independently flushes the Rust owner; a failed flush never exports stale state.
+The Save As destination completes only after its writable stream closes. Temporary
+exports are unique and protected by the copy lock until the stream finishes or the
+owning tab disappears. No browser edit writes back to the original desktop file.
 
 ### How documents evolve
 
@@ -81,7 +99,7 @@ its markers together; reads that only display it (Quick Look, the catalog, `get`
 export) never migrate it. Public boundaries grow additively: `ctx` and handle
 methods (new object-handle members start with `$`; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
-`data-hitslop-root` and the embed relay. The engine, rendering helper and live owner ship in one
+`data-slop-root` and the embed relay. The engine, rendering helper and live owner ship in one
 Mac app bundle and keep an exact core build check. Loro is pinned exactly and upgraded only
 with the corpus passing.
 
@@ -129,7 +147,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   identity. Every accepted operation keeps the document valid; invalid stored state is
   refused without modifying the file.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
-  JavaScriptCore engine or a second document engine. The WASM core is test-only. Browser development uses a native owner; the native engine validates authoring input.
+  JavaScriptCore engine or a second document engine. The WASM core serves SDK tests and local browser copies with the same Rust owner and SQLite store. Browser authoring development uses a native owner; the native engine validates authoring input. Browser copies hold a per-copy Web Lock and save through OPFS; authored code runs on a separate per-copy origin. A download drains the page, flushes the owner and streams one SQLite read transaction.
 - Rust owns wire types and shared limits (`crates/hitslop-core/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
@@ -146,7 +164,12 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
   `slop.ts` theme colors; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
-- Deferred: collaboration, a document history UI, schema evolution (changing a
+- Development-only exception: an opt-in native `dev-sync` loopback harness may qualify
+  one authority and two temporary replica owners. It keeps Loro bytes in Rust, disables
+  shared undo and attachment imports, and creates no released format or production
+  endpoint. Shared-session fencing ends with its live owner; durable restart/retry
+  recovery remains deferred.
+- Deferred: production collaboration, a document history UI, schema evolution (changing a
   descriptor makes a new document type), synced folders, hosted catalog/publishing,
   accounts and sharing.
 

@@ -30,22 +30,22 @@ function fatal(error) {
   notice.textContent = error;
 }
 const opening = setTimeout(() => fatal("The preview did not start; check the terminal, then reload"), 20000);
-hot.on("hitslop:ready", data => { clearTimeout(opening); resourceToken = data.resourceToken; ready.resolve(); });
-hot.on("hitslop:fatal", ({ error }) => fatal(error));
+hot.on("slop:ready", data => { clearTimeout(opening); resourceToken = data.resourceToken; ready.resolve(); });
+hot.on("slop:fatal", ({ error }) => fatal(error));
 hot.on("vite:ws:disconnect", () => fatal("Preview connection lost; reload before editing"));
-hot.on("hitslop:reply", ({ id, reply }) => {
+hot.on("slop:reply", ({ id, reply }) => {
   const request = pending.get(id);
   if (!request) return;
   pending.delete(id); clearTimeout(request.timer); request.resolve(reply);
 });
-hot.on("hitslop:push", batch => {
+hot.on("slop:push", batch => {
   if (receiver) receiver(batch);
   else {
     pushes.push(...batch);
     if (pushes.length > ${PushLimits.items}) pushes = [{ type: "resync" }];
   }
 });
-globalThis.__hitslopPreview = {
+globalThis.__slopPreview = {
   uiURL: "/__app__/assets/ui.js",
   attachmentURL(id) { return new URL("/attachments/" + resourceToken + "/" + id, location.href).href; },
   async request(request) {
@@ -56,12 +56,12 @@ globalThis.__hitslopPreview = {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => fatal("Preview request timed out; outcome unknown. Reload before editing."), 15000);
       pending.set(id, { resolve, reject, timer });
-      hot.send("hitslop:request", { token, id, request });
+      hot.send("slop:request", { token, id, request });
     });
   },
   onPush(next) { receiver = next; if (pushes.length) next(pushes); pushes = []; },
 };
-hot.send("hitslop:open", { token });
+hot.send("slop:open", { token });
 await ready.promise;
 await import("/__shell__/boot.js");
 `;

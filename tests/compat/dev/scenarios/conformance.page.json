@@ -78,6 +78,13 @@
     {
       "type": "set",
       "path": [
+        "lastHit"
+      ],
+      "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
         "memo"
       ],
       "value": "Compat 3 ✓ café 🦊"
@@ -123,7 +130,7 @@
       ],
       "id": "compat-1",
       "at": {
-        "after": "vnr54bf611cx9q54925zktszdg"
+        "after": "kawhbp1r6fx2g9vf2n8dne7td4"
       }
     },
     {
@@ -141,6 +148,27 @@
         "volume"
       ],
       "value": 3
+    },
+    {
+      "type": "insert",
+      "path": [
+        "slides"
+      ],
+      "id": "compat-3",
+      "value": {
+        "blocks": [],
+        "title": "Compat 3 ✓ café 🦊"
+      }
+    },
+    {
+      "type": "move",
+      "path": [
+        "slides"
+      ],
+      "id": "compat-1",
+      "at": {
+        "after": "rh1t4jdssr7ta5v8pqs4whygy4"
+      }
     },
     {
       "type": "set",
@@ -161,8 +189,7 @@
     "attachment": "compat 3",
     "cells": {
       "A1": {
-        "input": "43",
-        "width": 10
+        "input": "Fresh entry edited"
       },
       "compat-1": {
         "input": "Compat 1 ✓ café 🦊"
@@ -191,6 +218,7 @@
     "hits": 14,
     "label": "compat 3",
     "lane": "todo",
+    "lastHit": 3,
     "memo": "Compat 3 ✓ café 🦊",
     "note": "compat 3",
     "photo": "compat 3",
@@ -220,7 +248,28 @@
         "text": "First ✓"
       },
       {
+        "$id": "acpyd98gxnb64vh0sbef5m0kmg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board C ✓"
+      },
+      {
         "$id": "vnr54bf611cx9q54925zktszdg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board A ✓"
+      },
+      {
+        "$id": "mmvscns1ywfyymp18htb6228cg",
+        "done": false,
+        "notes": {},
+        "tags": [],
+        "text": "Board B ✓"
+      },
+      {
+        "$id": "kawhbp1r6fx2g9vf2n8dne7td4",
         "done": true,
         "notes": {},
         "tags": [],
@@ -245,6 +294,51 @@
       "muted": true,
       "volume": 3
     },
+    "slides": [
+      {
+        "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+        "blocks": [
+          {
+            "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+            "text": "First block"
+          },
+          {
+            "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+            "text": "Second block"
+          }
+        ],
+        "title": "Nested composition"
+      },
+      {
+        "$id": "compat-2",
+        "blocks": [],
+        "title": "Replay 2 é 中文"
+      },
+      {
+        "$id": "rh1t4jdssr7ta5v8pqs4whygy4",
+        "blocks": [
+          {
+            "$id": "mxb473vh7fyve7znjrjtdfgn3m",
+            "text": "Block B"
+          },
+          {
+            "$id": "9nv4eq7tpbnc3cgawaf88xyq60",
+            "text": "Block A edited"
+          }
+        ],
+        "title": "Edited slide"
+      },
+      {
+        "$id": "compat-1",
+        "blocks": [],
+        "title": "Compat 1 ✓ café 🦊"
+      },
+      {
+        "$id": "compat-3",
+        "blocks": [],
+        "title": "Compat 3 ✓ café 🦊"
+      }
+    ],
     "title": "Compat 3 ✓ café 🦊",
     "version": "compat 3"
   }

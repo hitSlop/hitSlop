@@ -1,12 +1,12 @@
-import { s } from "hitslop";
+import { refuse, s } from "hitslop";
 import doc from "./schema";
 
 export const addTask = doc.command({
   description: "Add an unfinished task and return its stable row ID.",
   args: { text: s.string() },
   run({ tx }, { text }) {
-    if (!text.trim()) throw new Error("Enter a task.");
-    return tx.fields.tasks.insert({ text: text.trim(), done: false, archived: false });
+    if (!text.trim()) refuse("Enter a task.");
+    return tx.fields.tasks.insert({ text: text.trim() });
   },
 });
 export const archiveFinished = doc.command({
@@ -20,10 +20,8 @@ export const archiveFinished = doc.command({
 });
 export const restoreTask = doc.command({
   description: "Return a filed task to the active list, unfinished.",
-  args: { id: s.string({ minLength: 1 }) },
-  run({ current, tx }, { id }) {
-    const task = current.tasks.find(task => task.$id === id);
-    if (!task) throw new Error("That task no longer exists.");
+  args: { task: s.row("tasks") },
+  run({ tx }, { task }) {
     tx.at(task).archived.set(false);
     tx.at(task).done.set(false);
   },
@@ -31,8 +29,8 @@ export const restoreTask = doc.command({
 
 export const removeTask = doc.command({
   description: "Remove a task from the checklist.",
-  args: { id: s.string({ minLength: 1 }) },
-  run({ tx }, { id }) {
-    tx.fields.tasks.remove(id);
+  args: { task: s.row("tasks") },
+  run({ tx }, { task }) {
+    tx.fields.tasks.remove(task.$id);
   },
 });

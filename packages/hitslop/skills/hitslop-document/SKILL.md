@@ -53,7 +53,9 @@ remains available.
 Run `slop describe PATH --json` to inspect the schema, operations, command arguments,
 current values, row IDs and version. Prefer a matching domain action with
 `slop call PATH NAME --args JSON`. It runs the command stored in that document and saves
-one atomic batch. A refusal applies no edits. After an unknown outcome, read the state
-before deciding on another action.
+one atomic batch. A refusal applies no edits; reason `refused` carries the command's
+message for the person, such as an empty entry or a row that no longer exists. An
+argument `describe` lists as "The $id of a row in tasks" takes that row's `$id`. After an
+unknown outcome, read the state before deciding on another action.
 
 Authors register `doc.command({ description, args, run })` in `defineSlop({ commands })`. Arguments use `s.*` descriptors, for example `{ text: s.string({ minLength: 1 }) }`. Rust checks arguments, evaluates the stored program in a restricted child and applies one batch. Page buttons await the same owner-routed command. `describe` projects arguments to JSON Schema for tools; JSON Schema is not stored or used to validate the document. Opening a document never upgrades its embedded app.

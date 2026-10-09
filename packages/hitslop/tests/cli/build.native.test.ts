@@ -27,7 +27,7 @@ test("generated Svelte app mounts with theme defaults before native capture", as
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
-    await cp("packages/hitslop/templates/checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { theme: '{ accent: "#123456" }' });
     await writeFile(join(source, "App.svelte"), `
       <script>
@@ -49,17 +49,19 @@ test("generated Svelte app mounts with theme defaults before native capture", as
   }
 }, 90000);
 
-test("discovered capture components share the document and receive preview/export mode", async () => {
+test("dedicated capture components share the document and mode without mounting the editor", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "source");
   try {
-    await cp("examples/slops/quick-checklist", source, { recursive: true });
+    await cp("tests/apps/document", source, { recursive: true });
     await writeFile(
       join(source, "Child.svelte"),
       `
       <script lang="ts">
         import doc from "./schema";
-        if (doc.fields !== (globalThis as any).appFields) throw new Error("Child received another document");
+        const previous = (globalThis as any).captureFields;
+        if (previous && doc.fields !== previous) throw new Error("Child received another document");
+        (globalThis as any).captureFields = doc.fields;
       </script>
       <h1>{doc.current.title}</h1>
     `,
@@ -68,19 +70,17 @@ test("discovered capture components share the document and receive preview/expor
       join(source, "App.svelte"),
       `
       <script lang="ts">
-        import Child from "./Child.svelte";
-        import doc from "./schema";
-        (globalThis as any).appFields = doc.fields;
+        throw new Error("The editor mounted during a dedicated capture");
       </script>
-      <Child />
     `,
     );
-    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child />');
+    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child /><Child />');
     await writeFile(join(source, "Export.svelte"), `<script>
       import Child from "./Child.svelte";
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
+    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
     const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);
@@ -103,8 +103,8 @@ test("native artwork is complete before a rebuild replaces a registered template
   try {
     // Registering builds into the template folder, replacing an earlier build.
     const templates = join(root, "templates");
-    const master = join(templates, "quick-checklist.slop");
-    await buildTemplate("examples/slops/quick-checklist", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
+    const master = join(templates, "document-fixture.slop");
+    await buildTemplate("tests/apps/document", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(master, name);
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -113,14 +113,14 @@ test("native artwork is complete before a rebuild replaces a registered template
         expect(png.readUInt32BE(20)).toBe(512);
       }
     }
-    await buildTemplate("examples/slops/quick-checklist", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
+    await buildTemplate("tests/apps/document", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
     const before = await readFile(master);
     await expect(
-      buildTemplate("examples/slops/quick-checklist", { binary: "/usr/bin/false" }, master),
+      buildTemplate("tests/apps/document", { binary: "/usr/bin/false" }, master),
     ).rejects.toThrow();
     expect(await readFile(master)).toEqual(before);
     const badSource = join(root, "bad-capture-source");
-    await cp("examples/slops/quick-checklist", badSource, { recursive: true });
+    await cp("tests/apps/document", badSource, { recursive: true });
     await writeFile(
       join(badSource, "App.svelte"),
       `
@@ -139,7 +139,7 @@ test("native artwork is complete before a rebuild replaces a registered template
     const document = join(root, "Document.slop");
     await execute({ method: "create", from: master, output: document });
     const saved = await readFile(document);
-    await expect(buildTemplate("examples/slops/quick-checklist", undefined, document)).rejects.toThrow("Refusing to replace a document");
+    await expect(buildTemplate("tests/apps/document", undefined, document)).rejects.toThrow("Refusing to replace a document");
     expect(await readFile(document)).toEqual(saved);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -161,10 +161,10 @@ test("register builds into the installed folder the catalog lists", async () => 
       expect(code, error).toBe(0);
       return out;
     };
-    await slop("register", "examples/slops/quick-checklist");
-    expect(await Bun.file(join(templates, "quick-checklist.slop")).exists()).toBe(true);
+    await slop("register", "tests/apps/document");
+    expect(await Bun.file(join(templates, "document-fixture.slop")).exists()).toBe(true);
     const listed = JSON.parse(await slop("templates")).templates.filter((t: { source: string }) => t.source === "installed");
-    expect(listed.map((t: { slug: string }) => t.slug)).toEqual(["quick-checklist"]);
+    expect(listed.map((t: { slug: string }) => t.slug)).toEqual(["document-fixture"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

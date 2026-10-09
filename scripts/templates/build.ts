@@ -9,13 +9,14 @@ import { publishFolder } from "../lib/artifacts";
 
 /** The template cache (`HITSLOP_TEMPLATE_CACHE_DIR`, or `.hitslop/template-cache`), keyed by
  * what every build reads; `folder` keeps a separate set of entries there. */
-export async function templateCache(folder = "") {
-  const discovered = await discoverTemplates();
+export async function templateCache(folder = "", includeExamples = true) {
+  const discovered = includeExamples ? await discoverTemplates() : [];
   return new TemplateCache(
     join(resolve(process.env.HITSLOP_TEMPLATE_CACHE_DIR ?? join(repository, ".hitslop/template-cache")), folder),
     await sharedTemplateInputs(
       repository,
       discovered.map((template) => relative(repository, template.source)),
+      includeExamples,
     ),
   );
 }

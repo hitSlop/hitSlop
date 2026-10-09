@@ -126,7 +126,8 @@ fn descriptor_depth_is_bounded_before_initial_values_are_checked() {
 fn unknown_options_are_refused_on_every_kind() {
     for node in [
         json!({"kind":"text","maxLength":5}),
-        json!({"kind":"boolean","default":true}),
+        json!({"kind":"boolean","maxLength":1}),
+        json!({"kind":"text","default":"Untitled"}),
         json!({"kind":"counter","min":0}),
         json!({"kind":"string","max":3}),
     ] {

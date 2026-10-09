@@ -5,6 +5,8 @@ description: Build an app, create a document, edit its data, and export it from 
 
 Use the CLI yourself or let your coding agent run it. Start with an authoring project to change an app, or a writable `.slop` document to work with its data.
 
+Responses below use example paths and compact JSON. Versions, timings, generated IDs, installed templates and palettes vary. Larger responses are explicitly marked as excerpts. Shell commands such as `cd` succeed without printing a response.
+
 ## Choose how to run commands
 
 Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx hitslop`.
@@ -21,6 +23,37 @@ For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.ap
 
 Append `--help` to any command to see its arguments.
 
+## Local browser copies (Chrome beta)
+
+```sh
+slop open --browser ./MyDocument.slop
+slop open --browser
+```
+
+Example responses (copy and import IDs vary):
+
+```text
+http://127.0.0.1:41238/?copy=COPY_ID#import=IMPORT_ID
+Local browser host is running. Keep this terminal open; Ctrl-C stops it.
+```
+
+Opening the list prints `http://127.0.0.1:41238`. The host message appears only when
+this invocation starts the host; one that reuses it prints the URL and exits.
+
+The first command opens an independent copy in desktop Google Chrome. The second
+opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
+Later invocations reuse the same host. No account or server upload is involved.
+
+Edits autosave in this browser profile on this device. **Download .slop** includes the
+current app, data, theme and referenced attachments for opening in the desktop client.
+The original file stays unchanged. Browser storage can be cleared or evicted: download
+copies you want to keep. Reload requires the local host to be running.
+
+The first version supports Chrome on desktop. Safari, private browsing, mobile and
+shareable hosted links are deferred. Fullscreen appears for apps declaring
+`fullscreenable`; **Keep awake** is a separate, initially off toggle.
+
+
 ## Create, preview, and register an app
 
 ```sh
@@ -30,6 +63,16 @@ bun install
 bun run check
 bun run dev
 ```
+
+Expected terminal responses (build-tool progress omitted):
+
+| Command | Response |
+| --- | --- |
+| `init weekend-kit` | After the brief and author questions: `Created /Users/you/weekend-kit. Run bun install in that directory, then bun run dev.` Then choose an agent. |
+| `cd weekend-kit` | No output on success. |
+| `bun install` | Bun’s dependency installation summary; package counts and timing vary. |
+| `bun run check` | `svelte-check found 0 errors and 0 warnings` for a valid starter. |
+| `bun run dev` | `Disposable preview: http://localhost:5173/` (port may differ); the process stays running. |
 
 `init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `slop.ts` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
 
@@ -47,6 +90,14 @@ bunx hitslop init budget-book --yes \
   --description 'A simple monthly spending tracker.'
 ```
 
+Response (with your chosen destination):
+
+```text
+Created /Users/you/budget-book. Run bun install in that directory, then bun run dev.
+```
+
+This invocation has no interactive questions or agent launch.
+
 Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The wizard initializes the explicit `slug` from the directory name: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
 
 Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or any module it imports outside components (the document definition, commands, skin or artwork) resets disposable state.
@@ -57,6 +108,15 @@ Stop the preview, then package the app and add it to your local catalog:
 bun run build
 bun run register
 ```
+
+Responses, respectively (additional build progress omitted):
+
+```text
+/Users/you/weekend-kit/dist/weekend-kit.slop
+/Users/you/.hitslop/templates/weekend-kit.slop
+```
+
+A build without supplied or native artwork also reports that no artwork was captured.
 
 Build writes `dist/weekend-kit.slop` on macOS or Linux. Register, on a Mac, builds it with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
@@ -71,6 +131,12 @@ bunx hitslop create --from dist/weekend-kit.slop --output "$HOME/Documents/Weeke
 bunx hitslop open "$HOME/Documents/Weekend.slop"
 ```
 
+Both commands print the same resolved path after success:
+
+```text
+/Users/you/Documents/Weekend.slop
+```
+
 Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.slop` is added if you leave it off. Open launches it in hitSlop. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
 
 To start from a template in the Mac app's catalog instead, list them and pass a slug to `--from`:
@@ -80,39 +146,103 @@ bunx hitslop templates
 bunx hitslop create --from weekend-kit --output "$HOME/Documents/Weekend.slop"
 ```
 
+The `templates` response is a catalog object. Example excerpt:
+
+```json
+{"templates":[{"slug":"weekend-kit","title":"Weekend Kit","source":"installed","path":"/Users/you/.hitslop/templates/weekend-kit.slop"}]}
+```
+
+The following `create` prints `/Users/you/Documents/Weekend.slop`. Run one of the two creation examples, or choose a different output path for a second copy.
+
 `templates` prints each template's slug, title, description, categories, path and source: `bundled` with the app, or `installed` by register. If you register a template with the same slug as a bundled one, the slug names yours.
 
 ## Read and edit data
 
-In the remaining examples, replace `My.slop` with your writable document's path and quote paths containing spaces. Read the schema and current data first:
+For a complete numbered example with every response, follow
+[edit a Checklist document](/docs/guides/edit-installed-data/). It creates a writable
+copy, discovers its commands, calls `addTask`, reads the returned row, and changes its
+`done` field with `apply`.
 
-`slop describe My.slop` lists the fields, supported edits and any named commands saved
-inside the document. Add `--json` for structured output. To run a listed command:
+For an existing document, replace `My.slop` with its path. Quote paths containing spaces:
+
+```sh
+bunx hitslop describe My.slop
+```
+
+Example excerpt from a Checklist response:
+
+```text
+Commands (slop call PATH NAME --args JSON)
+  addTask — Add an unfinished task and return its stable row ID.
+    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}
+```
+
+`describe` also prints fields, operations, a version, and current values. Add `--json`
+for a structured description. Run an action that it lists:
 
 ```sh
 bunx hitslop call My.slop addTask --args '{"text":"Buy coffee"}'
 ```
 
-Commands use the same authored behavior as the app's buttons and apply as one undo
-step. Each document lists its own commands; generic `apply` and `batch` remain available.
+```json
+{"result":{"id":"example-task-id"},"ids":["example-task-id"]}
+```
+
+The real ID differs. Commands use the app’s authored behavior and apply as one undo
+step. A command without a return value reports `"result": null`.
+
+Inspect the stored descriptor separately:
 
 ```sh
 bunx hitslop schema My.slop
+```
+
+Response excerpt for Checklist’s title field:
+
+```json
+{"kind":"text","description":"The title shown in the window."}
+```
+
+Read saved values:
+
+```sh
 bunx hitslop get My.slop
 ```
 
-For a document with a text field named `title`:
+Response excerpt from its `tasks` array:
 
-```sh
-bunx hitslop apply My.slop \
-  --op '{"type":"set","path":["title"],"value":"Weekend"}'
-bunx hitslop batch My.slop \
-  --ops '[{"type":"set","path":["title"],"value":"Ready for the weekend"}]'
+```json
+{"$id":"example-task-id","archived":false,"done":false,"text":"Buy coffee"}
 ```
 
-`apply` makes one edit. `batch` applies a list of edits together; if one is invalid, none are applied. Use row IDs from `get` when editing list items. See the [operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations) for more examples.
+For a direct edit, use that row’s actual ID:
 
-Commands print JSON (edits print `{ids}`; `get` prints the data), and successful edits are saved. Errors go to stderr with a nonzero exit status. Checkpoint maintenance is automatic. Document creation and editing work on macOS and Linux. On a Mac, you can edit a document while it is open or closed; opening windows and PNG/PDF export require the Mac app. While it is open, Edit ▸ Undo in its window can revert what the agent changed there. If a command fails and you are unsure whether the edit happened, run `get` to check before trying again.
+```sh
+bunx hitslop apply My.slop --op '{"type":"set","path":["tasks",{"id":"example-task-id"},"done"],"value":true}'
+```
+
+```json
+{"ids":[]}
+```
+
+Or group edits in one atomic batch:
+
+```sh
+bunx hitslop batch My.slop --ops '[{"type":"set","path":["tasks",{"id":"example-task-id"},"done"],"value":false},{"type":"set","path":["tasks",{"id":"example-task-id"},"archived"],"value":false}]'
+```
+
+```json
+{"ids":[]}
+```
+
+`ids` lists inserted rows, so it is empty for these field changes. If one batch operation
+is invalid, none apply. Use row IDs rather than list positions. See the
+[operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations).
+
+Successful edits are saved. Errors go to stderr with a nonzero exit status. On a Mac,
+**Edit ▸ Undo** can revert agent edits in the open window. If a command’s outcome is
+uncertain, run `get` before retrying. Document creation and editing work on macOS and
+Linux; native windows and PNG/PDF export require the Mac app.
 
 ## Move data between documents
 
@@ -123,6 +253,14 @@ bunx hitslop get Old.slop > data.json
 bunx hitslop import New.slop data.json
 bunx hitslop import New.slop rows.json --path '["rows"]'
 ```
+
+Responses:
+
+| Command | Response |
+| --- | --- |
+| `get Old.slop > data.json` | JSON is written to `data.json`; nothing is printed in the terminal. |
+| `import New.slop data.json` | `{"ids":[]}` when no rows are inserted; inserted rows appear in `ids`. |
+| `import New.slop rows.json --path '["rows"]'` | The same `{"ids":[...]}` shape, with the IDs inserted by this edit. |
 
 Both documents must come from the same template, so the data fits its schema; a value that doesn't fit is refused and nothing changes. For a document of another template, map the data to one `batch` of `insert` and `set` operations, giving each insert an `id` so a retried command is refused as a duplicate. Copy attachments with the commands below, then write their references. Edit ▸ Undo in the window reverts an import as one step.
 
@@ -136,6 +274,20 @@ bunx hitslop theme reset My.slop
 bunx hitslop theme export My.slop --output Purple.json
 bunx hitslop theme import Other.slop Purple.json
 ```
+
+Example responses for the counter tutorial’s three-color palette:
+
+| Command | Response |
+| --- | --- |
+| `theme get My.slop` | `{"defaults":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"},"overrides":{},"effective":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"}}` |
+| `theme set My.slop …` | `{"defaults":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"},"overrides":{"accent":"#7050ad"},"effective":{"accent":"#7050ad","ink":"#382d24","surface":"#fff7e6"}}` |
+| `theme reset My.slop --token accent` | The original `theme get` response above, with `"overrides":{}`. |
+| `theme reset My.slop` | The same original palette, with all overrides cleared. |
+| `theme export My.slop --output Purple.json` | `/Users/you/Documents/Purple.json` |
+| `theme import Other.slop Purple.json` | The full `defaults`, `overrides`, and `effective` palette, like `theme get`. |
+
+These commands run in order, so this example exports the reset palette. Export before
+resetting if you want to keep the purple accent.
 
 `theme get` reports the template's colors, the document's changes, and the effective palette. Set only colors the app declares, as lowercase `#rrggbb` or `#rrggbbaa`. Reset one color with `--token`, or omit it to reset them all. `theme export` prints the full palette as a theme file, or writes it with `--output`; `theme import` replaces the palette with a file made for the same template. The open window, its theme panel and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for declaring a theme.
 
@@ -151,6 +303,15 @@ bunx hitslop attachments export My.slop ATTACHMENT_ID \
   --output ./photo-copy.png
 ```
 
+Example responses (`ATTACHMENT_ID` stands for the file’s actual content hash):
+
+| Command | Response |
+| --- | --- |
+| `attachments ref ./photo.png` | `{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}` |
+| `apply My.slop --attach ./photo.png …` | `{"ids":[]}` |
+| `attachments list My.slop` | `[{"id":"ATTACHMENT_ID","byteLength":48213,"mimeType":"image/png"}]` |
+| `attachments export My.slop ATTACHMENT_ID --output ./photo-copy.png` | `/Users/you/Documents/photo-copy.png` |
+
 `attachments ref` prints a file's reference (its ID, size, name and type) without reading the document. `--attach` on `apply` or `batch` saves the file in the same edit that stores the reference, so both succeed or neither does; repeat it for more files. Ask your agent to store the reference where the app expects it. A file nothing references any more is removed when the document closes, and a duplicate or shared copy carries only the files its document references. List shows saved attachment IDs and sizes.
 
 Attachment export refuses existing output files and the document itself. After an uncertain edit, run `get` before another command.
@@ -162,7 +323,14 @@ bunx hitslop export My.slop --format png --output My.png
 bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose an output other than the `.slop` itself; existing output files are replaced. Open documents export the current view. Closed documents use saved data and the app's starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose an output other than the `.slop` itself; existing output files are replaced. Both open and closed documents render saved data in a fresh page, using the export view or the app’s starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+
+Successful exports print their resolved output paths, respectively:
+
+```text
+/Users/you/Documents/My.png
+/Users/you/Documents/My.pdf
+```
 
 ## Install agent skills
 
@@ -179,6 +347,15 @@ Or, from a project directory, install for all detected agents at project scope:
 slop skills install --all --scope project
 ```
 
+After the skill and agent selections, install prints each installed skill and its agent directories. Example excerpt:
+
+```text
+Installed "hitslop-authoring"
+```
+
+`--all` prints the same installation results without selection prompts. The preceding
+`bun install -g hitslop` prints Bun’s installation summary, including the `slop` executable.
+
 Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Global links require a global install. Project links use the project's pinned `node_modules/hitslop`, including when installed through `bunx`.
 
 Upgrading the global CLI updates linked skills in place. If a link breaks or points somewhere else, repair it; add `--scope project` for project links:
@@ -186,6 +363,14 @@ Upgrading the global CLI updates linked skills in place. If a link breaks or poi
 ```sh
 slop skills repair
 ```
+
+Example repair response when a link already points to the right place:
+
+```text
+No repairs needed [hitslop-authoring] (global).
+```
+
+A repaired link instead reports `Repaired "hitslop-authoring" for … (global)`, naming its agents.
 
 To install skills for a new agent, run `skills install` again.
 
@@ -196,6 +381,16 @@ slop skills uninstall --scope project
 # Remove every installed hitSlop skill at this scope without prompts:
 slop skills uninstall --all --scope project
 ```
+
+Both uninstall forms report each removed skill and its agent directories. Example excerpt:
+
+```text
+Removed "hitslop-authoring"
+```
+
+With nothing installed, the response is `No installed skills (project).` Use either
+interactive uninstall or `--all`; the second invocation will find no remaining links
+if the first removed everything.
 
 The guides linked by `init` follow the project's pinned `node_modules/hitslop` install. Upgrading that dependency updates the linked guides; upgrading the global CLI leaves them unchanged.
 

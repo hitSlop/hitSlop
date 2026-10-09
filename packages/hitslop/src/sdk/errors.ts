@@ -30,3 +30,13 @@ export function isDocumentError(error: unknown): error is DocumentError {
 export function isRejected(error: unknown): error is DocumentError & { code: "rejected" } {
   return isDocumentError(error) && error.code === "rejected";
 }
+/** A command or page action refused with a message for the person. */
+export function isRefused(error: unknown): error is DocumentError & { code: "rejected"; reason: "refused" } {
+  return isRejected(error) && error.reason === "refused";
+}
+/** Stops a command, or a page action, with `message` for the person: "Enter a task." The
+ * window shows it, nothing changes, and `slop call` reports it. Anything else a command
+ * throws is a fault the host reports. */
+export function refuse(message: string): never {
+  throw new DocumentError("rejected", message, "refused");
+}

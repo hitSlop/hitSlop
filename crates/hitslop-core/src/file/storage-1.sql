@@ -1,7 +1,7 @@
 CREATE TABLE app(id INTEGER PRIMARY KEY CHECK(id=1), package_format INTEGER NOT NULL CHECK(package_format>=1), runtime_abi INTEGER NOT NULL CHECK(runtime_abi>=1), slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, author_name TEXT NOT NULL, author_url TEXT, category_primary TEXT NOT NULL, category_secondary TEXT, definition_json TEXT NOT NULL) STRICT;
 CREATE TABLE assets(key TEXT PRIMARY KEY, media_type TEXT NOT NULL, encoding TEXT NOT NULL, size INTEGER NOT NULL CHECK(size>=0), bytes BLOB NOT NULL) STRICT;
 CREATE TABLE artwork(name TEXT PRIMARY KEY, png BLOB NOT NULL) STRICT;
-CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1)) STRICT;
+CREATE TABLE document(id INTEGER PRIMARY KEY CHECK(id=1), uuid TEXT NOT NULL CHECK(length(uuid)=36)) STRICT;
 CREATE TABLE checkpoint(id INTEGER PRIMARY KEY CHECK(id=1), bytes BLOB NOT NULL) STRICT;
 CREATE TABLE updates(seq INTEGER PRIMARY KEY, bytes BLOB NOT NULL) STRICT;
 CREATE TABLE attachments(id TEXT PRIMARY KEY CHECK(length(id)=64), media_type TEXT NOT NULL, bytes BLOB NOT NULL) STRICT;
@@ -11,3 +11,4 @@ CREATE TRIGGER app_insert BEFORE INSERT ON app WHEN EXISTS(SELECT 1 FROM app) BE
 CREATE TRIGGER assets_update BEFORE UPDATE ON assets BEGIN SELECT RAISE(ABORT,'App assets are immutable'); END;
 CREATE TRIGGER assets_delete BEFORE DELETE ON assets BEGIN SELECT RAISE(ABORT,'App assets are immutable'); END;
 CREATE TRIGGER assets_insert BEFORE INSERT ON assets WHEN EXISTS(SELECT 1 FROM app) BEGIN SELECT RAISE(ABORT,'App assets are sealed by the app row'); END;
+CREATE TRIGGER document_update BEFORE UPDATE ON document BEGIN SELECT RAISE(ABORT,'The document identity is immutable'); END;

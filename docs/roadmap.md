@@ -30,6 +30,22 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Open now
 
+- Native `window.fullscreenable` and the local Chrome browser beta are implemented.
+  The same Rust owner/store powers independent OPFS copies, bounded resource reads,
+  command workers and Save As downloads back to native. Identity, export barriers,
+  failed writes and recovery are covered at their owning boundaries. Browser launch
+  polish, sustained-edit/near-limit performance qualification, Safari/mobile and hosted
+  delivery remain deferred. `slop dev` keeps its native owner.
+  [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
+  and verification limits.
+- Finish the launch foundation qualification: complete-value replacement, template
+  acceptance, command declaration checks, the SDK/ABI cleanup, dedicated captures and
+  document UUID copy rules. [Implementation evidence](evidence/launch-foundation-2026-10-07.md)
+  distinguishes implemented work from checks still pending.
+- Prove the selected online single-authority collaboration model in a development-only
+  native loopback harness before freezing the foundation. The room orders and validates
+  intents; clients install accepted updates. The harness and two-view demo are not yet
+  implemented. Durable receipts, restart recovery and production sharing follow separately.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
 - Give that entry boundary documents: limits at their maximums and every descriptor kind.
@@ -58,12 +74,18 @@ In order, with the reasoning in [ideas](ideas.md):
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles. The window
   benchmarks record footprints only and make no leak claim.
-- Text drafts that can't be saved are reported and dropped, in two cases. One case is a draft
-  whose outcome is unknown when its field unmounts, which includes a draft that became
-  unresolved earlier. The other is a draft sent from a version that automatic retention
-  had to trim in a session exceeding its storage budget, to a field another edit changed meanwhile: the core refuses it (`stale_base`) and the field
-  shows the saved text. The fix to plan is a recoverable draft with an explicit discard.
-  Holding the close barrier instead made windows impossible to close.
+- Extend the live-history measurements to multi-window sessions. The local owner now
+  rebuilds bounded history through its persistence worker, with retained undo, explicit
+  base expiry and save-failure recovery. The
+  [owner baseline](evidence/owner-history-baseline-2026-10-08.json) records the original
+  growth under actual SQLite checkpoint cycles; this does not establish a process-wide
+  memory cap or qualify production room retention.
+- Recover unresolved text after its field unmounts. Mounted text refused because its
+  base expired now stays in the field without automatic replay; Escape explicitly
+  discards it and adopts accepted text. An unresolved draft (expired base or unknown
+  outcome) is still reported and dropped when its control unmounts. Recovering those
+  drafts needs a UI outside the control; indefinitely holding close after unmount
+  previously made windows impossible to close.
 
 ## Next
 
@@ -107,23 +129,27 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Collaboration**, separate from hosted discovery. Today one owner writes each document,
-and every accepted edit keeps it valid, so the core has no replica merge, imports or
-anomaly handling. Collaboration means a new document layout whose containers more than
-one replica can create (optional values, record entries) merge by identity, with a
-lossless migration from layout 1, plus defined handling for states two valid replicas
-can merge into (duplicate row IDs, counters summed past the safe range). Frontier version
-tokens and stateless text edits already carry over: a text set names the version it was
-written against, and the core merges it with what changed since. Closing a large document
-trims all history, so sync will need a retention policy compatible with offline replicas,
-and selective undo that preserves remote changes.
+**Collaboration**, separate from hosted discovery. The selected design extends the
+existing single writer to one room authority. Shared clients submit intents and commands
+online and install only accepted updates; ordinary local documents still work offline.
+Keep ordinary container identity and exact integer counters. The room serializes first
+creation and increments, so this design needs neither blanket mergeable children nor
+projection-time clamping. The pinned LoroCounter failed exact replay in the
+[retained diagnostic](evidence/launch-foundation-2026-10-07.md#before-the-fixes).
+Text keeps its base-aware merge path. Shared undo must be disabled until a personal undo
+policy preserves other people's changes. Storage 1 carries the document UUID; room
+bindings, durable request receipts, pending delivery and epochs belong to storage 2.
+The opt-in native loopback proof uses two live Vite views and separate SQLite replicas;
+run it with [the local authority harness](testing.md#local-authority-proof). It is not
+production sharing qualification. Its room binding and disconnected-write fence last
+only while the replica owner lives; stopped harness files are unsupported shared artifacts.
 Keep credentials outside authored code, and add a dedicated sync envelope rather than
 overloading `apply`. Sync gets its own protocol, never the command protocol's number, and
 attachment reclamation must allow for references arriving from other replicas.
 [Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare
 Durable Objects, the SDK additions, and per-person `s.local` state.
 
-Do not restore JSON room seeds, command/snapshot authority, guest snapshot reconciliation,
+Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
 internal import/export do not constitute a shipped collaboration product.
 

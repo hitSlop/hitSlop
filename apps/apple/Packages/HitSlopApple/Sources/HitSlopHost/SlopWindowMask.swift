@@ -57,11 +57,12 @@ import ImageIO
 
   init(file: SlopFile) {
     backdrop = file.backdrop
-    if let skin = file.skin {
+    switch file.outline {
+    case .skin(let skin):
       content = .image(skin)
       imageScale = CGFloat(skin.width) / CGFloat(file.width)
-    } else {
-      content = .vector(file.silhouette)
+    case .shape(let silhouette):
+      content = .vector(silhouette)
       imageScale = 1
     }
   }
@@ -96,19 +97,27 @@ import ImageIO
     }
   }
 
-  func update(_ layer: CALayer, bounds: CGRect) {
+  private func scaledPath(_ silhouette: SlopSilhouette, in bounds: CGRect, scale: CGFloat) -> CGPath {
+    if scale == 1 { return path(silhouette, in: bounds) }
+    let logical = CGRect(
+      x: bounds.minX / scale, y: bounds.minY / scale, width: bounds.width / scale, height: bounds.height / scale)
+    var transform = CGAffineTransform(scaleX: scale, y: scale)
+    return path(silhouette, in: logical).copy(using: &transform)!
+  }
+
+  func update(_ layer: CALayer, bounds: CGRect, scale: CGFloat = 1) {
     layer.frame = bounds
     guard case .vector(let silhouette) = content, let shapeLayer = layer as? CAShapeLayer else { return }
     shapeLayer.fillRule = silhouette.fillRule == .evenOdd ? .evenOdd : .nonZero
-    shapeLayer.path = path(silhouette, in: bounds)
+    shapeLayer.path = scaledPath(silhouette, in: bounds, scale: scale)
   }
 
   /// The window's shape as an image the size of `bounds`, for a view that a layer mask
   /// does not clip: the glass material's blur behind the window.
-  func image(in bounds: CGRect) -> NSImage {
+  func image(in bounds: CGRect, scale: CGFloat = 1) -> NSImage {
     switch content {
     case .vector(let silhouette):
-      let shape = path(silhouette, in: bounds)
+      let shape = scaledPath(silhouette, in: bounds, scale: scale)
       let rule = silhouette.fillRule
       return NSImage(size: bounds.size, flipped: false) { _ in
         guard let context = NSGraphicsContext.current?.cgContext else { return false }
@@ -121,10 +130,11 @@ import ImageIO
     }
   }
 
-  func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
+  func contains(_ point: CGPoint, in bounds: CGRect, scale: CGFloat = 1) -> Bool {
     switch content {
     case .vector(let silhouette):
-      return bounds.contains(point) && path(silhouette, in: bounds).contains(point, using: silhouette.fillRule)
+      return bounds.contains(point)
+        && scaledPath(silhouette, in: bounds, scale: scale).contains(point, using: silhouette.fillRule)
     case .image:
       return alphaMap?.contains(point, in: bounds) ?? false
     }

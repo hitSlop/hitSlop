@@ -1,5 +1,5 @@
 #![cfg(feature = "storage")]
-use hitslop_core::app::{AppDefinition, WindowDefinition};
+use hitslop_core::app::{AppDefinition, StandardFrame, WindowFrame};
 use hitslop_core::{Code, Document, build::BuildDeclaration};
 use serde_json::{Value, json};
 
@@ -31,9 +31,10 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     assert_eq!(app.theme().iter().map(|t| t.token.as_str()).collect::<Vec<_>>(), ["zinc", "accent"]);
     assert!(app.views().export);
     assert!(!app.views().icon);
+    assert_eq!((app.window().width, app.window().height), (320, 240));
     assert!(matches!(
-        app.window(),
-        WindowDefinition::Standard { width: 320, height: 240, resizable: true, lock_aspect: false, .. }
+        app.window().frame,
+        WindowFrame::Standard { frame: StandardFrame { resizable: true, lock_aspect: false, .. } }
     ));
     app.commands()[0].args.validate(&json!({"title":"New title"})).unwrap();
     assert!(app.commands()[0].args.validate(&json!({"title":""})).is_err());
@@ -122,6 +123,8 @@ fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
         ("/window", json!({"future":true})),
         ("/views", json!({"future":true})),
         ("/window", json!({"resizable":null})),
+        ("/window", json!({"fullscreenable":null})),
+        ("/window", json!({"fullscreenable":"true"})),
         ("/theme/0", json!({"future":true})),
         ("/commands/0", json!({"future":true})),
     ] {
@@ -137,12 +140,58 @@ fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
     let key = format!("media/{}.png", "a".repeat(64));
     let mut value = definition();
     value["window"] = json!({"kind":"skin","width":320,"height":240,"skin":key});
-    assert!(matches!(read(&metadata(), &value).unwrap().window(), WindowDefinition::Skin { .. }));
+    assert!(matches!(read(&metadata(), &value).unwrap().window().frame, WindowFrame::Skin { .. }));
     value["window"]["resizable"] = true.into();
     assert!(read(&metadata(), &value).is_err());
     value["window"].as_object_mut().unwrap().remove("resizable");
     value["window"]["skin"] = "media/../skin.png".into();
     assert_eq!(read(&metadata(), &value).unwrap_err().pointer(), "/window/skin");
+}
+
+#[test]
+fn fullscreen_is_opt_in_for_both_window_kinds_and_survives_the_page_and_file_projections() {
+    for skin in [false, true] {
+        for enabled in [None, Some(false), Some(true)] {
+            let mut value = definition();
+            if skin {
+                value["window"] = json!({"kind":"skin","width":320,"height":240,
+                    "skin":format!("media/{}.png", "a".repeat(64))});
+            }
+            if let Some(enabled) = enabled {
+                value["window"]["fullscreenable"] = enabled.into();
+            }
+            let app = read(&metadata(), &value).unwrap();
+            let actual = app.window().fullscreenable;
+            assert_eq!(actual, enabled.unwrap_or(false));
+            let page = serde_json::to_value(app.page_window()).unwrap();
+            assert_eq!(page.get("fullscreenable"), value["window"].get("fullscreenable"));
+            let saved = app.definition_json();
+            let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &saved).unwrap();
+            assert_eq!(reopened.definition_json(), saved);
+            assert_eq!(serde_json::to_value(reopened.page_window()).unwrap(), page);
+            // Authoring input has the same optional-boolean rule, including skins.
+            let mut invalid = page.clone();
+            invalid["fullscreenable"] = Value::Null;
+            assert!(serde_json::from_value::<hitslop_core::build::WindowInput>(invalid).is_err());
+            assert!(serde_json::from_value::<hitslop_core::build::WindowInput>(page).is_ok());
+        }
+    }
+}
+
+#[test]
+fn fullscreen_reflows_only_resizable_unshaped_unlocked_windows() {
+    for (extra, fits) in [
+        (json!({}), false),
+        (json!({"resizable":false}), true),
+        (json!({"lockAspect":true}), true),
+        (json!({"shape":"50%"}), true),
+    ] {
+        let mut value = definition();
+        value["window"].as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        let app = read(&metadata(), &value).unwrap();
+        let WindowFrame::Standard { frame } = &app.window().frame else { unreachable!() };
+        assert_eq!(frame.fullscreen_fit, fits);
+    }
 }
 
 #[test]
@@ -181,6 +230,22 @@ fn commands_are_named_unique_and_use_the_descriptor_subset() {
     value = definition();
     value["commands"][0]["args"]["properties"]["title"] = json!({"kind":"text"});
     assert_eq!(read(&metadata(), &value).unwrap_err().pointer(), "/commands/0/args/title");
+}
+
+#[test]
+fn row_arguments_name_a_list_of_objects_in_the_document() {
+    let mut value = definition();
+    value["document"]["properties"]["tasks"] =
+        json!({"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}});
+    value["document"]["properties"]["tags"] = json!({"kind":"list","item":{"kind":"string"}});
+    for (list, accepted) in [("tasks", true), ("tags", false), ("title", false), ("missing", false)] {
+        value["commands"][0]["args"]["properties"]["task"] = json!({"kind":"row","list":list});
+        let result = read(&metadata(), &value);
+        assert_eq!(result.is_ok(), accepted, "{list}");
+        if let Err(error) = result {
+            assert_eq!((error.code, error.pointer()), (Code::InvalidSchema, "/commands/0/args".into()));
+        }
+    }
 }
 
 #[test]

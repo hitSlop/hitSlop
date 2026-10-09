@@ -277,8 +277,14 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("open", { description: "Open a document in the hitSlop app" }, (c) =>
-      c.args(document).action(async ({ args }) => console.log((await (await engine()).execute({ method: "open", documentPath: args.document })).documentPath)),
+    defineCommand("open", { description: "Open a document in hitSlop, or a local browser copy (beta)" }, (c) =>
+      c.args({ name: "document", type: "string", description: "Path to a .slop document" })
+        .flags({ name: "browser", type: "boolean", description: "Open an independent browser copy with local autosave (beta); omit the file to list copies" })
+        .action(async ({ args, flags }) => {
+          if (flags.browser) return (await import("./browser")).openBrowser(args.document);
+          if (!args.document) throw new Error("Provide a .slop document, or use --browser to open browser copies");
+          console.log((await (await engine()).execute({ method: "open", documentPath: args.document })).documentPath);
+        }),
     ),
   )
   .add(

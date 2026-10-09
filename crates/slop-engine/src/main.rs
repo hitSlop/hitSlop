@@ -3,9 +3,8 @@
 //! document operations to the live owner or acquires its lock and runs the same owner.
 //! AppKit operations forward the original JSON to the native helper. Only build/protocol
 //! queries and the exact restricted evaluator entry point are outside the JSON wire.
-use hitslop_core::owner::{Failure, FailureKind};
 use hitslop_core::{EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
-mod preview;
+use slop_engine::{evaluator, preview, rejected};
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -34,26 +33,8 @@ fn helper() -> Result<PathBuf, String> {
         })
 }
 
-fn rejected(reason: &str, error: impl std::fmt::Display) -> String {
-    command::failure(
-        Failure {
-            kind: FailureKind::Rejected,
-            message: error.to_string(),
-            reason: Some(reason.into()),
-            op_index: None,
-        },
-        false,
-        false,
-    )
-}
 fn unknown(error: impl std::fmt::Display) -> String {
     command::failure(hitslop_core::store::Error::Failed(error.to_string()).into(), false, false)
-}
-fn evaluator() -> Result<hitslop_runner::Evaluator, String> {
-    hitslop_runner::Evaluator::new(
-        std::env::current_exe().map_err(|e| e.to_string())?,
-        vec!["--evaluate-command".into()],
-    )
 }
 fn success(result: EngineSuccess) -> String {
     serde_json::to_string(&result).expect("serializable reply")
@@ -156,6 +137,7 @@ fn request(input: &str, protocol: u64) -> String {
         }
         EngineRequest::Get { .. }
         | EngineRequest::Batch { .. }
+        | EngineRequest::Copy { .. }
         | EngineRequest::ThemeExport { .. }
         | EngineRequest::AttachmentsList { .. }
         | EngineRequest::AttachmentsRead { .. }

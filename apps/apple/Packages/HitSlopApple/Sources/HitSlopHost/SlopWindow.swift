@@ -65,6 +65,8 @@ class HoverView: NSView {
 
 final class ShapedView: HoverView {
   let windowMask: SlopWindowMask
+  /// Scales authored mask geometry without scaling WebKit's rasterized backing.
+  var compositionScale: CGFloat = 1 { didSet { if oldValue != compositionScale { needsLayout = true } } }
   private let maskLayer: CALayer
   /// A glass window's frosted material, below the page. It stays frosted while the
   /// window is inactive, as a widget on the desktop does, and light in dark mode: the
@@ -93,11 +95,14 @@ final class ShapedView: HoverView {
   required init?(coder: NSCoder) { nil }
   override func layout() {
     super.layout()
-    windowMask.update(maskLayer, bounds: bounds)
-    glass?.maskImage = windowMask.image(in: bounds)
+    windowMask.update(maskLayer, bounds: bounds, scale: compositionScale)
+    glass?.maskImage = windowMask.image(in: bounds, scale: compositionScale)
   }
   override func hitTest(_ point: NSPoint) -> NSView? {
-    windowMask.contains(point, in: bounds) ? super.hitTest(point) : nil
+    // AppKit supplies the point in the superview's coordinates. Fullscreen
+    // compositions may be both centered and scaled inside their opaque surface.
+    windowMask.contains(convert(point, from: superview), in: bounds, scale: compositionScale)
+      ? super.hitTest(point) : nil
   }
 }
 
@@ -140,12 +145,15 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var presentedPageError: String?
   var documentAttention: NSPanel?
   var attentionFailure: SaveFailure?
+  var attentionWaitingForSheet = false
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?
   /// The theme panel beside the window, while shown.
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
+  var fullscreenRestore: SlopFullscreenRestore?
+  var fullscreenTransition = false
   var commandsEnabled = true
   var openingProgress: SlopOpeningProgress?
   /// Undo for this window's document; see `DocumentUndoManager`.
@@ -221,6 +229,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     window.backgroundColor = .clear
     window.hasShadow = session.file.backdrop != .clear
     window.isReleasedWhenClosed = false
+    window.collectionBehavior = spec.isFullscreenable ? [.fullScreenPrimary] : [.fullScreenNone]
     window.tabbingMode = .disallowed
     window.representedURL = self.url
     window.miniwindowTitle = window.title
@@ -257,11 +266,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// A discard or recovery replaced the page: show the new one and wait for it, clearing
   /// any failure overlay left by the renderer it replaced.
   public func pageSession(_ session: DocumentSession, didReplace view: WKWebView) {
-    guard let content = window?.contentView else { return }
+    guard let content = documentComposition else { return }
     view.frame = content.bounds
+    view.pageZoom = content.compositionScale
     view.autoresizingMask = [.width, .height]
     // Above the glass, and below a failure overlay.
-    if let glass = (content as? ShapedView)?.glass {
+    if let glass = content.glass {
       content.addSubview(view, positioned: .above, relativeTo: glass)
     } else {
       content.addSubview(view, positioned: .below, relativeTo: failedOverlay)
@@ -277,7 +287,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   public override func showWindow(_ sender: Any?) {
-    guard !isHiddenForClose, !closePrepared else { return }
+    guard !isHiddenForClose else { return }
     presentationRequested = true
     if isContentReady || presentedPageError != nil {
       openingProgress?.finish()
@@ -292,6 +302,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     throws -> CGSize
   {
     guard let window else { throw SlopFailure("document window is unavailable") }
+    if fullscreenRestore != nil {
+      let view = session.webView
+      return CGSize(width: view.bounds.width / view.pageZoom, height: view.bounds.height / view.pageZoom)
+    }
     var requested = requested
     let spec = session.file
     if spec.lockAspect == true {
@@ -357,10 +371,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// Finder, Quick Look and the catalog show it as it closed. The window leaves the screen
   /// after the save barrier; a failed close shows it again, open and editable.
   public func finishClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
-    guard !closePrepared else { return }
+    if case .closed = closeState { return }
     // Some callers finish directly (including cancelled opens). Always establish the
     // barrier here too; preparation is idempotent and quit may have done it already.
-    if closePreparation == .none { try await prepareToClose(operation: operation) }
+    if case .open = closeState { try await prepareToClose(operation: operation) }
+    guard case .prepared(let preparation) = closeState else { throw SlopFailure("Document is already closing") }
     let trace = closeTrace
     defer {
       trace?.finish()
@@ -368,9 +383,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
     let shown = window?.isVisible == true
     toolbar.hide()
-    isHiddenForClose = true
+    closeState = .closing
     window?.orderOut(nil)
-    if operation == .close, closePreparation == .saved { routing.closeHidden() }
+    if operation == .close, preparation == .saved { routing.closeHidden() }
     let artwork = await closingArtwork()
     do {
       try await session.close(artwork: artwork, trace: trace)
@@ -379,13 +394,13 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         SlopPreviewWriter.announce(url)
         trace?.end("Artwork announcement", interval)
       }
-      closePrepared = true
+      closeState = .closed
       window?.close()
       telemetry.send(.breadcrumb(operation, .completed))
     } catch {
-      isHiddenForClose = false
-      closePreparation = .none
+      closeState = .open
       if shown { window?.makeKeyAndOrderFront(nil) }
+      showDocumentAttention()
       reportLifecycleFailure(operation, error: error)
       throw error
     }
@@ -401,17 +416,30 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
 
   public func windowDidMove(_ notification: Notification) { toolbar.relayout() }
-  private var closePrepared = false
-  private enum ClosePreparation { case none, unavailable, saved }
-  private var closePreparation = ClosePreparation.none
-  public private(set) var isHiddenForClose = false
+  private enum ClosePreparation { case unavailable, saved }
+  private enum CloseState {
+    case open, preparing
+    case prepared(ClosePreparation)
+    case closing, closed
+  }
+  private var closeState = CloseState.open
+  public var isHiddenForClose: Bool {
+    switch closeState {
+    case .closing, .closed: true
+    default: false
+    }
+  }
   private var closeTrace: SlopCloseTrace?
   public override func close() {
     guard let window, windowShouldClose(window) else { return }
     super.close()
   }
   public func prepareToClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
-    guard closePreparation == .none else { return }
+    switch closeState {
+    case .prepared, .closing, .closed: return
+    case .preparing: throw SlopFailure("Document is already preparing to close")
+    case .open: closeState = .preparing
+    }
     closeTrace = SlopCloseTrace()
     let trace = closeTrace
     let interval = trace?.begin("Save barrier")
@@ -420,13 +448,13 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     loadingTask?.cancel()
     openingProgress?.finish()
     if session.rendererDead || !session.isReady {
-      closePreparation = .unavailable
+      closeState = .prepared(.unavailable)
       return
     }
     window?.makeFirstResponder(nil)
     do {
       try await session.prepareClose()
-      closePreparation = .saved
+      closeState = .prepared(.saved)
     } catch {
       reportLifecycleFailure(operation, error: error)
       await cancelPreparedClose()
@@ -434,7 +462,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
   public func cancelPreparedClose() async {
-    closePreparation = .none
+    if case .closed = closeState { return }
+    closeState = .open
     closeTrace?.finish()
     closeTrace = nil
     await session.cancelClose()
@@ -444,7 +473,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// Closing is a command: the coordinator runs it after any command in progress, and
   /// the window closes once the document has saved and released.
   public func windowShouldClose(_ sender: NSWindow) -> Bool {
-    if closePrepared { return true }
+    if case .closed = closeState { return true }
     routing.command(.close)
     return false
   }
@@ -458,6 +487,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public func windowWillMiniaturize(_ notification: Notification) { toolbar.hide() }
   public func windowWillClose(_ notification: Notification) {
+    attentionWaitingForSheet = false
     isContentReady = false
     stopLoading()
     documentAttention?.close()

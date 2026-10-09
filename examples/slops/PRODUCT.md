@@ -59,7 +59,8 @@ CSS. A whole slop may opt in when reading and copying are central to its purpose
 
 ## Evidence on Hand
 
-Quick Checklist and Shape Lab are the current examples, and more return as they move
-to `slop.ts`; additional templates are welcome. Their individual visual identities belong to those objects alone.
+Quick Checklist, Hourglass, and Little Lamp are current examples; additional templates
+are welcome. Shape Lab lives in `tests/apps/shape-lab` as a presentation fixture.
+Each example's visual identity belongs to that object alone.
 Use current working examples and local `_vibe/` references as evidence for
 clarity and expressiveness, not as a collection-wide skin.

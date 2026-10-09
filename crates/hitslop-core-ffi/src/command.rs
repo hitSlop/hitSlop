@@ -7,7 +7,7 @@ use hitslop_core::owner::Failure;
 #[derive(uniffi::Record)]
 pub struct NativeExportRequest {
     pub document_path: String,
-    pub format: hitslop_core::engine::ExportFormat,
+    pub format: Option<hitslop_core::engine::ExportFormat>,
     pub output: String,
 }
 #[derive(uniffi::Enum)]

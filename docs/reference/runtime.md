@@ -16,6 +16,22 @@ on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`)
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.
 
+`subscribe` supports multiple listeners and idempotent disposal. `observe` is the single
+framework dependency hook: replacing it installs the new adapter, and disposing the old
+adapter cannot detach the replacement. Text composition, caret transforms and merges
+stay in the host binding. Draft submission, motion and notice presentation are SDK
+helpers compiled into the app, without separate host APIs.
+
+The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture/renderer and
+controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
+`__slopDescribe` and `__slopRun`. Commands use the `slop.command` symbol. A
+`slop.operation-error` branded `DocumentError` carries document outcomes across bundles;
+`refuse(message)` uses code `rejected` and reason `refused`. Unhandled refusals dispatch
+the cancelable `slop:refused` event with the message as its detail. An app that cancels
+it has displayed the message; other faults go to the host's issue path. The same file
+lists the host-internal names apps never read (`slop:render-error`, `data-slop-host`,
+`__slop`, `__slopPreview` and the preview transport's `slop:*` messages).
+
 `hitslop/svelte` is the Svelte adapter compiled into each app:
 the builder emits `svelteApp` from the declaration's explicit `view`, `document`,
 `export`, `icon` and `commands` references. Authors import styles themselves; filenames
@@ -24,6 +40,11 @@ have no special role. Once mounted, the schema's definition is the live document
 `ctx.document.observe`). `bindText`, `EditableText`, `capture` and `attachments` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
+
+A mounted text binding whose merge base has expired keeps its draft and refuses flush
+instead of overwriting or replaying the text. The error explains that Escape discards
+the draft and adopts the latest accepted text. Copy the draft before leaving the field;
+recovery after a control unmounts is not implemented.
 
 The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. Account UI, OpenAPI/Registry, hosted discovery, and sharing are deferred.
 
@@ -52,7 +73,7 @@ and atomically adds its identity. A template is immutable (`is_template` refuses
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
-The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses commands.js. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. WASM is test-only. No executable code is downloaded.
+The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses commands.js. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
 
 Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
 
@@ -116,13 +137,20 @@ State that should determine an export, such as a selected report, must be saved 
 document. Capture components read the same document facade; they cannot change saved
 state to prepare their view.
 
-The capture page waits for fonts, visible images and stable layout. A dedicated export
-hides the editor before layout and does not inherit the native window mask. The App
+The renderer mounts only the requested dedicated export or icon, without mounting a
+hidden editor. Without a dedicated export it mounts the editor for preview/export,
+including apps that declare only an icon. Capture preparation also runs hooks installed
+by the newly mounted component, then waits for fonts, visible images and stable layout.
+Cancellation or failed preparation restores the target and host state. A dedicated
+export does not inherit the native window mask. The App
 fallback can hide `data-slop-export="hide"` controls and replace native text inputs with
 wrapping text. The icon target owns a transparent 512×512 canvas and centers authored
 artwork. The host's window-filling sizing rules are disabled during capture; the page
 reset remains. Rendering errors reject the capture, and the disposable page is closed.
 
+Dedicated PNG and PDF captures use the export's measured width, including compositions
+wider than the editor window. Preview rasterization prefers 2×; a large fallback window
+uses 1× when 2× exceeds the raster budget. Explicit PNG export remains 2×.
 PDF recomposes WebKit's internal pages into one continuous page when needed. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.

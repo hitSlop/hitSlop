@@ -6,7 +6,10 @@ use ts_rs::{Config, TS};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::path::PathBuf::from(std::env::args_os().nth(1).ok_or("Expected output directory")?);
     let config = Config::new().with_out_dir(&directory).with_large_int("number");
+    hitslop_core::bindings::Node::export_all(&config)?;
     hitslop_core::preview::PreviewRequest::export_all(&config)?;
+    hitslop_core::browser_wire::BrowserRequest::export_all(&config)?;
+    hitslop_core::browser_wire::BrowserEvent::export_all(&config)?;
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;
     BuildInput::export_all(&config)?;

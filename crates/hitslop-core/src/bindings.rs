@@ -1,12 +1,19 @@
 //! Code-generation values. Types use ts-rs; these small registries are serialized
 //! from the same limits and enum variants the Rust checks consume.
 use crate::app::package_format_1::*;
+pub use crate::descriptor::Node;
 use crate::wire::engine::ExportFormat;
 use crate::wire::*;
 use serde_json::{Value, json};
 
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
+        (
+            "BrowserHost",
+            json!({"port": browser::PORT, "protocol": browser::PROTOCOL, "containerFormat": browser::CONTAINER_FORMAT, "chunkBytes": browser::TRANSFER_BYTES, "fileBytes": browser::FILE_BYTES, "commandTimeout": hitslop_runner::WATCHDOG_MS}),
+        ),
+        ("BrowserResourcePolicy", json!(browser::page_policy())),
+        ("BrowserHostPolicy", json!(browser::host_policy())),
         ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
         ("SlopCategories", json!(crate::app::Category::ALL)),
         (
@@ -46,7 +53,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         // These host/SDK values have no core consumer. They live here so generated
         // Swift and TypeScript still receive one value during boundary migration.
         ("ErrorTextLimit", json!(ERROR_TEXT)),
-        ("OperationErrorBrand", json!("hitslop.operation-error")),
+        ("OperationErrorBrand", json!("slop.operation-error")),
         ("PagePayloadLimit", json!(PAGE_PAYLOAD)),
         ("PushLimits", json!({"items": 256, "bytes": 4 * 1024 * 1024})),
         ("SocketLimits", json!({"request": SOCKET_REQUEST, "attachment": SOCKET_ATTACHMENT})),

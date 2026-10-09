@@ -44,11 +44,13 @@ async function run(command: string[]) {
 }
 /** A pinned generator: `generated/core-tools/bin/<name>` (or `variable`), refused at any
  * other version. */
-async function generator(name: string, version: string, variable: string, install: string) {
-  const local = join(repository, "generated/core-tools/bin", name);
+async function generator(name: string, version: string, variable: string, install: string, localPath = `generated/core-tools/bin/${name}`) {
+  const local = join(repository, localPath);
   const binary = process.env[variable] ?? (existsSync(local) ? local : name);
   const { stdout, code } = await exec([binary, "--version"], { env }).catch(() => ({ stdout: "", code: 1 }));
-  if (code || stdout.trim() !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
+  // Official Binaryen archives append a release tag; Homebrew omits it.
+  const reported = stdout.trim().replace(/ \(version_\d+\)$/, "");
+  if (code || reported !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
   return binary;
 }
 
@@ -57,9 +59,9 @@ async function generator(name: string, version: string, variable: string, instal
 export async function buildCoreWasm() {
   const bindgen = await generator(
     "wasm-bindgen",
-    "0.2.127",
+    "0.2.129",
     "HITSLOP_WASM_BINDGEN",
-    "cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools",
+    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools",
   );
   const target = "wasm32-unknown-unknown";
   await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "--target", target, "-p", "hitslop-core-wasm"]);
@@ -67,6 +69,31 @@ export async function buildCoreWasm() {
   await publishFolder(join(repository, "generated/core/wasm"), (stage) =>
     run([bindgen, "--target", "web", "--out-dir", stage, cargoOutput("hitslop_core_wasm.wasm", target)]),
   );
+}
+
+/** SQLite and QuickJS compile C for wasm32; Apple's clang has no WebAssembly backend. */
+export async function buildBrowserWasm() {
+  const optimizer = await generator("wasm-opt", "version 132", "HITSLOP_WASM_OPT",
+    "bash scripts/build/install-binaryen.sh (requires Binaryen 132; HITSLOP_WASM_OPT may select its wasm-opt)",
+    "generated/core-tools/binaryen/bin/wasm-opt");
+  const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
+  const browserEnv = {
+    ...env,
+    CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
+    AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
+  };
+  const bindgen = await generator("wasm-bindgen", "0.2.129", "HITSLOP_WASM_BINDGEN",
+    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools");
+  const target = "wasm32-unknown-unknown";
+  for (const [feature, name] of [["browser", "core"], ["evaluator", "evaluator"]] as const) {
+    const command = ["cargo", "build", "--locked", "--profile", "wasm", "--target", target, "-p", "hitslop-core-wasm", "--features", feature];
+    const { code } = await exec(command, { cwd: repository, env: browserEnv, inherit: ["stdout", "stderr"] });
+    if (code) throw new Error(`Browser ${name} build failed`);
+    await publishFolder(join(repository, "generated/browser", name), async stage => {
+      await run([bindgen, "--target", "web", "--out-dir", stage, join(repository, "target", target, "wasm/hitslop_core_wasm.wasm")]);
+      await run([optimizer, "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-nontrapping-float-to-int", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", join(stage, "hitslop_core_wasm_bg.wasm"), "-o", join(stage, "hitslop_core_wasm_bg.wasm")]);
+    });
+  }
 }
 
 /** Every platform a published CLI carries a file engine for, built by the engines workflow

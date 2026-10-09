@@ -22,7 +22,10 @@ private func silhouette(shape: Any, width: Int, height: Int) throws -> SlopSilho
       ]
     ])
   defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
-  return try SlopFile(url: Fixtures.template(stage: stage)).silhouette
+  guard case .shape(let silhouette) = try SlopFile(url: Fixtures.template(stage: stage)).outline else {
+    throw SlopFailure("Expected a vector window")
+  }
+  return silhouette
 }
 @Test func silhouettesPreserveOrientationOriginsAndEvenOddHoles() throws {
   let shape = try silhouette(

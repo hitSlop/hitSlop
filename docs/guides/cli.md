@@ -20,6 +20,29 @@ passes them to.
 `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
 
+## Local browser copies (Chrome beta)
+
+```sh
+slop open --browser ./MyDocument.slop
+slop open --browser
+```
+
+The first command opens an independent copy in desktop Google Chrome. The second
+opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
+Later invocations reuse the same host. No account or server upload is involved.
+
+Edits autosave in this browser profile on this device. **Download .slop** includes the
+current app, data, theme and attachments for opening in the desktop client. It opens
+Chrome’s Save As dialog; choosing a destination does not change the original document.
+The original file stays unchanged. Browser storage can be cleared or evicted: download
+copies you want to keep. Reload requires the local host to be running.
+
+The first version supports Chrome on desktop. Safari, private browsing, mobile and
+shareable hosted links are deferred. Fullscreen appears for apps declaring
+`fullscreenable`; **Keep awake** is a separate, initially off toggle. It displays
+**paused** when requested but the browser has released the screen wake lock.
+
+
 ## Operations
 
 `apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids}`, the inserted row IDs; `slop get` prints the value. A refused batch exits 1 and prints `Refused ops[N] (reason): message` on stderr, naming the zero-based index of the operation to fix, then whether anything was applied.

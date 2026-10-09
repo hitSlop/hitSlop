@@ -46,7 +46,7 @@ import Testing
       NSColor.systemRed.setFill()
       $0.fill()
     }
-    try await engine.copy(to: copy, artwork: SlopRenderedArtwork(preview: preview, icon: nil))
+    try await engine.copy(to: copy) { _ in SlopRenderedArtwork(preview: preview, icon: nil) }
     #expect(try await bytes(copy) == data)
     #expect(Fixtures.hasCustomIcon(copy), "a copy gets its own Finder icon")
     try await engine.close()

@@ -10,8 +10,8 @@ pub(super) fn scalar(node: &Node, value: &Value) -> Result<()> {
         if min.is_some_and(|m| n < m) || max.is_some_and(|m| n > m) { out_of_range() } else { Ok(()) }
     };
     match (node, value) {
-        (Node::Boolean {}, Value::Bool(_)) => Ok(()),
-        (Node::String { min_length, max_length }, Value::String(s)) => {
+        (Node::Boolean { .. }, Value::Bool(_)) => Ok(()),
+        (Node::String { min_length, max_length, .. }, Value::String(s)) => {
             let length = s.chars().count() as u64;
             if min_length.is_some_and(|min| length < min) || max_length.is_some_and(|max| length > max) {
                 out_of_range()
@@ -19,12 +19,12 @@ pub(super) fn scalar(node: &Node, value: &Value) -> Result<()> {
                 Ok(())
             }
         }
-        (Node::Enum { values }, Value::String(s)) if values.iter().any(|v| v == s) => Ok(()),
-        (Node::Number { min, max }, Value::Number(n)) => match n.as_f64() {
+        (Node::Enum { values, .. }, Value::String(s)) if values.iter().any(|v| v == s) => Ok(()),
+        (Node::Number { min, max, .. }, Value::Number(n)) => match n.as_f64() {
             Some(f) if f.is_finite() => bounded(f, *min, *max),
             _ => Err(mismatch(node)),
         },
-        (Node::Integer { min, max }, Value::Number(_)) => match integer(value) {
+        (Node::Integer { min, max, .. }, Value::Number(_)) => match integer(value) {
             Some(i) => bounded(i as f64, min.map(|m| m as f64), max.map(|m| m as f64)),
             None => Err(mismatch(node)),
         },
@@ -36,7 +36,7 @@ fn mismatch(node: &Node) -> Error {
         Code::TypeMismatch,
         match node {
             Node::String { .. } => "must be a string",
-            Node::Boolean {} => "must be a boolean",
+            Node::Boolean { .. } => "must be a boolean",
             Node::Number { .. } => "must be a finite number",
             Node::Integer { .. } => "must be a safe integer",
             Node::Enum { .. } => "must be one of the declared values",

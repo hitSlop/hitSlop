@@ -1,4 +1,7 @@
 // Generated from hitslop-core's contracts. Do not edit.
+export const BrowserHost = {"chunkBytes":1048576,"commandTimeout":3000,"containerFormat":1,"fileBytes":268435456,"port":41238,"protocol":1} as const;
+export const BrowserResourcePolicy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self'; base-uri 'none'; frame-ancestors http://127.0.0.1:41238" as const;
+export const BrowserHostPolicy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self'; worker-src 'self'; img-src 'self' blob:; frame-src http://*.localhost:41238; base-uri 'none'; frame-ancestors 'none'" as const;
 export const NativeResourcePolicy = "default-src 'none'; script-src slop://app/__shell__/ slop://app/assets/ 'wasm-unsafe-eval'; connect-src slop: https: blob:; media-src slop: https: blob:; frame-src https:; style-src slop://app/__shell__/ slop://app/assets/ 'unsafe-inline'; img-src slop: data: https: blob:; font-src slop://app/assets/ data:" as const;
 export const SlopCategories = ["productivity","utilities","finance","media","games","developer-tools","education","business","personal","health","creative","music","other"] as const;
 export const ManifestText = {"authorName":{"maxLength":80,"minLength":1,"pattern":"\\S"},"description":{"maxLength":240,"minLength":1},"slug":{"maxLength":64,"minLength":2,"pattern":"^[a-z0-9]+(?:-[a-z0-9]+)*$"},"title":{"maxLength":80,"minLength":1}} as const;
@@ -16,12 +19,12 @@ export const StorageLimits = {"bytes":33554432,"rows":4096} as const;
 export const ThemeLimit = 65536 as const;
 export const ThemeFileLimit = 66560 as const;
 export const ErrorTextLimit = 4096 as const;
-export const OperationErrorBrand = "hitslop.operation-error" as const;
+export const OperationErrorBrand = "slop.operation-error" as const;
 export const PagePayloadLimit = 4194304 as const;
 export const PushLimits = {"bytes":4194304,"items":256} as const;
 export const SocketLimits = {"attachment":16777216,"request":1048576} as const;
 export const RowIdRule = {"characters":"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-","maximum":64,"mintAlphabet":"0123456789abcdefghjkmnpqrstvwxyz"} as const;
-export const CoreErrorCodes = ["type_mismatch","out_of_range","path_not_found","invalid_key","exists","duplicate_id","invalid_request","invalid_id","invalid_path","invalid_schema","too_large","stale_base","invalid_version","invalid_bytes","missing_dependencies","engine_error","invalid_shape","requires_update","is_template"] as const;
+export const CoreErrorCodes = ["type_mismatch","out_of_range","path_not_found","invalid_key","exists","duplicate_id","invalid_request","invalid_id","invalid_path","invalid_schema","too_large","stale_base","invalid_version","invalid_bytes","missing_dependencies","engine_error","invalid_shape","requires_update","is_template","refused"] as const;
 export const PackageFormat = 1 as const;
 export const RuntimeABI = 1 as const;
 export const HelperProtocol = {"version":1} as const;

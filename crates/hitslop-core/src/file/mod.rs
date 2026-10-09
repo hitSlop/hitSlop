@@ -6,31 +6,51 @@
 
 mod artwork;
 mod assets;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod build;
+#[cfg(not(target_arch = "wasm32"))]
 mod catalog;
+#[cfg(not(target_arch = "wasm32"))]
 mod copy;
+#[cfg(not(target_arch = "wasm32"))]
 mod pack;
+#[cfg(not(target_arch = "wasm32"))]
 mod places;
 pub(crate) mod rows;
 
 pub use artwork::Artwork;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use artwork::{check_artwork, optimize_png};
+#[cfg(target_arch = "wasm32")]
+pub(crate) use assets::ResourceCache;
 pub use assets::{ResourceInfo, ResourceReader, ResourceRoute, content_type, valid_asset_path};
+#[cfg(not(target_arch = "wasm32"))]
 pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use copy::copy;
+#[cfg(not(target_arch = "wasm32"))]
 pub use copy::create_document;
+#[cfg(not(target_arch = "wasm32"))]
 pub use pack::{APP_INPUT_BYTES, pack, validate_app};
+#[cfg(not(target_arch = "wasm32"))]
 pub use places::{TemplateSource, template_roots};
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use places::{document_destination, document_location};
 
-use crate::app::{AppDefinition, AppMetadata, Author, WindowDefinition};
+use crate::app::{AppDefinition, AppMetadata, Author, WindowFrame};
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};
 use crate::wire::{ASSET_PATH_BYTES, MANIFEST_BYTES};
 use assets::{assets_within, read_asset};
-use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior, config::DbConfig, limits::Limit};
+#[cfg(not(target_arch = "wasm32"))]
+use rusqlite::OpenFlags;
+use rusqlite::{Connection, Transaction, TransactionBehavior, config::DbConfig, limits::Limit};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 use std::sync::OnceLock;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
@@ -49,6 +69,7 @@ const _: () = assert!(STORAGE_VERSION == 1, "add the old reader and a transactio
 
 /// The file's path with its folder resolved: NOFOLLOW refuses a symbolic link anywhere in
 /// a path, while the file itself must not be one.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn resolve(path: &Path) -> Result<PathBuf> {
     let name = path.file_name().ok_or_else(|| failed("Invalid document path"))?;
     let folder = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
@@ -56,6 +77,7 @@ pub(crate) fn resolve(path: &Path) -> Result<PathBuf> {
 }
 /// Every connection: no symbolic links, defensive mode, no trusted schema, cell checks, no
 /// memory mapping, and values no longer than the largest stored one.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<Connection> {
     let conn = Connection::open_with_flags(
         resolve(path)?,
@@ -63,17 +85,22 @@ pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<C
     )
     .map_err(sqlite("open"))?;
     conn.busy_timeout(busy).map_err(sqlite("open"))?;
+    configure_connection(&conn)?;
+    Ok(conn)
+}
+/// Connection settings shared by native SQLite and the browser VFS.
+pub(crate) fn configure_connection(conn: &Connection) -> Result<()> {
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true).map_err(sqlite("open"))?;
     // Closing never checkpoints: a file in WAL mode, which only a newer build writes, is
     // refused, never rewritten.
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).map_err(sqlite("open"))?;
     conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA cell_size_check=ON; PRAGMA mmap_size=0;")
         .map_err(sqlite("open"))?;
-    let version = one(&conn, "PRAGMA user_version")?;
+    let version = one(conn, "PRAGMA user_version")?;
     if version <= STORAGE_VERSION {
         conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, crate::STORAGE_BYTES as i32).map_err(sqlite("open"))?;
     }
-    Ok(conn)
+    Ok(())
 }
 /// The writer's durability: a rollback journal that exists only while a save commits, and
 /// a full sync of every commit. Deleted content is zeroed where that costs no extra write
@@ -87,6 +114,7 @@ pub(crate) fn configure_writer(conn: &Connection) -> Result<()> {
 }
 /// A writer's connection: read-write, creating a new file when `create`. An existing file
 /// is checked before `configure_writer`, so a file this build refuses is never written.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn writer(path: &Path, create: bool) -> Result<Connection> {
     let create = if create { OpenFlags::SQLITE_OPEN_CREATE } else { OpenFlags::empty() };
     connect(path, OpenFlags::SQLITE_OPEN_READ_WRITE | create, Duration::from_secs(2))
@@ -96,6 +124,7 @@ pub(crate) fn writer(path: &Path, create: bool) -> Result<Connection> {
 /// own, with EBADF (SQLITE_IOERR_LOCK). Like any opener, it completes the rollback of a
 /// crashed write, which restores the saved state it reads. A file this process can't write
 /// opens read-only; no writer can be in this process then.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn reader(path: &Path) -> Result<Connection> {
     let busy = Duration::from_secs(5);
     match connect(path, OpenFlags::SQLITE_OPEN_READ_WRITE, busy) {
@@ -143,6 +172,7 @@ fn migrate(_tx: &Connection, from: i64) -> Result<bool> {
         _ => Err(invalid("Unsupported document storage")),
     }
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn initialize(conn: &Connection) -> Result<WriteTransaction<'_>> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite("create"))?;
     Ok(WriteTransaction { tx, validate: true })
@@ -258,6 +288,15 @@ fn layout(conn: &Connection, version: i64) -> Result<()> {
         if rows > 1 || rows != first || (table == "app" && rows != 1) {
             return Err(invalid(format!("Unexpected rows in {table}")));
         }
+    }
+    // A lowercase hyphenated UUID: 36 ASCII bytes, hyphens at 8, 13, 18 and 23.
+    if let Some(uuid) = rows::document_uuid(conn)?
+        && (uuid.len() != 36
+            || !uuid.bytes().enumerate().all(|(index, byte)| {
+                if matches!(index, 8 | 13 | 18 | 23) { byte == b'-' } else { matches!(byte, b'0'..=b'9' | b'a'..=b'f') }
+            }))
+    {
+        return Err(invalid("Invalid document identity"));
     }
     Ok(())
 }
@@ -390,14 +429,9 @@ fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
         return Err(invalid("The file has no saved state; keep it for recovery"));
     }
     let kind = if one(conn, "SELECT count(*) FROM document")? == 0 { Kind::Template } else { Kind::Document };
-    Ok(Summary {
-        kind,
-        package_format,
-        runtime_abi,
-        metadata,
-        bytes: fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0),
-    })
+    Ok(Summary { kind, package_format, runtime_abi, metadata, bytes: stored_bytes(conn, path)? })
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn summary(path: &Path) -> Result<Summary> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -407,6 +441,9 @@ pub fn summary(path: &Path) -> Result<Summary> {
 /// Fully accepted app and resources, kept by the owner for its entire lifetime.
 pub struct OpenedApp {
     pub kind: Kind,
+    /// A document's immutable logical UUID. Templates have none; independent copies get
+    /// their own. This is never used as a Loro peer or as the file's writer-lock identity.
+    pub document_uuid: Option<String>,
     pub package_format: u64,
     pub runtime_abi: u64,
     pub app: AppDefinition,
@@ -448,14 +485,17 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if key == "ui.js" {
             ui = true;
         }
-        if let WindowDefinition::Skin { width, height, skin: skin_key } = app.window()
+        if let WindowFrame::Skin { skin: skin_key } = &app.window().frame
             && &key == skin_key
         {
             if kind.media_type != "image/png" {
                 return Err(invalid("Window skins must be PNG"));
             }
-            crate::images::check(&bytes, crate::images::Purpose::Skin { width: *width, height: *height })
-                .map_err(Error::Rejected)?;
+            crate::images::check(
+                &bytes,
+                crate::images::Purpose::Skin { width: app.window().width, height: app.window().height },
+            )
+            .map_err(Error::Rejected)?;
             skin = Some(bytes.clone());
         }
         if key == "commands.js" {
@@ -465,7 +505,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     if !ui {
         return Err(invalid("Missing ui.js"));
     }
-    if matches!(app.window(), WindowDefinition::Skin { .. }) && skin.is_none() {
+    if matches!(app.window().frame, WindowFrame::Skin { .. }) && skin.is_none() {
         return Err(invalid("Missing window skin"));
     }
     if commands.is_some() == app.commands().is_empty() {
@@ -473,6 +513,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     }
     Ok(OpenedApp {
         kind: summary.kind,
+        document_uuid: rows::document_uuid(conn)?,
         package_format: summary.package_format,
         runtime_abi: summary.runtime_abi,
         app,
@@ -482,14 +523,17 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         bytes: summary.bytes,
     })
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
     opened(&reader(path)?, path, integrity)
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
     let conn = reader(path)?;
     let kind = summary_on(&conn, path)?.kind;
     Ok((conn, kind))
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Vec<u8>)>> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -501,11 +545,13 @@ pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Ve
     }
     Ok(None)
 }
+#[cfg(not(target_arch = "wasm32"))]
 pub fn kind(path: &Path) -> Result<Kind> {
     Ok(summary(path)?.kind)
 }
 /// Copies existing cosmetic artwork without running the app or changing its file.
 /// A caller provides a fresh output path; existing files are never overwritten.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool> {
     use std::io::Write;
     let Some((_, png)) = artwork(path, &[name])? else {
@@ -522,6 +568,7 @@ pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool>
 
 /// A summary for `slop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
     use crate::engine::{AttachmentTotals, FileKind, InspectInfo, NamedSize, StateSizes};
     let conn = reader(path)?;
@@ -571,8 +618,20 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
 }
 
 /// The app's descriptor, for `slop schema`, from a file every open would accept.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn descriptor(path: &Path) -> Result<String> {
     Ok(open(path, false)?.app.document_json().into())
+}
+
+fn stored_bytes(_conn: &Connection, _path: &Path) -> Result<u64> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Ok(fs::metadata(resolve(_path)?).map(|m| m.len()).unwrap_or(0))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Ok((one(_conn, "PRAGMA page_count")? * one(_conn, "PRAGMA page_size")?) as u64)
+    }
 }
 
 #[cfg(test)]

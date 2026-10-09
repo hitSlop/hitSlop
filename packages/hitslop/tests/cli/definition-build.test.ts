@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
+import { extname } from "node:path";
 import { test, expect } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { buildDefinition, resourceKey } from "../../src/cli/definition-build";
+import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";
+const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
 test("two Vite builds retain real dependencies and remove UI command bodies", async () => {
   const root = await mkdtemp(join(process.cwd(),".build-test-definition-"));
@@ -28,6 +31,7 @@ test("two Vite builds retain real dependencies and remove UI command bodies", as
     expect(commands).toContain("BODY_ONLY_CHANGE");
     expect(ui).not.toContain(source);
     expect(commands).not.toContain(source);
+    expect(Object.keys(input.declaration.commands[0]!)).toEqual(["name", "description", "args"]);
     expect(built.dependencies.ui).toContain(join(source,"Room.svelte"));
     expect(built.dependencies.ui).toContain(join(source,"font.woff2"));
     expect(built.dependencies.definition).toContain(join(source,"model.ts"));
@@ -70,6 +74,76 @@ test("a declaration without commands is evaluated but stores no command program"
     await expect(buildDefinition(source,stage,options)).rejects.toThrow("host-provided");
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
+
+test("a command the page declares but slop.ts never registers fails the build", async () => {
+  const root = await mkdtemp(join(process.cwd(),".build-test-definition-"));
+  try {
+    const source=join(root,"source"),stage=join(root,"stage");
+    const options=await definitionFixture(source);
+    const entry=await readFile(join(source,"slop.ts"),"utf8");
+    // Registered under another name, it is still the same command.
+    await writeFile(join(source,"slop.ts"),entry.replace("commands:{rename},","commands:{retitle:rename},"));
+    expect((await buildDefinition(source,stage,options)).input.declaration.commands.map(c=>c.name)).toEqual(["retitle"]);
+    await writeFile(join(source,"slop.ts"),entry.replace("commands:{rename},",""));
+    await expect(buildDefinition(source,join(root,"unregistered"),options))
+      .rejects.toThrow("actions.ts declares the command rename that defineSlop({ commands }) does not register");
+  } finally { await rm(root,{recursive:true,force:true}); }
+},60000);
+
+test("command registration follows declarations through re-exports, not their descriptions", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source"), stage = join(root, "stage");
+    const options = await definitionFixture(source);
+    const actions = await readFile(join(source, "actions.ts"), "utf8");
+    const entry = await readFile(join(source, "slop.ts"), "utf8");
+    await writeFile(join(source, "registered.ts"), "export {rename as retitle} from './actions';");
+    await writeFile(join(source, "slop.ts"), entry.replace("import {rename} from './actions';", "import {retitle as rename} from './registered';"));
+    await writeFile(join(source, "actions.ts"), actions.replace("doc.command(", "doc.command \n (").replace("description:'Rename'", "description:['Re','name'].join('')"));
+    const built = await buildDefinition(source, stage, options);
+    expect(built.input.declaration.commands.map(c => c.name)).toEqual(["rename"]);
+    expect(await readFile(join(stage, "resources/ui.js"), "utf8")).not.toContain("BODY_ONLY_CHANGE");
+    for (const description of ["'Rename'", "['Re','name'].join('')"]) {
+      await writeFile(join(source, "actions.ts"), actions + `\nexport const missing = doc.command \n ({description:${description},args:{},run(){return 'UNREGISTERED_BODY';}});`);
+      await expect(buildDefinition(source, stage, options)).rejects.toThrow("the command missing");
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
+test("Svelte command declarations are refused before their bodies reach the UI", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    for (const script of ['<script lang="ts">', '<script module lang="ts">']) {
+      await writeFile(join(source, "Room.svelte"), `${script}import doc from './model'; const local=doc.command \n ({description:'Local',args:{},run(){return 'LEAKED_BODY';}});</script><button onclick={()=>local()}>Run</button>`);
+      await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow("Declare commands in a TypeScript command module");
+    }
+    await writeFile(join(source, "Room.svelte"), `<script>import doc from './model';</script><button onclick={()=>doc.command({description:'Inline',args:{},run(){return 'LEAKED_BODY';}})()}>Run</button>`);
+    await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow("Declare commands in a TypeScript command module");
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
+test("command factories cannot give different callable values the same declaration identity", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    await writeFile(join(source, "actions.ts"), `import doc from './model'; function make(){return doc.command({description:'Rename',args:{},run(){return 'BODY_ONLY_CHANGE';}});} export const rename=make(); export const missing=make();`);
+    await expect(buildDefinition(source, join(root, "stage"), options)).rejects.toThrow("module scope");
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
+test("another library's .command API is not mistaken for a document command", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    await writeFile(join(source, "actions.ts"), (await readFile(join(source, "actions.ts"), "utf8")) +
+      `\nconst cli = { command: (spec: { args: string[] }) => spec }; export const parsed = cli.command({ args: ["--help"] });\n`);
+    await buildDefinition(source, join(root, "stage"), options);
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
 
 test("a nonempty public directory is refused instead of silently ignored", async () => {
   const root = await mkdtemp(join(process.cwd(),".build-test-definition-"));

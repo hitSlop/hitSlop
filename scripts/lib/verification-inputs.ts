@@ -4,8 +4,7 @@ const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
   /^packages\/hitslop\/(src\/(sdk|shell|schema|wire)|generated|acceptance)\//,
-  /^tests\/(abi|presentation|fixtures|compat)\//,
-  /^examples\/slops\//,
+  /^tests\/(abi|apps|presentation|fixtures|compat)\//,
   /^scripts\/(lib|build|templates)\//,
   /^\.github\/actions\/native-cache\//,
 ];
@@ -27,15 +26,17 @@ export const tierInputs = {
     /^packages\/hitslop\/src\/(sdk|shell)\//,
     /\.generated\.(rs|swift)$/,
   ],
-  types: [/\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
-  bun: [...rustInputs, /^packages\//, /^tests\/(examples|fixtures|compat|release)\//, /^scripts\/(?!ci\/)/, /^examples\/slops\//],
-  cli: [...rustInputs, /^packages\//, /^tests\/(fixtures|compat)\//, /^scripts\/(?!ci\/)/, /^examples\/slops\//],
+  types: [/^examples\/slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
+  bun: [...rustInputs, /^packages\/hitslop\/src\//, /^packages\/hitslop\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
+  cli: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/hitslop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
+  browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//, /^scripts\/dev\/live-sync\.ts$/],
   rust: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+  "dev-sync": [...rustInputs, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
   landing: [/^apps\/landing\//],
-  packed: [...rustInputs, /^examples\/slops\//, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
+  packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,
   app: [],
-  native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/(native|examples)\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
+  native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/native\//, /\.native\.test\.ts$/, /^scripts\/compat\//],
 };
 
 // Policy workflows and tests of the runner do not change how product checks execute.

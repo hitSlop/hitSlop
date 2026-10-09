@@ -18,19 +18,22 @@ window accepts pointer input. Import it in `slop.ts` and use the skin window:
 import skin from "./assets/window-mask.png";
 
 // Inside defineSlop({ ... })
-window: { kind: "skin", width: 480, height: 480, image: skin },
+window: { kind: "skin", width: 480, height: 480, image: skin, fullscreenable: true },
 ```
 
-A skin window contains `kind`, `width`, `height`, and `image`. It cannot
+A skin window contains `kind`, `width`, `height`, and `image`, with optional
+`fullscreenable` (default false). It cannot
 also specify `shape`, `background`, or `resizable`, and the native window stays
-at the skin's fixed size.
+at the skin's fixed size on the desktop. With fullscreen enabled, the same composition
+scales to fit on black; it does not reflow. PNGs retain their source resolution when
+enlarged. See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 
 ## Align the WebView to the skin
 
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
 transparency with more-specific or `!important` page backgrounds. The generated Svelte entry provides the app root automatically;
-mark a framework-neutral root with `data-hitslop-root`; its mount ancestors
+mark a framework-neutral root with `data-slop-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
 are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
 

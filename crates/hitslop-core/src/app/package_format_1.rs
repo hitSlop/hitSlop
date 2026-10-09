@@ -5,13 +5,13 @@
 //! 1 releases and may only loosen. `authoring` is what `pack` and `init` require of a new
 //! app; it may tighten at any time, because it never runs on a saved file.
 use super::{
-    AppDefinition, AppMetadata, Background, Category, CommandDefinition, CommandInput, ThemeInput, Views,
-    WindowDefinition,
+    AppDefinition, AppMetadata, Background, Category, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
+    Views, WindowDefinition, WindowFrame,
 };
 use crate::arguments::Arguments;
 use crate::build::{BuildDeclaration, WindowInput};
 use crate::wire::{APP_TEXT_BYTES, ASSET_FILE_BYTES, MANIFEST_BYTES, THEME_LIMIT, present_option};
-use crate::{AppSpec, Code, Result, descriptor, encode, err, shape, theme};
+use crate::{AppSpec, Code, Node, Result, descriptor, encode, err, shape, theme};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
 use std::collections::HashSet;
@@ -106,6 +106,7 @@ const CATEGORY_COLUMNS: [(Category, &str); 13] = [
     (Category::Music, "music"),
     (Category::Other, "other"),
 ];
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn category_column(category: Category) -> &'static str {
     CATEGORY_COLUMNS.iter().find(|(c, _)| *c == category).map(|(_, name)| *name).expect("every category has a column")
 }
@@ -124,6 +125,8 @@ pub(super) enum Window {
         width: f64,
         height: f64,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         resizable: Option<bool>,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         lock_aspect: Option<bool>,
@@ -135,6 +138,8 @@ pub(super) enum Window {
     Skin {
         width: f64,
         height: f64,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        fullscreenable: Option<bool>,
         skin: String,
     },
 }
@@ -150,27 +155,28 @@ pub(super) fn decode(metadata_json: &str, definition_json: &str) -> Result<AppDe
 pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> Result<AppDefinition> {
     authoring(&input.metadata, &input.window, &input.commands)?;
     let window = match &input.window {
-        WindowInput::Standard { width, height, resizable, lock_aspect, background, shape } => {
+        WindowInput::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
             if skin.is_some() {
                 return Err(err(Code::InvalidRequest, "A standard window has no skin").at("window"));
             }
             Window::Standard {
                 width: *width,
                 height: *height,
+                fullscreenable: *fullscreenable,
                 resizable: *resizable,
                 lock_aspect: *lock_aspect,
                 background: background.map(Into::into),
                 shape: shape.clone(),
             }
         }
-        WindowInput::Skin { width, height, image } => {
+        WindowInput::Skin { width, height, fullscreenable, image } => {
             let key = skin.ok_or_else(|| err(Code::InvalidRequest, "Missing imported skin").at("window"))?;
             if image != &format!("/assets/{key}") {
                 return Err(err(Code::InvalidRequest, "The skin image must resolve to its bundled asset")
                     .at("image")
                     .at("window"));
             }
-            Window::Skin { width: *width, height: *height, skin: key.into() }
+            Window::Skin { width: *width, height: *height, fullscreenable: *fullscreenable, skin: key.into() }
         }
     };
     bound(encode(&input.initial).len(), APP_TEXT_BYTES, "initial")?;
@@ -217,6 +223,16 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
                 .at("name"));
             }
             let args = Arguments::parse(&encode(&command.args)).map_err(|e| e.at("args"))?;
+            let Node::Object { properties } = &node else { unreachable!("descriptor roots are objects") };
+            for list in args.row_lists() {
+                if !matches!(properties.get(list), Some(Node::List { item }) if matches!(**item, Node::Object { .. })) {
+                    return Err(err(
+                        Code::InvalidSchema,
+                        format!("s.row(\"{list}\") must name a list of objects in the document"),
+                    )
+                    .at("args"));
+                }
+            }
             Ok(CommandDefinition { name: name.clone(), description: command.description.clone(), args })
         };
         let command = check().map_err(|e| e.at(index).at("commands"))?;
@@ -298,8 +314,10 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
 }
 
 fn window(value: &Window) -> Result<WindowDefinition> {
-    let (width, height) = match value {
-        Window::Standard { width, height, .. } | Window::Skin { width, height, .. } => (*width, *height),
+    let (width, height, fullscreenable) = match value {
+        Window::Standard { width, height, fullscreenable, .. } | Window::Skin { width, height, fullscreenable, .. } => {
+            (*width, *height, fullscreenable.unwrap_or(false))
+        }
     };
     for (name, n, min) in
         [("width", width, f64::from(WINDOW_MIN_WIDTH)), ("height", height, f64::from(WINDOW_MIN_HEIGHT))]
@@ -308,27 +326,29 @@ fn window(value: &Window) -> Result<WindowDefinition> {
             return Err(err(Code::InvalidRequest, format!("Must be an integer from {min} to {WINDOW_MAX}")).at(name));
         }
     }
-    Ok(match value {
-        Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => WindowDefinition::Standard {
-            width: width as u32,
-            height: height as u32,
-            resizable: resizable.unwrap_or(true),
-            lock_aspect: lock_aspect.unwrap_or(false),
-            background: background.map(Into::into),
-            shape: shape::normalize(
-                geometry.clone().unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
-                width,
-                height,
-            )
-            .map_err(|e| e.at("shape"))?,
+    let frame = match value {
+        Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => WindowFrame::Standard {
+            frame: StandardFrame {
+                fullscreen_fit: !resizable.unwrap_or(true) || lock_aspect.unwrap_or(false) || geometry.is_some(),
+                resizable: resizable.unwrap_or(true),
+                lock_aspect: lock_aspect.unwrap_or(false),
+                background: background.map(Into::into),
+                shape: shape::normalize(
+                    geometry.clone().unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
+                    width,
+                    height,
+                )
+                .map_err(|e| e.at("shape"))?,
+            },
         },
         Window::Skin { skin, .. } => {
             if crate::media::asset_key(skin).is_none_or(|kind| kind.media_type != "image/png") {
                 return Err(err(Code::InvalidRequest, "Skin must name a content-addressed PNG asset").at("skin"));
             }
-            WindowDefinition::Skin { width: width as u32, height: height as u32, skin: skin.clone() }
+            WindowFrame::Skin { skin: skin.clone() }
         }
-    })
+    };
+    Ok(WindowDefinition { width: width as u32, height: height as u32, fullscreenable, frame })
 }
 
 fn text(value: &str, min: usize, max: usize) -> Result<()> {

@@ -40,11 +40,17 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
             get: () => host.read(path),
             set: (value: unknown) => host.assign(path, value, optional),
           });
+    // Live text handles expose the shown text as a read-only `value`; typing goes through
+    // a text binding, which merges edits made elsewhere.
+    const text = <T extends object>(handle: T) =>
+      collect
+        ? handle
+        : Object.defineProperty(handle, "value", { enumerable: true, get: () => host.read(path) ?? "" });
     if (node.kind === "optional") {
       const clear = () => shown({ type: "clear", path });
       if (isScalar(node.inner)) return Object.freeze(bindable({ ...scalar(), clear }, true));
       if (node.inner.kind === "text")
-        return Object.freeze({ set: (value: string) => send({ type: "set", path, value }), clear });
+        return Object.freeze(text({ set: (value: string) => send({ type: "set", path, value }), clear }));
       // An optional object: its fields, plus `set` to create or replace it and `clear`.
       const fields = make(node.inner, path, collect);
       const handle = Object.create(null);
@@ -114,7 +120,7 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
       }
       case "text":
         // Whole-field replacement of the text as it is when the owner runs it.
-        return Object.freeze({ set: (value: string) => send({ type: "set", path, value }) });
+        return Object.freeze(text({ set: (value: string) => send({ type: "set", path, value }) }));
       default:
         throw new Error(`Unsupported descriptor: ${(node as Node).kind}`);
     }

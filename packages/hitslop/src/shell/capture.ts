@@ -5,18 +5,26 @@ type CaptureState = {
   style: HTMLStyleElement;
   target?: Target | undefined;
   controller: AbortController;
+  restoring?: Promise<void>;
+  inputs: { input: HTMLElement; replacement: HTMLElement; display: string; priority: string }[];
 };
 const timeoutMS = 10_000;
+type Preparation = (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>;
 
 /** Captures run in disposable read-only pages, never in the interactive editor. */
 export function createCaptureController() {
   const targets = new Map<"icon" | "export", Target>();
-  const preparations = new Set<(mode: CaptureMode, signal: AbortSignal) => void | Promise<void>>();
+  const preparations = new Set<Preparation>();
   /** The capture in progress; there is at most one. */
   let session: { token: string; state: CaptureState } | undefined;
   const active = (token: string) => (session?.token === token ? session.state : undefined);
   const bounded = async <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
     let timer: ReturnType<typeof setTimeout>;
+    let abort: () => void;
+    const cancelled = new Promise<never>((_, reject) => {
+      abort = () => reject(signal.reason ?? new DOMException("Capture cancelled", "AbortError"));
+      signal.addEventListener("abort", abort, { once: true });
+    });
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () =>
@@ -28,11 +36,12 @@ export function createCaptureController() {
     });
     try {
       signal.throwIfAborted();
-      const result = await Promise.race([work, timeout]);
+      const result = await Promise.race([work, timeout, cancelled]);
       signal.throwIfAborted();
       return result;
     } finally {
       clearTimeout(timer!);
+      signal.removeEventListener("abort", abort!);
     }
   };
   const measure = (state: CaptureState) => {
@@ -100,16 +109,23 @@ export function createCaptureController() {
   const restore = async (token: string) => {
     const state = active(token);
     if (!state) return;
-    state.controller.abort();
-    // Restore host-owned state even when an author's teardown fails.
-    try {
-      await bounded(Promise.resolve(state.target?.restore()), new AbortController().signal);
-    } finally {
-      state.target?.element.removeAttribute("data-hitslop-active-target");
-      document.documentElement.removeAttribute("data-slop-capture");
-      state.style.remove();
-      session = undefined;
-    }
+    // One restoration even when cancellation and a failed begin race each other.
+    state.restoring ??= Promise.resolve().then(async () => {
+      state.controller.abort();
+      try {
+        await bounded(Promise.resolve(state.target?.restore()), new AbortController().signal);
+      } finally {
+        for (const { input, replacement, display, priority } of state.inputs) {
+          replacement.remove();
+          input.style.setProperty("display", display, priority);
+        }
+        state.target?.element.removeAttribute("data-slop-active-target");
+        document.documentElement.removeAttribute("data-slop-capture");
+        state.style.remove();
+        if (active(token) === state) session = undefined;
+      }
+    });
+    return state.restoring;
   };
   return {
     registerTarget(kind: "icon" | "export", target: Target) {
@@ -119,7 +135,7 @@ export function createCaptureController() {
         if (targets.get(kind) === target) targets.delete(kind);
       };
     },
-    onPrepare(handler: (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>) {
+    onPrepare(handler: Preparation) {
       preparations.add(handler);
       return () => {
         preparations.delete(handler);
@@ -133,6 +149,7 @@ export function createCaptureController() {
       const state: CaptureState = {
         style,
         controller: new AbortController(),
+        inputs: [],
       };
       session = { token, state };
       try {
@@ -143,19 +160,27 @@ export function createCaptureController() {
         );
         state.target = targets.get(mode === "icon" ? "icon" : "export");
         if (state.target) {
-          state.target.element.setAttribute("data-hitslop-active-target", "");
+          state.target.element.setAttribute("data-slop-active-target", "");
           style.textContent +=
-            "html,body{margin:0!important;padding:0!important;width:100%!important;background:transparent!important}body>:not([data-hitslop-active-target]){display:none!important}";
+            "html,body{margin:0!important;padding:0!important;width:100%!important;background:transparent!important}body>:not([data-slop-active-target]){display:none!important}";
         }
         if (mode === "icon") style.textContent += "html,body{background:transparent!important}";
         await bounded(
           (async () => {
-            for (const prepare of preparations) {
-              await prepare(mode, state.controller.signal);
-              state.controller.signal.throwIfAborted();
-            }
+            const prepared = new Set<Preparation>();
+            const prepareViews = async () => {
+              for (const prepare of preparations) {
+                if (prepared.has(prepare)) continue;
+                prepared.add(prepare);
+                await prepare(mode, state.controller.signal);
+                state.controller.signal.throwIfAborted();
+              }
+            };
+            await prepareViews();
             await state.target?.prepare();
             state.controller.signal.throwIfAborted();
+            // Mounting a dedicated target installs its own motion/layout hooks.
+            await prepareViews();
           })(),
           state.controller.signal,
         );
@@ -173,6 +198,7 @@ export function createCaptureController() {
             replacement.style.display = "block";
             replacement.style.height = "auto";
             input.after(replacement);
+            state.inputs.push({ input, replacement, display: input.style.getPropertyValue("display"), priority: input.style.getPropertyPriority("display") });
             input.style.display = "none";
           }
         return await settle(token);

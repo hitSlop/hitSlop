@@ -10,23 +10,26 @@ fn decode(value: Value) -> Result<SocketRequest, hitslop_core::Error> {
     SocketRequest::decode(&value.to_string())
 }
 fn batch() -> Value {
-    json!({"protocol":1,"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}})
+    json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}})
 }
 
 #[test]
 fn requests_check_routing_but_leave_intents_to_the_owner() {
     for method in ["get", "attachments.list", "theme.export"] {
-        assert!(decode(json!({"protocol":1,"method":method,"documentPath":"/tmp/doc.slop"})).is_ok());
+        assert!(
+            decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":method,"documentPath":"/tmp/doc.slop"}))
+                .is_ok()
+        );
     }
-    assert!(decode(json!({"protocol":1,"method":"export","documentPath":"/tmp/doc.slop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());
+    assert!(decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"export","documentPath":"/tmp/doc.slop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());
     let mut request = batch();
     request["batch"]["intents"] = json!([{"type":"unknown-operation"}]);
     assert!(decode(request).is_err());
     for request in [
-        json!({"protocol":1,"method":"unknown","documentPath":"/tmp/doc.slop"}),
-        json!({"protocol":1,"method":"get","documentPath":"/tmp/doc.slop","output":"/tmp/doc.pdf"}),
+        json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"unknown","documentPath":"/tmp/doc.slop"}),
+        json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"get","documentPath":"/tmp/doc.slop","output":"/tmp/doc.pdf"}),
         json!({"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}}),
-        json!({"protocol":1,"method":"export","documentPath":"/tmp/doc.slop","format":"html","output":"/tmp/doc.html"}),
+        json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"export","documentPath":"/tmp/doc.slop","format":"html","output":"/tmp/doc.html"}),
     ] {
         assert!(decode(request.clone()).is_err(), "{request}");
     }
@@ -57,11 +60,11 @@ fn request_constraints_survive_the_schema_removal() {
     }
     for id in ["".into(), "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)] {
         assert!(
-            decode(json!({"protocol":1,"method":"attachments.read","documentPath":"/tmp/doc.slop","attachmentID":id}))
+            decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.slop","attachmentID":id}))
                 .is_err()
         );
     }
-    assert!(decode(json!({"protocol":1,"method":"attachments.read","documentPath":"/tmp/doc.slop","attachmentID":"a".repeat(64)})).is_ok());
+    assert!(decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.slop","attachmentID":"a".repeat(64)})).is_ok());
     let mut request = batch();
     request["attachments"] = json!(["YWJj"]);
     assert!(decode(request).is_ok());
@@ -70,7 +73,7 @@ fn request_constraints_survive_the_schema_removal() {
 
 #[test]
 fn protocol_precedes_fields_and_discovery_ignores_future_fields() {
-    for version in [0, 2, 9999] {
+    for version in [0, hitslop_core::HELPER_PROTOCOL + 1, 9999] {
         let input = format!(r#"{{"protocol":{version},"method":{{"future":true}},"payload":1e999}}"#);
         assert_eq!(SocketRequest::decode(&input).unwrap_err().code, Code::RequiresUpdate);
     }
