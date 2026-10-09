@@ -2,8 +2,8 @@
  *
  *   bun run verify                  the tiers whose inputs changed since they last passed here
  *   bun run verify --native         the same, with the native (macOS) tiers
- *   bun run verify --all            every tier but the native ones (with --native, every tier)
- *   bun run verify --release        the release gate: every tier, built from scratch, with a
+ *   bun run verify --all            all ordinary tiers (with --native, also the macOS tiers)
+ *   bun run verify --release        the release gate: shipping acceptance built from scratch, with a
  *                                   retained report (--built reuses builds, --skip-app)
  *   bun run verify TIER[,TIER] ...  those tiers only; the rest are the tier's own arguments
  *                                   (`verify rust store::`, `verify swift --filter Compat`)
@@ -38,6 +38,8 @@ type Tier = {
   needs?: Build[];
   /** A native tier: macOS only, selected with --native. */
   native?: boolean;
+  /** Experimental qualification: run only when explicitly named. */
+  explicit?: boolean;
   /** Static checks run together, before the heavy tiers, with their output kept until done. */
   quick?: boolean;
 };
@@ -167,11 +169,6 @@ const tiers: Tier[] = [
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
-      if (!args.length) {
-        const sync = ["-p", "hitslop-core", "-p", "slop-engine", "--features", "dev-sync"];
-        await prepare("Development sync compilation and lints", () => quiet(["cargo", "clippy", "--locked", ...sync, "--all-targets", "--", "-D", "warnings"]));
-        await sh(["cargo", "nextest", "run", "--locked", ...sync, ...(ci ? ["--profile", "ci"] : [])]);
-      }
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
           await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
@@ -179,6 +176,14 @@ const tiers: Tier[] = [
         });
         await sh(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : [])]);
       }
+    },
+  },
+  {
+    name: "dev-sync", explicit: true, inputs: tierInputs["dev-sync"],
+    run: async (args, prepare) => {
+      const sync = ["-p", "hitslop-core", "-p", "slop-engine", "--features", "dev-sync"];
+      if (!args.length) await prepare("Development sync compilation and lints", () => quiet(["cargo", "clippy", "--locked", ...sync, "--all-targets", "--", "-D", "warnings"]));
+      await sh(["cargo", "nextest", "run", "--locked", ...sync, ...(ci ? ["--profile", "ci"] : []), ...args]);
     },
   },
   {
@@ -285,9 +290,9 @@ const inputsOf = (tier: Tier, files: Record<string, string>) =>
   Object.keys(files).filter((path) => [...sharedInputs, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
 // A base/named listing does not consult the local pass cache. A default listing must
 // use the same toolchain identity as an actual run.
-const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "contracts" || !!tier.needs?.length;
+const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "dev-sync" || tier.name === "contracts" || !!tier.needs?.length;
 const candidates = named ? tiers.filter(tier => named.includes(tier.name))
-  : tiers.filter(tier => !tier.native || flag("--native") || release);
+  : tiers.filter(tier => !tier.explicit && (!tier.native || flag("--native") || release));
 const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
 const toolchains = {
   rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
@@ -344,7 +349,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
     return { selection: chosen.map((tier) => ({ tier, reason: "named", args: tierArgs })) };
   }
   const native = flag("--native") || release;
-  const eligible = tiers.filter((tier) => (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
+  const eligible = tiers.filter((tier) => !tier.explicit && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
   if (flag("--all") || release) return { selection: eligible.map((tier) => ({ tier, reason: release ? "release" : "--all", args: [] })) };
   if (ref) return touched(ref, eligible, []);
   // Locally: every tier whose inputs changed since it last passed on this machine.

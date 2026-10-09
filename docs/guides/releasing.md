@@ -11,7 +11,7 @@ Development continues on `master`. When a candidate is ready to stabilize, cut
 release line maintained by default. A release branch accepts stabilization and patch fixes
 through PRs; it is not a second feature-development branch.
 
-PRs into a release branch and every push to it run all everyday CI tiers, including the
+PRs into a release branch and every push to it run all required CI tiers, including the
 full native suite. Before tagging, run **Release hitSlop** manually on the final branch
 commit and wait for the full release dry run to pass. That workflow builds matching Engines
 artifacts and validates the release gate. Any later commit requires another dry run;
@@ -70,7 +70,11 @@ npm bootstrap/deprecations and public release changes are separate release work.
    default covers every bundled template, plus conformance fixtures, saved updates,
    attachments, page actions and stored commands. The entry records acceptance-rule
    hashes and producing inputs. Commit only the corpus. Frozen entries are permanent;
-   the prelaunch `dev` entry may be replaced and is never frozen.
+   the prelaunch `dev` entry may be replaced and is never frozen. Each public version
+   gets its own entry even when all format markers remain at 1. Keep the original
+   `.slop` bytes and expectations in the test repository, not the installed app.
+   Required affected PR checks replay all entries through Rust and the native host
+   (open, render, edit, save, reopen); Playwright qualification is separate.
 4. Run Engines again on the corpus-only commit and replace the downloaded artifacts
    with that commit's outputs. The corpus records producing source inputs, which a
    corpus-only commit does not change; engine packaging requires the exact final commit.
@@ -122,7 +126,7 @@ First-publication checklist, after merge:
 
 ## Validate what ships
 
-`release:check` runs every tier in the `dist` Cargo profile, including native rendering,
+`release:check` runs release acceptance in the `dist` Cargo profile, including native rendering,
 process-death recovery, historical document replay and the installed-tarball consumer
 outside the workspace. Reports and render evidence live under `.hitslop/evidence`.
 A dirty-tree or partial-tier result is not release acceptance.

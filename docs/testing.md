@@ -50,11 +50,13 @@ tier whose inputs changed since that tier last passed on this machine (recorded 
 ```sh
 bun run verify                 # the tiers this change touches
 bun run verify --native        # the same, with the native (macOS) tiers
-bun run verify --all           # every tier but the native ones (with --native: every tier)
+bun run verify --all           # all ordinary tiers (add --native for macOS tiers)
+bun run verify browser         # optional browser qualification (macOS)
+bun run verify dev-sync        # optional experimental collaboration qualification
 bun run verify rust store::    # one tier, with its own arguments (here a nextest filter)
 bun run verify --list          # what would run, and why
 bun run verify --list --json --native --base origin/master # CI selection; no builds/tools
-bun run release:check          # verify --release: every tier, the shipped builds, a report
+bun run release:check          # release acceptance, shipped builds, and a retained report
 ```
 
 | Tier | Runs |
@@ -64,11 +66,12 @@ bun run release:check          # verify --release: every tier, the shipped build
 | `bun` | SDK, shell and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
 | `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `dev-sync` | Experimental collaboration Clippy and Rust tests; explicitly selected only, outside ordinary and release runs |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Included by `--native` while qualification remains macOS-only |
+| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Available locally with `--native` and during release acceptance; nightly/manual qualification in CI, never a required PR check |
 | `native` | `*.native.test.ts` against the debug helper |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
@@ -223,6 +226,18 @@ completed; inspect `releaseBlocked` and each workload's stopping reason before r
 
 ## Compatibility corpus
 
+The required compatibility checks answer: can this build open a saved slop, run its
+embedded app, edit it, save it, and reopen the result without losing data or attachments?
+Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
+the required Rust, Swift and native tiers whenever their inputs change.
+
+Before launch there is one replaceable baseline, `tests/compat/dev`, not a historical
+public release. Starting with the first public release, capture a separate frozen
+collection for **each released version**. Later builds replay every collection; never
+rebuild old samples with current tools. These artifacts live in the test repository,
+not the installed application's bundle. The format markers can remain at 1 across
+many releases; release versions and format requirements are different things.
+
 Old files are checked, not old programs. `tests/compat/<release>/` stores original built
 templates, saved documents (with their attachments), expected state, explicit page
 interactions, and the candidate writer: the darwin-arm64 `slop-engine` the release built
@@ -278,18 +293,23 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 |---|---|
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
 | `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, installed-package and landing checks |
-| `native` (macOS 15 ARM64) | Affected `rust,cli,packed,swift,native` tiers; includes platform SQLite, Darwin sandbox and old-writer compatibility replay. Manual runs execute all five |
+| `native` (macOS 15 ARM64) | Affected `rust,swift,native` tiers; includes platform SQLite, Darwin sandbox, native page edits and old-writer compatibility replay |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
+| `qualification` (nightly/manual) | Playwright browser integration, experimental `dev-sync`, and the macOS portable CLI/package matrix; not required for merging |
 | `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
 CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UTC
 (03:17 Saskatchewan time), and manual dispatch. Feature-branch pushes don't repeat PR
 checks. PRs into `master` and master pushes select affected tiers. PRs into `release/*`,
-release-branch pushes, nightly and manual runs select **all everyday tiers**, regardless
-of changed paths. The full release gate, including the app bundle, remains separate.
+release-branch pushes, nightly and manual runs select **all required tiers**, regardless
+of changed paths. Required PR jobs do not install Playwright browsers or run experimental
+sync tests. Portable CLI/package suites run once on Linux; their macOS repeat lives in
+nightly/manual qualification. Rust runs on both operating systems because SQLite,
+locking, sandboxing and the historical macOS writers have platform-specific behavior.
+The full release gate, including the app bundle and browser acceptance, remains separate.
 
 `native` and `linux-smoke` skip at job level when none of their tiers
 are affected, so an unrelated change allocates no Mac runner. Selection includes both
@@ -302,8 +322,10 @@ consumers, and packaged starter changes still select CLI/browser/packed acceptan
 Other product and build dependencies remain conservatively selected. For example, PR #5's attribution policy changes select
 only tooling and types, allocating no macOS runner. Documentation and repository-settings
 edits select no product tiers. The compatibility integrity tier runs when corpus files,
-its scripts or the core’s acceptance/storage modules change. Jobs execute exactly
-the selected tier names, without consulting the local pass cache. `fast` always reports
+its scripts or the core’s acceptance/storage modules change. The selector routes affected
+tiers to required jobs and records optional qualification separately in `selection.json`.
+Jobs execute exactly their assigned tier names, without consulting the local pass cache.
+`fast` always reports
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
 A successful empty selection reports success without checking out or installing tools in
 the fast job.
@@ -323,8 +345,8 @@ created on a PR merge ref is available only to that PR, so a successful PR alone
 warm the next one. Rust caches separate checks, template builds and release builds; SwiftPM
 caches separate fixtures and the release corpus. This prevents a smaller concurrent job
 from filling an immutable cache key before the full suite finishes.
-Playwright WebKit is installed when the browser tier is selected and for release
-verification; lighter PR checks do not download a browser.
+Playwright WebKit and Chrome are installed only for nightly/manual qualification and
+release verification; required PR jobs do not download browsers.
 
 The attribution workflow covers PRs into `master` and `release/*`, uses
 `pull_request_target` and publishes a separate

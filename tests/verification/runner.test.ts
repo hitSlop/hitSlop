@@ -6,7 +6,7 @@ import { checkoutLease, retainReport, shardTests, assertShardComplete, testInven
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
-import { verificationArgs } from "../../scripts/ci/select";
+import { ciJobs, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository });
@@ -39,7 +39,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "packed", "swift", "native"]);
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "dev-sync", "packed", "swift", "native"]);
   for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -68,6 +68,39 @@ test("nightly, manual and release branches select the full suite; ordinary chang
   expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master", CHANGE_BASE: "0".repeat(40) })).toEqual(full);
   for (const env of [{}, { GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master" }, { GITHUB_EVENT_NAME: "pull_request" }])
     expect(() => verificationArgs(env)).toThrow();
+});
+
+test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
+  const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event);
+  const core = jobs(["crates/hitslop-core/src/store.rs"]);
+  expect(core.native).toBe("rust,swift,native");
+  expect(core.rust).toBe("rust");
+  expect(core.fast.split(",")).toEqual(expect.arrayContaining(["contracts", "bun", "cli", "packed"]));
+  expect(core.qualification).toBe("");
+  const corpus = jobs(["tests/compat/dev/release.json"]);
+  expect(corpus.fast.split(",")).toContain("compat");
+  expect(corpus.native).toBe("rust,swift,native");
+  expect(jobs(["docs/testing.md"])).toEqual({ fast: "", native: "", rust: "", qualification: "" });
+  expect(jobs(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", native: "", rust: "", qualification: "" });
+  expect(jobs(["packages/hitslop/src/browser/worker.ts"]).fast.split(",")).toContain("packed");
+  for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
+    const all = ciJobs(candidates, event);
+    for (const job of [all.fast, all.native, all.rust]) {
+      expect(job.split(",")).not.toContain("browser");
+      expect(job.split(",")).not.toContain("dev-sync");
+    }
+    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,dev-sync,cli,packed" : "");
+  }
+});
+
+test("experimental sync requires explicit selection, including in full and release runs", async () => {
+  for (const args of [["--native", "--all"], ["--release"], ["dev-sync"]]) {
+    const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", ...args], { cwd: repository });
+    expect(result.code).toBe(0);
+    const names = JSON.parse(result.stdout).tiers.map((tier: { name: string }) => tier.name);
+    expect(names.includes("dev-sync")).toBe(args.includes("dev-sync"));
+    if (!args.includes("dev-sync")) expect(names).toEqual(expect.arrayContaining(["rust", "swift", "native"]));
+  }
 });
 
 test("test-only edits and build inputs still select their owning checks", () => {

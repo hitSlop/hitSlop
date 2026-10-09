@@ -1,6 +1,18 @@
 /** Event policy only; file ownership remains in verification-inputs.ts. */
 import { run } from "../../packages/hitslop/src/cli/process";
 import { repository } from "../lib/artifacts";
+import type { TierName } from "../lib/verification-inputs";
+
+/** Required jobs exercise shipping boundaries. Browser/sync qualification never blocks a PR. */
+export function ciJobs(tiers: TierName[], event: string | undefined) {
+  const pick = (names: TierName[]) => tiers.filter(name => names.includes(name)).join(",");
+  return {
+    fast: pick(["compat", "tooling", "contracts", "types", "bun", "cli", "packed", "landing"]),
+    native: pick(["rust", "swift", "native"]),
+    rust: pick(["rust"]),
+    qualification: event === "schedule" || event === "workflow_dispatch" ? "browser,dev-sync,cli,packed" : "",
+  };
+}
 
 export function verificationArgs(env: Record<string, string | undefined>): string[] {
   const args = ["--list", "--json", "--native"];
@@ -24,5 +36,6 @@ export function verificationArgs(env: Record<string, string | undefined>): strin
 }
 
 if (import.meta.main) {
-  console.log(await run([process.execPath, "scripts/verify.ts", ...verificationArgs(process.env)], { cwd: repository }));
+  const selection = JSON.parse(await run([process.execPath, "scripts/verify.ts", ...verificationArgs(process.env)], { cwd: repository }));
+  console.log(JSON.stringify({ ...selection, jobs: ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME) }));
 }
