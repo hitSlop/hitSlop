@@ -57,7 +57,13 @@ runs:
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: tools-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && inputs.bindings != 'none'
+      if: inputs.rust == 'true' && inputs.bindings != 'none' && github.event_name != 'pull_request'
+      with:
+        path: generated/core-tools
+        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.129-uniffi-0.32.2-binaryen-132
+    - id: tools-cache-restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.rust == 'true' && inputs.bindings != 'none' && github.event_name == 'pull_request'
       with:
         path: generated/core-tools
         key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-wasm-0.2.129-uniffi-0.32.2-binaryen-132
@@ -127,7 +133,7 @@ runs:
         BINDINGS: ${{ inputs.bindings }}
         DEPENDENCIES: ${{ inputs.dependencies }}
         RUST_HIT: ${{ steps.rust-cache.outputs.cache-hit || steps.rust-cache-restore.outputs.cache-hit }}
-        TOOLS_HIT: ${{ steps.tools-cache.outputs.cache-hit }}
+        TOOLS_HIT: ${{ steps.tools-cache.outputs.cache-hit || steps.tools-cache-restore.outputs.cache-hit }}
         BUN_HIT: ${{ steps.bun-cache.outputs.cache-hit || steps.bun-cache-restore.outputs.cache-hit }}
       run: |
         status() {

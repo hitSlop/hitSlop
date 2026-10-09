@@ -6,13 +6,16 @@ import { checkoutLease, retainReport, shardTests, assertShardComplete, testInven
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
-import { ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
+import { ciCompatibility, ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
-  const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository });
+  const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository,
+    env: { HITSLOP_COMPAT_MODE: "smoke", HITSLOP_NIGHTLY: "", HITSLOP_COMPAT_RELEASE: "" },
+  });
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     base: null,
+    compatibility: "smoke",
     tiers: ["compat", "rust", "swift", "native"].map(name => ({ name, reason: "named" })),
   });
 });
@@ -95,16 +98,48 @@ test("required CI keeps document compatibility and packaging, without browser qu
   }
 });
 
-test("a pull request defers Swift/native tiers unless it can affect opening documents", () => {
-  const sdk = ["packages/hitslop/src/sdk/index.ts"];
-  expect(touchesNativeGate(sdk)).toBe(false);
-  const deferred = ciJobs(affected(...sdk), "pull_request", touchesNativeGate(sdk));
+test("a pull request defers Swift/native tiers unless it affects a critical boundary or its tests", () => {
+  const authoring = ["packages/hitslop/src/cli/authoring.ts"];
+  expect(touchesNativeGate(authoring)).toBe(false);
+  const deferred = ciJobs(affected(...authoring), "pull_request", touchesNativeGate(authoring));
   expect(deferred.native).toBe("");
-  expect(deferred.deferred.split(",")).toEqual(expect.arrayContaining(["swift", "native"]));
+  expect(deferred.deferred.split(",")).toContain("native");
   for (const path of ["crates/hitslop-core/src/file/open.rs", "apps/apple/Packages/HitSlopApple/Sources/HitSlopHost/SlopWindow.swift",
-    "packages/hitslop/src/shell/owner.ts", "tests/compat/dev/release.json", "tests/native/crash.native.test.ts"]) {
+    "packages/hitslop/src/shell/owner.ts", "tests/compat/dev/release.json", "tests/native/crash.native.test.ts",
+    "tests/apps/fixture-checklist/slop.ts", "scripts/lib/native.ts", "scripts/lib/native-fixtures.ts", "scripts/lib/swift-tests.ts",
+    "packages/hitslop/src/sdk/index.ts"]) {
     expect(touchesNativeGate([path])).toBe(true);
     expect(ciJobs(affected(path), "pull_request", true).deferred).toBe("");
+  }
+});
+
+test("only sensitive changes expand ordinary PR compatibility; nightly and releases replay all", () => {
+  const pr = { GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "master" };
+  for (const path of ["docs/testing.md", "apps/landing/src/routes/+page.svelte", "packages/hitslop/src/cli/authoring.ts", "crates/hitslop-core/tests/store.rs",
+    "tests/native/render.native.test.ts", "apps/apple/Packages/HitSlopApple/Tests/HitSlopDocumentTests/DocumentOwnerTests.swift"]) {
+    expect(ciCompatibility(pr, [path])).toBe("smoke");
+  }
+  for (const path of ["crates/hitslop-core/src/store/save.rs", "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/DocumentOwner.swift",
+    "packages/hitslop/src/sdk/index.ts", "packages/hitslop/src/shell/boot.js", "packages/hitslop/src/cli/documents.ts",
+    "tests/compat/dev/release.json", "tests/native/compat-replay.native.test.ts",
+    "apps/apple/Packages/HitSlopApple/Tests/HitSlopDocumentTests/CompatCorpusTests.swift",
+    "tests/apps/fixture-checklist/slop.ts", "scripts/lib/native.ts", "scripts/build/core.ts", "Cargo.lock", "bun.lock"]) {
+    expect(ciCompatibility(pr, [path])).toBe("full");
+    expect(touchesNativeGate([path])).toBe(true);
+  }
+  expect(ciCompatibility(pr)).toBe("full");
+  for (const env of [{ GITHUB_EVENT_NAME: "schedule" }, { GITHUB_EVENT_NAME: "workflow_dispatch" },
+    { ...pr, GITHUB_BASE_REF: "release/1.0" }, { GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "release/1.0" }])
+    expect(ciCompatibility(env, [])).toBe("full");
+});
+
+test("verification propagates full compatibility independently of nightly checks", async () => {
+  for (const nightly of ["", "1"]) {
+    const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "swift,native"], {
+      cwd: repository, env: { HITSLOP_COMPAT_MODE: nightly ? "smoke" : "full", HITSLOP_NIGHTLY: nightly, HITSLOP_COMPAT_ENTRIES: "missing" },
+    });
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).compatibility).toBe("full");
   }
 });
 

@@ -3,7 +3,7 @@
 [profile.default]
 slow-timeout = { period = "20s", terminate-after = 6 }
 # Nightly and release only (`HITSLOP_NIGHTLY=1` or `verify --release` adds
-# `--ignore-default-filter`): storage-growth and history-trim budgets, scheduling latency,
+# `--ignore-default-filter`, as do explicitly filtered runs): storage-growth and history-trim budgets, scheduling latency,
 # and a busy display read that waits out the reader's timeouts. None of them guards
 # opening, editing or saving a document.
 default-filter = """not (

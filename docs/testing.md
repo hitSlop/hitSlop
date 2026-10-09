@@ -91,20 +91,38 @@ The packed preview uses an OS-assigned port and waits for its reported URL.
 
 ## Every change and nightly
 
-Every change runs what guards the product's promise: every document a released build wrote
-still opens, renders, edits, saves and reopens, and no acknowledged edit is lost or torn.
-`HITSLOP_NIGHTLY=1` (set by the nightly and manual CI runs, and implied by `--release`) adds
-checks that never guard that promise:
+PRs run affected critical correctness checks for opening, editing, saving and reopening
+documents. Compatibility-sensitive changes also run full app-level corpus replay; other
+changes use smoke coverage when native tiers are selected. Rust always replays every corpus
+entry. Smoke coverage samples recent entries and representative app renders; matching
+markers or embedded apps does not prove saved scenarios behave equivalently.
+
+`HITSLOP_NIGHTLY=1` (set by scheduled/manual CI and release-branch pushes, and implied by
+`--release`) adds expensive boundary cases and broader qualification:
 
 | Nightly and release only | Where it is selected |
 |---|---|
 | Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`HitSlopTestSupport/Nightly.swift`) |
 | Storage-growth and history-trim budgets, rebuild scheduling, a busy display read | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
 | Full randomized budgets: model 8 seeds (4 otherwise), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
-| Old-file replays through the app for every corpus entry (otherwise the newest entry and the newest per set of format markers; Rust replays every entry always) | `replayedEntries` in `scripts/compat/corpus.ts` |
+| Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
 | The type fixtures' fresh native render (their saved documents are replayed every time) | `tests/native/render.native.test.ts` |
 | Landing generation, skills install, update notice, help wording, documentation examples, the tutorial build | `test.if(nightly)` in those files |
 | The `browser` tier (Playwright WebKit and Chrome) | the tier's `nightly` flag; `verify browser` runs it on demand |
+
+Full compatibility is independent of nightly checks. CI selects it for changes to Rust,
+native hosting/export, SDK/runtime contracts, corpus/fixtures and their build dependencies
+(`compatibilityInputs`). It replays every entry through Swift/native and exports every saved
+document to both PNG and PDF. Other changes retain the newest entry per marker generation
+and one representative render per embedded app. This is sampling, not an equivalence rule.
+`HITSLOP_COMPAT_MODE=full bun run verify --native` requests full compatibility locally without
+enabling expensive nightly cases. A local `--base REF` run expands automatically for sensitive
+changes; otherwise ordinary local runs default to smoke. Reports record the mode, and smoke
+passes cannot satisfy a full verification cache entry. Nightly and required-release replay
+override inherited smoke restrictions.
+
+Explicit Rust/dev-sync filters bypass nextest's default exclusions, so
+`bun run verify rust a_busy_file_is_reported_busy_not_as_having_no_artwork` runs that test.
 
 A merged failure scenario keeps each failure it replaced named in its comment. Tests that
 wait out SQLite's busy timeout run their cases at once on separate documents, so a run
@@ -289,9 +307,11 @@ may be recaptured.
   16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
 - Native replay (`tests/native/compat-replay.native.test.ts`) checks original app
   rendering, PNG/PDF, attachments and template creation, through this build's CLI and
-  helper (the `compat` tier checks inventory and hashes). Each embedded app renders once;
-  its other documents still read, edit and reopen. Ordinary runs replay the entries
-  `replayedEntries` chooses; nightly and release runs replay all. Stored command programs replay twice: deterministically through the
+  helper (the `compat` tier checks inventory and hashes). Full coverage exports every saved
+  document, including different values saved with the same app. Smoke coverage samples the
+  entries `replayedEntries` chooses and renders each embedded app once; its other documents
+  still read, edit and reopen. Sensitive changes, nightly and releases use full coverage.
+  Stored command programs replay twice: deterministically through the
   evaluator with their recorded clock and seed, and through the owner with `slop call`
   (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
   frozen entry.
@@ -340,9 +360,10 @@ are affected, so an unrelated change allocates no Mac runner. On a pull request 
 `master`, `native` also waits for a change that can affect opening an existing document
 (`nativeGateInputs` in `scripts/lib/verification-inputs.ts`: the Rust crates, the Mac app,
 the page shell and wire types, the corpus and fixtures, and the native checks themselves).
-Each `.slop` carries its own app, so an SDK, template or CLI-only change cannot; its
-Swift/native tiers are recorded as `deferred` in `selection.json` and run on the master
-push. Selection includes both
+Compatibility-sensitive inputs additionally open the gate, including SDK/runtime contracts
+and the CLI's document/export transport. Other template and authoring-only changes have
+their Swift/native tiers recorded as `deferred` in `selection.json` until the master push.
+Native test and helper changes run their consumers on the PR. Selection includes both
 paths of a rename and deleted files. The main CI workflow, shared preparation action,
 selector, verifier implementation and shared toolchain/dependency inputs select all tiers.
 Policy workflows and verification tests select tooling; they do not invalidate the product.

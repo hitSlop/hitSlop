@@ -4,10 +4,10 @@
 // template master still creates documents. Old files are checked, not old programs. The Rust
 // and Swift corpus tests cover the rest (docs/testing.md).
 //   HITSLOP_COMPAT_RELEASE=VERSION  also require a frozen entry for VERSION (the release gate)
-//   HITSLOP_COMPAT_ENTRIES=a,b      replay only these entries (verify's ordinary runs; see
-//                                   `replayedEntries`); unset replays all
-// Each embedded app renders once: a document whose app (definition and assets) another
-// document already rendered still reads, edits and reopens, without a second export.
+//   HITSLOP_COMPAT_MODE=smoke      sample entries and render a representative of each app
+//   HITSLOP_COMPAT_ENTRIES=a,b     smoke entries selected by verify; ignored in full mode
+// Full replay exports every saved scenario. Smoke is sampled evidence, not proof that
+// documents sharing markers or embedded apps render equivalently.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
 import { copyFile, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
@@ -20,6 +20,7 @@ import {
   documentEngine,
   readJSON,
   releases,
+  compatibilityMode,
   savedState,
   slop,
   slopJSON,
@@ -32,7 +33,8 @@ import { evaluateStored, type CommandScenario } from "../../scripts/compat/comma
 useTestRegistry();
 
 const required = process.env.HITSLOP_COMPAT_RELEASE;
-const selected = process.env.HITSLOP_COMPAT_ENTRIES?.split(",");
+const mode = compatibilityMode(process.env);
+const selected = mode === "smoke" ? process.env.HITSLOP_COMPAT_ENTRIES?.split(",") : undefined;
 const entries = await Promise.all(
   (await releases()).filter(({ name }) => !selected || name === required || selected.includes(name)).map(async (entry) => ({
     ...entry,
@@ -73,7 +75,7 @@ if (required)
 for (const { name, root, release, documents: saved, templates } of entries)
   describe(`tests/compat/${name} (${release.frozen ? "frozen" : "replaceable"})`, () => {
     for (const document of saved)
-      test(`${document} reads as recorded, renders with its own app, keeps its attachments and reopens edited`, async () => {
+      test(`${document} reads as recorded, ${mode === "full" ? "renders its saved scenario" : "samples app rendering"}, keeps its attachments and reopens edited`, async () => {
         const copy = join(scratch, `${name}-${document}.slop`);
         const fresh = async () => {
           await rm(copy, { force: true });
@@ -91,15 +93,15 @@ for (const { name, root, release, documents: saved, templates } of entries)
           expect(sha256(bytes)).toBe(id);
           await rm(output);
         }
-        const app = appIdentity(copy);
-        for (const format of rendered.has(app) ? [] : (["png", "pdf"] as const)) {
+        const app = mode === "smoke" ? appIdentity(copy) : undefined;
+        for (const format of app && rendered.has(app) ? [] : (["png", "pdf"] as const)) {
           const output = join(scratch, `${document}.${format}`);
           const { code, stderr } = await slop(["export", copy, "--format", format, "--output", output]);
           assert.equal(code, 0, `the old app did not render: ${stderr.trim()}`);
           await assertExport(output, format);
           await rm(output);
         }
-        rendered.add(app);
+        if (app) rendered.add(app);
         const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
         if (scenario) {
           await fresh();

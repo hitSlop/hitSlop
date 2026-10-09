@@ -16,11 +16,15 @@ import WebKit
       ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
-  /// The entries `verify` chose for an ordinary run (`replayedEntries` in
-  /// scripts/compat/corpus.ts); unset, every entry.
-  static let selected = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ENTRIES"].map {
-    Set($0.split(separator: ",").map(String.init))
-  }
+  /// Only smoke runs may restrict entries. Nightly and release replay every scenario,
+  /// even if the caller inherited an ordinary run's entry selection.
+  static let selected: Set<String>? = {
+    let env = ProcessInfo.processInfo.environment
+    guard env["HITSLOP_COMPAT_MODE"] == "smoke", env["HITSLOP_NIGHTLY"] != "1",
+      env["HITSLOP_COMPAT_RELEASE"] == nil
+    else { return nil }
+    return env["HITSLOP_COMPAT_ENTRIES"].map { Set($0.split(separator: ",").map(String.init)) }
+  }()
 
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
