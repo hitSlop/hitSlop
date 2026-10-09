@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { fileDigest, sourceBlobHash } from "../../scripts/lib/artifacts";
 import { sourceFingerprint, verifyCandidate } from "../../scripts/compat/integrity";
-import type { Release } from "../../scripts/compat/corpus";
 
 // Staging identical bytes used to change verify's input identity and rerun every
 // affected tier. Git's actual index is the oracle, including Unicode/binary lengths.
@@ -43,7 +42,7 @@ test("release acceptance compares presentation fixtures at their built location"
         "presentation-ellipse": await fileDigest(fixture),
         minimal: await fileDigest(template),
       },
-    } as Release;
+    };
     await verifyCandidate(folder, release, folder);
     await writeFile(fixture, "changed presentation bytes");
     await expect(verifyCandidate(folder, release, folder)).rejects.toThrow("Captured template differs from candidate: presentation-ellipse");

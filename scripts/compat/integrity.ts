@@ -71,7 +71,7 @@ export async function verifyCorpus(root: string, release: Release) {
 }
 
 /** Only the release being published must match current producing inputs. */
-export async function verifyCandidate(root: string, release: Release, candidateRoot = repository) {
+export async function verifyCandidate(root: string, release: Pick<Release, "inputs" | "templates">, candidateRoot = repository) {
   assert.equal(await sourceFingerprint(candidateRoot), release.inputs, "Release inputs changed after compatibility capture; capture a new candidate");
   for (const [slug, hash] of Object.entries(release.templates)) {
     if (slug === "conformance" || slug.startsWith("fixture-")) continue;
