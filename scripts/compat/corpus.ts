@@ -59,6 +59,31 @@ export async function releases(): Promise<{ name: string; root: string; release:
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export type CompatibilityMode = "smoke" | "full";
+
+/** Standalone replay is full. The verification runner explicitly chooses smoke when
+ * appropriate; nightly and required-release replay cannot inherit a smoke restriction. */
+export function compatibilityMode(env: Record<string, string | undefined>): CompatibilityMode {
+  const mode = env.HITSLOP_COMPAT_MODE;
+  if (mode && mode !== "smoke" && mode !== "full") throw new Error(`Invalid HITSLOP_COMPAT_MODE: ${mode}`);
+  return env.HITSLOP_NIGHTLY === "1" || env.HITSLOP_COMPAT_RELEASE || mode !== "smoke" ? "full" : "smoke";
+}
+
+/** Smoke samples recent entries from each marker generation; it does not establish
+ * equivalence between their apps or saved scenarios. Full replay retains every entry.
+ * Rust replays every entry in both modes. */
+export function replayedEntries<T extends { name: string; release: Release }>(entries: T[], all: boolean): T[] {
+  if (all || entries.length <= 1) return entries;
+  const newest = (list: T[]) => list.reduce((a, b) => (b.release.captured > a.release.captured ? b : a));
+  const byMarkers = new Map<string, T[]>();
+  for (const entry of entries) {
+    const key = JSON.stringify(entry.release.markers);
+    byMarkers.set(key, [...(byMarkers.get(key) ?? []), entry]);
+  }
+  const chosen = new Set([newest(entries), ...[...byMarkers.values()].map(newest)]);
+  return entries.filter((entry) => chosen.has(entry));
+}
+
 export async function documents(root: string): Promise<string[]> {
   return (await readdir(join(root, "documents")))
     .filter((name) => name.endsWith(".slop"))

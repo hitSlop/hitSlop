@@ -157,7 +157,7 @@ impl Response {
 #[derive(Serialize, Deserialize)]
 struct Refusal {
     message: String,
-    reason: Option<String>,
+    reason: Option<hitslop_core::Code>,
     op_index: Option<u32>,
     rejected: bool,
 }
@@ -668,7 +668,7 @@ fn replica(path: &Path) -> ExitCode {
                         done(Err(Failure {
                             kind: FailureKind::Rejected,
                             message: "Shared snapshot is being installed; keep your draft and retry".into(),
-                            reason: Some("stale_base".into()),
+                            reason: Some(hitslop_core::Code::StaleBase),
                             op_index: None,
                         }));
                         return;
@@ -678,7 +678,7 @@ fn replica(path: &Path) -> ExitCode {
                         done(Err(Failure {
                             kind: FailureKind::Rejected,
                             message: "Too many pending shared mutations; request was not sent".into(),
-                            reason: Some("invalid_request".into()),
+                            reason: Some(hitslop_core::Code::InvalidRequest),
                             op_index: None,
                         }));
                         return;
@@ -736,7 +736,7 @@ fn replica(path: &Path) -> ExitCode {
                             {
                                 if snapshot_retries < 3
                                     && (matches!(error.kind, FailureKind::Busy)
-                                        || error.reason.as_deref() == Some("stale_base"))
+                                        || error.reason == Some(hitslop_core::Code::StaleBase))
                                 {
                                     snapshot_retries += 1;
                                     awaiting = true;

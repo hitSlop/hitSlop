@@ -388,23 +388,6 @@ fn close_refuses_edits_and_holds_the_lock_until_its_final_write() {
     assert_eq!(saved_title(&path), "Before close");
 }
 
-// Failure: another connection holding the database (a backup during Duplicate) must be a
-// definite, retryable failure, never mistaken for a lost reply or a conflict.
-#[test]
-fn a_busy_database_fails_a_flush_that_a_retry_completes() {
-    let (_dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
-    call(&owner, set("Retried")).unwrap();
-    let lock = rusqlite::Connection::open(&path).unwrap();
-    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
-    lock.execute_batch("ROLLBACK").unwrap();
-    drop(lock);
-    call(&owner, Request::Flush).unwrap();
-    assert_eq!(saved_title(&path), "Retried");
-    close(&owner);
-}
-
 // Failure: discard fenced an active save, then a failed reload (a moved file) left writing
 // latched forever and published nothing. Oracle: the failure is published, and once the
 // file is back another edit becomes durable and close releases ownership.
@@ -470,23 +453,50 @@ fn a_flush_during_a_discard_reload_settles_as_replaced() {
     close(&owner);
 }
 
-// A theme change is an edit: accepted in memory, saved by the owner's jobs, and waited for
-// by export, which fails while its save cannot complete. Oracle: the saved palette.
+// Another connection holding the database (a backup during Duplicate) is a definite,
+// retryable failure, never mistaken for a lost reply or a conflict: a flush fails and its
+// retry saves the edit; a theme export waits for its palette's save and fails with it.
+// Both run at once on their own documents, so the test waits out the busy timeout once.
 #[test]
-fn a_theme_export_waits_for_the_save_of_its_palette() {
-    let (_dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
-    let lock = rusqlite::Connection::open(&path).unwrap();
-    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    call(&owner, theme("#111111", Origin::Window)).unwrap();
-    assert_eq!(state(&owner)["theme"]["accent"], "#111111");
-    assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
-    lock.execute_batch("ROLLBACK").unwrap();
-    drop(lock);
-    let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
-    assert!(json.contains("#111111"));
-    close(&owner);
-    let (saved, _) = open(&path, Mode::Snapshot);
-    assert_eq!(state(&saved)["theme"]["accent"], "#111111");
-    close(&saved);
+fn a_busy_database_fails_a_flush_or_theme_export_that_a_retry_completes() {
+    let hold = |path: &std::path::Path| {
+        let lock = rusqlite::Connection::open(path).unwrap();
+        lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        lock
+    };
+    let flush = || {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        call(&owner, set("Retried")).unwrap();
+        let lock = hold(&path);
+        assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
+        lock.execute_batch("ROLLBACK").unwrap();
+        drop(lock);
+        call(&owner, Request::Flush).unwrap();
+        assert_eq!(saved_title(&path), "Retried");
+        close(&owner);
+    };
+    let theme_export = || {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        let lock = hold(&path);
+        call(&owner, theme("#111111", Origin::Window)).unwrap();
+        assert_eq!(state(&owner)["theme"]["accent"], "#111111");
+        assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
+        lock.execute_batch("ROLLBACK").unwrap();
+        drop(lock);
+        let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
+        assert!(json.contains("#111111"));
+        close(&owner);
+        let (saved, _) = open(&path, Mode::Snapshot);
+        assert_eq!(state(&saved)["theme"]["accent"], "#111111");
+        close(&saved);
+    };
+    std::thread::scope(|scope| {
+        for run in [scope.spawn(flush), scope.spawn(theme_export)] {
+            if let Err(panic) = run.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
 }

@@ -3,7 +3,7 @@
 #![cfg(feature = "storage")]
 mod support;
 use hitslop_core::{
-    Origin, file,
+    Code, Origin, file,
     owner::{Failure, FailureKind, Owner, Reply, Request},
     store::Mode,
 };
@@ -179,7 +179,7 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
         call(&owner, edit(&format!("Concurrent {attempt}"))).unwrap();
         fixture.reply(attempt, accepted("Command"));
     }
-    assert_eq!(receive(reply).unwrap_err().reason.as_deref(), Some("stale_base"));
+    assert_eq!(receive(reply).unwrap_err().reason, Some(Code::StaleBase));
     assert_eq!(title(&owner), "Concurrent 1");
     for (attempt, output) in [
         (2, json!({"ok":true,"intents":[],"result":null,"extra":true})),
@@ -200,14 +200,14 @@ fn a_refusal_for_the_person_keeps_its_message_under_its_own_reason() {
     let fixture = Fixture::new();
     let owner = fixture.open(true);
     for (attempt, output, reason) in [
-        (0, json!({"ok":false,"error":"Enter a title.","refused":true}), "refused"),
-        (1, json!({"ok":false,"error":"Enter a title."}), "invalid_request"),
+        (0, json!({"ok":false,"error":"Enter a title.","refused":true}), Code::Refused),
+        (1, json!({"ok":false,"error":"Enter a title."}), Code::InvalidRequest),
     ] {
         let reply = submit(&owner, command(json!({"title":"Command"})), None);
         fixture.input(attempt);
         fixture.reply(attempt, output);
         let failure = receive(reply).unwrap_err();
-        assert_eq!((failure.kind, failure.reason.as_deref()), (FailureKind::Rejected, Some(reason)));
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(reason)));
         assert_eq!(failure.message, "Enter a title.");
     }
     assert_eq!(title(&owner), "Saved");
@@ -224,8 +224,8 @@ fn arguments_are_checked_before_launch_and_missing_evaluators_never_fall_back() 
     }
     let missing = call(&owner, command(json!({"title":"Valid"}))).unwrap_err();
     assert_eq!(
-        (missing.message.as_str(), missing.reason.as_deref()),
-        ("This hitSlop has no command evaluator", Some("engine_error"))
+        (missing.message.as_str(), missing.reason),
+        ("This hitSlop has no command evaluator", Some(Code::EngineError))
     );
     assert!(!fixture.dir.path().join("started-0").exists());
     assert_eq!(title(&owner), "Saved");

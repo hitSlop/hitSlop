@@ -9,7 +9,11 @@ import { execute } from "../../packages/hitslop/src/cli/engine";
 import { png } from "../../packages/hitslop/tests/cli/png-fixture";
 import { PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
 
-test("landing generation reads current templates and preserves outputs when a later input fails", async () => {
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
+test.if(nightly)("landing generation reads current templates and preserves outputs when a later input fails", async () => {
   await prepareNativeFixtures();
   const destination = await mkdtemp(join(tmpdir(), "hitslop-landing-"));
   const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.slop") };
@@ -38,7 +42,7 @@ test("landing generation reads current templates and preserves outputs when a la
   }
 }, 120_000);
 
-test("a skinned template without artwork keeps its dimensions and fallback tile", async () => {
+test.if(nightly)("a skinned template without artwork keeps its dimensions and fallback tile", async () => {
   const folder = await mkdtemp(join(tmpdir(), "hitslop-landing-skin-"));
   try {
     const stage = join(folder, "stage");

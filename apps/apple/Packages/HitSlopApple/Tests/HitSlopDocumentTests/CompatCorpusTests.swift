@@ -16,10 +16,22 @@ import WebKit
       ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
+  /// Only smoke runs may restrict entries. Nightly and release replay every scenario,
+  /// even if the caller inherited an ordinary run's entry selection.
+  static let selected: Set<String>? = {
+    let env = ProcessInfo.processInfo.environment
+    guard env["HITSLOP_COMPAT_MODE"] == "smoke", env["HITSLOP_NIGHTLY"] != "1",
+      env["HITSLOP_COMPAT_RELEASE"] == nil
+    else { return nil }
+    return env["HITSLOP_COMPAT_ENTRIES"].map { Set($0.split(separator: ",").map(String.init)) }
+  }()
+
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
     let entries = (try? FileManager.default.contentsOfDirectory(atPath: corpus.path)) ?? []
-    return entries.sorted().filter { recording == nil || $0 == recording }.flatMap { entry in
+    return entries.sorted().filter {
+      recording == nil ? selected?.contains($0) ?? true : $0 == recording
+    }.flatMap { entry in
       ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path))
         ?? [])
         .filter { $0.hasSuffix(".json") }.sorted().map { "\(entry)/\(($0 as NSString).deletingPathExtension)" }

@@ -14,6 +14,7 @@ extension HostTests {
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
       styleMask: [.titled], backing: .buffered, defer: false)
+    window.moveOffScreen()
     window.isReleasedWhenClosed = false
     try operation?.present(in: window.contentView, show: { _, _ in })
     let picker = try #require(operation?.picker)
@@ -40,6 +41,7 @@ extension HostTests {
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
       styleMask: [.titled], backing: .buffered, defer: false)
+    window.moveOffScreen()
     window.isReleasedWhenClosed = false
     defer { window.close() }
     for present in [false, true] {

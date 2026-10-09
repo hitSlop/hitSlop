@@ -62,9 +62,10 @@ tempfile = "3"
 # Differential oracle for the output-only argument projection. Production uses Node.
 jsonschema = { version = "=0.58.3", default-features = false }
 
+# Authority update installation serves only the dev-sync room (`owner/sync.rs`).
 [[test]]
 name = "replication"
-required-features = ["storage"]
+required-features = ["dev-sync"]
 
 [[test]]
 name = "file"

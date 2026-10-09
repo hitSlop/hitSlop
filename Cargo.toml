@@ -21,6 +21,7 @@ unsafe_op_in_unsafe_fn = "deny"
 [workspace.lints.clippy]
 correctness = { level = "deny", priority = -1 }
 undocumented_unsafe_blocks = "deny"
+allow_attributes_without_reason = "deny"
 
 # Development builds (`bun run build`, the Bun, Swift and native tiers): optimized, since the
 # core's wall-clock budgets (the text diff's timeout, save scheduling, deadlines) assume it.

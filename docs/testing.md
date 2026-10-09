@@ -71,7 +71,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Available locally with `--native` and during release acceptance; nightly/manual qualification in CI, never a required PR check |
+| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
 | `native` | `*.native.test.ts` against the debug helper |
 
 Each tier builds what it needs first (the WASM core and shell, or the native build), and a
@@ -88,6 +88,45 @@ Use a separate checkout for simultaneous runs. Each run has its own temporary di
 and writer registry (an explicit registry override is preserved). Test-process helpers
 bound subprocess lifetimes, drain diagnostics and stop descendants on cancellation.
 The packed preview uses an OS-assigned port and waits for its reported URL.
+
+## Every change and nightly
+
+PRs run affected critical correctness checks for opening, editing, saving and reopening
+documents. Compatibility-sensitive changes also run full app-level corpus replay; other
+changes use smoke coverage when native tiers are selected. Rust always replays every corpus
+entry. Smoke coverage samples recent entries and representative app renders; matching
+markers or embedded apps does not prove saved scenarios behave equivalently.
+
+`HITSLOP_NIGHTLY=1` (set by scheduled/manual CI and release-branch pushes, and implied by
+`--release`) adds expensive boundary cases and broader qualification:
+
+| Nightly and release only | Where it is selected |
+|---|---|
+| Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`HitSlopTestSupport/Nightly.swift`) |
+| Storage-growth and history-trim budgets, rebuild scheduling, a busy display read | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
+| Full randomized budgets: model 8 seeds (4 otherwise), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
+| Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
+| The type fixtures' fresh native render (their saved documents are replayed every time) | `tests/native/render.native.test.ts` |
+| Landing generation, skills install, update notice, help wording, documentation examples, the tutorial build | `test.if(nightly)` in those files |
+| The `browser` tier (Playwright WebKit and Chrome) | the tier's `nightly` flag; `verify browser` runs it on demand |
+
+Full compatibility is independent of nightly checks. CI selects it for changes to Rust,
+native hosting/export, SDK/runtime contracts, corpus/fixtures and their build dependencies
+(`compatibilityInputs`). It replays every entry through Swift/native and exports every saved
+document to both PNG and PDF. Other changes retain the newest entry per marker generation
+and one representative render per embedded app. This is sampling, not an equivalence rule.
+`HITSLOP_COMPAT_MODE=full bun run verify --native` requests full compatibility locally without
+enabling expensive nightly cases. A local `--base REF` run expands automatically for sensitive
+changes; otherwise ordinary local runs default to smoke. Reports record the mode, and smoke
+passes cannot satisfy a full verification cache entry. Nightly and required-release replay
+override inherited smoke restrictions.
+
+Explicit Rust/dev-sync filters bypass nextest's default exclusions, so
+`bun run verify rust a_busy_file_is_reported_busy_not_as_having_no_artwork` runs that test.
+
+A merged failure scenario keeps each failure it replaced named in its comment. Tests that
+wait out SQLite's busy timeout run their cases at once on separate documents, so a run
+pays that wait once.
 
 ## Local authority proof
 
@@ -132,7 +171,7 @@ restart it.
 
 `crates/hitslop-core/tests/model.rs` is the descriptor-driven model of the single writer:
 one test per fixture (checklist, scalars, collections, nested), 8 seeds × 150 steps by
-default, over the edits one owner actually receives. Those are the agent's and the page's
+default (4 on an ordinary `verify`; see [Every change and nightly](#every-change-and-nightly)), over the edits one owner actually receives. Those are the agent's and the page's
 batches (including boundary and out-of-range values, anchors, whole scalar-list `set`,
 multi-element removes and `replace`), page text clients whose edits arrive late against
 older versions, undo and redo. After every step a refusal has changed nothing,
@@ -264,11 +303,15 @@ may be recaptured.
   entry's candidate writer creates documents from the entry's templates and applies
   generated batches in its own protocol, and this core must read exactly what that engine
   reads, then edit, save, trim and reopen them. Requests in older protocols live only in
-  this test. 2 seeds × 8 batches per template by default; the weekly `Core model` run uses
+  this test. 2 seeds × 8 batches per template by default (1 seed on an ordinary `verify`); the weekly `Core model` run uses
   16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
-- Native replay (`tests/native/compat-replay.native.test.ts`) checks inventory and hashes,
-  original app rendering, PNG/PDF, attachments and template creation, through this build's
-  CLI and helper. Stored command programs replay twice: deterministically through the
+- Native replay (`tests/native/compat-replay.native.test.ts`) checks original app
+  rendering, PNG/PDF, attachments and template creation, through this build's CLI and
+  helper (the `compat` tier checks inventory and hashes). Full coverage exports every saved
+  document, including different values saved with the same app. Smoke coverage samples the
+  entries `replayedEntries` chooses and renders each embedded app once; its other documents
+  still read, edit and reopen. Sensitive changes, nightly and releases use full coverage.
+  Stored command programs replay twice: deterministically through the
   evaluator with their recorded clock and seed, and through the owner with `slop call`
   (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
   frozen entry.
@@ -293,7 +336,8 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 |---|---|
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
 | `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, installed-package and landing checks |
-| `native` (macOS 15 ARM64) | Affected `rust,swift,native` tiers; includes platform SQLite, Darwin sandbox, native page edits and old-writer compatibility replay |
+| `native` (macOS 15 ARM64) | Affected `swift,native` tiers: native page edits, the CLI and helper, and the app-level old-file replay |
+| `native-rust` (macOS 15 ARM64) | The affected `rust` tier, in parallel with `native`: platform SQLite, Darwin sandbox and old-writer compatibility replay. WASM lints run on Linux only |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
@@ -311,8 +355,15 @@ nightly/manual qualification. Rust runs on both operating systems because SQLite
 locking, sandboxing and the historical macOS writers have platform-specific behavior.
 The full release gate, including the app bundle and browser acceptance, remains separate.
 
-`native` and `linux-smoke` skip at job level when none of their tiers
-are affected, so an unrelated change allocates no Mac runner. Selection includes both
+`native`, `native-rust` and `linux-smoke` skip at job level when none of their tiers
+are affected, so an unrelated change allocates no Mac runner. On a pull request into
+`master`, `native` also waits for a change that can affect opening an existing document
+(`nativeGateInputs` in `scripts/lib/verification-inputs.ts`: the Rust crates, the Mac app,
+the page shell and wire types, the corpus and fixtures, and the native checks themselves).
+Compatibility-sensitive inputs additionally open the gate, including SDK/runtime contracts
+and the CLI's document/export transport. Other template and authoring-only changes have
+their Swift/native tiers recorded as `deferred` in `selection.json` until the master push.
+Native test and helper changes run their consumers on the PR. Selection includes both
 paths of a rename and deleted files. The main CI workflow, shared preparation action,
 selector, verifier implementation and shared toolchain/dependency inputs select all tiers.
 Policy workflows and verification tests select tooling; they do not invalidate the product.
@@ -329,7 +380,7 @@ Jobs execute exactly their assigned tier names, without consulting the local pas
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
 A successful empty selection reports success without checking out or installing tools in
 the fast job.
-The required-check policy is `fast`, `native`, `linux-smoke`, `Gitleaks` and `Attribution`;
+The required-check policy is `fast`, `native`, `native-rust`, `linux-smoke`, `Gitleaks` and `Attribution`;
 activate it only after the corresponding workflows are installed (see
 [release rules](guides/releasing.md#github-rules-rollout)). The full
 `release:check` runs only in the Release macOS workflow. Reports live in
@@ -340,9 +391,11 @@ verification results or retry failed tests automatically. Job summaries report c
 restoration, setup duration, build/preparation and test duration. GitHub Actions displays
 complete job wall times.
 Nightly runs have a separate concurrency group, so a master push cannot cancel cache warming.
-Successful default-branch runs populate caches that other branches can restore. A cache
-created on a PR merge ref is available only to that PR, so a successful PR alone does not
-warm the next one. Rust caches separate checks, template builds and release builds; SwiftPM
+Successful default-branch runs populate caches that other branches can restore. Pull
+requests restore caches but never save them: a cache saved on a PR merge ref serves only
+that PR, and saving each one evicted the default branch's caches from the repository's
+10 GB budget. Before a push or nightly run saves its Rust cache,
+`scripts/ci/prune-cargo-target.sh` drops incremental state and executables. Rust caches separate checks, template builds and release builds; SwiftPM
 caches separate fixtures and the release corpus. This prevents a smaller concurrent job
 from filling an immutable cache key before the full suite finishes.
 Playwright WebKit and Chrome are installed only for nightly/manual qualification and

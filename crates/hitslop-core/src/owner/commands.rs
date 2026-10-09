@@ -211,7 +211,7 @@ impl Actor {
             }
             let output = result?;
             let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
-            let batch = crate::Batch { intents, ifVersion: Some(invocation.version.clone()), base: None };
+            let batch = crate::Batch { intents, if_version: Some(invocation.version.clone()), base: None };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
             Ok(Reply::Command {
@@ -226,9 +226,7 @@ impl Actor {
             Err(poisoned())
         });
         if invocation.attempt == 0
-            && applied
-                .as_ref()
-                .is_err_and(|e| e.kind == FailureKind::Rejected && e.reason.as_deref() == Some("stale_base"))
+            && applied.as_ref().is_err_and(|e| e.kind == FailureKind::Rejected && e.reason == Some(Code::StaleBase))
         {
             invocation.attempt = 1;
             invocation.version = self.core.version();

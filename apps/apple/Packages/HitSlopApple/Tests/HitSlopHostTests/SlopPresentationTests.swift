@@ -28,7 +28,7 @@ import Testing
 }
 
 extension HostTests {
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func shapeLabNativeResizeHonorsAspectAndKeepsEditorOperable() async throws {
     let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
     let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
@@ -69,7 +69,7 @@ extension HostTests {
     }
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func captureLeavesTheEditorOperable() async throws {
     for kind in ["standard", "ellipse", "glass", "washer"] {
       try await withPresentationSession(kind) { (session: DocumentSession) async throws in
@@ -89,7 +89,7 @@ extension HostTests {
     }
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func snippetFailurePreservesEditorAndAllowsCaptureRetry() async throws {
     try await withPresentationSession { (session: DocumentSession) async throws in
       var issues: [String] = []
@@ -156,7 +156,7 @@ extension HostTests {
     }
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func falsyEditorFailuresRejectReloadAndCapture() async throws {
     try await withPresentationSession { (session: DocumentSession) async throws in
       var recoveries = 0
@@ -188,6 +188,7 @@ extension HostTests {
 }
 
 @Test(
+  .nightly,
   .enabled(
     if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil,
     "Run bun run swift:test to build presentation fixtures"))
@@ -231,7 +232,7 @@ private func shapeLabKinds(fallback: Bool) throws -> [String] {
 }
 
 extension HostTests {
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func shapeLabCapturesPreserveCornersAndAcceptedInput() async throws {
     for kind in try shapeLabKinds(fallback: false) {
       try await withPresentationSession(kind) { session in
@@ -276,7 +277,7 @@ extension HostTests {
     }
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
+  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func shapeLabFallbackCapturesKeepNativeMask() async throws {
     for kind in try shapeLabKinds(fallback: true) {
       try await withPresentationSession(kind) { session in
@@ -313,7 +314,7 @@ extension HostTests {
   // Failure: a full-length fallback PNG export was clipped by the window silhouette
   // stretched to the export's height. The silhouette describes the window: only a
   // window-sized capture is masked, and longer exports are unmasked, like PDF.
-  @Test @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
+  @Test(.nightly) @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
     let root = try contractFixture { stage in
       try Fixtures.updateApp(stage) {
         $0["window"] = ["kind": "standard", "width": 480, "height": 360, "shape": "50%"]

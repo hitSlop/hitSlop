@@ -7,6 +7,10 @@ import { tmpdir } from "node:os";
 import metadata from "../../package.json";
 import { writeTemplate } from "./template-fixture";
 
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
 // These cases launch a sequence of fresh CLIs while the runner also builds fixtures.
 const subprocessSequenceTimeout = 30_000;
 
@@ -132,7 +136,7 @@ test("init flags and defaults produce validated metadata without prompts or part
   }
 }, subprocessSequenceTimeout);
 
-test("help and version do not invoke native or authoring handlers", async () => {
+test.if(nightly)("help and version do not invoke native or authoring handlers", async () => {
   // A fresh checkout has sources and dependencies, but no generated skill bundle.
   const root = await mkdtemp(join(tmpdir(), "hsl-cli-help-"));
   try {
@@ -208,7 +212,7 @@ test("attachments ref prints a file's reference without opening any document", a
   }
 });
 
-test("mistyped commands suggest the intended command", async () => {
+test.if(nightly)("mistyped commands suggest the intended command", async () => {
   for (const [args, suggestion] of [
     [["gte", "missing.slop"], "get"],
     [["theme", "gett", "missing.slop"], "get"],

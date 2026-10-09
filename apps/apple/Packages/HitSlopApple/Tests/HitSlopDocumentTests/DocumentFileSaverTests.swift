@@ -27,6 +27,7 @@ import WebKit
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 400, height: 500), styleMask: [.borderless], backing: .buffered,
       defer: false)
+    window.moveOffScreen()
     window.contentView = engine.webView
     window.orderFront(nil)
     defer {

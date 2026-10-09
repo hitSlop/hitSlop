@@ -9,7 +9,7 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  @Test @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
+  @Test(.nightly) @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
     _ = NSApplication.shared
     let fixtures = Fixtures.repository.appendingPathComponent("tests/fixtures")
     let entries = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil)

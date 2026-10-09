@@ -1,7 +1,7 @@
 //! Typed native adapter; sequencing and persistence remain in hitslop-core::owner.
 use super::*;
-use hitslop_core::Batch;
 use hitslop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
+use hitslop_core::{Batch, Code};
 use std::path::PathBuf;
 #[uniffi::remote(Enum)]
 pub enum ThemeChange {
@@ -29,7 +29,7 @@ pub enum FailureKind {
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
-    pub reason: Option<String>,
+    pub reason: Option<Code>,
     pub op_index: Option<u32>,
 }
 // Request destinations are file paths, which Swift passes as strings.
@@ -180,12 +180,7 @@ impl NativeOwner {
             mode,
             Arc::new(move |event| listener.event(event)),
             evaluator_path.map(|path| core::Evaluator::new(PathBuf::from(path), vec![])).transpose().map_err(|e| {
-                Failure {
-                    kind: FailureKind::Rejected,
-                    message: e,
-                    reason: Some("invalid_request".into()),
-                    op_index: None,
-                }
+                Failure { kind: FailureKind::Rejected, message: e, reason: Some(Code::InvalidRequest), op_index: None }
             })?,
         )?))))
     }

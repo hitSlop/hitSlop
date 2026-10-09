@@ -81,7 +81,7 @@ import HitSlopHost
         reply = encoded(.open(documentPath: file.path))
       }
     } catch let failure as OwnerFailure where failure.kind == .rejected {
-      return write(.failure(error: failure.message, code: .rejected, reason: failure.refusal, opIndex: failure.opIndex))
+      return write(.failure(error: failure.message, code: .rejected, reason: failure.reason, opIndex: failure.opIndex))
     } catch NativeRefusal.Refused(let reply) {
       return write(reply)
     } catch is SlopRequiresUpdate {

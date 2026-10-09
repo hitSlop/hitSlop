@@ -1,6 +1,7 @@
 //! A disposable development page runs against the production owner and command path.
 mod transport;
 use hitslop_core::{
+    Code,
     command::{self, PageDispatch},
     file::ResourceRoute,
     owner::{Event, Owner, Reply, Request},
@@ -73,7 +74,7 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
                         else {
                             return Err(error.to_string());
                         };
-                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected("invalid_request", error)}));
+                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected(Code::InvalidRequest, error)}));
                         continue;
                     }
                 };
@@ -129,7 +130,7 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::value::RawValue::from_string(crate::rejected("invalid_request", error))
+        let error = serde_json::value::RawValue::from_string(crate::rejected(Code::InvalidRequest, error))
             .expect("serialized failure");
         send.send(json!({"type":"fatal","error":error}));
     }

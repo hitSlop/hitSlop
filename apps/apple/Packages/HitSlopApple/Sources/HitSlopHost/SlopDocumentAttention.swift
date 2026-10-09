@@ -42,19 +42,7 @@ extension SlopDocumentWindowController {
 
   public func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     recordSaveStatus(saveStatus)
-    switch saveStatus {
-    case .failed(let failure):
-      attentionFailure = failure
-      showDocumentAttention()
-    case .saved:
-      attentionFailure = nil
-      attentionWaitingForSheet = false
-      if let panel = documentAttention {
-        window?.endSheet(panel, returnCode: .abort)
-        panel.orderOut(nil)
-      }
-    case .saving: break
-    }
+    apply(saveAttention.status(saveStatus, otherSheet: window?.attachedSheet != nil, hidden: attentionHidden))
   }
   /// The edited mark and save telemetry: one failure report until the next save.
   func recordSaveStatus(_ status: DocumentSaveStatus) {
@@ -75,53 +63,49 @@ extension SlopDocumentWindowController {
     refreshIssueBadge()
     toolbar.republishControls()
   }
-  /// What a button in the save-failure alert does.
-  private enum AttentionAction {
-    case retrySave, discardAndRetry, keepOpen
-  }
+  private var attentionHidden: Bool { window == nil || isHiddenForClose }
   /// The save-failure sheet: unsaved work is at risk, so it blocks the window. Issues that
-  /// leave the slop running show as the issue badge instead.
+  /// leave the slop running show as the issue badge instead. `SaveAttention` decides.
   func showDocumentAttention() {
-    guard documentAttention == nil, let window, !isHiddenForClose else { return }
-    guard let message = attentionFailure?.localizedDescription else { return }
-    guard window.attachedSheet == nil else {
-      attentionWaitingForSheet = true
-      return
-    }
-    attentionWaitingForSheet = false
-    let invalidated = attentionFailure == .invalidated
-    // Unsaved work stays live; a full or stopped document offers an explicit way back to
-    // the durable state.
-    let actions: [(title: String, action: AttentionAction)] =
-      invalidated
-      ? [("Discard Unsaved Edits and Reload", .discardAndRetry), ("Keep Open", .keepOpen)]
-      : attentionFailure == .full
-        ? [("Retry Save", .retrySave), ("Discard Unsaved Edits", .discardAndRetry), ("Keep Open", .keepOpen)]
-        : [("Retry Save", .retrySave), ("Keep Open", .keepOpen)]
-    let alert = NSAlert()
-    alert.messageText = invalidated ? "The document engine needs recovery" : "Changes could not be saved"
-    alert.informativeText = message
-    for entry in actions { alert.addButton(withTitle: entry.title) }
-    documentAttention = alert.window as? NSPanel
-    alert.beginSheetModal(for: window) { [weak self] result in
-      guard let self else { return }
-      self.documentAttention = nil
-      // A sheet ended by the window (`.abort`) chose no button.
-      let index = result.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
-      if actions.indices.contains(index) { self.respond(actions[index].action) }
-    }
+    apply(saveAttention.reveal(otherSheet: window?.attachedSheet != nil, hidden: attentionHidden))
   }
   /// Only an unrelated sheet defers a failure. Dismissing our own alert is final until
   /// another failure arrives, including when the person chose Keep Open.
   public func windowDidEndSheet(_ notification: Notification) {
-    guard attentionWaitingForSheet else { return }
-    attentionWaitingForSheet = false
+    guard saveAttention.otherSheetEnded() else { return }
     // AppKit finishes detaching the sheet after notifying its delegate.
     DispatchQueue.main.async { [weak self] in self?.showDocumentAttention() }
   }
+  func apply(_ effect: SaveAttention.Effect) {
+    switch effect {
+    case .none: break
+    case .present(let alert): present(alert)
+    case .dismiss:
+      if let panel = documentAttention {
+        window?.endSheet(panel, returnCode: .abort)
+        panel.orderOut(nil)
+      }
+    }
+  }
+  private func present(_ content: SaveAttention.Alert) {
+    guard let window else { return }
+    let alert = NSAlert()
+    alert.messageText = content.title
+    alert.informativeText = content.message
+    for button in content.buttons { alert.addButton(withTitle: button.title) }
+    documentAttention = alert.window as? NSPanel
+    alert.beginSheetModal(for: window) { [weak self] result in
+      guard let self else { return }
+      self.documentAttention = nil
+      self.saveAttention.alertEnded()
+      // A sheet ended by the window (`.abort`) chose no button.
+      let index = result.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+      if content.buttons.indices.contains(index) { self.respond(content.buttons[index].action) }
+    }
+  }
   /// Recovery is a command like any other, so it never runs beside a close or export. Its
   /// outcome returns as save status: saved dismisses the sheet, a new failure shows again.
-  private func respond(_ action: AttentionAction) {
+  private func respond(_ action: SaveAttention.Action) {
     switch action {
     case .retrySave: request(.retrySave)
     case .discardAndRetry: request(.discardUnsaved)
@@ -136,12 +120,7 @@ extension SlopDocumentWindowController {
     failedOverlay = nil
     guard let message, let content = documentComposition else { return }
     stopLoading()
-    if session.rendererDead, let panel = documentAttention {
-      window?.endSheet(panel)
-      panel.orderOut(nil)
-      documentAttention = nil
-      attentionFailure = nil
-    }
+    if session.rendererDead { apply(saveAttention.clear()) }
     let overlay = NSHostingView(
       rootView: FailureOverlay(message: message, retry: { [weak self] in self?.request(.retry) }))
     overlay.frame = content.bounds
@@ -149,6 +128,91 @@ extension SlopDocumentWindowController {
     content.addSubview(overlay)
     failedOverlay = overlay
     if presentationRequested { revealReadyWindow() }
+  }
+}
+
+/// Whether the save-failure alert shows, and with what: one alert for the latest failure,
+/// deferred behind an unrelated sheet, dismissed by the next save. A value, so its rules are
+/// tested without a window (`SaveAttentionTests`); the window controller presents it.
+struct SaveAttention: Equatable {
+  /// What a button in the save-failure alert does.
+  enum Action: Equatable { case retrySave, discardAndRetry, keepOpen }
+  struct Button: Equatable {
+    let title: String
+    let action: Action
+  }
+  struct Alert: Equatable {
+    let title: String
+    let message: String
+    let buttons: [Button]
+  }
+  enum Effect: Equatable { case none, present(Alert), dismiss }
+
+  /// The latest failure, until a save or a renderer death clears it.
+  private(set) var failure: SaveFailure?
+  /// An unrelated sheet held the window when the failure arrived.
+  private(set) var waiting = false
+  /// The alert is on the window.
+  private(set) var presented = false
+
+  mutating func status(_ status: DocumentSaveStatus, otherSheet: Bool, hidden: Bool) -> Effect {
+    switch status {
+    case .failed(let failure):
+      self.failure = failure
+      return reveal(otherSheet: otherSheet, hidden: hidden)
+    case .saved:
+      failure = nil
+      waiting = false
+      return presented ? .dismiss : .none
+    case .saving: return .none
+    }
+  }
+  /// Shows the pending failure unless the alert is already up, the window is hidden for
+  /// close, or an unrelated sheet holds it (then it waits for that sheet).
+  mutating func reveal(otherSheet: Bool, hidden: Bool) -> Effect {
+    guard !presented, !hidden, let failure else { return .none }
+    guard !otherSheet else {
+      waiting = true
+      return .none
+    }
+    waiting = false
+    presented = true
+    return .present(Self.alert(for: failure))
+  }
+  /// A sheet ended: whether a deferred failure should now try to show.
+  mutating func otherSheetEnded() -> Bool {
+    defer { waiting = false }
+    return waiting
+  }
+  /// The alert ended, by a button or by the window.
+  mutating func alertEnded() { presented = false }
+  /// The renderer died: its overlay replaces the alert.
+  mutating func clear() -> Effect {
+    failure = nil
+    return presented ? .dismiss : .none
+  }
+  /// The window closed.
+  mutating func windowClosed() {
+    waiting = false
+    presented = false
+  }
+
+  static func alert(for failure: SaveFailure) -> Alert {
+    // Unsaved work stays live; a full or stopped document offers an explicit way back to
+    // the durable state.
+    let buttons: [Button] =
+      switch failure {
+      case .invalidated: [.init(title: "Discard Unsaved Edits and Reload", action: .discardAndRetry), .init(title: "Keep Open", action: .keepOpen)]
+      case .full:
+        [
+          .init(title: "Retry Save", action: .retrySave), .init(title: "Discard Unsaved Edits", action: .discardAndRetry),
+          .init(title: "Keep Open", action: .keepOpen),
+        ]
+      default: [.init(title: "Retry Save", action: .retrySave), .init(title: "Keep Open", action: .keepOpen)]
+      }
+    return Alert(
+      title: failure == .invalidated ? "The document engine needs recovery" : "Changes could not be saved",
+      message: failure.localizedDescription, buttons: buttons)
   }
 }
 

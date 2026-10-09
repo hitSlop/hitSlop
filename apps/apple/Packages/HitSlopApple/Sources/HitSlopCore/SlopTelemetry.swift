@@ -101,7 +101,7 @@ public struct SlopFailureContext: Equatable, Sendable {
   public static func classify(_ error: Error) -> Self {
     if let diagnostic = error as? any SlopDiagnosticProviding { return diagnostic.diagnostic }
     // The core never replaces a file: creating, duplicating or sharing onto one is refused.
-    if let failure = error as? OwnerFailure, failure.refusal == .exists {
+    if let failure = error as? OwnerFailure, failure.reason == .exists {
       return .init(.rejection, reason: .destinationExists)
     }
     // Never serialize the original NSError, its description, or userInfo.

@@ -796,10 +796,9 @@ fn reimporting_over_damaged_bytes_is_refused() {
     store.close().unwrap();
 }
 
-/// Hosts that display a file take the first artwork it holds, in one read, and learn that
-/// a file they cannot read now is busy, never that it has no artwork.
+/// Hosts that display a file take the first artwork it holds, in one read.
 #[test]
-fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
+fn display_reads_fall_back_in_one_read() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
     fs::create_dir_all(stage.join("artwork")).unwrap();
@@ -822,7 +821,19 @@ fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
     assert_eq!(fs::read(&output).unwrap(), preview);
     assert!(file::export_artwork(&doc, Artwork::Preview, &output).is_err());
     assert_eq!(fs::read(&doc).unwrap(), before);
+}
 
+/// A host learns that a file it cannot read now is busy, never that it has no artwork.
+/// Nightly (`.config/nextest.toml`): it waits out the reader's busy timeouts.
+#[test]
+fn a_busy_file_is_reported_busy_not_as_having_no_artwork() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    fs::create_dir_all(stage.join("artwork")).unwrap();
+    support::artwork(&stage, "preview", &png(64, 48, 6));
+    let (template, doc) = (dir.path().join("T.slop"), dir.path().join("D.slop"));
+    support::pack(&stage, &template).unwrap();
+    file::create_document(&template, &doc).unwrap();
     let holder = raw(&doc);
     holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
     assert!(matches!(file::artwork(&doc, &[Artwork::Preview]), Err(Error::Busy)));

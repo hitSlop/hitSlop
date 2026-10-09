@@ -16,7 +16,9 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
+    // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
+    window.moveOffScreen()
     window.contentView = engine.webView
     defer {
       window.contentView = nil
@@ -50,7 +52,9 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
+    // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
+    window.moveOffScreen()
     window.contentView = engine.webView
     window.orderFront(nil)
     defer {
@@ -87,8 +91,8 @@ import WebKit
     _ = NSApplication.shared
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
-    window.orderFront(nil)
-    defer { window.orderOut(nil) }
+    window.moveOffScreen()
+    // Only the picker's parent: the presenter is the test's, so nothing goes on screen.
     var completions = 0
     var rejected = 0
     var dismissals = 0

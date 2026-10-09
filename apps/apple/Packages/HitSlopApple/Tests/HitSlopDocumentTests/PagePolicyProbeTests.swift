@@ -46,7 +46,8 @@ import WebKit
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     // WebKit starts media only in a page that is in a window.
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.moveOffScreen()
     window.contentView = session.webView
     window.orderFront(nil)
     defer {

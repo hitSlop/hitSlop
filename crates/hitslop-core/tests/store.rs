@@ -362,26 +362,6 @@ fn redo_across_compaction_survives_reopen() {
     assert_eq!(title(&open(&path).1), "After");
 }
 
-// A compaction whose write fails leaves the saved state as it was; undo and the retried
-// save must still reopen to what the window showed.
-#[test]
-fn undo_after_a_failed_compaction_saves_on_retry() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Before");
-    save(&store, &mut doc);
-    set_title(&mut doc, "After");
-    let job = store.job(&mut doc, true).unwrap().unwrap();
-    let other = hold(&path);
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    other.execute_batch("COMMIT").unwrap();
-    assert!(doc.undo().unwrap().publication.is_some());
-    assert_eq!(title(&doc), "Before");
-    save(&store, &mut doc);
-    store.close().unwrap();
-    assert_eq!(title(&open(&path).1), "Before");
-}
-
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
 // and saved an update that depends on it; the document could never be opened again.
 #[test]
@@ -483,39 +463,78 @@ fn oversized_documents_are_refused_before_any_blob_is_read() {
     }
 }
 
+// One busy database refuses every kind of save, and each keeps its changes for the retry:
+// an append, a checkpoint, a theme-only save, a theme change saved with an edit, and an undo
+// after a refused checkpoint. A refused write never advances the saved version. The
+// scenarios run at once, each on its own document, so the test waits out the busy timeout once.
 #[test]
-fn a_busy_database_fails_the_save_and_a_retry_succeeds() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Retried");
-    let other = hold(&path);
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    let started = std::time::Instant::now();
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    assert!(started.elapsed() >= std::time::Duration::from_secs(1), "waits for the busy timeout");
-    other.execute_batch("COMMIT").unwrap();
-    store.write(&store.job(&mut doc, false).unwrap().unwrap()).unwrap();
-    store.close().unwrap();
-    assert_eq!(title(&open(&path).1), "Retried");
-}
-
-// A refused write never advances the saved version: the next job saves the same edits
-// again, as an append or as a checkpoint.
-#[test]
-fn a_failed_write_never_advances_the_saved_version() {
-    for checkpoint in [false, true] {
+fn a_refused_save_keeps_every_change_for_the_retry() {
+    fn refused(store: &Store, path: &Path, job: &hitslop_core::store::SaveJob) {
+        let other = hold(path);
+        let started = std::time::Instant::now();
+        assert!(matches!(store.write(job), Err(Error::Busy)));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(1), "waits for the busy timeout");
+        other.execute_batch("COMMIT").unwrap();
+    }
+    let edits = |checkpoint: bool| {
         let (_dir, path) = document();
         let (store, mut doc) = open(&path);
         set_title(&mut doc, "Retried");
-        let job = store.job(&mut doc, checkpoint).unwrap().unwrap();
-        let other = hold(&path);
-        assert!(store.write(&job).is_err());
-        other.execute_batch("COMMIT").unwrap();
+        refused(&store, &path, &store.job(&mut doc, checkpoint).unwrap().unwrap());
         let retry = store.job(&mut doc, false).unwrap().expect("the refused edit is saved again");
         store.write(&retry).unwrap();
         store.close().unwrap();
         assert_eq!(title(&open(&path).1), "Retried", "checkpoint: {checkpoint}");
-    }
+    };
+    let theme_only = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_accent(&mut doc, "#303030");
+        refused(&store, &path, &store.job(&mut doc, false).unwrap().expect("a theme-only job"));
+        assert_eq!(accent(&doc), "#303030");
+        assert_eq!(saved_accent(&path), "#335577");
+        assert_eq!(save(&store, &mut doc), Some(false));
+        assert_eq!(saved_accent(&path), "#303030");
+    };
+    let theme_with_edit = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_accent(&mut doc, "#222222");
+        set_title(&mut doc, "Both");
+        refused(&store, &path, &store.job(&mut doc, false).unwrap().unwrap());
+        assert_eq!(saved_accent(&path), "#335577", "the theme change and the edit fail together");
+        save(&store, &mut doc);
+        assert_eq!(saved_accent(&path), "#222222");
+        let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
+        assert_eq!(title(&snapshot.document().unwrap()), "Both");
+    };
+    let undo_after_checkpoint = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_title(&mut doc, "Before");
+        save(&store, &mut doc);
+        set_title(&mut doc, "After");
+        refused(&store, &path, &store.job(&mut doc, true).unwrap().unwrap());
+        assert!(doc.undo().unwrap().publication.is_some());
+        assert_eq!(title(&doc), "Before");
+        save(&store, &mut doc);
+        store.close().unwrap();
+        assert_eq!(title(&open(&path).1), "Before");
+    };
+    std::thread::scope(|scope| {
+        let runs = [
+            scope.spawn(|| edits(false)),
+            scope.spawn(|| edits(true)),
+            scope.spawn(theme_only),
+            scope.spawn(theme_with_edit),
+            scope.spawn(undo_after_checkpoint),
+        ];
+        for run in runs {
+            if let Err(panic) = run.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
 }
 
 #[test]
@@ -696,21 +715,9 @@ fn a_theme_change_is_saved_by_the_next_job() {
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(stored(&path).rows, before.rows + 1, "theme changes share the Loro update log");
     assert_eq!(saved_accent(&path), "#111111");
-    // A theme change and an edit are saved in one transaction.
-    set_accent(&mut doc, "#222222");
-    set_title(&mut doc, "Both");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    let other = hold(&path);
-    assert!(store.write(&job).is_err());
-    other.execute_batch("COMMIT").unwrap();
-    assert_eq!(saved_accent(&path), "#111111");
-    save(&store, &mut doc);
-    assert_eq!(saved_accent(&path), "#222222");
-    let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(title(&snapshot.document().unwrap()), "Both");
     assert!(palette(&mut doc, json!({"type":"setTheme","values":{"unknown":"#000000"}})).is_err());
     store.close().unwrap();
-    assert_eq!(accent(&open(&path).1), "#222222");
+    assert_eq!(accent(&open(&path).1), "#111111");
 }
 
 // Failure: a theme change checked ownership under the mutex a save holds for its whole
@@ -739,21 +746,6 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     writer.join().unwrap().unwrap();
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
-}
-
-#[test]
-fn a_failed_theme_save_keeps_the_change_for_a_retry() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_accent(&mut doc, "#303030");
-    let other = hold(&path);
-    let job = store.job(&mut doc, false).unwrap().expect("a theme-only job");
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    other.execute_batch("COMMIT").unwrap();
-    assert_eq!(accent(&doc), "#303030");
-    assert_eq!(saved_accent(&path), "#335577");
-    assert_eq!(save(&store, &mut doc), Some(false));
-    assert_eq!(saved_accent(&path), "#303030");
 }
 
 // Failure: a theme command that changed nothing still wrote the document row, so it

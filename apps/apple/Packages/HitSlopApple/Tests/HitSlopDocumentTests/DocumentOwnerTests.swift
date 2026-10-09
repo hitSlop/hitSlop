@@ -26,7 +26,7 @@ import Testing
   // while a closed reply went unchecked, so a large document read closed but not live.
   // Oracle: near-limit batches each apply once, and the live and closed reads of a reply
   // over 48 MiB agree.
-  @Test @MainActor func largeDocumentsReadTheSameLiveAndClosed() async throws {
+  @Test(.nightly) @MainActor func largeDocumentsReadTheSameLiveAndClosed() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)

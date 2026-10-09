@@ -2,7 +2,15 @@
 //! the edit worker; SQLite work runs serially on the persistence worker. Callbacks run
 //! without locks and may enqueue another request, but must not wait for its completion.
 use crate::file::{self, Artwork};
+mod failure;
+pub use failure::{Failure, FailureKind};
+mod persistence;
 use crate::{Code, Document, Origin, store, theme};
+#[cfg(target_arch = "wasm32")]
+use persistence::perform;
+#[cfg(not(target_arch = "wasm32"))]
+use persistence::persistence;
+use persistence::{StorageAction, Work};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
@@ -10,62 +18,6 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailureKind {
-    Rejected,
-    Replaced,
-    Closing,
-    Closed,
-    ReadOnly,
-    Invalidated,
-    Locked,
-    Busy,
-    Full,
-    Moved,
-    SaveFailed,
-    Failed,
-}
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("{message}")]
-pub struct Failure {
-    pub kind: FailureKind,
-    pub message: String,
-    pub reason: Option<String>,
-    pub op_index: Option<u32>,
-}
-impl Failure {
-    pub(crate) fn new(kind: FailureKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), reason: None, op_index: None }
-    }
-    /// A refusal under a core error code: nothing changed.
-    pub(crate) fn rejected(code: Code, message: impl Into<String>) -> Self {
-        Self { reason: Some(code.as_str().into()), ..Self::new(FailureKind::Rejected, message) }
-    }
-}
-impl From<crate::Error> for Failure {
-    fn from(e: crate::Error) -> Self {
-        Self {
-            kind: FailureKind::Rejected,
-            reason: Some(e.code.as_str().into()),
-            message: e.message,
-            op_index: e.op_index.map(|n| n as u32),
-        }
-    }
-}
-impl From<store::Error> for Failure {
-    fn from(e: store::Error) -> Self {
-        let kind = match e {
-            store::Error::Rejected(e) => return e.into(),
-            store::Error::Locked => FailureKind::Locked,
-            store::Error::Busy => FailureKind::Busy,
-            store::Error::Full => FailureKind::Full,
-            store::Error::Moved => FailureKind::Moved,
-            store::Error::Closed => FailureKind::Closed,
-            store::Error::Failed(_) => FailureKind::Failed,
-        };
-        Self::new(kind, e.to_string())
-    }
-}
 #[cfg(target_arch = "wasm32")]
 mod browser;
 #[cfg(target_arch = "wasm32")]
@@ -75,7 +27,7 @@ mod commands;
 mod maintenance;
 /// The session hooks: a local document's, or with the opt-in `dev-sync` proof, a shared
 /// one's (`sync.rs`). The only place the owner differs between the two builds.
-#[cfg_attr(feature = "dev-sync", path = "owner/sync.rs")]
+#[cfg_attr(feature = "dev-sync", path = "sync.rs")]
 pub mod session;
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
 #[cfg(not(target_arch = "wasm32"))]
@@ -97,7 +49,7 @@ pub fn theme_request(change: ThemeChange) -> Request {
         ThemeChange::ImportFile { file } => crate::Intent::ImportTheme { file },
     };
     Request::Apply {
-        batch: crate::Batch { intents: vec![intent], base: None, ifVersion: None },
+        batch: crate::Batch { intents: vec![intent], base: None, if_version: None },
         origin: Origin::Window,
     }
 }
@@ -344,7 +296,7 @@ impl Drop for Owner {
 
 enum Message {
     /// Only a sharing session sends these; a local one has none.
-    #[allow(dead_code)]
+    #[cfg_attr(not(feature = "dev-sync"), expect(dead_code, reason = "only a sharing session sends these"))]
     Session(session::Message),
     Evaluated {
         invocation: Invocation,
@@ -388,164 +340,6 @@ enum Message {
     },
     Stop,
 }
-enum Work {
-    Maintain {
-        generation: u64,
-        seed: crate::maintenance::Seed,
-        budget: usize,
-    },
-    Save {
-        generation: u64,
-        target: u64,
-        job: store::SaveJob,
-    },
-    Restore {
-        generation: u64,
-        callback: Completion,
-    },
-    Store {
-        generation: u64,
-        action: StorageAction,
-        callback: Completion,
-    },
-    Close {
-        generation: u64,
-        job: Option<store::SaveJob>,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-        callback: Completion,
-    },
-}
-/// The artwork a window rendered, by name, leaving out what it did not render.
-#[cfg(not(target_arch = "wasm32"))]
-fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
-    [(Artwork::Preview, preview), (Artwork::Icon, icon)]
-        .into_iter()
-        .filter_map(|(name, png)| Some((name, png.as_deref()?)))
-        .collect()
-}
-enum StorageAction {
-    Copy { path: PathBuf, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
-    CaptureSource(PathBuf),
-    Backup(PathBuf),
-    Artwork(Artwork),
-    Attachments,
-    ReadAttachment(String),
-    PutAttachment(Vec<u8>),
-}
-#[cfg(not(target_arch = "wasm32"))]
-fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
-    for work in work {
-        let done = perform(&store, work);
-        if let Err(mpsc::SendError(Message::Stored { callback, .. } | Message::Restored { callback, .. })) =
-            sender.send(done)
-        {
-            complete(callback, Err(closed()))
-        }
-    }
-}
-/// One serial storage effect, driven by a native thread or a browser worker.
-fn perform(store: &store::Store, work: Work) -> Message {
-    match work {
-        Work::Maintain { generation, seed, budget } => {
-            let result = contained(|| {
-                #[cfg(test)]
-                if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                    hook(false)?;
-                }
-                let (rebuilt, bytes) = seed.build(budget)?;
-                let job = store.replacement_job(&rebuilt, bytes)?;
-                let written = contained(|| {
-                    store.write(&job).map_err(Failure::from)?;
-                    #[cfg(test)]
-                    if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                        hook(true)?;
-                    }
-                    Ok(())
-                });
-                Ok((Box::new(rebuilt), written))
-            });
-            Message::Maintained { generation, result }
-        }
-        Work::Save { generation, target, job } => Message::Saved {
-            generation,
-            target,
-            rebuild: job.rebuild_due(),
-            result: contained(|| store.write(&job).map_err(Failure::from)),
-        },
-        Work::Restore { generation, callback } => Message::Restored {
-            generation,
-            callback,
-            result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
-        },
-        Work::Store { generation, action, callback } => {
-            let result = contained(|| {
-                Ok(match action {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    StorageAction::Copy { path, preview, icon } => {
-                        store.copy_clean(&path, &named_artwork(&preview, &icon))?;
-                        Reply::Unit
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    StorageAction::CaptureSource(path) => {
-                        store.capture_source(&path)?;
-                        Reply::Unit
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    StorageAction::Backup(path) => {
-                        store.backup(&path)?;
-                        Reply::Unit
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    StorageAction::Copy { path, preview, icon } => {
-                        drop((path, preview, icon));
-                        return Err(Failure::rejected(
-                            Code::InvalidRequest,
-                            "Native path operation is unavailable in the browser",
-                        ));
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    StorageAction::CaptureSource(path) | StorageAction::Backup(path) => {
-                        drop(path);
-                        return Err(Failure::rejected(
-                            Code::InvalidRequest,
-                            "Native path operation is unavailable in the browser",
-                        ));
-                    }
-                    StorageAction::Artwork(name) => Reply::Bytes { bytes: store.artwork(name)? },
-                    StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
-                    StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
-                    StorageAction::PutAttachment(bytes) => Reply::Attachment { item: store.put_attachment(&bytes)? },
-                })
-            });
-            Message::Stored { generation, result, callback, closing: false }
-        }
-        Work::Close { generation, job, preview, icon, callback } => {
-            let result = contained(|| {
-                // Housekeeping cannot fail a close whose final save succeeded.
-                if let Some(job) = job {
-                    let _ = store.write(&job);
-                }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let artwork = named_artwork(&preview, &icon);
-                    if !artwork.is_empty() {
-                        let _ = store.set_artwork(&artwork);
-                    }
-                }
-                #[cfg(target_arch = "wasm32")]
-                let _ = (preview, icon);
-                // After the final save, when no import can be waiting for its
-                // reference: the page's barrier drained its imports, and an agent's
-                // blobs arrive in the batch that references them.
-                let _ = store.reclaim_attachments();
-                store.close()?;
-                Ok(Reply::Unit)
-            });
-            Message::Stored { generation, result, callback, closing: true }
-        }
-    }
-}
 #[derive(PartialEq, Eq)]
 enum Lifecycle {
     Open,
@@ -554,9 +348,7 @@ enum Lifecycle {
 }
 enum AfterSave {
     Reply(Reply),
-    Copy { path: PathBuf, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
-    CaptureSource(PathBuf),
-    Backup(PathBuf),
+    Storage(StorageAction),
     Close { preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
 }
 struct Waiter {
@@ -888,15 +680,15 @@ impl Actor {
                 return Ok(None);
             }
             Request::Copy { destination, preview, icon } => {
-                self.wait(callback, AfterSave::Copy { path: destination, preview, icon })?;
+                self.wait(callback, AfterSave::Storage(StorageAction::Copy { path: destination, preview, icon }))?;
                 return Ok(None);
             }
             Request::CaptureSource { destination } => {
-                self.wait(callback, AfterSave::CaptureSource(destination))?;
+                self.wait(callback, AfterSave::Storage(StorageAction::CaptureSource(destination)))?;
                 return Ok(None);
             }
             Request::Backup { destination } => {
-                self.wait(callback, AfterSave::Backup(destination))?;
+                self.wait(callback, AfterSave::Storage(StorageAction::Backup(destination)))?;
                 return Ok(None);
             }
             Request::Close { preview, icon } => {
@@ -1032,11 +824,7 @@ impl Actor {
             }
             match waiter.next {
                 AfterSave::Reply(reply) => complete(waiter.callback, Ok(reply)),
-                AfterSave::Copy { path, preview, icon } => {
-                    self.storage(StorageAction::Copy { path, preview, icon }, waiter.callback)
-                }
-                AfterSave::CaptureSource(path) => self.storage(StorageAction::CaptureSource(path), waiter.callback),
-                AfterSave::Backup(path) => self.storage(StorageAction::Backup(path), waiter.callback),
+                AfterSave::Storage(action) => self.storage(action, waiter.callback),
                 AfterSave::Close { preview, icon } => {
                     let job = if self.mode == store::Mode::Document {
                         catch_unwind(AssertUnwindSafe(|| self.store.close_job(&mut self.core)))

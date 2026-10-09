@@ -35,8 +35,6 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
 /// A failure the core reported, said for the person.
 extension OwnerFailure: LocalizedError {
   public var errorDescription: String? { message }
-  /// The core error code a refusal names.
-  public var refusal: CoreErrorCode? { reason.flatMap(CoreErrorCode.init(rawValue:)) }
 }
 
 /// A hitSlop file, checked by the core: a template (the app its author built) or a document
@@ -109,7 +107,7 @@ public struct SlopFile: Sendable {
   public static func opening<T>(_ open: () throws -> T) throws -> T {
     do { return try open() } catch CoreError.Failure(let failure) {
       guard failure.kind == .rejected else { throw failure }
-      switch failure.refusal {
+      switch failure.reason {
       case .requiresUpdate: throw SlopRequiresUpdate()
       case .isTemplate: throw SlopError.template
       default: throw SlopError.invalid(failure.message)

@@ -22,6 +22,8 @@ concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 env:
+  # Scheduled/manual runs and release pushes add nightly checks; ordinary PRs stay lean.
+  HITSLOP_NIGHTLY: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref_name, 'release/'))) && '1' || '' }}
   CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
   # replaced. Nightly, manual and release-branch runs check all required tiers.
@@ -34,8 +36,10 @@ jobs:
     outputs:
       fast: ${{ steps.select.outputs.fast }}
       native: ${{ steps.select.outputs.native }}
+      native-rust: ${{ steps.select.outputs.nativeRust }}
       rust: ${{ steps.select.outputs.rust }}
       qualification: ${{ steps.select.outputs.qualification }}
+      compatibility: ${{ steps.select.outputs.compatibility }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,7 +53,7 @@ jobs:
         run: |
           bun scripts/ci/select.ts > selection.json
           jq -r '.jobs | to_entries[] | "\(.key): \(.value)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          for job in fast native rust qualification; do
+          for job in fast native nativeRust rust deferred qualification compatibility; do
             echo "$job=$(jq -r --arg job "$job" '.jobs[$job]' selection.json)" >> "$GITHUB_OUTPUT"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -99,27 +103,55 @@ jobs:
     timeout-minutes: 45
     env:
       TIERS: ${{ needs.select.outputs.native }}
+      HITSLOP_COMPAT_MODE: ${{ needs.select.outputs.compatibility }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/prepare-checks
         with:
-          nextest: ${{ contains(env.TIERS, 'rust') }}
-          bindings: ${{ (contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')) && 'native' || 'none' }}
-          dependencies: ${{ env.TIERS != 'rust' }}
+          nextest: "false"
       - uses: ./.github/actions/native-cache
-        if: contains(env.TIERS, 'swift') || contains(env.TIERS, 'native')
         with:
           templates: fixtures
       - name: Native tiers
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
         run: bun run verify --ci --keep-going "$TIERS"
+      - name: Prune Rust build before caching
+        if: github.event_name != 'pull_request'
+        run: bash scripts/ci/prune-cargo-target.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: native-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
+  # Rust on macOS (platform SQLite, Darwin sandbox, the released macOS writers), in parallel
+  # with the Swift/native job. WASM lints run once, on Linux.
+  native-rust:
+    needs: select
+    if: needs.select.outputs.native-rust != ''
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      TIERS: ${{ needs.select.outputs.native-rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          bindings: none
+          dependencies: "false"
+      - run: bun run verify --ci --keep-going "$TIERS"
+      - name: Prune Rust build before caching
+        if: github.event_name != 'pull_request'
+        run: bash scripts/ci/prune-cargo-target.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: native-rust-evidence
           path: .hitslop/evidence
           include-hidden-files: true
   # Full Rust semantics plus both SQLite configurations, when affected.
@@ -139,6 +171,9 @@ jobs:
           bindings: none
           dependencies: "false"
       - run: bun run verify --ci --keep-going "$TIERS"
+      - name: Prune Rust build before caching
+        if: github.event_name != 'pull_request'
+        run: bash scripts/ci/prune-cargo-target.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

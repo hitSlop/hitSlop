@@ -9,7 +9,11 @@ import { stageProject } from "../../src/cli/build";
 import { writeTemplate } from "./template-fixture";
 import { stageEngines } from "../../../../scripts/build/engines";
 
-test("discovery builds an inventory independently of bundled selection and rejects invalid input", async () => {
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
+test.if(nightly)("discovery builds an inventory independently of bundled selection and rejects invalid input", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-discovery-"));
   // Discovery never runs author code: a folder with a slop.ts is a project, named by its slug.
   async function source(name: string) {
@@ -68,7 +72,7 @@ test("embedding replaces selection and never keeps a deselected starter", async 
 });
 
 // Each complete slop.ts example in the public guides builds with its page's schema.ts.
-test("complete public slop.ts examples follow the current contract", async () => {
+test.if(nightly)("complete public slop.ts examples follow the current contract", async () => {
   // Inside the checkout, so the examples resolve hitslop.
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   let count = 0;

@@ -12,6 +12,10 @@ import { appAsset, repository } from "../../scripts/lib/artifacts";
 import { exec, testProcess } from "../../scripts/lib/test-process";
 import { debugHelper } from "../../scripts/lib/native";
 
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
 const native = process.env.HITSLOP_PACKED_NATIVE === "1";
 const minutes = (n: number) => n * 60_000;
 let root: string, coreRoot: string, noNode: Record<string, string>, env: Record<string, string | undefined>;
@@ -237,7 +241,7 @@ test("the installed CLI previews the project with its own page shell and core", 
 }, minutes(5));
 
 // The getting-started code compiles, so the documentation is an executable contract.
-test("the getting-started tutorial's code checks and builds", async () => {
+test.if(nightly)("the getting-started tutorial's code checks and builds", async () => {
   const tutorial = await readFile(join(repository, "apps/landing/src/content/docs/docs/getting-started.mdx"), "utf8");
   for (const match of tutorial.matchAll(/```(?:ts|svelte|css) title="([^"]+)"\n([\s\S]*?)\n```/g))
     await writeFile(join(project(), match[1]!), match[2]!);
