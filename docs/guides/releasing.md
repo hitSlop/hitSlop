@@ -4,6 +4,16 @@ The Mac app and the single `hitslop` npm package ship together under one `vX.Y.Z
 Their shared version labels a release; file markers and the exact command protocol decide
 compatibility. The first shared version is 1.0.0. Mac build numbers continue increasing.
 
+Version 1.0.0 starts the supported document baseline. Earlier Mac and scoped npm
+releases were prelaunch experiments; their documents are unsupported and are recreated
+from current templates. Do not add readers or migrations for those files. From 1.0.0
+onward, retain every frozen corpus entry and preserve released documents.
+
+The old GitHub releases and remote tags were removed before this launch. Downloads and
+Sparkle are unavailable until v1.0.0 is published. The previous signed app and appcast
+are retained locally for isolated update acceptance. Use `git push --no-follow-tags`
+for release work: local historical tags must not repopulate the cleaned remote.
+
 ## Release branches and hotfixes
 
 Development continues on `master`. When a candidate is ready to stabilize, cut
@@ -114,12 +124,15 @@ successful publish within two days. These are deployment prerequisites, not loca
 First-publication checklist, after merge:
 
 - Confirm ownership of `hitslop`. If a bootstrap publication is needed to configure
-  trusted publishing, publish it under a bootstrap dist-tag and explicitly accept that
-  its version remains part of npm history.
+  trusted publishing, publish the metadata-only `0.0.0-bootstrap.0` under the `bootstrap`
+  dist-tag. It contains no CLI, SDK or document runtime and remains part of npm history.
+  npm may assign it `latest` on first publication and refuse to remove that tag. The
+  release promotion accepts this prerelease baseline and replaces it with `1.0.0`;
+  the bootstrap README makes clear that it is not a usable release.
 - Configure the exact repository/workflow with both direct publish and dist-tag access;
   confirm Apple, Sparkle and Cloudflare credentials independently of the dry run.
-- Retain the previous signed app and reachable appcast for Sparkle acceptance before
-  cleaning obsolete prerelease releases or tags. Keep Git history and increasing Mac builds.
+- Use the locally retained previous signed app and an isolated reachable appcast for
+  Sparkle acceptance after the prelaunch cleanup. Keep Git history and increasing Mac builds.
 - Complete and record the manual acceptance below. Publish only the accepted commit.
 - Once `hitslop` is available, deprecate the superseded `@hitslop/*` packages with a
   message pointing to it. Unpublication is not required for this release.

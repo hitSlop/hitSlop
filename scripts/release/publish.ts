@@ -100,7 +100,10 @@ if (action === "resume") {
   let remote = await remoteRelease();
   if (!remote) {
     const notes = join(directory, "release-notes.md");
-    await writeFile(notes, `hitSlop ${version} for Apple silicon Macs and hitslop ${version} for authoring and document commands.\n\nSigned and notarized by Apple. Requires macOS 15.2 or newer.\n`);
+    const baseline = version === "1.0.0"
+      ? "\nThis is the first supported release of the new hitSlop document format. Earlier Mac builds and documents were prelaunch experiments and are unsupported; recreate those documents from the included templates. Documents written by this release remain supported by future hitSlop versions.\n"
+      : "";
+    await writeFile(notes, `hitSlop ${version} for Apple silicon Macs and hitslop ${version} for authoring and document commands.\n\nSigned and notarized by Apple. Requires macOS 15.2 or newer.\n\nInstall the matching CLI and SDK with \`bun install -g hitslop@${version}\`. The single \`hitslop\` package replaces \`@hitslop/cli\`, \`@hitslop/document\`, and \`@hitslop/schema\`.\n${baseline}`);
     await gh(["release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${version}`, "--notes-file", notes]);
     remote = await remoteRelease();
   }

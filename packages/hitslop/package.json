@@ -40,7 +40,7 @@
   "homepage": "https://hitslop.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hitSlop/hitslop.git",
+    "url": "git+https://github.com/hitSlop/hitSlop.git",
     "directory": "packages/hitslop"
   },
   "bugs": {
