@@ -1,18 +1,7 @@
-import App from "./App.svelte";
-import "hitslop/base.css";
-import "./styles.css";
-import Icon from "./Icon.svelte";
-import Export from "./Export.svelte";
-import * as commands from "./commands";
 import { defineSlop } from "hitslop";
-import schema from "./schema";
 
 export default defineSlop({
   slug: "quick-checklist",
-  view: App,
-  export: Export,
-  icon: Icon,
-  commands,
   title: "Quick Checklist",
   description: "A blush pocket utility for capturing, finishing, and filing short task lists.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
@@ -32,14 +21,5 @@ export default defineSlop({
     successBorder: "#6c354b",
     filed: "#fff5e9",
     controlBorder: "#d8c0af",
-  },
-  document: schema,
-  initial: {
-    title: "Little things, today",
-    tasks: [
-      { text: "Send the first draft", done: true },
-      { text: "Take a walk without my phone" },
-      { text: "Make a little room for the weekend" },
-    ],
   },
 });

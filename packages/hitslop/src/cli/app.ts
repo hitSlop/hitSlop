@@ -3,6 +3,7 @@ import { didYouMean, help, version } from "@crustjs/extensions";
 import { skill } from "@crustjs/skills";
 import { ExportFormats, SlopCategories } from "../schema/constants";
 import metadata from "../../package.json";
+import { print } from "./json";
 
 export const skillExtras = [
   "hitslop",
@@ -44,7 +45,6 @@ const retrySection = {
 };
 
 const engine = () => import("./engine");
-const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 const documents = () => import("./documents");
 
 const theme = {
@@ -381,7 +381,7 @@ export const app = new Crust("slop", {
         sections: [
           {
             title: "Capture behavior",
-            body: "Open documents export their live selected view; closed documents export the saved state with the initial view. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
+            body: "Exports render the saved state in a fresh page with its default view; an open document first saves pending edits. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
           },
         ],
       },

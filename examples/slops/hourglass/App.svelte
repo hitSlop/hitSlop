@@ -1,11 +1,12 @@
 <script lang="ts">
+import "./styles.css";
 import { bindText } from "hitslop/svelte";
 import { refuse } from "hitslop";
 import { prefersReducedMotion } from "svelte/motion";
 import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 import CalendarClock from "@lucide/svelte/icons/calendar-clock";
 import doc from "./schema";
-import * as actions from "./commands";
+import { startUntil, restart } from "./countdown";
 import Vessel from "./Vessel.svelte";
 import { localInput, presets, read } from "./model";
 
@@ -36,14 +37,14 @@ function visibilityChanged() {
 /** Turns the glass over: it runs from now until `end`. */
 async function turnOver(end: number) {
   const previous = reading.remaining;
-  await actions.startUntil({ end });
+  await doc.change(tx => startUntil(tx, end, Date.now()));
   if (!prefersReducedMotion.current) turning = previous;
   changing = false;
   now = Date.now();
 }
 async function again() {
   const previous = reading.remaining;
-  await actions.restart();
+  await doc.change(tx => restart(tx, doc.current, Date.now()));
   if (!prefersReducedMotion.current) turning = previous;
   now = Date.now();
 }

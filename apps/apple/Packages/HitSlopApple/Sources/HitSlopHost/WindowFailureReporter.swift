@@ -1,0 +1,58 @@
+import HitSlopCore
+import HitSlopDocument
+
+/// One report per save/renderer incident and authored issue kind, with recovery breadcrumbs.
+@MainActor final class WindowFailureReporter {
+  private enum IssueKind { case operation, authored }
+  private var issues = Set<IssueKind>()
+  private var saveFailed = false
+  private var rendererFailed = false
+
+  func renderer(_ error: Error, reason: SlopFailureContext.Reason?, telemetry: SlopTelemetry) {
+    guard !rendererFailed else { return }
+    rendererFailed = true
+    let diagnostic =
+      (error as? any SlopDiagnosticProviding)?.diagnostic
+      ?? SlopFailureContext(reason: reason ?? .presentation)
+    telemetry.send(.breadcrumb(.renderer, .failed))
+    if !saveFailed || diagnostic.reason == .webContentTerminated { telemetry.send(.failed(.renderer, diagnostic)) }
+  }
+  func rendererRecovered(telemetry: SlopTelemetry) {
+    if rendererFailed { telemetry.send(.breadcrumb(.renderer, .recovered)) }
+    rendererFailed = false
+  }
+  func issue(_ issue: SlopPageIssue, telemetry: SlopTelemetry) {
+    let kind: IssueKind = issue.isOperation ? .operation : .authored
+    guard issues.insert(kind).inserted else { return }
+    telemetry.send(
+      .failed(
+        .renderer,
+        .init(
+          issue.isOperation ? .rejection : .authored,
+          reason: issue.isOperation ? .operationRejected : .authoredException)))
+  }
+  func save(_ status: DocumentSaveStatus, telemetry: SlopTelemetry) {
+    switch status {
+    case .failed:
+      if !saveFailed {
+        telemetry.send(.breadcrumb(.save, .failed))
+        telemetry.send(.failed(.save, .init(reason: .storage)))
+      }
+      saveFailed = true
+    case .saved:
+      if saveFailed { telemetry.send(.breadcrumb(.save, .recovered)) }
+      saveFailed = false
+    case .saving: break
+    }
+  }
+  func lifecycle(_ operation: SlopTelemetryEvent.Failure, error: Error, format: ExportFormat?, telemetry: SlopTelemetry)
+  {
+    if SlopFailureContext.isCancellation(error) {
+      telemetry.send(.breadcrumb(operation, .cancelled))
+    } else if saveFailed || rendererFailed {
+      telemetry.send(.breadcrumb(operation, .failed))
+    } else {
+      telemetry.failure(operation, error: error, format: format)
+    }
+  }
+}

@@ -2,7 +2,8 @@
   import Check from "@lucide/svelte/icons/check";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc, { checklistView } from "./schema";
+  import doc from "./schema";
+  import { checklistView } from "./tasks";
   const { visible, finished, ratio } = $derived(checklistView(doc.current));
 </script>
 

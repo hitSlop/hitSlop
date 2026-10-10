@@ -30,10 +30,23 @@ export async function asyncHandleTypes(doc: typeof checklist) {
   await doc.fields.title.set("Packing");
   const row = doc.current.tasks[0]!;
   await doc.at(row).done.set(false);
+  await doc.fields.tasks.item(row).done.set(true);
+  await doc.fields.tasks.move(row, { before: id });
+  await doc.fields.tasks.move(id, { after: row });
+  await doc.fields.tasks.insert({ text: "next", done: false }, { before: row });
+  await doc.fields.tasks.remove(row);
+  // @ts-expect-error Row references require a string identity.
+  void doc.fields.tasks.item({ $id: 3 });
+  // @ts-expect-error Destinations require a row or its ID.
+  void doc.fields.tasks.move(row, { before: { text: "no identity" } });
   // Collectors stay synchronous: insert returns its id immediately.
   const minted: string = await doc.change((tx) => {
     const { id } = tx.fields.tasks.insert({ text: "y", done: false });
     tx.fields.tasks.item(id).done.set(true);
+    tx.fields.tasks.move(row, { after: id });
+    tx.fields.tasks.move(id, { before: row });
+    tx.fields.tasks.item(row).text.set("updated");
+    tx.fields.tasks.remove(row);
     return id;
   });
   await doc.fields.tasks.remove(minted);
@@ -81,7 +94,7 @@ export function undefinedDefaultTypes(possible: boolean | undefined) {
   const required = defineDocument({
     absent: s.boolean({ default: undefined }),
     uncertain: s.boolean({ default: possible }),
-  });
+  }, { initial: { absent: false, uncertain: true } });
   const complete: Input<typeof required.descriptor> = { absent: false, uncertain: true };
   // @ts-expect-error An undefined default is absent from the emitted descriptor.
   const absent: Input<typeof required.descriptor> = { uncertain: true };
@@ -96,7 +109,7 @@ const scalars = defineDocument({
   note: s.optional(s.string()),
   photo: s.optional(s.object({ id: s.string() })),
   rows: s.list(s.object({ text: s.text(), limit: s.optional(s.integer()) })),
-});
+}, { initial: { currency: "CAD", amount: 0 } });
 export async function scalarTypes(doc: typeof scalars) {
   const currency: "CAD" | "USD" = doc.current.currency;
   const note: string | undefined = doc.current.note;
@@ -165,4 +178,18 @@ function documentErrors(error: unknown) {
   if (isRejected(error)) { const code: "rejected" = error.code; void code; }
   // @ts-expect-error The public DocumentError is a type, not a constructor.
   new DocumentError("rejected", "bad");
+}
+
+// One shared write serves `doc.change` in the page and `run({ tx })` in a command.
+import type { Tx } from "../../src/sdk/schema";
+const wins = defineDocument({ wins: s.counter(), title: s.text() });
+const countOne = (tx: Tx<typeof wins>) => tx.fields.wins.increment();
+export function sharedWrites() {
+  void wins.change(countOne);
+  void wins.change(tx => {
+    // @ts-expect-error Tx keeps the document's field types.
+    tx.fields.title.set(7);
+  });
+  // @ts-expect-error The starting value is build input, not page API.
+  void wins.initial;
 }

@@ -205,7 +205,7 @@ test("attachments ref prints a file's reference without opening any document", a
       id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       byteLength: 3,
       name: "note.txt",
-      mimeType: "text/plain",
+      mimeType: "application/octet-stream",
     });
   } finally {
     await rm(dir, { recursive: true, force: true });

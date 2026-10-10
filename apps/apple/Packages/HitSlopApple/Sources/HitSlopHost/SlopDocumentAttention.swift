@@ -6,31 +6,14 @@ import SwiftUI
 /// Renderer failures, authored issues and save failures: what the window shows and reports.
 extension SlopDocumentWindowController {
   public func pageSession(_ session: DocumentSession, didFail error: Error) {
-    isContentReady = false
+    presentation.ready = false
     stopLoading()
-    if !reportedRendererFailure {
-      reportedRendererFailure = true
-      let diagnostic =
-        (error as? any SlopDiagnosticProviding)?.diagnostic
-        ?? SlopFailureContext(reason: session.failureReason ?? .presentation)
-      telemetry.send(.breadcrumb(.renderer, .failed))
-      if !reportedSaveFailure || diagnostic.reason == .webContentTerminated {
-        telemetry.send(.failed(.renderer, diagnostic))
-      }
-    }
+    failures.renderer(error, reason: session.failureReason, telemetry: telemetry)
     updatePageFailure(error.localizedDescription)
   }
 
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
-    if reportedIssueKinds.insert(issue.isOperation).inserted {
-      let rejection = issue.isOperation
-      telemetry.send(
-        .failed(
-          .renderer,
-          .init(
-            rejection ? .rejection : .authored,
-            reason: rejection ? .operationRejected : .authoredException)))
-    }
+    failures.issue(issue, telemetry: telemetry)
     guard guestIssue?.message != issue.message else { return }
     guestIssue = issue
     refreshIssueBadge()
@@ -46,15 +29,7 @@ extension SlopDocumentWindowController {
   }
   /// The edited mark and save telemetry: one failure report until the next save.
   func recordSaveStatus(_ status: DocumentSaveStatus) {
-    switch status {
-    case .failed:
-      if !reportedSaveFailure { pageSession(session, storageFailure: .init(reason: .storage)) }
-      reportedSaveFailure = true
-    case .saved:
-      if reportedSaveFailure { telemetry.send(.breadcrumb(.save, .recovered)) }
-      reportedSaveFailure = false
-    case .saving: break
-    }
+    failures.save(status, telemetry: telemetry)
     window?.isDocumentEdited = status != .saved
   }
   public func pageSessionRecovered(_ session: DocumentSession) {
@@ -129,7 +104,7 @@ extension SlopDocumentWindowController {
     overlay.autoresizingMask = [.width, .height]
     content.addSubview(overlay)
     failedOverlay = overlay
-    if presentationRequested { revealReadyWindow() }
+    if presentation.requested { revealReadyWindow() }
   }
 }
 
@@ -148,7 +123,11 @@ struct SaveAttention: Equatable {
     let message: String
     let buttons: [Button]
   }
-  enum Effect: Equatable { case none, present(Alert), dismiss }
+  enum Effect: Equatable {
+    case none
+    case present(Alert)
+    case dismiss
+  }
 
   /// The latest failure, until a save or a renderer death clears it.
   private(set) var failure: SaveFailure?
@@ -204,10 +183,15 @@ struct SaveAttention: Equatable {
     // the durable state.
     let buttons: [Button] =
       switch failure {
-      case .invalidated: [.init(title: "Discard Unsaved Edits and Reload", action: .discardAndRetry), .init(title: "Keep Open", action: .keepOpen)]
+      case .invalidated:
+        [
+          .init(title: "Discard Unsaved Edits and Reload", action: .discardAndRetry),
+          .init(title: "Keep Open", action: .keepOpen),
+        ]
       case .full:
         [
-          .init(title: "Retry Save", action: .retrySave), .init(title: "Discard Unsaved Edits", action: .discardAndRetry),
+          .init(title: "Retry Save", action: .retrySave),
+          .init(title: "Discard Unsaved Edits", action: .discardAndRetry),
           .init(title: "Keep Open", action: .keepOpen),
         ]
       default: [.init(title: "Retry Save", action: .retrySave), .init(title: "Keep Open", action: .keepOpen)]

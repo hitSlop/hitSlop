@@ -215,4 +215,4 @@ function player(
   };
 }
 
-export const youtube = { parseId, findId, thumbnail, lookup, src, player, clip };
+export const youtube = { parseId, findId, thumbnail, lookup, src, player };

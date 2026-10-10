@@ -24,10 +24,10 @@
     "count": 42,
     "done": false,
     "epoch": 2,
-    "hits": 10,
+    "hits": 8,
     "label": "Undo me",
     "lane": "doing",
-    "lastHit": 10,
+    "lastHit": 2,
     "memo": "Memo ✎",
     "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
     "place": {

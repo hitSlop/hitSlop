@@ -132,9 +132,7 @@ private struct UpdateSettingsView: View {
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
   @objc private func showSettings() {
     if settingsWindow == nil {
-      let content = TabView {
-        UpdateSettingsView(updater: updater).tabItem { Label("Updates", systemImage: "arrow.triangle.2.circlepath") }
-      }.frame(width: 480, height: 340)
+      let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
       let window = NSWindow(contentViewController: NSHostingController(rootView: content))
       window.title = "Settings"
       window.styleMask = [.titled, .closable]

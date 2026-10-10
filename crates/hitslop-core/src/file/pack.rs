@@ -41,8 +41,8 @@ pub fn pack(input: &str, stage: &Path, dest: &Path) -> Result<()> {
     }
     staged.publish_template(dest)
 }
-pub fn validate_app(input: &str, stage: &Path) -> Result<()> {
-    accept(input, stage).map(|_| ())
+pub fn validate_app(input: &str, stage: &Path) -> Result<crate::app::WindowDefinition> {
+    accept(input, stage).map(|build| build.app.window().clone())
 }
 
 pub(super) fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {

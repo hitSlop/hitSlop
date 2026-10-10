@@ -12,7 +12,7 @@ public struct SlopThemeState: Sendable, Equatable {
     self.effective = effective
     self.revision = revision
   }
-  init(_ read: DocumentOwner.ThemeRead) throws {
+  init(_ read: DocumentOwner.ThemeRead) {
     self.init(
       overrides: read.state.overrides, effective: read.state.effective, revision: read.revision)
   }

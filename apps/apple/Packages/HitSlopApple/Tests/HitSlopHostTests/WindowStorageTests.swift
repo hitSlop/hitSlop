@@ -201,7 +201,7 @@ extension HostTests {
     #expect(try await command("batch", url: root, setTitle("Unsaved while held")).code == .saveFailed)
 
     var failure: SlopDocumentFailure?
-    do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(command: error) }
+    do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(error) }
     #expect(failure == .save)
     #expect(!handedOff)
     #expect(!controller.isHiddenForClose)
@@ -354,7 +354,9 @@ extension HostTests {
 /// The titles of the buttons inside an alert's view, in order.
 @MainActor private func buttons(in view: NSView) -> [String] {
   view.subviews.flatMap { subview -> [String] in
-    if let button = subview as? NSButton, button.bezelStyle != .disclosure, !button.title.isEmpty { return [button.title] }
+    if let button = subview as? NSButton, button.bezelStyle != .disclosure, !button.title.isEmpty {
+      return [button.title]
+    }
     return buttons(in: subview)
   }
 }

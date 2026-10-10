@@ -155,7 +155,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   request enums and returns typed outcomes for Rust to encode.
 - Attachments are host-owned immutable content-addressed blobs in the file's
   `attachments` table, referenced by ordinary document fields and served by URL. Stored media types are sniffed; the first read verifies the full hash.
-- Page and CLI commands share the owner's descriptor validation and restricted child. The UI bundle contains stubs only. Every evaluation gets a fresh runtime; no command globals persist across calls.
+- Agent commands use the owner's descriptor validation and restricted child. Pages use handles and `doc.change`; command implementations stay outside the UI graph. Every evaluation gets a fresh runtime; no command globals persist across calls.
 - The app row seals assets at pack time. No app or asset updates/deletes, and no asset insert after the seal, including conflict-replacement forms. Catalog summaries never parse `definition_json` or read app/attachment blobs.
 - Preserve the macOS client: app lifecycle and quit, catalog and Recents, slop windows and
   toolbar, PNG/PDF export, Quick Look previews and Finder icons, Firebase
@@ -164,8 +164,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
   `slop.ts` theme colors; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
-- Deferred: production collaboration, a document history UI, schema evolution (changing a
-  descriptor makes a new document type), synced folders, hosted catalog/publishing,
-  accounts and sharing.
+- Deferred work is tracked in the [roadmap](roadmap.md#later). Changing a descriptor
+  currently makes a new document type; schema evolution is deferred.
 
 Testing policy lives in [testing](testing.md). Agent entrypoint: [AGENTS.md](../AGENTS.md).

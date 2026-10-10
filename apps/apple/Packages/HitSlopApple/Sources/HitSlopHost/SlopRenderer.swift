@@ -26,7 +26,7 @@ import WebKit
     do {
       return try await withRenderSession(url: url) { await artwork(session: $0, telemetry: telemetry) }
     } catch {
-      if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+      reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
       return nil
     }
   }
@@ -45,21 +45,28 @@ import WebKit
           defer { trace?.end("Preview capture", interval) }
           preview = try await capture(session: renderer, output: .previewPNG)
         } catch {
-          if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+          reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
         }
         do {
           let interval = trace?.begin("Icon capture")
           defer { trace?.end("Icon capture", interval) }
           icon = try await captureIcon(session: renderer)
         } catch {
-          if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .icon))) }
+          reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
         }
         return SlopRenderedArtwork(preview: preview, icon: icon)
       }
     } catch {
-      if !SlopFailureContext.isCancellation(error) { telemetry.send(.failed(.artwork, .init(reason: .preview))) }
+      reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
       return SlopRenderedArtwork(preview: nil, icon: nil)
     }
+  }
+
+  private static func reportArtworkFailure(
+    _ error: Error, reason: SlopFailureContext.Reason, telemetry: SlopTelemetry
+  ) {
+    guard !SlopFailureContext.isCancellation(error) else { return }
+    telemetry.send(.failed(.artwork, .init(reason: reason)))
   }
 
   private static func withSavedRenderer<T>(

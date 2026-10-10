@@ -134,9 +134,6 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
     await cp(join(repository, "tests/presentation/assets/washer.png"), join(source, "assets/washer.png"));
   }
   if (fallback) {
-    const declaration = join(source, "slop.ts");
-    const text = await Bun.file(declaration).text();
-    await writeFile(declaration, text.replace('import Export from "./Export.svelte";\n', '').replace('  export: Export,\n', ''));
     await rm(join(source, "Export.svelte"));
   }
   return build(source, `shape-lab-${key}`, join(shapeLabRoot, key + ".slop"));

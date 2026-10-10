@@ -19,7 +19,7 @@ const definition = defineDocument({
   memo: s.optional(s.string()),
   photo: s.optional(s.object({ id: s.string(), name: s.string() })),
   rows: s.list(s.object({ text: s.text(), amount: s.number(), note: s.optional(s.string()) })),
-});
+}, { initial: { currency: "CAD", label: "ab", ratio: 0.5, rating: 3 } });
 const initial = { currency: "CAD", label: "ab", ratio: 0.5, rating: 3, rows: [{ $id: "r1", text: "Coffee", amount: 475 }] };
 
 async function open() {

@@ -10,7 +10,6 @@ export interface OwnerTransport {
   open(): Promise<OwnerState>;
   apply(batch: Batch): Promise<PageResult<"apply">>;
   flush(): Promise<void>;
-  runCommand(name: string, args: unknown): Promise<PageResult<"commands.run">>;
   undo(): Promise<PageResult<"undo">>;
   redo(): Promise<PageResult<"redo">>;
   onPush(receiver: (pushes: PagePush[]) => void): void;
@@ -23,7 +22,6 @@ export function nativeTransport(
   return {
     readOnly,
     open: async () => JSON.parse((await call({ method: "open" })).state) as OwnerState,
-    runCommand: (name, args) => call({ method: "commands.run", name, args }),
     apply: (batch) => call({ method: "apply", batch }),
     flush: async () => {
       await call({ method: "flush" });

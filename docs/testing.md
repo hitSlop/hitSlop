@@ -231,20 +231,22 @@ Other performance diagnostics:
 `docs/evidence/` when a doc cites it. Superseded runs may be kept locally under
 `archive/docs/evidence/`; remove or replace their tracked citations when untracking them.
 
-`bun run bench:growth` (it needs Doodle Board, Pixel Art and Morning Pages back in
-`examples/slops`) simulates up to 365 days of heavy use of those three through the native owner, with normal checkpoint thresholds
-and daily save/close/reopen checks; each daily close trims history as the app does. Build the templates first. The report records
-logical checkpoint/update bytes separately from physical SQLite size, retained
-content, and measured versus projected lifetime. A storage-full or reopen failure
-stops that workload and blocks release in the report; it does not change storage
-limits. Other workloads still run. Failed documents are retained under
-`.hitslop/evidence/document-growth/` for inspection.
+`bun run bench:growth` runs the checklist conformance fixture through the native owner
+for 30 simulated days by default (1–365 via `HITSLOP_GROWTH_DAYS`). Each day inserts
+100 synthetic strokes, with 2,048 points serialized into each row's text, and removes
+rows in groups of 25; each insert and removal batch is flushed. Two equal workloads
+compare daily close/reopen with one continuously open owner. The Swift runner prepares
+the infrastructure fixture; restoring archived examples is unnecessary.
 
-For a harness smoke, use `HITSLOP_GROWTH_DAYS=1` and set `HITSLOP_GROWTH_OUTPUT`
-to a temporary JSON path. A short run does not establish a year's capacity. Without
-an output path the report goes to `docs/evidence/document-growth-<today>.json`. These
-are synthetic workloads, not forecasts of individual users' behavior. A successful benchmark test means the measurements
-completed; inspect `releaseBlocked` and each workload's stopping reason before release.
+The report records checkpoint/update bytes, row counts, flush time, generated geometry
+bytes and exact saved-value checks. It makes no lifetime projection. Inspect each
+result's `completedDays` and optional `stoppedError`; failures also fail the test.
+Temporary documents are removed when the harness finishes.
+
+For a smoke run, use `HITSLOP_GROWTH_DAYS=1` and set `HITSLOP_GROWTH_OUTPUT` to a temporary
+JSON path. Without an override, the launcher writes
+`docs/evidence/document-growth-<today>.json`. A short run does not establish a year's
+capacity; these synthetic workloads are not forecasts of individual users' behavior.
 
 ## Compatibility corpus
 
@@ -300,7 +302,7 @@ may be recaptured.
   (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
   frozen entry.
 - Swift (`CompatCorpusTests`) runs the old conformance app's own scenario, which includes a
-  page command and a live agent edit, requires an actual saved edit and checks reopen.
+  page edit and a live agent command, requires an actual saved edit and checks reopen.
 
 Each storage-version bump adds two Rust tests: a frozen file migrated by a write equals a
 newly created file in exact layout and value, and an interrupted migration leaves the
@@ -332,8 +334,7 @@ CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UT
 (03:17 Saskatchewan time), and manual dispatch. Feature-branch pushes don't repeat PR
 checks. PRs into `master` and master pushes select affected tiers. PRs into `release/*`,
 release-branch pushes, nightly and manual runs select **all required tiers**, regardless
-of changed paths. Required PR jobs do not install Playwright browsers or run experimental
-sync tests. Portable CLI/package suites run once on Linux; their macOS repeat lives in
+of changed paths. Required PR jobs do not install Playwright browsers. Portable CLI/package suites run once on Linux; their macOS repeat lives in
 nightly/manual qualification. Rust runs on both operating systems because SQLite,
 locking, sandboxing and the historical macOS writers have platform-specific behavior.
 The full release gate, including the app bundle and browser acceptance, remains separate.
@@ -438,7 +439,7 @@ SDK browser tests exercise `EditableText` composition, focus, caret placement an
 autosizing with real document handles. Native export tests use controlled content to
 check saved-state capture, color, selectable text and editor isolation. App acceptance
 launches the actual app with no `HITSLOP_EVALUATOR`, executes the document fixture's
-insert, row-argument and remove commands through its live owner, and checks saved
+insert, row-ID and remove commands through its live owner, and checks saved
 state after reopening. `apple:build` runs this against the raw
 Xcode product before adding the standalone renderer; release artifact acceptance runs
 it against the packaged app. Test-runner environment overrides cannot mask a missing
@@ -475,22 +476,20 @@ and source-image scaling ([qualification evidence](evidence/native-fullscreen-20
   Generic template smoke checks have no template-specific selectors or actions.
 - Frozen compatibility cases retain their original artifacts and expectations.
 
-The removed Hourglass cases asserted illustration/countdown behavior. The removed
-Quick Checklist suite mixed its workflow/export wording with four SDK component
-contracts; only the latter survive, in the SDK fixture. No example test directory is
-accepted by discovery. No test quota is associated with a slop.
+No example test directory is accepted by discovery. Shared component contracts live
+in the SDK fixture; no test quota is associated with a slop.
 
 Performance samples in browser correctness scenarios are opt-in:
 `HITSLOP_BENCH_PREVIEW=1 bun run verify browser large-preview`. Ordinary runs still check
 large-list identity without repeated timing samples.
-`HITSLOP_BENCH_COMMANDS=1` enables repeated command-latency samples in `verify browser dev.browser`
-and `verify swift --filter pageAndCLICommandsShareTheNativeOwner`; normal runs still
-exercise accepted commands, invalid arguments and publication to the page.
+`HITSLOP_BENCH_EDITS=1` enables repeated page-edit latency samples in
+`verify browser dev.browser`. Native `cliCommandsPublishToTheNativeWindow` covers
+agent command acceptance, refusal, publication and undo/redo.
 
 The `browser` tier includes the local Chrome host boundary in
-`tests/browser/local-host.browser.test.ts`: real WASM commands, OPFS save/reload,
+`tests/browser/local-host.browser.test.ts`: real WASM edits, OPFS save/reload,
 independent origins and document identities, exclusive tab ownership, bounded resource
 streams, wake-lock state, container-marker refusal, Save As cancellation and cleanup,
 Rust flush-before-export (including save failure), and native reopening. Run it with `bun run verify browser local-host`. It launches installed
 Google Chrome with an isolated persistent profile; Safari qualification is deferred.
-The Rust tier also compiles both durable-browser and evaluator WASM feature sets.
+The Rust tier also compiles the durable-browser WASM feature set.

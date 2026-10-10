@@ -47,6 +47,7 @@ impl Actor {
     }
     /// Admits the ready prefix in order. If a request must still wait (for example a
     /// fence after a command starts evaluating), it stays at the head of the queue.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn release_held(&mut self) {
         if self.barrier.replaying {
             return;

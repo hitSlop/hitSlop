@@ -10,11 +10,24 @@ pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
         (
             "BrowserHost",
-            json!({"port": browser::PORT, "protocol": browser::PROTOCOL, "containerFormat": browser::CONTAINER_FORMAT, "chunkBytes": browser::TRANSFER_BYTES, "fileBytes": browser::FILE_BYTES, "commandTimeout": hitslop_runner::WATCHDOG_MS}),
+            json!({"port": browser::PORT, "protocol": browser::PROTOCOL, "containerFormat": browser::CONTAINER_FORMAT, "chunkBytes": browser::TRANSFER_BYTES, "fileBytes": browser::FILE_BYTES}),
         ),
         ("BrowserResourcePolicy", json!(browser::page_policy())),
         ("BrowserHostPolicy", json!(browser::host_policy())),
         ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
+        // The CLI substitutes its loopback origin; all policy directives live here.
+        (
+            "PreviewResourcePolicy",
+            json!(
+                "default-src 'none'; script-src {origin}/__shell__/ {origin}/__app__/ {origin}/__preview__/native.js 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:* https: blob:; media-src 'self' https: blob:; frame-src https:; style-src {origin}/__app__/ 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:"
+            ),
+        ),
+        (
+            "PreviewHostPolicy",
+            json!(
+                "default-src 'none'; script-src {origin}/__preview__/resize.js; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'"
+            ),
+        ),
         ("SlopCategories", json!(crate::app::Category::ALL)),
         (
             "ManifestText",
@@ -29,32 +42,16 @@ pub fn constants() -> Vec<(&'static str, Value)> {
             "WindowBounds",
             json!({"minWidth": crate::wire::WINDOW_MIN_WIDTH, "minHeight": crate::wire::WINDOW_MIN_HEIGHT, "max": crate::wire::WINDOW_MAX}),
         ),
-        ("DefaultWindowRadius", json!(DEFAULT_WINDOW_RADIUS)),
         (
             "AttachmentLimits",
-            json!({"file": ATTACHMENT_FILE_BYTES, "total": ATTACHMENT_BYTES, "count": ATTACHMENT_COUNT, "name": 255}),
+            json!({"file": ATTACHMENT_FILE_BYTES, "total": ATTACHMENT_BYTES, "count": ATTACHMENT_COUNT, "name": ATTACHMENT_NAME_BYTES}),
         ),
         ("AttachmentIdRule", json!({"length": ATTACHMENT_ID_LENGTH, "characters": ATTACHMENT_ID_CHARACTERS})),
-        (
-            "ThemeTokenRule",
-            json!({"nameLength": THEME_NAME_LIMIT, "reservedPrefix": THEME_RESERVED_PREFIX, "tokens": THEME_TOKENS}),
-        ),
-        (
-            "AssetLimits",
-            json!({"file": ASSET_FILE_BYTES, "count": ASSET_COUNT, "bytes": ASSET_BYTES, "imageSide": IMAGE_SIDE, "imagePixels": IMAGE_PIXELS}),
-        ),
-        ("AppLimits", json!({"manifest": MANIFEST_BYTES, "text": APP_TEXT_BYTES, "assetPath": ASSET_PATH_BYTES})),
-        ("ShapeLimits", json!({"path": SHAPE_PATH, "radius": SHAPE_RADIUS, "viewBox": SHAPE_VIEW_BOX})),
         ("ExportFormats", json!([ExportFormat::Png, ExportFormat::Pdf])),
-        ("BatchLimits", json!({"intents": BATCH_INTENTS, "pathSegments": PATH_SEGMENTS})),
-        ("StorageLimits", json!({"bytes": STORAGE_BYTES, "rows": STORAGE_ROWS})),
-        ("ThemeLimit", json!(THEME_LIMIT)),
         ("ThemeFileLimit", json!(THEME_FILE_LIMIT)),
-        // These host/SDK values have no core consumer. They live here so generated
-        // Swift and TypeScript still receive one value during boundary migration.
+        // Shared host/SDK values also come from the Rust-owned boundary.
         ("ErrorTextLimit", json!(ERROR_TEXT)),
         ("OperationErrorBrand", json!("slop.operation-error")),
-        ("PagePayloadLimit", json!(PAGE_PAYLOAD)),
         ("PushLimits", json!({"items": 256, "bytes": 4 * 1024 * 1024})),
         ("SocketLimits", json!({"request": SOCKET_REQUEST, "attachment": SOCKET_ATTACHMENT})),
         (

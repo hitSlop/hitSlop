@@ -1,9 +1,9 @@
 <script lang="ts">
+import "./styles.css";
   import { tick, onMount } from "svelte";
   import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
   import { isDocumentError, isRejected } from "hitslop";
   import doc from "./schema";
-  import { bump, decline } from "./actions";
   // App media the corpus must keep serving: an image, audio and a font (styles.css).
   import swatch from "./media/swatch.png";
   import tone from "./media/tone.wav";
@@ -204,27 +204,6 @@
       await doc.redo();
       check(doc.current.label === "Undo me", "Redo did not reapply");
       check(Array.isArray(doc.current.rows), "Snapshot missing");
-      // A command runs in the owner: its arguments are checked there, it returns its
-      // result after its edit reaches this page, and it is one undo step.
-      const before = doc.current.hits;
-      const previousHit = doc.current.lastHit;
-      check((await bump({ by: 2 })) === before + 2 && doc.current.hits === before + 2 &&
-        doc.current.lastHit === before + 2, "Command result or atomic edits were lost");
-      await refused(bump({ by: 100 }), "invalid_request");
-      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "A refused command changed the document");
-      await doc.undo();
-      check(doc.current.hits === before && doc.current.lastHit === previousHit, "Undo did not revert the whole command");
-      await doc.redo();
-      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "Redo did not reapply the whole command");
-      // A command's refusal reaches its caller as `refused`; left unhandled, it is shown
-      // in the notice region (the root cancels `slop:refused`) rather than reported.
-      await refused(decline(), "refused");
-      const offered = new Promise<string>((resolve) =>
-        document.addEventListener("slop:refused", (event) => resolve((event as CustomEvent<string>).detail), { once: true }));
-      void decline();
-      check((await offered) === "Not today.", "An unhandled refusal was not offered to the app");
-      await tick();
-      check(document.querySelector("[data-slop-notice] p")?.textContent === "Not today.", "The refusal was not shown");
       // Host services: attachments, capture and the window.
       const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),

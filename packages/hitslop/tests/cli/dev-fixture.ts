@@ -21,10 +21,11 @@ export async function createFixture(repository: string, source: string) {
     join(source, "App.svelte"),
     `
 <script lang="ts">
+  import './styles.css';
   import Circle from '@lucide/svelte/icons/circle';
   import doc from './schema';
   import {local} from './probe.svelte';
-  import {addRow} from './commands';
+  const addRow = ({text}: {text: string}) => doc.fields.tasks.insert({text});
   import {attachments} from 'hitslop/svelte';
   (globalThis as any).__devProbe = {doc, addRow, attachments};
   import Child from './Child.svelte';

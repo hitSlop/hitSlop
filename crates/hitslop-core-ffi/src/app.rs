@@ -57,6 +57,7 @@ pub struct StandardFrame {
     pub resizable: bool,
     pub lock_aspect: bool,
     pub background: Option<Background>,
+    pub radius: String,
     pub shape: Silhouette,
 }
 #[uniffi::remote(Record)]
@@ -125,6 +126,7 @@ use hitslop_core::HostLimits;
 #[uniffi::remote(Record)]
 pub struct HostLimits {
     pub error_text: u64,
+    pub download_bytes: u64,
     pub storage_bytes: u64,
     pub theme_file: u64,
     pub push_items: u64,

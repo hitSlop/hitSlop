@@ -1,5 +1,5 @@
 //! Same-build browser host transport. Authored pages only get the page channel;
-//! storage controls and evaluation results stay on the trusted host's worker channel.
+//! storage controls stay on the trusted host's worker channel.
 use serde::{Deserialize, Serialize};
 
 pub const PORT: u16 = 41238;
@@ -17,7 +17,6 @@ pub enum BrowserRequest {
     Flush { id: String },
     Export { id: String },
     Resource { id: String, route: ResourceRoute, key: String, offset: Option<u32>, length: Option<u32> },
-    Evaluated { output: Option<String>, error: Option<String> },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,11 +31,10 @@ pub enum ResourceRoute {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "browser.generated.ts"))]
 pub enum BrowserEvent {
-    Ready { title: String, window: super::build::WindowInput },
+    Ready { title: String, window: crate::app::WindowDefinition },
     Reply { id: String, json: String },
     Publication { json: String },
     Save { status: BrowserSaveStatus, error: Option<String> },
-    Evaluate { input: String },
     Exported { id: String, file: String },
     Resource { id: String, size: u64, media_type: String, offset: u32 },
     Error { id: Option<String>, error: String },
@@ -73,11 +71,6 @@ impl BrowserRequest {
                     && offset.is_none_or(|n| n as u64 <= FILE_BYTES)
                     && length.is_some_and(|n| n as usize <= TRANSFER_BYTES)
             }
-            Self::Evaluated { output, error } => match (output, error) {
-                (Some(output), None) => output.len() <= hitslop_runner::OUTPUT,
-                (None, Some(error)) => error.len() <= 4096,
-                _ => false,
-            },
         };
         if !valid {
             return Err(err(Code::InvalidRequest, "Invalid browser request fields"));

@@ -107,8 +107,10 @@ pub struct Views {
     pub icon: bool,
 }
 
-/// Native window semantics, independent of the stored definition's decoding rules.
-#[derive(Clone, Debug)]
+/// Resolved host window semantics, independent of the stored definition's decoding rules.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct WindowDefinition {
     pub width: u32,
     pub height: u32,
@@ -116,19 +118,25 @@ pub struct WindowDefinition {
     pub frame: WindowFrame,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub enum WindowFrame {
     Standard { frame: StandardFrame },
     Skin { skin: String },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct StandardFrame {
     /// Whether fullscreen fits the authored composition instead of reflowing it.
     pub fullscreen_fit: bool,
     pub resizable: bool,
     pub lock_aspect: bool,
     pub background: Option<Background>,
+    /// CSS radius token exposed by the page shell; paths expose zero.
+    pub radius: String,
     pub shape: shape::Silhouette,
 }
 
@@ -198,8 +206,8 @@ impl AppDefinition {
     pub fn document_json(&self) -> &str {
         self.stored.document.get()
     }
-    /// The shell's window projection keeps authored geometry; the native window uses
-    /// the normalized silhouette. Skin references are package URLs, never source paths.
+    /// CLI inspection retains authored geometry. Hosts use `window()` for resolved
+    /// semantics and the normalized silhouette. Skin references are package URLs.
     pub fn page_window(&self) -> crate::build::WindowInput {
         use package_format_1::Window;
         match &self.stored.window {

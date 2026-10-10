@@ -1,14 +1,15 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import { Checkbox } from "bits-ui";
   import { EditableText, draft } from "hitslop/svelte";
-  import doc from "./schema";
-  import { addTask } from "./commands";
+  import doc, { addTask } from "./schema";
 
   const { title, tasks } = doc.fields;
   const complete = $derived(doc.current.tasks.filter(task => task.done).length);
   // The composer's text; it clears once the task is added. A refusal such as
   // "Enter a task." appears in the window's notice region.
-  const newTask = draft(text => addTask({ text }));
+  const newTask = draft(text => doc.change(tx => addTask(tx, text)));
   let entry = $state<HTMLInputElement>();
 </script>
 
@@ -26,9 +27,9 @@
         </Checkbox.Root>
         <EditableText class="slop-text" field={row.text} label="Task text" placeholder="Untitled task" onenter={() => entry?.focus()} />
         <div class="slop-actions" data-slop-export="hide">
-          <button class="slop-small" aria-label="Move task up" disabled={index === 0} onclick={() => tasks.move(task.$id, { before: doc.current.tasks[index - 1]!.$id })}>↑</button>
-          <button class="slop-small" aria-label="Move task down" disabled={index === doc.current.tasks.length - 1} onclick={() => tasks.move(task.$id, { after: doc.current.tasks[index + 1]!.$id })}>↓</button>
-          <button class="slop-small" aria-label="Delete task" onclick={() => tasks.remove(task.$id)}>×</button>
+          <button class="slop-small" aria-label="Move task up" disabled={index === 0} onclick={() => tasks.move(task, { before: doc.current.tasks[index - 1]! })}>↑</button>
+          <button class="slop-small" aria-label="Move task down" disabled={index === doc.current.tasks.length - 1} onclick={() => tasks.move(task, { after: doc.current.tasks[index + 1]! })}>↓</button>
+          <button class="slop-small" aria-label="Delete task" onclick={() => tasks.remove(task)}>×</button>
         </div>
       </li>
     {/each}

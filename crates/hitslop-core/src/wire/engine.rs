@@ -63,6 +63,8 @@ pub enum ArtworkTarget {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
 pub enum EngineRequest {
+    #[serde(rename = "attachments.ref")]
+    AttachmentRef { file: String },
     #[serde(rename = "attachments.list")]
     AttachmentsList { document_path: String },
     #[serde(rename = "attachments.read")]
@@ -161,6 +163,7 @@ impl EngineRequest {
 
     pub fn method(&self) -> &'static str {
         match self {
+            Self::AttachmentRef { .. } => "attachments.ref",
             Self::AttachmentsList { .. } => "attachments.list",
             Self::AttachmentsRead { .. } => "attachments.read",
             Self::ThemeExport { .. } => "theme.export",
@@ -223,7 +226,7 @@ impl EngineRequest {
                 check_path(stage)?;
                 check_path(file)?;
             }
-            Self::Inspect { file } | Self::Schema { file } => check_path(file)?,
+            Self::Inspect { file } | Self::Schema { file } | Self::AttachmentRef { file } => check_path(file)?,
             Self::Templates {} | Self::ValidateMetadata { .. } => {}
             Self::ValidateApp { stage, .. } => check_path(stage)?,
         }
@@ -280,6 +283,17 @@ pub struct AttachmentInfo {
     pub id: String,
 
     pub byte_length: u64,
+}
+/// A local file's reference, before it is imported into a document.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub struct AttachmentRef {
+    pub id: String,
+    pub byte_length: u64,
+    pub name: String,
+    pub mime_type: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -385,6 +399,8 @@ pub struct DescribeState {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
 pub enum EngineSuccess {
+    #[serde(rename = "attachments.ref")]
+    AttachmentRef { ok: True, reference: AttachmentRef },
     #[serde(rename = "get")]
     Get { ok: True, state: GetState },
     #[serde(rename = "batch")]
@@ -428,7 +444,7 @@ pub enum EngineSuccess {
     #[serde(rename = "pack")]
     Pack { ok: True },
     #[serde(rename = "validateApp")]
-    ValidateApp { ok: True },
+    ValidateApp { ok: True, window: crate::app::WindowDefinition },
     #[serde(rename = "validateMetadata")]
     ValidateMetadata { ok: True },
     #[serde(rename = "describe")]

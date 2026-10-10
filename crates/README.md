@@ -7,8 +7,7 @@ native Rust engine. Bun SDK tests use the WASM adapter.
   `storage`, the `.slop` file, its writer lock and the save policy.
 - `hitslop-core-ffi`: UniFFI adapter used by the Apple host, its Quick Look extensions and
   the native helper.
-- `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests, durable browser copies and their
-  command evaluator; browser authoring development uses the native owner.
+- `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
   `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
@@ -17,12 +16,12 @@ native Rust engine. Bun SDK tests use the WASM adapter.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
 main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
-and wasm-bindgen 0.2.127. `bun run verify rust` runs the workspace's lints and tests.
+and wasm-bindgen 0.2.129. `bun run verify rust` runs the workspace's lints and tests.
 Use `cargo fmt --all` to apply `rustfmt.toml` explicitly. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 
 ```sh
-cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools
+cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools
 cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen
 brew install cargo-nextest
 bun run schema:generate

@@ -81,7 +81,7 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         runtime_abi: app.runtime_abi,
         style: app.style,
         read_only: owner.mode() == store::Mode::Snapshot,
-        window: app.app.page_window(),
+        window: app.app.window().clone(),
         descriptor: raw(app.app.document_json().into())?,
     })
 }
@@ -98,15 +98,6 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDis
     };
     let storage = matches!(request, PageRequest::AttachmentsPut { .. });
     let (request, answer): (Request, Answer) = match request {
-        PageRequest::CommandsRun { name, args } => (
-            Request::Command { name, args_json: args.to_string(), origin: crate::Origin::Page },
-            Box::new(|reply| match reply {
-                Reply::Command { sequence, ids, result_json } => {
-                    Some(Success::CommandsRun { ok: True, sequence, ids, result: raw(result_json).ok()? })
-                }
-                _ => None,
-            }),
-        ),
         PageRequest::Open {} => (
             Request::State,
             Box::new(|reply| match reply {

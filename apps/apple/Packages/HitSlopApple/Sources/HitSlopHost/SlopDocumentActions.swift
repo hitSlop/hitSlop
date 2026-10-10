@@ -22,7 +22,7 @@ extension SlopDocumentWindowController {
     routing.command(command)
   }
   /// Pinning keeps the window above others; it needs the page's content.
-  public var canPin: Bool { isContentReady && fullscreenRestore == nil && !fullscreenTransition }
+  public var canPin: Bool { isContentReady && fullscreen.saved == nil && !fullscreen.transitioning }
   public func togglePin() {
     guard canPin else { return }
     setPinned(!isPinned)
@@ -40,7 +40,7 @@ extension SlopDocumentWindowController {
       panel.nameFieldStringValue =
         url.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
-      return try await duplicateDocument(to: await runSheet(panel))
+      return try await duplicateDocument(to: await SlopPanels.select(panel, in: window))
     case .share:
       toolbar.willHide = { [weak self] in self?.sharePopover.dismiss() }
       toolbar.show()
@@ -55,7 +55,7 @@ extension SlopDocumentWindowController {
     case .retry:
       telemetry.send(.breadcrumb(.recovery, .started))
       do {
-        if session.isReady && !session.rendererDead {
+        if session.isReady {
           try await session.reloadInterface()
           updatePageFailure(nil)
           startLoading()
@@ -75,12 +75,6 @@ extension SlopDocumentWindowController {
       try await session.retrySave()
     }
     return nil
-  }
-
-  /// A save or open panel as a sheet on the document window; nil when cancelled.
-  func runSheet(_ panel: NSSavePanel) async -> URL? {
-    let response = if let window { await panel.beginSheetModal(for: window) } else { await panel.begin() }
-    return response == .OK ? panel.url : nil
   }
 
   func duplicateDocument(to target: URL?) async throws -> URL? {
@@ -141,7 +135,7 @@ extension SlopDocumentWindowController {
 
   /// The copy and its artwork consume one saved source, even if the editor changes or closes.
   private func copyDocument(to target: URL) async throws -> URL {
-    let canRender = session.isReady && !session.rendererDead
+    let canRender = session.isReady
     let telemetry = telemetry
     return try await session.copy(to: target) { source in
       guard canRender else { return nil }
@@ -154,22 +148,14 @@ extension SlopDocumentWindowController {
     _ operation: SlopTelemetryEvent.Failure, error: Error,
     format: ExportFormat? = nil
   ) {
-    if SlopFailureContext.isCancellation(error) {
-      telemetry.send(.breadcrumb(operation, .cancelled))
-      return
-    }
-    if reportedSaveFailure || reportedRendererFailure {
-      telemetry.send(.breadcrumb(operation, .failed))
-      return
-    }
-    telemetry.failure(operation, error: error, format: format)
+    failures.lifecycle(operation, error: error, format: format, telemetry: telemetry)
   }
 
   private func export(_ format: ExportFormat) async throws {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
     panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
-    try await exportDocument(format: format, to: await runSheet(panel))
+    try await exportDocument(format: format, to: await SlopPanels.select(panel, in: window))
   }
 
   /// The one export path, for the menu and for `slop export` of this open document. A
@@ -203,20 +189,6 @@ extension SlopDocumentWindowController {
     NSWorkspace.shared.open(
       [url.deletingLastPathComponent()], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(),
       completionHandler: nil)
-  }
-}
-
-extension SlopDocumentFailure {
-  /// How the coordinator treats a failed window command. Flush and close report a failed
-  /// save as the owner's `SaveFailure`, which the save-failure sheet already shows.
-  public init(command error: Error) {
-    if error is SaveFailure {
-      self = .save
-    } else if SlopFailureContext.isCancellation(error) {
-      self = .cancelled
-    } else {
-      self.init(error)
-    }
   }
 }
 

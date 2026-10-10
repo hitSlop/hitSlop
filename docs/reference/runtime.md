@@ -24,7 +24,7 @@ helpers compiled into the app, without separate host APIs.
 
 The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture/renderer and
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
-`__slopDescribe` and `__slopRun`. Commands use the `slop.command` symbol. A
+`__slopDescribe` and `__slopRun`. Command sets use `Symbol.for("slop.command-set")` with `{ document, specs }`. A
 `slop.operation-error` branded `DocumentError` carries document outcomes across bundles;
 `refuse(message)` uses code `rejected` and reason `refused`. Unhandled refusals dispatch
 the cancelable `slop:refused` event with the message as its detail. An app that cancels
@@ -41,7 +41,7 @@ have no special role. Once mounted, the schema's definition is the live document
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
-The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. Account UI, OpenAPI/Registry, hosted discovery, and sharing are deferred.
+The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. See the [roadmap](../roadmap.md#later) for deferred catalog and sharing work.
 
 ## File layout
 
@@ -73,7 +73,7 @@ The page shell is served at `slop://app/__shell__/`, from the one shell bundled 
 
 Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
 
-Assets are inserted first and the single app row last. The app row seals assets: unconditional update/delete guards and an insert guard reject replacements, even by rowid. Attachments and artwork keep separate lifecycles. A later physical change belongs to the storage version; definition interpretation belongs to package format. Before launch the disposable corpus may be replaced; after release original corpus bytes and embedded programs must remain readable.
+Assets are inserted first and the single app row last. The app row seals assets: unconditional update/delete guards and an insert guard reject replacements, even by rowid. Attachments and artwork keep separate lifecycles. Marker ownership and released-file guarantees are defined in the [compatibility contract](../engineering-contract.md#compatibility).
 
 
 ## Persistence and ownership
@@ -82,15 +82,15 @@ The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a documen
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.hitslop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
-Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history: it leaves none; [architecture](../architecture.md#saving) has the rule. A shared document never trims and never reclaims an attachment ([sync](../architecture.md#sync)). Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer, except in a shared document, which refuses it. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
+Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. The [saving flow](../architecture.md#saving) defines scheduling, close-time history trimming and failed-save recovery; [sync](../architecture.md#sync) defines the shared-document exceptions. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
 
 Generic mutations are not replayed; a named command may reevaluate once after a definite pre-admission conflict, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every request names its command protocol, which the owner checks before reading anything else, so an engine of another build is refused with which side to update. A reply carries its state whole, as large as the document; the CLI validates each reply's method and required result fields (`SocketReply`). A live and a closed `get` of one saved state print the same value.
 
-Failed saves retain ownership and native retry UI; cancel-close restores editing. Successful close removes discovery, destroys the WebView/bridge, drains storage, closes SQLite, and releases ownership; discovery is withdrawn before the writer lock is released, and restored if the close fails. Quit prepares every document before releasing any. Close before moving or renaming documents. iCloud and other synced folders are unsupported.
+The [close and capture flow](../architecture.md#close-export-and-capture) defines ownership release, retry and quit ordering. Close before moving or renaming documents. iCloud and other synced folders are unsupported.
 
 Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` stores the bytes, then submits the collector's reference edits; the close and capture barriers wait for both. An agent's `batch` carries its files (`slop apply --attach`), stored before its operations in the same request, so no close falls between a blob and its reference. A collector that throws, or an edit the core refuses, leaves the stored blob unreferenced until the document closes: after the final save, the owner deletes every blob whose ID appears in no string, text or map key of the saved state (`Store::reclaim_attachments`). Undo covers the open session only, so retained history is not a reason to keep a blob. The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. Duplicate and Share Slop File carry only the attachments their state references, with no history and artwork rendered for the copy (`Store::copy_clean`); templates contain none.
 
-Theme overrides live in the Loro root `theme` map: at most 256 declared colors, checked on write and on open. They share the document's sequence, undo history and save jobs. The initial state carries the effective palette; ordered publications carry it when it changes. The shell applies it as CSS variables before mounting the app and after each theme publication. JSON document replacement changes data and preserves the palette. Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
+Theme overrides are limited to 256 declared colors, checked on write and on open. Their storage, publication and undo behavior are described in [themes and attachments](../architecture.md#themes-and-attachments). Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
 ## Opening and recovery
 
@@ -104,7 +104,8 @@ Authored code can change or damage its own document. Runtime operation validatio
 
 The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
-The native and browser CSPs are defined in Rust (`crates/hitslop-core/src/wire/limits.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`; Soma Amp's MilkDrop compiles its presets this way), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
+The native, browser and development-preview CSPs are defined in Rust
+(`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
@@ -116,7 +117,7 @@ An export never replaces the document it renders. Capture stages output and publ
 
 Slop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 
-Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The validated `shape` becomes one immutable native silhouette that supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
+Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
 ## Capture and Finder integration
 
@@ -126,7 +127,7 @@ ends after the backup. Rendering then uses that independent copy, including its 
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
 
-`defineSlop` registers optional `export` and `icon` views beside `view`. The export view
+The CLI discovers optional `Export.svelte` and `Icon.svelte` beside `App.svelte`. The export view
 receives `mode: "preview" | "export"` and supplies the capture layout. Without it, a fresh
 rendering of `view` shows saved data using its default local UI state.
 State that should determine an export, such as a selected report, must be saved in the
@@ -184,4 +185,4 @@ Apps use the restricted `ctx.document` facade and its explicit durability barrie
 `flush()`. The initial owner state includes effective theme values, and ordered publications include
 them when they change (defaults come from `slop.ts`'s `theme`). Authored layout stays in CSS.
 
-Rust decodes page messages once, routes them to owner replies or typed native host actions, and encodes replies. The shell checks the outcome envelope. Commands from page and CLI use the same restricted child evaluator; arguments and resulting intents are checked by Rust. The page context and evaluator prelude are dispatched by the stored runtime ABI.
+Rust decodes page messages once, routes them to owner replies or typed native host actions, and encodes replies. The shell checks the outcome envelope. Agent commands use the restricted native child evaluator; arguments and resulting intents are checked by Rust. Pages edit through handles. The page context and evaluator prelude are dispatched by the stored runtime ABI.

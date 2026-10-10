@@ -8,8 +8,8 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 | Entry point | Use |
 | --- | --- |
-| `bunx hitslop@1.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
-| `slop COMMAND` | Run after `bun install -g hitslop@1.0.0`, with Bun's bin directory on PATH. |
+| `bunx hitslop COMMAND` | Run the published CLI without installing globally. |
+| `slop COMMAND` | Run after `bun install -g hitslop`, with Bun's bin directory on PATH. |
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
 
 `slop-engine` ships with the CLI for macOS and Linux. The executable creates, reads and edits documents without Bun,
@@ -116,22 +116,27 @@ A CLI-only release may reuse an installed app while the protocol and
 
 ## File engine
 
-`slop-engine` (`crates/slop-engine`) is the native build of the shared Rust core.
-`validate-app` checks bounded evaluated app JSON on standard input. `pack` turns a build
-stage into an immutable template. `templates` prints the templates the app's catalog lists
-as JSON: its `folders` (the starters inside the selected or installed Mac app, then the
-installed folder, `HITSLOP_TEMPLATES_ROOT` or `~/.hitslop/templates`, which `slop register`
-builds into), each template found there, and an issue for each `.slop` file left out.
-`create --from TEMPLATE --output DOCUMENT` creates a writable copy, makes missing parent
-folders and prints its resolved path; TEMPLATE is a template's path, or a listed slug when
-it is a bare name, and an installed template shadows a bundled one.
+`slop-engine` (`crates/slop-engine`) accepts the JSON `EngineRequest` methods above,
+not CLI subcommands. `validateApp` checks evaluated app input, `validateMetadata` checks
+new-project metadata, and `pack` writes an immutable template from a build stage.
+`templates` returns the catalog's folders, accepted templates and per-file issues;
+`create` takes `from` and `output`, creates parent folders and returns `documentPath`.
+A bare template slug resolves installed templates before bundled ones.
 
-`inspect` prints a file's kind, requirements, metadata, window and asset/artwork/attachment and
-saved-state sizes, and whether an owner published its socket. `schema` prints the
-stored descriptor. These two commands read the saved file; `request` routes through the
-live or in-process owner and waits for persistence where its method requires it.
-Checkpoint and retention maintenance are automatic; there is no public compaction
-command.
+`inspect` returns file kind, requirements, metadata, window and resource/state sizes;
+`schema` reads its stored descriptor. `get`, `describe`, `batch` and `call` route through
+the live or in-process owner and wait for persistence as required. `copy` makes a saved
+copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
+file and returns its hash, byte length, name and detected MIME type without opening a
+document. Native `open`, `screenshot` and `export`
+requests route through the rendering helper. See the Rust `EngineRequest` enum for the
+complete method and field inventory.
+
+The executable flags are `--client-protocol N`, `--protocol`, `--build-id`, the restricted
+`--evaluate-command` entry point and `--preview-owner PATH` (with a client protocol).
+There are no `validate-app`, `request` or `create --from` engine subcommands; those are
+JSON methods or public `slop` workflows. Checkpoint/retention maintenance is automatic,
+with no public compaction command.
 
 ## Agent skills
 

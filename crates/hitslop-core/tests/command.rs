@@ -610,7 +610,8 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
     assert_eq!(config["readOnly"], false);
-    assert_eq!(config["window"]["kind"], "standard");
+    assert_eq!(config["window"]["frame"]["kind"], "standard");
+    assert_eq!(config["window"]["frame"]["frame"]["resizable"], true);
     assert_eq!(config["descriptor"], serde_json::from_str::<Value>(SCHEMA).unwrap());
     assert!(matches!(page(&owner, "page", r#"{"method":"ready"}"#), PageDispatch::Host { action: HostAction::Ready }));
     assert!(matches!(

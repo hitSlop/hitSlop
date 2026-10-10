@@ -1,4 +1,5 @@
 import Foundation
+import HitSlopCoreBinding
 
 /// A document operation: the app runs one at a time per document, so none runs beside a
 /// close, an export or a save recovery. What only changes the window (pin, the theme panel,
@@ -30,7 +31,13 @@ public enum SlopDocumentFailure: Error, Equatable, Sendable {
   public init(_ error: Error) {
     if let failure = error as? SlopDocumentFailure {
       self = failure
-    } else if error is CancellationError {
+    } else if error is SaveFailure {
+      self = .save
+    } else if let failure = error as? OwnerFailure,
+      [.busy, .full, .moved, .invalidated, .saveFailed].contains(failure.kind)
+    {
+      self = .save
+    } else if SlopFailureContext.isCancellation(error) {
       self = .cancelled
     } else {
       self = .other(error.localizedDescription)

@@ -8,4 +8,6 @@ export default defineDocument({
     done: s.boolean({ default: false }),
     archived: s.boolean({ default: false }),
   })),
-});
+}, { initial: { title: "Fixture title", tasks: [
+    { text: "First row", done: true }, { text: "Second row" }, { text: "Third row" },
+  ] } });

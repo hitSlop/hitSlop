@@ -1,11 +1,9 @@
-export type { Command, CommandContext } from "./commands";
-import { makeCommand, type CommandSpec, type Command } from "./commands";
-import type { Arguments } from "./commands";
+export type { CommandContext } from "./commands";
 export type { DocumentError } from "./errors";
 export { isDocumentError, isRejected, isRefused, refuse } from "./errors";
 export { defineSlop, type AppDeclaration } from "./slop";
 export type { Scope } from "./abi";
-export type { InsertResult } from "./handle-types";
+export type { Destination, InsertResult, RowRef } from "./handle-types";
 import type { Scope } from "./abi";
 import type { At, Handle as ModeHandle } from "./handle-types";
 import { fromDescriptor } from "./descriptor";
@@ -29,10 +27,6 @@ export type EnumNode<V extends readonly string[] = readonly string[]> = Descript
 export type Scalar = StringNode | NumberNode | IntegerNode | BooleanNode | EnumNode;
 /** An exact checked integer counter in the single-writer owner. It starts at 0. */
 export type CounterNode = Description & { kind: "counter" };
-/** A command argument naming one row of a list in the document: `s.row("tasks")`. The
- * caller passes the row or its `$id`; `run` receives the row from `current`. A row that
- * no longer exists refuses the command with "That task no longer exists." */
-export type RowNode<L extends string = string> = Description & { kind: "row"; list: L };
 export interface ObjectNode<P extends Record<string, Node> = Record<string, Node>> extends Description {
   kind: "object";
   properties: P;
@@ -143,8 +137,6 @@ export const s = {
     values: V,
     extra?: E,
   ): Defaulted<EnumNode<V>, E> => options({ kind: "enum", values }, extra),
-  /** Command arguments only: the `$id` of a row in the document's list `list`. */
-  row: <const L extends string>(list: L, extra?: Description): RowNode<L> => options({ kind: "row", list }, extra),
   optional: <S extends Scalar | Text | ObjectNode>(inner: S, extra?: Description): OptionalNode<S> => options({ kind: "optional", inner }, extra),
   record: <V extends Scalar | ObjectNode>(value: V, extra?: Description): RecordNode<V> => options({ kind: "record", value }, extra),
   counter: (extra?: Description): CounterNode => options({ kind: "counter" }, extra),
@@ -159,9 +151,10 @@ export const s = {
 export type Handle<N extends Node> = ModeHandle<N, "live">;
 /** What `defineDocument` returns: the descriptor, and, once the app is mounted, the live
  * document. Components `import doc from "./schema"` and read `doc.current`. */
-export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocument<N> & {
-  command<A extends Arguments, R>(spec: CommandSpec<N, A, R>): Command<A, R>;
-};
+export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocument<N>;
+/** The `tx` a shared write takes: the page passes it with `doc.change(fn)` and a command
+ * with `run({ tx })`, so one function serves both. */
+export type Tx<D extends Definition<ObjectNode>> = Scope<D["descriptor"]>;
 export interface LiveDocument<N extends ObjectNode> {
   /** Immutable snapshot. Unchanged rows keep their identity. */
   readonly current: Value<N>;
@@ -180,6 +173,9 @@ export interface LiveDocument<N extends ObjectNode> {
 }
 export function defineDocument<P extends Record<string, Node>>(
   properties: P,
+  ...options: {} extends Input<ObjectNode<P>>
+    ? [options?: { initial?: NoInfer<Input<ObjectNode<P>>> }]
+    : [options: { initial: NoInfer<Input<ObjectNode<P>>> }]
 ): DocumentDefinition<ObjectNode<P>> {
   type Live = LiveDocument<ObjectNode<P>>;
   const definition = { ...fromDescriptor(s.object(properties)) };
@@ -187,7 +183,8 @@ export function defineDocument<P extends Record<string, Node>>(
   const live = () => documentFor(definition) as Live;
   return Object.freeze(
     Object.defineProperties(definition, {
-      command: { value: (spec: CommandSpec<ObjectNode<P>, Arguments, unknown>) => makeCommand(definition, spec) },
+      // The starting value, read only by the definition build; not page API.
+      initial: { value: options[0]?.initial ?? {} },
       current: { get: () => live().current },
       fields: { get: () => live().fields },
       at: { get: () => live().at },

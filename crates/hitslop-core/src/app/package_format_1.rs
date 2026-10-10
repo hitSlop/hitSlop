@@ -11,7 +11,7 @@ use super::{
 use crate::arguments::Arguments;
 use crate::build::{BuildDeclaration, WindowInput};
 use crate::wire::{APP_TEXT_BYTES, ASSET_FILE_BYTES, MANIFEST_BYTES, THEME_LIMIT, present_option};
-use crate::{AppSpec, Code, Node, Result, descriptor, encode, err, shape, theme};
+use crate::{AppSpec, Code, Result, descriptor, encode, err, shape, theme};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
 use std::collections::HashSet;
@@ -213,7 +213,7 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     let mut commands = vec![];
     for (index, command) in stored.commands.iter().enumerate() {
         let check = || -> Result<CommandDefinition> {
-            // The name every caller sends: the socket, engine and page grammar.
+            // The name every caller sends: the socket and engine grammar.
             let name = &command.name;
             if !crate::wire::engine::valid_command_name(name) {
                 return Err(err(
@@ -223,16 +223,6 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
                 .at("name"));
             }
             let args = Arguments::parse(&encode(&command.args)).map_err(|e| e.at("args"))?;
-            let Node::Object { properties } = &node else { unreachable!("descriptor roots are objects") };
-            for list in args.row_lists() {
-                if !matches!(properties.get(list), Some(Node::List { item }) if matches!(**item, Node::Object { .. })) {
-                    return Err(err(
-                        Code::InvalidSchema,
-                        format!("s.row(\"{list}\") must name a list of objects in the document"),
-                    )
-                    .at("args"));
-                }
-            }
             Ok(CommandDefinition { name: name.clone(), description: command.description.clone(), args })
         };
         let command = check().map_err(|e| e.at(index).at("commands"))?;
@@ -333,6 +323,11 @@ fn window(value: &Window) -> Result<WindowDefinition> {
                 resizable: resizable.unwrap_or(true),
                 lock_aspect: lock_aspect.unwrap_or(false),
                 background: background.map(Into::into),
+                radius: match geometry {
+                    Some(shape::Shape::Radius(radius)) => radius.clone(),
+                    Some(shape::Shape::Path(_)) => "0".into(),
+                    None => crate::wire::DEFAULT_WINDOW_RADIUS.into(),
+                },
                 shape: shape::normalize(
                     geometry.clone().unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
                     width,

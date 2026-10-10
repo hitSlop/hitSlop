@@ -30,9 +30,42 @@ path: string, };
 
 export type ResourceKind = "app" | "command";
 
+/**
+ * One corner length: points, or a percentage of the window's width or height.
+ */
+export type ShapeLength = { value: number, percent: boolean, };
+
+/**
+ * Absolute path commands in SVG's y-down coordinates. Lines, quadratics, arcs and the
+ * shorthand forms are all expressed as lines and cubics.
+ */
+export type ShapeSegment = { "kind": "move", x: number, y: number, } | { "kind": "line", x: number, y: number, } | { "kind": "cubic", x1: number, y1: number, x2: number, y2: number, x: number, y: number, } | { "kind": "close" };
+
+/**
+ * A window's shape, as the host draws it (it crosses to Swift as it is).
+ */
+export type Silhouette = { "kind": "radii", horizontal: Array<ShapeLength>, vertical: Array<ShapeLength>, } | { "kind": "path", segments: Array<ShapeSegment>, viewBoxWidth: number, viewBoxHeight: number, evenOdd: boolean, };
+
+export type StandardFrame = {
+/**
+ * Whether fullscreen fits the authored composition instead of reflowing it.
+ */
+fullscreenFit: boolean, resizable: boolean, lockAspect: boolean, background: Background | null,
+/**
+ * CSS radius token exposed by the page shell; paths expose zero.
+ */
+radius: string, shape: Silhouette, };
+
 export type ThemeInput = { token: string, color: string, };
 
 export type Views = { export: boolean, icon: boolean, };
+
+/**
+ * Resolved host window semantics, independent of the stored definition's decoding rules.
+ */
+export type WindowDefinition = { width: number, height: number, fullscreenable: boolean, frame: WindowFrame, };
+
+export type WindowFrame = { "kind": "standard", frame: StandardFrame, } | { "kind": "skin", skin: string, };
 
 /**
  * A source declaration: the skin image is an imported URL. Acceptance resolves it

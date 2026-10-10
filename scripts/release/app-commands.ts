@@ -53,7 +53,7 @@ export async function verifyAppCommands(app: string) {
     await host.stop();
     host = undefined;
     assert.deepEqual(await tasks(), accepted);
-    console.log("PASS app insert/row-argument/remove commands and reopen, without an evaluator override");
+    console.log("PASS app insert/row-ID/remove commands and reopen, without an evaluator override");
   } finally {
     if (host) await host.stop();
     await rm(folder, { recursive: true, force: true });

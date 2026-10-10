@@ -20,7 +20,7 @@ pub enum SyncEvent {
 }
 pub type SyncSink = Arc<dyn Fn(SyncEvent) + Send + Sync>;
 
-pub(super) enum SyncMessage {
+pub(in crate::owner) enum SyncMessage {
     Attach(SyncSink),
     Frame(Vec<u8>),
     Detach,
@@ -115,6 +115,7 @@ impl Actor {
         }
     }
     /// Frames held while a command evaluated, once it has finished.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn sync_resume(&mut self) {
         while !self.evaluating
             && let Some(bytes) = self.link.held.pop_front()

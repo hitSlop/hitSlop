@@ -204,7 +204,7 @@ import WebKit
 
   /// Publishes transitions only; the pointer sampler must not send JavaScript every tick.
   private func publishControls(_ visible: Bool, force: Bool = false) {
-    guard session.isReady, !session.rendererDead else {
+    guard session.isReady else {
       publishedControlsVisible = nil
       return
     }
@@ -233,7 +233,7 @@ extension SlopDocumentWindowController {
     SlopToolbar.Controls(
       pinned: isPinned, canPin: canPin,
       fullscreenable: session.file.isFullscreenable, fullscreen: isFullscreen,
-      canFullscreen: canToggleFullscreen, desktopControls: fullscreenRestore == nil && !fullscreenTransition,
+      canFullscreen: canToggleFullscreen, desktopControls: fullscreen.saved == nil && !fullscreen.transitioning,
       themeShown: isThemeShown, canToggleTheme: canToggleTheme,
       commandsEnabled: isAvailable(.duplicate))
   }

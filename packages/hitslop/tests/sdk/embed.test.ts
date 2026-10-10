@@ -24,14 +24,6 @@ test("video ids come from every common YouTube link and from pasted text", () =>
   expect(youtube.findId("nothing to see here")).toBeNull();
 });
 
-test("clip never splits a surrogate pair", () => {
-  expect(youtube.clip("hello", 10)).toBe("hello");
-  expect(youtube.clip("hello world", 5)).toBe("hello");
-  // The emoji is two UTF-16 units; cutting between them would leave a lone surrogate.
-  expect(youtube.clip("ab😀cd", 3)).toBe("ab");
-  expect(youtube.clip("ab😀cd", 4)).toBe("ab😀");
-});
-
 test("the relay URL carries the video and options in the fragment", () => {
   expect(youtube.src("dQw4w9WgXcQ")).toBe("https://hitslop.com/embed/youtube.html#v=dQw4w9WgXcQ");
   expect(youtube.src("dQw4w9WgXcQ", { controls: true, autoplay: false, captions: true, start: 30 })).toBe(
@@ -57,6 +49,11 @@ test("lookup returns the title and author, and explains why a video can't be add
   stubFetch(() => Response.json({ title: "x".repeat(300), author_name: "y".repeat(300) }));
   const long = await youtube.lookup("y6120QOlsfU");
   expect([long.title.length, long.author.length]).toEqual([200, 120]);
+  // Truncating metadata must not leave half of a UTF-16 surrogate pair.
+  stubFetch(() => Response.json({ title: "x".repeat(199) + "😀", author_name: "y".repeat(118) + "😀z" }));
+  const unicode = await youtube.lookup("y6120QOlsfU");
+  expect(unicode.title).toBe("x".repeat(199));
+  expect(unicode.author).toBe("y".repeat(118) + "😀");
 
   for (const [status, kind] of [[401, "embed"], [403, "embed"], [400, "missing"], [404, "missing"], [500, "network"]] as const) {
     stubFetch(() => new Response("", { status }));

@@ -168,7 +168,7 @@ public struct CatalogClient {
 
   public var categories: [SlopCategory] {
     let present = Set(local.flatMap(\.categories))
-    return SlopCategory.schemaOrder.filter { present.contains($0) }
+    return SlopCategory.allCases.filter { present.contains($0) }
   }
   public var visibleEntries: [CatalogEntry] {
     let items: [CatalogEntry]

@@ -5,3 +5,7 @@ Every immediate folder here with a `slop.ts` is an active template; its folder n
 ```sh
 bun slop dev examples/slops/quick-checklist
 ```
+
+Each project uses fixed root roles: `slop.ts` for metadata, `schema.ts` for fields and
+initial values, and `App.svelte` for the editor. `Export.svelte`, `Icon.svelte` and
+agent-only `commands.ts` are optional. Shared helpers live in separate modules.

@@ -14,9 +14,9 @@ import type { LiveDocument } from "./schema";
  * - Page boot: the shell imports `/assets/ui.js` (default export `SlopApp`) and links
  *   `/assets/ui.css` when present; it mounts the app only when `SlopApp.descriptor` equals
  *   the file's stored descriptor as JSON, so the host passes that descriptor unnormalized.
- * - Command program (`commands.js`): it sets `globalThis.__slopCommands` (name → command)
- *   and `__slopDescribe`; a command carries `Symbol.for("slop.command")` →
- *   `{ definition, spec: { description, args, run }, name }`. The ABI's evaluator prelude
+ * - Command program (`commands.js`): it sets `globalThis.__slopCommands` to a set
+ *   branded with `Symbol.for("slop.command-set")` → `{ document, specs }`, and sets
+ *   `__slopDescribe`; specs map names to `{ description, args, run }`. The ABI's evaluator prelude
  *   defines `__slopRun(json)` and replies `{ ok, intents, result }` or `{ ok: false,
  *   error }`, with intents in the core's vocabulary for that ABI.
  * - Errors: `Symbol.for("slop.operation-error")` brands document outcomes; apps treat an
@@ -123,7 +123,6 @@ export interface CaptureTarget {
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
   /** A named synchronous action; the host applies one guarded undo step. */
-  runCommand<R>(name: string, args: unknown): Promise<R>;
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). Replaces the active

@@ -4,7 +4,13 @@ import { previewFrame } from "../../src/cli/preview";
 
 test("preview titles cannot inject executable markup or iframe attributes", async () => {
   const title = '</title><script>alert(1)</script><title>" onload="alert(2)';
-  const frame = previewFrame({ title, window: { kind: "standard", width: 480, height: 620 } });
+  const frame = previewFrame({ title, window: {
+    width: 480, height: 620, fullscreenable: false,
+    frame: { kind: "standard", frame: {
+      fullscreenFit: false, resizable: true, lockAspect: false, background: null, radius: "22px",
+      shape: { kind: "radii", horizontal: Array(4).fill({ value: 22, percent: false }), vertical: Array(4).fill({ value: 22, percent: false }) },
+    } },
+  } });
   const scripts: (string | null)[] = [];
   let inlineScript = "";
   let iframeTitle: string | null = null;

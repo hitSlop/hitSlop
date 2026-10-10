@@ -45,7 +45,7 @@ must recognize `release/*`.
 
 The reviewed ruleset in [release-ruleset.json](../../.github/release-ruleset.json) is staged
 with enforcement disabled. It targets `refs/heads/release/*`, requires PRs and resolved
-review threads, blocks force pushes/deletion, and requires `fast`, `native`, `linux-smoke`,
+review threads, blocks force pushes/deletion, and requires `fast`, `native`, `native-rust`, `linux-smoke`,
 `Gitleaks` and `Attribution` from GitHub Actions. It permits initial branch creation without
 checks on that new ref; subsequent changes require current checks. Create branches from
 the chosen candidate or released tag, never as a way to bypass validation before tagging.
