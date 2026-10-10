@@ -411,7 +411,8 @@ fn records_missing_their_history_pause_sync_once_caught_up() {
 }
 
 /// A gap (the relay holds less than this connection believed) reconnects with a Hello
-/// carrying the replica's version, and the relay's answer heals it.
+/// carrying the replica's version, and the relay's answer heals it. A broadcast already
+/// in flight must not pause sync while that new Hello is waiting for its Welcome.
 #[test]
 fn a_gap_says_hello_again() {
     let doc = Document::create(&app(SCHEMA), r#"{"title":"Kept","done":false}"#).unwrap();
@@ -424,6 +425,36 @@ fn a_gap_says_hello_again() {
     let [hello] = step.send.as_slice() else { panic!("one frame") };
     assert!(matches!(Frame::decode(hello).unwrap(), Frame::Hello { .. }));
     assert_eq!(session.status(), &Status::Syncing);
+
+    let (record, remote) = foreign(&seed, |other| {
+        other.get_map("data").ensure_mergeable_text("title").unwrap().insert(0, "Remote ").unwrap();
+    });
+    let before = support::value(&doc);
+    let broadcast = session.receive(&mut doc, &Frame::Records(vec![record.clone()]).encode());
+    assert_eq!(session.status(), &Status::Syncing, "a broadcast before Welcome is covered by backfill");
+    assert!(broadcast.applied.is_none() && broadcast.send.is_empty());
+    assert_eq!(support::value(&doc), before);
+
+    let mut relay = Relay {
+        app: APP,
+        records: vec![record],
+        heads: remote.iter().map(|(p, c)| (*p, *c as u32)).collect(),
+    };
+    let (backfill, _) = relay.reply(hello);
+    let mut pushes = vec![];
+    for frame in backfill {
+        pushes.extend(session.receive(&mut doc, &frame.encode()).send);
+    }
+    assert_eq!(session.status(), &Status::Syncing, "the local edit still needs its acknowledgement");
+    for push in pushes {
+        let (replies, _) = relay.reply(&push);
+        for reply in replies {
+            assert!(session.receive(&mut doc, &reply.encode()).send.is_empty());
+        }
+    }
+    assert_eq!(session.status(), &Status::Synced);
+    assert_eq!(support::value(&doc), json!({"title":"Remote Kept","done":true}));
+    assert_eq!(relay.heads, version(&doc).iter().map(|(p, c)| (*p, *c as u32)).collect());
 }
 
 // Failure: a session reported `Synced` while the relay had not acknowledged a local change,

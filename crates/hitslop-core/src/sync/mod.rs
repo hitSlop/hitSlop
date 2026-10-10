@@ -141,7 +141,8 @@ impl Session {
             }
             Frame::Records(records) => {
                 if self.relay.is_none() {
-                    self.pause("The relay sent changes before admitting this document".into());
+                    // A broadcast may already be in flight when a Gap triggers another
+                    // Hello on this socket. Its Welcome backfills everything we lack.
                     return step;
                 }
                 let updates: Vec<&[u8]> = records.iter().map(|r| r.bytes.as_slice()).collect();
