@@ -220,43 +220,6 @@ class Field extends EventTarget {
 }
 const field = () => new Field() as Field & HTMLInputElement;
 
-test("an expired text base keeps its mounted draft until explicit discard, without replay", async () => {
-  const { core, doc, transport, errors } = await open();
-  const input = field();
-  const binding = doc.bindText(input, doc.fields.title);
-  let attempts = 0;
-  interceptText(transport, send => async batch => {
-    if (++attempts === 1) throw new DocumentError("rejected", "Text base expired", "stale_base");
-    return send(batch);
-  });
-  try {
-    input.type("Keep this draft 日本😀");
-    await expect(doc.flush()).rejects.toMatchObject({ reason: "stale_base" });
-    expect(input.value).toBe("Keep this draft 日本😀");
-    expect(doc.current.title).toBe("Hello");
-    input.type("Keep this newer draft 日本😀");
-    await doc.fields.title.set("Changed elsewhere");
-    await expect(doc.prepareClose()).rejects.toMatchObject({ reason: "stale_base" });
-    expect(input.value).toBe("Keep this newer draft 日本😀");
-    expect(attempts).toBe(1);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({ reason: "stale_base" });
-    const escape = (isComposing: boolean) => input.dispatchEvent(Object.assign(
-      new Event("keydown", { cancelable: true }), { key: "Escape", isComposing },
-    ));
-    escape(true);
-    expect(input.value).toBe("Keep this newer draft 日本😀");
-    escape(false);
-    await doc.flush();
-    expect(input.value).toBe("Changed elsewhere");
-    expect(attempts).toBe(1);
-    input.type("A deliberate new edit");
-    await doc.flush();
-    expect(doc.current.title).toBe("A deliberate new edit");
-    expect(attempts).toBe(2);
-  } finally { binding.destroy(); core.free(); }
-});
-
 test("text composition stays local until it ends, then flush sends the committed text", async () => {
   const { core, doc } = await open();
   const input = field();

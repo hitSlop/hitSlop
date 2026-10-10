@@ -17,25 +17,6 @@ pub(super) fn derived(seed: &str) -> String {
     }
     out
 }
-/// A row's stored `$id`, when it is a valid application ID.
-pub(super) fn stored_id(map: &LoroMap) -> Option<String> {
-    match map.get("$id") {
-        Some(ValueOrContainer::Value(loro::LoroValue::String(s))) if valid_id(&s) => Some(s.to_string()),
-        _ => None,
-    }
-}
-/// Every row's `$id`, in order. Each row stores its own unique ID: the open-time check and
-/// every write keep it so.
-pub(super) fn rows(list: &LoroMovableList) -> Vec<String> {
-    let mut ids = Vec::with_capacity(list.len());
-    list.for_each(|row| {
-        ids.push(match row {
-            ValueOrContainer::Container(Container::Map(map)) => stored_id(&map).unwrap_or_default(),
-            _ => String::new(),
-        })
-    });
-    ids
-}
 pub(super) fn application_id() -> String {
     let mut bytes = [0u8; 16];
     random(&mut bytes);

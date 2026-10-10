@@ -19,9 +19,8 @@ impl BrowserDriver {
         let (sender, messages) = mpsc::channel();
         let (persist, work) = mpsc::channel();
         let (evaluate, evaluations) = mpsc::channel();
-        let session = session::State::new(&sender, &store)?;
         let mode = store::Mode::Document;
-        let actor = Actor::new(store.clone(), mode, listener, persist, Some(evaluate), session)?;
+        let actor = Actor::new(store.clone(), mode, listener, persist, Some(evaluate))?;
         actor.start();
         Ok(Self {
             owner: Owner { mode, sender, store, path: PathBuf::from(name) },

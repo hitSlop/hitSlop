@@ -1,5 +1,6 @@
 #![allow(dead_code, reason = "each integration test binary uses a different subset of these fixtures")]
 pub mod generate;
+pub mod relay;
 use hitslop_core::Origin;
 use hitslop_core::{AppSpec, Applied, Document, Error};
 use serde_json::{Value, json};
@@ -134,33 +135,15 @@ pub fn updates_since(seed: &[u8], d: &Document) -> Vec<u8> {
     full.import(&d.checkpoint().unwrap()).unwrap();
     full.export(loro::ExportMode::updates(&base.oplog_vv())).unwrap()
 }
-/// The page's text edit as a batch: `path` went from `from`, its text at `base`, to `to`,
-/// with the caret at a UTF-16 offset of `to`.
-pub fn typed(base: &str, path: Value, from: &str, to: &str, caret: usize) -> String {
-    json!({"base":base,"intents":[{"type":"set","path":path,"value":to,"from":from,"selection":{"start":caret,"end":caret}}]})
+/// The page's text edit as a batch: `path` went from `from`, the text the page last
+/// confirmed, to `to`, with the caret at a UTF-16 offset of `to`.
+pub fn typed(path: Value, from: &str, to: &str, caret: usize) -> String {
+    json!({"intents":[{"type":"set","path":path,"value":to,"from":from,"selection":{"start":caret,"end":caret}}]})
         .to_string()
 }
 /// Applies the page's text edit (`typed`).
-pub fn type_text(
-    d: &mut Document,
-    base: &str,
-    path: Value,
-    from: &str,
-    to: &str,
-    caret: usize,
-) -> Result<Applied, Error> {
-    d.apply_json(&typed(base, path, from, to, caret), Origin::Page)
-}
-/// Whether `d` still accepts `version` as a text base: a no-change edit of `["title"]`
-/// (holding `text`) from it is refused as stale or invalid otherwise.
-pub fn knows(d: &mut Document, version: &str, text: &str) -> bool {
-    match type_text(d, version, json!(["title"]), text, text, 0) {
-        Ok(_) => true,
-        Err(e) => {
-            assert!(["stale_base", "invalid_version"].contains(&e.code.as_str()), "{}", e.code.as_str());
-            false
-        }
-    }
+pub fn type_text(d: &mut Document, path: Value, from: &str, to: &str, caret: usize) -> Result<Applied, Error> {
+    d.apply_json(&typed(path, from, to, caret), Origin::Page)
 }
 /// A checkpoint saved again without its history, as trimming does.
 pub fn trimmed(checkpoint: &[u8]) -> Vec<u8> {

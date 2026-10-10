@@ -30,7 +30,7 @@
     "compat:capture": "bun scripts/compat/capture.ts",
     "core:build:wasm": "bun scripts/build/core.ts --wasm",
     "core:test": "bun scripts/verify.ts rust",
-    "core:test:extended": "HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500 HITSLOP_COMPAT_SEEDS=16 HITSLOP_COMPAT_STEPS=40 cargo nextest run --locked --release --profile extended -p hitslop-core -E 'binary(model) | binary(compat_writers)'",
+    "core:test:extended": "HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500 HITSLOP_MERGE_SEEDS=400 HITSLOP_COMPAT_SEEDS=16 HITSLOP_COMPAT_STEPS=40 cargo nextest run --locked --release --profile extended -p hitslop-core -E 'binary(model) | binary(merge) | binary(compat_writers)'",
     "shape:lab": "bun scripts/dev/shape-lab.ts"
   },
   "devDependencies": {

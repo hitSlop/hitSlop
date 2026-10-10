@@ -1,4 +1,4 @@
-import { DocumentError, isRejected } from "../../sdk/errors";
+import { isRejected } from "../../sdk/errors";
 // Stateless text binding. The DOM keeps the user's text; the owner merges each change
 // from the text the binding last confirmed. No draft identity survives a request.
 import type { Batch, OwnerPath } from "../../schema/core";
@@ -6,10 +6,10 @@ import type { Segment } from "../../sdk/schema";
 
 type ApplyReply = import("../../wire/page").PageResult<"apply">;
 interface TextHost {
-  /** The store's text at `path` (not a string when the field is gone) and its version. */
-  read(path: readonly Segment[]): { text: unknown; version: string; sequence: number };
-  /** Applies a batch; one whose set carries `selection` is answered with `authored` and
-   * the merged selection. */
+  /** The store's text at `path` (not a string when the field is gone). */
+  read(path: readonly Segment[]): { text: unknown; sequence: number };
+  /** Applies a batch; one whose set carries `selection` is answered with the merged
+   * selection. */
   send(batch: Batch): Promise<ApplyReply>;
   reached(sequence: number): Promise<void>;
   recover(): Promise<void>;
@@ -57,13 +57,12 @@ export function bindText(
   let drain: Promise<void> | undefined;
   let removed = false;
   let outcomeFailure: unknown;
-  let expiredBase: DocumentError | undefined;
   /** A dispatched request whose outcome is unknown: the text before it and the text sent. */
   let uncertainText: { from: string; sent: string } | undefined;
   let inflight: Promise<void> | undefined;
   let barrierResend = false;
-  // The text this binding last knew to be the field's value at `version`.
-  let confirmed = { text: "", version: "" };
+  // The text this binding last knew to be the field's value; the owner merges from it.
+  let confirmed = "";
 
   const write = (next: string) => {
     if (detached || element.value === next) return;
@@ -94,14 +93,14 @@ export function bindText(
     }
     removed = false;
     setDisabled();
-    if (expiredBase || inflight || composing || element.value !== confirmed.text) return;
-    confirmed = { text: current.text, version: current.version };
+    if (inflight || composing || element.value !== confirmed) return;
+    confirmed = current.text;
     write(current.text);
   };
   const value = () => detached?.text ?? element.value;
   /** Sends the DOM value as one change from `confirmed`; one request at a time. */
   const send = () => {
-    if (expiredBase || outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed.text) return;
+    if (outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed) return;
     const target = path;
     const from = confirmed;
     const sent = value();
@@ -114,22 +113,21 @@ export function bindText(
     const quiet = barrierResend;
     const work = (async () => {
       const request = host.send({
-        base: from.version,
         intents: [{
           type: "set",
           path: target as OwnerPath,
           value: sent,
-          from: from.text,
+          from,
           selection: { start: selectionStart, end: selectionEnd },
         }],
       });
       dispatched = true;
-      const { sequence, authored, selectionStart: mergedStart, selectionEnd: mergedEnd } = await request;
-      if (authored === undefined || mergedStart === undefined || mergedEnd === undefined)
+      const { sequence, selectionStart: mergedStart, selectionEnd: mergedEnd } = await request;
+      if (mergedStart === undefined || mergedEnd === undefined)
         throw new Error("The owner did not answer the text edit");
       await host.reached(sequence);
       if (detached) {
-        confirmed = { text: sent, version: authored };
+        confirmed = sent;
         return;
       }
       const current = host.read(path);
@@ -138,7 +136,7 @@ export function bindText(
         // Nothing typed meanwhile: show the merged text.
         const untouched =
           element.selectionStart === selectionStart && element.selectionEnd === selectionEnd;
-        confirmed = { text: current.text, version: current.version };
+        confirmed = current.text;
         // The reply's caret is exact only if nothing else was published since.
         const exact = current.sequence === sequence;
         if (element.value !== current.text) {
@@ -154,8 +152,8 @@ export function bindText(
           element.setSelectionRange(mergedStart, mergedEnd);
         }
       } else {
-        // The user kept typing: the next change starts from what this one authored.
-        confirmed = { text: sent, version: authored };
+        // The user kept typing: the next change merges from what this one sent.
+        confirmed = sent;
       }
     })();
     inflight = work
@@ -163,27 +161,18 @@ export function bindText(
         // An uncertain outcome must not erase or automatically replay the draft.
         if (!isRejected(error)) {
           outcomeFailure = error;
-          uncertainText = dispatched ? { from: from.text, sent } : undefined;
+          uncertainText = dispatched ? { from, sent } : undefined;
           if (!quiet) host.report(error);
           return;
         }
-        if (error.reason === "stale_base") {
-          // Retention can expire a long-lived draft's merge base. Keep it in the DOM;
-          // neither overwriting it nor rebasing/replaying it is an accepted recovery.
-          expiredBase = new DocumentError("rejected",
-            "This edit is too old to merge. Your draft is still in this field. Copy it before leaving, or press Escape to discard it.",
-            "stale_base");
-          if (!quiet) host.report(expiredBase);
-          return;
-        }
-        // Other definite refusals show the owner's text again.
-        confirmed = { text: "", version: "" };
+        // A definite refusal shows the owner's text again.
+        confirmed = "";
         const current = host.read(path);
         if (typeof current.text === "string") {
-          confirmed = { text: current.text, version: current.version };
+          confirmed = current.text;
           if (!composing) write(current.text);
         }
-        if (detached) detached.text = confirmed.text;
+        if (detached) detached.text = confirmed;
         if (!quiet) host.report(error);
       })
       .finally(() => {
@@ -202,16 +191,6 @@ export function bindText(
     composing = false;
     send();
   };
-  const onKeyDown = (event: Event) => {
-    const key = event as KeyboardEvent;
-    if (!expiredBase || key.key !== "Escape" || composing || key.isComposing || key.keyCode === 229) return;
-    const current = host.read(path);
-    if (typeof current.text !== "string") return;
-    expiredBase = undefined;
-    confirmed = { text: current.text, version: current.version };
-    write(current.text);
-    event.preventDefault();
-  };
   // Undo belongs to the document: the field's own history knows nothing of edits made
   // elsewhere, and replaying it would author them again as new typing.
   const onBeforeInput = (event: Event) => {
@@ -223,10 +202,7 @@ export function bindText(
   const start = () => {
     removed = false;
     const current = host.read(path);
-    confirmed =
-      typeof current.text === "string"
-        ? { text: current.text, version: current.version }
-        : { text: "", version: "" };
+    confirmed = typeof current.text === "string" ? current.text : "";
     if (typeof current.text === "string") write(current.text);
     adopt();
   };
@@ -235,8 +211,6 @@ export function bindText(
   element.addEventListener("compositionstart", onStart);
   element.addEventListener("compositionend", onEnd);
   element.addEventListener("beforeinput", onBeforeInput);
-  // Run before an author's Escape handler ends/unmounts the editor.
-  element.addEventListener("keydown", onKeyDown, true);
   return {
     get detached() { return detached !== undefined; },
     refresh: adopt,
@@ -245,7 +219,6 @@ export function bindText(
       composing = false;
       send();
       while (inflight) await inflight;
-      if (expiredBase) throw expiredBase;
       if (outcomeFailure) {
         await host.recover();
         if (uncertainText) {
@@ -253,7 +226,7 @@ export function bindText(
           // Recovery reads a snapshot admitted after the request, so the field shows the
           // sent text if it applied, or its earlier text if it did not. Anything else is
           // ambiguous: retain the draft, because replaying could duplicate the edit.
-          if (current.text === uncertainText.sent) confirmed = { text: current.text, version: current.version };
+          if (current.text === uncertainText.sent) confirmed = current.text;
           else if (current.text !== uncertainText.from) throw outcomeFailure;
         }
         outcomeFailure = undefined;
@@ -264,7 +237,6 @@ export function bindText(
           while (inflight) await inflight;
         } finally { barrierResend = false; }
         if (outcomeFailure) throw outcomeFailure;
-        if (expiredBase) throw expiredBase;
       }
     },
     /** Detach immediately, but retain the final draft and target until it drains. */
@@ -279,7 +251,6 @@ export function bindText(
       element.removeEventListener("compositionstart", onStart);
       element.removeEventListener("compositionend", onEnd);
       element.removeEventListener("beforeinput", onBeforeInput);
-      element.removeEventListener("keydown", onKeyDown, true);
       drain = this.commit();
       host.track(drain);
       return drain;

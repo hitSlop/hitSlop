@@ -7,10 +7,9 @@ use support::ApplyJson;
 use support::generate::{intent, targets, value};
 use support::{View, app, next, snapshot, type_text};
 
-/// One page text client: the field it types in, and the version and text it last saw.
+/// One page text client: the field it types in, and the text it last saw or sent.
 struct Typist {
     path: Vec<Value>,
-    base: String,
     text: String,
 }
 /// The text fields that hold text now: plain text, and set optional text.
@@ -26,8 +25,8 @@ fn text_fields(descriptor: &Value, current: &Value) -> Vec<(Vec<Value>, String)>
         .collect()
 }
 /// The single-writer invariant, over the edits one owner actually receives: the agent's
-/// batches (including replacement, and text sets from the version it last read), page
-/// text clients whose edits arrive late against older versions, undo and redo. Every accepted step leaves a document whose stored state
+/// batches (including replacement), page text clients whose edits arrive late against
+/// older text, undo and redo. Every accepted step leaves a document whose stored state
 /// matches its descriptor (reopening checks it), whose publications replay to a fresh
 /// snapshot and which reopens the same; every refusal changes nothing.
 fn run(name: &str, fixture: &str) {
@@ -41,8 +40,6 @@ fn run(name: &str, fixture: &str) {
         let mut doc = Document::create(&app(&schema), &f["initial"].to_string()).unwrap();
         let mut view = View::of(&doc);
         let mut typists: Vec<Typist> = vec![];
-        // The version the agent last read; its batches' text sets merge from it.
-        let mut read: Option<String> = None;
         for step in 0..support::workload("HITSLOP_MODEL_STEPS", 150) {
             let before = snapshot(&doc);
             let n = next(&mut rng) as usize;
@@ -52,14 +49,7 @@ fn run(name: &str, fixture: &str) {
                         .map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"]))
                         .collect();
                     let origin = if n.is_multiple_of(2) { Origin::Agent } else { Origin::Page };
-                    let mut batch = json!({"intents":ops});
-                    if origin == Origin::Agent {
-                        if n.is_multiple_of(3) || read.is_none() {
-                            read = Some(before["version"].as_str().unwrap().to_owned());
-                        }
-                        batch["base"] = json!(read);
-                    }
-                    doc.apply_json(&batch.to_string(), origin).map(|a| a.publication)
+                    doc.apply_json(&json!({"intents":ops}).to_string(), origin).map(|a| a.publication)
                 }
                 5 => {
                     let mut all = vec![];
@@ -74,7 +64,7 @@ fn run(name: &str, fixture: &str) {
                     let fields = text_fields(&f["schema"], &before["value"]);
                     if typists.len() < 3 && !fields.is_empty() && n.is_multiple_of(2) {
                         let (path, text) = fields[n % fields.len()].clone();
-                        typists.push(Typist { path, base: before["version"].as_str().unwrap().to_owned(), text });
+                        typists.push(Typist { path, text });
                         Ok(None)
                     } else if typists.is_empty() {
                         Ok(None)
@@ -83,9 +73,9 @@ fn run(name: &str, fixture: &str) {
                         let to = format!("{}·{serial}", typist.text);
                         serial += 1;
                         let caret = to.encode_utf16().count();
-                        type_text(&mut doc, &typist.base, json!(typist.path), &typist.text, &to, caret).map(|edit| {
-                            // A client keeps typing from the version its edit authored.
-                            typists.push(Typist { path: typist.path, base: edit.text.unwrap().authored, text: to });
+                        type_text(&mut doc, json!(typist.path), &typist.text, &to, caret).map(|edit| {
+                            // A client keeps typing from the text it sent.
+                            typists.push(Typist { path: typist.path, text: to });
                             edit.publication
                         })
                     }
@@ -155,8 +145,7 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             let before = snapshot(&doc);
             let from = before["value"]["text"].as_str().unwrap();
             let to = format!("{from}p{seed}-{step}");
-            let base = doc.version();
-            // This CLI prefix arrives while the page is typing against its older base.
+            // This CLI prefix arrives while the page is typing from its older text.
             let prefixed = format!("A{from}");
             let agent = doc
                 .apply_json(
@@ -171,7 +160,7 @@ fn single_owner_delayed_typing_agent_edits_undo_and_reopen() {
             view.publish(&agent.publication.unwrap());
             view.check(&doc, "owner CLI batch");
             let caret = to.encode_utf16().count();
-            let typed = type_text(&mut doc, &base, json!(["text"]), from, &to, caret).unwrap();
+            let typed = type_text(&mut doc, json!(["text"]), from, &to, caret).unwrap();
             view.publish(&typed.publication.unwrap());
             view.check(&doc, "delayed page edit");
             assert_eq!(snapshot(&doc)["value"]["text"], format!("A{to}"));

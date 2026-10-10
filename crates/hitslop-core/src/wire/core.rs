@@ -151,8 +151,6 @@ pub struct Batch {
     #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
     #[serde(rename = "ifVersion")]
     pub if_version: Option<String>,
-    #[serde(default, deserialize_with = "super::present_option", skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
     pub intents: Vec<Intent>,
 }
 impl Batch {

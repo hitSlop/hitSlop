@@ -17,7 +17,7 @@ My.slop
              and the format and runtime the app needs
   assets     ui.js, optional ui.css / commands.js, content-addressed media
   artwork    preview and, when declared, icon images
-  checkpoint initial values as a seed Loro snapshot
+  history    initial values, as one Loro snapshot
 ```
 
 The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is never copied into the file.
@@ -28,12 +28,13 @@ Creating a document copies a template into a new file. As it is edited, the same
 
 ```text
   document     the document's identity
-  checkpoint   saved data and theme overrides
-  updates      edits saved since the checkpoint
+  history      saved data and theme overrides: a snapshot, then the edits saved since
   attachments  imported files, by content
 ```
 
-The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
+A `share` table stays empty until collaboration ships.
+
+The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque Loro history; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
 One writer at a time owns a document: an OS lock the Rust owner keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView. Named commands evaluate their stored program in a restricted child before the owner applies the returned intents.
 

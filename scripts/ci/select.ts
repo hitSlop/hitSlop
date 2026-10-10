@@ -15,7 +15,7 @@ export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate 
     nativeRust: pick(["rust"]),
     rust: pick(["rust"]),
     deferred: nativeGate ? "" : pick(["swift", "native"]),
-    qualification: event === "schedule" || event === "workflow_dispatch" ? "browser,dev-sync,cli,packed" : "",
+    qualification: event === "schedule" || event === "workflow_dispatch" ? "browser,cli,packed" : "",
   };
 }
 

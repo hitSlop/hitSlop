@@ -68,8 +68,7 @@ fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]
     }
     let tx = file::begin_write(conn, "clean copy")?;
     rows::renew_document(&tx)?;
-    rows::put_checkpoint(&tx, &state)?;
-    rows::clear_updates(&tx)?;
+    rows::replace_history(&tx, &state)?;
     rows::clear_artwork(&tx)?;
     delete_unreferenced(&tx, Some(&doc), app)?;
     for (name, png) in artwork {

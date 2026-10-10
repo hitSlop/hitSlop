@@ -17,7 +17,7 @@ fn write_template(path: &Path, build: &AcceptedBuild) -> Result<()> {
         "PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version={STORAGE_VERSION}; {SCHEMA}"
     ))
     .map_err(sqlite("create"))?;
-    rows::put_checkpoint(&tx, &build.checkpoint)?;
+    rows::replace_history(&tx, &build.checkpoint)?;
     for asset in &build.assets {
         let (encoding, stored) = encode(&asset.key, &asset.bytes)?;
         rows::put_asset(&tx, &asset.key, asset.media_type, encoding, asset.bytes.len(), &stored)?;

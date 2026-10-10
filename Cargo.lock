@@ -1870,13 +1870,10 @@ name = "slop-engine"
 version = "0.0.0"
 dependencies = [
  "data-encoding",
- "getrandom 0.2.17",
  "hitslop-core",
  "hitslop-runner",
  "libc",
- "serde",
  "serde_json",
- "sha2",
  "tempfile",
 ]
 

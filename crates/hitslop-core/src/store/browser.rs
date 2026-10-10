@@ -34,7 +34,7 @@ impl Store {
             app,
             owned: AtomicBool::new(true),
             backing: Mutex::new(Backing { conn: Some(conn) }),
-            account: Mutex::new(Account::new(Budget::DEFAULT)),
+            account: Mutex::new(Account::new()),
         })
     }
 

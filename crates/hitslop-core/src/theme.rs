@@ -107,9 +107,6 @@ impl Theme {
     pub fn new(template: &str, tokens: Vec<(String, String)>) -> Self {
         Self { template: template.into(), defaults: tokens.iter().cloned().collect(), tokens }
     }
-    pub fn template(&self) -> &str {
-        &self.template
-    }
     pub fn tokens(&self) -> &[(String, String)] {
         &self.tokens
     }

@@ -1,7 +1,8 @@
-// Stateless text (spike S-C). A page reports that a field went from `from` at `base`
-// to `to`; the owner merges it with whatever else changed. Failure: lost or duplicated
-// characters, a misplaced caret, a resurrected row, or a panic on a bad base.
-// Oracle: literal merged strings and UTF-16 carets, and an unchanged snapshot on refusal.
+// Stateless text. A page reports that a field went from `from`, the text it last confirmed,
+// to `to`; the owner merges it three ways with whatever else changed. Failure: lost or
+// duplicated characters, a misplaced caret, a resurrected row, or a refused edit that
+// changed the document. Oracle: literal merged strings and UTF-16 carets, and an unchanged
+// snapshot on refusal.
 mod support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
@@ -23,20 +24,18 @@ fn utf16(s: &str) -> usize {
 }
 /// What a page reads from its text edit's reply.
 struct Reply {
-    authored: String,
     selection_start: usize,
     publication: Option<String>,
 }
 impl Reply {
     fn of(applied: hitslop_core::Applied) -> Self {
         let text = applied.text.expect("a text edit's reply");
-        Self { authored: text.authored, selection_start: text.selection[0], publication: applied.publication }
+        Self { selection_start: text.selection[0], publication: applied.publication }
     }
 }
-/// One page binding: its authored version and the text it last sent.
+/// One page binding: the text it last sent, which its next edit goes from.
 struct Binding {
     path: Value,
-    base: String,
     text: String,
 }
 impl Binding {
@@ -49,15 +48,14 @@ impl Binding {
                 _ => unreachable!(),
             };
         }
-        Self { path, base: d.version(), text: at.as_str().unwrap().to_owned() }
+        Self { path, text: at.as_str().unwrap().to_owned() }
     }
     fn request(&self, to: &str, caret: usize) -> String {
-        typed(&self.base, self.path.clone(), &self.text, to, caret)
+        typed(self.path.clone(), &self.text, to, caret)
     }
-    /// Sends `to` with the caret at a UTF-16 offset; adopts the reply like the page does.
+    /// Sends `to` with the caret at a UTF-16 offset; keeps typing from what it sent.
     fn edit(&mut self, d: &mut Document, to: &str, caret: usize) -> Reply {
         let reply = Reply::of(d.apply_json(&self.request(to, caret), Origin::Page).unwrap());
-        self.base = reply.authored.clone();
         self.text = to.to_owned();
         reply
     }
@@ -76,7 +74,7 @@ fn splice(d: &mut Document, index: usize, insert: &str) {
 }
 
 #[test]
-fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
+fn queued_edits_merge_from_the_text_they_sent_not_the_merged_view() {
     let mut d = setup();
     let mut page = Binding::new(&d, json!(["title"]));
     page.edit(&mut d, "abcX", 4);
@@ -89,8 +87,6 @@ fn queued_edits_branch_from_their_authored_text_not_the_merged_view() {
     assert_eq!(title(&reopened), "RabcXYZ");
 }
 
-// Failure: a concurrent edit branched with `LoroDoc::fork_at`, which Loro does not
-// implement for trimmed documents, so it failed on every document after a checkpoint.
 #[test]
 fn a_concurrent_edit_on_a_trimmed_document_merges() {
     let mut d = Document::open(&app(schema()), &trimmed(&setup().checkpoint().unwrap()), &[]).unwrap();
@@ -112,8 +108,6 @@ fn two_bindings_on_one_field_with_delayed_replies_merge() {
     left.edit(&mut d, "abcL", 4);
     right.edit(&mut d, "Rabc", 1); // its view predates the left edit
     assert_eq!(title(&d), "RabcL");
-    // A concurrent whole-field set elsewhere in the text (a tie at one position would be
-    // ordered by peer ID, which is random).
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":"R-abcL"}]}).to_string()).unwrap();
     left.edit(&mut d, "abcLL", 5);
     assert_eq!(title(&d), "R-abcLL");
@@ -141,6 +135,18 @@ fn repeated_characters_insert_where_typed() {
     assert_eq!(reply.selection_start, 2);
 }
 
+// At one place, the concurrent insertion comes first and the page's after it, so the
+// caret stays at the end of what the person typed.
+#[test]
+fn inserts_at_one_place_keep_the_caret_after_the_persons_typing() {
+    let mut d = setup();
+    let mut page = Binding::new(&d, json!(["title"]));
+    splice(&mut d, 3, "X");
+    let reply = page.edit(&mut d, "abcY", 4);
+    assert_eq!(title(&d), "abcXY");
+    assert_eq!(reply.selection_start, 5);
+}
+
 #[test]
 fn emoji_selection_maps_in_utf16_and_a_split_surrogate_is_refused() {
     let mut d = setup();
@@ -150,7 +156,7 @@ fn emoji_selection_maps_in_utf16_and_a_split_surrogate_is_refused() {
     assert_eq!(title(&d), "éabc😀");
     assert_eq!(reply.selection_start, 6);
     let before = snapshot(&d);
-    let bad = type_text(&mut d, &page.base, json!(["title"]), &page.text, "abc😀!", 4);
+    let bad = type_text(&mut d, json!(["title"]), &page.text, "abc😀!", 4);
     assert_eq!(bad.unwrap_err().code.as_str(), "out_of_range");
     assert_eq!(snapshot(&d), before);
 }
@@ -162,7 +168,7 @@ fn caret_only_moves_publish_nothing() {
     let before = snapshot(&d);
     let reply = Reply::of(d.apply_json(&page.request("abc", 1), Origin::Page).unwrap());
     assert_eq!(snapshot(&d), before);
-    assert_eq!(reply.authored, page.base);
+    assert_eq!(reply.selection_start, 1);
     assert!(reply.publication.is_none());
 }
 
@@ -172,13 +178,14 @@ fn an_unrelated_edit_keeps_the_fast_path() {
     let mut page = Binding::new(&d, json!(["rows",{"id":ROW},"text"]));
     d.apply(&json!({"intents":[{"type":"set","path":["rows",{"id":ROW},"done"],"value":true}]}).to_string()).unwrap();
     let reply = page.edit(&mut d, "AB", 2);
-    // The owner edited directly: the authored version is the owner's own.
-    assert_eq!(reply.authored, d.version());
+    assert_eq!(reply.selection_start, 2);
     assert_eq!(snapshot(&d)["value"]["rows"][0]["text"], "AB");
 }
 
+// A removed row refuses; a row inserted again under the same `$id` is that row now, and
+// takes the edit merged from what the page last saw.
 #[test]
-fn removed_or_reinserted_rows_are_never_resurrected() {
+fn a_removed_row_refuses_and_a_reinserted_one_takes_the_edit() {
     let mut d = setup();
     let mut page = Binding::new(&d, json!(["rows",{"id":ROW},"text"]));
     page.edit(&mut d, "AX", 2);
@@ -188,33 +195,8 @@ fn removed_or_reinserted_rows_are_never_resurrected() {
         &json!({"intents":[{"type":"insert","path":["rows"],"id":ROW,"value":{"text":"AX","done":false}}]}).to_string(),
     )
     .unwrap();
-    // Same `$id`, new text container: the page's base never saw it.
-    assert_eq!(page.refused(&mut d, "AXY"), "path_not_found");
-}
-
-#[test]
-fn bad_bases_are_refused_on_every_path_without_panicking() {
-    // A version of another document's history.
-    let foreign = {
-        let mut other = setup();
-        other.apply(&json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}).to_string()).unwrap();
-        other.version()
-    };
-    let mut d = setup();
-    splice(&mut d, 0, "R");
-    for base in [foreign.as_str(), "zz", "", "00", "0000000000000001ffffffff"] {
-        // fast (owner text equals `from`), no-op (`from == to`) and slow paths.
-        for (from, to) in [("Rabc", "RabcX"), ("abc", "abc"), ("abc", "abcX")] {
-            let before = snapshot(&d);
-            let code = type_text(&mut d, base, json!(["title"]), from, to, 0).unwrap_err().code.as_str();
-            assert!(["stale_base", "invalid_version"].contains(&code), "{base} {from}->{to}: {code}");
-            assert_eq!(snapshot(&d), before);
-        }
-    }
-    // A known base whose text was not `from` is stale, never silently rebased.
-    let page = Binding { path: json!(["title"]), base: d.version(), text: "zzz".into() };
-    splice(&mut d, 0, "S");
-    assert_eq!(page.refused(&mut d, "zzzz"), "stale_base");
+    page.edit(&mut d, "AXY", 3);
+    assert_eq!(snapshot(&d)["value"]["rows"].as_array().unwrap().last().unwrap()["text"], "AXY");
 }
 
 #[test]
@@ -244,8 +226,7 @@ fn a_keystroke_publishes_only_its_change() {
         d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
         let to = format!("{}x{}", &from[..2 * (length / 2)], &from[2 * (length / 2)..]);
         let caret = utf16(&to[..2 * (length / 2) + 1]);
-        let base = d.version();
-        let edit = type_text(&mut d, &base, json!(["title"]), &from, &to, caret).unwrap();
+        let edit = type_text(&mut d, json!(["title"]), &from, &to, caret).unwrap();
         let publication: Value = serde_json::from_str(&edit.publication.unwrap()).unwrap();
         assert_eq!(
             publication["ops"],
@@ -262,10 +243,9 @@ fn a_keystroke_publishes_only_its_change() {
 fn an_agents_set_from_its_read_keeps_what_the_person_typed_since() {
     let mut d = setup();
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":"Buy milk"}]}).to_string()).unwrap();
-    let read = d.version();
     let mut page = Binding::new(&d, json!(["title"]));
     page.edit(&mut d, "Buy milk and eggs", 17);
-    let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":"Buy oat milk"}]});
+    let agent = json!({"intents":[{"type":"set","path":["title"],"value":"Buy oat milk","from":"Buy milk"}]});
     d.apply_json(&agent.to_string(), Origin::Agent).unwrap();
     assert_eq!(title(&d), "Buy oat milk and eggs");
     d.undo().unwrap();
@@ -274,16 +254,15 @@ fn an_agents_set_from_its_read_keeps_what_the_person_typed_since() {
     assert_eq!(title(&reopened), "Buy milk and eggs");
 }
 
-// Failure: a batch refused after one of its text sets merged a branch kept the merged
-// operations. Oracle: an unchanged snapshot, and a document that still edits and reopens.
+// Failure: a batch refused after one of its text sets merged kept the merged text.
+// Oracle: an unchanged snapshot, and a document that still edits and reopens.
 #[test]
-fn a_based_batch_refused_after_its_merge_changes_nothing() {
+fn a_batch_refused_after_its_text_merge_changes_nothing() {
     let mut d = setup();
-    let read = d.version();
     splice(&mut d, 3, "!"); // the field changes after the agent's read: its set merges
     let before = snapshot(&d);
-    let batch = json!({"base":read,"intents":[
-        {"type":"set","path":["title"],"value":"xyz"},
+    let batch = json!({"intents":[
+        {"type":"set","path":["title"],"value":"xyz","from":"abc"},
         {"type":"set","path":["rows",{"id":ROW},"done"],"value":"not a boolean"}]});
     assert_eq!(d.apply_json(&batch.to_string(), Origin::Agent).unwrap_err().op_index, Some(1));
     assert_eq!(snapshot(&d), before);
@@ -295,7 +274,6 @@ fn a_based_batch_refused_after_its_merge_changes_nothing() {
 #[test]
 fn text_set_fields_are_refused_where_they_do_not_apply() {
     let mut d = setup();
-    let base = d.version();
     let before = snapshot(&d);
     let refused = |d: &mut Document, batch: Value| {
         d.apply_json(&batch.to_string(), Origin::Page).unwrap_err().code.as_str().to_owned()
@@ -303,23 +281,21 @@ fn text_set_fields_are_refused_where_they_do_not_apply() {
     // A text edit with a selection is its own batch: its reply answers that edit.
     let typing = json!({"type":"set","path":["title"],"value":"abcX","from":"abc","selection":{"start":4,"end":4}});
     let increment = json!({"type":"increment","path":["hits"],"by":1});
-    assert_eq!(refused(&mut d, json!({"base":base,"intents":[typing, increment]})), "invalid_request");
-    // `from` and `selection` describe a change from the batch's base, and only of text.
-    assert_eq!(refused(&mut d, json!({"intents":[typing]})), "invalid_request");
+    assert_eq!(refused(&mut d, json!({"intents":[typing, increment]})), "invalid_request");
+    // `from` and `selection` describe a change of text only.
     let done = json!({"type":"set","path":["rows",{"id":ROW},"done"],"value":true,"from":"false"});
-    assert_eq!(refused(&mut d, json!({"base":base,"intents":[done]})), "type_mismatch");
+    assert_eq!(refused(&mut d, json!({"intents":[done]})), "type_mismatch");
     assert_eq!(snapshot(&d), before);
 }
 
-/// An agent rewrites the title from what it read while the page, from the same version,
+/// An agent rewrites the title from what it read while the page, from the same text,
 /// types `typed`; the merged title.
 fn rewrite_beside_typing(from: &str, rewrite: &str, typed: &str) -> String {
     let mut d = setup();
     d.apply(&json!({"intents":[{"type":"set","path":["title"],"value":from}]}).to_string()).unwrap();
-    let read = d.version();
-    let agent = json!({"base":read,"intents":[{"type":"set","path":["title"],"value":rewrite}]});
+    let agent = json!({"intents":[{"type":"set","path":["title"],"value":rewrite,"from":from}]});
     d.apply_json(&agent.to_string(), Origin::Agent).unwrap();
-    type_text(&mut d, &read, json!(["title"]), from, typed, utf16(typed)).unwrap();
+    type_text(&mut d, json!(["title"]), from, typed, utf16(typed)).unwrap();
     title(&d)
 }
 

@@ -482,7 +482,8 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         ),
         // Text edits are batches now; there is no separate text request.
         (json!({"method":"text","request":json!({"base":"x"}).to_string()}), "invalid_request"),
-        (json!({"method":"apply","batch":json!({"base":"x","intents":[]})}), "invalid_version"),
+        // A text set carries the text it started `from`; no batch names a version base.
+        (json!({"method":"apply","batch":json!({"base":"x","intents":[]})}), "invalid_request"),
         // The core bounds opaque document payloads in UTF-8 bytes.
         (
             json!({"method":"apply","batch":{"intents":[{"type":"set","path":["title"],"value":"😀".repeat(1_048_577)}]}}),
@@ -502,17 +503,16 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
 }
-// Failure: an agent's batch replaced text written after its `get`; then a batch's merged
-// version, reused as the next base, deleted it. Oracle: the literal merged text, with each
-// base read by `get` before the rewrite it serves.
+// Failure: an agent's batch replaced text written after its `get`. Oracle: the literal
+// merged text, with each `from` read by `get` before the rewrite it serves.
 #[test]
-fn a_based_batch_keeps_text_written_since_the_agents_read() {
+fn an_agents_text_set_from_its_read_keeps_text_written_since() {
     let (_dir, path) = document();
-    let set = |title: &str, base: Option<&Value>| {
+    let set = |title: &str, from: Option<&Value>| {
         let mut batch = request(&path, "batch");
         batch["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":title}]});
-        if let Some(base) = base {
-            batch["batch"]["base"] = base.clone();
+        if let Some(from) = from {
+            batch["batch"]["intents"][0]["from"] = from.clone();
         }
         run(batch)
     };
@@ -520,12 +520,12 @@ fn a_based_batch_keeps_text_written_since_the_agents_read() {
     let before = read();
     // The person types after the agent's read.
     set("Initial typed", None);
-    set("First", Some(&before["version"]));
+    set("First", Some(&before["value"]["title"]));
     assert_eq!(read()["value"]["title"], "First typed");
     // The agent reads again before its next rewrite, and the person keeps typing.
     let again = read();
     set("First typed!", None);
-    set("Second typed", Some(&again["version"]));
+    set("Second typed", Some(&again["value"]["title"]));
     assert_eq!(read()["value"]["title"], "Second typed!");
 }
 struct Delayed(Mutex<mpsc::Sender<Arc<ExportCompletion>>>);

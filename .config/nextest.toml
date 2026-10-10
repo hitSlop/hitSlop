@@ -14,8 +14,6 @@ default-filter = """not (
   | test(/^a_session_past_its_limit_trims_while_open$/)
   | test(/^doodle_like_use_stays_bounded$/)
   | test(/^checkpoints_reclaim_free_pages$/)
-  | test(/::a_rebuild_waits_for_editing_to_pause$/)
-  | test(/::close_right_after_a_rebuild_still_trims_history$/)
 )"""
 
 [profile.ci]

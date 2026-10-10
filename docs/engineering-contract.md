@@ -164,11 +164,6 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
   `slop.ts` theme colors; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
-- Development-only exception: an opt-in native `dev-sync` loopback harness may qualify
-  one authority and two temporary replica owners. It keeps Loro bytes in Rust, disables
-  shared undo and attachment imports, and creates no released format or production
-  endpoint. Shared-session fencing ends with its live owner; durable restart/retry
-  recovery remains deferred.
 - Deferred: production collaboration, a document history UI, schema evolution (changing a
   descriptor makes a new document type), synced folders, hosted catalog/publishing,
   accounts and sharing.

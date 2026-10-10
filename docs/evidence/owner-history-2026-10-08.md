@@ -1,5 +1,7 @@
 # Local-owner history maintenance, 2026-10-08
 
+> **Superseded 2026-10-09.** Live history maintenance and `bench_owner_history` were removed; their commands no longer run. Sync is now local owners and a byte relay: see [sync spikes](sync-spikes-2026-10.md).
+
 The actual Owner/Store workload crossed the measure-first gate: its durable file
 remained small while its live Loro history and process memory kept growing. The
 implemented local-owner maintenance bounds retained history in this workload, keeps

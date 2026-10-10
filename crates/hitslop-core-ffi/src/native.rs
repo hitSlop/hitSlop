@@ -36,7 +36,6 @@ pub enum Code {
     InvalidSchema,
     TooLarge,
     StaleBase,
-    InvalidVersion,
     InvalidBytes,
     MissingDependencies,
     EngineError,

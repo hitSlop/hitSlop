@@ -54,7 +54,7 @@ fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
         })
         .map_err(sqlite("read markers"))?;
     let metadata = scalar_metadata(conn)?;
-    if one(conn, "SELECT count(*) FROM checkpoint")? != 1 {
+    if one(conn, "SELECT count(*) FROM history")? == 0 {
         return Err(invalid("The file has no saved state; keep it for recovery"));
     }
     let kind = if one(conn, "SELECT count(*) FROM document")? == 0 { Kind::Template } else { Kind::Document };
@@ -271,16 +271,15 @@ mod summary_tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(&format!("PRAGMA application_id={APPLICATION_ID}; PRAGMA user_version=1;
-            INSERT INTO checkpoint VALUES(1,x'00');
+            INSERT INTO history VALUES(1,x'00');
             INSERT INTO assets VALUES('ui.js','text/javascript','identity',1,x'00');
             INSERT INTO app VALUES(1,1,1,'fixture','Fixture','A fixture','Author',NULL,'utilities',NULL,'invalid JSON');")).unwrap();
         conn.authorizer(Some(|context: AuthContext<'_>| match context.action {
             AuthAction::Read { table_name, column_name }
                 if table_name == "assets"
                     || table_name == "attachments"
-                    || table_name == "updates"
                     || (table_name == "app" && column_name == "definition_json")
-                    || (table_name == "checkpoint" && column_name == "bytes") =>
+                    || (table_name == "history" && column_name == "bytes") =>
             {
                 Authorization::Deny
             }
@@ -291,7 +290,7 @@ mod summary_tests {
             "SELECT definition_json FROM app",
             "SELECT bytes FROM assets",
             "SELECT bytes FROM attachments",
-            "SELECT bytes FROM checkpoint",
+            "SELECT bytes FROM history",
         ] {
             assert!(conn.prepare(query).is_err(), "authorizer must refuse {query}");
         }

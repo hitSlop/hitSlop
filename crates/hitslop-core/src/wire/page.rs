@@ -109,8 +109,6 @@ pub enum PageSuccess {
         sequence: u64,
         ids: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        authored: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         selection_start: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
         selection_end: Option<usize>,

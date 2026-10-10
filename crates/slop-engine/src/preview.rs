@@ -37,11 +37,6 @@ fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     }
 }
 pub fn serve(path: &Path) -> ExitCode {
-    serve_configured(path, |_| Ok(()))
-}
-/// `serve`, with `configure` run on the owner before the page connects: the development
-/// room makes it a replica there.
-pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Result<(), String>) -> ExitCode {
     let Ok((mut transport, send)) = transport::Transport::new() else {
         return ExitCode::FAILURE;
     };
@@ -57,7 +52,6 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
             };
             events.send(message);
         }), Some(evaluator)).map_err(|e| e.to_string())?);
-        configure(owner.clone())?;
         let resources = owner.resource_reader().map_err(|e| e.to_string())?;
         let view = "preview";
         owner.attach(view.into());

@@ -81,23 +81,21 @@ fn redo(d: &mut Document, view: &mut View) -> bool {
     let publication = d.redo().unwrap().publication;
     publication.map(|p| view.publish(&p)).is_some()
 }
-/// One text field typed into like a page binding: each edit names the version and text
-/// it started from, with the caret after it.
+/// One text field typed into like a page binding: each edit names the text it started
+/// from, with the caret after it.
 struct Field {
     path: Value,
-    base: String,
     text: String,
 }
 impl Field {
-    fn new(d: &Document, path: Value, text: &str) -> Self {
-        Self { path, base: d.version(), text: text.into() }
+    fn new(path: Value, text: &str) -> Self {
+        Self { path, text: text.into() }
     }
     fn edit(&mut self, d: &mut Document, view: &mut View, to: &str, caret: usize) {
-        let reply = type_text(d, &self.base, self.path.clone(), &self.text, to, caret).unwrap();
+        let reply = type_text(d, self.path.clone(), &self.text, to, caret).unwrap();
         if let Some(publication) = reply.publication {
             view.publish(&publication);
         }
-        self.base = reply.text.unwrap().authored;
         self.text = to.into();
     }
 }
@@ -145,7 +143,7 @@ fn an_agents_run_of_batches_is_one_step() {
 #[test]
 fn undo_reverts_an_agents_text_edit_first() {
     let (mut d, mut view) = setup();
-    let mut title = Field::new(&d, json!(["title"]), "abc");
+    let mut title = Field::new(json!(["title"]), "abc");
     title.edit(&mut d, &mut view, "abcX", 4);
     apply(&mut d, &mut view, &set(json!(["title"]), json!("RabcX")), Origin::Agent);
     assert!(undo(&mut d, &mut view));
@@ -158,7 +156,7 @@ fn undo_reverts_an_agents_text_edit_first() {
 #[test]
 fn a_typing_run_is_one_step() {
     let (mut d, mut view) = setup();
-    let mut title = Field::new(&d, json!(["title"]), "abc");
+    let mut title = Field::new(json!(["title"]), "abc");
     for (to, caret) in [("abcd", 4), ("abcde", 5), ("abcd", 4), ("abcdf", 5)] {
         title.edit(&mut d, &mut view, to, caret);
     }
@@ -178,12 +176,11 @@ fn a_typing_run_is_one_step() {
 #[test]
 fn another_field_or_a_change_ends_a_typing_run() {
     let (mut d, mut view) = setup();
-    let mut title = Field::new(&d, json!(["title"]), "abc");
+    let mut title = Field::new(json!(["title"]), "abc");
     title.edit(&mut d, &mut view, "abcd", 4);
-    let mut row = Field::new(&d, json!(["rows", {"id": ROW}, "text"]), "A");
+    let mut row = Field::new(json!(["rows", {"id": ROW}, "text"]), "A");
     row.edit(&mut d, &mut view, "AB", 2);
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    title.base = d.version();
     title.edit(&mut d, &mut view, "abcde", 5);
     for expected in [
         json!({"title":"abcd","row":"AB","done":true}),
@@ -230,6 +227,28 @@ fn an_agents_refused_batch_keeps_the_persons_undo() {
     assert!(undo(&mut d, &mut view), "the person's step survives");
     assert_eq!(value(&d)["rows"][0]["done"], false);
     assert_eq!(value(&d)["hits"], 0);
+}
+
+// Failure: a refused batch rebuilt the owner under a new random Loro peer, so each refusal
+// added a writer to the document's history and every replica's version vector grew.
+#[test]
+fn a_refused_batch_keeps_the_writer_peer() {
+    let (mut d, mut view) = setup();
+    apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
+    for _ in 0..3 {
+        let refused = d.apply_json(
+            &batch(json!([
+                {"type":"increment","path":["hits"],"by":1},
+                {"type":"set","path":["missing"],"value":1},
+            ])),
+            Origin::Agent,
+        );
+        assert!(refused.is_err());
+        apply(&mut d, &mut view, &set(json!(["title"]), json!("After a refusal")), Origin::Page);
+    }
+    let saved = loro::LoroDoc::new();
+    saved.import(&d.checkpoint().unwrap()).unwrap();
+    assert_eq!(saved.oplog_vv().len(), 1, "one session writes as one peer");
 }
 
 #[test]
@@ -312,7 +331,7 @@ fn a_reopened_document_starts_with_nothing_to_undo() {
 fn undo_survives_a_concurrent_text_edit() {
     let (mut d, mut view) = setup();
     apply(&mut d, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
-    let mut title = Field::new(&d, json!(["title"]), "abc");
+    let mut title = Field::new(json!(["title"]), "abc");
     apply(&mut d, &mut view, &set(json!(["title"]), json!("Rabc")), Origin::Agent);
     // Branches from before the agent's edit and merges.
     title.edit(&mut d, &mut view, "abcX", 4);

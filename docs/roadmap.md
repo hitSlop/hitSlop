@@ -42,10 +42,6 @@ In order, with the reasoning in [ideas](ideas.md):
   acceptance, command declaration checks, the SDK/ABI cleanup, dedicated captures and
   document UUID copy rules. [Implementation evidence](evidence/launch-foundation-2026-10-07.md)
   distinguishes implemented work from checks still pending.
-- Prove the selected online single-authority collaboration model in a development-only
-  native loopback harness before freezing the foundation. The room orders and validates
-  intents; clients install accepted updates. The harness and two-view demo are not yet
-  implemented. Durable receipts, restart recovery and production sharing follow separately.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
 - Give that entry boundary documents: limits at their maximums and every descriptor kind.
@@ -74,18 +70,10 @@ In order, with the reasoning in [ideas](ideas.md):
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles. The window
   benchmarks record footprints only and make no leak claim.
-- Extend the live-history measurements to multi-window sessions. The local owner now
-  rebuilds bounded history through its persistence worker, with retained undo, explicit
-  base expiry and save-failure recovery. The
-  [owner baseline](evidence/owner-history-baseline-2026-10-08.json) records the original
-  growth under actual SQLite checkpoint cycles; this does not establish a process-wide
-  memory cap or qualify production room retention.
-- Recover unresolved text after its field unmounts. Mounted text refused because its
-  base expired now stays in the field without automatic replay; Escape explicitly
-  discards it and adopts accepted text. An unresolved draft (expired base or unknown
-  outcome) is still reported and dropped when its control unmounts. Recovering those
-  drafts needs a UI outside the control; indefinitely holding close after unmount
-  previously made windows impossible to close.
+- Recover unresolved text after its field unmounts. A draft whose outcome is unknown is
+  reported and dropped when its control unmounts. Recovering it needs a UI outside the
+  control; indefinitely holding close after unmount previously made windows impossible
+  to close.
 
 ## Next
 
@@ -111,6 +99,12 @@ In order, with the reasoning in [ideas](ideas.md):
 - Named commands run in the owner's restricted evaluator for page buttons and agents
   alike; the page bundle carries no command bodies.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
+- Sync's core and its proof: one Loro peer per session, three-way text merges without
+  `base`, Loro's `UndoManager`, a merge-closed layout, the `history`/`share` storage tables,
+  and the sync session with its owner hooks ([architecture](architecture.md#sync)). The
+  engine that ships syncs through a Durable Object byte relay on Cloudflare's runtime
+  ([evidence](evidence/sync-spikes-2026-10.md)). The production relay and clients are
+  [later](#later).
 - `slop.ts` declares the app: `view`, optional `export` and `icon` views, commands and
   artwork. Captures use fresh saved-state pages, with a fresh `view` as the export
   fallback. `slop dev` runs the native owner on a disposable copy per preview page.
@@ -129,25 +123,18 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Collaboration**, separate from hosted discovery. The selected design extends the
-existing single writer to one room authority. Shared clients submit intents and commands
-online and install only accepted updates; ordinary local documents still work offline.
-Keep ordinary container identity and exact integer counters. The room serializes first
-creation and increments, so this design needs neither blanket mergeable children nor
-projection-time clamping. The pinned LoroCounter failed exact replay in the
-[retained diagnostic](evidence/launch-foundation-2026-10-07.md#before-the-fixes).
-Text keeps its base-aware merge path. Shared undo must be disabled until a personal undo
-policy preserves other people's changes. Storage 1 carries the document UUID; room
-bindings, durable request receipts, pending delivery and epochs belong to storage 2.
-The opt-in native loopback proof uses two live Vite views and separate SQLite replicas;
-run it with [the local authority harness](testing.md#local-authority-proof). It is not
-production sharing qualification. Its room binding and disconnected-write fence last
-only while the replica owner lives; stopped harness files are unsupported shared artifacts.
-Keep credentials outside authored code, and add a dedicated sync envelope rather than
-overloading `apply`. Sync gets its own protocol, never the command protocol's number, and
-attachment reclamation must allow for references arriving from other replicas.
-[Ideas](ideas.md#realtime-collaboration-on-durable-objects) sketches rooms on Cloudflare
-Durable Objects, the SDK additions, and per-person `s.local` state.
+**Collaboration**, separate from hosted discovery: each device edits its own `.slop`, and
+copies exchange Loro updates through a Durable Object byte relay. The core is in place and
+proven against the relay on Cloudflare's runtime; [architecture](architecture.md#sync)
+describes the design and its accepted limits, and
+[ideas](ideas.md#realtime-collaboration-on-durable-objects) holds the open proposals
+(presence, per-person `s.local` state).
+
+Still to build: the production relay (room creation with write and read keys, R2 for the
+seed and attachments, rate limits, quotas, server compaction); the Mac client (a socket
+connection with backoff, Share and Join, the room key in the Keychain, a sync status line);
+attachment sync; a way to save a full shared document's live state as a new, unshared copy;
+CLI `share` and `join`; the browser host's connection; and hosted-latency qualification.
 
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around

@@ -120,7 +120,7 @@ import Testing
     let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
     try await owner.close()
-    try Fixtures.sql(root, "UPDATE checkpoint SET bytes = x'00'")
+    try Fixtures.sql(root, "UPDATE history SET bytes = x'00' WHERE seq = (SELECT min(seq) FROM history)")
     #expect(throws: (any Error).self) { _ = try DocumentOwner(url: root) }
     #expect(!Fixtures.isLocked(root))
   }

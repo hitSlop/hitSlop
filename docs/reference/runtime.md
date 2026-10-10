@@ -41,11 +41,6 @@ have no special role. Once mounted, the schema's definition is the live document
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
-A mounted text binding whose merge base has expired keeps its draft and refuses flush
-instead of overwriting or replaying the text. The error explains that Escape discards
-the draft and adopts the latest accepted text. Copy the draft before leaving the field;
-recovery after a control unmounts is not implemented.
-
 The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. Account UI, OpenAPI/Registry, hosted discovery, and sharing are deferred.
 
 ## File layout
@@ -62,12 +57,13 @@ app          one row: package_format, runtime_abi, catalog columns, definition_j
 assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js, media…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
-checkpoint   the saved Loro snapshot, including data and theme overrides (a template's holds the initial values)
-updates      saved Loro updates after the checkpoint
+history      the saved Loro state in order: a snapshot (data and theme overrides; a template's
+             holds the initial values), then the updates saved after it
+share        the room a shared document syncs through and its relay endpoint; none otherwise
 attachments  sha256, sniffed media_type, bytes: imported files
 ```
 
-A template has no `document`, `updates` or `attachments` rows; it never
+A template has no `document`, `share` or `attachments` rows and one `history` row; it never
 opens as a document, and a command refuses it. Create copies a template into a new file
 and atomically adds its identity. A template is immutable (`is_template` refuses it as a
 document), and bundled starters are also read-only on disk. Initial values seed only
@@ -82,11 +78,11 @@ Assets are inserted first and the single app row last. The app row seals assets:
 
 ## Persistence and ownership
 
-The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a document's saved state: the `document`, `checkpoint`, `updates` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque checkpoint/update bytes. Checkpoint replacement, covered-row deletion and freeing their pages are atomic. Nothing outside the core opens the file, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
+The Rust store (`hitslop-core`'s `store`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. Nothing outside the core opens the file, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.hitslop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
-Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history: it leaves none; [architecture](../architecture.md#saving) has the rule. Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer. Exact integer counter contributions replay through ordinary updates. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
+Save scheduling, the save job and the close sequence are described in [architecture](../architecture.md#saving). Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,096 update rows and 32 MiB aggregate checkpoint/update bytes. Closing a document over 4 MiB that the session edited trims its history: it leaves none; [architecture](../architecture.md#saving) has the rule. A shared document never trims and never reclaims an attachment ([sync](../architecture.md#sync)). Oversized saves leave live edits pending, retain ownership and block close/export; explicit discard restores durable state under the same lock and remounts the renderer, except in a shared document, which refuses it. `slop import` writes a JSON value as one `replace` operation ([CLI](../guides/cli.md#operations)).
 
 Generic mutations are not replayed; a named command may reevaluate once after a definite pre-admission conflict, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every request names its command protocol, which the owner checks before reading anything else, so an engine of another build is refused with which side to update. A reply carries its state whole, as large as the document; the CLI validates each reply's method and required result fields (`SocketReply`). A live and a closed `get` of one saved state print the same value.
 
@@ -177,8 +173,8 @@ state and its descriptor never part. The app declares the descriptor it was buil
 shell refuses to mount an app on a document of another: key order never matters. Schema evolution is deferred.
 
 The native page protocol has one request/reply envelope for document edits and host
-services. Text edits are batches: a binding's `apply` names its `base` and a `set` with
-`from` and `selection`, and the reply adds `authored` and the merged selection
+services. Text edits are batches: a binding's `apply` carries a `set` with `from` and
+`selection`, and the reply adds the merged selection
 ([architecture](../architecture.md#text)). Rust owns it in `crates/hitslop-core/src/wire/page.rs`; core payloads are in
 `wire/core.rs`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies its own lifecycle view token alongside the

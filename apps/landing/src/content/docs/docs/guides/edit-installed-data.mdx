@@ -202,8 +202,13 @@ The CLI routes to the open document’s owner or edits a closed document without
 its interface. It never bypasses a busy writer. There is no editable `data.json` file;
 `get` is a read-only snapshot, and templates’ initial values do not change saved work.
 
-For text rewrites based on a read, use `get --snapshot` and pass its `version` with
-`apply --base` or `batch --base` so the edit merges with typing since that read.
+A text set replaces the field. When you rewrite text you read and someone may be typing
+in the open window, you can also pass the text you read as `from`: the edit then changes
+the field from that text and keeps anything typed since.
+
+```sh
+bunx hitslop apply Today.slop --op '{"type":"set","path":["title"],"value":"Little things, this week","from":"Little things, today"}'
+```
 
 ## More document commands
 

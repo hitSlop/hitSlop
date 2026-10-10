@@ -1,9 +1,9 @@
-// Captures a compatibility corpus entry from this build: the conformance app (every ctx
-// member and descriptor kind), the conformance fixtures and a few shipped templates, as
-// built; documents saved through this build's CLI and helper; what they read as; edits to
-// replay on them; and the engine that wrote them (the candidate writer).
-// Usage: bun run compat:capture RELEASE [--frozen] [--templates slug,slug]
-// The templates default to the shipped ones (`examples/slops/bundled.json`).
+// Captures a compatibility corpus entry from this build: the runtime, not individual slops.
+// The conformance app (every ctx member, descriptor kind and a stored command) as built,
+// with documents saved through this build's CLI and helper and by its own page, what they
+// read as and edits to replay on them; a template for each window kind; and the engine
+// that wrote them (the candidate writer).
+// Usage: bun run compat:capture RELEASE [--frozen]
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
 // release candidate with a clean tree, then commit it before tagging.
 import { Database } from "bun:sqlite";
@@ -25,9 +25,8 @@ import {
   type Scenario,
 } from "./corpus";
 import { prepareNativeFixtures } from "../lib/native-fixtures";
-import { builtTemplates } from "../templates/discover";
 import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
-import { appAsset, digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
+import { digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { createDocument, debugHelper } from "../lib/native";
@@ -42,9 +41,6 @@ if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun ru
 const frozen = flags.includes("--frozen");
 if (helper !== debugHelper)
   throw new Error("Capture uses the helper it builds; remove HITSLOP_NATIVE_CLI for capture");
-const chosen = flags.includes("--templates")
-  ? flags[flags.indexOf("--templates") + 1]!.split(",")
-  : (JSON.parse(await readFile(join(repository, "examples/slops/bundled.json"), "utf8")) as string[]);
 const destination = join(corpus, name);
 const previous = await readJSON<Release>(join(destination, "release.json"));
 if (previous?.frozen) throw new Error(`tests/compat/${name} is frozen; it is never recaptured`);
@@ -59,7 +55,6 @@ if (frozen && dirty) throw new Error("Capture a frozen entry from a clean releas
 
 // Build the producing tools rather than trusting an existing helper or inventory.
 await run([process.execPath, "run", "build"]);
-await run([process.execPath, "run", "build:templates"]);
 if (await run([documentEngine(), "--build-id"]) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
@@ -67,28 +62,16 @@ const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 const work = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-capture-")));
 const root = join(stage, name);
 try {
-// Templates: the chosen shipped templates as built, the hand-written conformance fixtures
-// (packed from their stages) and the Svelte conformance app, which exercises every ctx
-// member and descriptor kind.
+// Templates: the Svelte conformance app, which exercises every ctx member and descriptor
+// kind, and one per window kind (1× and 2× PNG skins, glass, a transparent ellipse and a
+// path shape). A window lives in the stored app, so its template is enough: later builds
+// create, edit and render a document from it.
 const presentation = await prepareNativeFixtures();
-const { templates: built } = await builtTemplates();
 for (const directory of ["templates", "documents", "expected", "scenarios", "pages", "commands", "engine/darwin-arm64"])
   await mkdir(join(root, directory), { recursive: true });
-const templates: Record<string, string> = {};
-for (const slug of chosen) {
-  if (!built.some((t) => t.slug === slug && t.bundled)) throw new Error(`Not a shipped template: ${slug}`);
-  templates[slug] = join(repository, "generated/templates", slug + ".slop");
-}
-for (const fixture of await readdir(join(repository, "tests/fixtures")))
-  templates[`fixture-${fixture}`] = join(repository, "tests/fixtures", fixture, "document");
-templates.conformance = join(repository, "generated/abi/owner-svelte.slop");
-// Window kinds the corpus keeps: 1× and 2× PNG skins, glass, a transparent ellipse and a path shape.
+const templates: Record<string, string> = { conformance: join(repository, "generated/abi/owner-svelte.slop") };
 for (const kind of ["washer", "washer-2x", "glass", "ellipse", "notch"]) templates[`presentation-${kind}`] = presentation[kind]!;
-for (const [slug, source] of Object.entries(templates)) {
-  const template = join(root, "templates", slug + ".slop");
-  if (source.endsWith(".slop")) await copyFile(source, template);
-  else await execute({ method: "pack", stage: source, file: template, app: JSON.parse(await readFile(join(source, "input.json"), "utf8")) });
-}
+for (const [slug, source] of Object.entries(templates)) await copyFile(source, join(root, "templates", slug + ".slop"));
 
 // Generic edits derived from a descriptor: one valid write of every kind it declares.
 type Node = { kind: string; [key: string]: any };
@@ -136,59 +119,41 @@ function edits(node: Node, value: any, round: number, path: unknown[] = []): unk
   return ops;
 }
 const schemaOf = async (document: string) => (await execute({ method: "schema", file: document })).schema as Node;
-/** The app's module, read from the file outside the core. */
-const appOf = (document: string) => appAsset(document, "ui.js");
 const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
 const batch = (document: string, ops: unknown[]) => slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
-// Documents: each package's document after two closed editing sessions (agent edits,
-// counter increments from two writers, checkpoint plus saved updates) and a theme
-// change; the conformance document also holds an attachment.
-const documents = join(root, "documents");
-const pageScripts: Record<string, Page["script"]> = {};
-const actions: Record<string, NonNullable<Page["actions"]>> = {
-  "fixture-scalars": [{ selector: 'input[type="range"]', value: "0.8" }, { selector: "select", value: "CAD" }],
-  "fixture-collections": [{ selector: "textarea", value: "Collection edit ✓" }],
-  "hourglass": [{ selector: '[aria-label="What it counts down to"]', value: "Hourglass edited ✓" }],
-  "quick-checklist": [
-    { selector: '[role="textbox"][aria-label="Checklist title"]', focus: true },
-    { selector: 'textarea[aria-label="Checklist title"]', value: "Checklist edited ✓" },
-  ],
-  ...Object.fromEntries(["washer", "washer-2x", "glass", "ellipse", "notch"].map((kind) => [`presentation-${kind}`, [{ selector: "button", click: true }]])),
-};
+// What a new document of each template holds: its initial snapshot.
 for (const slug of Object.keys(templates)) {
-  const document = join(documents, slug + ".slop");
-  await createDocument(join(root, "templates", slug + ".slop"), document, { engine: documentEngine() });
-  // What a new document of this release's template holds: its initial checkpoint.
-  await writeFile(join(root, "expected", `new-${slug}.json`), JSON.stringify(await valueOf(document), null, 2) + "\n");
-  const schema = await schemaOf(document);
-  for (const round of [1, 2]) await batch(document, edits(schema, await valueOf(document), round));
-  const theme = await slopJSON(["theme", "get", document]);
-  const [token, color] = Object.entries(theme.defaults as Record<string, string>)[0] ?? [];
-  if (token) await slopJSON(["theme", "set", document, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
-  if (slug === "conformance") {
-    const file = join(work, "attachment.txt");
-    await writeFile(file, "Compatibility corpus attachment ✓\n");
-    const ref = await slopJSON(["attachments", "ref", file]);
-    await slopJSON(["apply", document, "--attach", file, "--op", JSON.stringify({ type: "set", path: ["attachment"], value: ref.id })]);
-    await rm(file);
-    // A second attachment of a media type the host sniffs from its bytes.
-    const image = join(work, "photo.png");
-    await copyFile(join(repository, "tests/abi/owner-svelte/media/swatch.png"), image);
-    const photo = await slopJSON(["attachments", "ref", image]);
-    await slopJSON(["apply", document, "--attach", image, "--op", JSON.stringify({ type: "set", path: ["photo"], value: photo.id })]);
-    await rm(image);
-  }
-  const app = appOf(document);
-  pageScripts[slug] = app.includes("contractTest") ? "contractTest" : "actions";
+  const created = join(work, `new-${slug}.slop`);
+  await createDocument(join(root, "templates", slug + ".slop"), created, { engine: documentEngine() });
+  await writeFile(join(root, "expected", `new-${slug}.json`), JSON.stringify(await valueOf(created), null, 2) + "\n");
+  await rm(created);
 }
-// Storage shapes: a compacted (history-trimmed) checkpoint.
-for (const slug of ["conformance", "quick-checklist"]) {
-  const compacted = join(documents, `${slug}-compacted.slop`);
-  await copyFile(join(documents, slug + ".slop"), compacted);
-  await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_checkpoint", "--", compacted]);
-  pageScripts[`${slug}-compacted`] = pageScripts[slug]!;
-}
+// The conformance document after two closed editing sessions (agent edits, counter
+// increments from two writers, a snapshot plus saved updates), a theme change and two
+// attachments; and a compacted (history-trimmed) copy.
+const documents = join(root, "documents");
+const conformance = join(documents, "conformance.slop");
+await createDocument(join(root, "templates", "conformance.slop"), conformance, { engine: documentEngine() });
+const schema = await schemaOf(conformance);
+for (const round of [1, 2]) await batch(conformance, edits(schema, await valueOf(conformance), round));
+const theme = await slopJSON(["theme", "get", conformance]);
+const [token, color] = Object.entries(theme.defaults as Record<string, string>)[0] ?? [];
+if (token) await slopJSON(["theme", "set", conformance, "--values", JSON.stringify({ [token]: color === "#123456" ? "#654321" : "#123456" })]);
+const text = join(work, "attachment.txt");
+await writeFile(text, "Compatibility corpus attachment ✓\n");
+const ref = await slopJSON(["attachments", "ref", text]);
+await slopJSON(["apply", conformance, "--attach", text, "--op", JSON.stringify({ type: "set", path: ["attachment"], value: ref.id })]);
+await rm(text);
+// A second attachment of a media type the host sniffs from its bytes.
+const image = join(work, "photo.png");
+await copyFile(join(repository, "tests/abi/owner-svelte/media/swatch.png"), image);
+const photo = await slopJSON(["attachments", "ref", image]);
+await slopJSON(["apply", conformance, "--attach", image, "--op", JSON.stringify({ type: "set", path: ["photo"], value: photo.id })]);
+await rm(image);
+const compacted = join(documents, "conformance-compacted.slop");
+await copyFile(conformance, compacted);
+await run(["cargo", "run", "-q", "--locked", "-p", "hitslop-core", "--features", "storage", "--example", "compat_checkpoint", "--", compacted]);
 
 // What each document reads as, and an edit to replay on it with its result.
 const names = (await readdir(documents)).filter((n) => n.endsWith(".slop")).map((n) => n.slice(0, -5)).sort();
@@ -213,10 +178,8 @@ async function record(document: string) {
 }
 for (const document of names) {
   await record(document);
-  const script = pageScripts[document]!;
-  const selected = actions[document.replace(/-compacted$/, "")];
-  if (script === "actions" && !selected) throw new Error(`Add an explicit page action for ${document} before capture`);
-  const page: Page = { script, ...(selected ? { actions: selected } : {}), value: null };
+  // The conformance app's own contract test is its page scenario.
+  const page: Page = { script: "contractTest", value: null };
   await writeFile(join(root, "pages", document + ".json"), JSON.stringify(page, null, 2) + "\n");
 }
 
@@ -231,10 +194,11 @@ const writer = { buildId: await run([writerPath, "--build-id"]), commit: "", sha
 const storage: Release["storage"] = {};
 function measure(document: string) {
   const database = new Database(join(documents, document + ".slop"), { readonly: true });
-  const checkpoint = database.query("SELECT length(bytes) AS n FROM checkpoint").get() as { n: number };
-  const updates = database.query("SELECT count(*) AS n FROM updates").get() as { n: number };
+  // The history's first row is its snapshot; the rest are updates saved after it.
+  const checkpoint = database.query("SELECT length(bytes) AS n FROM history ORDER BY seq LIMIT 1").get() as { n: number };
+  const history = database.query("SELECT count(*) AS n FROM history").get() as { n: number };
   database.close();
-  storage[document] = { checkpointBytes: checkpoint.n, updates: updates.n };
+  storage[document] = { checkpointBytes: checkpoint.n, updates: history.n - 1 };
 }
 for (const document of names) measure(document);
 if (!Object.values(storage).some(({ updates }) => updates > 0)) throw new Error("No document keeps saved updates past its checkpoint");
@@ -286,12 +250,9 @@ const release: Release = {
 };
 await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
 
-const commandProbes = {
-  "quick-checklist": { name: "addTask", args: { text: "Frozen command replay ✓" } },
-  hourglass: { name: "startFor", args: { duration: 60_000 } },
-};
+// A stored command program, replayed by later builds with this clock and seed.
+const commandProbes = { conformance: { name: "bump", args: { by: 2 } } };
 for (const [slug, probe] of Object.entries(commandProbes)) {
-  if (!templates[slug]) continue;
   const original = join(documents, slug + ".slop"), copy = join(work, "command.slop");
   await rm(copy, { force: true });
   await copyFile(original, copy);

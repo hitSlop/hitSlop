@@ -49,7 +49,6 @@ fn replacing_a_value_with_itself_writes_nothing() {
 #[test]
 fn rows_and_text_keep_their_identity() {
     let (mut d, mut view) = open("checklist");
-    let base = d.version();
     let applied = apply(
         &mut d,
         &mut view,
@@ -75,7 +74,7 @@ fn rows_and_text_keep_their_identity() {
     assert_eq!((v["title"].clone(), v["rows"][1]["done"].clone()), (json!("New title"), json!(true)));
     view.check(&d, "after the replace");
     // A text field opened before the replace still edits the same text.
-    let typed = type_text(&mut d, &base, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
+    let typed = type_text(&mut d, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
     view.publish(&typed.publication.unwrap());
     assert_eq!(value(&d)["rows"][1]["text"], "AX");
     view.check(&d, "after typing in a kept row");
@@ -103,8 +102,7 @@ fn replacing_rows_after_an_insert_in_the_same_batch_preserves_identity_and_undo(
     view.publish(&d.redo().unwrap().publication.unwrap());
     assert_eq!(value(&d)["rows"], rows);
     view.check(&d, "after redo");
-    let base = d.version();
-    let typed = type_text(&mut d, &base, json!(["rows",{"id":"new"},"text"]), "C", "CX", 2).unwrap();
+    let typed = type_text(&mut d, json!(["rows",{"id":"new"},"text"]), "C", "CX", 2).unwrap();
     view.publish(&typed.publication.unwrap());
     assert_eq!(value(&d)["rows"][2]["text"], "CX");
     view.check(&d, "after editing the preserved text");
@@ -195,18 +193,17 @@ fn complete_optional_and_record_sets_preserve_surviving_text_and_row_identity() 
         let spec = app(schema.to_string());
         let mut d = Document::create(&spec, &json!({"box":initial,"entries":{"key":initial}}).to_string()).unwrap();
         let mut view = View::of(&d);
-        let base = d.version();
         let replacement = json!({"text":"Keep", "count":2,
             "rows":[{"$id":"b","text":"Beta","done":true},{"$id":"a","text":"Alpha","done":true}]});
         apply(&mut d, &mut view, &json!({"intents":[{"type":"set","path":path,"value":replacement}]}).to_string());
         view.check(&d, "after a complete complex-object set");
         let mut text_path = path.as_array().unwrap().clone();
         text_path.push(json!("text"));
-        let typed = type_text(&mut d, &base, json!(text_path), "Keep", "Keep!", 5).unwrap();
+        let typed = type_text(&mut d, json!(text_path), "Keep", "Keep!", 5).unwrap();
         view.publish(&typed.publication.unwrap());
         let mut row_path = path.as_array().unwrap().clone();
         row_path.extend([json!("rows"), json!({"id":"a"}), json!("text")]);
-        let typed = type_text(&mut d, &base, json!(row_path), "Alpha", "Alpha!", 6).unwrap();
+        let typed = type_text(&mut d, json!(row_path), "Alpha", "Alpha!", 6).unwrap();
         view.publish(&typed.publication.unwrap());
         view.check(&d, "old text bindings still target retained containers");
         let reopened = Document::open(&spec, &d.checkpoint().unwrap(), &[]).unwrap();
@@ -214,8 +211,10 @@ fn complete_optional_and_record_sets_preserve_surviving_text_and_row_identity() 
     }
 }
 
+// A text edit addresses the field at its path: after the field was cleared and recreated
+// (or restored by undo), an edit from its text applies to the field there now.
 #[test]
-fn clearing_and_recreating_map_children_invalidates_old_text_bindings_even_after_undo() {
+fn an_edit_from_a_cleared_and_recreated_field_applies_to_the_field_there_now() {
     let child = json!({"kind":"object","properties":{"text":{"kind":"text"}}});
     let schema = json!({"kind":"object","properties":{
         "memo":{"kind":"optional","inner":{"kind":"text"}},
@@ -231,7 +230,6 @@ fn clearing_and_recreating_map_children_invalidates_old_text_bindings_even_after
         for undo in [false, true] {
             let mut d = Document::create(&app(schema.to_string()), &initial.to_string()).unwrap();
             let mut view = View::of(&d);
-            let base = d.version();
             apply(&mut d, &mut view, &json!({"intents":[{"type":"clear","path":path}]}).to_string());
             if undo {
                 view.publish(&d.undo().unwrap().publication.unwrap());
@@ -243,50 +241,38 @@ fn clearing_and_recreating_map_children_invalidates_old_text_bindings_even_after
                 );
             }
             assert_eq!(value(&d), initial);
-            let before = d.state().unwrap();
-            assert_eq!(
-                type_text(&mut d, &base, text_path.clone(), "Old", "Old!", 4).unwrap_err().code,
-                Code::PathNotFound
-            );
-            assert_eq!(d.state().unwrap(), before);
-            view.check(&d, "recreated map child has old content and a fresh identity");
+            let typed = type_text(&mut d, text_path.clone(), "Old", "Old!", 4).unwrap();
+            view.publish(&typed.publication.unwrap());
+            view.check(&d, "the edit applies to the recreated field");
         }
     }
 }
 
 #[test]
-fn undoing_a_row_removal_restores_its_id_and_content_with_fresh_containers() {
+fn undoing_a_row_removal_revives_the_same_row_and_text_containers() {
     use loro::{Container, ContainerTrait, LoroDoc, ValueOrContainer};
+    // Rows are mergeable children keyed by `$id`: removal hides a row and undo revives it.
     let identities = |d: &Document| {
         let saved = LoroDoc::new();
         saved.import(&d.checkpoint().unwrap()).unwrap();
-        let Some(ValueOrContainer::Container(Container::MovableList(rows))) = saved.get_map("data").get("rows") else {
+        let Some(ValueOrContainer::Container(Container::Map(list))) = saved.get_map("data").get("rows") else {
             panic!("rows")
         };
-        let Some(ValueOrContainer::Container(Container::Map(row))) = rows.get(0) else { panic!("row") };
+        let Some(ValueOrContainer::Container(Container::Map(rows))) = list.get("rows") else { panic!("rows map") };
+        let Some(ValueOrContainer::Container(Container::Map(row))) = rows.get(A) else { panic!("row") };
         let Some(ValueOrContainer::Container(text)) = row.get("text") else { panic!("text") };
         (row.id(), text.id())
     };
     let (mut d, mut view) = open("checklist");
-    let base = d.version();
     let before = identities(&d);
     apply(&mut d, &mut view, &json!({"intents":[{"type":"remove","path":["rows"],"id":A}]}).to_string());
     view.publish(&d.undo().unwrap().publication.unwrap());
-    let after = identities(&d);
-    assert_ne!(before.0, after.0);
-    assert_ne!(before.1, after.1);
+    assert_eq!(identities(&d), before);
     assert_eq!(value(&d)["rows"][0], json!({"$id":A,"text":"A","done":false}));
-    let restored = d.state().unwrap();
-    assert_eq!(
-        type_text(&mut d, &base, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap_err().code,
-        Code::PathNotFound
-    );
-    assert_eq!(d.state().unwrap(), restored);
-    let current = d.version();
-    let typed = type_text(&mut d, &current, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
+    let typed = type_text(&mut d, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
     view.publish(&typed.publication.unwrap());
     assert_eq!(value(&d)["rows"][0]["text"], "AX");
-    view.check(&d, "the restored row is editable through a current binding");
+    view.check(&d, "the restored row is editable by its id");
 }
 
 #[test]

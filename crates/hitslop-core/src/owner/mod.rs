@@ -24,14 +24,12 @@ mod browser;
 pub use browser::BrowserDriver;
 mod barrier;
 mod commands;
-mod maintenance;
-/// The session hooks: a local document's, or with the opt-in `dev-sync` proof, a shared
-/// one's (`sync.rs`). The only place the owner differs between the two builds.
-#[cfg_attr(feature = "dev-sync", path = "sync.rs")]
-pub mod session;
+mod sync;
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
 #[cfg(not(target_arch = "wasm32"))]
 pub use hitslop_runner::Evaluator;
+use sync::{Link, SyncMessage};
+pub use sync::{SyncEvent, SyncSink};
 
 type Result<T> = std::result::Result<T, Failure>;
 /// Native theme controls use this typed adapter to the same batch path as page edits.
@@ -48,10 +46,7 @@ pub fn theme_request(change: ThemeChange) -> Request {
         ThemeChange::ResetAll => crate::Intent::SetTheme { values: Default::default(), replace: Some(true) },
         ThemeChange::ImportFile { file } => crate::Intent::ImportTheme { file },
     };
-    Request::Apply {
-        batch: crate::Batch { intents: vec![intent], base: None, if_version: None },
-        origin: Origin::Window,
-    }
+    Request::Apply { batch: crate::Batch { intents: vec![intent], if_version: None }, origin: Origin::Window }
 }
 
 pub enum Request {
@@ -100,6 +95,11 @@ pub enum Request {
     },
     PutAttachment {
         bytes: Vec<u8>,
+    },
+    /// Shares the document through a room: from then on it keeps its whole history and
+    /// every attachment, and the host may attach a connection to the room's relay.
+    Share {
+        share: store::Share,
     },
     /// The palette; changes are batch intents.
     Theme,
@@ -205,7 +205,6 @@ impl Owner {
         let path = file::resolve(path)?;
         let store = Arc::new(store::Store::open(&path, mode)?);
         let (sender, receive) = mpsc::channel();
-        let session = session::State::new(&sender, &store)?;
         let (persist, work) = mpsc::channel();
         let completion = sender.clone();
         let disk = store.clone();
@@ -227,7 +226,7 @@ impl Owner {
             None => None,
         };
         let epoch = Instant::now();
-        let actor = Actor::new(store.clone(), mode, listener, persist, evaluate, session)?;
+        let actor = Actor::new(store.clone(), mode, listener, persist, evaluate)?;
         std::thread::Builder::new()
             .name("hitslop.owner".into())
             .spawn(move || actor.run(receive, epoch))
@@ -255,11 +254,6 @@ impl Owner {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         Ok(self.store.resource_reader()?)
-    }
-    /// Runs `read` on the live document, on the owner, between requests: for diagnostics
-    /// and measurements that must see what the owner holds. It must not block.
-    pub fn read_document(&self, read: impl FnOnce(&Document) + Send + 'static) {
-        let _ = self.sender.send(Message::Read(Box::new(read)));
     }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
@@ -295,9 +289,6 @@ impl Drop for Owner {
 }
 
 enum Message {
-    /// Only a sharing session sends these; a local one has none.
-    #[cfg_attr(not(feature = "dev-sync"), expect(dead_code, reason = "only a sharing session sends these"))]
-    Session(session::Message),
     Evaluated {
         invocation: Invocation,
         result: Result<Evaluation>,
@@ -309,21 +300,14 @@ enum Message {
         callback: Completion,
     },
     Attach(String),
-    Read(Box<dyn FnOnce(&Document) + Send>),
+    Sync(SyncMessage),
     PageAdmission {
         view: String,
         callback: Completion,
     },
-    /// A history rebuild, built and written (or not); see `maintenance`.
-    Maintained {
-        generation: u64,
-        result: Result<(Box<Document>, Result<()>)>,
-    },
     Saved {
         generation: u64,
         target: u64,
-        /// The retained history the save's checkpoint measured, when it is due a rebuild.
-        rebuild: Option<usize>,
         result: Result<()>,
     },
     /// Boxed: a document is far larger than any other message.
@@ -380,7 +364,6 @@ struct Actor {
     /// the file covers. Waiters wait for `saved` to reach the revision they were admitted at.
     saved: u64,
     revision: u64,
-    session: session::State,
     writing: bool,
     requested: bool,
     deadline: Option<Duration>,
@@ -389,7 +372,7 @@ struct Actor {
     waiters: Vec<Waiter>,
     undo: (bool, bool),
     barrier: barrier::Barrier,
-    maintenance: maintenance::Maintenance,
+    link: Link,
 }
 impl Actor {
     fn new(
@@ -398,7 +381,6 @@ impl Actor {
         listener: Listener,
         persist: mpsc::Sender<Work>,
         evaluate: Option<mpsc::Sender<EvaluationWork>>,
-        session: session::State,
     ) -> Result<Self> {
         let core = store.document()?;
         let sequence = core.sequence();
@@ -420,7 +402,6 @@ impl Actor {
             sequence,
             saved: 0,
             revision: 0,
-            session,
             writing: false,
             requested: false,
             deadline: None,
@@ -429,7 +410,7 @@ impl Actor {
             waiters: vec![],
             undo: (false, false),
             barrier: barrier::Barrier::default(),
-            maintenance: maintenance::Maintenance::default(),
+            link: Link::default(),
         })
     }
     fn emit(&self, event: Event) {
@@ -449,49 +430,31 @@ impl Actor {
             self.requested = true;
             self.pump();
         }
-        self.maintenance_poll();
     }
     fn wake(&self) -> Option<Duration> {
-        [self.deadline, self.maintenance_wake()].into_iter().flatten().min()
+        self.deadline
     }
     fn step(&mut self, message: Message) -> bool {
         match message {
             Message::Stop => return false,
-            Message::Session(message) => {
-                if catch_unwind(AssertUnwindSafe(|| self.session_message(message))).is_err() {
-                    self.invalidated = true;
-                    self.fail(poisoned(), u64::MAX);
-                }
-            }
             Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
             Message::Attach(view) => self.view = Some(view),
-            Message::Read(read) => {
-                let _ = catch_unwind(AssertUnwindSafe(|| read(&self.core)));
-            }
+            Message::Sync(message) => self.sync(message),
             Message::PageAdmission { view, callback } => {
                 complete(callback, self.admit(false, Some(&view)).map(|()| Reply::Unit))
             }
             Message::Request { request, view, deadline, callback } => self.dispatch(request, view, deadline, callback),
-            Message::Maintained { generation, result } => self.maintenance_finished(generation, result),
-            Message::Saved { generation, target, rebuild, result } => {
+            Message::Saved { generation, target, result } => {
                 if generation != self.generation {
                     return true;
                 }
                 self.writing = false;
                 match result {
                     Ok(()) => {
-                        if let Err(error) = self.session_installed() {
-                            self.fail(error, target);
-                            return true;
-                        }
                         self.saved = self.saved.max(target);
                         self.failure = None;
                         self.status(if self.revision > self.saved { SaveStatus::Saving } else { SaveStatus::Saved });
                         self.settle();
-                        self.session_saved();
-                        if let Some(size) = rebuild {
-                            self.rebuild_due(size);
-                        }
                     }
                     Err(error) => self.fail(error, target),
                 }
@@ -550,7 +513,6 @@ impl Actor {
     fn shutdown(&mut self) {
         self.reject_waiters(closed());
         self.fail_held(closed());
-        self.session_shutdown();
     }
     #[cfg(not(target_arch = "wasm32"))]
     fn run(mut self, messages: mpsc::Receiver<Message>, epoch: Instant) {
@@ -640,17 +602,10 @@ impl Actor {
         if barrier::edits(&request) && self.barrier.closing() {
             return Err(Failure::new(FailureKind::Closing, "Document is closing"));
         }
-        if self.maintenance_holds(&request)
-            || self.barrier.precedes(&request)
-            || (self.evaluating && barrier::fence(&request))
-        {
+        if self.barrier.precedes(&request) || (self.evaluating && barrier::fence(&request)) {
             self.hold(request, view, deadline, callback)?;
             return Ok(None);
         }
-        let request = match self.session_admit(request, view.clone(), deadline, callback)? {
-            Some(request) => request,
-            None => return Ok(None),
-        };
         let reply = match request {
             Request::Command { name, args_json, origin } => {
                 self.begin_command(name, args_json, origin, view, deadline, callback)?;
@@ -708,10 +663,15 @@ impl Actor {
                 if self.discarding || self.lifecycle == Lifecycle::Closing {
                     return Err(replaced());
                 }
+                if self.store.is_shared() {
+                    return Err(Failure::rejected(
+                        Code::InvalidRequest,
+                        "A shared document keeps its edits: other copies may already have them",
+                    ));
+                }
                 self.generation += 1;
                 self.discarding = true;
                 self.deadline = None;
-                self.maintenance_cancel();
                 self.reject_waiters(replaced());
                 self.persist(Work::Restore { generation: self.generation, callback: take(callback) });
                 return Ok(None);
@@ -733,10 +693,16 @@ impl Actor {
                 self.storage(StorageAction::PutAttachment(bytes), take(callback));
                 return Ok(None);
             }
+            Request::Share { share } => {
+                self.mutation()?;
+                self.storage(StorageAction::Share(share), take(callback));
+                return Ok(None);
+            }
         };
-        self.session_reply(reply, callback)
+        Ok(Some(reply))
     }
     fn accepted(&mut self, sequence: u64, publication: Option<String>, themed: bool) {
+        self.sync_push();
         self.refresh_undo();
         let Some(json) = publication else {
             return;
@@ -744,9 +710,7 @@ impl Actor {
         let was_saved = self.revision <= self.saved;
         self.revision += 1;
         self.sequence = sequence;
-        self.maintenance_edited();
         self.emit(Event::Publication { json });
-        self.session_accepted();
         if themed {
             self.emit(Event::ThemeChanged);
         }
@@ -758,7 +722,7 @@ impl Actor {
         self.deadline = Some((now + Duration::from_millis(150)).min(since + Duration::from_millis(1000)));
     }
     fn refresh_undo(&mut self) {
-        let next = if self.session_undo() { (self.core.can_undo(), self.core.can_redo()) } else { (false, false) };
+        let next = (self.core.can_undo(), self.core.can_redo());
         if next != self.undo {
             self.undo = next;
             self.emit(Event::UndoState { can_undo: next.0, can_redo: next.1 });
@@ -789,17 +753,11 @@ impl Actor {
         self.requested = false;
         self.unsaved_since = None;
         self.deadline = None;
-        let job = catch_unwind(AssertUnwindSafe(|| {
-            if let Some(job) = self.session_job() {
-                return job.map(Some);
-            }
-            let rebuilds = self.session_rebuilds();
-            self.store.owner_job(&mut self.core, rebuilds).map_err(Failure::from)
-        }))
-        .unwrap_or_else(|_| {
-            self.invalidated = true;
-            Err(poisoned())
-        });
+        let job = catch_unwind(AssertUnwindSafe(|| self.store.job(&mut self.core, false).map_err(Failure::from)))
+            .unwrap_or_else(|_| {
+                self.invalidated = true;
+                Err(poisoned())
+            });
         match job {
             Ok(Some(job)) => {
                 self.writing = true;
@@ -810,7 +768,6 @@ impl Actor {
                 self.failure = None;
                 self.status(SaveStatus::Saved);
                 self.settle();
-                self.session_saved();
             }
             Err(error) => self.fail(error, u64::MAX),
         }
@@ -859,9 +816,6 @@ impl Actor {
             match work {
                 Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
                     complete(callback, Err(poisoned()))
-                }
-                Work::Maintain { generation, .. } => {
-                    self.maintenance_finished(generation, Err(poisoned()));
                 }
                 Work::Save { .. } => {}
             }
