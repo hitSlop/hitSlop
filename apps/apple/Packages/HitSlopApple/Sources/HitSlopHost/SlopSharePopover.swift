@@ -23,8 +23,8 @@ struct SlopShareButton: NSViewRepresentable {
     image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")
     imagePosition = .imageOnly
     isBordered = false
-    toolTip = "Share…"
-    setAccessibilityLabel("Share")
+    toolTip = "Share & Save…"
+    setAccessibilityLabel("Share & Save")
     target = self
     action = #selector(share)
   }
@@ -111,12 +111,20 @@ private struct SlopShareView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       VStack(alignment: .leading, spacing: 4) {
-        Text("Share").font(.title3.bold())
+        Text("Share & Save").font(.title3.bold())
         Text(filename).font(.subheadline).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
       }
       VStack(spacing: 6) {
-        option("Share PDF", detail: "A PDF of this document.", symbol: "doc.richtext", command: .sharePDF)
-        option("Share Image", detail: "A PNG image of this document.", symbol: "photo", command: .sharePNG)
+        Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+          GridRow {
+            formatOption("Share PDF", hint: "Send a PDF using the sharing picker.", symbol: "doc.richtext", command: .sharePDF)
+            formatOption("Save PDF", hint: "Choose where to save a PDF.", symbol: "arrow.down.to.line", command: .exportPDF)
+          }
+          GridRow {
+            formatOption("Share Image", hint: "Send a PNG image using the sharing picker.", symbol: "photo", command: .sharePNG)
+            formatOption("Save Image", hint: "Choose where to save a PNG image.", symbol: "arrow.down.to.line", command: .exportPNG)
+          }
+        }
         option("Share Slop File", detail: "An editable copy for hitSlop.", symbol: "doc", command: .shareSlop)
         option("Share URL", detail: "Coming soon", symbol: "link", command: nil)
       }.disabled(!model.commandsEnabled || model.preparing != nil)
@@ -137,8 +145,22 @@ private struct SlopShareView: View {
       }.toggleStyle(.switch).controlSize(.small).disabled(true)
         .accessibilityLabel("Live collaboration, coming soon")
     }
-    .padding(18).frame(width: 300)
+    .padding(18).frame(width: 320)
     .onExitCommand { if model.preparing == nil { model.dismiss() } }
+  }
+
+  private func formatOption(_ title: String, hint: String, symbol: String, command: SlopDocumentCommand) -> some View {
+    Button {
+      model.choose(command)
+    } label: {
+      VStack(spacing: 8) {
+        Image(systemName: symbol).font(.system(size: 19)).foregroundStyle(.secondary)
+          .frame(height: 24)
+        Text(title).font(.body.weight(.medium))
+      }.padding(.vertical, 12).frame(maxWidth: .infinity).contentShape(Rectangle())
+    }.buttonStyle(.plain)
+      .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+      .accessibilityLabel(title).accessibilityHint(hint)
   }
 
   private func option(_ title: String, detail: String, symbol: String, command: SlopDocumentCommand?) -> some View {

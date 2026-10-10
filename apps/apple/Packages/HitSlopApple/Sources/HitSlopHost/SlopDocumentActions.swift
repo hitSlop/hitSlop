@@ -152,6 +152,7 @@ extension SlopDocumentWindowController {
   }
 
   private func export(_ format: ExportFormat) async throws {
+    sharePopover.dismiss()
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
     panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
